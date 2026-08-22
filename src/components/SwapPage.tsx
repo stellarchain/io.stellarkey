@@ -19,6 +19,7 @@ export function SwapPage() {
   const [slippage, setSlippage] = useState<number>(0.5); // 0.5% default
   const [showSettings, setShowSettings] = useState(false);
   const [invertRate, setInvertRate] = useState(false);
+  const [stage, setStage] = useState<"form" | "review">("form");
   const [route, setRoute] = useState<{
     dest: string;
     destMin: string;
@@ -28,7 +29,6 @@ export function SwapPage() {
   const [routing, setRouting] = useState(false);
   const [noRoute, setNoRoute] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState<"form" | "review">("form");
   const [error, setError] = useState<string | null>(null);
   const networkRef = useRef(network);
   useEffect(() => {
@@ -163,7 +163,7 @@ export function SwapPage() {
       : null;
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[560px] px-5 pb-[150px]">
+    <div className="fade-up mx-auto w-full max-w-[1000px] px-5 pb-[150px]">
       <div className="flex items-center justify-between pb-4 pt-2">
         <h2 className="text-[17px] font-bold text-white tracking-tight">In-App Swap</h2>
         <button
@@ -179,300 +179,316 @@ export function SwapPage() {
         </button>
       </div>
 
-      {showSettings && (
-        <div className="panel-inset mb-4 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
-            <span className="text-[12px] font-medium text-[#0A84FF]">{slippage}%</span>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[0.1, 0.5, 1.0, 3.0].map((val) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setSlippage(val);
-                }}
-                className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
-                  slippage === val
-                    ? "bg-[#0A84FF] text-white shadow-sm"
-                    : "bg-white/[0.08] text-neutral-300 hover:text-white"
-                }`}
-              >
-                {val}%
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-[11.5px] text-neutral-400">Custom Slippage:</span>
-            <div className="flex items-center gap-1">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Trade Entry Cards */}
+        <div className="md:col-span-7 space-y-4">
+          {/* Sell card */}
+          <div className="panel-inset p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+                You Pay
+              </span>
+              {sendAsset && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setAmount(sendAsset.balance);
+                  }}
+                  className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                >
+                  Balance: {fmtAmount(sendAsset.balance)}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
               <input
-                type="number"
-                step="0.1"
-                min="0.05"
-                max="10"
-                placeholder={String(slippage)}
-                value={slippage}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  if (!Number.isNaN(val) && val > 0 && val <= 20) {
-                    setSlippage(val);
-                  }
-                }}
-                className="input mono !h-7 !w-20 text-[12px] text-center"
+                type="text"
+                inputMode="decimal"
+                placeholder="0.0"
+                value={amount}
+                onChange={(e) => handleAmountChange(e.target.value)}
+                className="w-full bg-transparent text-[32px] font-bold text-white outline-none placeholder:text-neutral-600"
               />
-              <span className="text-[12px] font-bold text-neutral-400">%</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-neutral-400">
-            Transactions revert if the execution price changes by more than this percentage.
-          </p>
-          {slippage > 2.0 && (
-            <div className="flex items-center gap-2 rounded-xl bg-[#FF9F0A]/10 border border-[#FF9F0A]/25 p-2.5 text-[11.5px] text-[#FF9F0A]">
-              <IconAlert size={14} className="shrink-0" />
-              <span>High slippage setting may result in suboptimal trade execution.</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Sell card */}
-      <div className="panel-inset p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            You Pay
-          </span>
-          {sendAsset && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setAmount(sendAsset.balance);
-              }}
-              className="text-[12px] font-medium text-[#0A84FF] hover:underline"
-            >
-              Balance: {fmtAmount(sendAsset.balance)}
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            inputMode="decimal"
-            placeholder="0.0"
-            value={amount}
-            onChange={(e) => handleAmountChange(e.target.value)}
-            className="w-full bg-transparent text-[32px] font-bold text-white outline-none placeholder:text-neutral-600"
-          />
-          <AssetSelect
-            options={options}
-            value={sendKey}
-            onChange={(k) => {
-              setSendKey(k);
-              setRoute(null);
-            }}
-          />
-        </div>
-        {/* Quick Percent Buttons */}
-        {sendAsset && (
-          <div className="flex items-center gap-1.5 pt-1">
-            {[0.25, 0.5, 0.75, 1.0].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  const bal = parseFloat(sendAsset.balance);
-                  const res = (bal * pct).toFixed(7).replace(/\.?0+$/, "");
-                  setAmount(res);
+              <AssetSelect
+                options={options}
+                value={sendKey}
+                onChange={(k) => {
+                  setSendKey(k);
+                  setRoute(null);
                 }}
-                className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:bg-white/[0.12]"
-              >
-                {pct === 1.0 ? "MAX" : `${pct * 100}%`}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Flip button */}
-      <div className="relative my-2 flex justify-center">
-        <button
-          type="button"
-          onClick={flipAssets}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-white shadow-lg transition-transform active:scale-90 hover:bg-neutral-800"
-          aria-label="Invert Assets"
-        >
-          <IconSwap size={18} />
-        </button>
-      </div>
-
-      {/* Buy card */}
-      <div className="panel-inset p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-            You Receive (Estimated)
-          </span>
-          {destAsset && (
-            <span className="text-[12px] text-neutral-400">
-              Balance: {fmtAmount(destAsset.balance)}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="w-full text-[32px] font-bold text-white">
-            {routing ? (
-              <span className="skeleton inline-block h-9 w-32 rounded-lg align-middle" />
-            ) : route ? (
-              fmtAmount(route.dest)
-            ) : (
-              <span className="text-neutral-600">0.0</span>
+              />
+            </div>
+            {/* Quick Percent Buttons */}
+            {sendAsset && (
+              <div className="flex items-center gap-1.5 pt-1">
+                {[0.25, 0.5, 0.75, 1.0].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      const bal = parseFloat(sendAsset.balance);
+                      const res = (bal * pct).toFixed(7).replace(/\.?0+$/, "");
+                      setAmount(res);
+                    }}
+                    className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                  >
+                    {pct === 1.0 ? "MAX" : `${pct * 100}%`}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          <AssetSelect
-            options={options.filter((b) => b.key !== sendKey)}
-            value={effectiveDestKey}
-            onChange={(k) => {
-              setDestKey(k);
-              setRoute(null);
-            }}
-          />
-        </div>
-      </div>
 
-      {/* Route Info & Guaranteed Minimum */}
-      {route && (
-        <div className="panel-inset mt-4 p-4 space-y-2 text-[12.5px]">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setInvertRate((r) => !r);
-            }}
-            className="flex justify-between w-full text-neutral-400 hover:text-white transition-colors cursor-pointer"
-          >
-            <span>Rate (Tap to flip)</span>
-            <span className="mono text-white">
-              {invertRate
-                ? `1 ${destAsset?.code} ≈ ${reverseExchangeRate} ${sendAsset?.code}`
-                : `1 ${sendAsset?.code} ≈ ${exchangeRate} ${destAsset?.code}`}
-            </span>
-          </button>
-          <div className="flex justify-between text-neutral-400">
-            <span>Min. Received (Guarantee)</span>
-            <span className="mono text-white">
-              {fmtAmount(route.destMin)} {destAsset?.code}
-            </span>
+          {/* Flip button */}
+          <div className="relative my-1 flex justify-center">
+            <button
+              type="button"
+              onClick={flipAssets}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-white shadow-lg transition-transform active:scale-90 hover:bg-neutral-800"
+              aria-label="Invert Assets"
+            >
+              <IconSwap size={18} />
+            </button>
           </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Price Impact</span>
-            <span className="text-[#30D158] font-medium">{"< 0.1% Minimal"}</span>
-          </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Market Depth</span>
-            <span className="text-[#30D158] font-medium">{"🟢 High Liquidity"}</span>
-          </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Orderbook Spread</span>
-            <span className="mono text-[#30D158]">0.02% (Tight)</span>
-          </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Estimated Network Fee</span>
-            <span className="mono text-neutral-300">0.00001 XLM (100 stroops)</span>
-          </div>
-          <div className="flex justify-between items-center text-neutral-400">
-            <span>Route Hops</span>
-            <div className="flex items-center gap-1">
-              <span className="mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded-md text-[11px]">
-                {sendAsset?.code}
+
+          {/* Buy card */}
+          <div className="panel-inset p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+                You Receive (Estimated)
               </span>
-              {route.intermediates.map((p, idx) => (
-                <span key={idx} className="flex items-center gap-1">
-                  <span className="text-[10px] text-neutral-500">➔</span>
-                  <span className="mono font-semibold text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-md text-[11px]">
-                    {p.getCode()}
-                  </span>
+              {destAsset && (
+                <span className="text-[12px] text-neutral-400">
+                  Balance: {fmtAmount(destAsset.balance)}
                 </span>
-              ))}
-              <span className="text-[10px] text-neutral-500">➔</span>
-              <span className="mono font-semibold text-[#30D158] bg-[#30D158]/10 px-2 py-0.5 rounded-md text-[11px]">
-                {destAsset?.code}
-              </span>
+              )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {noRoute && (
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FF9F0A]">
-          <IconAlert size={16} className="shrink-0" />
-          <span>No DEX liquidity pool path found for this asset pair on {network}.</span>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4">
-          <ErrorText message={error} />
-        </div>
-      )}
-
-      {stage === "review" && route ? (
-        <div className="mt-6 space-y-3">
-          <div className="panel-inset p-4 space-y-2 text-[13px]">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
-              Review Swap Details
-            </p>
-            <div className="flex justify-between text-neutral-300">
-              <span>You Pay</span>
-              <span className="mono font-semibold text-white">
-                {amount} {sendAsset?.code}
-              </span>
-            </div>
-            <div className="flex justify-between text-[#30D158]">
-              <span>Guaranteed Minimum</span>
-              <span className="mono font-semibold">
-                {fmtAmount(route.destMin)} {destAsset?.code}
-              </span>
-            </div>
-            <div className="flex justify-between text-neutral-400 text-[12px]">
-              <span>Max Price Slippage</span>
-              <span>{slippage}%</span>
+            <div className="flex items-center gap-3">
+              <div className="w-full text-[32px] font-bold text-white">
+                {routing ? (
+                  <span className="skeleton inline-block h-9 w-32 rounded-lg align-middle" />
+                ) : route ? (
+                  fmtAmount(route.dest)
+                ) : (
+                  <span className="text-neutral-600">0.0</span>
+                )}
+              </div>
+              <AssetSelect
+                options={options.filter((b) => b.key !== sendKey)}
+                value={effectiveDestKey}
+                onChange={(k) => {
+                  setDestKey(k);
+                  setRoute(null);
+                }}
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {error && (
+            <div className="mt-4">
+              <ErrorText message={error} />
+            </div>
+          )}
+
+          {stage === "review" && route ? (
+            <div className="mt-4 space-y-3">
+              <div className="panel-inset p-4 space-y-2 text-[13px]">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                  Review Swap Details
+                </p>
+                <div className="flex justify-between text-neutral-300">
+                  <span>You Pay</span>
+                  <span className="mono font-semibold text-white">
+                    {amount} {sendAsset?.code}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#30D158]">
+                  <span>Guaranteed Minimum</span>
+                  <span className="mono font-semibold">
+                    {fmtAmount(route.destMin)} {destAsset?.code}
+                  </span>
+                </div>
+                <div className="flex justify-between text-neutral-400 text-[12px]">
+                  <span>Max Price Slippage</span>
+                  <span>{slippage}%</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setStage("form");
+                  }}
+                >
+                  Back
+                </Button>
+                <Button
+                  loading={busy}
+                  disabled={busy}
+                  onClick={() => void handleSwap()}
+                >
+                  {busy ? "Executing…" : "Confirm Swap"}
+                </Button>
+              </div>
+            </div>
+          ) : (
             <Button
-              variant="ghost"
-              disabled={busy}
+              className="mt-4 w-full !h-12 text-[16px]"
+              disabled={!route || busy || routing}
               onClick={() => {
                 triggerHaptic("selection");
-                setStage("form");
+                setStage("review");
               }}
             >
-              Back
+              {routing ? "Finding Best Route…" : "Review Swap"}
             </Button>
-            <Button
-              loading={busy}
-              disabled={busy}
-              onClick={() => void handleSwap()}
-            >
-              {busy ? "Executing…" : "Confirm Swap"}
-            </Button>
-          </div>
+          )}
         </div>
-      ) : (
-        <Button
-          className="mt-6 w-full !h-12 text-[16px]"
-          disabled={!route || busy || routing}
-          onClick={() => {
-            triggerHaptic("selection");
-            setStage("review");
-          }}
-        >
-          {routing ? "Finding Best Route…" : "Review Swap"}
-        </Button>
-      )}
+
+        {/* Right Column: Slippage & Analytics (Desktop / Tablet) */}
+        <div className="md:col-span-5 space-y-4">
+          {/* Slippage Settings */}
+          {showSettings && (
+            <div className="panel-inset p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
+                <span className="text-[12px] font-medium text-[#0A84FF]">{slippage}%</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {[0.1, 0.5, 1.0, 3.0].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSlippage(val);
+                    }}
+                    className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
+                      slippage === val
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "bg-white/[0.08] text-neutral-300 hover:text-white"
+                    }`}
+                  >
+                    {val}%
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-[11.5px] text-neutral-400">Custom:</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.05"
+                    max="10"
+                    placeholder={String(slippage)}
+                    value={slippage}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!Number.isNaN(val) && val > 0 && val <= 20) {
+                        setSlippage(val);
+                      }
+                    }}
+                    className="input mono !h-7 !w-20 text-[12px] text-center"
+                  />
+                  <span className="text-[12px] font-bold text-neutral-400">%</span>
+                </div>
+              </div>
+              <p className="text-[11px] text-neutral-400">
+                Transactions revert if execution price changes by more than this percentage.
+              </p>
+              {slippage > 2.0 && (
+                <div className="flex items-center gap-2 rounded-xl bg-[#FF9F0A]/10 border border-[#FF9F0A]/25 p-2.5 text-[11.5px] text-[#FF9F0A]">
+                  <IconAlert size={14} className="shrink-0" />
+                  <span>High slippage setting may result in suboptimal trade execution.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Route Analytics */}
+          {route ? (
+            <div className="panel-inset p-4 space-y-2.5 text-[12.5px]">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-1">
+                Routing & Execution Analytics
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setInvertRate((r) => !r);
+                }}
+                className="flex justify-between w-full text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <span>Rate (Tap to flip)</span>
+                <span className="mono text-white">
+                  {invertRate
+                    ? `1 ${destAsset?.code} ≈ ${reverseExchangeRate} ${sendAsset?.code}`
+                    : `1 ${sendAsset?.code} ≈ ${exchangeRate} ${destAsset?.code}`}
+                </span>
+              </button>
+              <div className="flex justify-between text-neutral-400">
+                <span>Min. Received (Guarantee)</span>
+                <span className="mono text-white">
+                  {fmtAmount(route.destMin)} {destAsset?.code}
+                </span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Price Impact</span>
+                <span className="text-[#30D158] font-medium">{"< 0.1% Minimal"}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Market Depth</span>
+                <span className="text-[#30D158] font-medium">{"🟢 High Liquidity"}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Orderbook Spread</span>
+                <span className="mono text-[#30D158]">0.02% (Tight)</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Estimated Network Fee</span>
+                <span className="mono text-neutral-300">0.00001 XLM (100 stroops)</span>
+              </div>
+              <div className="flex justify-between items-center text-neutral-400 pt-1">
+                <span>Route Hops</span>
+                <div className="flex items-center gap-1">
+                  <span className="mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded-md text-[11px]">
+                    {sendAsset?.code}
+                  </span>
+                  {route.intermediates.map((p, idx) => (
+                    <span key={idx} className="flex items-center gap-1">
+                      <span className="text-[10px] text-neutral-500">➔</span>
+                      <span className="mono font-semibold text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-md text-[11px]">
+                        {p.getCode()}
+                      </span>
+                    </span>
+                  ))}
+                  <span className="text-[10px] text-neutral-500">➔</span>
+                  <span className="mono font-semibold text-[#30D158] bg-[#30D158]/10 px-2 py-0.5 rounded-md text-[11px]">
+                    {destAsset?.code}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="panel-inset p-6 text-center text-neutral-500 text-[13px] hidden md:block">
+              Enter an amount to simulate DEX routing and orderbook liquidity.
+            </div>
+          )}
+
+          {noRoute && (
+            <div className="flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FF9F0A]">
+              <IconAlert size={16} className="shrink-0" />
+              <span>No DEX liquidity pool path found for this asset pair on {network}.</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
