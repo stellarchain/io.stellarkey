@@ -26,6 +26,7 @@ import { TxDetailModal } from "./TxDetailModal";
 import {
   IconArrowDownLeft,
   IconArrowUpRight,
+  IconCheck,
   IconChevronDown,
   IconClose,
   IconDownload,
@@ -359,7 +360,7 @@ export function Dashboard() {
   );
 
   return (
-    <div className="relative z-10 min-h-screen md:flex">
+    <div className="relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
       {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
@@ -502,33 +503,29 @@ export function Dashboard() {
           </button>
         </nav>
 
-                        {/* Trezor Suite Multi-Account Section */}
+                                {/* Apple HIG Multi-Account Section */}
         <div className="mt-5 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
-              {/* Trezor Device / Wallet Category Header */}
-              <div className="flex items-center justify-between px-1 pb-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#30D158]" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-300">
-                    Stellar Wallet ({accounts.length})
-                  </span>
-                </div>
+              {/* Accounts Header */}
+              <div className="flex items-center justify-between px-2 pb-1.5">
+                <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+                  Accounts ({accounts.length})
+                </span>
                 <button
                   type="button"
                   onClick={() => openSettings("addAccount")}
-                  className="text-[11px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
+                  className="text-[12px] font-semibold text-[#0A84FF] hover:underline"
                 >
-                  <IconPlus size={11} /> Add
+                  + Add
                 </button>
               </div>
 
               {/* Accounts List */}
-              <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-0.5 scrollbar-none">
+              <div className="space-y-1 max-h-[260px] overflow-y-auto pr-0.5 scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
-                  const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
-                  const pathStr = acct.path ?? `m/44'/148'/${acct.index ?? 0}'`;
+                  
                   return (
                     <button
                       key={acct.id}
@@ -537,59 +534,37 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`group flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.08] border-l-[3px] border-l-[#0A84FF] border-y border-r border-white/15 text-white font-semibold shadow-md shadow-black/40"
-                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
+                          ? "bg-white/[0.09] text-white font-semibold shadow-sm"
+                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="relative shrink-0">
-                          <Avatar seed={acct.publicKey} size={28} />
-                          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 border border-white/20 text-[9px] font-bold text-neutral-300">
-                            {idxNum}
-                          </span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] leading-tight font-semibold text-white">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <Avatar seed={acct.publicKey} size={28} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13.5px] leading-tight font-medium text-white">
                             {acct.label}
                           </p>
-                          <p className="mono truncate text-[10.5px] text-neutral-400">
+                          <p className="mono truncate text-[11px] text-neutral-400 pt-0.5">
                             {isActive && balances
                               ? `${fmtAmount(xlm?.balance ?? "0")} XLM`
-                              : pathStr}
+                              : shortenAddr(acct.publicKey, 4, 4)}
                           </p>
                         </div>
                       </div>
-                      {isActive ? (
-                        <span className="h-2 w-2 rounded-full bg-[#0A84FF] shadow-[0_0_8px_#0A84FF] shrink-0" />
-                      ) : (
-                        <span className="mono text-[10px] text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                          #{idxNum}
-                        </span>
+                      {isActive && (
+                        <IconCheck size={16} className="text-[#0A84FF] shrink-0 ml-1" />
                       )}
                     </button>
                   );
                 })}
-
-                <button
-                  type="button"
-                  onClick={() => openSettings("addAccount")}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
-                >
-                  <IconPlus size={13} />
-                  <span>Add Stellar Account</span>
-                </button>
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-2.5 pt-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-500 mb-0.5">
-                Accs
-              </span>
+            <div className="flex flex-col items-center gap-2 pt-1">
               {accounts.map((acct) => {
                 const isActive = acct.id === activeAccount?.id;
-                const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                 return (
                   <button
                     key={acct.id}
@@ -598,25 +573,22 @@ export function Dashboard() {
                       triggerHaptic("selection");
                       selectAccount(acct.id);
                     }}
-                    className={`relative flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
+                    className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
                       isActive
-                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-md shadow-blue-500/25"
+                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                         : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                     }`}
-                    title={`${acct.label} (#${idxNum}) - ${shortenAddr(acct.publicKey, 4, 4)}`}
+                    title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
                   >
                     <Avatar seed={acct.publicKey} size={28} />
-                    <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-black border border-white/20 text-[9px] font-bold text-white">
-                      {idxNum}
-                    </span>
                   </button>
                 );
               })}
               <button
                 type="button"
                 onClick={() => openSettings("addAccount")}
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
-                title="Derive Next Account"
+                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                title="Add Account"
               >
                 <IconPlus size={14} />
               </button>
@@ -698,7 +670,7 @@ export function Dashboard() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
         {/* Desktop macOS Top Window Header Bar */}
         <header className="hidden md:flex items-center justify-between px-8 py-4 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
