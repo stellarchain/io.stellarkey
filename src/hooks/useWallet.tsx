@@ -42,6 +42,7 @@ import {
 import { deleteContact, loadContacts, saveContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
+import type { FiatCurrency } from "@/lib/format";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import { NETWORKS, type NetworkKey } from "@/lib/stellar";
 
@@ -58,6 +59,7 @@ function stripSecret(account: StoredAccount): AccountMeta {
 }
 
 const POLL_MS = 15_000;
+const FIAT_LIST: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
 
 interface WalletContextValue {
   phase: Phase;
@@ -80,6 +82,8 @@ interface WalletContextValue {
   unfunded: boolean;
   privacyMode: boolean;
   togglePrivacy: () => void;
+  fiatCurrency: FiatCurrency;
+  cycleFiatCurrency: () => void;
   autoLockMs: number;
   changeAutoLockMs: (ms: number) => void;
   biometricsEnabled: boolean;
@@ -161,6 +165,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [priceLoading, setPriceLoading] = useState(false);
   const priceCache = useRef<Partial<Record<PriceRange, api.PriceSeries>>>({});
   const [privacyMode, setPrivacyMode] = useState(false);
+  const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
   const [biometricsEnabled, setBiometricsEnabledState] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -179,6 +184,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const net = loadNetworkPref();
       setNetworkState(net);
       setPrivacyMode(window.localStorage.getItem("polaris.privacy.v1") === "1");
+      const storedFiat = window.localStorage.getItem("wallet.currency.v1") as FiatCurrency;
+      if (storedFiat && FIAT_LIST.includes(storedFiat)) setFiatCurrencyState(storedFiat);
       setAutoLockMsState(loadAutoLockPref());
       setBiometricsEnabledState(loadBiometricsPref());
       setContacts(loadContacts());
@@ -359,7 +366,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts([]);
     setActiveId(null);
     setBalances(null);
-    setClaimableBalances([]);
     setActivity([]);
     setPriceData(null);
     setHasDeletedWalletBackup(true);
@@ -372,7 +378,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     setBalances(null);
-    setClaimableBalances([]);
     setActivity([]);
     setHasDeletedWalletBackup(false);
     setPhase("unlocked");
@@ -406,7 +411,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setArchivedAccounts([]);
       setActiveId(null);
       setBalances(null);
-      setClaimableBalances([]);
       setActivity([]);
       setPhase("empty");
       return;
@@ -415,7 +419,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((remaining.archivedAccounts ?? []).map(stripSecret));
     setActiveId(remaining.activeAccountId);
     setBalances(null);
-    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
   }, []);
@@ -622,6 +625,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const cycleFiatCurrency = useCallback(() => {
+    setFiatCurrencyState((prev) => {
+      const idx = FIAT_LIST.indexOf(prev);
+      const next = FIAT_LIST[(idx + 1) % FIAT_LIST.length];
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("wallet.currency.v1", next);
+      }
+      triggerHaptic("selection");
+      return next;
+    });
+  }, []);
+
   const changeAutoLockMs = useCallback((ms: number) => {
     saveAutoLockPref(ms);
     setAutoLockMsState(ms);
@@ -654,6 +669,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unfunded,
       privacyMode,
       togglePrivacy,
+      fiatCurrency,
+      cycleFiatCurrency,
       autoLockMs,
       changeAutoLockMs,
       biometricsEnabled,
@@ -706,6 +723,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unfunded,
       privacyMode,
       togglePrivacy,
+      fiatCurrency,
+      cycleFiatCurrency,
       autoLockMs,
       changeAutoLockMs,
       biometricsEnabled,
