@@ -46,6 +46,7 @@ import {
   IconLock,
   IconPlus,
   IconRefresh,
+  IconShare,
   IconShield,
   IconTrash,
   IconWallet,
@@ -449,6 +450,24 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     toast("Contacts exported to JSON", "success");
   }
 
+  async function handleShareContact(c: Contact) {
+    triggerHaptic("selection");
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: `Stellar Contact: ${c.name}`,
+          text: `${c.name}: ${c.address}`,
+        });
+        triggerHaptic("success");
+      } catch {
+        void 0;
+      }
+    } else {
+      await navigator.clipboard.writeText(`${c.name}: ${c.address}`);
+      toast("Contact copied to clipboard", "info");
+      triggerHaptic("success");
+    }
+  }
   async function handleImportContactsFile(file: File) {
     try {
       const text = await file.text();
@@ -1304,6 +1323,14 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
                   >
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShareContact(c)}
+                    className="icon-btn !h-8 !w-8 hover:!text-[#0A84FF]"
+                    title="Share Contact"
+                  >
+                    <IconShare size={13} />
                   </button>
                   <a
                     href={NETWORKS[network].explorerAccountUrl(c.address)}

@@ -553,7 +553,7 @@ function SendInner({
                   {liveFeeStats && (
                     <span className="text-[11px] font-medium text-[#30D158] flex items-center gap-1">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#30D158]" />
-                      Base Fee: {liveFeeStats.lastLedgerBaseFee} stroops
+                      Base Fee: {liveFeeStats.lastLedgerBaseFee} stroops (0.00001 XLM)
                     </span>
                   )}
                 </div>

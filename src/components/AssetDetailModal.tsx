@@ -200,24 +200,30 @@ export function AssetDetailModal({
 
         {/* Action Buttons */}
         <div className="mt-5 flex flex-wrap gap-2">
-          {!asset.isNative && asset.issuer && (
-            <>
-              <CopyButton
-                value={asset.issuer}
-                label="Copy Issuer"
-                className="chip flex-1 justify-center"
-              />
-              <a
-                className="chip flex-1 justify-center"
-                href={NETWORKS[network].explorerAccountUrl(asset.issuer)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => triggerHaptic("light")}
-              >
-                Explorer <IconExternal size={11} />
-              </a>
-            </>
-          )}
+          <CopyButton
+            value={
+              asset.isNative
+                ? "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                : asset.issuer ?? ""
+            }
+            label={asset.isNative ? "Copy SAC ID" : "Copy Issuer"}
+            className="chip flex-1 justify-center"
+          />
+          <a
+            className="chip flex-1 justify-center"
+            href={
+              asset.isNative
+                ? `${NETWORKS[network].explorerAccountUrl("CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC")}`
+                : asset.issuer
+                  ? NETWORKS[network].explorerAccountUrl(asset.issuer)
+                  : "#"
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => triggerHaptic("light")}
+          >
+            Explorer <IconExternal size={11} />
+          </a>
         </div>
 
         {!asset.isNative && (
