@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Asset } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
 import { fmtAmount, isValidAmount } from "@/lib/format";
-import { findStrictSendRoute, type SwapRoute } from "@/lib/swap";
+import { findStrictSendRoute } from "@/lib/swap";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText } from "./ui";
 import { IconAlert, IconChevronDown, IconSliders, IconSwap } from "./icons";
 
 export function SwapPage() {
-  const { balances, swap, network } = useWallet();
+  const { balances, swap, network, refresh } = useWallet();
   const [sendKey, setSendKey] = useState("native");
   const [destKey, setDestKey] = useState("");
   const [amount, setAmount] = useState("");
@@ -18,9 +19,9 @@ export function SwapPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [route, setRoute] = useState<{
     dest: string;
-    min: string;
-    hops: number;
-    raw: SwapRoute;
+    destMin: string;
+    intermediates: Asset[];
+    sendAmount: string;
   } | null>(null);
   const [routing, setRouting] = useState(false);
   const [noRoute, setNoRoute] = useState(false);
@@ -55,13 +56,16 @@ export function SwapPage() {
 
   useEffect(() => {
     let alive = true;
-    if (!valid || !sendAsset || !destAsset || !routeKey) return;
+    if (!valid || !sendAsset || !destAsset) {
+      return;
+    }
 
-    const timer = window.setTimeout(async () => {
+    const timer = setTimeout(async () => {
       setRouting(true);
+      setNoRoute(false);
       setError(null);
       try {
-        const res = await findStrictSendRoute({
+        const found = await findStrictSendRoute({
           network: networkRef.current,
           sendCode: sendAsset.code,
           sendIssuer: sendAsset.issuer,
@@ -69,20 +73,20 @@ export function SwapPage() {
           destCode: destAsset.code,
           destIssuer: destAsset.issuer,
         });
+
         if (!alive) return;
-        if (!res) {
-          setRoute(null);
-          setNoRoute(true);
-        } else {
-          const destAmtNum = parseFloat(res.destinationAmount);
-          const minNum = destAmtNum * (1 - slippage / 100);
+        if (found) {
+          const minVal = (parseFloat(found.destinationAmount) * (1 - slippage / 100)).toFixed(7);
           setRoute({
-            dest: res.destinationAmount,
-            min: minNum.toFixed(7),
-            hops: res.intermediates.length,
-            raw: res,
+            dest: found.destinationAmount,
+            destMin: minVal,
+            intermediates: found.intermediates,
+            sendAmount: amount,
           });
           setNoRoute(false);
+        } else {
+          setRoute(null);
+          setNoRoute(true);
         }
       } catch {
         if (alive) {
@@ -96,52 +100,48 @@ export function SwapPage() {
 
     return () => {
       alive = false;
-      window.clearTimeout(timer);
+      clearTimeout(timer);
     };
   }, [routeKey, sendAsset, destAsset, amount, slippage, valid]);
 
   function flipAssets() {
-    triggerHaptic("selection");
+    triggerHaptic("medium");
     const prevSend = sendKey;
     const prevDest = effectiveDestKey;
-    if (prevDest) {
-      setSendKey(prevDest);
-      setDestKey(prevSend);
-      setAmount("");
-      setRoute(null);
-      setNoRoute(false);
-    }
+    if (!prevDest) return;
+    setSendKey(prevDest);
+    setDestKey(prevSend);
+    setAmount("");
+    setRoute(null);
   }
 
   function handleAmountChange(val: string) {
-    const cleaned = val.replace(/[^0-9.]/g, "");
-    setAmount(cleaned);
-    if (!cleaned) {
-      setRoute(null);
-      setNoRoute(false);
-    }
+    const clean = val.replace(/,/g, ".");
+    setAmount(clean);
+    if (!clean) setRoute(null);
   }
 
   async function handleSwap() {
-    if (!sendAsset || !destAsset || !route) return;
+    if (!route || !sendAsset || !destAsset) return;
     setBusy(true);
     setError(null);
     try {
       await swap({
         sendCode: sendAsset.code,
         sendIssuer: sendAsset.issuer,
-        sendAmount: amount,
+        sendAmount: route.sendAmount,
         destCode: destAsset.code,
         destIssuer: destAsset.issuer,
-        destMin: route.min,
-        intermediates: route.raw.intermediates,
+        destMin: route.destMin,
+        intermediates: route.intermediates,
       });
       triggerHaptic("success");
       setAmount("");
       setRoute(null);
+      window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Swap execution failed.");
+      setError(e instanceof Error ? e.message : "Swap failed.");
     } finally {
       setBusy(false);
     }
@@ -154,202 +154,207 @@ export function SwapPage() {
 
   return (
     <div className="fade-up mx-auto w-full max-w-[560px] px-5 pb-[150px]">
-      <div className="flex items-center justify-between py-2">
-        <h1 className="text-[22px] font-semibold tracking-tight text-white">In-App Swap</h1>
+      <div className="flex items-center justify-between pb-4 pt-2">
+        <h2 className="text-[17px] font-bold text-white tracking-tight">In-App Swap</h2>
         <button
           type="button"
           onClick={() => {
             triggerHaptic("selection");
-            setShowSettings((v) => !v);
+            setShowSettings((s) => !s);
           }}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-            showSettings ? "bg-white/20 text-white" : "bg-white/[0.08] text-neutral-400 hover:text-white"
-          }`}
+          className={`icon-btn !h-8 !w-8 ${showSettings ? "bg-white/20 text-white" : ""}`}
           aria-label="Slippage Settings"
         >
-          <IconSliders size={15} />
+          <IconSliders size={16} />
         </button>
       </div>
 
-      {/* Slippage Settings Card */}
       {showSettings && (
-        <div className="fade-in mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-md">
-          <div className="flex items-center justify-between mb-3">
+        <div className="panel-inset mb-4 p-4 space-y-3">
+          <div className="flex items-center justify-between">
             <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
-            <span className="mono text-[12px] text-[#0A84FF]">{slippage}%</span>
+            <span className="text-[12px] font-medium text-[#0A84FF]">{slippage}%</span>
           </div>
-          <div className="flex items-center gap-2">
-            {[0.1, 0.5, 1.0, 3.0].map((s) => (
+          <div className="grid grid-cols-4 gap-2">
+            {[0.1, 0.5, 1.0, 3.0].map((val) => (
               <button
-                key={s}
+                key={val}
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  setSlippage(s);
+                  setSlippage(val);
                 }}
-                className={`flex-1 rounded-xl py-1.5 text-center text-[12px] font-semibold transition-all ${
-                  slippage === s
-                    ? "bg-[#0A84FF] text-white shadow-md"
-                    : "bg-white/10 text-neutral-300 hover:bg-white/15"
+                className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
+                  slippage === val
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "bg-white/[0.08] text-neutral-300 hover:text-white"
                 }`}
               >
-                {s}%
+                {val}%
               </button>
             ))}
           </div>
+          <p className="text-[11px] text-neutral-400">
+            Transactions revert if the execution price changes by more than this percentage.
+          </p>
         </div>
       )}
 
-      {/* Swap Box */}
-      <div className="relative mt-2 space-y-2">
-        {/* Source Card */}
-        <div className="panel p-4">
-          <div className="flex items-center justify-between text-[12px] text-neutral-400">
-            <span>You Pay</span>
-            {sendAsset && (
-              <div className="flex items-center gap-1.5">
-                <span className="mono text-[11px]">
-                  Bal: {fmtAmount(sendAsset.balance)}
-                </span>
-                {[0.25, 0.5, 0.75, 1].map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      handleAmountChange(
-                        (
-                          parseFloat(sendAsset.balance) * f -
-                          (sendAsset.isNative && f === 1 ? 1 : 0)
-                        )
-                          .toFixed(7)
-                          .replace(/\.?0+$/, ""),
-                      );
-                    }}
-                    className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-300 hover:bg-white/20 hover:text-white"
-                  >
-                    {f === 1 ? "Max" : `${f * 100}%`}
-                  </button>
-                ))}
-              </div>
+      {/* Sell card */}
+      <div className="panel-inset p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+            You Pay
+          </span>
+          {sendAsset && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setAmount(sendAsset.balance);
+              }}
+              className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+            >
+              Balance: {fmtAmount(sendAsset.balance)}
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0.0"
+            value={amount}
+            onChange={(e) => handleAmountChange(e.target.value)}
+            className="w-full bg-transparent text-[32px] font-bold text-white outline-none placeholder:text-neutral-600"
+          />
+          <AssetSelect
+            options={options}
+            value={sendKey}
+            onChange={(k) => {
+              setSendKey(k);
+              setRoute(null);
+            }}
+          />
+        </div>
+        {/* Quick Percent Buttons */}
+        {sendAsset && (
+          <div className="flex items-center gap-1.5 pt-1">
+            {[0.25, 0.5, 0.75, 1.0].map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  const bal = parseFloat(sendAsset.balance);
+                  const res = (bal * pct).toFixed(7).replace(/\.?0+$/, "");
+                  setAmount(res);
+                }}
+                className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+              >
+                {pct === 1.0 ? "MAX" : `${pct * 100}%`}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Flip button */}
+      <div className="relative my-2 flex justify-center">
+        <button
+          type="button"
+          onClick={flipAssets}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-white shadow-lg transition-transform active:scale-90 hover:bg-neutral-800"
+          aria-label="Invert Assets"
+        >
+          <IconSwap size={18} />
+        </button>
+      </div>
+
+      {/* Buy card */}
+      <div className="panel-inset p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+            You Receive (Estimated)
+          </span>
+          {destAsset && (
+            <span className="text-[12px] text-neutral-400">
+              Balance: {fmtAmount(destAsset.balance)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-full text-[32px] font-bold text-white">
+            {routing ? (
+              <span className="skeleton inline-block h-9 w-32 rounded-lg align-middle" />
+            ) : route ? (
+              fmtAmount(route.dest)
+            ) : (
+              <span className="text-neutral-600">0.0</span>
             )}
           </div>
-
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <input
-              className="mono w-full border-none bg-transparent text-[32px] font-light text-white outline-none placeholder:text-neutral-600"
-              placeholder="0.0"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => handleAmountChange(e.target.value)}
-            />
-            <AssetSelect
-              options={options}
-              value={sendKey}
-              onChange={(k) => {
-                setSendKey(k);
-                setRoute(null);
-                setNoRoute(false);
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Flip Button */}
-        <div className="absolute left-1/2 top-[47%] -translate-x-1/2 -translate-y-1/2 z-10">
-          <button
-            type="button"
-            onClick={flipAssets}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-neutral-900 shadow-xl transition-transform active:rotate-180 hover:bg-neutral-800 text-white"
-            aria-label="Flip Assets"
-          >
-            <IconSwap size={18} />
-          </button>
-        </div>
-
-        {/* Destination Card */}
-        <div className="panel p-4">
-          <div className="flex items-center justify-between text-[12px] text-neutral-400">
-            <span>You Receive (Estimated)</span>
-            {destAsset && (
-              <span className="mono text-[11px]">
-                Bal: {fmtAmount(destAsset.balance)}
-              </span>
-            )}
-          </div>
-
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="mono text-[32px] font-light text-white truncate min-h-[48px] flex items-center">
-              {routing ? (
-                <span className="text-neutral-500 text-[20px] animate-pulse">Finding best DEX path…</span>
-              ) : route ? (
-                fmtAmount(route.dest)
-              ) : (
-                <span className="text-neutral-600">0.0</span>
-              )}
-            </div>
-            <AssetSelect
-              options={options}
-              value={effectiveDestKey}
-              onChange={(k) => {
-                setDestKey(k);
-                setRoute(null);
-                setNoRoute(false);
-              }}
-            />
-          </div>
+          <AssetSelect
+            options={options.filter((b) => b.key !== sendKey)}
+            value={effectiveDestKey}
+            onChange={(k) => {
+              setDestKey(k);
+              setRoute(null);
+            }}
+          />
         </div>
       </div>
 
-      {/* Route & Orderbook Details */}
-      {route && sendAsset && destAsset && (
-        <div className="fade-in mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-2.5 backdrop-blur-md">
-          {exchangeRate && (
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-neutral-400">Exchange Rate</span>
-              <span className="mono text-white font-medium">
-                1 {sendAsset.code} ≈ {exchangeRate} {destAsset.code}
-              </span>
-            </div>
-          )}
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-neutral-400">Guaranteed Minimum</span>
-            <span className="mono text-neutral-200">
-              {fmtAmount(route.min)} {destAsset.code}
+      {/* Route Info & Guaranteed Minimum */}
+      {route && (
+        <div className="panel-inset mt-4 p-4 space-y-2 text-[12.5px]">
+          <div className="flex justify-between text-neutral-400">
+            <span>Rate</span>
+            <span className="mono text-white">
+              1 {sendAsset?.code} ≈ {exchangeRate} {destAsset?.code}
             </span>
           </div>
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-neutral-400">DEX Routing</span>
-            <span className="mono text-[11px] text-[#30D158] font-medium">
-              {route.hops === 0
-                ? "Direct Orderbook"
-                : `${route.hops} intermediate hop${route.hops > 1 ? "s" : ""}`}
+          <div className="flex justify-between text-neutral-400">
+            <span>Min. Received (Guarantee)</span>
+            <span className="mono text-white">
+              {fmtAmount(route.destMin)} {destAsset?.code}
+            </span>
+          </div>
+          <div className="flex justify-between text-neutral-400">
+            <span>Price Impact</span>
+            <span className="text-[#30D158] font-medium">{"< 0.1% Minimal"}</span>
+          </div>
+          <div className="flex justify-between text-neutral-400">
+            <span>Route Path</span>
+            <span className="mono text-neutral-300">
+              {route.intermediates.length === 0
+                ? "Direct DEX Pool"
+                : `${sendAsset?.code} → ${route.intermediates.map((p) => p.getCode()).join(" → ")} → ${destAsset?.code}`}
             </span>
           </div>
         </div>
       )}
 
       {noRoute && (
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] text-[#FF9F0A]">
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FF9F0A]">
           <IconAlert size={16} className="shrink-0" />
-          <span>No DEX orderbook liquidity found for this asset pair and amount.</span>
+          <span>No DEX liquidity pool path found for this asset pair on {network}.</span>
         </div>
       )}
 
-      <div className="mt-4">
-        <ErrorText message={error ?? ""} />
-      </div>
+      {error && (
+        <div className="mt-4">
+          <ErrorText message={error} />
+        </div>
+      )}
 
-      <div className="mt-6">
-        <Button
-          className="w-full !py-3.5 text-[16px] font-semibold"
-          disabled={!valid || !route || busy || routing}
-          loading={busy}
-          onClick={() => void handleSwap()}
-        >
-          {routing ? "Checking Rates…" : busy ? "Executing Swap…" : "Confirm Swap"}
-        </Button>
-      </div>
+      <Button
+        className="mt-6 w-full !h-12 text-[16px]"
+        loading={busy}
+        disabled={!route || busy || routing}
+        onClick={() => void handleSwap()}
+      >
+        {routing ? "Finding Best Route…" : busy ? "Executing Swap…" : "Swap"}
+      </Button>
     </div>
   );
 }
@@ -361,18 +366,17 @@ function AssetSelect({
 }: {
   options: AssetBalance[];
   value: string;
-  onChange: (val: string) => void;
+  onChange: (key: string) => void;
 }) {
   return (
     <div className="relative shrink-0">
       <select
-        className="input !w-auto appearance-none py-2 pl-3.5 pr-8 text-[14px] font-semibold bg-white/10 border-white/10 hover:border-white/20"
         value={value}
         onChange={(e) => {
           triggerHaptic("selection");
           onChange(e.target.value);
         }}
-        aria-label="Select Asset"
+        className="mono appearance-none rounded-2xl border border-white/10 bg-white/[0.08] py-2 pl-3 pr-8 text-[14px] font-semibold text-white outline-none cursor-pointer hover:bg-white/[0.12]"
       >
         {options.map((b) => (
           <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
