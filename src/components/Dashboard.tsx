@@ -7,7 +7,7 @@ import { lookupKnownAsset } from "@/lib/assets";
 import { fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
-import type { ActivityItem, AssetBalance } from "@/lib/types";
+import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
 import { fetchAssetPrices, estimatePortfolioUsd, type AssetPrices } from "@/lib/prices";
@@ -33,6 +33,7 @@ import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { CurrencyConverterModal } from "./CurrencyConverterModal";
 import { NetworkStatsModal } from "./NetworkStatsModal";
 import { TrezorModal } from "./TrezorModal";
+import { RenameAccountModal } from "./RenameAccountModal";
 import {
   IconArrowDownLeft,
   IconCompass,
@@ -113,6 +114,7 @@ export function Dashboard() {
   const [converterOpen, setConverterOpen] = useState(false);
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
   const [trezorModalOpen, setTrezorModalOpen] = useState(false);
+  const [renamingAccount, setRenamingAccount] = useState<AccountMeta | null>(null);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
   const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -557,6 +559,7 @@ export function Dashboard() {
       { id: "trezor-suite", label: "Trezor Hardware Suite (Safe 3 / Model T / Model One)", run: () => setTrezorModalOpen(true) },
       { id: "ledger-connect", label: "Connect Ledger Hardware Wallet (Nano S / X / Stax)", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
+      { id: "rename-account", label: "Rename Active Account", hint: activeAccount?.label, run: () => setRenamingAccount(activeAccount) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
       {
         id: "copy",
@@ -1904,6 +1907,10 @@ export function Dashboard() {
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
       <TrezorModal open={trezorModalOpen} onClose={() => setTrezorModalOpen(false)} />
+      <RenameAccountModal
+        account={renamingAccount}
+        onClose={() => setRenamingAccount(null)}
+      />
       <CurrencyConverterModal
         open={converterOpen}
         onClose={() => setConverterOpen(false)}
