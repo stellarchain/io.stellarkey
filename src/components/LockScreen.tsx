@@ -31,6 +31,28 @@ export function LockScreen() {
     }
   }
 
+  async function handleBiometricUnlock() {
+    triggerHaptic("selection");
+    if (typeof window !== "undefined" && window.PublicKeyCredential) {
+      try {
+        const challenge = new Uint8Array(32);
+        crypto.getRandomValues(challenge);
+        const cred = await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            timeout: 60000,
+            userVerification: "preferred",
+          },
+        });
+        if (cred) {
+          triggerHaptic("success");
+        }
+      } catch {
+        // User cancel or fallback to password
+      }
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col items-center justify-center px-6">
       <div className={`w-full ${shaking ? "shake" : ""}`}>
@@ -78,10 +100,7 @@ export function LockScreen() {
             <div className="mt-3">
               <button
                 type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  // Trigger biometric simulation or prompt
-                }}
+                onClick={() => void handleBiometricUnlock()}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-white/[0.08]"
               >
                 <IconFingerprint size={18} className="text-[#0A84FF]" />

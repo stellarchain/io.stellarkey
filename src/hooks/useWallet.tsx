@@ -41,8 +41,9 @@ import {
 } from "@/lib/vault";
 import { deleteContact, loadContacts, saveContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
+import { triggerHaptic } from "@/lib/haptics";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
-import type { NetworkKey } from "@/lib/stellar";
+import { NETWORKS, type NetworkKey } from "@/lib/stellar";
 
 type Phase = "loading" | "empty" | "locked" | "unlocked";
 
@@ -237,6 +238,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void refreshRef.current();
     }, POLL_MS);
     return () => window.clearInterval(timer);
+  }, [phase, activeAccount, network]);
+
+  // Real-time Horizon Server-Sent Event stream
+  useEffect(() => {
+    if (
+      phase !== "unlocked" ||
+      !activeAccount ||
+      typeof window === "undefined" ||
+      typeof window.EventSource === "undefined"
+    ) {
+      return;
+    }
+    const cfg = NETWORKS[network];
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(
+        `${cfg.horizonUrl}/accounts/${activeAccount.publicKey}/operations?cursor=now`,
+      );
+      es.onmessage = () => {
+        triggerHaptic("success");
+        void refreshRef.current();
+      };
+    } catch {
+      // Ignore
+    }
+
+    return () => {
+      if (es) es.close();
+    };
   }, [phase, activeAccount, network]);
 
   function lockVaultAndReset() {
