@@ -177,6 +177,48 @@ export async function mergeAccount(params: {
   }
 }
 
+export interface AccountSignerInfo {
+  thresholds: {
+    low_threshold: number;
+    med_threshold: number;
+    high_threshold: number;
+  };
+  signers: Array<{
+    key: string;
+    weight: number;
+    type: string;
+  }>;
+}
+
+export async function fetchAccountSignerInfo(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AccountSignerInfo | null> {
+  const horizonUrl = getHorizonUrl(network);
+  const data = await getJson<{
+    thresholds?: { low_threshold: number; med_threshold: number; high_threshold: number };
+    signers?: Array<{ key: string; weight: number; type: string }>;
+  }>(`${horizonUrl}/accounts/${publicKey}`);
+
+  if (!data) return null;
+  return {
+    thresholds: data.thresholds ?? { low_threshold: 0, med_threshold: 1, high_threshold: 1 },
+    signers: data.signers ?? [{ key: publicKey, weight: 1, type: "ed25519_public_key" }],
+  };
+}
+
+export async function testHorizonPing(network: NetworkKey): Promise<number | null> {
+  const horizonUrl = getHorizonUrl(network);
+  const start = performance.now();
+  try {
+    const res = await fetch(`${horizonUrl}/fee_stats`, { method: "HEAD" });
+    if (!res.ok) return null;
+    return Math.round(performance.now() - start);
+  } catch {
+    return null;
+  }
+}
+
 interface RawOperation {
   id: string;
   type: string;
