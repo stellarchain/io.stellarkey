@@ -107,6 +107,27 @@ export function Dashboard() {
   const [settingsKey, setSettingsKey] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [converterOpen, setConverterOpen] = useState(false);
+  const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(window.localStorage.getItem("wallet.pinned-assets.v1") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  const togglePinAsset = (key: string) => {
+    triggerHaptic("selection");
+    setPinnedAssets((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      try {
+        window.localStorage.setItem("wallet.pinned-assets.v1", JSON.stringify(next));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  };
   const [nodePing, setNodePing] = useState<number | null>(42);
   const [detailAsset, setDetailAsset] = useState<AssetBalance | null>(null);
   const [txDetail, setTxDetail] = useState<ActivityItem | null>(null);
@@ -378,14 +399,20 @@ export function Dashboard() {
     if (hideDust) {
       list = list.filter((b) => b.isNative || parseFloat(b.balance) > 0.0001);
     }
-    if (!q) return list;
-    return list.filter(
-      (b) =>
-        b.code.toLowerCase().includes(q) ||
-        (b.issuer ?? "").toLowerCase().includes(q) ||
-        (lookupKnownAsset(b.code)?.name ?? "").toLowerCase().includes(q),
-    );
-  }, [balances, hideDust, q]);
+    if (q) {
+      list = list.filter(
+        (b) =>
+          b.code.toLowerCase().includes(q) ||
+          (b.issuer ?? "").toLowerCase().includes(q) ||
+          (lookupKnownAsset(b.code)?.name ?? "").toLowerCase().includes(q),
+      );
+    }
+    return list.slice().sort((a, b) => {
+      const aPinned = pinnedAssets.includes(a.key) ? 1 : 0;
+      const bPinned = pinnedAssets.includes(b.key) ? 1 : 0;
+      return bPinned - aPinned;
+    });
+  }, [balances, hideDust, q, pinnedAssets]);
 
   const filteredActivity = useMemo(() => {
     return activity.filter((a) => {
@@ -1394,10 +1421,18 @@ export function Dashboard() {
                       const known = lookupKnownAsset(asset.code);
                       const hue = assetHue(asset.key);
                       return (
-                        <button
+                        <div
                           key={asset.key}
-                          type="button"
-                          className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              triggerHaptic("selection");
+                              setDetailAsset(asset);
+                            }
+                          }}
+                          className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left cursor-pointer ${
                             i > 0 ? "ios-sep" : ""
                           }`}
                           onClick={() => {
@@ -1438,6 +1473,21 @@ export function Dashboard() {
                               </span>
                             );
                           })()}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              togglePinAsset(asset.key);
+                            }}
+                            className={`h-6 w-6 rounded-md flex items-center justify-center text-[12px] transition-colors mr-1 ${
+                              pinnedAssets.includes(asset.key)
+                                ? "text-[#FFD60A] opacity-100"
+                                : "text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-neutral-300"
+                            }`}
+                            title={pinnedAssets.includes(asset.key) ? "Unpin asset" : "Pin asset to top"}
+                          >
+                            ★
+                          </button>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
                               {asset.code}
@@ -1491,7 +1541,7 @@ export function Dashboard() {
                             )}
                           </span>
                           <Chevron />
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
