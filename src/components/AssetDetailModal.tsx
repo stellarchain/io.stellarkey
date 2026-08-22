@@ -5,7 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { fmtAmount, fmtFiat } from "@/lib/format";
-import { fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
+import { fetchIssuerDetails, getCachedAssetLogo, type IssuerDetails } from "@/lib/toml";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, ErrorText, Modal, ModalHeader } from "./ui";
@@ -25,6 +25,7 @@ export function AssetDetailModal({
       ? getCachedAssetLogo(asset.code, asset.issuer)
       : null,
   );
+  const [issuerInfo, setIssuerInfo] = useState<IssuerDetails | null>(null);
 
   // Fetch USD price for this asset when the modal opens
   useEffect(() => {
@@ -46,8 +47,11 @@ export function AssetDetailModal({
     const issuer = asset.issuer;
     let alive = true;
     void (async () => {
-      const url = await fetchAssetLogo(code, issuer, NETWORKS[network].horizonUrl);
-      if (alive && url) setLogoUrl(url);
+      const details = await fetchIssuerDetails(code, issuer, NETWORKS[network].horizonUrl);
+      if (alive && details) {
+        setIssuerInfo(details);
+        if (details.logoUrl) setLogoUrl(details.logoUrl);
+      }
     })();
     return () => {
       alive = false;
@@ -214,14 +218,24 @@ export function AssetDetailModal({
               {asset.isNative ? "Native Lumens" : "Credit Alphanum"}
             </span>
           </Row>
-          {known?.anchorDomain && (
-            <Row label="Anchor / Domain">
-              <span className="flex items-center gap-1.5 text-[13px] text-[#30D158] font-medium">
-                <span>{known.anchorDomain}</span>
+          {(known?.anchorDomain || issuerInfo?.domain) && (
+            <Row label="Verified Domain">
+              <a
+                href={`https://${known?.anchorDomain ?? issuerInfo?.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[13px] text-[#30D158] font-medium hover:underline"
+              >
+                <span>{known?.anchorDomain ?? issuerInfo?.domain}</span>
                 <span className="text-[9px] rounded bg-[#30D158]/15 px-1 py-0.5 font-bold uppercase tracking-wider">
                   Verified
                 </span>
-              </span>
+              </a>
+            </Row>
+          )}
+          {issuerInfo?.orgName && (
+            <Row label="Organization">
+              <span className="text-[13px] text-white font-medium">{issuerInfo.orgName}</span>
             </Row>
           )}
           {known?.anchorDomain && (

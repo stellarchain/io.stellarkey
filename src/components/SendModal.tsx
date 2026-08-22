@@ -17,6 +17,7 @@ import {
   IconChevronDown,
   IconExternal,
   IconQrScan,
+  IconWallet,
 } from "./icons";
 
 type Stage = "form" | "review" | "sending" | "done";
@@ -43,7 +44,7 @@ function SendInner({
   onClose: () => void;
   prefill?: PayUriPayload | null;
 }) {
-  const { balances, send, network, refresh, contacts, activeAccount, activity } = useWallet();
+  const { balances, send, network, refresh, contacts, activeAccount, accounts, activity } = useWallet();
   const [stage, setStage] = useState<Stage>("form");
   const [destination, setDestination] = useState(prefill?.destination ?? "");
   const [amount, setAmount] = useState(
@@ -555,6 +556,32 @@ function SendInner({
                   spellCheck={false}
                   autoComplete="off"
                 />
+
+                {/* Transfer to My Accounts (Internal Wallet Transfer) */}
+                {accounts.length > 1 && !destination && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-neutral-400 font-semibold flex items-center gap-1">
+                      <IconWallet size={11} className="text-[#0A84FF]" />
+                      <span>My accounts:</span>
+                    </span>
+                    {accounts
+                      .filter((a) => a.id !== activeAccount?.id)
+                      .map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            handleDestinationChange(acc.publicKey);
+                          }}
+                          className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-200 hover:text-white bg-[#0A84FF]/10 border border-[#0A84FF]/25 font-medium flex items-center gap-1"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
+                          <span>{acc.label}</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
                 {contacts.length > 0 && !destination && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span className="text-[11px] text-neutral-500 font-medium">Quick contact:</span>
