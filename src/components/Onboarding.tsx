@@ -330,7 +330,7 @@ export function Onboarding() {
           <CopyButton value={revealed ?? ""} label="Copy" />
         </div>
         {revealedKind === "mnemonic" ? (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
             {revealed?.split(" ").map((w, i) => (
               <span
                 key={i}
@@ -402,7 +402,7 @@ function StepShell({
   backDisabled?: boolean;
 }) {
   return (
-    <div className="fade-up relative z-10 mx-auto flex min-h-screen w-full max-w-[420px] flex-col justify-center px-6 py-16">
+    <div className="fade-up relative z-10 mx-auto flex min-h-screen w-full max-w-[440px] sm:max-w-[520px] md:max-w-[560px] flex-col justify-center px-6 py-16">
       <div className="mb-8 flex items-center justify-between">
         <LogoMark size={42} />
         <p className="eyebrow">{stepLabel}</p>
