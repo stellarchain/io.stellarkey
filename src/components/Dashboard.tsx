@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
+import { fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
 import type { ActivityItem, AssetBalance } from "@/lib/types";
@@ -115,6 +116,7 @@ export function Dashboard() {
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
+  const [assetLogos, setAssetLogos] = useState<Record<string, string>>({});
   const [phraseOpen, setPhraseOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -158,11 +160,31 @@ export function Dashboard() {
       if (codes.length === 0) return;
       const prices = await fetchAssetPrices(codes);
       if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
+
+      // Resolve token logos for custom assets (cached per code:issuer)
+      const customCodes = balances.filter((b) => !b.isNative && !b.issuer && !lookupKnownAsset(b.code));
+      void customCodes; // known assets already have colors
+      const customAssets = balances.filter(
+        (b): b is AssetBalance & { issuer: string } =>
+          !b.isNative && b.issuer !== null && !lookupKnownAsset(b.code),
+      );
+      for (const b of customAssets) {
+        const key = `${b.code}:${b.issuer}`;
+        if (assetLogos[key]) continue;
+        const cached = getCachedAssetLogo(b.code, b.issuer);
+        if (cached) {
+          setAssetLogos((prev) => ({ ...prev, [key]: cached }));
+          continue;
+        }
+        void fetchAssetLogo(b.code, b.issuer, NETWORKS[network].horizonUrl).then((url) => {
+          if (alive && url) setAssetLogos((prev) => ({ ...prev, [key]: url }));
+        });
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [network, balances]);
+  }, [network, balances, assetLogos]);
 
   // PWA install prompt capture
   useEffect(() => {
@@ -1238,22 +1260,39 @@ export function Dashboard() {
                             setDetailAsset(asset);
                           }}
                         >
-                          <span
-                            className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                            style={
-                              known
-                                ? { background: known.color }
-                                : asset.isNative
-                                  ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                                  : {
-                                      background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${
-                                        (hue + 60) % 360
-                                      }, 70%, 35%))`,
-                                    }
+                          {(() => {
+                            const logoUrl =
+                              !asset.isNative && asset.issuer
+                                ? assetLogos[`${asset.code}:${asset.issuer}`]
+                                : undefined;
+                            const bgStyle = known
+                              ? { background: known.color }
+                              : asset.isNative
+                                ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
+                                : {
+                                    background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
+                                  };
+                            if (logoUrl) {
+                              return (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={logoUrl}
+                                  alt=""
+                                  width={36}
+                                  height={36}
+                                  className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner"
+                                />
+                              );
                             }
-                          >
-                            {asset.code.slice(0, 3)}
-                          </span>
+                            return (
+                              <span
+                                className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                                style={bgStyle}
+                              >
+                                {asset.code.slice(0, 3)}
+                              </span>
+                            );
+                          })()}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
                               {asset.code}
