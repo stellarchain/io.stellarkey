@@ -16,6 +16,7 @@ import { NETWORKS } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
 import { shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
+import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
 import type { AccountMeta } from "@/lib/types";
 import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
@@ -96,6 +97,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [revealError, setRevealError] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
 
+  const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
+
   const [addMode, setAddMode] = useState<"generate" | "import">("generate");
   const [newLabel, setNewLabel] = useState("");
   const [importSecret, setImportSecret] = useState("");
@@ -131,6 +134,12 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [phraseError, setPhraseError] = useState<string | null>(null);
   const [phraseBusy, setPhraseBusy] = useState(false);
   const hasMnemonicVault = hasMnemonicAlias();
+
+  function toggleSound(on: boolean) {
+    saveSoundPref(on);
+    setSoundEnabled(on);
+    if (on) triggerHaptic("selection");
+  }
 
   async function handleRevealPhrase() {
     setPhraseBusy(true);
@@ -457,6 +466,15 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               }}
               sep
             />
+            <RowButton
+              icon={<IconRefresh size={16} />}
+              tint="#FF9F0A"
+              label="Audio & Haptic Feedback"
+              as="div"
+              sep
+            >
+              <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
+            </RowButton>
             <RowButton
               as="div"
               icon={<IconShield size={16} />}
