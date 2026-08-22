@@ -387,6 +387,41 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
+  function handleExportContacts() {
+    if (contacts.length === 0) return;
+    triggerHaptic("selection");
+    const json = JSON.stringify(contacts, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `wallet-contacts-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerHaptic("success");
+    toast("Contacts exported to JSON", "success");
+  }
+
+  async function handleImportContactsFile(file: File) {
+    try {
+      const text = await file.text();
+      const list = JSON.parse(text) as Contact[];
+      if (!Array.isArray(list)) throw new Error("Invalid contacts file format.");
+      let imported = 0;
+      for (const c of list) {
+        if (c.name && c.address && !contacts.some((existing) => existing.address === c.address)) {
+          addContact(c);
+          imported++;
+        }
+      }
+      triggerHaptic("success");
+      toast(`Imported ${imported} new contact${imported === 1 ? "" : "s"}`, "success");
+    } catch {
+      triggerHaptic("error");
+      toast("Failed to parse contacts JSON", "error");
+    }
+  }
+
   function handleSaveContact() {
     const err = validateContact(contactName, contactAddr);
     if (err) {
@@ -1209,16 +1244,40 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               ))}
             </div>
           )}
-          <button
-            type="button"
-            className="mt-3 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
-            onClick={() => {
-              triggerHaptic("selection");
-              setSub("addContact");
-            }}
-          >
-            + Add New Contact
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="flex-1 rounded-2xl bg-white/[0.08] py-3.5 text-center text-[14px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSub("addContact");
+              }}
+            >
+              + Add New Contact
+            </button>
+            {contacts.length > 0 && (
+              <button
+                type="button"
+                className="rounded-2xl bg-white/[0.08] px-4 py-3.5 text-center text-[13px] font-semibold text-neutral-300 hover:bg-white/[0.12] transition-colors"
+                onClick={handleExportContacts}
+              >
+                Export JSON
+              </button>
+            )}
+            <label className="rounded-2xl bg-white/[0.08] px-4 py-3.5 text-center text-[13px] font-semibold text-neutral-300 hover:bg-white/[0.12] transition-colors cursor-pointer">
+              <span>Import JSON</span>
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleImportContactsFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
         </>
       )}
 

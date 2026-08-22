@@ -93,6 +93,7 @@ export function Dashboard() {
   const [fundBusy, setFundBusy] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimingAll, setClaimingAll] = useState(false);
+  const [appHidden, setAppHidden] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -112,6 +113,14 @@ export function Dashboard() {
     const onScroll = () => setScrolled(window.scrollY > 12);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const onVisChange = () => {
+      setAppHidden(document.visibilityState === "hidden");
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => document.removeEventListener("visibilitychange", onVisChange);
   }, []);
 
   useEffect(() => {
@@ -339,6 +348,17 @@ export function Dashboard() {
 
   return (
     <div className="relative z-10 min-h-screen">
+      {appHidden && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-white shadow-2xl">
+              <IconShield size={32} />
+            </span>
+            <p className="text-[17px] font-bold text-white tracking-tight">Wallet Privacy Shield</p>
+            <p className="text-[13px] text-neutral-400">Balances hidden while multitasking</p>
+          </div>
+        </div>
+      )}
       {/* Dynamic Nav bar */}
       <div className={`sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
         <div className="mx-auto w-full max-w-[560px] px-5">
