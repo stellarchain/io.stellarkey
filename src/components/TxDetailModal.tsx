@@ -18,6 +18,31 @@ export function TxDetailModal({
 }) {
   const { network, privacyMode } = useWallet();
   const [copiedReceipt, setCopiedReceipt] = useState(false);
+  const [note, setNote] = useState<string>(() => {
+    if (!item || typeof window === "undefined") return "";
+    try {
+      const notes = JSON.parse(window.localStorage.getItem("wallet.tx-notes.v1") ?? "{}");
+      return notes[item.hash] ?? "";
+    } catch {
+      return "";
+    }
+  });
+
+  function handleSaveNote(val: string) {
+    setNote(val);
+    if (!item || typeof window === "undefined") return;
+    try {
+      const notes = JSON.parse(window.localStorage.getItem("wallet.tx-notes.v1") ?? "{}");
+      if (val.trim()) {
+        notes[item.hash] = val.trim();
+      } else {
+        delete notes[item.hash];
+      }
+      window.localStorage.setItem("wallet.tx-notes.v1", JSON.stringify(notes));
+    } catch {
+      // Ignore
+    }
+  }
   if (!item) return null;
 
   const incoming = item.direction === "in";
@@ -127,6 +152,21 @@ Explorer: ${explorerUrl}`;
               {item.hash}
             </span>
           </Row>
+        </div>
+
+        {/* Private Transaction Note / Tag */}
+        <div className="mt-3.5 panel-inset p-3.5 space-y-1.5">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            Private Transaction Note (Encrypted Locally)
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. 🧾 Freelance Design Invoice #104"
+            value={note}
+            onChange={(e) => handleSaveNote(e.target.value)}
+            className="input text-[13px] !h-8"
+            maxLength={60}
+          />
         </div>
 
         {/* Action Links */}
