@@ -31,6 +31,7 @@ import { TxDetailModal } from "./TxDetailModal";
 import { ExplorePage } from "./ExplorePage";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { CurrencyConverterModal } from "./CurrencyConverterModal";
+import { NetworkStatsModal } from "./NetworkStatsModal";
 import {
   IconArrowDownLeft,
   IconCompass,
@@ -107,6 +108,8 @@ export function Dashboard() {
   const [settingsKey, setSettingsKey] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [converterOpen, setConverterOpen] = useState(false);
+  const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
+  const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
   const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -421,6 +424,7 @@ export function Dashboard() {
       if (activityFilter === "out" && a.direction !== "out") return false;
       if (activityFilter === "swap" && a.direction !== "neutral") return false;
       if (activityFilter === "trust" && a.type !== "change_trust") return false;
+      if (activityAssetFilter !== "all" && (a.assetCode ?? "XLM").toUpperCase() !== activityAssetFilter.toUpperCase()) return false;
 
       if (!q) return true;
       return (
@@ -430,7 +434,7 @@ export function Dashboard() {
         a.hash.toLowerCase().includes(q)
       );
     });
-  }, [activity, activityFilter, counterpartyFilter, q]);
+  }, [activity, activityFilter, activityAssetFilter, counterpartyFilter, q]);
 
   // Group activity deterministically by date label
   const groupedActivity = useMemo(() => {
@@ -545,6 +549,7 @@ export function Dashboard() {
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
       { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
+      { id: "stats", label: "Network Stats & Gas Savings", run: () => setNetworkStatsOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
       {
@@ -1048,16 +1053,21 @@ export function Dashboard() {
             </div>
 
             {/* Live Horizon Latency Indicator */}
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-[11px] font-mono text-neutral-300"
-              title="Horizon Node Latency"
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setNetworkStatsOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] font-mono text-neutral-300 transition-colors cursor-pointer"
+              title="Click to view network performance & gas savings"
             >
               <span
                 className="h-2 w-2 rounded-full"
                 style={{ background: nodePing !== null ? "#30d158" : "#ff9f0a" }}
               />
               <span>{nodePing !== null ? `${nodePing}ms` : "Live"}</span>
-            </div>
+            </button>
 
             <button
               type="button"
@@ -1420,127 +1430,125 @@ export function Dashboard() {
                     {filteredAssets?.map((asset, i) => {
                       const known = lookupKnownAsset(asset.code);
                       const hue = assetHue(asset.key);
+                      const isPinned = pinnedAssets.includes(asset.key);
                       return (
                         <div
                           key={asset.key}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              triggerHaptic("selection");
-                              setDetailAsset(asset);
-                            }
-                          }}
-                          className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left cursor-pointer ${
+                          className={`group row-hover flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left ${
                             i > 0 ? "ios-sep" : ""
                           }`}
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            setDetailAsset(asset);
-                          }}
                         >
-                          {(() => {
-                            const logoUrl =
-                              !asset.isNative && asset.issuer
-                                ? assetLogos[`${asset.code}:${asset.issuer}`]
-                                : undefined;
-                            const bgStyle = known
-                              ? { background: known.color }
-                              : asset.isNative
-                                ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                                : {
-                                    background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
-                                  };
-                            if (logoUrl) {
-                              return (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={logoUrl}
-                                  alt=""
-                                  width={36}
-                                  height={36}
-                                  className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner"
-                                />
-                              );
-                            }
-                            return (
-                              <span
-                                className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                                style={bgStyle}
-                              >
-                                {asset.code.slice(0, 3)}
-                              </span>
-                            );
-                          })()}
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              togglePinAsset(asset.key);
-                            }}
-                            className={`h-6 w-6 rounded-md flex items-center justify-center text-[12px] transition-colors mr-1 ${
-                              pinnedAssets.includes(asset.key)
+                            onClick={() => togglePinAsset(asset.key)}
+                            className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[13px] transition-all ${
+                              isPinned
                                 ? "text-[#FFD60A] opacity-100"
                                 : "text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-neutral-300"
                             }`}
-                            title={pinnedAssets.includes(asset.key) ? "Unpin asset" : "Pin asset to top"}
+                            title={isPinned ? "Unpin asset" : "Pin asset to top"}
                           >
                             ★
                           </button>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
-                              {asset.code}
-                            </span>
-                            <span className="block truncate text-[12px] leading-tight text-neutral-400">
-                              {asset.isNative
-                                ? "Stellar Lumens"
-                                : known
-                                  ? known.name
-                                  : shortenAddr(asset.issuer ?? "", 6, 6)}
-                            </span>
-                          </span>
-                          <div className="hidden sm:flex items-center gap-2 mr-2 shrink-0">
-                            <Sparkline
-                              values={
-                                asset.isNative && priceData?.points && priceData.points.length > 5
-                                  ? priceData.points.slice(-12).map((p) => p.p)
-                                  : [0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              setDetailAsset(asset);
+                            }}
+                            className="flex-1 min-w-0 flex items-center gap-3.5 text-left py-1"
+                          >
+                            {(() => {
+                              const logoUrl =
+                                !asset.isNative && asset.issuer
+                                ? assetLogos[`${asset.code}:${asset.issuer}`]
+                                : undefined;
+                              const bgStyle = known
+                                ? { background: known.color }
+                                : asset.isNative
+                                  ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
+                                  : {
+                                      background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
+                                    };
+                              if (logoUrl) {
+                                return (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={logoUrl}
+                                    alt=""
+                                    width={36}
+                                    height={36}
+                                    className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner"
+                                  />
+                                );
                               }
-                              width={54}
-                              height={22}
-                              color={
-                                known?.color ??
-                                (asset.isNative
-                                  ? (priceData?.changePct ?? 0) >= 0
-                                    ? "#30D158"
-                                    : "#FF453A"
-                                  : "#0A84FF")
-                              }
-                            />
-                            {asset.isNative && priceData && (
-                              <span
-                                className="mono text-[10.5px] font-semibold rounded px-1.5 py-0.5"
-                                style={{
-                                  color: (priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A",
-                                  background: (priceData.changePct ?? 0) >= 0 ? "rgba(48,209,88,0.14)" : "rgba(255,69,58,0.14)",
-                                }}
-                              >
-                                {(priceData.changePct ?? 0) >= 0 ? "+" : ""}{priceData.changePct.toFixed(1)}%
+                              return (
+                                <span
+                                  className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                                  style={bgStyle}
+                                >
+                                  {asset.code.slice(0, 3)}
+                                </span>
+                              );
+                            })()}
+
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
+                                {asset.code}
                               </span>
-                            )}
-                          </div>
-                          <span className="text-right">
-                            <span className="mono block text-[15.5px] font-medium leading-tight text-white">
-                              {privacyMode ? "••••••" : fmtAmount(asset.balance)}
+                              <span className="block truncate text-[12px] leading-tight text-neutral-400">
+                                {asset.isNative
+                                  ? "Stellar Lumens"
+                                  : known
+                                    ? known.name
+                                    : shortenAddr(asset.issuer ?? "", 6, 6)}
+                              </span>
                             </span>
-                            {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
-                              <span className="block text-[12px] leading-tight text-neutral-400">
-                                {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
+
+                            <div className="hidden sm:flex items-center gap-2 mr-2 shrink-0">
+                              <Sparkline
+                                values={
+                                  asset.isNative && priceData?.points && priceData.points.length > 5
+                                    ? priceData.points.slice(-12).map((p) => p.p)
+                                    : [0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]
+                                }
+                                width={54}
+                                height={22}
+                                color={
+                                  known?.color ??
+                                  (asset.isNative
+                                    ? (priceData?.changePct ?? 0) >= 0
+                                      ? "#30D158"
+                                      : "#FF453A"
+                                    : "#0A84FF")
+                                }
+                              />
+                              {asset.isNative && priceData && (
+                                <span
+                                  className="mono text-[10.5px] font-semibold rounded px-1.5 py-0.5"
+                                  style={{
+                                    color: (priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A",
+                                    background: (priceData.changePct ?? 0) >= 0 ? "rgba(48,209,88,0.14)" : "rgba(255,69,58,0.14)",
+                                  }}
+                                >
+                                  {(priceData.changePct ?? 0) >= 0 ? "+" : ""}{priceData.changePct.toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
+
+                            <span className="text-right">
+                              <span className="mono block text-[15.5px] font-medium leading-tight text-white">
+                                {privacyMode ? "••••••" : fmtAmount(asset.balance)}
                               </span>
-                            )}
-                          </span>
-                          <Chevron />
+                              {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
+                                <span className="block text-[12px] leading-tight text-neutral-400">
+                                  {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
+                                </span>
+                              )}
+                            </span>
+                            <Chevron />
+                          </button>
                         </div>
                       );
                     })}
@@ -1627,7 +1635,7 @@ export function Dashboard() {
           ) : view === "activity" ? (
             <section className="fade-up pt-2 max-w-[1000px] mx-auto">
               {/* Filter Pills & Export CSV */}
-              <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pb-2.5 pt-1">
                 <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
                   {(
                     [
@@ -1656,17 +1664,36 @@ export function Dashboard() {
                   ))}
                 </div>
 
-                {filteredActivity.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleExportCsv}
-                    className="chip !py-1 !px-2.5 text-[11.5px] shrink-0 flex items-center gap-1"
-                    title="Export activity to CSV"
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  {/* Asset Code Filter */}
+                  <select
+                    value={activityAssetFilter}
+                    onChange={(e) => {
+                      triggerHaptic("selection");
+                      setActivityAssetFilter(e.target.value);
+                    }}
+                    className="chip !h-7 !py-0 !px-2 text-[11.5px] bg-white/[0.04] border border-white/10 text-neutral-300 rounded-xl cursor-pointer"
                   >
-                    <IconDownload size={12} />
-                    <span>CSV</span>
-                  </button>
-                )}
+                    <option value="all" className="bg-neutral-900 text-white">All Assets</option>
+                    {(balances ?? []).map((b) => (
+                      <option key={b.key} value={b.code} className="bg-neutral-900 text-white">
+                        {b.code}
+                      </option>
+                    ))}
+                  </select>
+
+                  {filteredActivity.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleExportCsv}
+                      className="chip !py-1 !px-2.5 text-[11.5px] shrink-0 flex items-center gap-1"
+                      title="Export activity to CSV"
+                    >
+                      <IconDownload size={12} />
+                      <span>CSV</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Active Counterparty Filter Pill */}
@@ -1852,6 +1879,7 @@ export function Dashboard() {
       <AssetDetailModal asset={detailAsset} onClose={() => setDetailAsset(null)} />
       <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
       <CurrencyConverterModal
         open={converterOpen}
         onClose={() => setConverterOpen(false)}
