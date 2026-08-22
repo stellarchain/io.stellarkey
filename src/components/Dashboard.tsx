@@ -612,6 +612,39 @@ export function Dashboard() {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0">
+        {/* Desktop macOS Top Window Header Bar */}
+        <header className="hidden md:flex items-center justify-between px-8 py-4 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <h2 className="text-[20px] font-bold text-white tracking-tight">
+              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view.charAt(0).toUpperCase() + view.slice(1)}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="search-field !py-1.5 !px-3 w-64">
+              <IconSearch size={14} className="text-neutral-400 shrink-0" />
+              <input
+                placeholder="Search assets, activity…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-neutral-500"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setQuery("");
+                  }}
+                  className="text-neutral-400 hover:text-white"
+                >
+                  <IconClose size={13} />
+                </button>
+              )}
+            </div>
+            <NetworkDropdown network={network} onSwitch={switchNetwork} />
+          </div>
+        </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
         <div className={`md:hidden sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-5">
