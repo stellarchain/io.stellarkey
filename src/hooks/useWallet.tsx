@@ -31,6 +31,7 @@ import {
   restoreAccountByIndex as restoreAccountByIndexVault,
   restoreArchivedAccount as restoreArchivedAccountVault,
   restoreDeletedVault,
+  restoreVaultBackup,
   saveAutoLockPref,
   saveBiometricsPref,
   saveNetworkPref,
@@ -38,7 +39,9 @@ import {
   unlockVault,
   updateAccountLabel,
   wipeVault,
+  clearSessionSecrets,
   type InitializeOptions,
+  type VaultRestoreResult,
 } from "@/lib/vault";
 import { deleteContact, loadContacts, saveContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
@@ -108,6 +111,8 @@ interface WalletContextValue {
   lock: () => void;
   resetWallet: () => void;
   restoreDeletedWallet: (password: string) => Promise<void>;
+  /** Replace the entire wallet from a backup file; wallet returns to locked state */
+  restoreWalletFromBackup: (json: string) => Promise<VaultRestoreResult>;
   selectAccount: (id: string) => void;
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
   /** Track a public key without holding its secret (read-only) */
@@ -441,6 +446,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setHasDeletedWalletBackup(false);
     setPhase("unlocked");
+  }, []);
+
+  const restoreWalletFromBackup = useCallback(async (json: string): Promise<VaultRestoreResult> => {
+    const result = restoreVaultBackup(json);
+    const vault = loadVault();
+    if (vault) {
+      setAccounts(vault.accounts.map(stripSecret));
+      setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
+      setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
+    }
+    setBalances(null);
+    setClaimableBalances([]);
+    setActivity([]);
+    setActivityCursor(null);
+    setPendingTxs([]);
+    clearSessionSecrets();
+    setHasDeletedWalletBackup(true);
+    // Wallet is restored but LOCKED — unlock with the backup's password
+    setPhase("locked");
+    return result;
   }, []);
 
   const selectAccount = useCallback((id: string) => {
@@ -788,6 +813,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       lock,
       resetWallet,
       restoreDeletedWallet,
+      restoreWalletFromBackup,
       selectAccount,
       addAccount,
       addWatchOnly,
@@ -846,6 +872,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       lock,
       resetWallet,
       restoreDeletedWallet,
+      restoreWalletFromBackup,
       selectAccount,
       addAccount,
       addWatchOnly,

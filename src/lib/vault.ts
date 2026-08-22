@@ -126,6 +126,13 @@ export function lockVault(): void {
   sessionSecrets.clear();
 }
 
+/** Wipe in-memory secrets after a full-vault restore (old ids no longer exist) */
+export function clearSessionSecrets(): void {
+  sessionSecrets.clear();
+  sessionMnemonic = null;
+  sessionPassword = null;
+}
+
 export function isUnlocked(): boolean {
   return sessionPassword !== null;
 }
