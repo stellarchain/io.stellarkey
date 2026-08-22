@@ -67,7 +67,8 @@ export type SettingsSub =
   | "signers"
   | "airsigner"
   | "dapps"
-  | "soroban";
+  | "soroban"
+  | "currency";
 type Sub = SettingsSub;
 
 export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
@@ -97,6 +98,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     biometricsEnabled,
     toggleBiometrics,
     revealRecoveryPhrase,
+    fiatCurrency,
+    cycleFiatCurrency,
   } = useWallet();
   const { toast } = useToast();
 
@@ -599,7 +602,9 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                                   ? "Connected dApps"
                                   : sub === "soroban"
                                     ? "Soroban Contracts"
-                                    : "Network"}
+                                    : sub === "currency"
+                                      ? "Display Currency"
+                                      : "Network"}
           </h1>
         </>
       )}
@@ -699,6 +704,18 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               onClick={() => {
                 triggerHaptic("selection");
                 setSub("dapps");
+              }}
+              sep
+            />
+            <RowButton
+              icon={<IconWallet size={16} />}
+              tint="#64D2FF"
+              label="Primary Display Currency"
+              value={fiatCurrency}
+              chevron
+              onClick={() => {
+                triggerHaptic("selection");
+                setSub("currency");
               }}
               sep
             />
@@ -1740,6 +1757,54 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               </pre>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ---------- DISPLAY CURRENCY PICKER ---------- */}
+      {sub === "currency" && (
+        <div className="space-y-4">
+          <p className="text-[13px] text-neutral-300 leading-relaxed">
+            Select your preferred fiat currency for portfolio valuations, charts, and asset rates.
+          </p>
+
+          <div className="list-group">
+            {(
+              [
+                { id: "USD", name: "United States Dollar", symbol: "$" },
+                { id: "EUR", name: "Euro", symbol: "€" },
+                { id: "GBP", name: "British Pound", symbol: "£" },
+                { id: "JPY", name: "Japanese Yen", symbol: "¥" },
+                { id: "CAD", name: "Canadian Dollar", symbol: "CA$" },
+                { id: "AUD", name: "Australian Dollar", symbol: "A$" },
+                { id: "CHF", name: "Swiss Franc", symbol: "CHF" },
+              ] as const
+            ).map((curr, idx) => (
+              <button
+                key={curr.id}
+                type="button"
+                className={`flex w-full items-center justify-between px-4 py-3.5 text-left ${
+                  idx > 0 ? "ios-sep" : ""
+                }`}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  if (fiatCurrency !== curr.id) cycleFiatCurrency();
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="mono flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.08] text-[13px] font-bold text-white">
+                    {curr.symbol}
+                  </span>
+                  <div>
+                    <span className="block text-[15px] font-semibold text-white">{curr.id}</span>
+                    <span className="block text-[12px] text-neutral-400">{curr.name}</span>
+                  </div>
+                </div>
+                {fiatCurrency === curr.id && (
+                  <IconCheck size={18} className="text-[#0A84FF] shrink-0" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

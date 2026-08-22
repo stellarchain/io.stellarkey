@@ -28,6 +28,7 @@ export function SwapPage() {
   const [routing, setRouting] = useState(false);
   const [noRoute, setNoRoute] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<"form" | "review">("form");
   const [error, setError] = useState<string | null>(null);
   const networkRef = useRef(network);
   useEffect(() => {
@@ -141,6 +142,7 @@ export function SwapPage() {
       playSwapSound();
       setAmount("");
       setRoute(null);
+      setStage("form");
       window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       triggerHaptic("error");
@@ -415,14 +417,62 @@ export function SwapPage() {
         </div>
       )}
 
-      <Button
-        className="mt-6 w-full !h-12 text-[16px]"
-        loading={busy}
-        disabled={!route || busy || routing}
-        onClick={() => void handleSwap()}
-      >
-        {routing ? "Finding Best Route…" : busy ? "Executing Swap…" : "Swap"}
-      </Button>
+      {stage === "review" && route ? (
+        <div className="mt-6 space-y-3">
+          <div className="panel-inset p-4 space-y-2 text-[13px]">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+              Review Swap Details
+            </p>
+            <div className="flex justify-between text-neutral-300">
+              <span>You Pay</span>
+              <span className="mono font-semibold text-white">
+                {amount} {sendAsset?.code}
+              </span>
+            </div>
+            <div className="flex justify-between text-[#30D158]">
+              <span>Guaranteed Minimum</span>
+              <span className="mono font-semibold">
+                {fmtAmount(route.destMin)} {destAsset?.code}
+              </span>
+            </div>
+            <div className="flex justify-between text-neutral-400 text-[12px]">
+              <span>Max Price Slippage</span>
+              <span>{slippage}%</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                triggerHaptic("selection");
+                setStage("form");
+              }}
+            >
+              Back
+            </Button>
+            <Button
+              loading={busy}
+              disabled={busy}
+              onClick={() => void handleSwap()}
+            >
+              {busy ? "Executing…" : "Confirm Swap"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          className="mt-6 w-full !h-12 text-[16px]"
+          disabled={!route || busy || routing}
+          onClick={() => {
+            triggerHaptic("selection");
+            setStage("review");
+          }}
+        >
+          {routing ? "Finding Best Route…" : "Review Swap"}
+        </Button>
+      )}
     </div>
   );
 }
