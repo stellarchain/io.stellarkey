@@ -59,6 +59,7 @@ export function Dashboard() {
     selectAccount,
     contacts,
     balances,
+    accountBalances,
     claimableBalances,
     claimAirdrop,
     activity,
@@ -545,7 +546,16 @@ export function Dashboard() {
                             {acct.label}
                           </p>
                           <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
-                            {privacyMode ? "••••••" : `${fmtAmount(xlm?.balance ?? "0")} XLM`}
+                            {(() => {
+                              const bal = accountBalances[acct.publicKey];
+                              if (privacyMode) return "••••••";
+                              if (bal === undefined) return "Loading…";
+                              const fiat =
+                                network === "mainnet" && xlmPriceUsd !== null
+                                  ? ` · ≈ ${fmtFiat(bal * xlmPriceUsd, fiatCurrency)}`
+                                  : "";
+                              return `${fmtAmount(bal)} XLM${fiat}`;
+                            })()}
                           </p>
                         </div>
                       </div>
