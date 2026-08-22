@@ -5,7 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
-import { fmtAmount, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
+import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
 import type { ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
@@ -67,6 +67,8 @@ export function Dashboard() {
     unfunded,
     privacyMode,
     togglePrivacy,
+    fiatCurrency,
+    cycleFiatCurrency,
     refresh,
     loadMoreActivity,
     lock,
@@ -76,6 +78,7 @@ export function Dashboard() {
   const [view, setView] = useState<View>("home");
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
+  const [counterpartyFilter, setCounterpartyFilter] = useState<string | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<PayUriPayload | null>(null);
@@ -143,6 +146,7 @@ export function Dashboard() {
 
   const filteredActivity = useMemo(() => {
     return activity.filter((a) => {
+      if (counterpartyFilter && a.counterparty !== counterpartyFilter) return false;
       if (activityFilter === "in" && a.direction !== "in") return false;
       if (activityFilter === "out" && a.direction !== "out") return false;
       if (activityFilter === "swap" && a.direction !== "neutral") return false;
@@ -156,7 +160,7 @@ export function Dashboard() {
         a.hash.toLowerCase().includes(q)
       );
     });
-  }, [activity, activityFilter, q]);
+  }, [activity, activityFilter, counterpartyFilter, q]);
 
   // Group activity deterministically by date label
   const groupedActivity = useMemo(() => {
@@ -299,6 +303,11 @@ export function Dashboard() {
         run: togglePrivacy,
       },
       {
+        id: "currency",
+        label: `Cycle currency (${fiatCurrency})`,
+        run: cycleFiatCurrency,
+      },
+      {
         id: "net",
         label: network === "testnet" ? "Switch to Mainnet" : "Switch to Testnet",
         run: () => switchNetwork(network === "testnet" ? "mainnet" : "testnet"),
@@ -319,6 +328,8 @@ export function Dashboard() {
       activeAccount,
       privacyMode,
       network,
+      fiatCurrency,
+      cycleFiatCurrency,
       togglePrivacy,
       switchNetwork,
       selectAccount,
@@ -477,9 +488,17 @@ export function Dashboard() {
                 {privacyMode ? (
                   <p className="text-[13px] text-neutral-500">Balances hidden</p>
                 ) : usdValue !== null ? (
-                  <p className="text-[15px] font-medium text-neutral-300">
-                    ≈ {fmtUsd(usdValue)}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={cycleFiatCurrency}
+                    className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
+                    title="Click to cycle currency (USD, EUR, GBP, JPY...)"
+                  >
+                    <span>≈ {fmtFiat(usdValue, fiatCurrency)}</span>
+                    <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
+                      {fiatCurrency}
+                    </span>
+                  </button>
                 ) : network === "testnet" ? (
                   <p className="text-[13px] text-neutral-500">
                     Testnet Lumens — No real value
@@ -660,7 +679,7 @@ export function Dashboard() {
                         </span>
                         {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
                           <span className="block text-[12px] leading-tight text-neutral-400">
-                            {fmtUsd(parseFloat(asset.balance) * xlmPriceUsd)}
+                            {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
                           </span>
                         )}
                       </span>
@@ -674,7 +693,7 @@ export function Dashboard() {
         ) : view === "activity" ? (
           <section className="fade-up pt-2">
             {/* Filter Pills & Export CSV */}
-            <div className="flex items-center justify-between gap-2 pb-3 pt-1">
+            <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
               <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
                 {(
                   [
@@ -715,6 +734,25 @@ export function Dashboard() {
                 </button>
               )}
             </div>
+
+            {/* Active Counterparty Filter Pill */}
+            {counterpartyFilter && (
+              <div className="mb-3 flex items-center justify-between rounded-xl bg-white/[0.06] border border-white/10 px-3 py-1.5 text-[12px]">
+                <span className="mono truncate text-neutral-300">
+                  Filtered by: {shortenAddr(counterpartyFilter, 6, 6)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setCounterpartyFilter(null);
+                  }}
+                  className="text-[#0A84FF] font-semibold hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
 
             {filteredActivity.length === 0 ? (
               <div className="list-group mt-2">
