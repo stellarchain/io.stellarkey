@@ -43,6 +43,7 @@ import {
   IconShield,
   IconSwap,
   IconWallet,
+  LogoMark,
 } from "./icons";
 
 type View = "home" | "activity" | "swap" | "settings";
@@ -357,7 +358,8 @@ export function Dashboard() {
   );
 
   return (
-    <div className="relative z-10 min-h-screen">
+    <div className="relative z-10 min-h-screen md:flex">
+      {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
           <div className="flex flex-col items-center gap-3 text-center">
@@ -369,550 +371,784 @@ export function Dashboard() {
           </div>
         </div>
       )}
-      {/* Dynamic Nav bar */}
-      <div className={`sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
-        <div className="mx-auto w-full max-w-[560px] px-5">
-          <div className="flex h-[56px] items-center justify-between">
-            <AccountMenu onManageAccounts={() => openSettings("accounts")} />
-            <div className="flex items-center gap-1">
+
+      {/* iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
+      <aside className="hidden md:flex flex-col w-[260px] lg:w-[280px] shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] p-5 sticky top-0 h-screen overflow-y-auto">
+        {/* App Title & Logo */}
+        <div className="flex items-center gap-3 pb-6 border-b border-white/[0.08]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.08] shadow-md border border-white/10">
+            <LogoMark size={22} className="text-white" />
+          </div>
+          <div>
+            <h1 className="text-[17px] font-bold tracking-tight text-white leading-tight">Wallet</h1>
+            <p className="text-[11.5px] text-neutral-400 font-medium">Stellar Self-Custody</p>
+          </div>
+        </div>
+
+        {/* Active Account Identity Card */}
+        {activeAccount && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Avatar seed={activeAccount.publicKey} size={28} />
+                <div className="min-w-0">
+                  <p className="truncate text-[13.5px] font-semibold text-white leading-tight">
+                    {activeAccount.label}
+                  </p>
+                  <p className="mono truncate text-[11px] text-neutral-400">
+                    {shortenAddr(activeAccount.publicKey, 4, 4)}
+                  </p>
+                </div>
+              </div>
+              <NetworkBadge network={network} />
+            </div>
+            <div className="flex items-center gap-1.5 pt-1">
+              <CopyButton
+                value={activeAccount.publicKey}
+                label="Copy"
+                className="chip !py-0.5 !px-2 text-[11px] flex-1 justify-center"
+              />
               <button
                 type="button"
-                className="icon-btn"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  togglePrivacy();
-                }}
-                aria-label={privacyMode ? "Show balances" : "Hide balances"}
+                onClick={() => openSettings("accounts")}
+                className="chip !py-0.5 !px-2 text-[11px] flex-1 justify-center text-neutral-300"
               >
-                {privacyMode ? <IconEyeOff size={18} /> : <IconEye size={18} />}
-              </button>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => {
-                  triggerHaptic("light");
-                  void refresh();
-                }}
-                disabled={dataLoading}
-                aria-label="Refresh"
-              >
-                {dataLoading ? <Spinner /> : <IconRefresh size={17} />}
-              </button>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => openSettings("root")}
-                aria-label="Settings"
-              >
-                <IconGear size={18} />
+                Switch
               </button>
             </div>
           </div>
+        )}
 
-          {scrolled ? (
-            <div className="-mt-1 pb-2.5 text-center">
-              <span className="text-[17px] font-semibold tracking-tight text-white">
-                {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
-              </span>
+        {/* Sidebar Nav Links */}
+        <nav className="mt-6 space-y-1 flex-1" aria-label="Desktop Sidebar Navigation">
+          <button
+            type="button"
+            onClick={() => switchTab("home")}
+            className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
+              view === "home"
+                ? "bg-[#0A84FF] text-white shadow-sm"
+                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <IconHome size={18} />
+              <span>Home</span>
             </div>
-          ) : (
-            <div className="flex items-end justify-between pb-2">
-              <h1 className="display-h text-[34px] leading-tight text-white font-bold">
-                {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
-              </h1>
-              {view === "home" && <NetworkDropdown network={network} onSwitch={switchNetwork} />}
-            </div>
-          )}
-
-          {(view === "home" || view === "activity") && (
-            <div className="pb-3">
-              <div className="search-field flex items-center gap-2">
-                <IconSearch size={15} className="text-neutral-400 shrink-0" />
-                <input
-                  placeholder="Search assets, activity, contacts..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  aria-label="Search"
-                  className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setQuery("");
-                    }}
-                    className="text-neutral-400 hover:text-white"
-                  >
-                    <IconClose size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Main View Content */}
-      <div className="mx-auto w-full max-w-[560px] px-5 pb-[150px]">
-        {view === "settings" ? (
-          <SettingsPage key={settingsKey} initialSub={settingsSub} />
-        ) : view === "swap" ? (
-          <SwapPage />
-        ) : view === "home" && unfunded ? (
-          <>
-            <UnfundedCard
-              network={network}
-              fundBusy={fundBusy}
-              fundError={fundError}
-              onFund={() => void handleFund()}
-            />
-            <div className="mt-5">
-              <PriceCard />
-            </div>
-          </>
-        ) : view === "home" ? (
-          <>
-            {/* Pending Airdrops / Claimable Balances Alert Banner */}
-            {claimableBalances.length > 0 && (
-              <div className="fade-up mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="text-[20px] shrink-0">🎁</span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold text-white">
-                      {claimableBalances.length} Pending Airdrop{claimableBalances.length > 1 ? "s" : ""}
-                    </p>
-                    <p className="truncate text-[11px] text-neutral-300">
-                      {claimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="secondary"
-                  className="!h-8 !px-3 !text-[12px] shrink-0"
-                  loading={claimingAll}
-                  disabled={claimingAll}
-                  onClick={() => void handleClaimAllAirdrops()}
-                >
-                  Claim All
-                </Button>
-              </div>
+            {balances && (
+              <span className="mono text-[11px] font-normal opacity-80">{balances.length}</span>
             )}
+          </button>
 
-            {/* Hero Total Balance */}
-            <section className="fade-up flex flex-col items-center pb-6 pt-4 text-center">
-              <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
-              <h2 className="mt-1.5 text-[48px] font-bold leading-none tracking-tight text-white sm:text-[56px]">
-                {balances === null ? (
-                  <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
-                ) : privacyMode ? (
-                  "••••••"
-                ) : (
-                  fmtAmount(xlm?.balance ?? "0")
-                )}
-                {!privacyMode && balances !== null && (
-                  <span className="mono text-[24px] font-normal text-neutral-400 ml-2">XLM</span>
-                )}
-              </h2>
-              <div className="mt-2 flex min-h-[24px] items-center justify-center">
-                {privacyMode ? (
-                  <p className="text-[13px] text-neutral-500">Balances hidden</p>
-                ) : usdValue !== null ? (
-                  <button
-                    type="button"
-                    onClick={cycleFiatCurrency}
-                    className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
-                    title="Click to cycle currency (USD, EUR, GBP, JPY...)"
-                  >
-                    <span>≈ {fmtFiat(usdValue, fiatCurrency)}</span>
-                    <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
-                      {fiatCurrency}
-                    </span>
-                  </button>
-                ) : network === "testnet" ? (
-                  <p className="text-[13px] text-neutral-500">
-                    Testnet Lumens — No real value
-                  </p>
-                ) : (
-                  <p className="text-[13px] text-neutral-500">Fetching live rates…</p>
-                )}
-              </div>
-
-              {/* Portfolio Allocation Distribution Bar & Legend */}
-              {allocationShares.length > 0 && !privacyMode && (
-                <div className="mt-4 w-full max-w-[360px]">
-                  <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
-                    {allocationShares.map((s) => (
-                      <div
-                        key={s.code}
-                        style={{ width: `${s.pct}%`, background: s.color }}
-                        className="h-full transition-all"
-                        title={`${s.code}: ${s.pct.toFixed(1)}%`}
-                      />
-                    ))}
-                  </div>
-                  <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-neutral-400">
-                    {allocationShares.map((s) => (
-                      <span key={s.code} className="flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
-                        <span className="font-semibold text-neutral-200">{s.code}</span>
-                        <span>{s.pct.toFixed(1)}%</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 4 Primary Action Buttons */}
-              <div className="mt-6 grid w-full max-w-[420px] grid-cols-4 gap-2.5">
-                <ActionButton
-                  icon={<IconSend size={18} />}
-                  label="Send"
-                  filled
-                  onClick={() => {
-                    setSendPrefill(null);
-                    setSendOpen(true);
-                  }}
-                />
-                <ActionButton
-                  icon={<IconArrowDownLeft size={18} />}
-                  label="Receive"
-                  onClick={() => setReceiveOpen(true)}
-                />
-                <ActionButton
-                  icon={<IconSwap size={18} />}
-                  label="Swap"
-                  onClick={() => switchTab("swap")}
-                />
-                <ActionButton
-                  icon={<IconPlus size={18} />}
-                  label="Add"
-                  onClick={() => setAddAssetOpen(true)}
-                />
-              </div>
-
-              {activeAccount && (
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                  <CopyButton
-                    value={activeAccount.publicKey}
-                    label={shortenAddr(activeAccount.publicKey, 8, 8)}
-                  />
-                  <a
-                    className="chip"
-                    href={NETWORKS[network].explorerAccountUrl(activeAccount.publicKey)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => triggerHaptic("light")}
-                  >
-                    Stellarchain
-                  </a>
-                </div>
-              )}
-            </section>
-
-            {/* Live XLM Price Chart Card */}
-            <div className="mt-2">
-              <PriceCard />
+          <button
+            type="button"
+            onClick={() => switchTab("activity")}
+            className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
+              view === "activity"
+                ? "bg-[#0A84FF] text-white shadow-sm"
+                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <IconList size={18} />
+              <span>Activity</span>
             </div>
+            {activity.length > 0 && (
+              <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
+            )}
+          </button>
 
-            {/* Assets List with Sparklines */}
-            <section className="fade-up mt-6">
-              <div className="flex items-center justify-between px-1 pb-2.5">
-                <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setHideDust((d) => !d);
-                    }}
-                    className={`text-[12px] font-medium transition-colors ${
-                      hideDust ? "text-[#0A84FF] font-semibold" : "text-neutral-400 hover:text-white"
-                    }`}
-                  >
-                    {hideDust ? "Dust Hidden" : "Hide Dust"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setBatchSendOpen(true);
-                    }}
-                    className="text-[12px] font-medium text-neutral-400 hover:text-white"
-                  >
-                    Multi-Send
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setAddAssetOpen(true);
-                    }}
-                    className="text-[13px] font-semibold text-[#0A84FF] hover:underline"
-                  >
-                    + Add Asset
-                  </button>
-                </div>
-              </div>
-              <div className="list-group">
-                {balances === null &&
-                  [0, 1].map((i) => (
-                    <div
-                      key={i}
-                      className={`flex items-center gap-3.5 px-4 py-3.5 ${
-                        i > 0 ? "ios-sep" : ""
-                      }`}
-                    >
-                      <div className="skeleton h-[36px] w-[36px] rounded-full" />
-                      <div className="skeleton h-4 w-28 rounded" />
-                      <div className="skeleton ml-auto h-4 w-16 rounded" />
-                    </div>
-                  ))}
-                {balances?.length === 0 && (
-                  <p className="px-4 py-8 text-center text-[14px] text-neutral-500">
-                    No assets in wallet
-                  </p>
-                )}
-                {filteredAssets?.map((asset, i) => {
-                  const known = lookupKnownAsset(asset.code);
-                  const hue = assetHue(asset.key);
-                  return (
-                    <button
-                      key={asset.key}
-                      type="button"
-                      className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
-                        i > 0 ? "ios-sep" : ""
-                      }`}
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setDetailAsset(asset);
-                      }}
-                    >
-                      <span
-                        className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                        style={
-                          known
-                            ? { background: known.color }
-                            : asset.isNative
-                              ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                              : {
-                                  background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${
-                                    (hue + 60) % 360
-                                  }, 70%, 35%))`,
-                                }
-                        }
-                      >
-                        {asset.code.slice(0, 3)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
-                          {asset.code}
-                        </span>
-                        <span className="block truncate text-[12px] leading-tight text-neutral-400">
-                          {asset.isNative
-                            ? "Stellar Lumens"
-                            : known
-                              ? known.name
-                              : shortenAddr(asset.issuer ?? "", 6, 6)}
-                        </span>
-                      </span>
-                      <div className="hidden sm:block mr-2">
-                        <Sparkline
-                          values={[0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]}
-                          width={60}
-                          height={24}
-                          color={known?.color ?? (asset.isNative ? "#30D158" : "#0A84FF")}
-                        />
-                      </div>
-                      <span className="text-right">
-                        <span className="mono block text-[15.5px] font-medium leading-tight text-white">
-                          {privacyMode ? "••••••" : fmtAmount(asset.balance)}
-                        </span>
-                        {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
-                          <span className="block text-[12px] leading-tight text-neutral-400">
-                            {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
-                          </span>
-                        )}
-                      </span>
-                      <Chevron />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </>
-        ) : view === "activity" ? (
-          <section className="fade-up pt-2">
-            {/* Filter Pills & Export CSV */}
-            <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                {(
-                  [
-                    { id: "all", label: "All" },
-                    { id: "in", label: "Received" },
-                    { id: "out", label: "Sent" },
-                    { id: "swap", label: "Swaps" },
-                    { id: "trust", label: "Trustlines" },
-                  ] as const
-                ).map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setActivityFilter(f.id);
-                    }}
-                    className={`rounded-full px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
-                      activityFilter === f.id
-                        ? "bg-white text-black font-semibold shadow-sm"
-                        : "bg-white/[0.08] text-neutral-400 hover:text-white"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+          <button
+            type="button"
+            onClick={() => switchTab("swap")}
+            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
+              view === "swap"
+                ? "bg-[#0A84FF] text-white shadow-sm"
+                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <IconSwap size={18} />
+            <span>DEX Swap</span>
+          </button>
 
-              {filteredActivity.length > 0 && (
+          <button
+            type="button"
+            onClick={() => openSettings("root")}
+            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
+              view === "settings"
+                ? "bg-[#0A84FF] text-white shadow-sm"
+                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <IconGear size={18} />
+            <span>Settings</span>
+          </button>
+        </nav>
+
+        {/* Sidebar Footer Controls */}
+        <div className="pt-4 border-t border-white/[0.08] space-y-2">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="icon-btn !h-8 !w-8"
+              onClick={() => {
+                triggerHaptic("selection");
+                togglePrivacy();
+              }}
+              title={privacyMode ? "Show balances" : "Hide balances"}
+            >
+              {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+            </button>
+            <button
+              type="button"
+              className="icon-btn !h-8 !w-8"
+              onClick={() => {
+                triggerHaptic("light");
+                void refresh();
+              }}
+              disabled={dataLoading}
+              title="Refresh Network Data"
+            >
+              {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+            </button>
+            <NetworkDropdown network={network} onSwitch={switchNetwork} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("warning");
+              lock();
+            }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] py-2 text-[12px] font-semibold text-neutral-400 hover:bg-white/[0.08] hover:text-[#FF453A] transition-colors"
+          >
+            <IconLock size={13} />
+            <span>Lock Wallet</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 min-w-0">
+        {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
+        <div className={`md:hidden sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
+          <div className="mx-auto w-full max-w-[560px] px-5">
+            <div className="flex h-[56px] items-center justify-between">
+              <AccountMenu onManageAccounts={() => openSettings("accounts")} />
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={handleExportCsv}
-                  className="chip !py-1 !px-2.5 text-[11.5px] shrink-0 flex items-center gap-1"
-                  title="Export activity to CSV"
-                >
-                  <IconDownload size={12} />
-                  <span>CSV</span>
-                </button>
-              )}
-            </div>
-
-            {/* Active Counterparty Filter Pill */}
-            {counterpartyFilter && (
-              <div className="mb-3 flex items-center justify-between rounded-xl bg-white/[0.06] border border-white/10 px-3 py-1.5 text-[12px]">
-                <span className="mono truncate text-neutral-300">
-                  Filtered by: {shortenAddr(counterpartyFilter, 6, 6)}
-                </span>
-                <button
-                  type="button"
+                  className="icon-btn"
                   onClick={() => {
                     triggerHaptic("selection");
-                    setCounterpartyFilter(null);
+                    togglePrivacy();
                   }}
-                  className="text-[#0A84FF] font-semibold hover:underline"
+                  aria-label={privacyMode ? "Show balances" : "Hide balances"}
                 >
-                  Clear
+                  {privacyMode ? <IconEyeOff size={18} /> : <IconEye size={18} />}
                 </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    void refresh();
+                  }}
+                  disabled={dataLoading}
+                  aria-label="Refresh"
+                >
+                  {dataLoading ? <Spinner /> : <IconRefresh size={17} />}
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => openSettings("root")}
+                  aria-label="Settings"
+                >
+                  <IconGear size={18} />
+                </button>
+              </div>
+            </div>
+
+            {scrolled ? (
+              <div className="-mt-1 pb-2.5 text-center">
+                <span className="text-[17px] font-semibold tracking-tight text-white">
+                  {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-end justify-between pb-2">
+                <h1 className="display-h text-[34px] leading-tight text-white font-bold">
+                  {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
+                </h1>
+                {view === "home" && <NetworkDropdown network={network} onSwitch={switchNetwork} />}
               </div>
             )}
 
-            {filteredActivity.length === 0 ? (
-              <div className="list-group mt-2">
-                <p className="px-4 py-12 text-center text-[14px] text-neutral-500">
-                  No activity found
-                </p>
+            {(view === "home" || view === "activity") && (
+              <div className="pb-3">
+                <div className="search-field flex items-center gap-2">
+                  <IconSearch size={15} className="text-neutral-400 shrink-0" />
+                  <input
+                    placeholder="Search assets, activity, contacts..."
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Search"
+                    className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setQuery("");
+                      }}
+                      className="text-neutral-400 hover:text-white"
+                    >
+                      <IconClose size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4 mt-2">
-                {groupedActivity.map((group) => (
-                  <div key={group.title}>
-                    <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                      {group.title}
+            )}
+          </div>
+        </div>
+
+        {/* Responsive Content Body */}
+        <div className="mx-auto w-full max-w-[1200px] px-5 py-4 md:py-8 pb-[150px] md:pb-12">
+          {view === "settings" ? (
+            <SettingsPage key={settingsKey} initialSub={settingsSub} />
+          ) : view === "swap" ? (
+            <SwapPage />
+          ) : view === "home" && unfunded ? (
+            <>
+              <UnfundedCard
+                network={network}
+                fundBusy={fundBusy}
+                fundError={fundError}
+                onFund={() => void handleFund()}
+              />
+              <div className="mt-5 max-w-[560px] mx-auto">
+                <PriceCard />
+              </div>
+            </>
+          ) : view === "home" ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Hero Portfolio & Assets */}
+              <div className="lg:col-span-7 space-y-6">
+                {/* Pending Airdrops / Claimable Balances Alert Banner */}
+                {claimableBalances.length > 0 && (
+                  <div className="fade-up flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-[20px] shrink-0">🎁</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-white">
+                          {claimableBalances.length} Pending Airdrop{claimableBalances.length > 1 ? "s" : ""}
+                        </p>
+                        <p className="truncate text-[11px] text-neutral-300">
+                          {claimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="!h-8 !px-3 !text-[12px] shrink-0"
+                      loading={claimingAll}
+                      disabled={claimingAll}
+                      onClick={() => void handleClaimAllAirdrops()}
+                    >
+                      Claim All
+                    </Button>
+                  </div>
+                )}
+
+                {/* Hero Total Balance */}
+                <section className="panel fade-up flex flex-col items-center p-6 text-center">
+                  <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
+                  <h2 className="mt-1.5 text-[44px] sm:text-[54px] font-bold leading-none tracking-tight text-white">
+                    {balances === null ? (
+                      <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
+                    ) : privacyMode ? (
+                      "••••••"
+                    ) : (
+                      fmtAmount(xlm?.balance ?? "0")
+                    )}
+                    {!privacyMode && balances !== null && (
+                      <span className="mono text-[22px] sm:text-[24px] font-normal text-neutral-400 ml-2">XLM</span>
+                    )}
+                  </h2>
+                  <div className="mt-2 flex min-h-[24px] items-center justify-center">
+                    {privacyMode ? (
+                      <p className="text-[13px] text-neutral-500">Balances hidden</p>
+                    ) : usdValue !== null ? (
+                      <button
+                        type="button"
+                        onClick={cycleFiatCurrency}
+                        className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
+                        title="Click to cycle currency"
+                      >
+                        <span>≈ {fmtFiat(usdValue, fiatCurrency)}</span>
+                        <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
+                          {fiatCurrency}
+                        </span>
+                      </button>
+                    ) : network === "testnet" ? (
+                      <p className="text-[13px] text-neutral-500">
+                        Testnet Lumens — No real value
+                      </p>
+                    ) : (
+                      <p className="text-[13px] text-neutral-500">Fetching live rates…</p>
+                    )}
+                  </div>
+
+                  {/* Portfolio Allocation Distribution Bar & Legend */}
+                  {allocationShares.length > 0 && !privacyMode && (
+                    <div className="mt-4 w-full max-w-[360px]">
+                      <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
+                        {allocationShares.map((s) => (
+                          <div
+                            key={s.code}
+                            style={{ width: `${s.pct}%`, background: s.color }}
+                            className="h-full transition-all"
+                            title={`${s.code}: ${s.pct.toFixed(1)}%`}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-neutral-400">
+                        {allocationShares.map((s) => (
+                          <span key={s.code} className="flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
+                            <span className="font-semibold text-neutral-200">{s.code}</span>
+                            <span>{s.pct.toFixed(1)}%</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4 Primary Action Buttons */}
+                  <div className="mt-6 grid w-full max-w-[420px] grid-cols-4 gap-2.5">
+                    <ActionButton
+                      icon={<IconSend size={18} />}
+                      label="Send"
+                      filled
+                      onClick={() => {
+                        setSendPrefill(null);
+                        setSendOpen(true);
+                      }}
+                    />
+                    <ActionButton
+                      icon={<IconArrowDownLeft size={18} />}
+                      label="Receive"
+                      onClick={() => setReceiveOpen(true)}
+                    />
+                    <ActionButton
+                      icon={<IconSwap size={18} />}
+                      label="Swap"
+                      onClick={() => switchTab("swap")}
+                    />
+                    <ActionButton
+                      icon={<IconPlus size={18} />}
+                      label="Add"
+                      onClick={() => setAddAssetOpen(true)}
+                    />
+                  </div>
+
+                  {activeAccount && (
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                      <CopyButton
+                        value={activeAccount.publicKey}
+                        label={shortenAddr(activeAccount.publicKey, 8, 8)}
+                      />
+                      <a
+                        className="chip"
+                        href={NETWORKS[network].explorerAccountUrl(activeAccount.publicKey)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => triggerHaptic("light")}
+                      >
+                        Stellarchain
+                      </a>
+                    </div>
+                  )}
+                </section>
+
+                {/* Assets List with Sparklines */}
+                <section className="fade-up">
+                  <div className="flex items-center justify-between px-1 pb-2.5">
+                    <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setHideDust((d) => !d);
+                        }}
+                        className={`text-[12px] font-medium transition-colors ${
+                          hideDust ? "text-[#0A84FF] font-semibold" : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {hideDust ? "Dust Hidden" : "Hide Dust"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setBatchSendOpen(true);
+                        }}
+                        className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                      >
+                        Multi-Send
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setAddAssetOpen(true);
+                        }}
+                        className="text-[13px] font-semibold text-[#0A84FF] hover:underline"
+                      >
+                        + Add Asset
+                      </button>
+                    </div>
+                  </div>
+                  <div className="list-group">
+                    {balances === null &&
+                      [0, 1].map((i) => (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-3.5 px-4 py-3.5 ${
+                            i > 0 ? "ios-sep" : ""
+                          }`}
+                        >
+                          <div className="skeleton h-[36px] w-[36px] rounded-full" />
+                          <div className="skeleton h-4 w-28 rounded" />
+                          <div className="skeleton ml-auto h-4 w-16 rounded" />
+                        </div>
+                      ))}
+                    {balances?.length === 0 && (
+                      <p className="px-4 py-8 text-center text-[14px] text-neutral-500">
+                        No assets in wallet
+                      </p>
+                    )}
+                    {filteredAssets?.map((asset, i) => {
+                      const known = lookupKnownAsset(asset.code);
+                      const hue = assetHue(asset.key);
+                      return (
+                        <button
+                          key={asset.key}
+                          type="button"
+                          className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+                            i > 0 ? "ios-sep" : ""
+                          }`}
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            setDetailAsset(asset);
+                          }}
+                        >
+                          <span
+                            className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                            style={
+                              known
+                                ? { background: known.color }
+                                : asset.isNative
+                                  ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
+                                  : {
+                                      background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${
+                                        (hue + 60) % 360
+                                      }, 70%, 35%))`,
+                                    }
+                            }
+                          >
+                            {asset.code.slice(0, 3)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
+                              {asset.code}
+                            </span>
+                            <span className="block truncate text-[12px] leading-tight text-neutral-400">
+                              {asset.isNative
+                                ? "Stellar Lumens"
+                                : known
+                                  ? known.name
+                                  : shortenAddr(asset.issuer ?? "", 6, 6)}
+                            </span>
+                          </span>
+                          <div className="hidden sm:block mr-2">
+                            <Sparkline
+                              values={[0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]}
+                              width={60}
+                              height={24}
+                              color={known?.color ?? (asset.isNative ? "#30D158" : "#0A84FF")}
+                            />
+                          </div>
+                          <span className="text-right">
+                            <span className="mono block text-[15.5px] font-medium leading-tight text-white">
+                              {privacyMode ? "••••••" : fmtAmount(asset.balance)}
+                            </span>
+                            {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
+                              <span className="block text-[12px] leading-tight text-neutral-400">
+                                {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
+                              </span>
+                            )}
+                          </span>
+                          <Chevron />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+
+              {/* Right Column: Live Chart & Recent Activity Stream */}
+              <div className="lg:col-span-5 space-y-6">
+                {/* Live XLM Price Chart */}
+                <PriceCard />
+
+                {/* Recent Activity Mini-Feed */}
+                <div className="panel p-5 fade-up">
+                  <div className="flex items-center justify-between pb-3">
+                    <h3 className="text-[15px] font-bold text-white">Recent Activity</h3>
+                    <button
+                      type="button"
+                      onClick={() => switchTab("activity")}
+                      className="text-[12px] font-semibold text-[#0A84FF] hover:underline"
+                    >
+                      View All
+                    </button>
+                  </div>
+                  {activity.length === 0 ? (
+                    <p className="text-center py-6 text-[13px] text-neutral-500">
+                      No recent activity
                     </p>
-                    <div className="list-group">
-                      {group.items.map((item, i) => {
+                  ) : (
+                    <div className="space-y-1">
+                      {activity.slice(0, 5).map((item) => {
                         const incoming = item.direction === "in";
                         const neutral = item.direction === "neutral";
+                        const matchedContact = contacts.find((c) => c.address === item.counterparty);
                         return (
                           <button
                             key={item.id}
                             type="button"
-                            className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
-                              i > 0 ? "ios-sep" : ""
-                            }`}
                             onClick={() => {
                               triggerHaptic("selection");
                               setTxDetail(item);
                             }}
+                            className="flex w-full items-center justify-between rounded-xl p-2 text-left hover:bg-white/[0.04] transition-colors"
                           >
-                            <span
-                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                              style={{
-                                color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
-                                background: neutral
-                                  ? "rgba(100,210,255,0.12)"
-                                  : incoming
-                                    ? "rgba(48,209,88,0.14)"
-                                    : "rgba(255,69,58,0.14)",
-                              }}
-                            >
-                              {item.type === "change_trust" ? (
-                                <IconShield size={16} />
-                              ) : neutral ? (
-                                <IconSwap size={16} />
-                              ) : incoming ? (
-                                <IconArrowDownLeft size={16} />
-                              ) : (
-                                <IconArrowUpRight size={16} />
-                              )}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[15px] font-semibold leading-tight text-white">
-                                {item.title}
-                              </span>
-                              <span className="block truncate text-[12px] leading-tight text-neutral-400">
-                                {timeAgo(item.createdAt)}
-                                {(() => {
-                                  if (!item.counterparty) return "";
-                                  const c = contacts.find((ct) => ct.address === item.counterparty);
-                                  return c ? ` · ${c.name}` : ` · ${shortenAddr(item.counterparty, 4, 4)}`;
-                                })()}
-                              </span>
-                            </span>
-                            {item.amount !== null && (
+                            <div className="flex items-center gap-2.5 min-w-0">
                               <span
-                                className="mono shrink-0 text-right text-[15px] font-medium"
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px]"
                                 style={{
-                                  color: privacyMode
-                                    ? "var(--color-faint)"
-                                    : neutral
-                                      ? "#FFFFFF"
-                                      : incoming
-                                        ? "#30D158"
-                                        : "#FF453A",
+                                  color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+                                  background: neutral
+                                    ? "rgba(100,210,255,0.12)"
+                                    : incoming
+                                      ? "rgba(48,209,88,0.14)"
+                                      : "rgba(255,69,58,0.14)",
                                 }}
                               >
-                                {privacyMode
-                                  ? "••••••"
-                                  : `${incoming ? "+" : "−"}${fmtAmount(item.amount)}`}
+                                {incoming ? "↓" : "↑"}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold text-white leading-tight">
+                                  {item.title}
+                                </p>
+                                <p className="truncate text-[11px] text-neutral-400">
+                                  {matchedContact ? matchedContact.name : timeAgo(item.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                            {item.amount && (
+                              <span
+                                className="mono text-[13px] font-medium shrink-0"
+                                style={{ color: incoming ? "#30D158" : "#FF453A" }}
+                              >
+                                {incoming ? "+" : "−"}{fmtAmount(item.amount)}
                               </span>
                             )}
                           </button>
                         );
                       })}
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
-            )}
+            </div>
+          ) : view === "activity" ? (
+            <section className="fade-up pt-2 max-w-[720px] mx-auto">
+              {/* Filter Pills & Export CSV */}
+              <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                  {(
+                    [
+                      { id: "all", label: "All" },
+                      { id: "in", label: "Received" },
+                      { id: "out", label: "Sent" },
+                      { id: "swap", label: "Swaps" },
+                      { id: "trust", label: "Trustlines" },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setActivityFilter(f.id);
+                      }}
+                      className={`rounded-full px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
+                        activityFilter === f.id
+                          ? "bg-white text-black font-semibold shadow-sm"
+                          : "bg-white/[0.08] text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
 
-            {activityCursor && (
-              <button
-                type="button"
-                className="mt-4 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  void loadMoreActivity();
-                }}
-              >
-                {loadingMore ? <Spinner /> : "Load More Activity"}
-              </button>
-            )}
-          </section>
-        ) : null}
-      </div>
+                {filteredActivity.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="chip !py-1 !px-2.5 text-[11.5px] shrink-0 flex items-center gap-1"
+                    title="Export activity to CSV"
+                  >
+                    <IconDownload size={12} />
+                    <span>CSV</span>
+                  </button>
+                )}
+              </div>
 
-      {/* Floating iOS Tab Bar */}
-      <nav className="tab-bar" aria-label="Tabs">
+              {/* Active Counterparty Filter Pill */}
+              {counterpartyFilter && (
+                <div className="mb-3 flex items-center justify-between rounded-xl bg-white/[0.06] border border-white/10 px-3 py-1.5 text-[12px]">
+                  <span className="mono truncate text-neutral-300">
+                    Filtered by: {shortenAddr(counterpartyFilter, 6, 6)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setCounterpartyFilter(null);
+                    }}
+                    className="text-[#0A84FF] font-semibold hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
+              {filteredActivity.length === 0 ? (
+                <div className="list-group mt-2">
+                  <p className="px-4 py-12 text-center text-[14px] text-neutral-500">
+                    No activity found
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 mt-2">
+                  {groupedActivity.map((group) => (
+                    <div key={group.title}>
+                      <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                        {group.title}
+                      </p>
+                      <div className="list-group">
+                        {group.items.map((item, i) => {
+                          const incoming = item.direction === "in";
+                          const neutral = item.direction === "neutral";
+                          const matchedContact = contacts.find((c) => c.address === item.counterparty);
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+                                i > 0 ? "ios-sep" : ""
+                              }`}
+                              onClick={() => {
+                                triggerHaptic("selection");
+                                setTxDetail(item);
+                              }}
+                            >
+                              <span
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                                style={{
+                                  color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+                                  background: neutral
+                                    ? "rgba(100,210,255,0.12)"
+                                    : incoming
+                                      ? "rgba(48,209,88,0.14)"
+                                      : "rgba(255,69,58,0.14)",
+                                }}
+                              >
+                                {item.type === "change_trust" ? (
+                                  <IconShield size={16} />
+                                ) : neutral ? (
+                                  <IconSwap size={16} />
+                                ) : incoming ? (
+                                  <IconArrowDownLeft size={16} />
+                                ) : (
+                                  <IconArrowUpRight size={16} />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[15px] font-semibold leading-tight text-white">
+                                  {item.title}
+                                </span>
+                                <span className="block truncate text-[12px] leading-tight text-neutral-400">
+                                  {timeAgo(item.createdAt)}
+                                  {matchedContact
+                                    ? ` · ${matchedContact.name}`
+                                    : item.counterparty
+                                      ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
+                                      : ""}
+                                </span>
+                              </span>
+                              {item.amount !== null && (
+                                <span
+                                  className="mono shrink-0 text-right text-[15px] font-medium"
+                                  style={{
+                                    color: privacyMode
+                                      ? "var(--color-faint)"
+                                      : neutral
+                                        ? "#FFFFFF"
+                                        : incoming
+                                          ? "#30D158"
+                                          : "#FF453A",
+                                  }}
+                                >
+                                  {privacyMode
+                                    ? "••••••"
+                                    : `${incoming ? "+" : "−"}${fmtAmount(item.amount)}`}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activityCursor && (
+                <button
+                  type="button"
+                  className="mt-4 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    void loadMoreActivity();
+                  }}
+                >
+                  {loadingMore ? <Spinner /> : "Load More Activity"}
+                </button>
+              )}
+            </section>
+          ) : null}
+        </div>
+      </main>
+
+      {/* Floating iOS Tab Bar (Mobile Only - Hidden on Desktop/iPad) */}
+      <nav className="tab-bar md:hidden" aria-label="Tabs">
         <button
           type="button"
           className={`tab-item ${view === "home" ? "active" : ""}`}
