@@ -16,7 +16,7 @@ import {
 } from "./icons";
 
 type Mode = "create" | "import" | "restore";
-type Step = "choose" | "password" | "reveal";
+type Step = "choose" | "password" | "reveal" | "verify";
 
 export function Onboarding() {
   const { createWallet, completeSetup, resetWallet, hasDeletedWalletBackup, restoreDeletedWallet, restoreWalletFromBackup } = useWallet();
@@ -46,6 +46,8 @@ export function Onboarding() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challengeIndices, setChallengeIndices] = useState<number[]>([2, 6, 10]);
+  const [selectedWords, setSelectedWords] = useState<string[]>([]);
 
   const passwordValid = password.length >= 8;
   const passwordsMatch = password === confirmPassword;
@@ -404,18 +406,152 @@ export function Onboarding() {
         </span>
       </button>
 
-      <Button
-        className="w-full !py-3.5 text-[15px] font-semibold"
-        disabled={!saved}
-        onClick={() => {
-          triggerHaptic("success");
-          completeSetup();
-        }}
-      >
-        Enter Wallet
-      </Button>
+      <div className="flex flex-col gap-2.5 w-full">
+        {revealedKind === "mnemonic" && (
+          <Button
+            variant="secondary"
+            className="w-full !py-3 text-[14px] font-semibold"
+            disabled={!saved}
+            onClick={() => {
+              triggerHaptic("selection");
+              // Pick 3 random distinct indices between 0 and 11
+              const words = (revealed ?? "").split(" ");
+              if (words.length >= 12) {
+                setChallengeIndices([2, 6, 10]);
+                setSelectedWords([]);
+                setStep("verify");
+              } else {
+                completeSetup();
+              }
+            }}
+          >
+            ✓ Test Backup Knowledge (Recommended)
+          </Button>
+        )}
+        <Button
+          className="w-full !py-3.5 text-[15px] font-semibold"
+          disabled={!saved}
+          onClick={() => {
+            triggerHaptic("success");
+            completeSetup();
+          }}
+        >
+          Enter Wallet
+        </Button>
+      </div>
     </StepShell>
   );
+
+  if (step === "verify") {
+    const words = (revealed ?? "").split(" ");
+    const targetWords = challengeIndices.map((idx) => words[idx] ?? "");
+    const allOptions = Array.from(new Set([...targetWords, words[0], words[3], words[7], words[11]])).filter(Boolean).sort();
+    const isCorrect =
+      selectedWords.length === 3 &&
+      selectedWords.every((w, i) => w === targetWords[i]);
+
+    return (
+      <StepShell
+        stepLabel="Step 4 of 4"
+        title="Verify Your Phrase"
+        subtitle="Select the requested words to confirm your physical backup"
+        onBack={() => {
+          triggerHaptic("selection");
+          setStep("reveal");
+        }}
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+            <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+              Tap the matching words in order:
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {challengeIndices.map((idx, i) => (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-center min-h-[56px] flex flex-col items-center justify-center"
+                >
+                  <span className="text-[10px] text-neutral-500 font-bold uppercase">
+                    Word #{idx + 1}
+                  </span>
+                  <span className="mono text-[14px] font-bold text-white mt-0.5">
+                    {selectedWords[i] ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-2 px-1">
+              Word Bank:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {allOptions.map((w) => {
+                const isPicked = selectedWords.includes(w);
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    disabled={isPicked || selectedWords.length >= 3}
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSelectedWords((prev) => [...prev, w]);
+                    }}
+                    className={`chip !py-1.5 !px-3 text-[13px] font-medium transition-all ${
+                      isPicked
+                        ? "opacity-30 cursor-not-allowed bg-white/5"
+                        : "hover:bg-white/[0.12] active:scale-95"
+                    }`}
+                  >
+                    {w}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {selectedWords.length > 0 && !isCorrect && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSelectedWords([]);
+              }}
+              className="text-[12px] text-[#FF453A] hover:underline"
+            >
+              Clear & Try Again
+            </button>
+          )}
+
+          <div className="pt-2 flex flex-col gap-2">
+            <Button
+              className="w-full !py-3.5 text-[15px] font-semibold"
+              disabled={!isCorrect}
+              onClick={() => {
+                triggerHaptic("success");
+                completeSetup();
+              }}
+            >
+              {isCorrect ? "✓ Phrase Verified — Enter Wallet" : "Select All 3 Words"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full !py-2 text-[13px] text-neutral-400"
+              onClick={() => {
+                triggerHaptic("selection");
+                completeSetup();
+              }}
+            >
+              Skip Verification & Enter
+            </Button>
+          </div>
+        </div>
+      </StepShell>
+    );
+  }
+
+  return null;
 }
 
 function StepShell({
