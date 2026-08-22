@@ -235,19 +235,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         cursor: acts.nextCursor,
       });
       const nativeBal = bals.find((b) => b.isNative);
-      if (nativeBal) {
-        setAccountBalances((prev) => ({
-          ...prev,
-          [activeAccount.publicKey]: parseFloat(nativeBal.balance),
-        }));
-      }
+      setAccountBalances((prev) => ({
+        ...prev,
+        [activeAccount.publicKey]: nativeBal ? parseFloat(nativeBal.balance) : 0,
+      }));
       if (price !== null) setXlmPriceUsd(price);
       if (series !== null) {
         priceCache.current[series.range] = series;
         setPriceData(series);
       }
     } catch {
-      void 0;
+      // Resolve to empty state rather than leaving skeletons up forever
+      setBalances((prev) => prev ?? []);
     } finally {
       setDataLoading(false);
     }
@@ -304,17 +303,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     let alive = true;
     void (async () => {
       const results = await Promise.allSettled(
-        accounts.map(async (acct) => {
-          const bals = await api.fetchBalances(acct.publicKey, network);
-          return { key: acct.publicKey, native: bals.find((b) => b.isNative) };
-        }),
+        accounts.map(async (acct) => ({
+          key: acct.publicKey,
+          bal: await api.fetchNativeBalance(acct.publicKey, network),
+        })),
       );
       if (!alive) return;
       setAccountBalances((prev) => {
         const next = { ...prev };
         for (const r of results) {
-          if (r.status === "fulfilled" && r.value.native && !(r.value.key in prev)) {
-            next[r.value.key] = parseFloat(r.value.native.balance);
+          // Record 0 for inactive wallets too; only skip true network failures (null)
+          if (r.status === "fulfilled" && r.value.bal !== null && !(r.value.key in next)) {
+            next[r.value.key] = r.value.bal;
           }
         }
         return next;

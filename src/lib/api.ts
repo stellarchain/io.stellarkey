@@ -66,6 +66,28 @@ export async function fetchBalances(
   return nativeBal ? [nativeBal, ...list] : list;
 }
 
+
+/**
+ * Native XLM balance for one account.
+ * Returns 0 for unfunded/inactive accounts (Horizon 404),
+ * and null only when the network request itself failed.
+ */
+export async function fetchNativeBalance(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<number | null> {
+  try {
+    const res = await fetch(`${getHorizonUrl(network)}/accounts/${publicKey}`);
+    if (res.status === 404) return 0;
+    if (!res.ok) return null;
+    const data = (await res.json()) as { balances?: RawBalance[] };
+    const native = data.balances?.find((b) => b.asset_type === "native");
+    return native ? parseFloat(native.balance) : 0;
+  } catch {
+    return null;
+  }
+}
+
 export interface ClaimableBalanceItem {
   id: string;
   assetCode: string;
