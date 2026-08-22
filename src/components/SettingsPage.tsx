@@ -955,7 +955,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                       {acct.label}
                     </span>
                     <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-                      {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                      {acct.path ? `Path: ${acct.path}` : shortenAddr(acct.publicKey, 6, 6)}
                     </span>
                   </div>
                   {acct.id === activeAccount?.id && (
