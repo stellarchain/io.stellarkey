@@ -373,7 +373,7 @@ export function Dashboard() {
         </div>
       )}
 
-                        {/* iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
+                              {/* Trezor-Style iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
         className={`hidden md:flex flex-col shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky top-0 h-screen overflow-y-auto transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           sidebarCollapsed ? "w-[76px] p-3 items-center" : "w-[260px] lg:w-[280px] p-5"
@@ -409,49 +409,9 @@ export function Dashboard() {
           </button>
         </div>
 
-        {/* Active Account Identity */}
-        {activeAccount && (
-          sidebarCollapsed ? (
-            <div className="mt-4 flex flex-col items-center">
-              <AccountMenu onManageAccounts={() => openSettings("accounts")} compact={sidebarCollapsed} />
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2 w-full">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Avatar seed={activeAccount.publicKey} size={28} />
-                  <div className="min-w-0">
-                    <p className="truncate text-[13.5px] font-semibold text-white leading-tight">
-                      {activeAccount.label}
-                    </p>
-                    <p className="mono truncate text-[11px] text-neutral-400">
-                      {shortenAddr(activeAccount.publicKey, 4, 4)}
-                    </p>
-                  </div>
-                </div>
-                <NetworkBadge network={network} />
-              </div>
-              <div className="flex items-center gap-1.5 pt-1">
-                <CopyButton
-                  value={activeAccount.publicKey}
-                  label="Copy"
-                  className="chip !py-0.5 !px-2 text-[11px] flex-1 justify-center"
-                />
-                <button
-                  type="button"
-                  onClick={() => openSettings("accounts")}
-                  className="chip !py-0.5 !px-2 text-[11px] flex-1 justify-center text-neutral-300"
-                >
-                  Switch
-                </button>
-              </div>
-            </div>
-          )
-        )}
-
         {/* Sidebar Nav Links */}
-        <nav className="mt-5 space-y-2 flex-1 w-full" aria-label="Desktop Sidebar Navigation">
-          {!sidebarCollapsed ? (
+        <nav className="mt-4 space-y-1.5 w-full" aria-label="Desktop Primary Navigation">
+          {!sidebarCollapsed && (
             <button
               type="button"
               onClick={() => {
@@ -467,18 +427,6 @@ export function Dashboard() {
               <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
                 ⌘K
               </kbd>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setPaletteOpen(true);
-              }}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/[0.04] text-neutral-400 hover:bg-white/[0.08] hover:text-white transition-all mx-auto border border-white/5 mb-3"
-              title="Search Actions (⌘K)"
-            >
-              <IconSearch size={18} />
             </button>
           )}
 
@@ -498,9 +446,6 @@ export function Dashboard() {
               <IconHome size={18} />
               {!sidebarCollapsed && <span>Home</span>}
             </div>
-            {!sidebarCollapsed && balances && (
-              <span className="mono text-[11px] font-normal opacity-80">{balances.length}</span>
-            )}
           </button>
 
           <button
@@ -557,11 +502,106 @@ export function Dashboard() {
           </button>
         </nav>
 
-        {/* Sidebar Footer Controls */}
-        <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
+        {/* Trezor Suite Multi-Account Tree Section */}
+        <div className="mt-5 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                  Accounts ({accounts.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openSettings("addAccount")}
+                  className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
+                >
+                  <IconPlus size={12} /> Add
+                </button>
+              </div>
+
+              <div className="space-y-1 max-h-[220px] overflow-y-auto pr-0.5">
+                {accounts.map((acct) => {
+                  const isActive = acct.id === activeAccount?.id;
+                  return (
+                    <button
+                      key={acct.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        selectAccount(acct.id);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all ${
+                        isActive
+                          ? "bg-white/[0.1] border border-white/10 text-white font-semibold shadow-sm"
+                          : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar seed={acct.publicKey} size={24} />
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] leading-tight font-medium text-white">
+                            {acct.label}
+                          </p>
+                          <p className="mono truncate text-[10.5px] text-neutral-500">
+                            {shortenAddr(acct.publicKey, 4, 4)}
+                          </p>
+                        </div>
+                      </div>
+                      {isActive && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF] shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-500 mb-0.5">
+                Accs
+              </span>
+              {accounts.map((acct) => {
+                const isActive = acct.id === activeAccount?.id;
+                return (
+                  <button
+                    key={acct.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      selectAccount(acct.id);
+                    }}
+                    className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
+                      isActive
+                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-md"
+                        : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
+                    }`}
+                    title={`${acct.label} (${shortenAddr(acct.publicKey, 4, 4)})`}
+                  >
+                    <Avatar seed={acct.publicKey} size={26} />
+                    {isActive && (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#0A84FF] border-2 border-black" />
+                    )}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => openSettings("addAccount")}
+                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                title="Derive Next Account"
+              >
+                <IconPlus size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Controls */}
+        <div className="pt-3 border-t border-white/[0.08] space-y-2 w-full">
+
+          {!sidebarCollapsed ? (
+            <>
+              <div className="flex items-center justify-between pt-1">
                 <button
                   type="button"
                   className="icon-btn !h-8 !w-8"
@@ -601,40 +641,28 @@ export function Dashboard() {
               </button>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5 pt-1">
               <button
                 type="button"
-                className="icon-btn !h-9 !w-9"
+                className="icon-btn !h-8 !w-8"
                 onClick={() => {
                   triggerHaptic("selection");
                   togglePrivacy();
                 }}
                 title={privacyMode ? "Show balances" : "Hide balances"}
               >
-                {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                {privacyMode ? <IconEyeOff size={15} /> : <IconEye size={15} />}
               </button>
               <button
                 type="button"
-                className="icon-btn !h-9 !w-9"
-                onClick={() => {
-                  triggerHaptic("light");
-                  void refresh();
-                }}
-                disabled={dataLoading}
-                title="Refresh Network Data"
-              >
-                {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
-              </button>
-              <button
-                type="button"
-                className="icon-btn !h-9 !w-9 hover:!text-[#FF453A]"
+                className="icon-btn !h-8 !w-8 hover:!text-[#FF453A]"
                 onClick={() => {
                   triggerHaptic("warning");
                   lock();
                 }}
                 title="Lock Wallet"
               >
-                <IconLock size={16} />
+                <IconLock size={15} />
               </button>
             </div>
           )}
@@ -1458,12 +1486,12 @@ function AccountMenu({
         compact ? (
           <button
             type="button"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full transition-transform active:scale-95 hover:ring-2 hover:ring-[#0A84FF]/50"
+            className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
             title={`${activeAccount.label} (${shortenAddr(activeAccount.publicKey, 4, 4)})`}
           >
-            <Avatar seed={activeAccount.publicKey} size={34} />
+            <Avatar seed={activeAccount.publicKey} size={28} />
             <span
-              className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-black"
+              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#18181b]"
               style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
             />
           </button>
