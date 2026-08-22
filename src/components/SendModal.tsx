@@ -220,6 +220,7 @@ function SendInner({
       open
       onClose={stage === "sending" ? () => undefined : onClose}
       dismissable={stage !== "sending"}
+      wide
     >
       <div className="px-6 pb-6 pt-7">
         {stage === "done" ? (
@@ -397,7 +398,94 @@ function SendInner({
             />
 
             <div className="mt-5 space-y-4">
-              {/* Asset picker */}
+                            {/* Asset picker and Amount Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Asset picker */}
+                <div>
+                  <label className="field-label">Asset</label>
+                  <div className="relative">
+                    <select
+                      value={assetKey}
+                      onChange={(e) => {
+                        triggerHaptic("selection");
+                        setAssetKey(e.target.value);
+                      }}
+                      className="input pr-10 cursor-pointer text-[14px]"
+                    >
+                      {options.map((b) => (
+                        <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
+                          {b.code} · Balance: {fmtAmount(b.balance)}
+                        </option>
+                      ))}
+                    </select>
+                    <IconChevronDown
+                      size={16}
+                      className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div>
+                  <div className="flex items-center justify-between pb-1">
+                    <label className="field-label !pb-0">Amount</label>
+                    {selectedAsset && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setAmount(String(maxSendable));
+                        }}
+                        className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                      >
+                        Max: {fmtAmount(maxSendable)} {selectedAsset.code}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value.replace(/,/g, "."))}
+                    className="input mono text-[15px]"
+                  />
+                  {reserveBlocked && (
+                    <p className="mt-1 text-[11.5px] text-[#FF453A]">
+                      Exceeds reserve ({fmtAmount(maxSendable)} XLM).
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Amount Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                {[10, 25, 50, 100].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setAmount(String(val));
+                    }}
+                    className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                  >
+                    {val}
+                  </button>
+                ))}
+                {selectedAsset && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setAmount(String(maxSendable));
+                    }}
+                    className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF]"
+                  >
+                    MAX
+                  </button>
+                )}
+              </div>
               <div>
                 <label className="field-label">Asset</label>
                 <div className="relative">
@@ -486,65 +574,6 @@ function SendInner({
                   }}
                 />
               )}
-
-              {/* Amount */}
-              <div>
-                <div className="flex items-center justify-between pb-1">
-                  <label className="field-label !pb-0">Amount</label>
-                  {selectedAsset && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setAmount(String(maxSendable));
-                      }}
-                      className="text-[12px] font-medium text-[#0A84FF] hover:underline"
-                    >
-                      Max: {fmtAmount(maxSendable)} {selectedAsset.code}
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/,/g, "."))}
-                  className="input mono text-[15px]"
-                />
-                <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                  {[10, 25, 50, 100].map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setAmount(String(val));
-                      }}
-                      className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.12]"
-                    >
-                      {val}
-                    </button>
-                  ))}
-                  {selectedAsset && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setAmount(String(maxSendable));
-                      }}
-                      className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF]"
-                    >
-                      MAX
-                    </button>
-                  )}
-                </div>
-                {reserveBlocked && (
-                  <p className="mt-1 text-[11.5px] text-[#FF453A]">
-                    Exceeds maximum sendable reserve ({fmtAmount(maxSendable)} XLM).
-                  </p>
-                )}
-              </div>
 
               {/* Fee Tier Selector with Live Surge Stats */}
               <div>
