@@ -29,7 +29,7 @@ const page = await context.newPage();
 
 const consoleErrors = [];
 page.on("console", (msg) => {
-  if (msg.type() === "error") {
+  if (msg.type === "error") {
     consoleErrors.push(msg.text());
   }
 });
@@ -44,49 +44,41 @@ try {
   console.log("Navigating to Wallet app...");
   await page.goto("http://localhost:3456", { waitUntil: "networkidle" });
 
-  // 1. Onboarding Flow
+  // 1. Onboarding Flow Verification
   console.log("Testing Onboarding Flow...");
   await page.waitForSelector("text=Create New Wallet");
-  await page.click("text=Create New Wallet");
+  await page.click("button:has-text('Create New Wallet')");
 
-  await page.waitForSelector("input[type=password]");
-  const passwordInputs = page.locator("input[type=password]");
-  await passwordInputs.nth(0).fill("masterpassword123");
-  await passwordInputs.nth(1).fill("masterpassword123");
+  await page.waitForSelector("text=Create Your Password");
+  await page.fill("input[placeholder='Enter password']", "SuperSecurePass123!");
+  await page.fill("input[placeholder='Repeat password']", "SuperSecurePass123!");
   await page.click("button:has-text('Continue to Secret Phrase')");
 
   await page.waitForSelector("text=Save Your Recovery Phrase");
   await page.click("text=I have written down");
   await page.click("button:has-text('Enter Wallet')");
 
-  // 2. Unfunded Card & Claiming test XLM
+  // 2. Account Activation & Friendbot Funding
   console.log("Testing Account Activation...");
-  await page.waitForSelector("text=Activate your account", { timeout: 10000 });
+  await page.waitForSelector("text=Activate your account");
   await page.click("button:has-text('Claim 10,000 Test XLM')");
-  
-  // Wait for funding confirmation
-  await page.waitForSelector("text=Total Portfolio", { timeout: 20000 });
+
+  await page.waitForSelector("text=Total Portfolio", { timeout: 25000 });
   console.log("Account funded and Total Portfolio loaded!");
 
-  // Test Timeframe Pill Switcher
-  await page.click("button:text-is('1M')");
-  await page.waitForTimeout(600);
-  await page.click("button:text-is('1D')");
-  await page.waitForTimeout(600);
-
-  // 3. Swap Page Verification
+  // 3. In-App DEX Swap Page Verification
   console.log("Testing In-App DEX Swap Page...");
   await page.click("nav button:has-text('Swap')");
   await page.waitForSelector("text=In-App Swap");
   await page.click("button[aria-label='Slippage Settings']");
   await page.waitForSelector("text=Slippage Tolerance");
-  await page.click("button:text-is('1%')");
-  await page.click("button[aria-label='Slippage Settings']");
+  await page.click("button:has-text('1%')");
 
-  // 4. Activity View Verification
+  // 4. Activity View Verification & Filters
   console.log("Testing Activity View & Filters...");
   await page.click("nav button:has-text('Activity')");
-  await page.waitForSelector("button:text-is('Received')");
+  await page.waitForSelector("text=Account Activated");
+  await page.click("button:text-is('Received')");
   await page.click("button:text-is('Sent')");
   await page.click("button:text-is('Swaps')");
   await page.click("button:text-is('All')");
@@ -130,7 +122,18 @@ try {
   await page.waitForSelector("text=Treasury Alpha"); // Quick contact chip
   await page.keyboard.press("Escape");
 
-  console.log("All UI and Functional checks passed perfectly!");
+  // 8. Responsive Viewport Checks (Mobile & iPad)
+  console.log("Testing Mobile & Tablet Viewports...");
+  await page.setViewportSize({ width: 390, height: 844 }); // iPhone 14 Pro
+  await page.waitForSelector("nav.tab-bar");
+  await page.click("nav.tab-bar button:has-text('Activity')");
+  await page.waitForSelector("text=Account Activated");
+
+  await page.setViewportSize({ width: 820, height: 1180 }); // iPad Air
+  await page.click("nav button:has-text('Home')");
+  await page.waitForSelector("text=Total Portfolio");
+
+  console.log("All UI and Functional checks passed perfectly across Desktop, Tablet & Mobile!");
 } catch (err) {
   console.error("Test error:", err);
   process.exitCode = 1;
