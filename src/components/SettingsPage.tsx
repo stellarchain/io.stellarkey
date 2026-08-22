@@ -697,6 +697,17 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     onClick={() => backupInputRef.current?.click()}
                     sep
                   />
+                  <input
+                    ref={backupInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleRestoreBackupFile(f);
+                      e.target.value = "";
+                    }}
+                  />
                   <RowButton
                     icon={<IconFingerprint size={16} />}
                     tint="#5E5CE6"
@@ -1110,17 +1121,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               Import from Keystore File…
             </button>
           )}
-          <input
-            ref={backupInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleRestoreBackupFile(f);
-              e.target.value = "";
-            }}
-          />
+          
           <input
             ref={fileInputRef}
             type="file"
@@ -1132,17 +1133,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               e.target.value = "";
             }}
           />
-          <input
-            ref={backupInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleRestoreBackupFile(f);
-              e.target.value = "";
-            }}
-          />
+          
 
           {accounts.length > 1 && (
             <div className="list-group mt-6 space-y-1">

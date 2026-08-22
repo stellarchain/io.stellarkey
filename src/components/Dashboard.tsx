@@ -9,6 +9,7 @@ import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo }
 import type { ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
+import { playTapSound } from "@/lib/sounds";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
@@ -1017,12 +1018,13 @@ export function Dashboard() {
                     </div>
                   )}
 
-                  {/* 4 Primary Action Buttons — iOS circle style */}
-                  <div className="mt-6 flex w-full max-w-[420px] items-start justify-between px-2">
+                  {/* Primary Actions — iOS tinted squircles */}
+                  <div className="mt-7 flex w-full max-w-[420px] items-start justify-between px-1 sm:px-3">
                     <ActionButton
-                      icon={<IconSend size={22} />}
+                      icon={<IconSend size={24} />}
                       label="Send"
-                      variant="primary"
+                      accent="blue"
+                      filled
                       disabled={activeAccount?.watchOnly === true}
                       onClick={() => {
                         setSendPrefill(null);
@@ -1030,18 +1032,21 @@ export function Dashboard() {
                       }}
                     />
                     <ActionButton
-                      icon={<IconArrowDownLeft size={22} />}
+                      icon={<IconArrowDownLeft size={24} />}
                       label="Receive"
+                      accent="green"
                       onClick={() => setReceiveOpen(true)}
                     />
                     <ActionButton
-                      icon={<IconSwap size={22} />}
+                      icon={<IconSwap size={24} />}
                       label="Swap"
+                      accent="purple"
                       onClick={() => switchTab("swap")}
                     />
                     <ActionButton
-                      icon={<IconPlus size={22} />}
+                      icon={<IconPlus size={24} />}
                       label="Add"
+                      accent="orange"
                       onClick={() => setAddAssetOpen(true)}
                     />
                   </div>
@@ -1522,17 +1527,28 @@ function Chevron() {
   );
 }
 
+type ActionAccent = "blue" | "green" | "purple" | "orange";
+
+const ACTION_STYLES: Record<ActionAccent, string> = {
+  blue: "border-transparent bg-gradient-to-b from-[#2E9BFF] to-[#0A84FF] text-white shadow-[0_10px_28px_-8px_rgba(10,132,255,0.75)]",
+  green: "border-[#30D158]/25 bg-[#30D158]/[0.14] text-[#30D158]",
+  purple: "border-[#BF5AF2]/25 bg-[#BF5AF2]/[0.14] text-[#BF5AF2]",
+  orange: "border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.14] text-[#FF9F0A]",
+};
+
 function ActionButton({
   icon,
   label,
   onClick,
-  variant = "glass",
+  accent,
+  filled = false,
   disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  variant?: "primary" | "glass";
+  accent: ActionAccent;
+  filled?: boolean;
   disabled?: boolean;
 }) {
   return (
@@ -1543,22 +1559,21 @@ function ActionButton({
       onClick={() => {
         if (disabled) return;
         triggerHaptic("selection");
+        playTapSound();
         onClick();
       }}
-      className="group flex w-[68px] flex-col items-center gap-2 outline-none"
+      className="group flex w-[72px] flex-col items-center gap-2 outline-none sm:w-[84px]"
     >
       <span
-        className={`flex h-14 w-14 items-center justify-center rounded-full transition-all duration-200 group-active:scale-90 group-active:opacity-80 disabled:cursor-not-allowed disabled:opacity-40 ${
-          variant === "primary"
-            ? "bg-gradient-to-b from-[#2E9BFF] to-[#0A84FF] text-white shadow-[0_8px_24px_-6px_rgba(10,132,255,0.65)]"
-            : "border border-white/[0.12] bg-white/[0.08] text-white shadow-sm backdrop-blur-md group-hover:bg-white/[0.14]"
+        className={`flex h-14 w-14 items-center justify-center rounded-[22px] border backdrop-blur-md transition-all duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-active:scale-90 group-active:brightness-125 disabled:cursor-not-allowed disabled:opacity-40 sm:h-16 sm:w-16 sm:rounded-[26px] ${
+          filled ? ACTION_STYLES[accent] : `${ACTION_STYLES[accent]} bg-white/[0.05]`
         }`}
       >
         {icon}
       </span>
       <span
-        className={`text-[11.5px] font-semibold tracking-tight ${
-          disabled ? "text-neutral-600" : "text-neutral-200"
+        className={`text-[11.5px] font-semibold tracking-tight transition-colors ${
+          disabled ? "text-neutral-600" : "text-neutral-200 group-hover:text-white"
         }`}
       >
         {label}
