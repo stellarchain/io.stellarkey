@@ -1095,7 +1095,7 @@ export function Dashboard() {
             <section className="fade-up pt-2 max-w-[1000px] mx-auto">
               {/* Filter Pills & Export CSV */}
               <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
                   {(
                     [
                       { id: "all", label: "All" },
@@ -1112,10 +1112,10 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         setActivityFilter(f.id);
                       }}
-                      className={`rounded-full px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
+                      className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
                         activityFilter === f.id
                           ? "bg-white text-black font-semibold shadow-sm"
-                          : "bg-white/[0.08] text-neutral-400 hover:text-white"
+                          : "bg-white/[0.08] sm:bg-transparent text-neutral-400 hover:text-white sm:hover:bg-white/[0.06]"
                       }`}
                     >
                       {f.label}
