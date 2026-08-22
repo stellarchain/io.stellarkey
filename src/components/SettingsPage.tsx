@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
   exportKeystoreUnlocked,
@@ -140,6 +140,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [ksBusy, setKsBusy] = useState(false);
 
   const [contactName, setContactName] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
   const [showContactScanner, setShowContactScanner] = useState(false);
   const [contactAddr, setContactAddr] = useState("");
   const [contactError, setContactError] = useState<string | null>(null);
@@ -486,6 +487,14 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     setSub("contacts");
   }
 
+  const sortedContacts = useMemo(() => {
+    const q = contactSearch.trim().toLowerCase();
+    const list = contacts.filter(
+      (c) => !q || c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q)
+    );
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [contacts, contactSearch]);
+
   const autoLockLabel =
     autoLockMs === 60000
       ? "1 Minute"
@@ -616,6 +625,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
             Security & Backup
           </p>
+          {contacts.length > 2 && (
+            <div className="search-field mb-3 flex items-center gap-2">
+              <input
+                placeholder="Search contacts by name or key..."
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-neutral-500"
+              />
+            </div>
+          )}
           <div className="list-group">
             <RowButton
               icon={<IconKey size={16} />}
@@ -1257,7 +1276,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </p>
           ) : (
             <div className="list-group">
-              {contacts.map((c, i) => (
+              {sortedContacts.map((c, i) => (
                 <div
                   key={c.address}
                   className={`flex items-center gap-3 px-4 py-3.5 ${

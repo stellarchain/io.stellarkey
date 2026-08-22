@@ -512,6 +512,33 @@ function SendInner({
                   onChange={(e) => setAmount(e.target.value.replace(/,/g, "."))}
                   className="input mono text-[15px]"
                 />
+                <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                  {[10, 25, 50, 100].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setAmount(String(val));
+                      }}
+                      className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                    >
+                      {val}
+                    </button>
+                  ))}
+                  {selectedAsset && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setAmount(String(maxSendable));
+                      }}
+                      className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF]"
+                    >
+                      MAX
+                    </button>
+                  )}
+                </div>
                 {reserveBlocked && (
                   <p className="mt-1 text-[11.5px] text-[#FF453A]">
                     Exceeds maximum sendable reserve ({fmtAmount(maxSendable)} XLM).
