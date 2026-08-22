@@ -347,6 +347,15 @@ function SendInner({
               <span className="text-[11px] text-neutral-400">Ed25519 · Non-Custodial</span>
             </div>
 
+            {/* High-Value Safeguard Warning */}
+            {amountNum >= 500 && (
+              <div className="panel-inset mt-3 p-3 flex items-center gap-2.5 bg-[#FF9F0A]/10 border border-[#FF9F0A]/20 text-[12px] text-[#FF9F0A]">
+                <span className="text-[16px] shrink-0">🛡️</span>
+                <span className="leading-tight">
+                  High-Value Transfer Safeguard: Verify the recipient address carefully before confirming.
+                </span>
+              </div>
+            )}
             {/* Time to Finality Indicator */}
             <div className="mt-2 px-1 flex items-center justify-between text-[11px] text-neutral-500">
               <span>Settlement Network</span>

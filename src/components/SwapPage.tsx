@@ -345,6 +345,10 @@ export function SwapPage() {
             <span className="text-[#30D158] font-medium">{"< 0.1% Minimal"}</span>
           </div>
           <div className="flex justify-between text-neutral-400">
+            <span>Market Depth</span>
+            <span className="text-[#30D158] font-medium">{"🟢 High Liquidity"}</span>
+          </div>
+          <div className="flex justify-between text-neutral-400">
             <span>Route Path</span>
             <span className="mono text-neutral-300">
               {route.intermediates.length === 0

@@ -104,9 +104,16 @@ Explorer: ${explorerUrl}`;
             </span>
           </Row>
           {item.counterparty && (
-            <Row label={incoming ? "From" : "To"}>
+            <Row label={incoming ? (item.type === "create_account" ? "Funder" : "From") : "To"}>
               <span className="mono text-[12px] break-all text-neutral-300">
                 {item.counterparty}
+              </span>
+            </Row>
+          )}
+          {item.type === "create_account" && (
+            <Row label="Account Creation">
+              <span className="text-[12px] font-semibold text-[#30D158]">
+                ✨ Genesis Account Activation
               </span>
             </Row>
           )}
