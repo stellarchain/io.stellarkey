@@ -646,3 +646,18 @@ body::after {
     transform: translateX(6px);
   }
 }
+
+/* macOS & iPadOS fine pointer micro-interactions */
+@media (hover: hover) and (pointer: fine) {
+  .row-hover {
+    transition: background-color 0.16s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .row-hover:hover {
+    background: rgba(255, 255, 255, 0.04);
+    transform: translateY(-0.5px);
+  }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
+}
