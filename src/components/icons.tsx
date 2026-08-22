@@ -57,6 +57,14 @@ export function LogoMark({ size = 34 }: IconProps) {
       {/* Subtle Specular Lighting Edge */}
       <path d="M11 22H23C24.5 22 26 23.5 27 25" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
       <path d="M41 22H53" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
+
+      {/* Stellar Logo Emblem (Crisp White) */}
+      <g transform="translate(32, 40) rotate(-22) scale(0.68)">
+        <path d="M -8.49 -3 A 9 9 0 0 1 8.49 -3" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M -8.49 3 A 9 9 0 0 0 8.49 3" fill="none" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
+        <line x1="-12" y1="-3" x2="12" y2="-3" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
+        <line x1="-12" y1="3" x2="12" y2="3" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
     </svg>
   );
 }
