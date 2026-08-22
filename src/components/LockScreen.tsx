@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
-import { IconFingerprint, LogoMark } from "./icons";
+import { IconFingerprint, IconLedger, IconTrezor, LogoMark } from "./icons";
 
 export function LockScreen() {
   const { unlock, resetWallet, biometricsEnabled } = useWallet();
@@ -108,6 +108,21 @@ export function LockScreen() {
               </button>
             </div>
           )}
+
+          <div className="mt-3 pt-3 border-t border-white/[0.08] flex items-center justify-center gap-2">
+            <span className="text-[11px] text-neutral-400 font-medium flex items-center gap-1.5">
+              <span>Hardware Backed:</span>
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <IconTrezor size={13} />
+                <span>Trezor</span>
+              </span>
+              <span>·</span>
+              <span className="flex items-center gap-1 text-[#64D2FF] font-semibold">
+                <IconLedger size={13} />
+                <span>Ledger</span>
+              </span>
+            </span>
+          </div>
         </div>
 
         <button
