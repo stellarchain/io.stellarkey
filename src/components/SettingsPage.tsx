@@ -10,6 +10,7 @@ import {
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
+import { testHorizonPing, fetchAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
 import { validateContact } from "@/lib/contacts";
 import type { NetworkKey } from "@/lib/stellar";
 import { NETWORKS } from "@/lib/stellar";
@@ -60,7 +61,9 @@ export type SettingsSub =
   | "network"
   | "phrase"
   | "autolock"
-  | "merge";
+  | "merge"
+  | "signers"
+  | "airsigner";
 type Sub = SettingsSub;
 
 export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
@@ -143,6 +146,62 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [phraseError, setPhraseError] = useState<string | null>(null);
   const [phraseBusy, setPhraseBusy] = useState(false);
   const hasMnemonicVault = hasMnemonicAlias();
+  const [pingMs, setPingMs] = useState<number | null>(null);
+  const [pinging, setPinging] = useState(false);
+
+  const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
+  const [signerLoading, setSignerLoading] = useState(false);
+
+  const [airXdr, setAirXdr] = useState("");
+  const [airPw, setAirPw] = useState("");
+  const [signedXdr, setSignedXdr] = useState<string | null>(null);
+  const [airError, setAirError] = useState<string | null>(null);
+  const [airBusy, setAirBusy] = useState(false);
+
+  async function handlePing() {
+    setPinging(true);
+    triggerHaptic("selection");
+    try {
+      const ms = await testHorizonPing(network);
+      setPingMs(ms);
+      triggerHaptic("success");
+    } finally {
+      setPinging(false);
+    }
+  }
+
+  async function handleLoadSigners() {
+    if (!activeAccount) return;
+    setSignerLoading(true);
+    try {
+      const info = await fetchAccountSignerInfo(activeAccount.publicKey, network);
+      setSignerInfo(info);
+    } finally {
+      setSignerLoading(false);
+    }
+  }
+
+  async function handleAirSign() {
+    if (!activeAccount || !airXdr.trim() || !airPw) return;
+    setAirBusy(true);
+    setAirError(null);
+    try {
+      const secret = await revealSecret(activeAccount.id, airPw);
+      if (!secret) throw new Error("Incorrect password.");
+      const { Keypair, TransactionBuilder } = await import("@stellar/stellar-sdk");
+      const kp = Keypair.fromSecret(secret);
+      const tx = TransactionBuilder.fromXdr(airXdr.trim(), NETWORKS[network].networkPassphrase);
+      tx.sign(kp);
+      setSignedXdr(tx.toXdr());
+      triggerHaptic("success");
+    } catch (e) {
+      triggerHaptic("error");
+      setAirError(e instanceof Error ? e.message : "Signing failed. Verify transaction XDR.");
+    } finally {
+      setAirBusy(false);
+    }
+  }
+
 
   function toggleSound(on: boolean) {
     saveSoundPref(on);
@@ -423,7 +482,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                           ? "Merge Account"
                           : sub === "phrase"
                             ? "Recovery Phrase"
-                            : "Network"}
+                            : sub === "signers"
+                              ? "Signers & Multi-Sig"
+                              : sub === "airsigner"
+                                ? "Air-Gapped Signer"
+                                : "Network"}
           </h1>
         </>
       )}
@@ -478,6 +541,29 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               onClick={() => {
                 triggerHaptic("selection");
                 if (hasMnemonicVault) setSub("phrase");
+              }}
+              sep
+            />
+            <RowButton
+              icon={<IconShield size={16} />}
+              tint="#0A84FF"
+              label="Account Signers & Multi-Sig"
+              chevron
+              onClick={() => {
+                triggerHaptic("selection");
+                setSub("signers");
+                void handleLoadSigners();
+              }}
+              sep
+            />
+            <RowButton
+              icon={<IconLock size={16} />}
+              tint="#5E5CE6"
+              label="Air-Gapped Cold QR Signer"
+              chevron
+              onClick={() => {
+                triggerHaptic("selection");
+                setSub("airsigner");
               }}
               sep
             />
@@ -1248,6 +1334,123 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         </>
       )}
 
+      {/* ---------- SIGNERS & MULTI-SIG INSPECTOR ---------- */}
+      {sub === "signers" && (
+        <div className="space-y-4">
+          <div className="panel-inset p-4 space-y-3 text-[13px]">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              Account Thresholds
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-white/[0.04] p-2.5">
+                <span className="block text-[11px] text-neutral-400">Low</span>
+                <span className="mono text-[16px] font-bold text-white">
+                  {signerInfo?.thresholds.low_threshold ?? 0}
+                </span>
+              </div>
+              <div className="rounded-xl bg-white/[0.04] p-2.5">
+                <span className="block text-[11px] text-neutral-400">Medium</span>
+                <span className="mono text-[16px] font-bold text-white">
+                  {signerInfo?.thresholds.med_threshold ?? 1}
+                </span>
+              </div>
+              <div className="rounded-xl bg-white/[0.04] p-2.5">
+                <span className="block text-[11px] text-neutral-400">High</span>
+                <span className="mono text-[16px] font-bold text-white">
+                  {signerInfo?.thresholds.high_threshold ?? 1}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-inset p-4 space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              Authorized Signers ({signerInfo?.signers.length ?? 1})
+            </p>
+            <div className="space-y-2">
+              {signerLoading ? (
+                <div className="skeleton h-12 w-full rounded-xl" />
+              ) : (
+                signerInfo?.signers.map((s) => (
+                  <div
+                    key={s.key}
+                    className="flex items-center justify-between rounded-xl bg-white/[0.03] p-3 text-[12.5px]"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <p className="mono truncate text-white">{s.key}</p>
+                      <p className="text-[11px] text-neutral-400 capitalize">{s.type.replace(/_/g, " ")}</p>
+                    </div>
+                    <span className="mono rounded-lg bg-[#0A84FF]/15 px-2 py-0.5 font-bold text-[#0A84FF] shrink-0">
+                      Weight: {s.weight}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <Button variant="secondary" className="w-full" onClick={() => void handleLoadSigners()}>
+            Refresh Signers from Horizon
+          </Button>
+        </div>
+      )}
+
+      {/* ---------- AIR-GAPPED TRANSACTION SIGNER ---------- */}
+      {sub === "airsigner" && (
+        <div className="space-y-4">
+          <p className="text-[13px] text-neutral-300 leading-relaxed">
+            Sign raw Stellar transaction envelopes offline with zero network connectivity. Perfect for air-gapped cold storage.
+          </p>
+
+          <Field label="Unsigned Transaction XDR" hint="Paste transaction envelope">
+            <textarea
+              rows={4}
+              placeholder="AAAAAG..."
+              value={airXdr}
+              onChange={(e) => {
+                setAirXdr(e.target.value);
+                setSignedXdr(null);
+              }}
+              className="input mono text-[12px] resize-none"
+            />
+          </Field>
+
+          <Field label="Wallet Password" hint="To unlock your private key in memory">
+            <input
+              type="password"
+              placeholder="Enter password"
+              value={airPw}
+              onChange={(e) => setAirPw(e.target.value)}
+              className="input text-[13.5px]"
+            />
+          </Field>
+
+          {airError && (
+            <div className="mt-2">
+              <ErrorText message={airError} />
+            </div>
+          )}
+
+          <Button
+            className="w-full"
+            loading={airBusy}
+            disabled={!airXdr.trim() || !airPw || airBusy}
+            onClick={() => void handleAirSign()}
+          >
+            Sign Transaction Offline
+          </Button>
+
+          {signedXdr && (
+            <div className="fade-in panel-inset mt-4 p-4 space-y-2">
+              <p className="text-[12px] font-bold text-[#30D158]">✓ Transaction Signed Successfully</p>
+              <div className="mono select-all break-all rounded-xl bg-black/40 p-2.5 text-[11px] text-neutral-300 max-h-32 overflow-y-auto">
+                {signedXdr}
+              </div>
+              <CopyButton value={signedXdr} label="Copy Signed XDR" className="chip w-full justify-center" />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ---------- NETWORK SWITCHER & HEALTH ---------- */}
       {sub === "network" && (
         <div className="space-y-4">
@@ -1286,6 +1489,22 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               <span className="mono text-[11px] text-neutral-400 truncate max-w-[200px]">
                 {NETWORKS[network].horizonUrl}
               </span>
+            </div>
+            <div className="flex justify-between items-center text-neutral-300 pt-1">
+              <span>Endpoint Latency</span>
+              <div className="flex items-center gap-2">
+                <span className="mono text-white font-semibold">
+                  {pingMs !== null ? `${pingMs}ms` : "—"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handlePing()}
+                  disabled={pinging}
+                  className="chip !py-0.5 !px-2 text-[11px] text-[#0A84FF]"
+                >
+                  {pinging ? <Spinner /> : "Ping"}
+                </button>
+              </div>
             </div>
           </div>
 
