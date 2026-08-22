@@ -1751,19 +1751,110 @@ function assetHue(key: string): number {
 }
 
 function PriceCard() {
-  const { priceData, priceRange, changePriceRange, priceLoading } = useWallet();
+  const {
+    priceData,
+    priceRange,
+    changePriceRange,
+    priceLoading,
+    accountBalances,
+    accounts,
+    activeAccount,
+    network,
+    fiatCurrency,
+  } = useWallet();
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
-  const up = (priceData?.changePct ?? 0) >= 0;
+  const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
+
+  const totalAllXlm = useMemo(
+    () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
+    [accountBalances],
+  );
+  const isMainnet = network === "mainnet";
+  const canShowPortfolio = isMainnet && totalAllXlm > 0 && priceData !== null;
+  const mode = canShowPortfolio ? chartMode : "market";
+
+  // Portfolio series: your total balance × historical XLM price
+  const portfolioPoints = useMemo(
+    () =>
+      priceData && canShowPortfolio
+        ? priceData.points.map((pt) => ({ t: pt.t, p: pt.p * totalAllXlm }))
+        : [],
+    [priceData, canShowPortfolio, totalAllXlm],
+  );
+
+  const headerLabel =
+    mode === "portfolio"
+      ? `Your Portfolio · ${accounts.length > 1 ? `${accounts.length} accounts` : activeAccount?.label ?? ""}`
+      : "XLM Market";
+
+  const currentValue =
+    mode === "portfolio"
+      ? portfolioPoints.length > 0
+        ? portfolioPoints[portfolioPoints.length - 1].p
+        : null
+      : priceData?.current ?? null;
+
+  const changePct =
+    mode === "portfolio"
+      ? (() => {
+          if (portfolioPoints.length < 2 || currentValue === null) return null;
+          const firstP = portfolioPoints[0].p;
+          if (!firstP) return null;
+          return ((currentValue - firstP) / firstP) * 100;
+        })()
+      : priceData?.changePct ?? null;
+
+  const up = (changePct ?? 0) >= 0;
+
   return (
     <section className="panel fade-up p-5">
+      {/* Mode toggle */}
+      {canShowPortfolio && (
+        <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
+          {(
+            [
+              { id: "market", label: "Market" },
+              { id: "portfolio", label: "Your Portfolio" },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setChartMode(opt.id);
+              }}
+              className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+                mode === opt.id
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[12.5px] font-semibold text-neutral-400">XLM Market</p>
-          <div className="mt-0.5 flex items-center gap-2.5">
+        <div className="min-w-0">
+          <p className="truncate text-[12.5px] font-semibold text-neutral-400">{headerLabel}</p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2.5">
             <span className="text-[24px] font-bold tracking-tight text-white">
-              {priceData ? fmtUsd(priceData.current) : "—"}
+              {mode === "portfolio" && currentValue !== null
+                ? fmtUsd(currentValue)
+                : priceData
+                  ? fmtUsd(priceData.current)
+                  : "—"}
             </span>
-            {priceData && (
+            {mode === "portfolio"
+              ? currentValue !== null && fiatCurrency !== "USD" && (
+                  <span className="mono text-[12px] text-neutral-400">
+                    ≈ {fmtFiat(currentValue, fiatCurrency)}
+                  </span>
+                )
+              : null}
+            {changePct !== null && (
               <span
                 className="rounded-lg px-2 py-0.5 text-[12px] font-semibold"
                 style={{
@@ -1772,12 +1863,12 @@ function PriceCard() {
                 }}
               >
                 {up ? "+" : ""}
-                {priceData.changePct.toFixed(2)}%
+                {changePct.toFixed(2)}%
               </span>
             )}
           </div>
         </div>
-        <div className="flex gap-1 pt-1 bg-white/[0.06] p-1 rounded-xl">
+        <div className="flex gap-1 rounded-xl bg-white/[0.06] p-1 pt-1">
           {ranges.map((r) => (
             <button
               key={r}
@@ -1796,12 +1887,19 @@ function PriceCard() {
         </div>
       </div>
       <div className="mt-3">
-        {priceData && priceData.points.length > 1 ? (
+        {mode === "portfolio" && portfolioPoints.length > 1 ? (
+          <PriceChart points={portfolioPoints} range={priceRange} />
+        ) : priceData && priceData.points.length > 1 ? (
           <PriceChart points={priceData.points} range={priceRange} />
         ) : (
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}
       </div>
+      {mode === "portfolio" && (
+        <p className="mt-2 text-[10.5px] text-neutral-500">
+          Estimated from your current balance × historical XLM price.
+        </p>
+      )}
       {priceLoading && <p className="mt-1 text-right text-[10px] text-neutral-500">Updating…</p>}
     </section>
   );
