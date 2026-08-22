@@ -29,13 +29,15 @@ export function fmtAmount(value: string | number, maxDecimals = 7): string {
 }
 
 export function fmtFiat(usdAmount: number, currency: FiatCurrency = "USD"): string {
+  if (!Number.isFinite(usdAmount)) return "$0.00";
   const rate = FIAT_RATES[currency] ?? 1.0;
   const val = usdAmount * rate;
+  const digits = currency === "JPY" ? 0 : 2;
   return val.toLocaleString("en-US", {
     style: "currency",
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: currency === "JPY" ? 0 : val >= 1000 ? 0 : 2,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
 }
 
@@ -49,17 +51,16 @@ export function shortenAddr(addr: string, head = 6, tail = 6): string {
 }
 
 export function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return "";
-  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (s < 45) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (Number.isNaN(diff) || diff < 0) return "just now";
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export function isValidAmount(raw: string): boolean {
@@ -75,56 +76,45 @@ export function normalizeAmount(raw: string): string {
 }
 
 export function opTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    create_account: "Account created",
-    payment: "Payment",
-    path_payment_strict_receive: "Swap received",
-    path_payment_strict_send: "Swap sent",
-    claim_claimable_balance: "Claimed airdrop",
-    change_trust: "Trustline",
-    allow_trust: "Trustline auth",
-    account_merge: "Account merged",
-    manage_data: "Data entry",
-    bump_sequence: "Sequence bumped",
-    set_options: "Account settings",
-    invoke_host_function: "Contract call",
-    clawback: "Clawback",
-    liquidity_pool_deposit: "Pool deposit",
-    liquidity_pool_withdraw: "Pool withdraw",
-  };
-  return (
-    labels[type] ??
-    type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  switch (type) {
+    case "create_account":
+      return "Account Created";
+    case "payment":
+      return "Payment";
+    case "path_payment_strict_receive":
+    case "path_payment_strict_send":
+      return "DEX Swap";
+    case "manage_buy_offer":
+    case "manage_sell_offer":
+    case "create_passive_sell_offer":
+      return "Trade Offer";
+    case "change_trust":
+      return "Trustline";
+    case "allow_trust":
+    case "set_trust_line_flags":
+      return "Trustline Auth";
+    case "account_merge":
+      return "Account Merge";
+    case "claim_claimable_balance":
+      return "Claim Airdrop";
+    default:
+      return type.replace(/_/g, " ");
+  }
 }
 
 export function generateActivityCsv(items: ActivityItem[], network = "mainnet"): string {
-  const headers = [
-    "Date (ISO)",
-    "Title",
-    "Type",
-    "Direction",
-    "Amount",
-    "Asset",
-    "Counterparty",
-    "Transaction Hash",
-    "Explorer URL",
-  ];
-  const rows = items.map((i) => [
-    JSON.stringify(i.createdAt),
-    JSON.stringify(i.title),
-    JSON.stringify(i.type),
-    JSON.stringify(i.direction),
-    JSON.stringify(i.amount ?? ""),
-    JSON.stringify(i.assetCode ?? ""),
-    JSON.stringify(i.counterparty ?? ""),
-    JSON.stringify(i.hash),
-    JSON.stringify(
-      network === "testnet"
-        ? `https://testnet.stellarchain.io/tx/${i.hash}`
-        : `https://stellarchain.io/tx/${i.hash}`,
-    ),
-  ]);
-
-  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+  const headers = ["Date", "Type", "Direction", "Amount", "Asset", "Counterparty", "Status", "TxHash", "ExplorerLink"];
+  const rows = items.map((item) => {
+    const d = new Date(item.createdAt).toISOString();
+    const type = opTypeLabel(item.type);
+    const dir = item.direction;
+    const amt = item.amount ?? "";
+    const asset = item.assetCode ?? "XLM";
+    const cp = item.counterparty ?? "";
+    const status = item.successful ? "SUCCESS" : "FAILED";
+    const hash = item.hash;
+    const link = network === "mainnet" ? `https://stellarchain.io/tx/${hash}` : `https://testnet.stellarchain.io/tx/${hash}`;
+    return [d, type, dir, amt, asset, cp, status, hash, link].map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",");
+  });
+  return [headers.join(","), ...rows].join("\n");
 }
