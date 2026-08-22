@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
@@ -18,6 +18,30 @@ export function AssetDetailModal({
   onClose: () => void;
 }) {
   const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, balances } = useWallet();
+  const [prices, setPrices] = useState<Record<string, number>>({});
+
+  // Fetch USD price for this asset when the modal opens
+  useEffect(() => {
+    if (!asset || network !== "mainnet") return;
+    let alive = true;
+    void (async () => {
+      const { fetchAssetPrices } = await import("@/lib/prices");
+      const p = await fetchAssetPrices([asset.code]);
+      if (alive && Object.keys(p).length > 0) setPrices(p);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [asset, network]);
+
+  const unitPrice =
+    asset && asset.isNative
+      ? xlmPriceUsd
+      : asset
+        ? prices[asset.code.trim().toUpperCase()] ?? null
+        : null;
+  const totalUsd =
+    asset && unitPrice !== null ? parseFloat(asset.balance) * unitPrice : null;
   const trustlinesCount = (balances ?? []).filter((b) => !b.isNative).length;
   const totalReserve = 1.0 + trustlinesCount * 0.5;
   const spendableBalance = Math.max(0, parseFloat(asset?.balance ?? "0") - totalReserve).toFixed(4);
@@ -88,6 +112,18 @@ export function AssetDetailModal({
             <p className="mt-1.5 text-center text-[12px] text-neutral-400 max-w-xs">
               {known.description}
             </p>
+          )}
+          {!privacyMode && unitPrice !== null && (
+            <div className="mt-3 flex items-baseline justify-center gap-2">
+              <span className="mono text-[14px] font-semibold text-[#30D158]">
+                {fmtFiat(unitPrice, fiatCurrency)}
+              </span>
+              <span className="text-[11px] text-neutral-500">per {asset.code}</span>
+              <span className="text-neutral-600">·</span>
+              <span className="mono text-[12px] font-medium text-neutral-300">
+                {fmtFiat(totalUsd ?? 0, fiatCurrency)} total
+              </span>
+            </div>
           )}
         </div>
 
