@@ -81,146 +81,154 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal open onClose={onClose} wide={showCustomRequest}>
       <ModalHeader
         title="Receive Funds"
         subtitle={`Your ${NETWORKS[network].label} account`}
         onClose={onClose}
       />
-      <div className="flex flex-col items-center px-6 py-6">
-        {/* Active Account Identity Pill */}
-        {activeAccount && (
-          <div className="mb-3 flex items-center gap-1.5 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1 text-[12px] text-neutral-200">
-            <span className="h-2 w-2 rounded-full bg-[#0A84FF]" />
-            <span className="font-semibold">{activeAccount.label}</span>
-          </div>
-        )}
-        {/* Dynamic Request Pill */}
-        {showCustomRequest && requestAmount.trim() && (
-          <div className="fade-in mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
-            <span>Requesting {requestAmount} XLM</span>
-          </div>
-        )}
-
-        {/* QR Code Container with subtle specular border */}
-        <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
-          {qrDataUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={qrDataUrl}
-              alt="Address QR code"
-              width={210}
-              height={210}
-              className="rounded-2xl"
-            />
-          ) : (
-            <div className="skeleton h-[210px] w-[210px] rounded-2xl" />
-          )}
-        </div>
-
-        <p className="mono mt-5 select-all break-all text-center text-[12.5px] leading-relaxed text-neutral-300">
-          {address}
-        </p>
-
-        {/* Action buttons */}
-        <div className="mt-4 flex flex-wrap justify-center items-center gap-2">
-          <CopyButton value={address} label="Copy Address" className="chip" />
-          {canShare && (
-            <Button
-              variant="secondary"
-              className="!h-8 !px-3 !text-[12px] flex items-center gap-1.5"
-              onClick={handleShare}
-            >
-              <IconShare size={12} /> Share
-            </Button>
-          )}
-          {qrDataUrl && (
-            <a
-              href={qrDataUrl}
-              download="stellar-receive-qr.png"
-              onClick={() => triggerHaptic("selection")}
-              className="chip flex items-center gap-1.5 text-[12px]"
-            >
-              <IconDownload size={13} /> Save QR
-            </a>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setShowCustomRequest((v) => !v);
-            }}
-            className="chip text-[12px]"
-          >
-            {showCustomRequest ? "Hide Request Options" : "Set Amount / Memo"}
-          </button>
-        </div>
-
-        {/* Custom request configuration */}
-        {showCustomRequest && (
-          <div className="fade-in mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
-            <p className="text-[12px] font-semibold text-white">Dynamic Payment Request (SEP-0007)</p>
-            {balances && balances.length > 1 && (
-              <div>
-                <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                  Requested Asset
-                </label>
-                <select
-                  value={selectedAssetKey}
-                  onChange={(e) => {
-                    triggerHaptic("selection");
-                    setSelectedAssetKey(e.target.value);
-                  }}
-                  className="input text-[13px] cursor-pointer"
-                >
-                  {balances.map((b) => (
-                    <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
-                      {b.code}
-                    </option>
-                  ))}
-                </select>
+            <div className="px-6 py-6">
+        <div className={`flex flex-col items-center ${showCustomRequest ? "sm:grid sm:grid-cols-12 sm:gap-6 sm:items-start" : ""}`}>
+          {/* QR Code Column */}
+          <div className={`flex flex-col items-center ${showCustomRequest ? "sm:col-span-5" : ""}`}>
+            {/* Active Account Identity Pill */}
+            {activeAccount && (
+              <div className="mb-3 flex items-center gap-1.5 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1 text-[12px] text-neutral-200">
+                <span className="h-2 w-2 rounded-full bg-[#0A84FF]" />
+                <span className="font-semibold">{activeAccount.label}</span>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                  Amount (optional)
-                </label>
-                <input
-                  className="input text-[13px]"
-                  placeholder="e.g. 50"
-                  inputMode="decimal"
-                  value={requestAmount}
-                  onChange={(e) => setRequestAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                />
+            {/* Dynamic Request Pill */}
+            {showCustomRequest && requestAmount.trim() && (
+              <div className="fade-in mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
+                <span>Requesting {requestAmount} {selectedAsset?.code ?? "XLM"}</span>
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                  Memo (optional)
-                </label>
-                <input
-                  className="input text-[13px]"
-                  placeholder="e.g. Dinner"
-                  value={requestMemo}
-                  onChange={(e) => setRequestMemo(e.target.value)}
+            )}
+
+            {/* QR Code Container with subtle specular border */}
+            <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
+              {qrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={qrDataUrl}
+                  alt="Address QR code"
+                  width={210}
+                  height={210}
+                  className="rounded-2xl"
                 />
-              </div>
+              ) : (
+                <div className="skeleton h-[210px] w-[210px] rounded-2xl" />
+              )}
             </div>
-            {payload.startsWith("web+stellar") && (
-              <CopyButton
-                value={payload}
-                label="Copy SEP-0007 Link"
-                className="chip w-full justify-center text-[11px]"
-              />
-            )}
-          </div>
-        )}
 
-        <div className="mt-5 flex w-full items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.02] px-3.5 py-3">
-          <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
-          <p className="text-[11.5px] leading-relaxed text-neutral-400">
-            Only send Stellar network assets (XLM, USDC, etc.) to this address. Funds sent on other blockchains are unrecoverable.
-          </p>
+            <p className="mono mt-4 select-all break-all text-center text-[12px] leading-relaxed text-neutral-300">
+              {address}
+            </p>
+
+            <div className="mt-3 flex flex-wrap justify-center items-center gap-2">
+              <CopyButton value={address} label="Copy Address" className="chip" />
+              {canShare && (
+                <Button
+                  variant="secondary"
+                  className="!h-8 !px-3 !text-[12px] flex items-center gap-1.5"
+                  onClick={handleShare}
+                >
+                  <IconShare size={12} /> Share
+                </Button>
+              )}
+              {qrDataUrl && (
+                <a
+                  href={qrDataUrl}
+                  download="stellar-receive-qr.png"
+                  onClick={() => triggerHaptic("selection")}
+                  className="chip flex items-center gap-1.5 text-[12px]"
+                >
+                  <IconDownload size={13} /> Save QR
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Configuration Options Column */}
+          <div className={`w-full ${showCustomRequest ? "sm:col-span-7 space-y-3" : "mt-3 flex flex-col items-center"}`}>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setShowCustomRequest((v) => !v);
+              }}
+              className="chip text-[12px] w-full justify-center"
+            >
+              {showCustomRequest ? "Hide Request Options" : "Set Amount / Memo"}
+            </button>
+
+            {/* Custom request configuration */}
+            {showCustomRequest && (
+              <div className="fade-in w-full rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
+                <p className="text-[12px] font-semibold text-white">Dynamic Payment Request (SEP-0007)</p>
+                {balances && balances.length > 1 && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Requested Asset
+                    </label>
+                    <select
+                      value={selectedAssetKey}
+                      onChange={(e) => {
+                        triggerHaptic("selection");
+                        setSelectedAssetKey(e.target.value);
+                      }}
+                      className="input text-[13px] cursor-pointer"
+                    >
+                      {balances.map((b) => (
+                        <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
+                          {b.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Amount (optional)
+                    </label>
+                    <input
+                      className="input text-[13px]"
+                      placeholder="e.g. 50"
+                      inputMode="decimal"
+                      value={requestAmount}
+                      onChange={(e) => setRequestAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Memo (optional)
+                    </label>
+                    <input
+                      className="input text-[13px]"
+                      placeholder="e.g. Dinner"
+                      value={requestMemo}
+                      onChange={(e) => setRequestMemo(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {payload.startsWith("web+stellar") && (
+                  <CopyButton
+                    value={payload}
+                    label="Copy SEP-0007 Link"
+                    className="chip w-full justify-center text-[11px]"
+                  />
+                )}
+              </div>
+            )}
+
+            <div className="flex w-full items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.02] px-3.5 py-3">
+              <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
+              <p className="text-[11.5px] leading-relaxed text-neutral-400">
+                Only send Stellar network assets (XLM, USDC, etc.) to this address. Funds sent on other blockchains are unrecoverable.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </Modal>
