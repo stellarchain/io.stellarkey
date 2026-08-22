@@ -22,6 +22,7 @@ import type { AccountMeta } from "@/lib/types";
 import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
 import { PaperWalletModal } from "./PaperWalletModal";
+import { RenameAccountModal } from "./RenameAccountModal";
 import { ConfirmModal } from "./AddAssetModal";
 import { AddAccountModal } from "./AddAccountModal";
 import { PhraseModal } from "./PhraseModal";
@@ -84,7 +85,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     archivedAccounts,
     selectAccount,
     removeAccount,
-    renameAccount,
     restoreArchivedAccount,
     restoreAccountByIndex,
     mergeAccount,
@@ -124,7 +124,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   } | null>(null);
 
   const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
-  const [editLabel, setEditLabel] = useState("");
 
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [editContactName, setEditContactName] = useState("");
@@ -276,15 +275,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
-  function handleSaveRename() {
-    if (!editingAccount) return;
-    if (editLabel.trim()) {
-      renameAccount(editingAccount.id, editLabel.trim());
-      triggerHaptic("success");
-      toast("Account renamed", "success");
-    }
-    setEditingAccount(null);
-  }
+
 
   function handleSaveEditContact() {
     if (!editingContact) return;
@@ -1039,7 +1030,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                   onClick={() => {
                     triggerHaptic("selection");
                     setEditingAccount(acct);
-                    setEditLabel(acct.label);
                   }}
                   className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
                 >
@@ -1988,68 +1978,10 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       )}
 
       {/* Rename Account Modal */}
-      <Modal open={editingAccount !== null} onClose={() => setEditingAccount(null)}>
-        <ModalHeader
-          title="Rename Account"
-          subtitle={
-            editingAccount
-              ? `Custom label for ${shortenAddr(editingAccount.publicKey, 6, 6)}`
-              : "Set a custom name for this account"
-          }
-          onClose={() => setEditingAccount(null)}
-        />
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-              Preset &amp; Emoji
-            </label>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {[
-                { emoji: "⚡", name: "Trading" },
-                { emoji: "💼", name: "Treasury" },
-                { emoji: "🏦", name: "Savings" },
-                { emoji: "☕", name: "Daily" },
-                { emoji: "🛡️", name: "Vault" },
-                { emoji: "🚀", name: "Moon" },
-              ].map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setEditLabel(`${preset.emoji} ${preset.name}`);
-                  }}
-                  className="chip !py-1 !px-2.5 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
-                >
-                  <span>{preset.emoji}</span>
-                  <span>{preset.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Field label="Account Label">
-            <input
-              className="input text-[14px]"
-              value={editLabel}
-              onChange={(e) => setEditLabel(e.target.value)}
-              placeholder="e.g. 💼 Treasury, ⚡ Trading"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveRename();
-              }}
-            />
-          </Field>
-          <div className="flex gap-3 pt-1">
-            <Button variant="ghost" className="flex-1" onClick={() => setEditingAccount(null)}>
-              Cancel
-            </Button>
-            <Button className="flex-1" onClick={handleSaveRename}>
-              Save Label
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <RenameAccountModal
+        account={editingAccount}
+        onClose={() => setEditingAccount(null)}
+      />
 
       {/* Edit Contact Modal */}
       <Modal open={editingContact !== null} onClose={() => setEditingContact(null)}>
