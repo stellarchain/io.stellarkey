@@ -12,6 +12,7 @@ import {
   IconKey,
   IconRefresh,
   IconSend,
+  IconShield,
   LogoMark,
 } from "./icons";
 
@@ -164,8 +165,24 @@ export function Onboarding() {
               setStep("password");
             }}
           >
-            <IconDownload size={16} /> Import Existing
+            <IconDownload size={16} /> Import Phrase / Key
           </Button>
+        </div>
+
+        {/* Hardware Wallet Connect Option */}
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              setMode("create");
+              setStep("password");
+            }}
+            className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-2 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+          >
+            <IconShield size={14} className="text-[#64D2FF]" />
+            <span>Connect Hardware (Ledger / Trezor)</span>
+          </button>
         </div>
 
         {hasDeletedWalletBackup && (
