@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
-import { fmtAmount, isValidAmount } from "@/lib/format";
+import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconChevronDown, IconPlus, IconTrash } from "./icons";
 
 interface RecipientRow {
@@ -20,13 +20,14 @@ export function BatchSendModal({
 }: {
   open: boolean;
   onClose: () => void;
+  memo?: string;
 }) {
   if (!open) return null;
   return <BatchSendInner onClose={onClose} />;
 }
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
-  const { balances, sendBatch, refresh } = useWallet();
+  const { balances, sendBatch, refresh, contacts } = useWallet();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");
   const [rows, setRows] = useState<RecipientRow[]>([
@@ -47,8 +48,8 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
 
   const totalAmount = useMemo(() => {
     return rows.reduce((acc, r) => {
-      const n = parseFloat(r.amount);
-      return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+      const v = parseFloat(r.amount);
+      return acc + (Number.isNaN(v) ? 0 : v);
     }, 0);
   }, [rows]);
 
@@ -70,44 +71,45 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
 
   function handleRemoveRow(id: string) {
     triggerHaptic("selection");
-    if (rows.length <= 1) return;
-    setRows((prev) => prev.filter((r) => r.id !== id));
+    setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.id !== id) : prev));
   }
 
   function handleRowChange(id: string, field: "destination" | "amount", val: string) {
     setRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)),
+      prev.map((r) => (r.id === id ? { ...r, [field]: field === "amount" ? val.replace(/,/g, ".") : val } : r)),
+    );
+  }
+
+  function handleSelectContactForRow(id: string, addr: string) {
+    triggerHaptic("selection");
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, destination: addr } : r)),
     );
   }
 
   function handleParseCsv() {
-    if (!csvInput.trim()) return;
-    const lines = csvInput.trim().split(/\r?\n/);
+    triggerHaptic("selection");
+    const lines = csvInput.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const parsed: RecipientRow[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const parts = line.split(/[,\t\s]+/);
+    for (const line of lines) {
+      const parts = line.split(/[,\t;]/).map((p) => p.trim());
       if (parts.length >= 2) {
         parsed.push({
-          id: String(Date.now() + i),
-          destination: parts[0].trim(),
-          amount: parts[1].trim(),
+          id: String(Math.random()),
+          destination: parts[0],
+          amount: parts[1],
         });
       }
     }
-
     if (parsed.length > 0) {
-      triggerHaptic("success");
       setRows(parsed);
       setShowCsvInput(false);
-      setCsvInput("");
+      triggerHaptic("success");
     }
   }
 
   async function handleBatchSend() {
-    if (!selectedAsset || !canSubmit) return;
+    if (!selectedAsset || validRows.length === 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -120,33 +122,28 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
         })),
         memoText: memo.trim() || undefined,
       });
-      triggerHaptic("success");
       setSuccess(true);
+      triggerHaptic("success");
       window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
-      triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Batch transaction failed.");
+      triggerHaptic("error");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose}>
-      <ModalHeader
-        title="Batch Payment Disperse"
-        subtitle="Send assets to multiple recipients at once"
-        onClose={onClose}
-      />
-      <div className="px-6 pb-6 pt-4">
+    <Modal open onClose={busy ? () => undefined : onClose} dismissable={!busy}>
+      <div className="px-6 pb-6 pt-7">
         {success ? (
           <div className="flex flex-col items-center py-8 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-5 text-xl font-bold text-white">Batch Sent Successfully</p>
+            <p className="display-h mt-5 text-xl font-light text-white">Batch Payment Broadcasted</p>
             <p className="mt-1.5 text-[13px] text-neutral-400">
-              Dispersed {fmtAmount(totalAmount)} {selectedAsset?.code} across {validRows.length} recipients.
+              Successfully sent to {validRows.length} recipient{validRows.length > 1 ? "s" : ""} in a single atomic transaction.
             </p>
             <Button variant="ghost" className="mt-7 w-full" onClick={onClose}>
               Done
@@ -154,142 +151,180 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] font-semibold text-neutral-300">Asset</span>
+            <ModalHeader
+              title="Multi-Send Disperse"
+              subtitle="Send payments to multiple recipients in 1 transaction"
+              onClose={onClose}
+            />
+
+            <div className="mt-5 space-y-4">
+              {/* Asset picker */}
+              <div>
+                <label className="field-label">Asset</label>
                 <div className="relative">
                   <select
-                    className="input !w-auto py-1 pl-3 pr-8 text-[13px] font-semibold bg-white/10"
                     value={assetKey}
-                    onChange={(e) => setAssetKey(e.target.value)}
-                    aria-label="Asset"
+                    onChange={(e) => {
+                      triggerHaptic("selection");
+                      setAssetKey(e.target.value);
+                    }}
+                    className="input pr-10 cursor-pointer text-[14px]"
                   >
                     {options.map((b) => (
-                      <option key={b.key} value={b.key} className="bg-neutral-900">
-                        {b.code} ({fmtAmount(b.balance)})
+                      <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
+                        {b.code} · Balance: {fmtAmount(b.balance)}
                       </option>
                     ))}
                   </select>
                   <IconChevronDown
-                    size={13}
-                    className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400"
+                    size={16}
+                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400"
                   />
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setShowCsvInput((v) => !v);
-                }}
-                className="text-[12px] font-semibold text-[#0A84FF] hover:underline"
-              >
-                {showCsvInput ? "Manual Rows" : "Paste CSV / List"}
-              </button>
-            </div>
-
-            {showCsvInput ? (
-              <div className="space-y-2 mb-4">
-                <textarea
-                  className="input mono min-h-[120px] text-[12px]"
-                  placeholder="G..., 50&#10;G..., 100"
-                  value={csvInput}
-                  onChange={(e) => setCsvInput(e.target.value)}
-                />
-                <Button variant="secondary" className="w-full !py-2 text-[13px]" onClick={handleParseCsv}>
-                  Import Lines
-                </Button>
-              </div>
-            ) : (
-              <div className="max-h-[260px] overflow-y-auto space-y-2.5 pr-1">
-                {rows.map((row, i) => (
-                  <div key={row.id} className="flex items-center gap-2">
-                    <span className="text-[11px] mono text-neutral-500 w-4 shrink-0">{i + 1}</span>
-                    <input
-                      className="input mono flex-1 !py-2 text-[12.5px]"
-                      placeholder="Destination G..."
-                      value={row.destination}
-                      onChange={(e) => handleRowChange(row.id, "destination", e.target.value)}
-                    />
-                    <input
-                      className="input mono w-24 !py-2 text-[12.5px]"
-                      placeholder="Amount"
-                      inputMode="decimal"
-                      value={row.amount}
-                      onChange={(e) => handleRowChange(row.id, "amount", e.target.value.replace(/[^0-9.]/g, ""))}
-                    />
-                    {rows.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveRow(row.id)}
-                        className="text-neutral-500 hover:text-[#FF453A] p-1.5"
-                      >
-                        <IconTrash size={14} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {!showCsvInput && (
-              <button
-                type="button"
-                onClick={handleAddRow}
-                className="mt-2.5 flex items-center gap-1.5 text-[12.5px] font-semibold text-[#0A84FF] hover:underline"
-              >
-                <IconPlus size={14} /> Add Recipient
-              </button>
-            )}
-
-            {/* Total Summary */}
-            <div className="panel-inset mt-4 p-3.5 space-y-1.5 text-[12.5px]">
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Total Recipients</span>
-                <span className="font-semibold text-white">{validRows.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Total Sum</span>
-                <span className="mono font-bold text-white">
-                  {fmtAmount(totalAmount)} {selectedAsset?.code}
+              {/* Mode toggle: Manual vs CSV */}
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-semibold text-white">
+                  Recipients ({rows.length})
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setShowCsvInput((s) => !s);
+                  }}
+                  className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                >
+                  {showCsvInput ? "Switch to Form" : "Paste CSV / TSV"}
+                </button>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Est. Base Fee</span>
-                <span className="mono text-neutral-300">
-                  {(rows.length * 0.00001).toFixed(5)} XLM
-                </span>
-              </div>
-            </div>
 
-            <div className="mt-3">
-              <Field label="Memo (optional)">
+              {showCsvInput ? (
+                <div className="space-y-2">
+                  <textarea
+                    rows={5}
+                    placeholder={"GDESTINATION..., 10.5\nGDESTINATION2..., 5.0"}
+                    value={csvInput}
+                    onChange={(e) => setCsvInput(e.target.value)}
+                    className="input mono text-[12px] resize-none"
+                  />
+                  <Button variant="secondary" className="w-full !h-9 text-[13px]" onClick={handleParseCsv}>
+                    Parse & Populate Rows
+                  </Button>
+                </div>
+              ) : (
+                <div className="max-h-[260px] space-y-2.5 overflow-y-auto pr-1">
+                  {rows.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-neutral-400">
+                          #{idx + 1}
+                        </span>
+                        {contacts.length > 0 && (
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) handleSelectContactForRow(row.id, e.target.value);
+                            }}
+                            defaultValue=""
+                            className="bg-transparent text-[11px] font-medium text-[#0A84FF] outline-none cursor-pointer"
+                          >
+                            <option value="" disabled className="bg-neutral-900 text-neutral-400">
+                              + Contact
+                            </option>
+                            {contacts.map((c) => (
+                              <option key={c.address} value={c.address} className="bg-neutral-900 text-white">
+                                {c.name} ({shortenAddr(c.address, 4, 4)})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {rows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRow(row.id)}
+                            className="text-neutral-500 hover:text-[#FF453A] transition-colors"
+                          >
+                            <IconTrash size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Recipient address (G...)"
+                        value={row.destination}
+                        onChange={(e) => handleRowChange(row.id, "destination", e.target.value)}
+                        className="input mono !h-9 text-[12px]"
+                      />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="Amount"
+                        value={row.amount}
+                        onChange={(e) => handleRowChange(row.id, "amount", e.target.value)}
+                        className="input mono !h-9 text-[12px]"
+                      />
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={handleAddRow}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/20 py-2 text-[12.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04]"
+                  >
+                    <IconPlus size={14} />
+                    <span>Add Recipient</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Memo */}
+              <div>
+                <label className="field-label">Transaction Memo (Optional)</label>
                 <input
-                  className="input !py-2 text-[13px]"
-                  placeholder="Shared batch memo"
+                  type="text"
+                  placeholder="Max 28 bytes"
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
-                  maxLength={28}
+                  className="input text-[13px]"
                 />
-              </Field>
-            </div>
+              </div>
 
-            <div className="mt-3">
-              <ErrorText message={error ?? ""} />
-            </div>
+              {/* Summary calculation */}
+              <div className="panel-inset p-3 space-y-1 text-[12px]">
+                <div className="flex justify-between text-neutral-300">
+                  <span>Total Recipients</span>
+                  <span className="font-semibold">{validRows.length}</span>
+                </div>
+                <div className="flex justify-between text-white font-semibold">
+                  <span>Total Disperse</span>
+                  <span className="mono">
+                    {totalAmount.toFixed(4)} {selectedAsset?.code}
+                  </span>
+                </div>
+                {totalAmount > balanceNum && (
+                  <p className="text-[11px] text-[#FF453A] pt-1">
+                    Exceeds available balance ({fmtAmount(balanceNum)} {selectedAsset?.code})
+                  </p>
+                )}
+              </div>
 
-            <div className="mt-5 flex gap-3">
-              <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
-                Cancel
-              </Button>
+              {error && (
+                <div className="mt-4">
+                  <ErrorText message={error} />
+                </div>
+              )}
+
               <Button
-                className="flex-1"
+                className="mt-6 w-full"
                 loading={busy}
                 disabled={!canSubmit}
                 onClick={() => void handleBatchSend()}
               >
-                Disperse {validRows.length} Payments
+                {busy ? "Broadcasting…" : `Disperse to ${validRows.length} Recipient${validRows.length > 1 ? "s" : ""}`}
               </Button>
             </div>
           </>

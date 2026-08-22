@@ -8,11 +8,11 @@ import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
 import { lookupKnownAsset } from "@/lib/assets";
+import { fetchFeeStats, type FeeStats } from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
-import { Avatar, Button, ErrorText, Modal, ModalHeader, SegmentedControl } from "./ui";
+import { Button, ErrorText, Modal, ModalHeader, SegmentedControl } from "./ui";
 import {
-  IconCamera,
   IconCheck,
   IconChevronDown,
   IconExternal,
@@ -61,11 +61,24 @@ function SendInner({
   const [memoType, setMemoType] = useState<MemoType>("text");
   const [memo, setMemo] = useState(prefill?.memo ?? "");
   const [feeTier, setFeeTier] = useState<FeeTier>("normal");
+  const [liveFeeStats, setLiveFeeStats] = useState<FeeStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [resolvingFed, setResolvingFed] = useState(false);
   const [fedResolvedAddr, setFedResolvedAddr] = useState<string | null>(null);
+
+  // Fetch live fee surge stats on mount
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const stats = await fetchFeeStats(network);
+      if (alive && stats) setLiveFeeStats(stats);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [network]);
 
   const options = useMemo(() => balances ?? [], [balances]);
   const selectedAsset = useMemo(
@@ -135,7 +148,12 @@ function SendInner({
   const reserveBlocked = selectedAsset?.isNative === true && isValidAmount(amount) && amountNum > maxSendable;
   const canReview = (destOk || Boolean(fedResolvedAddr)) && amountOk && memoOk && !reserveBlocked;
 
-  const feeStroops = feeTier === "urgent" ? 500 : feeTier === "priority" ? 200 : 100;
+  // Dynamic fee calculation from live fee stats
+  const normalStroops = liveFeeStats?.modeAcceptedFee ?? 100;
+  const priorityStroops = Math.max(200, (liveFeeStats?.p90AcceptedFee ?? 150) * 2);
+  const urgentStroops = Math.max(500, (liveFeeStats?.p99AcceptedFee ?? 300) * 3);
+
+  const feeStroops = feeTier === "urgent" ? urgentStroops : feeTier === "priority" ? priorityStroops : normalStroops;
   const feeXlm = (feeStroops / 10_000_000).toFixed(7);
 
   const remainingBalance = Math.max(
@@ -156,6 +174,7 @@ function SendInner({
         assetCode: selectedAsset.code,
         issuer: selectedAsset.issuer,
         memoText: memo.trim() || undefined,
+        feeStroops,
       });
       setHash(result.hash);
       setStage("done");
@@ -298,197 +317,207 @@ function SendInner({
               </div>
               <div className="flex justify-between text-[#FF453A]">
                 <span>Transfer Amount</span>
-                <span className="mono">−{fmtAmount(amount)} {selectedAsset?.code}</span>
+                <span className="mono">−{fmtAmount(amountNum)} {selectedAsset?.code}</span>
               </div>
               {selectedAsset?.isNative && (
                 <div className="flex justify-between text-neutral-400">
-                  <span>Network Fee</span>
+                  <span>Network Gas Fee</span>
                   <span className="mono">−{feeXlm} XLM</span>
                 </div>
               )}
-              <div className="flex justify-between pt-1 border-t border-white/10 font-medium text-white">
-                <span>Est. Remaining Balance</span>
-                <span className="mono font-bold text-[#30D158]">{fmtAmount(remainingBalance)} {selectedAsset?.code}</span>
+              <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
+                <span>Balance After</span>
+                <span className="mono">{remainingBalance} {selectedAsset?.code}</span>
               </div>
             </div>
 
-            {/* Priority Fee Tier Selector */}
-            <div className="mt-3.5">
-              <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
-                Speed & Priority Tier
-              </label>
-              <SegmentedControl<FeeTier>
-                value={feeTier}
-                onChange={(t) => {
-                  triggerHaptic("selection");
-                  setFeeTier(t);
-                }}
-                options={[
-                  { value: "normal", label: "Normal (~5s)" },
-                  { value: "priority", label: "Priority (~3s)" },
-                  { value: "urgent", label: "Urgent (~1s)" },
-                ]}
-              />
-            </div>
+            {error && (
+              <div className="mt-4">
+                <ErrorText message={error} />
+              </div>
+            )}
 
-            <div className="mt-4">
-              <ErrorText message={error ?? ""} />
-            </div>
-
-            <div className="mt-5 flex gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3">
               <Button
                 variant="ghost"
-                className="flex-1"
                 disabled={stage === "sending"}
-                onClick={() => setStage("form")}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setStage("form");
+                }}
               >
                 Back
               </Button>
               <Button
-                className="flex-1"
                 loading={stage === "sending"}
                 disabled={stage === "sending"}
                 onClick={() => void handleConfirm()}
               >
-                Confirm & Send
+                {stage === "sending" ? "Sending…" : "Confirm Send"}
               </Button>
             </div>
           </>
         ) : (
           <>
-            <div className="text-center">
-              <p className="eyebrow">Send Payment</p>
-              <div className="mt-4 flex items-center justify-center gap-3">
-                <input
-                  className="mono w-[190px] border-none bg-transparent text-center text-[40px] font-light tracking-tight text-white outline-none placeholder:text-neutral-600"
-                  placeholder="0"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                  autoFocus
-                />
-                <div className="relative shrink-0">
-                  <select
-                    className="input !w-auto appearance-none py-2.5 pl-4 pr-9 text-[14px] font-semibold"
-                    value={assetKey}
-                    onChange={(e) => setAssetKey(e.target.value)}
-                    aria-label="Asset"
-                  >
-                    {(options.length > 0 ? options : [{ key: "native", code: "XLM" }]).map(
-                      (b) => (
-                        <option key={b.key} value={b.key} className="bg-neutral-900">
-                          {b.code}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                  <IconChevronDown
-                    size={14}
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400"
-                  />
-                </div>
-              </div>
-              <div className="mt-2.5 flex items-center justify-center gap-1.5">
-                {selectedAsset && (
-                  <>
-                    <span className="mono mr-1 text-[11px] text-neutral-400">
-                      Avail: {fmtAmount(maxSendable)} {selectedAsset.code}
-                    </span>
-                    {[0.25, 0.5, 1].map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-neutral-400 transition-colors hover:border-white/20 hover:text-white"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setAmount(
-                            parseFloat((maxSendable * f).toFixed(7)).toString(),
-                          );
-                        }}
-                      >
-                        {f === 1 ? "Max" : `${f * 100}%`}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </div>
-              {reserveBlocked && (
-                <p className="mt-2 text-[11.5px] text-[#FF9F0A] leading-relaxed">
-                  Reserve safeguard: {requiredReserve} XLM must remain in your account for base balance and active trustlines.
-                </p>
-              )}
-            </div>
-
-            {/* Quick Contacts Bar */}
-            {contacts.length > 0 && (
-              <div className="mt-5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-2">
-                  Recent Contacts
-                </p>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none">
-                  {contacts.map((c) => (
-                    <button
-                      key={c.address}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        handleDestinationChange(c.address);
-                      }}
-                      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] transition-colors shrink-0 ${
-                        destination === c.address
-                          ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white"
-                          : "border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white"
-                      }`}
-                    >
-                      <Avatar seed={c.address} size={18} />
-                      <span className="font-medium">{c.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            <ModalHeader
+              title="Send Payment"
+              subtitle={`Transfer assets on Stellar ${NETWORKS[network].label}`}
+              onClose={onClose}
+            />
 
             <div className="mt-5 space-y-4">
-              <div className="relative">
-                <label className="block text-[12px] font-semibold tracking-tight text-neutral-300 mb-1.5">
-                  Recipient Address or Federation
-                </label>
-                <div className="relative flex items-center">
-                  <input
-                    className="input mono pr-10 text-[13px]"
-                    placeholder="G... or username*stellar.org"
-                    value={destination}
-                    onChange={(e) => handleDestinationChange(e.target.value)}
+              {/* Asset picker */}
+              <div>
+                <label className="field-label">Asset</label>
+                <div className="relative">
+                  <select
+                    value={assetKey}
+                    onChange={(e) => {
+                      triggerHaptic("selection");
+                      setAssetKey(e.target.value);
+                    }}
+                    className="input pr-10 cursor-pointer text-[14px]"
+                  >
+                    {options.map((b) => (
+                      <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
+                        {b.code} · Balance: {fmtAmount(b.balance)}
+                      </option>
+                    ))}
+                  </select>
+                  <IconChevronDown
+                    size={16}
+                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400"
                   />
+                </div>
+              </div>
+
+              {/* Destination */}
+              <div>
+                <div className="flex items-center justify-between pb-1">
+                  <label className="field-label !pb-0">Recipient Address or Federation</label>
                   <button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setShowScanner(true);
-                    }}
-                    className="absolute right-2.5 flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white"
-                    aria-label="Scan QR Code"
+                    onClick={() => setShowScanner((s) => !s)}
+                    className="text-[12px] font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
                   >
-                    <IconQrScan size={16} />
+                    <IconQrScan size={13} />
+                    <span>{showScanner ? "Hide Camera" : "Scan QR"}</span>
                   </button>
                 </div>
+                <input
+                  type="text"
+                  placeholder="G... or user*domain.com"
+                  value={destination}
+                  onChange={(e) => handleDestinationChange(e.target.value)}
+                  className="input mono text-[13px]"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                {contacts.length > 0 && !destination && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-neutral-500">Quick contact:</span>
+                    {contacts.slice(0, 4).map((c) => (
+                      <button
+                        key={c.address}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          handleDestinationChange(c.address);
+                        }}
+                        className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {resolvingFed && (
                   <p className="mt-1 text-[11px] text-[#0A84FF]">Resolving federation address…</p>
                 )}
                 {fedResolvedAddr && (
-                  <p className="mono mt-1 text-[11px] text-[#30D158] truncate">
-                    Resolved: {fedResolvedAddr}
+                  <p className="mt-1 mono text-[11px] text-[#30D158] truncate">
+                    ✓ Resolved: {fedResolvedAddr}
+                  </p>
+                )}
+                {matchedContact && (
+                  <p className="mt-1 text-[11px] text-neutral-400">
+                    Contact: <span className="text-white font-medium">{matchedContact.name}</span>
                   </p>
                 )}
               </div>
 
-              {/* Memo field with Type selector */}
+              {showScanner && (
+                <QrScannerBox
+                  onScan={(text) => {
+                    handleDestinationChange(text);
+                    setShowScanner(false);
+                    triggerHaptic("success");
+                  }}
+                />
+              )}
+
+              {/* Amount */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] font-semibold tracking-tight text-neutral-300">
-                    Memo (optional)
-                  </span>
-                  <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between pb-1">
+                  <label className="field-label !pb-0">Amount</label>
+                  {selectedAsset && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setAmount(String(maxSendable));
+                      }}
+                      className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                    >
+                      Max: {fmtAmount(maxSendable)} {selectedAsset.code}
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value.replace(/,/g, "."))}
+                  className="input mono text-[15px]"
+                />
+                {reserveBlocked && (
+                  <p className="mt-1 text-[11.5px] text-[#FF453A]">
+                    Exceeds maximum sendable reserve ({fmtAmount(maxSendable)} XLM).
+                  </p>
+                )}
+              </div>
+
+              {/* Fee Tier Selector with Live Surge Stats */}
+              <div>
+                <div className="flex items-center justify-between pb-1">
+                  <label className="field-label !pb-0">Speed / Network Fee</label>
+                  {liveFeeStats && (
+                    <span className="text-[11px] font-medium text-[#30D158] flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#30D158]" />
+                      Base Fee: {liveFeeStats.lastLedgerBaseFee} stroops
+                    </span>
+                  )}
+                </div>
+                <SegmentedControl
+                  value={feeTier}
+                  onChange={(val) => {
+                    triggerHaptic("selection");
+                    setFeeTier(val as FeeTier);
+                  }}
+                  options={[
+                    { value: "normal", label: `Normal (${normalStroops}s)` },
+                    { value: "priority", label: `Priority (${priorityStroops}s)` },
+                    { value: "urgent", label: `Urgent (${urgentStroops}s)` },
+                  ]}
+                />
+              </div>
+
+              {/* Memo */}
+              <div>
+                <div className="flex items-center justify-between pb-1">
+                  <label className="field-label !pb-0">Memo (Optional)</label>
+                  <div className="flex gap-2 text-[11px]">
                     {(["text", "id", "hash"] as const).map((t) => (
                       <button
                         key={t}
@@ -497,43 +526,32 @@ function SendInner({
                           triggerHaptic("selection");
                           setMemoType(t);
                         }}
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                          memoType === t
-                            ? "bg-white/20 text-white"
-                            : "text-neutral-500 hover:text-neutral-300"
+                        className={`capitalize ${
+                          memoType === t ? "text-white font-semibold" : "text-neutral-500"
                         }`}
                       >
                         {t}
                       </button>
                     ))}
-                    {memoType === "text" && (
-                      <span className="mono text-[10px] text-neutral-500 ml-1">
-                        {memoBytes}/28
-                      </span>
-                    )}
                   </div>
                 </div>
                 <input
-                  className="input text-[13px]"
+                  type="text"
                   placeholder={
                     memoType === "text"
-                      ? "Public memo text"
+                      ? "Max 28 bytes"
                       : memoType === "id"
-                        ? "Numeric memo ID (uint64)"
-                        : "64-character hex hash"
+                        ? "Numeric 64-bit integer"
+                        : "64-char hex hash"
                   }
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
+                  className="input text-[13px]"
                 />
               </div>
-            </div>
 
-            <div className="mt-6 flex gap-3">
-              <Button variant="ghost" className="flex-1" onClick={onClose}>
-                Cancel
-              </Button>
               <Button
-                className="flex-1"
+                className="mt-6 w-full"
                 disabled={!canReview}
                 onClick={() => {
                   triggerHaptic("selection");
@@ -546,94 +564,96 @@ function SendInner({
           </>
         )}
       </div>
-
-      {/* QR Code Scanner Dialog */}
-      {showScanner && (
-        <ScannerModal
-          onClose={() => setShowScanner(false)}
-          onScan={(val) => {
-            setShowScanner(false);
-            handleDestinationChange(val);
-          }}
-        />
-      )}
-    </Modal>
-  );
-}
-
-function ScannerModal({
-  onClose,
-  onScan,
-}: {
-  onClose: () => void;
-  onScan: (value: string) => void;
-}) {
-  const [manualCode, setManualCode] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  return (
-    <Modal open onClose={onClose}>
-      <ModalHeader title="Scan Stellar QR Code" onClose={onClose} />
-      <div className="p-6 flex flex-col items-center">
-        <div className="relative flex h-56 w-56 items-center justify-center rounded-2xl border-2 border-dashed border-white/20 bg-neutral-900/60 p-4 text-center">
-          <div className="flex flex-col items-center gap-3">
-            <IconCamera size={36} className="text-neutral-400" />
-            <p className="text-[12px] text-neutral-400">
-              Upload a QR code image or paste payload
-            </p>
-            <input
-              type="file"
-              accept="image/*"
-              ref={fileInputRef}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  triggerHaptic("selection");
-                }
-              }}
-            />
-            <Button
-              variant="secondary"
-              className="text-[12px] py-1.5 px-3"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Choose Image
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-5 w-full space-y-2">
-          <label className="block text-[12px] font-medium text-neutral-400">
-            Or paste address / SEP-0007 URI
-          </label>
-          <div className="flex gap-2">
-            <input
-              className="input text-[13px]"
-              placeholder="Paste QR payload..."
-              value={manualCode}
-              onChange={(e) => setManualCode(e.target.value)}
-            />
-            <Button
-              disabled={!manualCode.trim()}
-              onClick={() => onScan(manualCode.trim())}
-            >
-              Use
-            </Button>
-          </div>
-        </div>
-      </div>
     </Modal>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <span className="shrink-0 pt-0.5 text-[13px] font-medium text-neutral-400">
-        {label}
-      </span>
-      <span className="min-w-0 text-right">{children}</span>
+    <div className="flex items-center justify-between py-2.5 text-[13px]">
+      <span className="text-neutral-400">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+function QrScannerBox({ onScan }: { onScan: (val: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [permErr, setPermErr] = useState(false);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let timer: number | null = null;
+
+    async function start() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setPermErr(true);
+          return;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        if ("BarcodeDetector" in window) {
+          const barcodeDetector = new (window as unknown as {
+            BarcodeDetector: new (opts: { formats: string[] }) => {
+              detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
+            };
+          }).BarcodeDetector({ formats: ["qr_code"] });
+
+          const tick = async () => {
+            if (videoRef.current && videoRef.current.readyState === 4) {
+              try {
+                const barcodes = await barcodeDetector.detect(videoRef.current);
+                if (barcodes.length > 0) {
+                  onScan(barcodes[0].rawValue);
+                  return;
+                }
+              } catch {
+                void 0;
+              }
+            }
+            timer = window.setTimeout(tick, 300);
+          };
+          timer = window.setTimeout(tick, 500);
+        }
+      } catch {
+        setPermErr(true);
+      }
+    }
+
+    void start();
+
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+    };
+  }, [onScan]);
+
+  return (
+    <div className="overflow-hidden rounded-2xl bg-black border border-white/10 p-2 text-center">
+      {permErr ? (
+        <p className="py-6 text-[12px] text-neutral-400">
+          Camera permission needed to scan QR codes.
+        </p>
+      ) : (
+        <div className="relative aspect-square max-h-[220px] mx-auto overflow-hidden rounded-xl bg-neutral-900">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="h-36 w-36 rounded-2xl border-2 border-white/70 shadow-lg" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

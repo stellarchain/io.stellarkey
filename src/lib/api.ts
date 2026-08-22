@@ -388,10 +388,11 @@ export interface SendPaymentParams {
   assetCode: string;
   issuer?: string | null;
   memoText?: string;
+  feeStroops?: number;
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<{ hash: string }> {
-  const { network, secretKey, destination, amount, assetCode, issuer, memoText } = params;
+  const { network, secretKey, destination, amount, assetCode, issuer, memoText, feeStroops = 100 } = params;
 
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
@@ -418,7 +419,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
   }
 
   const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
-    fee: BASE_FEE,
+    fee: String(feeStroops),
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -543,6 +544,31 @@ export async function changeTrust(params: {
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
+}
+
+export interface FeeStats {
+  lastLedgerBaseFee: number;
+  minAcceptedFee: number;
+  modeAcceptedFee: number;
+  p90AcceptedFee: number;
+  p99AcceptedFee: number;
+}
+
+export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | null> {
+  const horizonUrl = getHorizonUrl(network);
+  const data = await getJson<{
+    last_ledger_base_fee: string;
+    fee_charged?: { min: string; mode: string; p90: string; p99: string };
+  }>(`${horizonUrl}/fee_stats`);
+
+  if (!data) return null;
+  return {
+    lastLedgerBaseFee: parseInt(data.last_ledger_base_fee || "100", 10),
+    minAcceptedFee: parseInt(data.fee_charged?.min || "100", 10),
+    modeAcceptedFee: parseInt(data.fee_charged?.mode || "100", 10),
+    p90AcceptedFee: parseInt(data.fee_charged?.p90 || "150", 10),
+    p99AcceptedFee: parseInt(data.fee_charged?.p99 || "300", 10),
+  };
 }
 
 interface CoinGeckoPriceResp {
