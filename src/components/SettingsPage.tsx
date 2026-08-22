@@ -661,6 +661,19 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     sep
                   />
                   <RowButton
+                    icon={<IconShield size={16} />}
+                    tint="#64D2FF"
+                    label="Hardware Wallets"
+                    value="Ledger & Trezor"
+                    sub="WebUSB on-device cold storage keys"
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setShowAddAccount(true);
+                    }}
+                    sep
+                  />
+                  <RowButton
                     icon={<IconLock size={16} />}
                     tint="#5E5CE6"
                     label="Air-Gapped Cold QR Signer"
@@ -995,9 +1008,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 >
                   <Avatar seed={acct.publicKey} size={34} />
                   <div className="min-w-0 flex-1">
-                    <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
-                      {acct.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
+                        {acct.label}
+                      </span>
+                      {acct.hardware && (
+                        <span className="px-1.5 py-0.2 rounded-md bg-[#0A84FF]/20 border border-[#0A84FF]/30 text-[10px] font-bold text-[#64D2FF] shrink-0">
+                          {acct.hardware === "ledger" ? "🔒 Ledger" : "🛡️ Trezor"}
+                        </span>
+                      )}
+                    </div>
                     <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
                       {acct.path ? `Path: ${acct.path}` : shortenAddr(acct.publicKey, 6, 6)}
                     </span>
