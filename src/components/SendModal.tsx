@@ -565,6 +565,11 @@ function SendInner({
                   onChange={(e) => setMemo(e.target.value)}
                   className="input text-[13px]"
                 />
+                {!memo.trim() && (
+                  <p className="mt-1.5 text-[11px] text-neutral-400">
+                    💡 Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.
+                  </p>
+                )}
               </div>
 
               <Button
