@@ -412,8 +412,8 @@ export function Dashboard() {
 
 
 
-        {/* Primary Navigation */}
-        <nav className="mt-4 space-y-1.5 flex-1 w-full" aria-label="Desktop Navigation">
+                {/* Navigation & Accounts (Clean Borderless Flow) */}
+        <nav className="mt-4 space-y-1 flex-1 w-full" aria-label="Desktop Navigation">
           {!sidebarCollapsed && (
             <button
               type="button"
@@ -421,7 +421,7 @@ export function Dashboard() {
                 triggerHaptic("selection");
                 setPaletteOpen(true);
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-2 border border-white/5"
             >
               <div className="flex items-center gap-2">
                 <IconSearch size={15} />
@@ -436,9 +436,9 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("home")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`group relative flex w-full items-center rounded-xl transition-all ${
+              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+            } text-[13.5px] font-semibold ${
               view === "home"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -454,9 +454,9 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("activity")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`group relative flex w-full items-center rounded-xl transition-all ${
+              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+            } text-[13.5px] font-semibold ${
               view === "activity"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -475,9 +475,9 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("swap")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`group relative flex w-full items-center rounded-xl transition-all ${
+              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+            } text-[13.5px] font-semibold ${
               view === "swap"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -491,9 +491,9 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => openSettings("root")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`group relative flex w-full items-center rounded-xl transition-all ${
+              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+            } text-[13.5px] font-semibold ${
               view === "settings"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -503,31 +503,26 @@ export function Dashboard() {
             <IconGear size={18} />
             {!sidebarCollapsed && <span>Settings</span>}
           </button>
-        </nav>
 
-                        {/* Apple iPadOS Inset-Grouped Accounts Section */}
-        <div className="mt-2 flex-1 w-full space-y-1">
+          {/* Accounts Subgroup (Zero Outer Borders) */}
           {!sidebarCollapsed ? (
-            <>
-              {/* Header */}
-              <div className="flex items-center justify-between px-2 pb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+            <div className="pt-3 space-y-1">
+              <div className="flex items-center justify-between px-2 pb-0.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Accounts ({accounts.length})
                 </span>
                 <button
                   type="button"
                   onClick={() => openSettings("addAccount")}
-                  className="text-[12px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
+                  className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
                 >
-                  <IconPlus size={11} /> Add
+                  + Add
                 </button>
               </div>
 
-              {/* Inset Grouped Accounts List */}
-              <div className="space-y-0.5 max-h-[280px] overflow-y-auto scrollbar-none">
-                {accounts.map((acct) => {
+              <div className="space-y-0.5">
+                                {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
-                  const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                   return (
                     <button
                       key={acct.id}
@@ -536,44 +531,32 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-all ${
+                      className={`flex w-full items-center rounded-xl px-2.5 py-2 text-left transition-colors ${
                         isActive
-                          ? "bg-white/[0.09] text-white font-semibold shadow-sm"
+                          ? "bg-white/[0.09] text-white font-medium shadow-sm"
                           : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <Avatar seed={acct.publicKey} size={26} />
+                        <Avatar seed={acct.publicKey} size={24} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] leading-tight font-semibold text-white">
+                          <p className="truncate text-[13px] leading-tight font-medium text-white">
                             {acct.label}
                           </p>
                           <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
-                            {isActive && balances
-                              ? `${fmtAmount(xlm?.balance ?? "0")} XLM`
-                              : `#${idxNum} · ${shortenAddr(acct.publicKey, 4, 4)}`}
+                            {shortenAddr(acct.publicKey, 6, 6)}
                           </p>
                         </div>
                       </div>
-                      {isActive && (
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0A84FF] text-white shrink-0 ml-1">
-                          <IconCheck size={10} />
-                        </span>
-                      )}
                     </button>
                   );
                 })}
-
               </div>
-            </>
+            </div>
           ) : (
-            <div className="flex flex-col items-center gap-2 pt-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-500 mb-0.5">
-                Accs
-              </span>
+            <div className="flex flex-col items-center gap-2 pt-2">
               {accounts.map((acct) => {
                 const isActive = acct.id === activeAccount?.id;
-                const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                 return (
                   <button
                     key={acct.id}
@@ -587,7 +570,7 @@ export function Dashboard() {
                         ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                         : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                     }`}
-                    title={`${acct.label} (#${idxNum}) - ${shortenAddr(acct.publicKey, 4, 4)}`}
+                    title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
                   >
                     <Avatar seed={acct.publicKey} size={28} />
                   </button>
@@ -603,7 +586,7 @@ export function Dashboard() {
               </button>
             </div>
           )}
-        </div>
+        </nav>
 
         {/* Footer Controls */}
         <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
