@@ -50,6 +50,10 @@ import {
 } from "./icons";
 
 type View = "home" | "activity" | "swap" | "settings";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+}
 type ActivityFilter = "all" | "in" | "out" | "swap" | "trust";
 
 export function Dashboard() {
@@ -100,6 +104,7 @@ export function Dashboard() {
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimingAll, setClaimingAll] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
+  const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [phraseOpen, setPhraseOpen] = useState(false);
@@ -132,6 +137,16 @@ export function Dashboard() {
     };
     document.addEventListener("visibilitychange", onVisChange);
     return () => document.removeEventListener("visibilitychange", onVisChange);
+  }, []);
+
+  // PWA install prompt capture
+  useEffect(() => {
+    function onInstallPrompt(e: Event) {
+      e.preventDefault();
+      setInstallEvt(e as BeforeInstallPromptEvent);
+    }
+    window.addEventListener("beforeinstallprompt", onInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onInstallPrompt);
   }, []);
 
   useEffect(() => {
@@ -664,6 +679,20 @@ export function Dashboard() {
                   <NetworkBadge network={network} />
                 </button>
               </div>
+
+              {installEvt && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    void installEvt.prompt();
+                    setInstallEvt(null);
+                  }}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#0A84FF]/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-[#0A84FF]/25 transition-colors"
+                >
+                  ⬇ <span>Install App</span>
+                </button>
+              )}
 
               <button
                 type="button"

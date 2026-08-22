@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { Dashboard } from "./Dashboard";
 import { LockScreen } from "./LockScreen";
@@ -8,6 +9,16 @@ import { LogoMark } from "./icons";
 
 export function WalletApp() {
   const { phase } = useWallet();
+
+  // Register as the OS-level handler for web+stellar pay links (SEP-0007 deep links)
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.registerProtocolHandler) return;
+    try {
+      navigator.registerProtocolHandler("web+stellar", "/?uri=%s");
+    } catch {
+      // Browser refused (e.g. not user-initiated or cross-origin) — harmless.
+    }
+  }, []);
 
   if (phase === "loading") {
     return (
