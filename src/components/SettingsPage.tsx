@@ -30,6 +30,7 @@ import {
   Field,
   Modal,
   ModalHeader,
+  QrScannerBox,
   SegmentedControl,
   Spinner,
   Toggle,
@@ -139,6 +140,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [ksBusy, setKsBusy] = useState(false);
 
   const [contactName, setContactName] = useState("");
+  const [showContactScanner, setShowContactScanner] = useState(false);
   const [contactAddr, setContactAddr] = useState("");
   const [contactError, setContactError] = useState<string | null>(null);
 
@@ -1365,7 +1367,17 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 maxLength={24}
               />
             </Field>
-            <Field label="Stellar Public Key">
+            <div>
+              <div className="flex items-center justify-between pb-1">
+                <label className="field-label !pb-0">Stellar Public Key</label>
+                <button
+                  type="button"
+                  onClick={() => setShowContactScanner((s) => !s)}
+                  className="text-[12px] font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
+                >
+                  <span>{showContactScanner ? "Hide Camera" : "Scan QR"}</span>
+                </button>
+              </div>
               <input
                 className="input mono text-[13.5px]"
                 placeholder="G..."
@@ -1374,7 +1386,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 spellCheck={false}
                 autoComplete="off"
               />
-            </Field>
+            </div>
+            {showContactScanner && (
+              <QrScannerBox
+                onScan={(val) => {
+                  setContactAddr(val);
+                  setShowContactScanner(false);
+                  triggerHaptic("success");
+                }}
+              />
+            )}
           </div>
           <ErrorText message={contactError ?? ""} />
           <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Federation } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
@@ -11,7 +11,7 @@ import { lookupKnownAsset } from "@/lib/assets";
 import { fetchFeeStats, type FeeStats } from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Modal, ModalHeader, SegmentedControl } from "./ui";
+import { Button, ErrorText, Modal, ModalHeader, QrScannerBox, SegmentedControl } from "./ui";
 import {
   IconCheck,
   IconChevronDown,
@@ -609,87 +609,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-center justify-between py-2.5 text-[13px]">
       <span className="text-neutral-400">{label}</span>
       <span className="text-right">{children}</span>
-    </div>
-  );
-}
-
-function QrScannerBox({ onScan }: { onScan: (val: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [permErr, setPermErr] = useState(false);
-
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    let timer: number | null = null;
-
-    async function start() {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setPermErr(true);
-          return;
-        }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-
-        if ("BarcodeDetector" in window) {
-          const barcodeDetector = new (window as unknown as {
-            BarcodeDetector: new (opts: { formats: string[] }) => {
-              detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
-            };
-          }).BarcodeDetector({ formats: ["qr_code"] });
-
-          const tick = async () => {
-            if (videoRef.current && videoRef.current.readyState === 4) {
-              try {
-                const barcodes = await barcodeDetector.detect(videoRef.current);
-                if (barcodes.length > 0) {
-                  onScan(barcodes[0].rawValue);
-                  return;
-                }
-              } catch {
-                void 0;
-              }
-            }
-            timer = window.setTimeout(tick, 300);
-          };
-          timer = window.setTimeout(tick, 500);
-        }
-      } catch {
-        setPermErr(true);
-      }
-    }
-
-    void start();
-
-    return () => {
-      if (timer) window.clearTimeout(timer);
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-    };
-  }, [onScan]);
-
-  return (
-    <div className="overflow-hidden rounded-2xl bg-black border border-white/10 p-2 text-center">
-      {permErr ? (
-        <p className="py-6 text-[12px] text-neutral-400">
-          Camera permission needed to scan QR codes.
-        </p>
-      ) : (
-        <div className="relative aspect-square max-h-[220px] mx-auto overflow-hidden rounded-xl bg-neutral-900">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="h-36 w-36 rounded-2xl border-2 border-white/70 shadow-lg" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }
