@@ -80,6 +80,13 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
         onClose={onClose}
       />
       <div className="flex flex-col items-center px-6 py-6">
+        {/* Dynamic Request Pill */}
+        {showCustomRequest && requestAmount.trim() && (
+          <div className="fade-in mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
+            <span>Requesting {requestAmount} XLM</span>
+          </div>
+        )}
+
         {/* QR Code Container with subtle specular border */}
         <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
           {qrDataUrl ? (

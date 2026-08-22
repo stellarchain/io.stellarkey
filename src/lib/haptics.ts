@@ -1,7 +1,9 @@
 /**
- * iOS-style tactile feedback using the Web Vibration API.
- * Gracefully no-ops in environments without vibration support.
+ * iOS-style tactile feedback using the Web Vibration API & Web Audio FX.
+ * Gracefully no-ops in environments without hardware vibration or audio.
  */
+
+import { playLockSound, playSuccessChime, playTapSound } from "./sounds";
 
 export type HapticType =
   | "selection"
@@ -13,6 +15,15 @@ export type HapticType =
   | "error";
 
 export function triggerHaptic(type: HapticType = "light"): void {
+  // Play subtle matching synthesized audio cue
+  if (type === "success") {
+    playSuccessChime();
+  } else if (type === "selection" || type === "light") {
+    playTapSound();
+  } else if (type === "warning") {
+    playLockSound();
+  }
+
   if (typeof window === "undefined" || !("vibrate" in navigator)) return;
 
   try {
