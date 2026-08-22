@@ -144,7 +144,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={busy ? () => undefined : onClose} dismissable={!busy}>
+    <Modal open onClose={busy ? () => undefined : onClose} dismissable={!busy} wide>
       <div className="px-6 pb-6 pt-7">
         {success ? (
           <div className="flex flex-col items-center py-8 text-center">
@@ -234,15 +234,15 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                   </Button>
                 </div>
               ) : (
-                <div className="max-h-[260px] space-y-2.5 overflow-y-auto pr-1">
+                <div className="max-h-[280px] space-y-2.5 overflow-y-auto pr-1">
                   {rows.map((row, idx) => (
                     <div
                       key={row.id}
-                      className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-2"
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-2"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-bold text-neutral-400">
-                          #{idx + 1}
+                          Recipient #{idx + 1}
                         </span>
                         {contacts.length > 0 && (
                           <select
@@ -272,21 +272,27 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                           </button>
                         )}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Recipient address (G...)"
-                        value={row.destination}
-                        onChange={(e) => handleRowChange(row.id, "destination", e.target.value)}
-                        className="input mono !h-9 text-[12px]"
-                      />
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="Amount"
-                        value={row.amount}
-                        onChange={(e) => handleRowChange(row.id, "amount", e.target.value)}
-                        className="input mono !h-9 text-[12px]"
-                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div className="sm:col-span-8">
+                          <input
+                            type="text"
+                            placeholder="Recipient address (G...)"
+                            value={row.destination}
+                            onChange={(e) => handleRowChange(row.id, "destination", e.target.value)}
+                            className="input mono !h-9 text-[12px]"
+                          />
+                        </div>
+                        <div className="sm:col-span-4">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="Amount"
+                            value={row.amount}
+                            onChange={(e) => handleRowChange(row.id, "amount", e.target.value)}
+                            className="input mono !h-9 text-[12px]"
+                          />
+                        </div>
+                      </div>
                     </div>
                   ))}
 
