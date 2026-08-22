@@ -36,6 +36,7 @@ import {
   IconAlert,
   IconCheck,
   IconDownload,
+  IconExternal,
   IconEye,
   IconEyeOff,
   IconFingerprint,
@@ -75,6 +76,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     restoreArchivedAccount,
     restoreAccountByIndex,
     mergeAccount,
+    fundFromFriendbot,
     lock,
     resetWallet,
     contacts,
@@ -105,6 +107,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [fundingTestnet, setFundingTestnet] = useState(false);
 
   const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -262,6 +265,20 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       setMergeError(e instanceof Error ? e.message : "Account merge failed.");
     } finally {
       setMerging(false);
+    }
+  }
+
+  async function handleClaimFriendbot() {
+    setFundingTestnet(true);
+    try {
+      await fundFromFriendbot();
+      triggerHaptic("success");
+      toast("Received 10,000 Testnet XLM", "success");
+    } catch (e) {
+      triggerHaptic("error");
+      toast(e instanceof Error ? e.message : "Faucet request failed", "error");
+    } finally {
+      setFundingTestnet(false);
     }
   }
 
@@ -1021,6 +1038,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                   >
                     Edit
                   </button>
+                  <a
+                    href={NETWORKS[network].explorerAccountUrl(c.address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="icon-btn !h-8 !w-8 hover:!text-[#0A84FF]"
+                    title="View on Stellarchain"
+                    onClick={() => triggerHaptic("light")}
+                  >
+                    <IconExternal size={13} />
+                  </a>
                   <CopyButton
                     value={c.address}
                     label=""
@@ -1194,6 +1221,20 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               </span>
             </div>
           </div>
+
+          {network === "testnet" && (
+            <div className="pt-2">
+              <Button
+                variant="secondary"
+                className="w-full !py-3 text-[14px] flex items-center justify-center gap-2"
+                loading={fundingTestnet}
+                disabled={fundingTestnet}
+                onClick={() => void handleClaimFriendbot()}
+              >
+                <IconRefresh size={15} /> Claim 10,000 Testnet XLM (Friendbot)
+              </Button>
+            </div>
+          )}
 
           {network === "mainnet" ? (
             <Notice tone="pos">
