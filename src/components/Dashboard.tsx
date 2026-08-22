@@ -52,7 +52,10 @@ export function Dashboard() {
   const {
     network,
     switchNetwork,
+    accounts,
     activeAccount,
+    selectAccount,
+    contacts,
     balances,
     claimableBalances,
     claimAirdrop,
@@ -249,50 +252,79 @@ export function Dashboard() {
     window.scrollTo({ top: 0 });
   }
 
-  const paletteActions = [
-    {
-      id: "send",
-      label: "Send payment",
-      run: () => {
-        setSendPrefill(null);
-        setSendOpen(true);
+  const paletteActions = useMemo(
+    () => [
+      {
+        id: "send",
+        label: "Send payment",
+        run: () => {
+          setSendPrefill(null);
+          setSendOpen(true);
+        },
       },
-    },
-    {
-      id: "batch-send",
-      label: "Batch payment disperse (Multi-Send)",
-      run: () => setBatchSendOpen(true),
-    },
-    { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
-    { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
-    { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
-    {
-      id: "copy",
-      label: "Copy your address",
-      run: () => {
-        if (activeAccount) void navigator.clipboard.writeText(activeAccount.publicKey);
+      {
+        id: "batch-send",
+        label: "Batch payment disperse (Multi-Send)",
+        run: () => setBatchSendOpen(true),
       },
-    },
-    {
-      id: "privacy",
-      label: privacyMode ? "Show balances" : "Hide balances",
-      run: togglePrivacy,
-    },
-    {
-      id: "net",
-      label: network === "testnet" ? "Switch to Mainnet" : "Switch to Testnet",
-      run: () => switchNetwork(network === "testnet" ? "mainnet" : "testnet"),
-    },
-    {
-      id: "secret",
-      label: "Reveal secret key",
-      run: () => openSettings("reveal"),
-    },
-    { id: "phrase", label: "View recovery phrase", run: () => openSettings("phrase") },
-    { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
-    { id: "contacts", label: "Manage contacts", run: () => openSettings("contacts") },
-    { id: "lock", label: "Lock wallet", run: lock },
-  ];
+      { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
+      { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
+      { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
+      {
+        id: "copy",
+        label: "Copy your address",
+        hint: shortenAddr(activeAccount?.publicKey ?? "", 6, 6),
+        run: () => {
+          if (activeAccount) void navigator.clipboard.writeText(activeAccount.publicKey);
+        },
+      },
+      ...accounts.map((acc) => ({
+        id: `acc-${acc.id}`,
+        label: `Switch account: ${acc.label}`,
+        hint: shortenAddr(acc.publicKey, 4, 4),
+        run: () => selectAccount(acc.id),
+      })),
+      ...contacts.map((c) => ({
+        id: `contact-${c.address}`,
+        label: `Send to contact: ${c.name}`,
+        hint: shortenAddr(c.address, 4, 4),
+        run: () => {
+          setSendPrefill({ destination: c.address });
+          setSendOpen(true);
+        },
+      })),
+      {
+        id: "privacy",
+        label: privacyMode ? "Show balances" : "Hide balances",
+        run: togglePrivacy,
+      },
+      {
+        id: "net",
+        label: network === "testnet" ? "Switch to Mainnet" : "Switch to Testnet",
+        run: () => switchNetwork(network === "testnet" ? "mainnet" : "testnet"),
+      },
+      {
+        id: "secret",
+        label: "Reveal secret key",
+        run: () => openSettings("reveal"),
+      },
+      { id: "phrase", label: "View recovery phrase", run: () => openSettings("phrase") },
+      { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
+      { id: "contacts", label: "Manage contacts", run: () => openSettings("contacts") },
+      { id: "lock", label: "Lock wallet", run: lock },
+    ],
+    [
+      accounts,
+      contacts,
+      activeAccount,
+      privacyMode,
+      network,
+      togglePrivacy,
+      switchNetwork,
+      selectAccount,
+      lock,
+    ],
+  );
 
   return (
     <div className="relative z-10 min-h-screen">

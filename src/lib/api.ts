@@ -12,7 +12,7 @@ import {
   type FeeBumpTransaction,
 } from "@stellar/stellar-sdk";
 import type { ActivityItem, AssetBalance } from "./types";
-import { NETWORKS, type NetworkKey } from "./stellar";
+import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
 import { isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
 
@@ -40,9 +40,9 @@ export async function fetchBalances(
   publicKey: string,
   network: NetworkKey,
 ): Promise<AssetBalance[]> {
-  const cfg = NETWORKS[network];
+  const horizonUrl = getHorizonUrl(network);
   const data = await getJson<{ balances?: RawBalance[] }>(
-    `${cfg.horizonUrl}/accounts/${publicKey}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!data?.balances) return [];
 
@@ -78,7 +78,7 @@ export async function fetchClaimableBalances(
   publicKey: string,
   network: NetworkKey,
 ): Promise<ClaimableBalanceItem[]> {
-  const cfg = NETWORKS[network];
+  const horizonUrl = getHorizonUrl(network);
   const data = await getJson<{
     _embedded?: {
       records?: Array<{
@@ -88,7 +88,7 @@ export async function fetchClaimableBalances(
         sponsor?: string;
       }>;
     };
-  }>(`${cfg.horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`);
+  }>(`${horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`);
 
   const records = data?._embedded?.records ?? [];
   return records.map((r) => {
@@ -112,10 +112,11 @@ export async function claimClaimableBalance(params: {
   balanceId: string;
 }): Promise<{ hash: string }> {
   const { network, secretKey, balanceId } = params;
+  const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   const kp = Keypair.fromSecret(secretKey);
   const source = await getJson<{ sequence: string }>(
-    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
@@ -148,10 +149,11 @@ export async function mergeAccount(params: {
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
   }
+  const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   const kp = Keypair.fromSecret(secretKey);
   const source = await getJson<{ sequence: string }>(
-    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
   );
   if (!source) throw new SendError("Account does not exist on this network.");
 
@@ -292,8 +294,8 @@ export async function fetchActivity(
   limit = 30,
   cursor?: string,
 ): Promise<{ items: ActivityItem[]; nextCursor: string | null }> {
-  const cfg = NETWORKS[network];
-  const url = new URL(`${cfg.horizonUrl}/accounts/${publicKey}/operations`);
+  const horizonUrl = getHorizonUrl(network);
+  const url = new URL(`${horizonUrl}/accounts/${publicKey}/operations`);
   url.searchParams.set("order", "desc");
   url.searchParams.set("limit", String(limit));
   if (cursor) url.searchParams.set("cursor", cursor);
@@ -359,11 +361,11 @@ export async function submitSignedTx(
   tx: Transaction | FeeBumpTransaction,
   network: NetworkKey,
 ): Promise<{ hash: string }> {
-  const cfg = NETWORKS[network];
+  const horizonUrl = getHorizonUrl(network);
   const form = new URLSearchParams();
   form.set("tx", tx.toXdr());
 
-  const res = await fetch(`${cfg.horizonUrl}/transactions`, {
+  const res = await fetch(`${horizonUrl}/transactions`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
@@ -398,14 +400,15 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
     throw new SendError("Memo must be 28 bytes or fewer.");
   }
 
+  const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   const kp = Keypair.fromSecret(secretKey);
   const source = await getJson<{ sequence: string }>(
-    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = await getJson(`${cfg.horizonUrl}/accounts/${destination}`) !== null;
+  const destExists = await getJson(`${horizonUrl}/accounts/${destination}`) !== null;
   const isNative = assetCode === "XLM";
 
   if (!destExists && !isNative) {
@@ -462,10 +465,11 @@ export async function sendBatchPayments(params: {
   const { network, secretKey, payments, memoText } = params;
   if (payments.length === 0) throw new SendError("No recipients provided.");
 
+  const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   const kp = Keypair.fromSecret(secretKey);
   const source = await getJson<{ sequence: string }>(
-    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
@@ -505,6 +509,7 @@ export async function changeTrust(params: {
   add: boolean;
 }): Promise<{ hash: string }> {
   const { network, secretKey, code, issuer, add } = params;
+  const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   if (!code.trim() || code.trim().length > 12) {
     throw new SendError("Asset code must be 1–12 characters.");
@@ -515,7 +520,7 @@ export async function changeTrust(params: {
 
   const kp = Keypair.fromSecret(secretKey);
   const source = await getJson<{ sequence: string }>(
-    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
@@ -605,12 +610,12 @@ export async function waitForTransaction(
   hash: string,
   timeoutMs = 25_000,
 ): Promise<boolean | null> {
-  const cfg = NETWORKS[network];
+  const horizonUrl = getHorizonUrl(network);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       const tx = await getJson<{ successful: boolean }>(
-        `${cfg.horizonUrl}/transactions/${hash}`,
+        `${horizonUrl}/transactions/${hash}`,
       );
       if (tx) return tx.successful;
     } catch {
