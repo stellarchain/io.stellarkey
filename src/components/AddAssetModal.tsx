@@ -86,11 +86,12 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       (network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
     if (multi) {
       const key = `${asset.code}:${iss}`;
-      setSelected((prev) =>
-        prev.some((s) => `${s.code}:${s.issuer}` === key)
+      setSelected((prev) => {
+        const exists = prev.some((s) => `${s.code}:${s.issuer}` === key);
+        return exists
           ? prev.filter((s) => `${s.code}:${s.issuer}` !== key)
-          : [...prev, { code: asset.code.toUpperCase(), issuer: iss }],
-      );
+          : [...prev, { code: asset.code.toUpperCase(), issuer: iss }];
+      });
       return;
     }
     setCode(asset.code);
@@ -106,22 +107,36 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       setError("Enter a valid asset code and issuer first.");
       return;
     }
-    if (selected.some((s) => `${s.code}:${s.issuer}` === key)) {
-      setError("${c} is already queued.");
+    const alreadyQueued = selected.some((s) => `${s.code}:${s.issuer}` === key);
+    setError(null);
+    // Dedupe atomically inside the updater so rapid double-clicks can't create duplicates
+    setSelected((prev) =>
+      prev.some((s) => `${s.code}:${s.issuer}` === key)
+        ? prev
+        : [...prev, { code: c, issuer: iss }],
+    );
+    if (alreadyQueued) {
+      setError(`${c} is already queued.`);
       return;
     }
-    setError(null);
-    setSelected((prev) => [...prev, { code: c, issuer: iss }]);
     setCode("");
     setIssuer("");
   }
 
   async function handleAddBatch() {
-    if (selected.length === 0) return;
+    // Defensive dedupe by code:issuer key before submit
+    const seen = new Set<string>();
+    const unique = selected.filter((s) => {
+      const k = `${s.code}:${s.issuer}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (unique.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      await trustAssets(selected);
+      await trustAssets(unique);
       triggerHaptic("success");
       onClose();
       window.setTimeout(() => void refresh(), 4000);
