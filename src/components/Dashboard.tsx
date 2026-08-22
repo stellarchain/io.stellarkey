@@ -30,6 +30,7 @@ import { SwapPage } from "./SwapPage";
 import { TxDetailModal } from "./TxDetailModal";
 import { ExplorePage } from "./ExplorePage";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
+import { CurrencyConverterModal } from "./CurrencyConverterModal";
 import {
   IconArrowDownLeft,
   IconCompass,
@@ -105,6 +106,8 @@ export function Dashboard() {
   const [settingsSub, setSettingsSub] = useState<SettingsSub>("root");
   const [settingsKey, setSettingsKey] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [converterOpen, setConverterOpen] = useState(false);
+  const [nodePing, setNodePing] = useState<number | null>(42);
   const [detailAsset, setDetailAsset] = useState<AssetBalance | null>(null);
   const [txDetail, setTxDetail] = useState<ActivityItem | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -274,6 +277,28 @@ export function Dashboard() {
       window.removeEventListener("touchend", onEnd);
     };
   }, [refreshingPull, refresh]);
+
+  // Live Horizon Node Latency Ping
+  useEffect(() => {
+    let alive = true;
+    const ping = async () => {
+      try {
+        const start = performance.now();
+        const res = await fetch(NETWORKS[network].horizonUrl, { method: "GET", signal: AbortSignal.timeout(4000) });
+        if (res.ok && alive) {
+          setNodePing(Math.round(performance.now() - start));
+        }
+      } catch {
+        if (alive) setNodePing(null);
+      }
+    };
+    void ping();
+    const iv = setInterval(ping, 30000);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [network]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -492,6 +517,7 @@ export function Dashboard() {
       { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
       { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
+      { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
       {
@@ -993,6 +1019,30 @@ export function Dashboard() {
                 </button>
               )}
             </div>
+
+            {/* Live Horizon Latency Indicator */}
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-[11px] font-mono text-neutral-300"
+              title="Horizon Node Latency"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: nodePing !== null ? "#30d158" : "#ff9f0a" }}
+              />
+              <span>{nodePing !== null ? `${nodePing}ms` : "Live"}</span>
+            </div>
+
+            <button
+              type="button"
+              className="chip !py-1.5 !px-2.5 text-[12px] flex items-center gap-1"
+              onClick={() => {
+                triggerHaptic("selection");
+                setConverterOpen(true);
+              }}
+              title="Live Currency Converter & Calculator"
+            >
+              <span>💱 Calculator</span>
+            </button>
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
@@ -1752,6 +1802,11 @@ export function Dashboard() {
       <AssetDetailModal asset={detailAsset} onClose={() => setDetailAsset(null)} />
       <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <CurrencyConverterModal
+        open={converterOpen}
+        onClose={() => setConverterOpen(false)}
+        onOpenSwap={() => switchTab("swap")}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
