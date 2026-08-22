@@ -15,7 +15,8 @@ export function ReceiveModal({ open, onClose }: { open: boolean; onClose: () => 
 }
 
 function ReceiveInner({ onClose }: { onClose: () => void }) {
-  const { activeAccount, network } = useWallet();
+  const { activeAccount, network, balances } = useWallet();
+  const [selectedAssetKey, setSelectedAssetKey] = useState("native");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [requestAmount, setRequestAmount] = useState("");
@@ -23,17 +24,24 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
 
   const address = activeAccount?.publicKey ?? "";
 
+  const selectedAsset = useMemo(
+    () => balances?.find((b) => b.key === selectedAssetKey) ?? null,
+    [balances, selectedAssetKey]
+  );
+
   const payload = useMemo(() => {
     if (!address) return "";
-    if (showCustomRequest && (requestAmount.trim() || requestMemo.trim())) {
+    if (showCustomRequest && (requestAmount.trim() || requestMemo.trim() || selectedAssetKey !== "native")) {
       return buildSep7PayUri({
         destination: address,
         amount: requestAmount.trim() || undefined,
         memo: requestMemo.trim() || undefined,
+        assetCode: selectedAsset?.isNative ? undefined : selectedAsset?.code,
+        assetIssuer: selectedAsset?.isNative ? undefined : (selectedAsset?.issuer ?? undefined),
       });
     }
     return address;
-  }, [address, showCustomRequest, requestAmount, requestMemo]);
+  }, [address, showCustomRequest, requestAmount, requestMemo, selectedAssetKey, selectedAsset]);
 
   useEffect(() => {
     let alive = true;
@@ -145,6 +153,27 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
         {showCustomRequest && (
           <div className="fade-in mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
             <p className="text-[12px] font-semibold text-white">Dynamic Payment Request (SEP-0007)</p>
+            {balances && balances.length > 1 && (
+              <div>
+                <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                  Requested Asset
+                </label>
+                <select
+                  value={selectedAssetKey}
+                  onChange={(e) => {
+                    triggerHaptic("selection");
+                    setSelectedAssetKey(e.target.value);
+                  }}
+                  className="input text-[13px] cursor-pointer"
+                >
+                  {balances.map((b) => (
+                    <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
+                      {b.code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[11px] font-medium text-neutral-400 mb-1">
