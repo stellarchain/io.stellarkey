@@ -129,11 +129,18 @@ export function Dashboard() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
+      } else if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
+        const index = parseInt(e.key, 10) - 1;
+        if (accounts[index]) {
+          e.preventDefault();
+          selectAccount(accounts[index].id);
+          triggerHaptic("selection");
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [accounts, selectAccount]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
   const usdValue =

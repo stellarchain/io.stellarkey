@@ -181,6 +181,15 @@ export function AssetDetailModal({
           <Row label="Network">
             <span className="text-[13px] text-white capitalize">{NETWORKS[network].label}</span>
           </Row>
+          <Row label="Soroban SAC ID">
+            <span className="mono text-[11px] text-neutral-400 truncate max-w-[200px]">
+              {asset.isNative
+                ? "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                : asset.issuer
+                  ? `C${asset.issuer.slice(1, 10)}...${asset.issuer.slice(-6)}`
+                  : "Native WASM SAC"}
+            </span>
+          </Row>
         </div>
 
         {error && (
