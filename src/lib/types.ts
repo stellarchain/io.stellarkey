@@ -4,6 +4,7 @@ import type { NetworkKey } from "./stellar";
 export interface StoredAccount {
   id: string;
   label: string;
+  emoji?: string;
   publicKey: string;
   createdAt: number;
   /** v2: derived from the vault mnemonic at this SLIP-0010 index */
@@ -26,6 +27,7 @@ export interface VaultFile {
 export interface AccountMeta {
   id: string;
   label: string;
+  emoji?: string;
   publicKey: string;
   createdAt: number;
   index?: number;

@@ -84,12 +84,41 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
         />
 
         <div className="mt-4 space-y-4">
+          <div>
+            <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+              Account Preset & Emoji
+            </label>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {[
+                { emoji: "⚡", name: "Trading" },
+                { emoji: "💼", name: "Treasury" },
+                { emoji: "🏦", name: "Savings" },
+                { emoji: "☕", name: "Daily" },
+                { emoji: "🛡️", name: "Vault" },
+                { emoji: "🚀", name: "Moon" },
+              ].map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setLabel(`${preset.emoji} ${preset.name}`);
+                  }}
+                  className="chip !py-1 !px-2.5 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
+                >
+                  <span>{preset.emoji}</span>
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <Field label="Account Label">
             <input
               className="input text-[13.5px]"
               placeholder={
                 mode === "watch"
-                  ? "e.g. Exchange Cold Wallet"
+                  ? "e.g. 👁 Cold Storage"
                   : `Account ${accounts.length + 1}`
               }
               value={label}
