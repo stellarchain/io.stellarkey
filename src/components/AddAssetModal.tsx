@@ -84,7 +84,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal open onClose={onClose} wide>
       <ModalHeader
         title="Add Trustline"
         subtitle="Enable a verified or custom Stellar asset"
@@ -107,7 +107,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-2.5">
             Verified Stellar Assets
           </p>
-          <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-0.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[180px] overflow-y-auto pr-0.5">
             {filteredPopular.map((asset) => {
               const alreadyAdded = existingCodes.has(asset.code.toUpperCase());
               const iss = network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer);
