@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
@@ -21,7 +21,6 @@ type Step = "choose" | "password" | "reveal";
 export function Onboarding() {
   const { createWallet, completeSetup, resetWallet, hasDeletedWalletBackup, restoreDeletedWallet, restoreWalletFromBackup } = useWallet();
   const [restoringFile, setRestoringFile] = useState(false);
-  const backupInputRef = useRef<HTMLInputElement>(null);
 
   async function handleRestoreBackupFile(file: File) {
     const json = await file.text();
@@ -186,26 +185,20 @@ export function Onboarding() {
 
         {/* Restore from a full wallet backup file */}
         <div className="mt-3">
-          <button
-            type="button"
-            disabled={restoringFile}
-            onClick={() => backupInputRef.current?.click()}
-            className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-2 text-[13px] font-medium text-neutral-300 hover:bg-white/[0.08] hover:text-white transition-colors disabled:opacity-50"
-          >
+          <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-2 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white">
             <IconDownload size={14} />
             <span>{restoringFile ? "Restoring…" : "Restore From Backup File"}</span>
-          </button>
-          <input
-            ref={backupInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleRestoreBackupFile(f);
-              e.target.value = "";
-            }}
-          />
+            <input
+              type="file"
+              accept="application/json,.json,application/octet-stream"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleRestoreBackupFile(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
         </div>
 
         <div className="mt-16 grid w-full max-w-3xl gap-6 sm:grid-cols-3">
