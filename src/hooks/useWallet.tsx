@@ -134,6 +134,8 @@ interface WalletContextValue {
   claimAirdrop: (balanceId: string) => Promise<{ hash: string }>;
   mergeAccount: (destination: string) => Promise<{ hash: string }>;
   trustAsset: (params: { code: string; issuer: string; add: boolean }) => Promise<{ hash: string }>;
+  /** Atomically add multiple trustlines in one transaction */
+  trustAssets: (assets: Array<{ code: string; issuer: string }>) => Promise<{ hash: string; added: number }>;
   swap: (params: {
     sendCode: string;
     sendIssuer?: string | null;
@@ -628,6 +630,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, toast, confirmAndRefresh],
   );
 
+  const trustAssets = useCallback(
+    async (assets: Array<{ code: string; issuer: string }>) => {
+      if (!activeAccount) throw new Error("No active account");
+      const secretKey = getSecretKey(activeAccount.id);
+      const result = await api.changeTrustBatch({ network, secretKey, assets });
+      toast(
+        `${result.added} trustlines submitted in 1 transaction — confirming…`,
+        "info",
+      );
+      void confirmAndRefresh(result.hash, `${result.added} trustlines`);
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
+
   const swap = useCallback(
     async (params: {
       sendCode: string;
@@ -758,6 +775,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       claimAirdrop,
       mergeAccount,
       trustAsset,
+      trustAssets,
       swap,
       fundFromFriendbot,
     }),
@@ -813,6 +831,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       claimAirdrop,
       mergeAccount,
       trustAsset,
+      trustAssets,
       swap,
       fundFromFriendbot,
     ],

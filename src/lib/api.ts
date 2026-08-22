@@ -610,6 +610,68 @@ export async function changeTrust(params: {
   }
 }
 
+
+/**
+ * Add multiple trustlines atomically — one transaction, N changeTrust ops.
+ * All-or-nothing: if any op fails validation on-chain, none are created.
+ */
+export async function changeTrustBatch(params: {
+  network: NetworkKey;
+  secretKey: string;
+  assets: Array<{ code: string; issuer: string }>;
+}): Promise<{ hash: string; added: number }> {
+  const { network, secretKey, assets } = params;
+  const horizonUrl = getHorizonUrl(network);
+  const cfg = NETWORKS[network];
+
+  if (assets.length === 0) throw new SendError("No assets selected.");
+  if (assets.length > 100) throw new SendError("Maximum 100 trustlines per transaction.");
+
+  const seen = new Set<string>();
+  for (const a of assets) {
+    const code = a.code.trim();
+    if (!code || code.length > 12) {
+      throw new SendError(`Invalid asset code: "${a.code}" (1–12 characters).`);
+    }
+    if (!isValidPublicAddress(a.issuer)) {
+      throw new SendError(`Invalid issuer for ${code}.`);
+    }
+    const key = `${code}:${a.issuer}`;
+    if (seen.has(key)) throw new SendError(`Duplicate asset selected: ${code}.`);
+    seen.add(key);
+  }
+
+  const kp = Keypair.fromSecret(secretKey);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${kp.publicKey()}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+
+  const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+    fee: String(parseInt(BASE_FEE, 10) * assets.length),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+
+  for (const a of assets) {
+    builder.addOperation(
+      Operation.changeTrust({
+        asset: new Asset(a.code.trim(), a.issuer.trim()),
+        limit: MAX_TRUST_LIMIT,
+      }),
+    );
+  }
+
+  const tx = builder.setTimeout(180).build();
+  tx.sign(kp);
+
+  try {
+    const result = await submitSignedTx(tx, network);
+    return { hash: result.hash, added: assets.length };
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
 export interface FeeStats {
   lastLedgerBaseFee: number;
   minAcceptedFee: number;
