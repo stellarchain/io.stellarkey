@@ -555,6 +555,69 @@ export function exportKeystore(accountId: string): string | null {
   return JSON.stringify(payload, null, 2);
 }
 
+
+/**
+ * Export the ENTIRE encrypted vault (all accounts + mnemonic) as a portable
+ * JSON backup. The file is already password-encrypted at rest — no plaintext
+ * secrets are ever written.
+ */
+export function exportVaultBackup(): string {
+  const vault = readVault();
+  if (!vault) throw new Error("No wallet to back up.");
+  const payload = {
+    kind: "stellar-wallet-backup",
+    exportedAt: new Date().toISOString(),
+    network: loadNetworkPref(),
+    vault,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+export interface VaultRestoreResult {
+  accountCount: number;
+  hasMnemonic: boolean;
+}
+
+/**
+ * Restore a full vault from a backup file. Replaces any existing wallet —
+ * the caller must confirm with the user first. The restored wallet stays
+ * locked; unlocking requires the ORIGINAL password of the backup.
+ */
+export function restoreVaultBackup(json: string): VaultRestoreResult {
+  let parsed: {
+    kind?: string;
+    vault?: VaultFile;
+  };
+  try {
+    parsed = JSON.parse(json) as typeof parsed;
+  } catch {
+    throw new Error("Not a valid backup file.");
+  }
+  if (parsed.kind !== "stellar-wallet-backup" || !parsed.vault) {
+    throw new Error("This file is not a Wallet backup.");
+  }
+  const vault = parsed.vault;
+  if (
+    (vault.version !== 1 && vault.version !== 2) ||
+    !Array.isArray(vault.accounts) ||
+    vault.accounts.length === 0
+  ) {
+    throw new Error("Backup contains no recoverable accounts.");
+  }
+  // Move any current wallet to trash so restore is itself reversible
+  const current = readVault();
+  if (current) {
+    window.localStorage.setItem(TRASH_KEY, JSON.stringify(current));
+  }
+  persist(vault);
+  sessionSecrets.clear();
+  sessionMnemonic = null;
+  return {
+    accountCount: vault.accounts.length,
+    hasMnemonic: Boolean(vault.mnemonic),
+  };
+}
+
 export async function exportKeystoreUnlocked(accountId: string): Promise<string | null> {
   const secret = sessionSecrets.get(accountId);
   const vault = readVault();

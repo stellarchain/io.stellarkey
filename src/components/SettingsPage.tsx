@@ -4,6 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
   exportKeystoreUnlocked,
+  exportVaultBackup,
+  restoreVaultBackup,
   importKeystore,
   revealSecret,
   isValidPublicAddress,
@@ -129,6 +131,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [merging, setMerging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const backupInputRef = useRef<HTMLInputElement>(null);
+  const [restoringBackup, setRestoringBackup] = useState(false);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
   const [ksPassword, setKsPassword] = useState("");
   const [ksError, setKsError] = useState<string | null>(null);
@@ -360,6 +364,41 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     URL.revokeObjectURL(url);
     triggerHaptic("success");
     toast("Encrypted keystore downloaded", "success");
+  }
+
+  function handleDownloadBackup() {
+    triggerHaptic("success");
+    try {
+      const json = exportVaultBackup();
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("Encrypted wallet backup downloaded", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Backup failed.", "error");
+    }
+  }
+
+  async function handleRestoreBackupFile(file: File) {
+    const json = await file.text();
+    setRestoringBackup(true);
+    try {
+      const result = restoreVaultBackup(json);
+      toast(
+        `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"} — unlock with the backup's password`,
+        "success",
+      );
+      // Clean re-init from restored storage
+      window.setTimeout(() => window.location.reload(), 900);
+    } catch (e) {
+      setRestoringBackup(false);
+      triggerHaptic("error");
+      toast(e instanceof Error ? e.message : "Restore failed.", "error");
+    }
   }
 
   async function handleImportKeystoreFile(file: File) {
@@ -640,6 +679,22 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     tint="#FF9F0A"
                     label="Export Encrypted Keystore"
                     onClick={handleExportKeystore}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconDownload size={16} />}
+                    tint="#0A84FF"
+                    label="Download Full Wallet Backup"
+                    sub="All accounts · password-encrypted file"
+                    onClick={handleDownloadBackup}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconRefresh size={16} />}
+                    tint="#5E5CE6"
+                    label="Restore From Backup File"
+                    value={restoringBackup ? "Restoring…" : undefined}
+                    onClick={() => backupInputRef.current?.click()}
                     sep
                   />
                   <RowButton
@@ -1056,6 +1111,17 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </button>
           )}
           <input
+            ref={backupInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleRestoreBackupFile(f);
+              e.target.value = "";
+            }}
+          />
+          <input
             ref={fileInputRef}
             type="file"
             accept="application/json,.json"
@@ -1063,6 +1129,17 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) void handleImportKeystoreFile(f);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleRestoreBackupFile(f);
               e.target.value = "";
             }}
           />
