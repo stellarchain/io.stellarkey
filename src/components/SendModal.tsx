@@ -342,6 +342,12 @@ function SendInner({
               <span className="text-[11px] text-neutral-400">Ed25519 · Non-Custodial</span>
             </div>
 
+            {/* Time to Finality Indicator */}
+            <div className="mt-2 px-1 flex items-center justify-between text-[11px] text-neutral-500">
+              <span>Settlement Network</span>
+              <span className="mono text-neutral-400">~3.5s Finality (Stellar SCP)</span>
+            </div>
+
             {error && (
               <div className="mt-4">
                 <ErrorText message={error} />
