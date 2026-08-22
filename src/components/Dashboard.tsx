@@ -420,7 +420,23 @@ export function Dashboard() {
         )}
 
         {/* Sidebar Nav Links */}
-        <nav className="mt-6 space-y-1 flex-1" aria-label="Desktop Sidebar Navigation">
+        <nav className="mt-5 space-y-1 flex-1" aria-label="Desktop Sidebar Navigation">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              setPaletteOpen(true);
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3.5 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
+          >
+            <div className="flex items-center gap-2">
+              <IconSearch size={15} />
+              <span>Search actions…</span>
+            </div>
+            <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
+              ⌘K
+            </kbd>
+          </button>
           <button
             type="button"
             onClick={() => switchTab("home")}
