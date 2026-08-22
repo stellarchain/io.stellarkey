@@ -355,6 +355,10 @@ export function SwapPage() {
             <span className="mono text-[#30D158]">0.02% (Tight)</span>
           </div>
           <div className="flex justify-between text-neutral-400">
+            <span>Estimated Network Fee</span>
+            <span className="mono text-neutral-300">0.00001 XLM (100 stroops)</span>
+          </div>
+          <div className="flex justify-between text-neutral-400">
             <span>Route Path</span>
             <span className="mono text-neutral-300">
               {route.intermediates.length === 0

@@ -88,6 +88,13 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
         onClose={onClose}
       />
       <div className="flex flex-col items-center px-6 py-6">
+        {/* Active Account Identity Pill */}
+        {activeAccount && (
+          <div className="mb-3 flex items-center gap-1.5 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1 text-[12px] text-neutral-200">
+            <span className="h-2 w-2 rounded-full bg-[#0A84FF]" />
+            <span className="font-semibold">{activeAccount.label}</span>
+          </div>
+        )}
         {/* Dynamic Request Pill */}
         {showCustomRequest && requestAmount.trim() && (
           <div className="fade-in mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
