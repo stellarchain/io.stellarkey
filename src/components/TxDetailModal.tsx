@@ -93,7 +93,7 @@ export function TxDetailModal({
             rel="noopener noreferrer"
             onClick={() => triggerHaptic("light")}
           >
-            Stellar.Expert <IconExternal size={11} />
+            Stellarchain <IconExternal size={11} />
           </a>
         </div>
 

@@ -19,8 +19,8 @@ export const NETWORKS: Record<NetworkKey, NetworkConfig> = {
     rpcUrl: "https://soroban-testnet.stellar.org",
     networkPassphrase: "Test SDF Network ; September 2015",
     friendbotUrl: "https://friendbot.stellar.org",
-    explorerTxUrl: (hash) => `https://stellar.expert/explorer/testnet/tx/${hash}`,
-    explorerAccountUrl: (pk) => `https://stellar.expert/explorer/testnet/account/${pk}`,
+    explorerTxUrl: (hash) => `https://testnet.stellarchain.io/tx/${hash}`,
+    explorerAccountUrl: (pk) => `https://testnet.stellarchain.io/address/${pk}`,
   },
   mainnet: {
     id: "mainnet",
@@ -29,8 +29,8 @@ export const NETWORKS: Record<NetworkKey, NetworkConfig> = {
     rpcUrl: null,
     networkPassphrase: "Public Global Stellar Network ; September 2015",
     friendbotUrl: null,
-    explorerTxUrl: (hash) => `https://stellar.expert/explorer/tx/${hash}`,
-    explorerAccountUrl: (pk) => `https://stellar.expert/explorer/account/${pk}`,
+    explorerTxUrl: (hash) => `https://stellarchain.io/tx/${hash}`,
+    explorerAccountUrl: (pk) => `https://stellarchain.io/address/${pk}`,
   },
 };
 

@@ -298,13 +298,13 @@ export function Dashboard() {
           {scrolled ? (
             <div className="-mt-1 pb-2.5 text-center">
               <span className="text-[17px] font-semibold tracking-tight text-white">
-                {view === "home" ? "Polaris" : view.charAt(0).toUpperCase() + view.slice(1)}
+                {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
               </span>
             </div>
           ) : (
             <div className="flex items-end justify-between pb-2">
               <h1 className="display-h text-[34px] leading-tight text-white font-bold">
-                {view === "home" ? "Polaris" : view.charAt(0).toUpperCase() + view.slice(1)}
+                {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
               </h1>
               {view === "home" && <NetworkDropdown network={network} onSwitch={switchNetwork} />}
             </div>
@@ -447,7 +447,7 @@ export function Dashboard() {
                     rel="noopener noreferrer"
                     onClick={() => triggerHaptic("light")}
                   >
-                    Explorer
+                    Stellarchain
                   </a>
                 </div>
               )}

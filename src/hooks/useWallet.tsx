@@ -35,6 +35,7 @@ import {
   saveNetworkPref,
   setActiveStoredAccount,
   unlockVault,
+  updateAccountLabel,
   wipeVault,
   type InitializeOptions,
 } from "@/lib/vault";
@@ -98,6 +99,7 @@ interface WalletContextValue {
   selectAccount: (id: string) => void;
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
   removeAccount: (id: string) => void;
+  renameAccount: (id: string, newLabel: string) => void;
   restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
   restoreAccountByIndex: (index: number) => Promise<AccountMeta>;
   switchNetwork: (network: NetworkKey) => void;
@@ -365,6 +367,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivityCursor(null);
   }, []);
 
+  const renameAccount = useCallback((id: string, newLabel: string) => {
+    updateAccountLabel(id, newLabel);
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, label: newLabel.trim() || a.label } : a)),
+    );
+  }, []);
+
   const restoreArchivedAccount = useCallback(async (id: string) => {
     const restored = await restoreArchivedAccountVault(id);
     setAccounts((prev) => [...prev, restored]);
@@ -561,6 +570,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       selectAccount,
       addAccount,
       removeAccount,
+      renameAccount,
       restoreArchivedAccount,
       restoreAccountByIndex,
       switchNetwork,
@@ -608,6 +618,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       selectAccount,
       addAccount,
       removeAccount,
+      renameAccount,
       restoreArchivedAccount,
       restoreAccountByIndex,
       switchNetwork,

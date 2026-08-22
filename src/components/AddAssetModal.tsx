@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconPlus } from "./icons";
+import { IconCheck, IconPlus, IconSearch } from "./icons";
 
 export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -15,12 +15,27 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
 
 function AddAssetInner({ onClose }: { onClose: () => void }) {
   const { trustAsset, refresh, balances, network } = useWallet();
+  const [search, setSearch] = useState("");
   const [code, setCode] = useState("");
   const [issuer, setIssuer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const existingCodes = new Set((balances ?? []).map((b) => b.code.toUpperCase()));
+  const existingCodes = useMemo(
+    () => new Set((balances ?? []).map((b) => b.code.toUpperCase())),
+    [balances],
+  );
+
+  const filteredPopular = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return POPULAR_ASSETS;
+    return POPULAR_ASSETS.filter(
+      (a) =>
+        a.code.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q) ||
+        (a.description ?? "").toLowerCase().includes(q),
+    );
+  }, [search]);
 
   const valid =
     code.trim().length >= 1 &&
@@ -56,17 +71,28 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose}>
       <ModalHeader
         title="Add Trustline"
-        subtitle="Enable a new Stellar asset or token"
+        subtitle="Enable a verified or custom Stellar asset"
         onClose={onClose}
       />
       <div className="px-6 py-5">
+        {/* Search bar for verified assets */}
+        <div className="search-field mb-4 flex items-center gap-2">
+          <IconSearch size={15} className="text-neutral-400 shrink-0" />
+          <input
+            placeholder="Search popular tokens (USDC, EURC, AQUA, BTC...)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
+          />
+        </div>
+
         {/* Popular Stellar Assets */}
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-2.5">
-            Popular Verified Assets
+            Verified Stellar Assets
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {POPULAR_ASSETS.map((asset) => {
+          <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-0.5">
+            {filteredPopular.map((asset) => {
               const alreadyAdded = existingCodes.has(asset.code.toUpperCase());
               const iss = network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer);
               const available = Boolean(iss);
@@ -113,9 +139,9 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Custom Asset Form */}
-        <div className="mt-6 space-y-4">
+        <div className="mt-5 space-y-3.5 border-t border-white/[0.08] pt-4">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Or Enter Custom Asset
+            Selected / Custom Asset Parameters
           </p>
           <Field label="Asset Code" hint="1–12 characters (e.g. USDC, AQUA)">
             <input
@@ -151,7 +177,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
             disabled={!valid || busy}
             onClick={() => void handleAdd(code, issuer)}
           >
-            Add Asset
+            Add Trustline
           </Button>
         </div>
       </div>

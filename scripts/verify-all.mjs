@@ -41,7 +41,7 @@ page.on("response", (res) => {
 });
 
 try {
-  console.log("Navigating to Polaris app...");
+  console.log("Navigating to Wallet app...");
   await page.goto("http://localhost:3456", { waitUntil: "networkidle" });
 
   // 1. Onboarding Flow
@@ -57,7 +57,7 @@ try {
 
   await page.waitForSelector("text=Save Your Recovery Phrase");
   await page.click("text=I have written down");
-  await page.click("button:has-text('Enter Polaris')");
+  await page.click("button:has-text('Enter Wallet')");
 
   // 2. Unfunded Card & Claiming test XLM
   console.log("Testing Account Activation...");

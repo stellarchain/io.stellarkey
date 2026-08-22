@@ -14,6 +14,8 @@ import type { NetworkKey } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
 import { shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
+import type { AccountMeta } from "@/lib/types";
+import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
 import {
   Avatar,
@@ -65,6 +67,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     selectAccount,
     addAccount,
     removeAccount,
+    renameAccount,
     restoreArchivedAccount,
     restoreAccountByIndex,
     lock,
@@ -95,6 +98,14 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
+
+  const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [editContactName, setEditContactName] = useState("");
+  const [editContactAddr, setEditContactAddr] = useState("");
+  const [editContactError, setEditContactError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -168,6 +179,30 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
+  function handleSaveRename() {
+    if (!editingAccount) return;
+    if (editLabel.trim()) {
+      renameAccount(editingAccount.id, editLabel.trim());
+      triggerHaptic("success");
+      toast("Account renamed", "success");
+    }
+    setEditingAccount(null);
+  }
+
+  function handleSaveEditContact() {
+    if (!editingContact) return;
+    const err = validateContact(editContactName, editContactAddr);
+    if (err) {
+      setEditContactError(err);
+      return;
+    }
+    removeContact(editingContact.address);
+    addContact({ name: editContactName.trim(), address: editContactAddr.trim() });
+    triggerHaptic("success");
+    toast("Contact updated", "success");
+    setEditingContact(null);
+  }
+
   async function handleScanAndRestore() {
     setScanning(true);
     try {
@@ -196,7 +231,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `polaris-${activeAccount.label.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
+    a.download = `wallet-${activeAccount.label.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
     a.click();
     URL.revokeObjectURL(url);
     triggerHaptic("success");
@@ -480,7 +515,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           </div>
 
           <p className="px-1 pt-5 text-center text-[12px] leading-relaxed text-neutral-500">
-            Polaris Stellar Wallet · Client-side encrypted self-custody
+            Wallet · Client-side encrypted self-custody
           </p>
         </>
       )}
@@ -584,30 +619,46 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         <>
           <div className="list-group">
             {accounts.map((acct, i) => (
-              <button
+              <div
                 key={acct.id}
-                type="button"
-                className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+                className={`flex w-full items-center justify-between gap-3.5 px-4 py-3.5 ${
                   i > 0 ? "ios-sep" : ""
                 }`}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  selectAccount(acct.id);
-                }}
               >
-                <Avatar seed={acct.publicKey} size={34} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
-                    {acct.label}
-                  </span>
-                  <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-                    {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
-                  </span>
-                </span>
-                {acct.id === activeAccount?.id && (
-                  <IconCheck size={18} className="text-[#0A84FF]" />
-                )}
-              </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-3.5 min-w-0 flex-1 text-left"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    selectAccount(acct.id);
+                  }}
+                >
+                  <Avatar seed={acct.publicKey} size={34} />
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
+                      {acct.label}
+                    </span>
+                    <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+                      {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                    </span>
+                  </div>
+                  {acct.id === activeAccount?.id && (
+                    <IconCheck size={18} className="text-[#0A84FF] shrink-0 mr-1" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setEditingAccount(acct);
+                    setEditLabel(acct.label);
+                  }}
+                  className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
+                >
+                  Rename
+                </button>
+              </div>
             ))}
             <RowButton
               icon={<IconPlus size={15} />}
@@ -824,6 +875,19 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                       {c.address}
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setEditingContact(c);
+                      setEditContactName(c.name);
+                      setEditContactAddr(c.address);
+                      setEditContactError(null);
+                    }}
+                    className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
+                  >
+                    Edit
+                  </button>
                   <CopyButton
                     value={c.address}
                     label=""
@@ -982,6 +1046,68 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           )}
         </>
       )}
+
+      {/* Rename Account Modal */}
+      <Modal open={editingAccount !== null} onClose={() => setEditingAccount(null)}>
+        <ModalHeader title="Rename Account" onClose={() => setEditingAccount(null)} />
+        <div className="px-6 pb-6 pt-3 space-y-4">
+          <Field label="Account Label">
+            <input
+              className="input text-[14px]"
+              value={editLabel}
+              onChange={(e) => setEditLabel(e.target.value)}
+              placeholder="e.g. Savings, Trading, Treasury"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveRename();
+              }}
+            />
+          </Field>
+          <div className="flex gap-3">
+            <Button variant="ghost" className="flex-1" onClick={() => setEditingAccount(null)}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSaveRename}>
+              Save Label
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Contact Modal */}
+      <Modal open={editingContact !== null} onClose={() => setEditingContact(null)}>
+        <ModalHeader title="Edit Contact" onClose={() => setEditingContact(null)} />
+        <div className="px-6 pb-6 pt-3 space-y-4">
+          <Field label="Contact Name">
+            <input
+              className="input text-[14px]"
+              value={editContactName}
+              onChange={(e) => setEditContactName(e.target.value)}
+              placeholder="e.g. Alice"
+              maxLength={24}
+            />
+          </Field>
+          <Field label="Stellar Public Key">
+            <input
+              className="input mono text-[13px]"
+              value={editContactAddr}
+              onChange={(e) => setEditContactAddr(e.target.value)}
+              placeholder="G..."
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </Field>
+          <ErrorText message={editContactError ?? ""} />
+          <div className="flex gap-3">
+            <Button variant="ghost" className="flex-1" onClick={() => setEditingContact(null)}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSaveEditContact}>
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Reset Confirmation Modal */}
       <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
