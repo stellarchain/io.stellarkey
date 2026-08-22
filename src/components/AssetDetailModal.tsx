@@ -5,6 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { fmtAmount, fmtFiat } from "@/lib/format";
+import { fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, ErrorText, Modal, ModalHeader } from "./ui";
@@ -19,6 +20,11 @@ export function AssetDetailModal({
 }) {
   const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, balances } = useWallet();
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [logoUrl, setLogoUrl] = useState<string | null>(() =>
+    asset && !asset.isNative && asset.issuer
+      ? getCachedAssetLogo(asset.code, asset.issuer)
+      : null,
+  );
 
   // Fetch USD price for this asset when the modal opens
   useEffect(() => {
@@ -28,6 +34,20 @@ export function AssetDetailModal({
       const { fetchAssetPrices } = await import("@/lib/prices");
       const p = await fetchAssetPrices([asset.code]);
       if (alive && Object.keys(p).length > 0) setPrices(p);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [asset, network]);
+
+  useEffect(() => {
+    if (!asset || asset.isNative || !asset.issuer) return;
+    const code = asset.code;
+    const issuer = asset.issuer;
+    let alive = true;
+    void (async () => {
+      const url = await fetchAssetLogo(code, issuer, NETWORKS[network].horizonUrl);
+      if (alive && url) setLogoUrl(url);
     })();
     return () => {
       alive = false;
@@ -92,18 +112,29 @@ export function AssetDetailModal({
       />
       <div className="px-6 py-6">
         <div className="flex flex-col items-center pb-2 pt-1">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-full text-[18px] font-bold text-white shadow-xl"
-            style={
-              known
-                ? { background: known.color }
-                : asset.isNative
-                  ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                  : { background: `hsl(${assetHueOf(asset.key)}, 70%, 50%)` }
-            }
-          >
-            {asset.code.slice(0, 3)}
-          </span>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt=""
+              width={56}
+              height={56}
+              className="h-14 w-14 rounded-full object-cover shadow-xl"
+            />
+          ) : (
+            <span
+              className="flex h-14 w-14 items-center justify-center rounded-full text-[18px] font-bold text-white shadow-xl"
+              style={
+                known
+                  ? { background: known.color }
+                  : asset.isNative
+                    ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
+                    : { background: `hsl(${assetHueOf(asset.key)}, 70%, 50%)` }
+              }
+            >
+              {asset.code.slice(0, 3)}
+            </span>
+          )}
           <p className="display-h mt-4 text-[32px] font-light text-white">
             {privacyMode ? "••••••" : fmtAmount(asset.balance)}{" "}
             <span className="mono text-[18px] text-neutral-400 font-normal">{asset.code}</span>
