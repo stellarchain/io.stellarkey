@@ -157,6 +157,13 @@ export function AssetDetailModal({
               </span>
             </Row>
           )}
+          {known?.anchorDomain && (
+            <Row label="Compliance (SEP-0008)">
+              <span className="text-[12px] font-semibold text-[#30D158]">
+                ✓ Regulated & Asset Anchored
+              </span>
+            </Row>
+          )}
           {!asset.isNative && asset.issuer && (
             <Row label="Issuer">
               <span className="mono text-[12px] break-all text-neutral-300">

@@ -6,6 +6,7 @@ import { isValidPublicAddress } from "@/lib/vault";
 import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { useToast } from "./Toast";
 import { IconCheck, IconChevronDown, IconPlus, IconTrash } from "./icons";
 
 interface RecipientRow {
@@ -28,6 +29,7 @@ export function BatchSendModal({
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
   const { balances, sendBatch, refresh, contacts } = useWallet();
+  const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");
   const [rows, setRows] = useState<RecipientRow[]>([
@@ -85,6 +87,14 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
     setRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, destination: addr } : r)),
     );
+  }
+
+  function handleSplitEqually() {
+    if (rows.length === 0 || balanceNum <= 0) return;
+    triggerHaptic("selection");
+    const splitAmount = (balanceNum / rows.length).toFixed(4).replace(/\.?0+$/, "");
+    setRows((prev) => prev.map((r) => ({ ...r, amount: splitAmount })));
+    toast(`Split ${fmtAmount(balanceNum)} ${selectedAsset?.code} equally`, "info");
   }
 
   function handleParseCsv() {
@@ -188,16 +198,26 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                 <span className="text-[13px] font-semibold text-white">
                   Recipients ({rows.length})
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setShowCsvInput((s) => !s);
-                  }}
-                  className="text-[12px] font-medium text-[#0A84FF] hover:underline"
-                >
-                  {showCsvInput ? "Switch to Form" : "Paste CSV / TSV"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSplitEqually}
+                    className="text-[12px] font-medium text-[#30D158] hover:underline"
+                    title="Split total balance equally across all recipient rows"
+                  >
+                    Split Equally
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setShowCsvInput((s) => !s);
+                    }}
+                    className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                  >
+                    {showCsvInput ? "Switch to Form" : "Paste CSV / TSV"}
+                  </button>
+                </div>
               </div>
 
               {showCsvInput ? (
