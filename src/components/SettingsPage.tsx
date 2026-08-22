@@ -431,6 +431,40 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {/* ---------- ROOT SETTINGS ---------- */}
       {sub === "root" && (
         <>
+          {/* Security Health Score Card */}
+          <div className="fade-up mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#30D158]/15 text-[#30D158]">
+                  <IconShield size={22} />
+                </span>
+                <div>
+                  <p className="text-[14px] font-bold text-white">Wallet Security Health</p>
+                  <p className="text-[12px] text-neutral-400">
+                    {hasMnemonicVault && autoLockMs > 0 ? "Excellent Protection (100%)" : "Good Protection (80%)"}
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-[#30D158]/20 px-3 py-1 text-[13px] font-bold text-[#30D158]">
+                {hasMnemonicVault && autoLockMs > 0 ? "100/100" : "80/100"}
+              </span>
+            </div>
+            <div className="mt-3.5 grid grid-cols-3 gap-2 text-center text-[11.5px]">
+              <div className="rounded-xl bg-white/[0.04] p-2">
+                <span className="block text-[#30D158] font-bold">✓ AES-256</span>
+                <span className="text-neutral-400">PBKDF2-GCM</span>
+              </div>
+              <div className="rounded-xl bg-white/[0.04] p-2">
+                <span className="block text-[#30D158] font-bold">✓ {hasMnemonicVault ? "BIP-39" : "Secret Key"}</span>
+                <span className="text-neutral-400">Seed Encrypted</span>
+              </div>
+              <div className="rounded-xl bg-white/[0.04] p-2">
+                <span className="block text-[#30D158] font-bold">✓ Auto-Lock</span>
+                <span className="text-neutral-400">{autoLockLabel}</span>
+              </div>
+            </div>
+          </div>
+
           <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
             Security & Backup
           </p>

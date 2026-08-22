@@ -6,7 +6,7 @@ import { fmtAmount, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconExternal } from "./icons";
+import { IconCheck, IconClose, IconExternal } from "./icons";
 
 export function TxDetailModal({
   item,
@@ -18,38 +18,46 @@ export function TxDetailModal({
   const { network, privacyMode } = useWallet();
   if (!item) return null;
 
+  const incoming = item.direction === "in";
+  const neutral = item.direction === "neutral";
+
+  const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
+    item.hash,
+  )}&network=${network}`;
+
   return (
     <Modal open onClose={onClose}>
       <ModalHeader
         title={item.title}
         subtitle={new Date(item.createdAt).toLocaleString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
+          dateStyle: "medium",
+          timeStyle: "short",
         })}
         onClose={onClose}
       />
       <div className="px-6 py-6">
         {/* Status Badge & Amount */}
         <div className="flex flex-col items-center pb-3 pt-1">
-          <div className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold bg-[#30D158]/15 text-[#30D158] border border-[#30D158]/30 mb-3">
-            <IconCheck size={12} />
-            <span>Success</span>
-          </div>
-
-          {item.amount && item.assetCode ? (
-            <p className="display-h text-[32px] font-light text-white">
-              {item.direction === "out" ? "−" : item.direction === "in" ? "+" : ""}
-              {privacyMode ? "••••••" : fmtAmount(item.amount)}{" "}
-              <span className="mono text-[20px] text-neutral-400 font-normal">
-                {item.assetCode}
+          <span
+            className="flex h-12 w-12 items-center justify-center rounded-full text-xl"
+            style={{
+              color: item.successful ? "#30D158" : "#FF453A",
+              background: item.successful ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
+            }}
+          >
+            {item.successful ? <IconCheck size={24} /> : <IconClose size={24} />}
+          </span>
+          <p className="mt-3 text-[13px] font-semibold text-neutral-400">
+            {item.successful ? "Transaction Confirmed" : "Transaction Failed"}
+          </p>
+          {item.amount !== null && (
+            <p className="display-h mt-1 text-[32px] font-light text-white">
+              {privacyMode
+                ? "••••••"
+                : `${neutral ? "" : incoming ? "+" : "−"}${fmtAmount(item.amount)}`}{" "}
+              <span className="mono text-[18px] text-neutral-400 font-normal">
+                {item.assetCode ?? "XLM"}
               </span>
-            </p>
-          ) : (
-            <p className="text-[15px] font-medium text-neutral-300">
-              {opTypeLabel(item.type)}
             </p>
           )}
         </div>
@@ -57,35 +65,32 @@ export function TxDetailModal({
         {/* Details list */}
         <div className="panel-inset mt-4 divide-y divide-white/[0.08]">
           <Row label="Operation">
-            <span className="text-[13px] text-white">{opTypeLabel(item.type)}</span>
+            <span className="text-[13px] text-white capitalize">
+              {opTypeLabel(item.type)}
+            </span>
           </Row>
           {item.counterparty && (
-            <Row label={item.direction === "in" ? "From" : "To"}>
+            <Row label={incoming ? "From" : "To"}>
               <span className="mono text-[12px] break-all text-neutral-300">
                 {item.counterparty}
               </span>
             </Row>
           )}
-          <Row label="Transaction Hash">
-            <span className="mono text-[12px] break-all text-neutral-300">
-              {item.hash}
+          <Row label="Network">
+            <span className="text-[13px] text-white capitalize">
+              {NETWORKS[network].label}
             </span>
           </Row>
-          <Row label="Network">
-            <span className="text-[13px] text-white capitalize">{NETWORKS[network].label}</span>
+          <Row label="Tx Hash">
+            <span className="mono text-[12px] break-all text-neutral-400">
+              {item.hash}
+            </span>
           </Row>
         </div>
 
         {/* Action Links */}
         <div className="mt-5 flex flex-wrap gap-2">
           <CopyButton value={item.hash} label="Copy Hash" className="chip flex-1 justify-center" />
-          {item.counterparty && (
-            <CopyButton
-              value={item.counterparty}
-              label="Copy Address"
-              className="chip flex-1 justify-center"
-            />
-          )}
           <a
             className="chip flex-1 justify-center"
             href={NETWORKS[network].explorerTxUrl(item.hash)}
@@ -94,6 +99,15 @@ export function TxDetailModal({
             onClick={() => triggerHaptic("light")}
           >
             Stellarchain <IconExternal size={11} />
+          </a>
+          <a
+            className="chip flex-1 justify-center text-neutral-400 hover:text-white"
+            href={labUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => triggerHaptic("light")}
+          >
+            Stellar Lab <IconExternal size={11} />
           </a>
         </div>
 
