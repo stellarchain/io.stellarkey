@@ -538,7 +538,7 @@ export function Dashboard() {
                 )}
               </div>
 
-              {/* Portfolio Allocation Distribution Bar */}
+              {/* Portfolio Allocation Distribution Bar & Legend */}
               {allocationShares.length > 0 && !privacyMode && (
                 <div className="mt-4 w-full max-w-[360px]">
                   <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
@@ -549,6 +549,15 @@ export function Dashboard() {
                         className="h-full transition-all"
                         title={`${s.code}: ${s.pct.toFixed(1)}%`}
                       />
+                    ))}
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-neutral-400">
+                    {allocationShares.map((s) => (
+                      <span key={s.code} className="flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
+                        <span className="font-semibold text-neutral-200">{s.code}</span>
+                        <span>{s.pct.toFixed(1)}%</span>
+                      </span>
                     ))}
                   </div>
                 </div>
