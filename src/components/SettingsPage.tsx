@@ -23,6 +23,8 @@ import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
 import { PaperWalletModal } from "./PaperWalletModal";
 import { RenameAccountModal } from "./RenameAccountModal";
+import { EditContactModal } from "./EditContactModal";
+import { ResetWalletModal } from "./ResetWalletModal";
 import { ConfirmModal } from "./AddAssetModal";
 import { AddAccountModal } from "./AddAccountModal";
 import { PhraseModal } from "./PhraseModal";
@@ -32,8 +34,6 @@ import {
   CopyButton,
   ErrorText,
   Field,
-  Modal,
-  ModalHeader,
   NetworkBadge,
   QrScannerBox,
   SegmentedControl,
@@ -89,7 +89,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     restoreAccountByIndex,
     mergeAccount,
     fundFromFriendbot,
-    resetWallet,
     contacts,
     addContact,
     removeContact,
@@ -126,9 +125,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
 
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  const [editContactName, setEditContactName] = useState("");
-  const [editContactAddr, setEditContactAddr] = useState("");
-  const [editContactError, setEditContactError] = useState<string | null>(null);
+
 
   const [mergeDest, setMergeDest] = useState("");
   const [mergeError, setMergeError] = useState<string | null>(null);
@@ -277,19 +274,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
 
 
-  function handleSaveEditContact() {
-    if (!editingContact) return;
-    const err = validateContact(editContactName, editContactAddr);
-    if (err) {
-      setEditContactError(err);
-      return;
-    }
-    removeContact(editingContact.address);
-    addContact({ name: editContactName.trim(), address: editContactAddr.trim() });
-    triggerHaptic("success");
-    toast("Contact updated", "success");
-    setEditingContact(null);
-  }
+
 
   async function handleScanAndRestore() {
     setScanning(true);
@@ -1322,9 +1307,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     onClick={() => {
                       triggerHaptic("selection");
                       setEditingContact(c);
-                      setEditContactName(c.name);
-                      setEditContactAddr(c.address);
-                      setEditContactError(null);
                     }}
                     className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
                   >
@@ -1984,68 +1966,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       />
 
       {/* Edit Contact Modal */}
-      <Modal open={editingContact !== null} onClose={() => setEditingContact(null)}>
-        <ModalHeader title="Edit Contact" subtitle="Update saved address book entry" onClose={() => setEditingContact(null)} />
-        <div className="p-6 space-y-4">
-          <Field label="Contact Name">
-            <input
-              className="input text-[14px]"
-              value={editContactName}
-              onChange={(e) => setEditContactName(e.target.value)}
-              placeholder="e.g. Alice"
-              maxLength={24}
-            />
-          </Field>
-          <Field label="Stellar Public Key">
-            <input
-              className="input mono text-[13px]"
-              value={editContactAddr}
-              onChange={(e) => setEditContactAddr(e.target.value)}
-              placeholder="G..."
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </Field>
-          <ErrorText message={editContactError ?? ""} />
-          <div className="flex gap-3">
-            <Button variant="ghost" className="flex-1" onClick={() => setEditingContact(null)}>
-              Cancel
-            </Button>
-            <Button className="flex-1" onClick={handleSaveEditContact}>
-              Save Changes
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <EditContactModal
+        contact={editingContact}
+        onClose={() => setEditingContact(null)}
+      />
 
       {/* Reset Confirmation Modal */}
-      <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
-        <ModalHeader title="Erase & Reset Wallet?" subtitle="Destructive action — irreversible" onClose={() => setConfirmReset(false)} />
-        <div className="p-6">
-          <p className="text-[13.5px] leading-relaxed text-neutral-300">
-            This permanently erases all encrypted private keys and recovery phrases in this browser.{" "}
-            <span className="text-[#FF453A] font-semibold">
-              Without a backup of your recovery phrase, all funds will be permanently lost.
-            </span>
-          </p>
-          <div className="mt-6 flex gap-3">
-            <Button variant="ghost" className="flex-1" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              className="flex-1"
-              onClick={() => {
-                triggerHaptic("error");
-                setConfirmReset(false);
-                resetWallet();
-              }}
-            >
-              Erase Everything
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <ResetWalletModal
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+      />
     </div>
   );
 }
