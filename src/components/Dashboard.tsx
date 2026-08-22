@@ -36,6 +36,8 @@ import { TrezorModal } from "./TrezorModal";
 import {
   IconArrowDownLeft,
   IconCompass,
+  IconTrezor,
+  IconLedger,
   IconArrowUpRight,
   IconCheck,
   IconChevronDown,
@@ -833,13 +835,24 @@ export function Dashboard() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                     Accounts ({accounts.length})
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setAddAccountOpen(true)}
-                    className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
-                  >
-                    + Add
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTrezorModalOpen(true)}
+                      className="text-[11px] font-semibold text-emerald-400 hover:underline flex items-center gap-1"
+                      title="Open Trezor Hardware Suite"
+                    >
+                      <IconTrezor size={12} />
+                      <span>Trezor</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddAccountOpen(true)}
+                      className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
+                    >
+                      + Add
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-0.5">
@@ -862,8 +875,14 @@ export function Dashboard() {
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <Avatar seed={acct.publicKey} size={24} />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[13px] leading-tight font-medium text-white">
-                              {acct.label}
+                            <p className="truncate text-[13px] leading-tight font-medium text-white flex items-center gap-1.5">
+                              <span>{acct.label}</span>
+                              {acct.hardware === "trezor" && (
+                                <IconTrezor size={12} className="text-emerald-400 shrink-0" />
+                              )}
+                              {acct.hardware === "ledger" && (
+                                <IconLedger size={12} className="text-[#64D2FF] shrink-0" />
+                              )}
                             </p>
                             <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                               {privacyMode ? "••••••" : `${fmtAmount(xlm?.balance ?? "0")} XLM`}
