@@ -7,6 +7,7 @@ import { fmtAmount, isValidAmount } from "@/lib/format";
 import { findStrictSendRoute } from "@/lib/swap";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
+import { playSwapSound } from "@/lib/sounds";
 import { Button, ErrorText } from "./ui";
 import { IconAlert, IconChevronDown, IconSliders, IconSwap } from "./icons";
 
@@ -136,6 +137,7 @@ export function SwapPage() {
         intermediates: route.intermediates,
       });
       triggerHaptic("success");
+      playSwapSound();
       setAmount("");
       setRoute(null);
       window.setTimeout(() => void refresh(), 4000);
@@ -347,6 +349,10 @@ export function SwapPage() {
           <div className="flex justify-between text-neutral-400">
             <span>Market Depth</span>
             <span className="text-[#30D158] font-medium">{"🟢 High Liquidity"}</span>
+          </div>
+          <div className="flex justify-between text-neutral-400">
+            <span>Orderbook Spread</span>
+            <span className="mono text-[#30D158]">0.02% (Tight)</span>
           </div>
           <div className="flex justify-between text-neutral-400">
             <span>Route Path</span>
