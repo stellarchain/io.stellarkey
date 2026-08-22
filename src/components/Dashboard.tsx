@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
@@ -108,6 +108,10 @@ export function Dashboard() {
   const [claimingAll, setClaimingAll] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [pullY, setPullY] = useState(0);
+  const [refreshingPull, setRefreshingPull] = useState(false);
+  const touchStartY = useRef<number | null>(null);
+  const pullYRef = useRef(0);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
@@ -169,6 +173,62 @@ export function Dashboard() {
     window.addEventListener("beforeinstallprompt", onInstallPrompt);
     return () => window.removeEventListener("beforeinstallprompt", onInstallPrompt);
   }, []);
+
+  // Native-feel pull-to-refresh on touch devices
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+
+    const isFormTarget = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (isFormTarget(e.target)) return;
+      if (window.scrollY <= 0 && !refreshingPull) {
+        touchStartY.current = e.touches[0].clientY;
+      }
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (touchStartY.current === null || refreshingPull) return;
+      const dy = e.touches[0].clientY - touchStartY.current;
+      if (dy > 0 && window.scrollY <= 0) {
+        // Resistance curve: harder to pull the further you go
+        const y = Math.min(110, dy * 0.45);
+        pullYRef.current = y;
+        setPullY(y);
+      }
+    };
+
+    const onEnd = () => {
+      touchStartY.current = null;
+      if (pullYRef.current >= 60) {
+        setRefreshingPull(true);
+        setPullY(52);
+        void refresh().finally(() => {
+          setRefreshingPull(false);
+          pullYRef.current = 0;
+          setPullY(0);
+        });
+      } else {
+        pullYRef.current = 0;
+        setPullY(0);
+      }
+    };
+
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, [refreshingPull, refresh]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -428,6 +488,21 @@ export function Dashboard() {
             <p className="text-[17px] font-bold text-white tracking-tight">Wallet Privacy Shield</p>
             <p className="text-[13px] text-neutral-400">Balances hidden while multitasking</p>
           </div>
+        </div>
+      )}
+
+      {/* Pull-to-refresh indicator */}
+      {(pullY > 4 || refreshingPull) && (
+        <div
+          className="pointer-events-none fixed inset-x-0 z-40 flex justify-center transition-opacity"
+          style={{
+            top: `calc(env(safe-area-inset-top) + ${refreshingPull ? 56 : Math.max(12, pullY * 0.5)}px)`,
+            opacity: refreshingPull ? 1 : Math.min(1, pullY / 60),
+          }}
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-neutral-900/90 shadow-lg backdrop-blur-md">
+            <Spinner />
+          </span>
         </div>
       )}
 
