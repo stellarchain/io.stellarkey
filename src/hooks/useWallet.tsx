@@ -69,6 +69,8 @@ interface WalletContextValue {
   archivedAccounts: AccountMeta[];
   hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
+  /** Native XLM balance per publicKey — kept warm so the sidebar never flashes zero */
+  accountBalances: Record<string, number>;
   claimableBalances: ClaimableBalanceItem[];
   activity: ActivityItem[];
   activityCursor: string | null;
@@ -155,6 +157,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [hasDeletedWalletBackup, setHasDeletedWalletBackup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
+  const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
+  // Session-scoped cache so switching accounts shows last-known data instantly (no zero flash)
+  const snapshotCache = useRef<
+    Map<string, { balances: AssetBalance[]; activity: ActivityItem[]; cursor: string | null }>
+  >(new Map());
   const [claimableBalances, setClaimableBalances] = useState<ClaimableBalanceItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
@@ -222,6 +229,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setClaimableBalances(claims);
       setActivity(acts.items);
       setActivityCursor(acts.nextCursor);
+      snapshotCache.current.set(activeAccount.publicKey, {
+        balances: bals,
+        activity: acts.items,
+        cursor: acts.nextCursor,
+      });
+      const nativeBal = bals.find((b) => b.isNative);
+      if (nativeBal) {
+        setAccountBalances((prev) => ({
+          ...prev,
+          [activeAccount.publicKey]: parseFloat(nativeBal.balance),
+        }));
+      }
       if (price !== null) setXlmPriceUsd(price);
       if (series !== null) {
         priceCache.current[series.range] = series;
@@ -276,6 +295,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (es) es.close();
     };
   }, [phase, activeAccount, network]);
+
+
+  // Warm-fetch every account's balance in parallel so the sidebar can show
+  // live totals for all accounts without switching to them.
+  useEffect(() => {
+    if (phase !== "unlocked" || accounts.length === 0) return;
+    let alive = true;
+    void (async () => {
+      const results = await Promise.allSettled(
+        accounts.map(async (acct) => {
+          const bals = await api.fetchBalances(acct.publicKey, network);
+          return { key: acct.publicKey, native: bals.find((b) => b.isNative) };
+        }),
+      );
+      if (!alive) return;
+      setAccountBalances((prev) => {
+        const next = { ...prev };
+        for (const r of results) {
+          if (r.status === "fulfilled" && r.value.native && !(r.value.key in prev)) {
+            next[r.value.key] = parseFloat(r.value.native.balance);
+          }
+        }
+        return next;
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [phase, accounts, network]);
 
   function lockVaultAndReset() {
     lockVault();
@@ -387,11 +435,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
     if (!vault) return;
+    const target = vault.accounts.find((a) => a.id === id);
+    const cached = target ? snapshotCache.current.get(target.publicKey) : undefined;
+    // Show last-known snapshot instantly; background poll refreshes it within POLL_MS
+    if (cached) {
+      setBalances(cached.balances);
+      setActivity(cached.activity);
+      setActivityCursor(cached.cursor);
+    } else {
+      setBalances(null);
+      setActivity([]);
+      setActivityCursor(null);
+    }
     setActiveId(id);
-    setBalances(null);
-    setClaimableBalances([]);
-    setActivity([]);
-    setActivityCursor(null);
   }, []);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
@@ -655,6 +711,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network,
       accounts,
       activeAccount,
+      accountBalances,
       archivedAccounts,
       hasDeletedWalletBackup,
       balances,
@@ -711,6 +768,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       activeAccount,
       archivedAccounts,
       hasDeletedWalletBackup,
+      accountBalances,
       balances,
       claimableBalances,
       activity,
