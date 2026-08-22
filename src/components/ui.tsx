@@ -119,7 +119,7 @@ export function Modal({
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
     >
       <div
-        className={`fade-up relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] border-t border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:rounded-[28px] sm:border sm:border-white/[0.12] ${
+        className={`fade-up relative max-h-[92vh] w-full overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border-t border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:rounded-[28px] sm:border sm:border-white/[0.12] ${
           wide ? "max-w-xl" : "max-w-md"
         }`}
       >
