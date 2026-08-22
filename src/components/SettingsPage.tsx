@@ -54,6 +54,8 @@ import {
   IconTrash,
   IconWallet,
   IconKey,
+  IconTrezor,
+  IconLedger,
 } from "./icons";
 
 export type SettingsSub =
@@ -1693,7 +1695,9 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="text-2xl">🛡️</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <IconTrezor size={20} />
+                  </div>
                     <div>
                       <h3 className="text-[16px] font-bold text-white">Trezor</h3>
                       <p className="text-[11.5px] text-neutral-400">Safe 3 · Model T · Model One</p>
@@ -1725,7 +1729,9 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="text-2xl">🔒</span>
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-[#64D2FF]">
+                    <IconLedger size={20} />
+                  </div>
                     <div>
                       <h3 className="text-[16px] font-bold text-white">Ledger</h3>
                       <p className="text-[11.5px] text-neutral-400">Stax · Nano X · Nano S Plus</p>

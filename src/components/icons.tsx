@@ -444,3 +444,30 @@ export function IconFlame(p: IconProps) {
     </svg>
   );
 }
+
+export function IconTrezor(p: IconProps) {
+  const s = p.size ?? 16;
+  return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" className={p.className}>
+      <path
+        d="M7 8V6a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v7.5a4.5 4.5 0 0 1-4.5 4.5h-7A4.5 4.5 0 0 1 4 17.5V10a2 2 0 0 1 2-2h1z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="14" r="2" fill="currentColor" />
+      <path d="M10 8V6a2 2 0 0 1 4 0v2" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+export function IconLedger(p: IconProps) {
+  const s = p.size ?? 16;
+  return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" className={p.className}>
+      <path d="M4 8V4h5M20 8V4h-5M4 16v4h5M20 16v4h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}

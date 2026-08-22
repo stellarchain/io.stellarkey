@@ -7,7 +7,7 @@ import { shortenAddr } from "@/lib/format";
 import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconPlus, IconSearch } from "./icons";
+import { IconCheck, IconLedger, IconPlus, IconSearch, IconTrezor } from "./icons";
 
 export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -280,7 +280,11 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         {activeAccount?.hardware && (
           <div className="mt-3 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
             <div className="flex items-center gap-2">
-              <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+              {activeAccount.hardware === "ledger" ? (
+                <IconLedger size={15} className="text-[#64D2FF]" />
+              ) : (
+                <IconTrezor size={15} className="text-emerald-400" />
+              )}
               <span className="font-semibold">
                 Sign Trustline on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
               </span>
