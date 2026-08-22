@@ -18,35 +18,49 @@ function base(size = 16) {
 
 export function LogoMark({ size = 34 }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" className="shrink-0">
       <defs>
-        <linearGradient id="logo-wallet-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <linearGradient id="logo-bg-grad" x1="32" y1="0" x2="32" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#1c1c1e" />
+          <stop offset="100%" stopColor="#000000" />
+        </linearGradient>
+        <linearGradient id="logo-card-top-grad" x1="0" y1="12" x2="64" y2="28" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#0A84FF" />
           <stop offset="100%" stopColor="#5E5CE6" />
         </linearGradient>
-        <linearGradient id="logo-card-top" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+        <linearGradient id="logo-card-mid-grad" x1="0" y1="18" x2="64" y2="34" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#64D2FF" />
-          <stop offset="100%" stopColor="#0A84FF" />
+          <stop offset="100%" stopColor="#30D158" />
         </linearGradient>
-        <filter id="logo-shadow" x="0" y="4" width="64" height="60" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
-          <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.45" />
-        </filter>
+        <linearGradient id="logo-pouch-grad" x1="32" y1="26" x2="32" y2="56" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#2c2c2e" />
+          <stop offset="100%" stopColor="#121214" />
+        </linearGradient>
       </defs>
-      
+
+      {/* iOS App Icon Squircle Background */}
+      <rect width="64" height="64" rx="14.5" fill="url(#logo-bg-grad)" />
+      <rect x="0.5" y="0.5" width="63" height="63" rx="14" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+
       {/* Back Card Layer */}
-      <rect x="12" y="10" width="40" height="12" rx="4" fill="url(#logo-card-top)" opacity="0.85" />
-      
-      {/* Main Wallet Body */}
-      <rect x="6" y="16" width="52" height="38" rx="9" fill="url(#logo-wallet-bg)" filter="url(#logo-shadow)" />
-      <rect x="6.5" y="16.5" width="51" height="37" rx="8.5" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
-      
-      {/* Stitching Line */}
-      <path d="M6 24h52" stroke="rgba(255,255,255,0.18)" strokeWidth="1.2" strokeDasharray="2 2" />
-      
-      {/* Wallet Clasp */}
-      <path d="M38 27h20v16H38a8 8 0 0 1 0-16Z" fill="#121214" stroke="rgba(255,255,255,0.2)" strokeWidth="1.2" />
-      <circle cx="46" cy="35" r="3.5" fill="#30D158" />
-      <circle cx="46" cy="35" r="1.5" fill="#FFFFFF" />
+      <rect x="14" y="10" width="36" height="24" rx="4.5" fill="url(#logo-card-top-grad)" opacity="0.95" />
+      <rect x="14.5" y="10.5" width="35" height="23" rx="4" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
+
+      {/* Middle Card Layer */}
+      <rect x="10" y="16" width="44" height="24" rx="5" fill="url(#logo-card-mid-grad)" opacity="0.95" />
+      <rect x="10.5" y="16.5" width="43" height="23" rx="4.5" stroke="rgba(255,255,255,0.35)" strokeWidth="1" />
+
+      {/* Front Wallet Pocket */}
+      <path d="M7 25C7 22.7909 8.79086 21 11 21H23C24.5 21 26 22.5 27 24C28 25.5 29.5 26.5 32 26.5C34.5 26.5 36 25.5 37 24C38 22.5 39.5 21 41 21H53C55.2091 21 57 22.7909 57 25V49C57 52.3137 54.3137 55 51 55H13C9.68629 55 7 52.3137 7 49V25Z" fill="url(#logo-pouch-grad)" />
+      <path d="M7.5 25C7.5 23.067 9.067 21.5 11 21.5H23C24.3 21.5 25.6 22.8 26.5 24.3C27.6 25.9 29.3 27 32 27C34.7 27 36.4 25.9 37.5 24.3C38.4 22.8 39.7 21.5 41 21.5H53C54.933 21.5 56.5 23.067 56.5 25V49C56.5 52.0376 54.0376 54.5 51 54.5H13C9.96243 54.5 7.5 52.0376 7.5 49V25Z" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+
+      {/* Subtle Specular Lighting Edge */}
+      <path d="M11 22H23C24.5 22 26 23.5 27 25" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
+      <path d="M41 22H53" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
+
+      {/* Minimal Center Clasp / Notch Emblem */}
+      <circle cx="32" cy="38" r="4.5" fill="#0A84FF" fillOpacity="0.2" stroke="#0A84FF" strokeWidth="1.2" />
+      <circle cx="32" cy="38" r="2" fill="#FFFFFF" />
     </svg>
   );
 }
