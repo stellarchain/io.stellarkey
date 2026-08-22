@@ -1,3 +1,5 @@
+import type { ActivityItem } from "./types";
+
 export function fmtAmount(value: string | number, maxDecimals = 7): string {
   const n = typeof value === "string" ? parseFloat(value) : value;
   if (!Number.isFinite(n)) return "0";
@@ -65,4 +67,35 @@ export function opTypeLabel(type: string): string {
     labels[type] ??
     type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
   );
+}
+
+export function generateActivityCsv(items: ActivityItem[], network = "mainnet"): string {
+  const headers = [
+    "Date (ISO)",
+    "Title",
+    "Type",
+    "Direction",
+    "Amount",
+    "Asset",
+    "Counterparty",
+    "Transaction Hash",
+    "Explorer URL",
+  ];
+  const rows = items.map((i) => [
+    JSON.stringify(i.createdAt),
+    JSON.stringify(i.title),
+    JSON.stringify(i.type),
+    JSON.stringify(i.direction),
+    JSON.stringify(i.amount ?? ""),
+    JSON.stringify(i.assetCode ?? ""),
+    JSON.stringify(i.counterparty ?? ""),
+    JSON.stringify(i.hash),
+    JSON.stringify(
+      network === "testnet"
+        ? `https://testnet.stellarchain.io/tx/${i.hash}`
+        : `https://stellarchain.io/tx/${i.hash}`,
+    ),
+  ]);
+
+  return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
 }

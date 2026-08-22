@@ -8,19 +8,24 @@ import {
   Operation,
   TransactionBuilder,
   BASE_FEE,
+  type Transaction,
+  type FeeBumpTransaction,
 } from "@stellar/stellar-sdk";
-import { NETWORKS, type NetworkKey } from "./stellar";
 import type { ActivityItem, AssetBalance } from "./types";
+import { NETWORKS, type NetworkKey } from "./stellar";
 import { isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 
 export async function getJson<T>(url: string): Promise<T | null> {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Horizon request failed (${res.status})`);
-  return (await res.json()) as T;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 interface RawBalance {
@@ -36,117 +41,131 @@ export async function fetchBalances(
   network: NetworkKey,
 ): Promise<AssetBalance[]> {
   const cfg = NETWORKS[network];
-  const account = await getJson<{ balances: RawBalance[] }>(
+  const data = await getJson<{ balances?: RawBalance[] }>(
     `${cfg.horizonUrl}/accounts/${publicKey}`,
   );
-  if (!account?.balances) return [];
-  const rows: AssetBalance[] = [];
-  for (const b of account.balances) {
-    if (b.asset_type === "liquidity_pool_shares") continue;
+  if (!data?.balances) return [];
+
+  const list: AssetBalance[] = [];
+  let nativeBal: AssetBalance | null = null;
+
+  for (const b of data.balances) {
     const isNative = b.asset_type === "native";
-    rows.push({
+    const item: AssetBalance = {
       key: isNative ? "native" : `${b.asset_code}:${b.asset_issuer}`,
-      code: isNative ? "XLM" : b.asset_code!,
-      issuer: isNative ? null : b.asset_issuer!,
+      code: isNative ? "XLM" : b.asset_code ?? "UNKNOWN",
+      issuer: isNative ? null : b.asset_issuer ?? null,
       balance: b.balance,
       limit: b.limit ?? null,
       isNative,
-    });
+    };
+    if (isNative) nativeBal = item;
+    else list.push(item);
   }
-  rows.sort((a, b) => {
-    if (a.isNative) return -1;
-    if (b.isNative) return 1;
-    return parseFloat(b.balance) - parseFloat(a.balance);
-  });
-  return rows;
+
+  return nativeBal ? [nativeBal, ...list] : list;
 }
 
 interface RawOperation {
   id: string;
-  paging_token?: string;
   type: string;
   created_at: string;
+  transaction_successful: boolean;
   transaction_hash: string;
-  transaction_successful?: boolean;
+  source_account?: string;
+  account?: string;
+  funder?: string;
+  starting_balance?: string;
   from?: string;
   to?: string;
-  funder?: string;
-  account?: string;
-  into?: string;
-  trustor?: string;
   amount?: string;
-  starting_balance?: string;
-  limit?: string;
   asset_type?: string;
   asset_code?: string;
   asset_issuer?: string;
+  source_asset_code?: string;
+  source_amount?: string;
+  dest_asset_code?: string;
+  dest_amount?: string;
+  into?: string;
 }
 
 function assetCodeOf(op: RawOperation): string | null {
   if (op.asset_type === "native") return "XLM";
-  if (typeof op.asset_type === "string") return op.asset_code ?? null;
-  return null;
+  return op.asset_code ?? null;
 }
 
 function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
-  let title = "";
-  let direction: ActivityItem["direction"] = "neutral";
-  let amount: string | null = null;
-  let assetCode: string | null = null;
-  let counterparty: string | null = null;
-
-  switch (op.type) {
-    case "payment":
-      assetCode = assetCodeOf(op);
-      amount = op.amount ?? null;
-      counterparty = op.from === publicKey ? op.to ?? null : op.from ?? null;
-      direction = op.from === publicKey ? "out" : "in";
-      title = direction === "out" ? "Sent" : "Received";
-      break;
-    case "create_account": {
-      const outgoing = op.funder === publicKey;
-      direction = outgoing ? "out" : "in";
-      amount = op.starting_balance ?? null;
-      assetCode = "XLM";
-      counterparty = outgoing ? op.account ?? null : op.funder ?? null;
-      title = outgoing ? "Account funded" : "Account activated";
-      break;
-    }
-    case "account_merge":
-      direction = op.into === publicKey ? "in" : "out";
-      counterparty = op.into ?? null;
-      title = "Account merged";
-      break;
-    case "change_trust":
-      title = parseFloat(op.limit ?? "0") === 0 ? "Trustline removed" : "Trustline added";
-      assetCode = assetCodeOf(op);
-      counterparty = op.asset_issuer ?? null;
-      break;
-    case "path_payment_strict_send":
-    case "path_payment_strict_receive":
-      assetCode = assetCodeOf(op);
-      amount = op.amount ?? null;
-      counterparty = op.from === publicKey ? op.to ?? null : op.from ?? null;
-      direction = op.from === publicKey ? "out" : "in";
-      title = direction === "out" ? "Swap sent" : "Swap received";
-      break;
-    default:
-      title = op.type.replace(/_/g, " ").replace(/\b\w/, (c) => c.toUpperCase());
-      break;
-  }
-
-  return {
+  const base = {
     id: op.id,
     type: op.type,
-    title,
-    direction,
-    amount,
-    assetCode,
-    counterparty,
     hash: op.transaction_hash,
     createdAt: op.created_at,
-    successful: op.transaction_successful !== false,
+    successful: op.transaction_successful,
   };
+
+  switch (op.type) {
+    case "create_account": {
+      const isMe = op.account === publicKey;
+      return {
+        ...base,
+        title: isMe ? "Account Activated" : "Created Account",
+        direction: isMe ? "in" : "out",
+        amount: op.starting_balance ?? null,
+        assetCode: "XLM",
+        counterparty: isMe ? op.funder ?? null : op.account ?? null,
+      };
+    }
+    case "payment": {
+      const isIncoming = op.to === publicKey;
+      return {
+        ...base,
+        title: isIncoming ? "Received Payment" : "Sent Payment",
+        direction: isIncoming ? "in" : "out",
+        amount: op.amount ?? null,
+        assetCode: assetCodeOf(op),
+        counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+      };
+    }
+    case "path_payment_strict_receive":
+    case "path_payment_strict_send": {
+      const isIncoming = op.to === publicKey;
+      return {
+        ...base,
+        title: "DEX Swap",
+        direction: "neutral",
+        amount: op.amount ?? op.dest_amount ?? null,
+        assetCode: op.dest_asset_code ?? (op.asset_type === "native" ? "XLM" : null),
+        counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+      };
+    }
+    case "change_trust":
+      return {
+        ...base,
+        title: "Trustline Added",
+        direction: "neutral",
+        amount: null,
+        assetCode: op.asset_code ?? null,
+        counterparty: op.asset_issuer ?? null,
+      };
+    case "account_merge":
+      return {
+        ...base,
+        title: "Account Merged",
+        direction: op.into === publicKey ? "in" : "out",
+        amount: null,
+        assetCode: "XLM",
+        counterparty: op.into ?? null,
+      };
+    default:
+      return {
+        ...base,
+        title: op.type.replace(/_/g, " "),
+        direction: "neutral",
+        amount: op.amount ?? null,
+        assetCode: assetCodeOf(op),
+        counterparty: null,
+      };
+  }
 }
 
 export async function fetchActivity(
@@ -156,15 +175,15 @@ export async function fetchActivity(
   cursor?: string,
 ): Promise<{ items: ActivityItem[]; nextCursor: string | null }> {
   const cfg = NETWORKS[network];
-  const params = new URLSearchParams({ limit: String(limit), order: "desc" });
-  if (cursor) params.set("cursor", cursor);
-  const page = await getJson<{
-    _embedded: { records: (RawOperation & { paging_token: string })[] };
-  } | null>(`${cfg.horizonUrl}/accounts/${publicKey}/operations?${params.toString()}`);
-  const records = page?._embedded?.records ?? [];
+  const url = new URL(`${cfg.horizonUrl}/accounts/${publicKey}/operations`);
+  url.searchParams.set("order", "desc");
+  url.searchParams.set("limit", String(limit));
+  if (cursor) url.searchParams.set("cursor", cursor);
+
+  const data = await getJson<{ _embedded?: { records?: RawOperation[] } }>(url.toString());
+  const records = data?._embedded?.records ?? [];
   const items = records.map((op) => mapOperation(op, publicKey));
-  const nextCursor =
-    records.length === limit ? records[records.length - 1]?.paging_token ?? null : null;
+  const nextCursor = records.length === limit ? records[records.length - 1].id : null;
   return { items, nextCursor };
 }
 
@@ -173,17 +192,13 @@ export async function fundWithFriendbot(
   network: NetworkKey,
 ): Promise<void> {
   const cfg = NETWORKS[network];
-  if (!cfg.friendbotUrl) throw new Error("Friendbot is only available on testnet");
+  if (!cfg.friendbotUrl) {
+    throw new Error("Friendbot is only available on testnet.");
+  }
   const res = await fetch(`${cfg.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`);
   if (!res.ok) {
-    let detail = `Friendbot responded ${res.status}`;
-    try {
-      const body = (await res.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
-    } catch {
-      void 0;
-    }
-    throw new Error(detail);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Friendbot funding failed: ${text || res.statusText}`);
   }
 }
 
@@ -196,47 +211,47 @@ export class SendError extends Error {}
 interface SubmitFailureBody {
   title?: string;
   detail?: string;
-  extras?: { result_codes?: { transaction?: string; operations?: string[] } };
+  extras?: {
+    result_codes?: {
+      transaction?: string;
+      operations?: string[];
+    };
+  };
 }
 
 export function explainSubmitError(err: unknown): string {
-  const e = err as { status?: number; body?: SubmitFailureBody; message?: string };
-  const codes = e.body?.extras?.result_codes;
-  if (codes) {
-    const tx = codes.transaction;
-    const op = codes.operations?.find((c) => c !== "op_success");
-    if (tx === "tx_insufficient_fee")
-      return "Fee too low for current network load. Try again.";
-    if (tx === "tx_bad_seq") return "Account state changed. Refresh and retry.";
-    if (tx === "tx_no_source_account")
-      return "Source account does not exist on this network.";
-    if (tx === "tx_insufficient_balance")
-      return "Insufficient balance after reserves and liabilities.";
-    if (op === "op_underfunded")
-      return "Insufficient balance after accounting for minimum reserves.";
-    if (op === "op_low_reserve")
-      return "Amount is below the minimum balance required to activate an account.";
-    if (op === "op_no_trust") return "Destination has no trustline for that asset.";
-    if (op === "op_no_issuer") return "Asset issuer account does not exist.";
-    if (op === "op_line_full") return "Destination would exceed its trustline limit.";
-    const all = [tx, ...(codes.operations ?? [])].filter(Boolean).join(", ");
-    return `Network rejected the transaction (${all}).`;
+  if (err && typeof err === "object" && "body" in err) {
+    const b = err.body as SubmitFailureBody;
+    const txCode = b.extras?.result_codes?.transaction;
+    const opCodes = b.extras?.result_codes?.operations ?? [];
+    if (txCode === "tx_bad_seq") return "Sequence number mismatch. Please retry.";
+    if (txCode === "tx_insufficient_fee") return "Fee was too low for network conditions.";
+    if (txCode === "tx_insufficient_balance") return "Insufficient balance to cover payment and reserve.";
+    if (opCodes.includes("op_underfunded")) return "Insufficient balance for this payment.";
+    if (opCodes.includes("op_no_destination")) return "Destination account does not exist. Activate it with XLM first.";
+    if (opCodes.includes("op_no_trust")) return "Destination account does not trust this asset.";
+    if (opCodes.includes("op_line_full")) return "Destination trustline limit exceeded.";
+    if (b.detail) return b.detail;
   }
-  if (e.message && !e.message.startsWith("Failed to fetch")) return e.message;
-  return "Network request failed. Check your connection and try again.";
+  if (err instanceof Error) return err.message;
+  return "Transaction failed on the Stellar network.";
 }
 
 export async function submitSignedTx(
-  tx: ReturnType<TransactionBuilder["build"]>,
+  tx: Transaction | FeeBumpTransaction,
   network: NetworkKey,
 ): Promise<{ hash: string }> {
   const cfg = NETWORKS[network];
+  const form = new URLSearchParams();
+  form.set("tx", tx.toXdr());
+
   const res = await fetch(`${cfg.horizonUrl}/transactions`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ tx: tx.toXdr() }).toString(),
+    body: form.toString(),
   });
-  const body = (await res.json().catch(() => ({}))) as SubmitFailureBody & { hash?: string };
+
+  const body = (await res.json()) as SubmitFailureBody & { hash?: string };
   if (!res.ok || !body.hash) {
     const error = new Error(body.title ?? body.detail ?? "Submission failed");
     Object.assign(error, { status: res.status, body });
@@ -358,13 +373,17 @@ export async function changeTrust(params: {
   }
 }
 
+interface CoinGeckoPriceResp {
+  stellar?: { usd?: number };
+}
+
 export async function fetchXlmPrice(): Promise<number | null> {
   try {
     const res = await fetch(
       "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd",
     );
     if (!res.ok) return null;
-    const json = (await res.json()) as { stellar?: { usd?: number } };
+    const json = (await res.json()) as CoinGeckoPriceResp;
     return json.stellar?.usd ?? null;
   } catch {
     return null;
@@ -382,13 +401,17 @@ export interface PriceSeries {
   current: number;
 }
 
+interface CoinGeckoChartResp {
+  prices?: Array<[number, number]>;
+}
+
 export async function fetchXlmSeries(range: PriceRange): Promise<PriceSeries | null> {
   try {
     const res = await fetch(
       `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
     );
     if (!res.ok) return null;
-    const json = (await res.json()) as { prices?: Array<[number, number]> };
+    const json = (await res.json()) as CoinGeckoChartResp;
     if (!json.prices || json.prices.length < 2) return null;
     const points = json.prices.map(([t, p]) => ({ t, p }));
     const first = points[0].p;
@@ -402,6 +425,12 @@ export async function fetchXlmSeries(range: PriceRange): Promise<PriceSeries | n
   } catch {
     return null;
   }
+}
+
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
 }
 
 export async function waitForTransaction(
@@ -420,7 +449,7 @@ export async function waitForTransaction(
     } catch {
       void 0;
     }
-    await new Promise((r) => setTimeout(r, 1200));
+    await delay(1200);
   }
   return null;
 }

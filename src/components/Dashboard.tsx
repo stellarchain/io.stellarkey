@@ -5,7 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
-import { fmtAmount, fmtUsd, shortenAddr, timeAgo } from "@/lib/format";
+import { fmtAmount, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
 import type { ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
@@ -27,6 +27,7 @@ import {
   IconArrowUpRight,
   IconChevronDown,
   IconClose,
+  IconDownload,
   IconEye,
   IconEyeOff,
   IconGear,
@@ -197,6 +198,20 @@ export function Dashboard() {
     } finally {
       setFundBusy(false);
     }
+  }
+
+  function handleExportCsv() {
+    if (filteredActivity.length === 0) return;
+    triggerHaptic("selection");
+    const csv = generateActivityCsv(filteredActivity, network);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `wallet-activity-${network}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerHaptic("success");
   }
 
   function openSettings(sub: SettingsSub) {
@@ -562,33 +577,47 @@ export function Dashboard() {
           </>
         ) : view === "activity" ? (
           <section className="fade-up pt-2">
-            {/* Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-3 pt-1 scrollbar-none">
-              {(
-                [
-                  { id: "all", label: "All" },
-                  { id: "in", label: "Received" },
-                  { id: "out", label: "Sent" },
-                  { id: "swap", label: "Swaps" },
-                  { id: "trust", label: "Trustlines" },
-                ] as const
-              ).map((f) => (
+            {/* Filter Pills & Export CSV */}
+            <div className="flex items-center justify-between gap-2 pb-3 pt-1">
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                {(
+                  [
+                    { id: "all", label: "All" },
+                    { id: "in", label: "Received" },
+                    { id: "out", label: "Sent" },
+                    { id: "swap", label: "Swaps" },
+                    { id: "trust", label: "Trustlines" },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setActivityFilter(f.id);
+                    }}
+                    className={`rounded-full px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
+                      activityFilter === f.id
+                        ? "bg-white text-black font-semibold shadow-sm"
+                        : "bg-white/[0.08] text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredActivity.length > 0 && (
                 <button
-                  key={f.id}
                   type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setActivityFilter(f.id);
-                  }}
-                  className={`rounded-full px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
-                    activityFilter === f.id
-                      ? "bg-white text-black font-semibold shadow-sm"
-                      : "bg-white/[0.08] text-neutral-400 hover:text-white"
-                  }`}
+                  onClick={handleExportCsv}
+                  className="chip !py-1 !px-2.5 text-[11.5px] shrink-0 flex items-center gap-1"
+                  title="Export activity to CSV"
                 >
-                  {f.label}
+                  <IconDownload size={12} />
+                  <span>CSV</span>
                 </button>
-              ))}
+              )}
             </div>
 
             {filteredActivity.length === 0 ? (
