@@ -852,9 +852,11 @@ export function Dashboard() {
                               </span>
                               <span className="block truncate text-[12px] leading-tight text-neutral-400">
                                 {timeAgo(item.createdAt)}
-                                {item.counterparty
-                                  ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
-                                  : ""}
+                                {(() => {
+                                  if (!item.counterparty) return "";
+                                  const c = contacts.find((ct) => ct.address === item.counterparty);
+                                  return c ? ` · ${c.name}` : ` · ${shortenAddr(item.counterparty, 4, 4)}`;
+                                })()}
                               </span>
                             </span>
                             {item.amount !== null && (
