@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
+import { ResetWalletModal } from "./ResetWalletModal";
+import { Button, ErrorText, Field } from "./ui";
 import { IconFingerprint, IconLedger, IconTrezor, LogoMark } from "./icons";
 
 export function LockScreen() {
-  const { unlock, resetWallet, biometricsEnabled } = useWallet();
+  const { unlock, biometricsEnabled } = useWallet();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,30 +138,10 @@ export function LockScreen() {
         </button>
       </div>
 
-      <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
-        <ModalHeader title="Reset this wallet?" subtitle="Permanent action — local vault data will be erased" onClose={() => setConfirmReset(false)} />
-        <div className="p-6">
-          <p className="text-[13.5px] leading-relaxed text-neutral-300">
-            Resetting your wallet will erase all encrypted data from this browser. If you don&apos;t have a backup of your recovery phrase or secret key, your funds will be lost forever.
-          </p>
-          <div className="mt-6 flex gap-3">
-            <Button variant="ghost" className="flex-1" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              className="flex-1"
-              onClick={() => {
-                triggerHaptic("error");
-                setConfirmReset(false);
-                resetWallet();
-              }}
-            >
-              Erase & Reset
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      <ResetWalletModal
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+      />
     </div>
   );
 }
