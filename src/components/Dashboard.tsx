@@ -14,6 +14,8 @@ import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import { SettingsPage } from "./SettingsPage";
+import { AddAccountModal } from "./AddAccountModal";
+import { PhraseModal } from "./PhraseModal";
 import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Spinner } from "./ui";
 import { AddAssetModal } from "./AddAssetModal";
 import { AssetDetailModal } from "./AssetDetailModal";
@@ -98,6 +100,8 @@ export function Dashboard() {
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimingAll, setClaimingAll] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [phraseOpen, setPhraseOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -341,7 +345,7 @@ export function Dashboard() {
         label: "Reveal secret key",
         run: () => openSettings("reveal"),
       },
-      { id: "phrase", label: "View recovery phrase", run: () => openSettings("phrase") },
+      { id: "phrase", label: "View recovery phrase", run: () => setPhraseOpen(true) },
       { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
       { id: "contacts", label: "Manage contacts", run: () => openSettings("contacts") },
       { id: "lock", label: "Lock wallet", run: lock },
@@ -515,7 +519,7 @@ export function Dashboard() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => openSettings("addAccount")}
+                  onClick={() => setAddAccountOpen(true)}
                   className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
                 >
                   + Add
@@ -589,7 +593,7 @@ export function Dashboard() {
               })}
               <button
                 type="button"
-                onClick={() => openSettings("addAccount")}
+                onClick={() => setAddAccountOpen(true)}
                 className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
                 title="Add Account"
               >
@@ -1406,6 +1410,8 @@ export function Dashboard() {
         network={network}
         onSwitch={switchNetwork}
       />
+      <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
+      <PhraseModal open={phraseOpen} onClose={() => setPhraseOpen(false)} />
     </div>
   );
 }

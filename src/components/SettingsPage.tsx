@@ -6,7 +6,6 @@ import {
   exportKeystoreUnlocked,
   importKeystore,
   revealSecret,
-  validateStellarSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
@@ -22,6 +21,8 @@ import type { AccountMeta } from "@/lib/types";
 import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
 import { PaperWalletModal } from "./PaperWalletModal";
+import { AddAccountModal } from "./AddAccountModal";
+import { PhraseModal } from "./PhraseModal";
 import {
   Avatar,
   Button,
@@ -57,11 +58,9 @@ export type SettingsSub =
   | "root"
   | "reveal"
   | "accounts"
-  | "addAccount"
   | "contacts"
   | "addContact"
   | "network"
-  | "phrase"
   | "autolock"
   | "merge"
   | "signers"
@@ -79,7 +78,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     activeAccount,
     archivedAccounts,
     selectAccount,
-    addAccount,
     removeAccount,
     renameAccount,
     restoreArchivedAccount,
@@ -96,7 +94,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     changeAutoLockMs,
     biometricsEnabled,
     toggleBiometrics,
-    revealRecoveryPhrase,
     fiatCurrency,
     cycleFiatCurrency,
   } = useWallet();
@@ -111,11 +108,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
 
-  const [addMode, setAddMode] = useState<"generate" | "import">("generate");
-  const [newLabel, setNewLabel] = useState("");
-  const [importSecret, setImportSecret] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [fundingTestnet, setFundingTestnet] = useState(false);
 
@@ -149,10 +141,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [contactError, setContactError] = useState<string | null>(null);
 
   const [confirmReset, setConfirmReset] = useState(false);
-  const [phrasePw, setPhrasePw] = useState("");
-  const [revealedPhrase, setRevealedPhrase] = useState<string | null>(null);
-  const [phraseError, setPhraseError] = useState<string | null>(null);
-  const [phraseBusy, setPhraseBusy] = useState(false);
+  const [showAddAccount, setShowAddAccount] = useState(false);
+  const [showPhrase, setShowPhrase] = useState(false);
   const hasMnemonicVault = hasMnemonicAlias();
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [pinging, setPinging] = useState(false);
@@ -259,20 +249,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     if (on) triggerHaptic("selection");
   }
 
-  async function handleRevealPhrase() {
-    setPhraseBusy(true);
-    setPhraseError(null);
-    try {
-      setRevealedPhrase(await revealRecoveryPhrase(phrasePw));
-      triggerHaptic("success");
-    } catch (e) {
-      triggerHaptic("error");
-      setPhraseError(e instanceof Error ? e.message : "Failed to decrypt.");
-    } finally {
-      setPhraseBusy(false);
-    }
-  }
-
   async function handleReveal() {
     if (!activeAccount) return;
     setRevealing(true);
@@ -285,32 +261,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       setRevealError(e instanceof Error ? e.message : "Failed to decrypt.");
     } finally {
       setRevealing(false);
-    }
-  }
-
-  async function handleAddAccount() {
-    if (addMode === "import" && !validateStellarSecret(importSecret)) {
-      setAddError("Invalid secret key.");
-      return;
-    }
-    setAdding(true);
-    setAddError(null);
-    try {
-      await addAccount({
-        secret: addMode === "import" ? importSecret : undefined,
-        label: newLabel || undefined,
-      });
-      triggerHaptic("success");
-      toast("Account added", "success");
-      setAddMode("generate");
-      setNewLabel("");
-      setImportSecret("");
-      setSub("accounts");
-    } catch (e) {
-      triggerHaptic("error");
-      setAddError(e instanceof Error ? e.message : "Could not add account.");
-    } finally {
-      setAdding(false);
     }
   }
 
@@ -530,13 +480,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     accounts.length;
 
   const backTarget: Sub | null =
-    sub === "root"
-      ? null
-      : sub === "addAccount" || sub === "merge"
-        ? "accounts"
-        : sub === "addContact"
-          ? "contacts"
-          : "root";
+    sub === "root" ? null : sub === "merge" ? "accounts" : sub === "addContact" ? "contacts" : "root";
 
   return (
     <div className="fade-up mx-auto w-full max-w-[1000px] px-5 pb-[150px]">
@@ -577,9 +521,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               ? "Reveal Secret Key"
               : sub === "accounts"
                 ? "Accounts"
-                : sub === "addAccount"
-                  ? "Add Account"
-                  : sub === "contacts"
+                : sub === "contacts"
                     ? `Address Book (${contacts.length})`
                     : sub === "addContact"
                       ? "New Contact"
@@ -587,9 +529,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                         ? "Auto-Lock Timer"
                         : sub === "merge"
                           ? "Merge Account"
-                          : sub === "phrase"
-                            ? "Recovery Phrase"
-                            : sub === "signers"
+                          : sub === "signers"
                               ? "Signers & Multi-Sig"
                               : sub === "airsigner"
                                 ? "Air-Gapped Signer"
@@ -657,7 +597,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      if (hasMnemonicVault) setSub("phrase");
+                      if (hasMnemonicVault) setShowPhrase(true);
                     }}
                     sep
                   />
@@ -1010,7 +950,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               chevron
               onClick={() => {
                 triggerHaptic("selection");
-                setSub("addAccount");
+                setShowAddAccount(true);
               }}
               sep
             />
@@ -1227,51 +1167,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         </div>
       )}
 
-      {/* ---------- ADD ACCOUNT ---------- */}
-      {sub === "addAccount" && (
-        <>
-          <SegmentedControl
-            value={addMode}
-            onChange={setAddMode}
-            options={[
-              { value: "generate", label: "Derive from Phrase" },
-              { value: "import", label: "Import Secret Key" },
-            ]}
-          />
-          <div className="list-group mt-4 space-y-4 p-4">
-            <Field label="Account Label">
-              <input
-                className="input text-[13.5px]"
-                placeholder={`Account ${accounts.length + 1}`}
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-              />
-            </Field>
-            {addMode === "import" && (
-              <Field label="Secret Key (starts with S)">
-                <input
-                  className="input mono text-[13.5px]"
-                  placeholder="S..."
-                  value={importSecret}
-                  onChange={(e) => setImportSecret(e.target.value)}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-              </Field>
-            )}
-          </div>
-          <ErrorText message={addError ?? ""} />
-          <Button
-            className="mt-4 w-full !py-3.5 text-[15px] font-semibold"
-            loading={adding}
-            disabled={adding || (addMode === "import" && !validateStellarSecret(importSecret))}
-            onClick={() => void handleAddAccount()}
-          >
-            Create Account
-          </Button>
-        </>
-      )}
-
       {/* ---------- CONTACTS / ADDRESS BOOK ---------- */}
       {sub === "contacts" && (
         <>
@@ -1436,84 +1331,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           >
             Save Contact
           </Button>
-        </>
-      )}
-
-      {/* ---------- RECOVERY PHRASE ---------- */}
-      {sub === "phrase" && (
-        <>
-          <Notice>
-            These 12 words recreate your entire wallet at m/44&apos;/148&apos;/account&apos;. Write them down safely offline.
-          </Notice>
-          {revealedPhrase ? (
-            <>
-              <div className="list-group mt-4 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-[13px] font-semibold text-white">12-Word Recovery Phrase</span>
-                  <CopyButton value={revealedPhrase} label="Copy Phrase" />
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {revealedPhrase.split(" ").map((w, i) => (
-                    <span
-                      key={i}
-                      className="rounded-xl bg-white/[0.05] border border-white/10 px-2 py-2 text-center text-[13px] text-white"
-                    >
-                      <span className="mr-1.5 text-[10.5px] text-neutral-500">{i + 1}</span>
-                      {w}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-3.5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setPaperModalData({ secretOrPhrase: revealedPhrase, kind: "mnemonic" });
-                  }}
-                  className="chip flex items-center gap-1.5"
-                >
-                  <IconDownload size={13} />
-                  <span>Print Paper Wallet Certificate</span>
-                </button>
-                <button
-                  type="button"
-                  className="chip flex items-center gap-1.5 text-neutral-400"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setRevealedPhrase(null);
-                    setPhrasePw("");
-                  }}
-                >
-                  <IconEyeOff size={13} /> Hide Phrase
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="mt-4 flex gap-2">
-                <input
-                  className="input flex-1 text-[13.5px]"
-                  type="password"
-                  placeholder="Wallet Password"
-                  value={phrasePw}
-                  onChange={(e) => setPhrasePw(e.target.value)}
-                  autoComplete="current-password"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleRevealPhrase();
-                  }}
-                />
-                <Button
-                  loading={phraseBusy}
-                  disabled={!phrasePw || phraseBusy}
-                  onClick={() => void handleRevealPhrase()}
-                >
-                  Reveal
-                </Button>
-              </div>
-              {phraseError && <p className="mt-3 px-1 text-[13px] text-[#FF453A]">{phraseError}</p>}
-            </>
-          )}
         </>
       )}
 
@@ -1859,6 +1676,12 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           )}
         </div>
       )}
+
+      {/* Add Account Modal */}
+      <AddAccountModal open={showAddAccount} onClose={() => setShowAddAccount(false)} />
+
+      {/* Recovery Phrase Modal */}
+      <PhraseModal open={showPhrase} onClose={() => setShowPhrase(false)} />
 
       {/* Paper Wallet Modal */}
       {paperModalData && activeAccount && (
