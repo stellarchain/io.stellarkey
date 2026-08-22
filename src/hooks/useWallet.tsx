@@ -207,7 +207,27 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setNetworkState(net);
       setPrivacyMode(window.localStorage.getItem("polaris.privacy.v1") === "1");
       const storedFiat = window.localStorage.getItem("wallet.currency.v1") as FiatCurrency;
-      if (storedFiat && FIAT_LIST.includes(storedFiat)) setFiatCurrencyState(storedFiat);
+      if (storedFiat && FIAT_LIST.includes(storedFiat)) {
+        setFiatCurrencyState(storedFiat);
+      } else {
+        // First run: guess display currency from the browser locale (e.g. en-GB -> GBP)
+        try {
+          const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
+          const region = (locale.split("-")[1] ?? "").toUpperCase();
+          const regionToFiat: Record<string, FiatCurrency> = {
+            US: "USD", GB: "GBP", JP: "JPY", CA: "CAD", AU: "AUD", CH: "CHF",
+          };
+          if (region in regionToFiat) {
+            setFiatCurrencyState(regionToFiat[region]);
+          } else {
+            // Eurozone locales
+            const euroRegions = ["FR","DE","ES","IT","NL","IE","AT","PT","FI","BE","GR","LU","SK","SI"];
+            if (euroRegions.includes(region)) setFiatCurrencyState("EUR");
+          }
+        } catch {
+          void 0;
+        }
+      }
       setAutoLockMsState(loadAutoLockPref());
       setBiometricsEnabledState(loadBiometricsPref());
       setContacts(loadContacts());
