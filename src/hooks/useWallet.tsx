@@ -15,6 +15,7 @@ import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
 import {
   addStoredAccount,
+  addWatchOnlyAccount,
   getArchivedAccounts,
   hasDeletedVault,
   hasMnemonic,
@@ -55,6 +56,7 @@ function stripSecret(account: StoredAccount): AccountMeta {
     publicKey: account.publicKey,
     createdAt: account.createdAt,
     ...(account.index !== undefined ? { index: account.index, path: account.path } : {}),
+    ...(account.watchOnly ? { watchOnly: true } : {}),
   };
 }
 
@@ -106,6 +108,8 @@ interface WalletContextValue {
   restoreDeletedWallet: (password: string) => Promise<void>;
   selectAccount: (id: string) => void;
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
+  /** Track a public key without holding its secret (read-only) */
+  addWatchOnly: (publicKey: string, label?: string) => Promise<AccountMeta>;
   removeAccount: (id: string) => void;
   renameAccount: (id: string, newLabel: string) => void;
   restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
@@ -463,6 +467,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return account;
   }, []);
 
+  const addWatchOnly = useCallback(async (publicKey: string, label?: string) => {
+    const account = await addWatchOnlyAccount(publicKey.trim(), label);
+    setAccounts((prev) => [...prev, stripSecret(account)]);
+    setActiveId(account.id);
+    setBalances(null);
+    setClaimableBalances([]);
+    setActivity([]);
+    setActivityCursor(null);
+    return account;
+  }, []);
+
   const removeAccount = useCallback((id: string) => {
     const remaining = removeStoredAccount(id);
     if (!remaining) {
@@ -565,6 +580,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       feeStroops?: number;
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      if (activeAccount.watchOnly) {
+        throw new Error("This is a watch-only account — switch to a signing account to send.");
+      }
       const secretKey = getSecretKey(activeAccount.id);
       const result = await api.sendPayment({ network, secretKey, ...params });
       toast("Transaction submitted — confirming…", "info");
@@ -585,6 +603,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       memoText?: string;
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      if (activeAccount.watchOnly) {
+        throw new Error("Watch-only accounts cannot sign transactions.");
+      }
       const secretKey = getSecretKey(activeAccount.id);
       const result = await api.sendBatchPayments({ network, secretKey, ...params });
       toast("Batch transaction submitted — confirming…", "info");
@@ -763,6 +784,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       restoreDeletedWallet,
       selectAccount,
       addAccount,
+      addWatchOnly,
       removeAccount,
       renameAccount,
       restoreArchivedAccount,
@@ -819,6 +841,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       restoreDeletedWallet,
       selectAccount,
       addAccount,
+      addWatchOnly,
       removeAccount,
       renameAccount,
       restoreArchivedAccount,
