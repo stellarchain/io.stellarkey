@@ -424,6 +424,50 @@ export function updateAccountLabel(accountId: string, newLabel: string): VaultFi
  * Add a watch-only account: tracks an existing public key with no secret.
  * Balances and activity are visible; signing is impossible by design.
  */
+
+/**
+ * Add a hardware-backed account (Ledger or Trezor).
+ * Public key is stored for balance/activity indexing; transactions
+ * are signed on the physical hardware device.
+ */
+export async function addHardwareAccount(params: {
+  publicKey: string;
+  device: "ledger" | "trezor";
+  path: string;
+  label?: string;
+  index?: number;
+}): Promise<AccountMeta> {
+  const { publicKey, device, path, label, index } = params;
+  if (!StrKey.isValidEd25519PublicKey(publicKey.trim())) {
+    throw new Error("Invalid Stellar public key");
+  }
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+
+  const pk = publicKey.trim();
+  if (
+    vault.accounts.some((a) => a.publicKey === pk) ||
+    (vault.archivedAccounts ?? []).some((a) => a.publicKey === pk)
+  ) {
+    throw new Error("This hardware address is already in your wallet.");
+  }
+
+  const account: StoredAccount = {
+    id: randomHex(8),
+    label: label?.trim() || `${device === "ledger" ? "Ledger" : "Trezor"} ${(index ?? 0) + 1}`,
+    emoji: device === "ledger" ? "🔒" : "🛡️",
+    publicKey: pk,
+    createdAt: Date.now(),
+    hardware: device,
+    path,
+    index,
+  };
+  vault.accounts.push(account);
+  vault.activeAccountId = account.id;
+  persist(vault);
+  return stripSecret(account);
+}
+
 export async function addWatchOnlyAccount(
   publicKey: string,
   label?: string,

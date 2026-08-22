@@ -15,6 +15,7 @@ import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
 import {
   addStoredAccount,
+  addHardwareAccount as addHardwareAccountVault,
   addWatchOnlyAccount,
   getArchivedAccounts,
   hasDeletedVault,
@@ -118,6 +119,14 @@ interface WalletContextValue {
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
   /** Track a public key without holding its secret (read-only) */
   addWatchOnly: (publicKey: string, label?: string) => Promise<AccountMeta>;
+  /** Add a hardware wallet account (Ledger or Trezor) */
+  addHardwareAccount: (params: {
+    publicKey: string;
+    device: "ledger" | "trezor";
+    path: string;
+    label?: string;
+    index?: number;
+  }) => Promise<AccountMeta>;
   removeAccount: (id: string) => void;
   renameAccount: (id: string, newLabel: string) => void;
   restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
@@ -518,6 +527,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return account;
   }, []);
 
+  const addHardwareAccount = useCallback(
+    async (params: {
+      publicKey: string;
+      device: "ledger" | "trezor";
+      path: string;
+      label?: string;
+      index?: number;
+    }) => {
+      const account = await addHardwareAccountVault(params);
+      setAccounts((prev) => [...prev, stripSecret(account)]);
+      setActiveId(account.id);
+      setBalances(null);
+      setActivity([]);
+      setActivityCursor(null);
+      void refresh();
+      return account;
+    },
+    [refresh],
+  );
+
   const addWatchOnly = useCallback(async (publicKey: string, label?: string) => {
     const account = await addWatchOnlyAccount(publicKey.trim(), label);
     setAccounts((prev) => [...prev, stripSecret(account)]);
@@ -842,6 +871,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       selectAccount,
       addAccount,
       addWatchOnly,
+      addHardwareAccount,
       removeAccount,
       renameAccount,
       restoreArchivedAccount,
@@ -902,6 +932,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       selectAccount,
       addAccount,
       addWatchOnly,
+      addHardwareAccount,
       removeAccount,
       renameAccount,
       restoreArchivedAccount,

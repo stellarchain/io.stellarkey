@@ -14,6 +14,8 @@ export interface StoredAccount {
   secret?: EncryptedPayload;
   /** Track-only: no secret key exists for this account */
   watchOnly?: boolean;
+  /** Hardware wallet backing (Ledger or Trezor) */
+  hardware?: "ledger" | "trezor";
 }
 
 export interface VaultFile {
@@ -33,6 +35,7 @@ export interface AccountMeta {
   index?: number;
   path?: string;
   watchOnly?: boolean;
+  hardware?: "ledger" | "trezor";
 }
 
 export type { NetworkKey, EncryptedPayload };
