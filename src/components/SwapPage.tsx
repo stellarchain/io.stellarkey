@@ -9,7 +9,7 @@ import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
 import { Button, ErrorText } from "./ui";
-import { IconAlert, IconChevronDown, IconSliders, IconSwap } from "./icons";
+import { IconAlert, IconChevronDown, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
 
 export function SwapPage() {
   const { balances, swap, network, refresh, activeAccount } = useWallet();
@@ -297,7 +297,11 @@ export function SwapPage() {
               {activeAccount?.hardware && (
                 <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
                   <div className="flex items-center gap-2">
-                    <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+                    {activeAccount.hardware === "ledger" ? (
+                      <IconLedger size={15} className="text-[#64D2FF]" />
+                    ) : (
+                      <IconTrezor size={15} className="text-emerald-400" />
+                    )}
                     <span className="font-semibold">
                       Sign Swap on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
                     </span>

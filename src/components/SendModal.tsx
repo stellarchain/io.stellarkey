@@ -18,6 +18,8 @@ import {
   IconExternal,
   IconQrScan,
   IconWallet,
+  IconTrezor,
+  IconLedger,
 } from "./icons";
 
 type Stage = "form" | "review" | "sending" | "done";
@@ -389,11 +391,13 @@ function SendInner({
             {activeAccount?.hardware && (
               <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#0A84FF]/[0.08] border border-[#0A84FF]/30 text-[12px]">
                 <div className="flex items-center gap-2 text-[#0A84FF]">
-                  <span className="text-[14px]">
-                    {activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}
-                  </span>
+                  {activeAccount.hardware === "ledger" ? (
+                    <IconLedger size={16} className="text-[#64D2FF]" />
+                  ) : (
+                    <IconTrezor size={16} className="text-emerald-400" />
+                  )}
                   <span className="font-semibold">
-                    Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+                    Confirm &amp; Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Hardware Device
                   </span>
                 </div>
                 <span className="mono text-[11px] text-neutral-400">

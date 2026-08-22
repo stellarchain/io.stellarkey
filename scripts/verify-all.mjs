@@ -112,7 +112,7 @@ try {
 
   // Connect Trezor Device
   await page.click("button:has-text('Connect Trezor Device')");
-  await page.waitForSelector("text=🛡️ Trezor");
+  await page.waitForSelector("text=Trezor");
   await page.click("button:has-text('Connect Trezor via WebUSB')");
   await page.waitForSelector("text=✓ Device Connected");
   await page.click("button:has-text('Import Hardware Account')");
@@ -133,8 +133,15 @@ try {
   await page.click("button:has-text('Save Contact')");
   await page.waitForSelector("text=Treasury Alpha");
 
+  // Return to Settings Accounts and switch back to Account 1
+  await page.click("nav button:has-text('Settings')");
+  await page.click("button:has-text('Accounts')");
+  await page.click("button:has-text('Main Account')");
+  await page.waitForTimeout(300);
+
   // Return to Home
   await page.click("nav button:has-text('Home')");
+  await page.waitForSelector("text=Total Portfolio");
 
   // 8. Modals: Send and Receive
   console.log("Testing Send & Receive Modals...");

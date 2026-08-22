@@ -10,6 +10,7 @@ import {
   getStellarDerivationPath,
   type HardwareDeviceType,
 } from "@/lib/hardware";
+import { IconLedger, IconTrezor } from "./icons";
 import { Button, ErrorText, Field, Modal, ModalHeader, SegmentedControl } from "./ui";
 
 type Mode = "generate" | "import" | "hardware" | "watch";
@@ -224,8 +225,9 @@ function AddAccountInner({
                       : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
                   }`}
                 >
-                  <p className="text-[14px] font-bold text-white flex items-center gap-1.5">
-                    <span>🔒 Ledger</span>
+                  <p className="text-[14px] font-bold text-white flex items-center gap-2">
+                    <IconLedger size={18} className="text-[#64D2FF]" />
+                    <span>Ledger</span>
                   </p>
                   <p className="text-[11px] text-neutral-400 mt-0.5">Nano S / X / Stax</p>
                 </button>
@@ -243,8 +245,9 @@ function AddAccountInner({
                       : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
                   }`}
                 >
-                  <p className="text-[14px] font-bold text-white flex items-center gap-1.5">
-                    <span>🛡️ Trezor</span>
+                  <p className="text-[14px] font-bold text-white flex items-center gap-2">
+                    <IconTrezor size={18} className="text-emerald-400" />
+                    <span>Trezor</span>
                   </p>
                   <p className="text-[11px] text-neutral-400 mt-0.5">Model One / T / Safe</p>
                 </button>

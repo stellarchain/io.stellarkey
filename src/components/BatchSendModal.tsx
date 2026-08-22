@@ -7,7 +7,7 @@ import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { useToast } from "./Toast";
-import { IconCheck, IconChevronDown, IconPlus, IconTrash } from "./icons";
+import { IconCheck, IconChevronDown, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
 
 interface RecipientRow {
   id: string;
@@ -326,7 +326,11 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
               {activeAccount?.hardware && (
                 <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
                   <div className="flex items-center gap-2">
-                    <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+                    {activeAccount.hardware === "ledger" ? (
+                      <IconLedger size={15} className="text-[#64D2FF]" />
+                    ) : (
+                      <IconTrezor size={15} className="text-emerald-400" />
+                    )}
                     <span className="font-semibold">
                       Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
                     </span>
