@@ -550,6 +550,8 @@ export function Dashboard() {
       { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Network Stats & Gas Savings", run: () => setNetworkStatsOpen(true) },
+      { id: "trezor-connect", label: "Connect Trezor Hardware Wallet (Model One / T / Safe)", run: () => setAddAccountOpen(true) },
+      { id: "ledger-connect", label: "Connect Ledger Hardware Wallet (Nano S / X / Stax)", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
       {
