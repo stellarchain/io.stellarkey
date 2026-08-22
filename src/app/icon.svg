@@ -50,15 +50,9 @@
   <path d="M11 22H23C24.5 22 26 23.5 27 25" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/>
   <path d="M41 22H53" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/>
 
-  <!-- Stellar Logo Emblem (Crisp, High-Contrast White) -->
-  <g transform="translate(32, 40) rotate(-22)">
-    <!-- Top Arc of Planet -->
-    <path d="M -8.2 -3.4 A 8.8 8.8 0 0 1 8.2 -3.4" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
-    <!-- Bottom Arc of Planet -->
-    <path d="M -8.2 3.4 A 8.8 8.8 0 0 0 8.2 3.4" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
-    <!-- Upper Orbit Line -->
-    <line x1="-12" y1="-3.4" x2="12" y2="-3.4" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
-    <!-- Lower Orbit Line -->
-    <line x1="-12" y1="3.4" x2="12" y2="3.4" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- Official Stellar Logo Glyph (1:1 Reference in Crisp Pure White) -->
+  <g fill="#FFFFFF">
+    <path d="M 31.07 28.86 L 30.11 29 L 29.13 29.24 L 28.27 29.53 L 27.18 30.03 L 26.2 30.65 L 25.56 31.12 L 24.52 32.11 L 23.86 32.91 L 23.17 33.97 L 22.79 34.69 L 22.42 35.59 L 22.16 36.47 L 21.89 37.99 L 21.89 40.09 L 21.73 40.68 L 21.46 41.1 L 21.2 41.37 L 20.82 41.61 L 20 42.01 L 20 44.08 L 43.97 31.84 L 43.97 29.77 L 23.78 40.09 L 23.7 39.64 L 23.7 38.39 L 23.78 37.67 L 24.1 36.37 L 24.47 35.43 L 25.03 34.45 L 25.8 33.44 L 26.68 32.59 L 27.64 31.9 L 29.1 31.18 L 30.3 30.83 L 31.2 30.7 L 32.48 30.67 L 33.84 30.86 L 34.98 31.2 L 36.07 31.74 L 37.93 30.78 L 37.88 30.7 L 37.4 30.38 L 36.23 29.74 L 35.38 29.39 L 34.5 29.13 L 32.93 28.86 L 31.1 28.86 Z"/>
+    <path d="M 43.95 33.94 L 20.05 46.13 L 20 46.18 L 20 48.23 L 40.22 37.91 L 40.3 38.36 L 40.3 39.61 L 40.22 40.33 L 39.9 41.63 L 39.53 42.57 L 38.97 43.55 L 38.2 44.56 L 37.32 45.41 L 36.36 46.1 L 34.9 46.82 L 33.7 47.17 L 32.8 47.3 L 31.52 47.33 L 30.16 47.14 L 29.02 46.8 L 27.93 46.26 L 26.04 47.22 L 27.18 47.97 L 28.41 48.53 L 29.61 48.9 L 31.07 49.14 L 32.93 49.14 L 34.16 48.95 L 35.38 48.61 L 36.82 47.97 L 38.07 47.17 L 38.84 46.53 L 39.5 45.86 L 40.14 45.09 L 40.94 43.84 L 41.58 42.41 L 41.98 40.94 L 42.14 39.69 L 42.11 37.91 L 42.16 37.62 L 42.38 37.11 L 42.83 36.61 L 43.97 35.99 L 43.97 33.92 Z"/>
   </g>
 </svg>
