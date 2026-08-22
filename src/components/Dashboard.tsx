@@ -124,7 +124,25 @@ export function Dashboard() {
   useEffect(() => {
     void (async () => {
       await Promise.resolve();
-      const uri = new URLSearchParams(window.location.search).get("uri");
+      const params = new URLSearchParams(window.location.search);
+      const action = params.get("action");
+      if (action === "send") {
+        setSendPrefill(null);
+        setSendOpen(true);
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+      if (action === "receive") {
+        setReceiveOpen(true);
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+      if (action === "swap") {
+        setView("swap");
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+      const uri = params.get("uri");
       if (!uri) return;
       const parsed = parseSep7PayUri(uri);
       if (parsed) {
@@ -530,152 +548,217 @@ export function Dashboard() {
 
                                     {/* Apple Native iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
-        className={`hidden md:flex flex-col shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky top-0 h-screen overflow-y-auto transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-          sidebarCollapsed ? "w-[72px] p-3 items-center" : "w-[260px] lg:w-[280px] p-5"
+        className={`hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky top-0 h-screen transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          sidebarCollapsed ? "w-[72px]" : "w-[260px] lg:w-[280px]"
         }`}
       >
-        {/* App Title & Header Controls */}
-        <div className={`flex items-center pb-4 border-b border-white/[0.08] w-full ${sidebarCollapsed ? "flex-col gap-2.5 items-center" : "justify-between"}`}>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-md border border-white/10">
-              <LogoMark size={22} className="text-white" />
-            </div>
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-[17px] font-bold tracking-tight text-white leading-tight">Wallet</h1>
-                <p className="text-[11px] text-neutral-400 font-medium">Stellar Self-Custody</p>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setSidebarCollapsed((c) => !c);
-            }}
-            className="icon-btn !h-8 !w-8 text-neutral-400 hover:text-white"
-            title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            aria-label={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" />
-              <path d="M9 3v18" />
-            </svg>
-          </button>
-        </div>
-
-
-
-                {/* Navigation & Accounts (Clean Borderless Flow) */}
-        <nav className="mt-4 space-y-1 flex-1 w-full" aria-label="Desktop Navigation">
-          {!sidebarCollapsed && (
+        {/* App Title & Header Controls — Exact 64px height to match Main Header */}
+        <div
+          className={`flex h-[64px] shrink-0 items-center border-b border-white/[0.08] w-full ${
+            sidebarCollapsed ? "justify-center px-2" : "justify-between px-5"
+          }`}
+        >
+          {sidebarCollapsed ? (
             <button
               type="button"
               onClick={() => {
                 triggerHaptic("selection");
-                setPaletteOpen(true);
+                setSidebarCollapsed(false);
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-2 border border-white/5"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] shadow-sm border border-white/10 text-white hover:bg-white/[0.14] transition-all"
+              title="Expand Sidebar"
+              aria-label="Expand Sidebar"
             >
-              <div className="flex items-center gap-2">
-                <IconSearch size={15} />
-                <span>Search actions…</span>
-              </div>
-              <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
-                ⌘K
-              </kbd>
+              <LogoMark size={20} className="text-white" />
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => switchTab("home")}
-            className={`group relative flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-            } text-[13.5px] font-semibold ${
-              view === "home"
-                ? "bg-[#0A84FF] text-white shadow-sm"
-                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-            }`}
-            title={sidebarCollapsed ? "Home (⌘1)" : undefined}
-          >
-            <div className="flex items-center gap-2.5">
-              <IconHome size={18} />
-              {!sidebarCollapsed && <span>Home</span>}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => switchTab("activity")}
-            className={`group relative flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-            } text-[13.5px] font-semibold ${
-              view === "activity"
-                ? "bg-[#0A84FF] text-white shadow-sm"
-                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-            }`}
-            title={sidebarCollapsed ? "Activity (⌘2)" : undefined}
-          >
-            <div className="flex items-center gap-2.5">
-              <IconList size={18} />
-              {!sidebarCollapsed && <span>Activity</span>}
-            </div>
-            {!sidebarCollapsed && activity.length > 0 && (
-              <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => switchTab("swap")}
-            className={`group relative flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-            } text-[13.5px] font-semibold ${
-              view === "swap"
-                ? "bg-[#0A84FF] text-white shadow-sm"
-                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-            }`}
-            title={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
-          >
-            <IconSwap size={18} />
-            {!sidebarCollapsed && <span>DEX Swap</span>}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openSettings("root")}
-            className={`group relative flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-            } text-[13.5px] font-semibold ${
-              view === "settings"
-                ? "bg-[#0A84FF] text-white shadow-sm"
-                : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-            }`}
-            title={sidebarCollapsed ? "Settings (⌘4)" : undefined}
-          >
-            <IconGear size={18} />
-            {!sidebarCollapsed && <span>Settings</span>}
-          </button>
-
-          {/* Accounts Subgroup (Zero Outer Borders) */}
-          {!sidebarCollapsed ? (
-            <div className="pt-3 space-y-1">
-              <div className="flex items-center justify-between px-2 pb-0.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Accounts ({accounts.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setAddAccountOpen(true)}
-                  className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
-                >
-                  + Add
-                </button>
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-sm border border-white/10">
+                  <LogoMark size={20} className="text-white" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="truncate text-[15.5px] font-bold tracking-tight text-white leading-tight">
+                    Wallet
+                  </h1>
+                  <p className="truncate text-[10.5px] text-neutral-400 font-medium">
+                    Stellar Self-Custody
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setSidebarCollapsed(true);
+                }}
+                className="icon-btn !h-8 !w-8 text-neutral-400 hover:text-white shrink-0"
+                title="Collapse Sidebar"
+                aria-label="Collapse Sidebar"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect width="18" height="18" x="3" y="3" rx="2" />
+                  <path d="M9 3v18" />
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
 
-              <div className="space-y-0.5">
-                                {accounts.map((acct) => {
+        {/* Navigation & Accounts Scroll Body */}
+        <div className={`flex-1 overflow-y-auto scrollbar-none ${sidebarCollapsed ? "p-2.5 space-y-2" : "p-4 space-y-1"}`}>
+          <nav className="space-y-1 w-full" aria-label="Desktop Navigation">
+            {!sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setPaletteOpen(true);
+                }}
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-2 border border-white/5"
+              >
+                <div className="flex items-center gap-2">
+                  <IconSearch size={15} />
+                  <span>Search actions…</span>
+                </div>
+                <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => switchTab("home")}
+              className={`group relative flex w-full items-center rounded-xl transition-all ${
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+              } text-[13.5px] font-semibold ${
+                view === "home"
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              title={sidebarCollapsed ? "Home (⌘1)" : undefined}
+            >
+              <div className="flex items-center gap-2.5">
+                <IconHome size={18} />
+                {!sidebarCollapsed && <span>Home</span>}
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => switchTab("activity")}
+              className={`group relative flex w-full items-center rounded-xl transition-all ${
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+              } text-[13.5px] font-semibold ${
+                view === "activity"
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              title={sidebarCollapsed ? "Activity (⌘2)" : undefined}
+            >
+              <div className="flex items-center gap-2.5">
+                <IconList size={18} />
+                {!sidebarCollapsed && <span>Activity</span>}
+              </div>
+              {!sidebarCollapsed && activity.length > 0 && (
+                <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => switchTab("swap")}
+              className={`group relative flex w-full items-center rounded-xl transition-all ${
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+              } text-[13.5px] font-semibold ${
+                view === "swap"
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              title={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
+            >
+              <IconSwap size={18} />
+              {!sidebarCollapsed && <span>DEX Swap</span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openSettings("root")}
+              className={`group relative flex w-full items-center rounded-xl transition-all ${
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+              } text-[13.5px] font-semibold ${
+                view === "settings"
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              title={sidebarCollapsed ? "Settings (⌘4)" : undefined}
+            >
+              <IconGear size={18} />
+              {!sidebarCollapsed && <span>Settings</span>}
+            </button>
+
+            {/* Accounts Subgroup (Zero Outer Borders) */}
+            {!sidebarCollapsed ? (
+              <div className="pt-3 space-y-1">
+                <div className="flex items-center justify-between px-2 pb-0.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                    Accounts ({accounts.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAddAccountOpen(true)}
+                    className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                <div className="space-y-0.5">
+                  {accounts.map((acct) => {
+                    const isActive = acct.id === activeAccount?.id;
+                    return (
+                      <button
+                        key={acct.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          selectAccount(acct.id);
+                        }}
+                        className={`flex w-full items-center rounded-xl px-2.5 py-2 text-left transition-colors ${
+                          isActive
+                            ? "bg-white/[0.09] text-white font-medium shadow-sm"
+                            : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <Avatar seed={acct.publicKey} size={24} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] leading-tight font-medium text-white">
+                              {acct.label}
+                            </p>
+                            <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
+                              {privacyMode ? "••••••" : `${fmtAmount(xlm?.balance ?? "0")} XLM`}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
                   return (
                     <button
@@ -685,79 +768,32 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`flex w-full items-center rounded-xl px-2.5 py-2 text-left transition-colors ${
+                      className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
                         isActive
-                          ? "bg-white/[0.09] text-white font-medium shadow-sm"
-                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
+                          ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
+                          : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                       }`}
+                      title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <Avatar seed={acct.publicKey} size={24} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] leading-tight font-medium text-white">
-                            {acct.label}
-                            {acct.watchOnly && (
-                              <span className="ml-1.5 rounded-md bg-[#64D2FF]/15 px-1 py-px align-middle text-[9px] font-bold uppercase tracking-wide text-[#64D2FF]">
-                                Watch
-                              </span>
-                            )}
-                          </p>
-                          <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
-                            {(() => {
-                              const bal = accountBalances[acct.publicKey];
-                              if (privacyMode) return "••••••";
-                              if (bal === undefined) return "Loading…";
-                              const fiat =
-                                network === "mainnet" && xlmPriceUsd !== null
-                                  ? ` · ≈ ${fmtFiat(bal * xlmPriceUsd, fiatCurrency)}`
-                                  : "";
-                              return `${fmtAmount(bal)} XLM${fiat}`;
-                            })()}
-                          </p>
-                        </div>
-                      </div>
+                      <Avatar seed={acct.publicKey} size={28} />
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={() => setAddAccountOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                  title="Add Account"
+                >
+                  <IconPlus size={14} />
+                </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 pt-2">
-              {accounts.map((acct) => {
-                const isActive = acct.id === activeAccount?.id;
-                return (
-                  <button
-                    key={acct.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      selectAccount(acct.id);
-                    }}
-                    className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
-                      isActive
-                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
-                        : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
-                    }`}
-                    title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
-                  >
-                    <Avatar seed={acct.publicKey} size={28} />
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setAddAccountOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
-                title="Add Account"
-              >
-                <IconPlus size={14} />
-              </button>
-            </div>
-          )}
-        </nav>
+            )}
+          </nav>
+        </div>
 
-                {/* Footer Controls */}
-        <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
+        {/* Footer Controls */}
+        <div className={`border-t border-white/[0.08] shrink-0 w-full ${sidebarCollapsed ? "p-2.5" : "p-4 space-y-2"}`}>
           {!sidebarCollapsed ? (
             <>
               <div className="flex items-center justify-between">
@@ -871,7 +907,7 @@ export function Dashboard() {
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
         {/* Desktop macOS Top Window Header Bar */}
-        <header className="hidden md:flex items-center justify-between px-8 py-4 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
+        <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
               {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view.charAt(0).toUpperCase() + view.slice(1)}
