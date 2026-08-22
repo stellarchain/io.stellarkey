@@ -505,11 +505,11 @@ export function Dashboard() {
           </button>
         </nav>
 
-                {/* iOS / iPadOS Native Multi-Account Section */}
+                        {/* Apple iPadOS Inset-Grouped Accounts Section */}
         <div className="mt-4 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
-              {/* Section Header */}
+              {/* Header */}
               <div className="flex items-center justify-between px-2 pb-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
                   Accounts ({accounts.length})
@@ -517,16 +517,17 @@ export function Dashboard() {
                 <button
                   type="button"
                   onClick={() => openSettings("addAccount")}
-                  className="text-[12px] font-semibold text-[#0A84FF] hover:underline"
+                  className="text-[12px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
                 >
-                  + Add
+                  <IconPlus size={11} /> Add
                 </button>
               </div>
 
-              {/* Accounts List */}
-              <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-0.5 scrollbar-none">
+              {/* Inset Grouped Accounts List */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-1.5 space-y-1 max-h-[280px] overflow-y-auto scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
+                  const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                   return (
                     <button
                       key={acct.id}
@@ -535,27 +536,29 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`group flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
+                      className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.08] border border-white/10 text-white font-semibold shadow-sm"
+                          ? "bg-white/[0.09] text-white font-semibold shadow-sm border border-white/10"
                           : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <Avatar seed={acct.publicKey} size={28} />
+                        <Avatar seed={acct.publicKey} size={26} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13.5px] leading-tight font-semibold text-white">
+                          <p className="truncate text-[13px] leading-tight font-semibold text-white">
                             {acct.label}
                           </p>
-                          <p className="mono truncate text-[11px] text-neutral-400 pt-0.5">
+                          <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                             {isActive && balances
                               ? `${fmtAmount(xlm?.balance ?? "0")} XLM`
-                              : shortenAddr(acct.publicKey, 4, 4)}
+                              : `#${idxNum} · ${shortenAddr(acct.publicKey, 4, 4)}`}
                           </p>
                         </div>
                       </div>
                       {isActive && (
-                        <IconCheck size={16} className="text-[#0A84FF] shrink-0 ml-1" />
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#0A84FF] text-white shrink-0 ml-1">
+                          <IconCheck size={10} />
+                        </span>
                       )}
                     </button>
                   );
@@ -564,10 +567,10 @@ export function Dashboard() {
                 <button
                   type="button"
                   onClick={() => openSettings("addAccount")}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 py-1.5 text-[11.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
                 >
-                  <IconPlus size={13} />
-                  <span>Add Account</span>
+                  <IconPlus size={12} />
+                  <span>New Account</span>
                 </button>
               </div>
             </>
@@ -578,6 +581,7 @@ export function Dashboard() {
               </span>
               {accounts.map((acct) => {
                 const isActive = acct.id === activeAccount?.id;
+                const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                 return (
                   <button
                     key={acct.id}
@@ -591,7 +595,7 @@ export function Dashboard() {
                         ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                         : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                     }`}
-                    title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
+                    title={`${acct.label} (#${idxNum}) - ${shortenAddr(acct.publicKey, 4, 4)}`}
                   >
                     <Avatar seed={acct.publicKey} size={28} />
                   </button>
