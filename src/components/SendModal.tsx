@@ -304,6 +304,11 @@ function SendInner({
                   {feeXlm} XLM <span className="text-[11px] text-neutral-500">({feeStroops} stroops)</span>
                 </span>
               </Row>
+              <Row label="Time-Lock Window">
+                <span className="mono text-[12.5px] text-neutral-300">
+                  180 seconds <span className="text-[11px] text-neutral-500">(SCP Timeout)</span>
+                </span>
+              </Row>
             </div>
 
             {/* Pre-Flight Balance Delta Simulator */}
