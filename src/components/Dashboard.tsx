@@ -96,7 +96,6 @@ export function Dashboard() {
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimingAll, setClaimingAll] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -373,44 +372,22 @@ export function Dashboard() {
         </div>
       )}
 
-            {/* iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
-      <aside
-        className={`hidden md:flex flex-col shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] sticky top-0 h-screen overflow-y-auto transition-all duration-300 ${
-          sidebarCollapsed ? "w-[76px] p-3 items-center" : "w-[260px] lg:w-[280px] p-5"
-        }`}
-      >
+                  {/* iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
+      <aside className="hidden md:flex flex-col w-[260px] lg:w-[280px] shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] p-5 sticky top-0 h-screen overflow-y-auto">
         {/* App Title & Logo */}
-        <div className={`flex items-center pb-5 border-b border-white/[0.08] w-full ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-md border border-white/10">
-              <LogoMark size={22} className="text-white" />
-            </div>
-            {!sidebarCollapsed && (
-              <div>
-                <h1 className="text-[17px] font-bold tracking-tight text-white leading-tight">Wallet</h1>
-                <p className="text-[11px] text-neutral-400 font-medium">Stellar Self-Custody</p>
-              </div>
-            )}
+        <div className="flex items-center gap-3 pb-5 border-b border-white/[0.08]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-md border border-white/10">
+            <LogoMark size={22} className="text-white" />
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setSidebarCollapsed((c) => !c);
-            }}
-            className="text-neutral-400 hover:text-white transition-colors"
-            title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect width="18" height="18" x="3" y="3" rx="2" />
-              <path d="M9 3v18" />
-            </svg>
-          </button>
+          <div>
+            <h1 className="text-[17px] font-bold tracking-tight text-white leading-tight">Wallet</h1>
+            <p className="text-[11.5px] text-neutral-400 font-medium">Stellar Self-Custody</p>
+          </div>
         </div>
 
         {/* Active Account Identity Card */}
-        {activeAccount && !sidebarCollapsed && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2 w-full">
+        {activeAccount && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5 min-w-0">
                 <Avatar seed={activeAccount.publicKey} size={28} />
@@ -443,32 +420,28 @@ export function Dashboard() {
         )}
 
         {/* Sidebar Nav Links */}
-        <nav className="mt-5 space-y-1.5 flex-1 w-full" aria-label="Desktop Sidebar Navigation">
-          {!sidebarCollapsed && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setPaletteOpen(true);
-              }}
-              className="flex w-full items-center justify-between rounded-xl px-3.5 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
-            >
-              <div className="flex items-center gap-2">
-                <IconSearch size={15} />
-                <span>Search actions…</span>
-              </div>
-              <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
-                ⌘K
-              </kbd>
-            </button>
-          )}
+        <nav className="mt-5 space-y-1 flex-1" aria-label="Desktop Sidebar Navigation">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              setPaletteOpen(true);
+            }}
+            className="flex w-full items-center justify-between rounded-xl px-3.5 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
+          >
+            <div className="flex items-center gap-2">
+              <IconSearch size={15} />
+              <span>Search actions…</span>
+            </div>
+            <kbd className="mono rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-neutral-400 font-semibold">
+              ⌘K
+            </kbd>
+          </button>
 
           <button
             type="button"
             onClick={() => switchTab("home")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "justify-center p-3" : "justify-between px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
               view === "home"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -477,9 +450,9 @@ export function Dashboard() {
           >
             <div className="flex items-center gap-2.5">
               <IconHome size={18} />
-              {!sidebarCollapsed && <span>Home</span>}
+              <span>Home</span>
             </div>
-            {!sidebarCollapsed && balances && (
+            {balances && (
               <span className="mono text-[11px] font-normal opacity-80">{balances.length}</span>
             )}
           </button>
@@ -487,9 +460,7 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("activity")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "justify-center p-3" : "justify-between px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
               view === "activity"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -498,9 +469,9 @@ export function Dashboard() {
           >
             <div className="flex items-center gap-2.5">
               <IconList size={18} />
-              {!sidebarCollapsed && <span>Activity</span>}
+              <span>Activity</span>
             </div>
-            {!sidebarCollapsed && activity.length > 0 && (
+            {activity.length > 0 && (
               <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
             )}
           </button>
@@ -508,9 +479,7 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("swap")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "justify-center p-3" : "gap-2.5 px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
               view === "swap"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -518,15 +487,13 @@ export function Dashboard() {
             title="DEX Swap (Cmd+3)"
           >
             <IconSwap size={18} />
-            {!sidebarCollapsed && <span>DEX Swap</span>}
+            <span>DEX Swap</span>
           </button>
 
           <button
             type="button"
             onClick={() => openSettings("root")}
-            className={`flex w-full items-center rounded-xl transition-all ${
-              sidebarCollapsed ? "justify-center p-3" : "gap-2.5 px-3.5 py-2.5"
-            } text-[14px] font-semibold ${
+            className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left text-[14px] font-semibold transition-all ${
               view === "settings"
                 ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -534,79 +501,50 @@ export function Dashboard() {
             title="Settings (Cmd+4)"
           >
             <IconGear size={18} />
-            {!sidebarCollapsed && <span>Settings</span>}
+            <span>Settings</span>
           </button>
         </nav>
 
         {/* Sidebar Footer Controls */}
-        <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
-          {!sidebarCollapsed ? (
-            <>
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  className="icon-btn !h-8 !w-8"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    togglePrivacy();
-                  }}
-                  title={privacyMode ? "Show balances" : "Hide balances"}
-                >
-                  {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                </button>
-                <button
-                  type="button"
-                  className="icon-btn !h-8 !w-8"
-                  onClick={() => {
-                    triggerHaptic("light");
-                    void refresh();
-                  }}
-                  disabled={dataLoading}
-                  title="Refresh Network Data"
-                >
-                  {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
-                </button>
-                <NetworkDropdown network={network} onSwitch={switchNetwork} />
-              </div>
+        <div className="pt-4 border-t border-white/[0.08] space-y-2">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="icon-btn !h-8 !w-8"
+              onClick={() => {
+                triggerHaptic("selection");
+                togglePrivacy();
+              }}
+              title={privacyMode ? "Show balances" : "Hide balances"}
+            >
+              {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+            </button>
+            <button
+              type="button"
+              className="icon-btn !h-8 !w-8"
+              onClick={() => {
+                triggerHaptic("light");
+                void refresh();
+              }}
+              disabled={dataLoading}
+              title="Refresh Network Data"
+            >
+              {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+            </button>
+            <NetworkDropdown network={network} onSwitch={switchNetwork} />
+          </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("warning");
-                  lock();
-                }}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] py-2 text-[12px] font-semibold text-neutral-400 hover:bg-white/[0.08] hover:text-[#FF453A] transition-colors"
-              >
-                <IconLock size={13} />
-                <span>Lock Wallet</span>
-              </button>
-            </>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                className="icon-btn !h-8 !w-8"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  togglePrivacy();
-                }}
-                title={privacyMode ? "Show balances" : "Hide balances"}
-              >
-                {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-              </button>
-              <button
-                type="button"
-                className="icon-btn !h-8 !w-8"
-                onClick={() => {
-                  triggerHaptic("warning");
-                  lock();
-                }}
-                title="Lock Wallet"
-              >
-                <IconLock size={15} className="text-neutral-400 hover:text-[#FF453A]" />
-              </button>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("warning");
+              lock();
+            }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.04] py-2 text-[12px] font-semibold text-neutral-400 hover:bg-white/[0.08] hover:text-[#FF453A] transition-colors"
+          >
+            <IconLock size={13} />
+            <span>Lock Wallet</span>
+          </button>
         </div>
       </aside>
 
