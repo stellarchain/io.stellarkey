@@ -374,15 +374,15 @@ export function Dashboard() {
         </div>
       )}
 
-                              {/* Trezor-Style iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
+                                    {/* Apple Native iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
         className={`hidden md:flex flex-col shrink-0 min-h-screen border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky top-0 h-screen overflow-y-auto transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-          sidebarCollapsed ? "w-[76px] p-3 items-center" : "w-[260px] lg:w-[280px] p-5"
+          sidebarCollapsed ? "w-[72px] p-3 items-center" : "w-[260px] lg:w-[280px] p-5"
         }`}
       >
         {/* App Title & Header Controls */}
         <div className={`flex items-center pb-4 border-b border-white/[0.08] w-full ${sidebarCollapsed ? "flex-col gap-2.5 items-center" : "justify-between"}`}>
-          <div className={`flex items-center gap-3 ${sidebarCollapsed ? "flex-col items-center" : ""}`}>
+          <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-md border border-white/10">
               <LogoMark size={22} className="text-white" />
             </div>
@@ -410,8 +410,15 @@ export function Dashboard() {
           </button>
         </div>
 
-        {/* Sidebar Nav Links */}
-        <nav className="mt-4 space-y-1.5 w-full" aria-label="Desktop Primary Navigation">
+        {/* Active Account Identity Card */}
+        {activeAccount && (
+          <div className={`mt-3 w-full ${sidebarCollapsed ? "flex justify-center" : ""}`}>
+            <AccountMenu onManageAccounts={() => openSettings("accounts")} compact={sidebarCollapsed} />
+          </div>
+        )}
+
+        {/* Primary Navigation */}
+        <nav className="mt-4 space-y-1.5 flex-1 w-full" aria-label="Desktop Navigation">
           {!sidebarCollapsed && (
             <button
               type="button"
@@ -419,7 +426,7 @@ export function Dashboard() {
                 triggerHaptic("selection");
                 setPaletteOpen(true);
               }}
-              className="flex w-full items-center justify-between rounded-xl px-3.5 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-3 border border-white/5"
             >
               <div className="flex items-center gap-2">
                 <IconSearch size={15} />
@@ -434,11 +441,11 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("home")}
-            className={`group relative flex w-full items-center rounded-2xl transition-all ${
+            className={`flex w-full items-center rounded-xl transition-all ${
               sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3.5 py-2.5"
             } text-[14px] font-semibold ${
               view === "home"
-                ? "bg-[#0A84FF] text-white shadow-md shadow-blue-500/20"
+                ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
             }`}
             title={sidebarCollapsed ? "Home (⌘1)" : undefined}
@@ -452,11 +459,11 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("activity")}
-            className={`group relative flex w-full items-center rounded-2xl transition-all ${
+            className={`flex w-full items-center rounded-xl transition-all ${
               sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3.5 py-2.5"
             } text-[14px] font-semibold ${
               view === "activity"
-                ? "bg-[#0A84FF] text-white shadow-md shadow-blue-500/20"
+                ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
             }`}
             title={sidebarCollapsed ? "Activity (⌘2)" : undefined}
@@ -473,11 +480,11 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => switchTab("swap")}
-            className={`group relative flex w-full items-center rounded-2xl transition-all ${
+            className={`flex w-full items-center rounded-xl transition-all ${
               sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3.5 py-2.5"
             } text-[14px] font-semibold ${
               view === "swap"
-                ? "bg-[#0A84FF] text-white shadow-md shadow-blue-500/20"
+                ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
             }`}
             title={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
@@ -489,11 +496,11 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => openSettings("root")}
-            className={`group relative flex w-full items-center rounded-2xl transition-all ${
+            className={`flex w-full items-center rounded-xl transition-all ${
               sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3.5 py-2.5"
             } text-[14px] font-semibold ${
               view === "settings"
-                ? "bg-[#0A84FF] text-white shadow-md shadow-blue-500/20"
+                ? "bg-[#0A84FF] text-white shadow-sm"
                 : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
             }`}
             title={sidebarCollapsed ? "Settings (⌘4)" : undefined}
@@ -503,13 +510,13 @@ export function Dashboard() {
           </button>
         </nav>
 
-                                {/* Apple HIG Multi-Account Section */}
-        <div className="mt-5 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
+                {/* iOS / iPadOS Native Multi-Account Section */}
+        <div className="mt-4 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
-              {/* Accounts Header */}
-              <div className="flex items-center justify-between px-2 pb-1.5">
-                <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+              {/* Section Header */}
+              <div className="flex items-center justify-between px-2 pb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
                   Accounts ({accounts.length})
                 </span>
                 <button
@@ -522,10 +529,9 @@ export function Dashboard() {
               </div>
 
               {/* Accounts List */}
-              <div className="space-y-1 max-h-[260px] overflow-y-auto pr-0.5 scrollbar-none">
+              <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-0.5 scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
-                  
                   return (
                     <button
                       key={acct.id}
@@ -534,16 +540,16 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all ${
+                      className={`group flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.09] text-white font-semibold shadow-sm"
-                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
+                          ? "bg-white/[0.08] border border-white/10 text-white font-semibold shadow-sm"
+                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <Avatar seed={acct.publicKey} size={28} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13.5px] leading-tight font-medium text-white">
+                          <p className="truncate text-[13.5px] leading-tight font-semibold text-white">
                             {acct.label}
                           </p>
                           <p className="mono truncate text-[11px] text-neutral-400 pt-0.5">
@@ -559,10 +565,22 @@ export function Dashboard() {
                     </button>
                   );
                 })}
+
+                <button
+                  type="button"
+                  onClick={() => openSettings("addAccount")}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
+                >
+                  <IconPlus size={13} />
+                  <span>Add Account</span>
+                </button>
               </div>
             </>
           ) : (
             <div className="flex flex-col items-center gap-2 pt-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-500 mb-0.5">
+                Accs
+              </span>
               {accounts.map((acct) => {
                 const isActive = acct.id === activeAccount?.id;
                 return (
@@ -596,12 +614,11 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Bottom Controls */}
-        <div className="pt-3 border-t border-white/[0.08] space-y-2 w-full">
-
+        {/* Footer Controls */}
+        <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
           {!sidebarCollapsed ? (
             <>
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center justify-between">
                 <button
                   type="button"
                   className="icon-btn !h-8 !w-8"
@@ -641,28 +658,40 @@ export function Dashboard() {
               </button>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-1.5 pt-1">
+            <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
-                className="icon-btn !h-8 !w-8"
+                className="icon-btn !h-9 !w-9"
                 onClick={() => {
                   triggerHaptic("selection");
                   togglePrivacy();
                 }}
                 title={privacyMode ? "Show balances" : "Hide balances"}
               >
-                {privacyMode ? <IconEyeOff size={15} /> : <IconEye size={15} />}
+                {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
               </button>
               <button
                 type="button"
-                className="icon-btn !h-8 !w-8 hover:!text-[#FF453A]"
+                className="icon-btn !h-9 !w-9"
+                onClick={() => {
+                  triggerHaptic("light");
+                  void refresh();
+                }}
+                disabled={dataLoading}
+                title="Refresh Network Data"
+              >
+                {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+              </button>
+              <button
+                type="button"
+                className="icon-btn !h-9 !w-9 hover:!text-[#FF453A]"
                 onClick={() => {
                   triggerHaptic("warning");
                   lock();
                 }}
                 title="Lock Wallet"
               >
-                <IconLock size={15} />
+                <IconLock size={16} />
               </button>
             </div>
           )}
