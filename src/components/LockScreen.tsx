@@ -54,7 +54,7 @@ export function LockScreen() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col items-center justify-center px-6">
+    <div className="mx-auto flex min-h-screen w-full max-w-sm sm:max-w-md flex-col items-center justify-center px-6 py-12">
       <div className={`w-full ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />
@@ -64,7 +64,7 @@ export function LockScreen() {
           </p>
         </div>
 
-        <div className="panel mt-7 p-5">
+        <div className="panel mt-7 p-6 sm:p-8 shadow-2xl border border-white/10">
           <form
             onSubmit={(e) => {
               e.preventDefault();
