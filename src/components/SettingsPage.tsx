@@ -90,6 +90,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     contacts,
     addContact,
     removeContact,
+    toggleContactFavorite,
     privacyMode,
     togglePrivacy,
     autoLockMs,
@@ -132,6 +133,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [merging, setMerging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -695,31 +697,29 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     onClick={handleDownloadBackup}
                     sep
                   />
-                  <label
-                    className="row-hover flex w-full cursor-pointer items-center gap-3.5 px-4 py-3.5 text-left ios-sep"
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white shadow-sm">
-                      <IconRefresh size={16} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[14px] font-medium text-white">
-                        Restore From Backup File
-                      </span>
-                      {restoringBackup && (
-                        <span className="block text-[11px] text-[#BF5AF2]">Restoring…</span>
-                      )}
-                    </span>
-                    <input
-                      type="file"
-                      accept="application/json,.json,application/octet-stream"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) void handleRestoreBackupFile(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
+                                    <RowButton
+                    icon={<IconRefresh size={16} />}
+                    tint="#5E5CE6"
+                    label="Restore From Backup File"
+                    value={restoringBackup ? "Restoring…" : undefined}
+                    onClick={() => {
+                      // Single activation via sibling input — no label double-fire
+                      backupInputRef.current?.click();
+                    }}
+                    sep
+                  />
+                  <input
+                    ref={backupInputRef}
+                    type="file"
+                    accept="application/json,.json,application/octet-stream"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      void handleRestoreBackupFile(f);
+                      e.target.value = "";
+                    }}
+                  />
                   <RowButton
                     icon={<IconFingerprint size={16} />}
                     tint="#5E5CE6"
@@ -1263,15 +1263,43 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     i > 0 ? "ios-sep" : ""
                   }`}
                 >
-                  <Avatar seed={c.address} size={34} />
+                  <div className="relative shrink-0">
+                    <Avatar seed={c.address} size={34} />
+                    {c.favorite && (
+                      <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-black text-[9px] font-bold shadow-sm">
+                        ★
+                      </span>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15.5px] font-semibold leading-tight text-white">
-                      {c.name}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-[15.5px] font-semibold leading-tight text-white">
+                        {c.name}
+                      </p>
+                      {c.favorite && (
+                        <span className="rounded-md bg-[#FFD60A]/15 px-1.5 py-0.5 text-[9.5px] font-bold text-[#FFD60A] uppercase tracking-wide">
+                          VIP
+                        </span>
+                      )}
+                    </div>
                     <p className="mono truncate text-[12px] leading-tight text-neutral-400">
                       {c.address}
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      toggleContactFavorite(c.address);
+                    }}
+                    className={`icon-btn !h-8 !w-8 transition-colors ${
+                      c.favorite ? "!text-[#FFD60A]" : "!text-neutral-500 hover:!text-[#FFD60A]"
+                    }`}
+                    title={c.favorite ? "Unmark Favorite" : "Pin as Favorite"}
+                    aria-label="Toggle Favorite"
+                  >
+                    <span className="text-[14px]">{c.favorite ? "★" : "☆"}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {

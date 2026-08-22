@@ -7,6 +7,7 @@ const KEY = "polaris.contacts.v1";
 export interface Contact {
   name: string;
   address: string;
+  favorite?: boolean;
 }
 
 export function loadContacts(): Contact[] {
@@ -28,13 +29,34 @@ export function saveContact(contact: Contact): Contact[] {
   const contacts = loadContacts().filter(
     (c) => c.address.toLowerCase() !== contact.address.toLowerCase(),
   );
-  const next = [...contacts, contact].sort((a, b) => a.name.localeCompare(b.name));
+  const next = [...contacts, contact].sort((a, b) => {
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  persist(next);
+  return next;
+}
+
+export function toggleFavoriteContact(address: string): Contact[] {
+  const contacts = loadContacts();
+  const next = contacts.map((c) =>
+    c.address.toLowerCase() === address.toLowerCase()
+      ? { ...c, favorite: !c.favorite }
+      : c,
+  ).sort((a, b) => {
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
+    return a.name.localeCompare(b.name);
+  });
   persist(next);
   return next;
 }
 
 export function deleteContact(address: string): Contact[] {
-  const next = loadContacts().filter((c) => c.address !== address);
+  const next = loadContacts().filter(
+    (c) => c.address.toLowerCase() !== address.toLowerCase(),
+  );
   persist(next);
   return next;
 }

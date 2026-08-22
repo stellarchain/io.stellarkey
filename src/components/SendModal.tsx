@@ -533,30 +533,6 @@ function SendInner({
                   </button>
                 )}
               </div>
-              <div>
-                <label className="field-label">Asset</label>
-                <div className="relative">
-                  <select
-                    value={assetKey}
-                    onChange={(e) => {
-                      triggerHaptic("selection");
-                      setAssetKey(e.target.value);
-                    }}
-                    className="input pr-10 cursor-pointer text-[14px]"
-                  >
-                    {options.map((b) => (
-                      <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
-                        {b.code} · Balance: {fmtAmount(b.balance)}
-                      </option>
-                    ))}
-                  </select>
-                  <IconChevronDown
-                    size={16}
-                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400"
-                  />
-                </div>
-              </div>
-
               {/* Destination */}
               <div>
                 <div className="flex items-center justify-between pb-1">
@@ -581,20 +557,29 @@ function SendInner({
                 />
                 {contacts.length > 0 && !destination && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-neutral-500">Quick contact:</span>
-                    {contacts.slice(0, 4).map((c) => (
-                      <button
-                        key={c.address}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          handleDestinationChange(c.address);
-                        }}
-                        className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
-                      >
-                        {c.name}
-                      </button>
-                    ))}
+                    <span className="text-[11px] text-neutral-500 font-medium">Quick contact:</span>
+                    {contacts
+                      .slice()
+                      .sort((a, b) => (a.favorite && !b.favorite ? -1 : !a.favorite && b.favorite ? 1 : 0))
+                      .slice(0, 5)
+                      .map((c) => (
+                        <button
+                          key={c.address}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            handleDestinationChange(c.address);
+                          }}
+                          className={`chip !py-0.5 !px-2 text-[11.5px] flex items-center gap-1 transition-all ${
+                            c.favorite
+                              ? "bg-[#FFD60A]/15 border border-[#FFD60A]/30 text-white font-medium"
+                              : "text-neutral-300 hover:text-white"
+                          }`}
+                        >
+                          {c.favorite && <span className="text-[#FFD60A] text-[10px]">★</span>}
+                          <span>{c.name}</span>
+                        </button>
+                      ))}
                   </div>
                 )}
                 {recentRecipients.length > 0 && (
@@ -665,10 +650,21 @@ function SendInner({
                 />
               </div>
 
-              {/* Memo */}
+              {/* Memo & Preset Tags */}
               <div>
                 <div className="flex items-center justify-between pb-1">
-                  <label className="field-label !pb-0">Memo (Optional)</label>
+                  <div className="flex items-center gap-2">
+                    <label className="field-label !pb-0">Memo (Optional)</label>
+                    {memoType === "text" && (
+                      <span
+                        className={`mono text-[10.5px] font-medium ${
+                          memoBytes > 28 ? "text-[#FF453A] font-bold" : memoBytes > 20 ? "text-[#FF9F0A]" : "text-neutral-500"
+                        }`}
+                      >
+                        {memoBytes}/28 bytes
+                      </span>
+                    )}
+                  </div>
                   <div className="flex gap-2 text-[11px]">
                     {(["text", "id", "hash"] as const).map((t) => (
                       <button
@@ -698,8 +694,33 @@ function SendInner({
                   }
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
-                  className="input text-[13px]"
+                  className={`input text-[13px] ${memoBytes > 28 && memoType === "text" ? "!ring-2 !ring-[#FF453A]" : ""}`}
                 />
+                {memoType === "text" && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10.5px] text-neutral-500">Presets:</span>
+                    {[
+                      { label: "⚡ Payment", val: "Payment" },
+                      { label: "🧾 Invoice", val: "Invoice" },
+                      { label: "🎁 Gift", val: "Gift" },
+                      { label: "☕ Tip", val: "Tip" },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setMemo(p.val);
+                        }}
+                        className={`rounded-md bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+                          memo === p.val ? "bg-[#0A84FF] text-white font-semibold" : "text-neutral-400 hover:text-white"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {!memo.trim() && (
                   <p className="mt-1.5 text-[11px] text-neutral-400">
                     💡 Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.
