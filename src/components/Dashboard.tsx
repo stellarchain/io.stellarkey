@@ -506,7 +506,7 @@ export function Dashboard() {
         </nav>
 
                         {/* Apple iPadOS Inset-Grouped Accounts Section */}
-        <div className="mt-4 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
+        <div className="mt-2 flex-1 w-full space-y-1">
           {!sidebarCollapsed ? (
             <>
               {/* Header */}
@@ -524,7 +524,7 @@ export function Dashboard() {
               </div>
 
               {/* Inset Grouped Accounts List */}
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-1.5 space-y-1 max-h-[280px] overflow-y-auto scrollbar-none">
+              <div className="space-y-0.5 max-h-[280px] overflow-y-auto scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
                   const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
@@ -538,8 +538,8 @@ export function Dashboard() {
                       }}
                       className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.09] text-white font-semibold shadow-sm border border-white/10"
-                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
+                          ? "bg-white/[0.09] text-white font-semibold shadow-sm"
+                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -564,14 +564,6 @@ export function Dashboard() {
                   );
                 })}
 
-                <button
-                  type="button"
-                  onClick={() => openSettings("addAccount")}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 py-1.5 text-[11.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
-                >
-                  <IconPlus size={12} />
-                  <span>New Account</span>
-                </button>
               </div>
             </>
           ) : (
@@ -1526,68 +1518,78 @@ function AccountMenu({
         ) : (
           <button
             type="button"
-            className="flex items-center gap-2.5 rounded-full py-1 pr-3 pl-1 transition-colors hover:bg-white/[0.06]"
+            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
           >
-            <Avatar seed={activeAccount.publicKey} size={34} />
-            <span className="text-left">
-              <span className="block text-[15px] font-semibold leading-tight text-white">
+            <Avatar seed={activeAccount.publicKey} size={28} />
+            <span className="text-left min-w-0 max-w-[110px]">
+              <span className="block truncate text-[13.5px] font-semibold leading-tight text-white">
                 {activeAccount.label}
               </span>
-              <span className="mono block max-w-[86px] truncate text-[11px] leading-tight text-neutral-400">
+              <span className="mono block truncate text-[10.5px] text-neutral-400">
                 {shortenAddr(activeAccount.publicKey, 4, 4)}
               </span>
             </span>
-            <IconChevronDown size={12} className="text-neutral-400" />
+            <IconChevronDown size={11} className="text-neutral-400 shrink-0 ml-0.5" />
           </button>
         )
       }
     >
       {(close) => (
-        <>
-          <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+        <div className="p-1 space-y-1">
+          <p className="px-3 pb-1 pt-2 text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
             Switch Account
           </p>
-          {accounts.map((acct) => (
-            <button
-              key={acct.id}
-              type="button"
-              className="menu-item"
-              onClick={() => {
-                triggerHaptic("selection");
-                selectAccount(acct.id);
-                close();
-              }}
-            >
-              <Avatar seed={acct.publicKey} size={22} />
-              <span className="truncate">{acct.label}</span>
-              {acct.id === activeAccount.id && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
-              )}
-            </button>
-          ))}
-          <div className="my-1.5 h-px bg-white/10" />
+          {accounts.map((acct) => {
+            const isActive = acct.id === activeAccount.id;
+            return (
+              <button
+                key={acct.id}
+                type="button"
+                className={`menu-item !rounded-xl !py-2 !px-3 ${
+                  isActive ? "bg-white/[0.08] text-white font-semibold" : ""
+                }`}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  selectAccount(acct.id);
+                  close();
+                }}
+              >
+                <Avatar seed={acct.publicKey} size={24} />
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-[13px] font-semibold leading-tight">{acct.label}</p>
+                  <p className="mono truncate text-[10.5px] text-neutral-400">
+                    {shortenAddr(acct.publicKey, 4, 4)}
+                  </p>
+                </div>
+                {isActive && (
+                  <IconCheck size={14} className="text-[#0A84FF] shrink-0 ml-1" />
+                )}
+              </button>
+            );
+          })}
+          <div className="my-1 h-px bg-white/10" />
           <button
             type="button"
-            className="menu-item"
+            className="menu-item !rounded-xl !py-2 !px-3"
             onClick={() => {
               onManageAccounts();
               close();
             }}
           >
-            <IconKey size={15} /> Manage Accounts
+            <IconKey size={14} /> <span>Manage Accounts</span>
           </button>
           <button
             type="button"
-            className="menu-item danger"
+            className="menu-item danger !rounded-xl !py-2 !px-3"
             onClick={() => {
               triggerHaptic("warning");
               lock();
               close();
             }}
           >
-            <IconLock size={15} /> Lock Wallet
+            <IconLock size={14} /> <span>Lock Wallet</span>
           </button>
-        </>
+        </div>
       )}
     </Dropdown>
   );
