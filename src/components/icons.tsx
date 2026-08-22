@@ -57,10 +57,6 @@ export function LogoMark({ size = 34 }: IconProps) {
       {/* Subtle Specular Lighting Edge */}
       <path d="M11 22H23C24.5 22 26 23.5 27 25" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
       <path d="M41 22H53" stroke="rgba(255,255,255,0.4)" strokeWidth="1" strokeLinecap="round" />
-
-      {/* Minimal Center Clasp / Notch Emblem */}
-      <circle cx="32" cy="38" r="4.5" fill="#0A84FF" fillOpacity="0.2" stroke="#0A84FF" strokeWidth="1.2" />
-      <circle cx="32" cy="38" r="2" fill="#FFFFFF" />
     </svg>
   );
 }
