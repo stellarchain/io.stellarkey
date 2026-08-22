@@ -369,7 +369,7 @@ function ConfirmInner({
 }) {
   return (
     <Modal open onClose={onClose}>
-      <ModalHeader title={title} onClose={onClose} />
+      <ModalHeader title={title} subtitle="Please confirm this action" onClose={onClose} />
       <div className="p-6">
         <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
         <div className="mt-6 flex gap-3">

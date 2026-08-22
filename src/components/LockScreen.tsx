@@ -138,7 +138,7 @@ export function LockScreen() {
       </div>
 
       <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
-        <ModalHeader title="Reset this wallet?" onClose={() => setConfirmReset(false)} />
+        <ModalHeader title="Reset this wallet?" subtitle="Permanent action — local vault data will be erased" onClose={() => setConfirmReset(false)} />
         <div className="p-6">
           <p className="text-[13.5px] leading-relaxed text-neutral-300">
             Resetting your wallet will erase all encrypted data from this browser. If you don&apos;t have a backup of your recovery phrase or secret key, your funds will be lost forever.

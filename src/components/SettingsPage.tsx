@@ -1989,21 +1989,58 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
       {/* Rename Account Modal */}
       <Modal open={editingAccount !== null} onClose={() => setEditingAccount(null)}>
-        <ModalHeader title="Rename Account" onClose={() => setEditingAccount(null)} />
+        <ModalHeader
+          title="Rename Account"
+          subtitle={
+            editingAccount
+              ? `Custom label for ${shortenAddr(editingAccount.publicKey, 6, 6)}`
+              : "Set a custom name for this account"
+          }
+          onClose={() => setEditingAccount(null)}
+        />
         <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+              Preset &amp; Emoji
+            </label>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {[
+                { emoji: "⚡", name: "Trading" },
+                { emoji: "💼", name: "Treasury" },
+                { emoji: "🏦", name: "Savings" },
+                { emoji: "☕", name: "Daily" },
+                { emoji: "🛡️", name: "Vault" },
+                { emoji: "🚀", name: "Moon" },
+              ].map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setEditLabel(`${preset.emoji} ${preset.name}`);
+                  }}
+                  className="chip !py-1 !px-2.5 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
+                >
+                  <span>{preset.emoji}</span>
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <Field label="Account Label">
             <input
               className="input text-[14px]"
               value={editLabel}
               onChange={(e) => setEditLabel(e.target.value)}
-              placeholder="e.g. Savings, Trading, Treasury"
+              placeholder="e.g. 💼 Treasury, ⚡ Trading"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSaveRename();
               }}
             />
           </Field>
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-1">
             <Button variant="ghost" className="flex-1" onClick={() => setEditingAccount(null)}>
               Cancel
             </Button>
@@ -2016,7 +2053,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
       {/* Edit Contact Modal */}
       <Modal open={editingContact !== null} onClose={() => setEditingContact(null)}>
-        <ModalHeader title="Edit Contact" onClose={() => setEditingContact(null)} />
+        <ModalHeader title="Edit Contact" subtitle="Update saved address book entry" onClose={() => setEditingContact(null)} />
         <div className="p-6 space-y-4">
           <Field label="Contact Name">
             <input
@@ -2051,7 +2088,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
       {/* Reset Confirmation Modal */}
       <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
-        <ModalHeader title="Erase & Reset Wallet?" onClose={() => setConfirmReset(false)} />
+        <ModalHeader title="Erase & Reset Wallet?" subtitle="Destructive action — irreversible" onClose={() => setConfirmReset(false)} />
         <div className="p-6">
           <p className="text-[13.5px] leading-relaxed text-neutral-300">
             This permanently erases all encrypted private keys and recovery phrases in this browser.{" "}
