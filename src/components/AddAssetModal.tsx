@@ -63,6 +63,19 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function handleIssuerChange(val: string) {
+    const clean = val.trim();
+    setIssuer(clean);
+    if (isValidPublicAddress(clean)) {
+      const match = POPULAR_ASSETS.find(
+        (a) => a.mainnetIssuer === clean || a.testnetIssuer === clean
+      );
+      if (match && !code) {
+        setCode(match.code);
+        triggerHaptic("medium");
+      }
+    }
+  }
   function handleSelectPopular(asset: KnownAsset) {
     triggerHaptic("selection");
     setCode(asset.code);
@@ -161,7 +174,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
               className="input mono text-[13px]"
               placeholder="G..."
               value={issuer}
-              onChange={(e) => setIssuer(e.target.value.trim())}
+              onChange={(e) => handleIssuerChange(e.target.value)}
             />
           </Field>
 
