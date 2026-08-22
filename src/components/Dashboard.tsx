@@ -413,7 +413,7 @@ export function Dashboard() {
         {activeAccount && (
           sidebarCollapsed ? (
             <div className="mt-4 flex flex-col items-center">
-              <AccountMenu onManageAccounts={() => openSettings("accounts")} />
+              <AccountMenu onManageAccounts={() => openSettings("accounts")} compact={sidebarCollapsed} />
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2 w-full">
@@ -1442,29 +1442,49 @@ function NetworkDropdown({
   );
 }
 
-function AccountMenu({ onManageAccounts }: { onManageAccounts: () => void }) {
-  const { accounts, activeAccount, selectAccount, lock } = useWallet();
+function AccountMenu({
+  onManageAccounts,
+  compact = false,
+}: {
+  onManageAccounts: () => void;
+  compact?: boolean;
+}) {
+  const { accounts, activeAccount, selectAccount, lock, network } = useWallet();
   if (!activeAccount) return null;
   return (
     <Dropdown
       align="left"
-      trigger={() => (
-        <button
-          type="button"
-          className="flex items-center gap-2.5 rounded-full py-1 pr-3 pl-1 transition-colors hover:bg-white/[0.06]"
-        >
-          <Avatar seed={activeAccount.publicKey} size={34} />
-          <span className="text-left">
-            <span className="block text-[15px] font-semibold leading-tight text-white">
-              {activeAccount.label}
+      trigger={() =>
+        compact ? (
+          <button
+            type="button"
+            className="relative flex h-10 w-10 items-center justify-center rounded-full transition-transform active:scale-95 hover:ring-2 hover:ring-[#0A84FF]/50"
+            title={`${activeAccount.label} (${shortenAddr(activeAccount.publicKey, 4, 4)})`}
+          >
+            <Avatar seed={activeAccount.publicKey} size={34} />
+            <span
+              className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-black"
+              style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
+            />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex items-center gap-2.5 rounded-full py-1 pr-3 pl-1 transition-colors hover:bg-white/[0.06]"
+          >
+            <Avatar seed={activeAccount.publicKey} size={34} />
+            <span className="text-left">
+              <span className="block text-[15px] font-semibold leading-tight text-white">
+                {activeAccount.label}
+              </span>
+              <span className="mono block max-w-[86px] truncate text-[11px] leading-tight text-neutral-400">
+                {shortenAddr(activeAccount.publicKey, 4, 4)}
+              </span>
             </span>
-            <span className="mono block max-w-[86px] truncate text-[11px] leading-tight text-neutral-400">
-              {shortenAddr(activeAccount.publicKey, 4, 4)}
-            </span>
-          </span>
-          <IconChevronDown size={12} className="text-neutral-400" />
-        </button>
-      )}
+            <IconChevronDown size={12} className="text-neutral-400" />
+          </button>
+        )
+      }
     >
       {(close) => (
         <>
