@@ -111,7 +111,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         subtitle="Select one or more — all added in a single atomic transaction"
         onClose={onClose}
       />
-      <div className="px-6 py-5">
+      <div className="p-6">
         {/* Search */}
         <div className="search-field mb-4 flex items-center gap-2">
           <IconSearch size={15} className="text-neutral-400 shrink-0" />
@@ -370,7 +370,7 @@ function ConfirmInner({
   return (
     <Modal open onClose={onClose}>
       <ModalHeader title={title} onClose={onClose} />
-      <div className="px-6 py-6">
+      <div className="p-6">
         <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
         <div className="mt-6 flex gap-3">
           <Button variant="ghost" className="flex-1" onClick={onClose}>

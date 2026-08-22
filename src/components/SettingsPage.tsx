@@ -1990,7 +1990,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {/* Rename Account Modal */}
       <Modal open={editingAccount !== null} onClose={() => setEditingAccount(null)}>
         <ModalHeader title="Rename Account" onClose={() => setEditingAccount(null)} />
-        <div className="px-6 pb-6 pt-3 space-y-4">
+        <div className="p-6 space-y-4">
           <Field label="Account Label">
             <input
               className="input text-[14px]"
@@ -2017,7 +2017,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {/* Edit Contact Modal */}
       <Modal open={editingContact !== null} onClose={() => setEditingContact(null)}>
         <ModalHeader title="Edit Contact" onClose={() => setEditingContact(null)} />
-        <div className="px-6 pb-6 pt-3 space-y-4">
+        <div className="p-6 space-y-4">
           <Field label="Contact Name">
             <input
               className="input text-[14px]"
@@ -2052,7 +2052,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {/* Reset Confirmation Modal */}
       <Modal open={confirmReset} onClose={() => setConfirmReset(false)}>
         <ModalHeader title="Erase & Reset Wallet?" onClose={() => setConfirmReset(false)} />
-        <div className="px-6 pb-6 pt-2">
+        <div className="p-6">
           <p className="text-[13.5px] leading-relaxed text-neutral-300">
             This permanently erases all encrypted private keys and recovery phrases in this browser.{" "}
             <span className="text-[#FF453A] font-semibold">
