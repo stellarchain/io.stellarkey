@@ -1,80 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
 import { IconCheck, IconClose, IconCopy } from "./icons";
-
-export function Spinner({ className }: { className?: string }) {
-  return <span className={`spinner ${className ?? ""}`} aria-hidden />;
-}
-
-type ButtonVariant = "primary" | "ghost" | "danger" | "secondary";
-
-export function Button({
-  children,
-  onClick,
-  variant = "primary",
-  loading = false,
-  disabled = false,
-  type = "button",
-  className,
-}: {
-  children: React.ReactNode;
-  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
-  variant?: ButtonVariant;
-  loading?: boolean;
-  disabled?: boolean;
-  type?: "button" | "submit" | "reset";
-  className?: string;
-}) {
-  const variantClass =
-    variant === "ghost"
-      ? "btn-ghost"
-      : variant === "danger"
-        ? "btn-danger"
-        : variant === "secondary"
-          ? "btn-secondary"
-          : "btn-primary";
-
-  return (
-    <button
-      type={type}
-      disabled={disabled || loading}
-      onClick={(e) => {
-        triggerHaptic(variant === "danger" ? "warning" : "light");
-        if (onClick) onClick(e);
-      }}
-      className={`btn ${variantClass} ${className ?? ""}`}
-    >
-      {loading ? <Spinner className="text-current" /> : children}
-    </button>
-  );
-}
-
-export function Field({
-  label,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  error?: string | null;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-1.5 text-left">
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] font-semibold tracking-tight text-neutral-300">
-          {label}
-        </span>
-        {hint && <span className="text-[11px] text-neutral-500">{hint}</span>}
-      </div>
-      {children}
-      {error && <p className="text-[11px] font-medium text-[#FF453A]">{error}</p>}
-    </label>
-  );
-}
 
 export function Modal({
   open,
@@ -116,17 +44,13 @@ export function Modal({
           onClose();
         }
       }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
     >
       <div
-        className={`fade-up relative max-h-[92vh] w-full overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border-t border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl sm:rounded-[28px] sm:border sm:border-white/[0.12] ${
+        className={`fade-up relative max-h-[90dvh] w-full overflow-y-auto scrollbar-none overscroll-contain rounded-[28px] border border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl ${
           wide ? "max-w-xl" : "max-w-md"
         }`}
       >
-        {/* iOS sheet grab bar */}
-        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
-          <div className="h-1 w-9 rounded-full bg-white/25" />
-        </div>
         {children}
       </div>
     </div>
@@ -145,8 +69,8 @@ export function ModalHeader({
   return (
     <div className="relative flex items-center justify-between border-b border-white/[0.08] px-6 py-4">
       <div>
-        <h2 className="text-[17px] font-semibold tracking-tight text-white">{title}</h2>
-        {subtitle && <p className="text-[12px] text-neutral-400">{subtitle}</p>}
+        <h2 className="text-[17px] font-bold tracking-tight text-white">{title}</h2>
+        {subtitle && <p className="text-[12px] text-neutral-400 mt-0.5">{subtitle}</p>}
       </div>
       {onClose && (
         <button
@@ -187,16 +111,25 @@ export function Dropdown({
         setOpen(false);
       }
     }
-    document.addEventListener("click", onDocClick);
-    return () => document.removeEventListener("click", onDocClick);
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
   return (
     <div ref={containerRef} className="relative inline-block text-left">
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => {
           triggerHaptic("selection");
-          setOpen((v) => !v);
+          setOpen((o) => !o);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            triggerHaptic("selection");
+            setOpen((o) => !o);
+          }
         }}
       >
         {trigger(open)}
@@ -318,139 +251,205 @@ export function SegmentedControl<T extends string>({
   );
 }
 
+export function Spinner({ size = 16 }: { size?: number }) {
+  return (
+    <span
+      className="spinner inline-block align-middle"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+export function Button({
+  children,
+  className = "",
+  variant = "primary",
+  loading = false,
+  disabled = false,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  loading?: boolean;
+}) {
+  const vClass =
+    variant === "primary"
+      ? "btn-primary"
+      : variant === "danger"
+        ? "bg-[#FF453A] text-white hover:bg-[#FF3B30] shadow-sm"
+        : variant === "secondary"
+          ? "bg-white/[0.08] text-white hover:bg-white/[0.14] border border-white/10"
+          : "btn-ghost";
+
+  return (
+    <button
+      {...props}
+      disabled={disabled || loading}
+      className={`btn ${vClass} ${className}`}
+    >
+      {loading ? <Spinner /> : children}
+    </button>
+  );
+}
+
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <label className="field-label !pb-0">{label}</label>
+        {hint && <span className="text-[11px] text-neutral-400">{hint}</span>}
+      </div>
+      {children}
+      {error && <p className="text-[11.5px] text-[#FF453A]">{error}</p>}
+    </div>
+  );
+}
+
 export function ErrorText({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-[#FF453A]/30 bg-[#FF453A]/10 px-3.5 py-2.5 text-[12px] leading-relaxed text-[#FF453A]">
-      <span className="font-semibold shrink-0">!</span>
-      <span>{message}</span>
+    <div className="rounded-xl border border-[#FF453A]/30 bg-[#FF453A]/10 p-3 text-[12px] text-[#FF453A] leading-relaxed">
+      {message}
     </div>
   );
 }
 
-export function Avatar({ seed, size = 32 }: { seed: string; size?: number }) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  const hue1 = hash % 360;
-  const hue2 = (hue1 + 55) % 360;
+export function Notice({
+  children,
+  tone = "info",
+}: {
+  children: React.ReactNode;
+  tone?: "info" | "warn" | "pos";
+}) {
+  const styles =
+    tone === "pos"
+      ? "border-[#30D158]/30 bg-[#30D158]/10 text-neutral-200"
+      : tone === "warn"
+        ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-neutral-200"
+        : "border-white/10 bg-white/[0.04] text-neutral-300";
 
   return (
-    <div
-      className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white shadow-inner"
-      style={{
-        width: size,
-        height: size,
-        background: `linear-gradient(135deg, hsl(${hue1}, 85%, 55%), hsl(${hue2}, 85%, 45%))`,
-        fontSize: Math.max(10, Math.floor(size * 0.38)),
-      }}
-    >
-      {seed.slice(0, 1).toUpperCase()}
+    <div className={`rounded-2xl border p-4 text-[13px] leading-relaxed ${styles}`}>
+      {children}
     </div>
   );
 }
 
-export function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
+export function Toggle({
+  checked,
+  on,
+  onChange,
+  disabled = false,
+  label,
+}: {
+  checked?: boolean;
+  on?: boolean;
+  onChange: (c?: boolean) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const isChecked = checked ?? on ?? false;
   return (
     <button
       type="button"
       role="switch"
-      aria-checked={on}
+      aria-checked={isChecked}
+      disabled={disabled}
       onClick={() => {
         triggerHaptic("selection");
-        onChange();
+        onChange(!isChecked);
       }}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-        on ? "bg-[#30D158]" : "bg-white/20"
-      }`}
+        isChecked ? "bg-[#30D158]" : "bg-neutral-700"
+      } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
+      <span className="sr-only">{label ?? "Toggle"}</span>
       <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-          on ? "translate-x-5" : "translate-x-0"
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+          isChecked ? "translate-x-5" : "translate-x-0"
         }`}
       />
     </button>
   );
 }
 
-export function QrScannerBox({ onScan }: { onScan: (val: string) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [permErr, setPermErr] = useState(false);
-
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    let timer: number | null = null;
-
-    async function start() {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setPermErr(true);
-          return;
-        }
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-
-        if ("BarcodeDetector" in window) {
-          const barcodeDetector = new (window as unknown as {
-            BarcodeDetector: new (opts: { formats: string[] }) => {
-              detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
-            };
-          }).BarcodeDetector({ formats: ["qr_code"] });
-
-          const tick = async () => {
-            if (videoRef.current && videoRef.current.readyState === 4) {
-              try {
-                const barcodes = await barcodeDetector.detect(videoRef.current);
-                if (barcodes.length > 0) {
-                  onScan(barcodes[0].rawValue);
-                  return;
-                }
-              } catch {
-                void 0;
-              }
-            }
-            timer = window.setTimeout(tick, 300);
-          };
-          timer = window.setTimeout(tick, 500);
-        }
-      } catch {
-        setPermErr(true);
-      }
-    }
-
-    void start();
-
-    return () => {
-      if (timer) window.clearTimeout(timer);
-      if (stream) stream.getTracks().forEach((t) => t.stop());
-    };
-  }, [onScan]);
+export function Avatar({ seed, size = 32 }: { seed: string; size?: number }) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  const hue1 = hash % 360;
+  const hue2 = (hash + 120) % 360;
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-black border border-white/10 p-2 text-center">
-      {permErr ? (
-        <p className="py-6 text-[12px] text-neutral-400">
-          Camera permission needed to scan QR codes.
+    <div
+      className="shrink-0 rounded-full flex items-center justify-center font-bold text-white shadow-inner"
+      style={{
+        width: size,
+        height: size,
+        background: `linear-gradient(135deg, hsl(${hue1}, 70%, 50%), hsl(${hue2}, 70%, 40%))`,
+        fontSize: size * 0.4,
+      }}
+    >
+      {seed.slice(0, 1)}
+    </div>
+  );
+}
+
+export function QrScannerBox({
+  onScan,
+  onClose,
+}: {
+  onScan: (val: string) => void;
+  onClose?: () => void;
+}) {
+  const [inputVal, setInputVal] = useState("");
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+      <div className="flex items-center justify-between text-[12px] font-semibold text-white">
+        <span>Scan QR Code</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-neutral-400 hover:text-white"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="h-40 rounded-xl bg-black/50 border border-dashed border-white/20 flex flex-col items-center justify-center p-4 text-center">
+        <p className="text-[12px] text-neutral-400">
+          Point camera at QR code or paste payload below
         </p>
-      ) : (
-        <div className="relative aspect-square max-h-[220px] mx-auto overflow-hidden rounded-xl bg-neutral-900">
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            className="h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="h-36 w-36 rounded-2xl border-2 border-white/70 shadow-lg" />
-          </div>
-        </div>
-      )}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Paste scanned address or URI..."
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          className="input mono text-[12px] flex-1 !h-8"
+        />
+        <Button
+          variant="secondary"
+          className="!h-8 !px-3 text-[12px]"
+          onClick={() => {
+            if (inputVal.trim()) {
+              triggerHaptic("success");
+              onScan(inputVal.trim());
+            }
+          }}
+        >
+          Submit
+        </Button>
+      </div>
     </div>
   );
 }
