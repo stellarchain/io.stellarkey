@@ -1109,7 +1109,7 @@ export function Dashboard() {
         <div className={`md:hidden sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-5">
             <div className="flex h-[56px] items-center justify-between">
-              <AccountMenu onManageAccounts={() => openSettings("accounts")} />
+              <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -2083,9 +2083,11 @@ function NetworkModal({
 
 function AccountMenu({
   onManageAccounts,
+  onOpenTrezor,
   compact = false,
 }: {
   onManageAccounts: () => void;
+  onOpenTrezor?: () => void;
   compact?: boolean;
 }) {
   const { accounts, activeAccount, selectAccount, lock, network } = useWallet();
@@ -2147,7 +2149,15 @@ function AccountMenu({
               >
                 <Avatar seed={acct.publicKey} size={24} />
                 <div className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-[13px] font-semibold leading-tight">{acct.label}</p>
+                  <p className="truncate text-[13px] font-semibold leading-tight flex items-center gap-1.5">
+                    <span>{acct.label}</span>
+                    {acct.hardware === "trezor" && (
+                      <IconTrezor size={12} className="text-emerald-400 shrink-0" />
+                    )}
+                    {acct.hardware === "ledger" && (
+                      <IconLedger size={12} className="text-[#64D2FF] shrink-0" />
+                    )}
+                  </p>
                   <p className="mono truncate text-[10.5px] text-neutral-400">
                     {shortenAddr(acct.publicKey, 4, 4)}
                   </p>
@@ -2159,6 +2169,17 @@ function AccountMenu({
             );
           })}
           <div className="my-1 h-px bg-white/10" />
+          <button
+            type="button"
+            className="menu-item !rounded-xl !py-2 !px-3"
+            onClick={() => {
+              triggerHaptic("selection");
+              if (onOpenTrezor) onOpenTrezor();
+              close();
+            }}
+          >
+            <IconTrezor size={14} className="text-emerald-400" /> <span>Trezor Hardware Suite</span>
+          </button>
           <button
             type="button"
             className="menu-item !rounded-xl !py-2 !px-3"
