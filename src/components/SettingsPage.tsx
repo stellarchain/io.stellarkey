@@ -5,8 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import {
   exportKeystoreUnlocked,
   exportVaultBackup,
-  restoreVaultBackup,
-  importKeystore,
+    importKeystore,
   revealSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
@@ -23,6 +22,7 @@ import type { AccountMeta } from "@/lib/types";
 import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
 import { PaperWalletModal } from "./PaperWalletModal";
+import { ConfirmModal } from "./AddAssetModal";
 import { AddAccountModal } from "./AddAccountModal";
 import { PhraseModal } from "./PhraseModal";
 import {
@@ -98,6 +98,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     toggleBiometrics,
     fiatCurrency,
     cycleFiatCurrency,
+    restoreWalletFromBackup,
   } = useWallet();
   const { toast } = useToast();
 
@@ -133,6 +134,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [restoringBackup, setRestoringBackup] = useState(false);
+  const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
   const [ksPassword, setKsPassword] = useState("");
   const [ksError, setKsError] = useState<string | null>(null);
@@ -385,15 +387,20 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
   async function handleRestoreBackupFile(file: File) {
     const json = await file.text();
+    setPendingBackupJson(json);
+  }
+
+  async function handleConfirmRestore() {
+    if (!pendingBackupJson) return;
     setRestoringBackup(true);
     try {
-      const result = restoreVaultBackup(json);
+      const result = await restoreWalletFromBackup(pendingBackupJson);
+      triggerHaptic("success");
       toast(
-        `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"} — unlock with the backup's password`,
+        `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"} — enter the backup's password to unlock`,
         "success",
       );
-      // Clean re-init from restored storage
-      window.setTimeout(() => window.location.reload(), 900);
+      // No reload: phase flips to "locked" and LockScreen renders immediately
     } catch (e) {
       setRestoringBackup(false);
       triggerHaptic("error");
@@ -1750,6 +1757,17 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
       {/* Recovery Phrase Modal */}
       <PhraseModal open={showPhrase} onClose={() => setShowPhrase(false)} />
+
+      {/* Restore confirmation */}
+      <ConfirmModal
+        open={pendingBackupJson !== null}
+        onClose={() => setPendingBackupJson(null)}
+        title="Restore From Backup?"
+        body="Your current wallet will be replaced by the backup (the previous one stays recoverable from internal trash). After restoring, unlock with the backup's password."
+        confirmLabel="Restore Wallet"
+        danger
+        onConfirm={() => void handleConfirmRestore()}
+      />
 
       {/* Paper Wallet Modal */}
       {paperModalData && activeAccount && (
