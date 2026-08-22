@@ -138,6 +138,13 @@ function SendInner({
   const feeStroops = feeTier === "urgent" ? 500 : feeTier === "priority" ? 200 : 100;
   const feeXlm = (feeStroops / 10_000_000).toFixed(7);
 
+  const remainingBalance = Math.max(
+    0,
+    balanceNum - amountNum - (selectedAsset?.isNative ? parseFloat(feeXlm) : 0),
+  )
+    .toFixed(7)
+    .replace(/\.?0+$/, "");
+
   async function handleConfirm() {
     if (!selectedAsset) return;
     setStage("sending");
@@ -280,8 +287,33 @@ function SendInner({
               </Row>
             </div>
 
+            {/* Pre-Flight Balance Delta Simulator */}
+            <div className="panel-inset mt-3 p-3.5 space-y-1.5 text-[12px]">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400">
+                Pre-Flight Balance Simulation
+              </p>
+              <div className="flex justify-between text-neutral-300">
+                <span>Balance Before</span>
+                <span className="mono">{fmtAmount(balanceNum)} {selectedAsset?.code}</span>
+              </div>
+              <div className="flex justify-between text-[#FF453A]">
+                <span>Transfer Amount</span>
+                <span className="mono">−{fmtAmount(amount)} {selectedAsset?.code}</span>
+              </div>
+              {selectedAsset?.isNative && (
+                <div className="flex justify-between text-neutral-400">
+                  <span>Network Fee</span>
+                  <span className="mono">−{feeXlm} XLM</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1 border-t border-white/10 font-medium text-white">
+                <span>Est. Remaining Balance</span>
+                <span className="mono font-bold text-[#30D158]">{fmtAmount(remainingBalance)} {selectedAsset?.code}</span>
+              </div>
+            </div>
+
             {/* Priority Fee Tier Selector */}
-            <div className="mt-4">
+            <div className="mt-3.5">
               <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
                 Speed & Priority Tier
               </label>
@@ -299,7 +331,7 @@ function SendInner({
               />
             </div>
 
-            <div className="mt-5">
+            <div className="mt-4">
               <ErrorText message={error ?? ""} />
             </div>
 
