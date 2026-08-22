@@ -6,7 +6,7 @@ import { isValidPublicAddress } from "@/lib/vault";
 import { shortenAddr } from "@/lib/format";
 import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconPlus, IconSearch } from "./icons";
 
 export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -15,24 +15,19 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 function AddAssetInner({ onClose }: { onClose: () => void }) {
-  const { trustAsset, trustAssets, refresh, balances, network } = useWallet();
+  const { trustAssets, refresh, balances, network } = useWallet();
   const [search, setSearch] = useState("");
   const [code, setCode] = useState("");
   const [issuer, setIssuer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Multi-select batch mode: queue of { code, issuer } added in ONE transaction
-  const [multi, setMulti] = useState(false);
+  // Multi-select: queued trustlines added atomically in ONE transaction
   const [selected, setSelected] = useState<Array<{ code: string; issuer: string }>>([]);
 
   const existingCodes = useMemo(
     () => new Set((balances ?? []).map((b) => b.code.toUpperCase())),
     [balances],
   );
-
-  const matchedKnown = useMemo(() => {
-    return lookupKnownAsset(code.trim().toUpperCase());
-  }, [code]);
 
   const filteredPopular = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -45,71 +40,31 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     );
   }, [search]);
 
-  const valid =
-    code.trim().length >= 1 &&
-    code.trim().length <= 12 &&
-    isValidPublicAddress(issuer) &&
-    !existingCodes.has(code.trim().toUpperCase());
-
-  async function handleAdd(assetCode: string, assetIssuer: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      await trustAsset({ code: assetCode.trim().toUpperCase(), issuer: assetIssuer.trim(), add: true });
-      triggerHaptic("success");
-      onClose();
-      window.setTimeout(() => void refresh(), 4000);
-    } catch (e) {
-      triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Failed to add trustline.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function handleIssuerChange(val: string) {
-    const clean = val.trim();
-    setIssuer(clean);
-    if (isValidPublicAddress(clean)) {
-      const match = POPULAR_ASSETS.find(
-        (a) => a.mainnetIssuer === clean || a.testnetIssuer === clean
-      );
-      if (match && !code) {
-        setCode(match.code);
-        triggerHaptic("medium");
-      }
-    }
-  }
   function handleSelectPopular(asset: KnownAsset) {
     triggerHaptic("selection");
     const iss =
       (network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
-    if (multi) {
-      const key = `${asset.code}:${iss}`;
-      setSelected((prev) => {
-        const exists = prev.some((s) => `${s.code}:${s.issuer}` === key);
-        return exists
-          ? prev.filter((s) => `${s.code}:${s.issuer}` !== key)
-          : [...prev, { code: asset.code.toUpperCase(), issuer: iss }];
-      });
-      return;
-    }
-    setCode(asset.code);
-    if (iss) setIssuer(iss);
+    setSelected((prev) => {
+      const exists = prev.some(
+        (s) => `${s.code}:${s.issuer}` === `${asset.code}:${iss}`,
+      );
+      return exists
+        ? prev.filter((s) => `${s.code}:${s.issuer}` !== `${asset.code}:${iss}`)
+        : [...prev, { code: asset.code.toUpperCase(), issuer: iss }];
+    });
   }
 
   function queueCustom() {
     triggerHaptic("medium");
     const c = code.trim().toUpperCase();
     const iss = issuer.trim();
-    const key = `${c}:${iss}`;
     if (!c || !isValidPublicAddress(iss)) {
       setError("Enter a valid asset code and issuer first.");
       return;
     }
+    const key = `${c}:${iss}`;
     const alreadyQueued = selected.some((s) => `${s.code}:${s.issuer}` === key);
-    setError(null);
-    // Dedupe atomically inside the updater so rapid double-clicks can't create duplicates
+    // Dedupe atomically inside the updater so rapid clicks can't create duplicates
     setSelected((prev) =>
       prev.some((s) => `${s.code}:${s.issuer}` === key)
         ? prev
@@ -119,12 +74,13 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       setError(`${c} is already queued.`);
       return;
     }
+    setError(null);
     setCode("");
     setIssuer("");
   }
 
   async function handleAddBatch() {
-    // Defensive dedupe by code:issuer key before submit
+    // Defensive dedupe before submit
     const seen = new Set<string>();
     const unique = selected.filter((s) => {
       const k = `${s.code}:${s.issuer}`;
@@ -149,44 +105,14 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal open onClose={onClose} wide dismissable={!busy}>
       <ModalHeader
-        title="Add Trustline"
-        subtitle="Enable a verified or custom Stellar asset"
+        title="Add Assets"
+        subtitle="Select one or more — all added in a single atomic transaction"
         onClose={onClose}
       />
       <div className="px-6 py-5">
-        {/* Single vs Batch mode */}
-        <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setMulti(false);
-            }}
-            className={`flex-1 rounded-xl py-1.5 text-[12.5px] font-semibold transition-all ${
-              !multi ? "bg-[#0A84FF] text-white shadow-sm" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            Single Asset
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setMulti(true);
-              setCode("");
-              setIssuer("");
-            }}
-            className={`flex-1 rounded-xl py-1.5 text-[12.5px] font-semibold transition-all ${
-              multi ? "bg-[#0A84FF] text-white shadow-sm" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            Multi-Select Batch
-          </button>
-        </div>
-
-        {/* Search bar for verified assets */}
+        {/* Search */}
         <div className="search-field mb-4 flex items-center gap-2">
           <IconSearch size={15} className="text-neutral-400 shrink-0" />
           <input
@@ -197,118 +123,156 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           />
         </div>
 
-        {/* Popular Stellar Assets */}
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-2.5">
-            Verified Stellar Assets
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[180px] overflow-y-auto pr-0.5">
-            {filteredPopular.map((asset) => {
-              const alreadyAdded = existingCodes.has(asset.code.toUpperCase());
-              const iss = network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer);
-              const available = Boolean(iss);
+        {/* Verified assets grid */}
+        <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+          Verified Stellar Assets
+        </p>
+        <div className="grid max-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
+          {filteredPopular.map((asset) => {
+            const alreadyAdded = existingCodes.has(asset.code.toUpperCase());
+            const iss =
+              (network === "mainnet"
+                ? asset.mainnetIssuer
+                : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
+            const isSelected = selected.some(
+              (s) => `${s.code}:${s.issuer}` === `${asset.code}:${iss}`,
+            );
+            const available = Boolean(iss);
 
-              return (
-                <button
-                  key={asset.code}
-                  type="button"
-                  disabled={alreadyAdded || !available || busy}
-                  onClick={() => handleSelectPopular(asset)}
-                  className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-all ${
-                    alreadyAdded
-                      ? "border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed"
-                      : multi && selected.some((s) => s.code === asset.code)
-                        ? "border-[#0A84FF] bg-[#0A84FF]/15 text-white"
-                        : !multi && code === asset.code
-                          ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white"
-                          : "border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                      style={{ background: asset.color }}
-                    >
-                      {asset.code.slice(0, 2)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] font-semibold text-white">
-                        {asset.code}
-                      </p>
-                      <p className="truncate text-[10.5px] text-neutral-400">
-                        {asset.name}
-                      </p>
-                    </div>
+            return (
+              <button
+                key={`${asset.code}:${iss}`}
+                type="button"
+                disabled={alreadyAdded || !available || busy}
+                onClick={() => handleSelectPopular(asset)}
+                className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-all ${
+                  alreadyAdded
+                    ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-50"
+                    : isSelected
+                      ? "border-[#0A84FF] bg-[#0A84FF]/15 text-white"
+                      : "border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white"
+                }`}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="mono flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                    style={{ background: asset.color }}
+                  >
+                    {asset.code.slice(0, 2)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold text-white">{asset.code}</p>
+                    <p className="truncate text-[10.5px] text-neutral-400">{asset.name}</p>
                   </div>
-                  {alreadyAdded ? (
-                    <IconCheck size={14} className="text-[#30D158] shrink-0" />
-                  ) : multi && selected.some((s) => s.code === asset.code) ? (
-                    <IconCheck size={14} className="text-[#0A84FF] shrink-0" />
-                  ) : (
-                    <IconPlus size={14} className="text-neutral-400 shrink-0" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                </div>
+                {alreadyAdded ? (
+                  <IconCheck size={14} className="shrink-0 text-[#30D158]" />
+                ) : isSelected ? (
+                  <IconCheck size={14} className="shrink-0 text-[#0A84FF]" />
+                ) : (
+                  <IconPlus size={14} className="shrink-0 text-neutral-400" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Custom Asset (single) / Queue custom (batch) */}
-        {multi && (
-          <div className="mt-4 flex gap-2">
-            <input
-              className="input uppercase !h-9 flex-1 text-[13px]"
-              placeholder="CODE"
-              maxLength={12}
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-            />
-            <input
-              className="input mono !h-9 flex-[2] text-[12.5px]"
-              placeholder="Issuer G…"
-              value={issuer}
-              onChange={(e) => setIssuer(e.target.value)}
-            />
-            <Button
-              variant="secondary"
-              className="!h-9 shrink-0 !px-3 !text-[12px]"
-              disabled={!code.trim() || !isValidPublicAddress(issuer)}
-              onClick={queueCustom}
-            >
-              Queue
-            </Button>
+        {/* Custom asset row */}
+        <div className="mt-4 flex gap-2 border-t border-white/[0.08] pt-4">
+          <input
+            className="input !h-9 w-[110px] shrink-0 uppercase text-[13px]"
+            placeholder="CODE"
+            maxLength={12}
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+          />
+          <input
+            className="input mono !h-9 min-w-0 flex-1 text-[12.5px]"
+            placeholder="Issuer G..."
+            value={issuer}
+            onChange={(e) => setIssuer(e.target.value)}
+          />
+          <Button
+            variant="secondary"
+            className="!h-9 shrink-0 !px-3 !text-[12px]"
+            disabled={!code.trim() || !isValidPublicAddress(issuer)}
+            onClick={queueCustom}
+          >
+            Queue
+          </Button>
+        </div>
+
+        {/* Queued trustlines */}
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
+          <div className="flex items-center justify-between pb-2">
+            <p className="text-[12px] font-semibold text-white">
+              Queued Trustlines ({selected.length})
+            </p>
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setSelected([]);
+                }}
+                className="text-[11.5px] font-medium text-neutral-400 hover:text-[#FF453A]"
+              >
+                Clear all
+              </button>
+            )}
           </div>
-        )}
-
-        {/* Custom Asset Form */}
-        <div className={`mt-5 space-y-3.5 border-t border-white/[0.08] pt-4 ${multi ? "hidden" : ""}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Selected / Custom Asset Parameters
-          </p>
-          <Field label="Asset Code" hint="1–12 characters (e.g. USDC, AQUA)">
-            <input
-              className="input uppercase text-[13px]"
-              placeholder="e.g. USDC"
-              maxLength={12}
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-            />
-          </Field>
-
-          <Field label="Issuer Public Key" hint="Starts with 'G' (56 chars)">
-            <input
-              className="input mono text-[13px]"
-              placeholder="G..."
-              value={issuer}
-              onChange={(e) => handleIssuerChange(e.target.value)}
-            />
-          </Field>
-
-          {matchedKnown?.anchorDomain && (
-            <div className="flex items-center justify-between rounded-xl bg-[#30D158]/10 border border-[#30D158]/20 px-3 py-1.5 text-[11.5px] text-[#30D158]">
-              <span className="font-semibold">✓ Verified Issuer: {matchedKnown.name}</span>
-              <span className="font-mono text-neutral-300">{matchedKnown.anchorDomain}</span>
+          {selected.length === 0 ? (
+            <p className="text-[11.5px] text-neutral-500">
+              Tap verified assets or queue a custom asset above — they&apos;ll be added atomically
+              in one transaction.
+            </p>
+          ) : (
+            <div className="scrollbar-none max-h-[120px] space-y-1 overflow-y-auto">
+              {selected.map((s) => {
+                const known = lookupKnownAsset(s.code);
+                return (
+                  <div
+                    key={`${s.code}:${s.issuer}`}
+                    className="flex items-center justify-between rounded-xl bg-white/[0.04] px-2.5 py-1.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                        style={{ background: known?.color ?? "#5E5CE6" }}
+                      >
+                        {s.code.slice(0, 2)}
+                      </span>
+                      <span className="truncate text-[12.5px] font-medium text-white">
+                        {s.code}
+                      </span>
+                      <span className="mono hidden truncate text-[10.5px] text-neutral-500 sm:inline">
+                        {shortenAddr(s.issuer, 4, 4)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setSelected((prev) =>
+                          prev.filter(
+                            (p) => `${p.code}:${p.issuer}` !== `${s.code}:${s.issuer}`,
+                          ),
+                        );
+                      }}
+                      className="text-neutral-500 hover:text-[#FF453A]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
             </div>
+          )}
+          {selected.length > 1 && (
+            <p className="pt-2 text-[11px] text-neutral-400">
+              Fee: {(selected.length * 0.00001).toFixed(5)} XLM ({selected.length * 100} stroops)
+              — one atomic transaction.
+            </p>
           )}
         </div>
 
@@ -316,103 +280,26 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           <ErrorText message={error ?? ""} />
         </div>
 
-        {multi && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
-            <div className="flex items-center justify-between pb-2">
-              <p className="text-[12px] font-semibold text-white">
-                Queued Trustlines ({selected.length})
-              </p>
-              {selected.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setSelected([]);
-                  }}
-                  className="text-[11.5px] font-medium text-neutral-400 hover:text-[#FF453A]"
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
-            {selected.length === 0 ? (
-              <p className="text-[11.5px] text-neutral-500">
-                Tap verified assets above to queue them — they&apos;ll be added atomically in one transaction.
-              </p>
-            ) : (
-              <div className="space-y-1 max-h-[120px] overflow-y-auto scrollbar-none">
-                {selected.map((s) => {
-                  const known = lookupKnownAsset(s.code);
-                  return (
-                    <div
-                      key={`${s.code}:${s.issuer}`}
-                      className="flex items-center justify-between rounded-xl bg-white/[0.04] px-2.5 py-1.5"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                          style={{ background: known?.color ?? "#5E5CE6" }}
-                        >
-                          {s.code.slice(0, 2)}
-                        </span>
-                        <span className="truncate text-[12.5px] font-medium text-white">{s.code}</span>
-                        <span className="mono hidden truncate text-[10.5px] text-neutral-500 sm:inline">
-                          {shortenAddr(s.issuer, 4, 4)}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setSelected((prev) =>
-                            prev.filter((p) => `${p.code}:${p.issuer}` !== `${s.code}:${s.issuer}`),
-                          );
-                        }}
-                        className="text-neutral-500 hover:text-[#FF453A]"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {selected.length > 1 && (
-              <p className="pt-2 text-[11px] text-neutral-400">
-                Fee: {(selected.length * 0.00001).toFixed(5)} XLM ({selected.length * 100} stroops) — one atomic transaction.
-              </p>
-            )}
-          </div>
-        )}
-
-        {multi ? (
+        {/* Footer actions */}
+        <div className="mt-4 flex gap-3">
+          <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
           <Button
-            className="mt-4 w-full"
+            className="flex-[2]"
             loading={busy}
             disabled={selected.length === 0 || busy}
             onClick={() => void handleAddBatch()}
           >
             {busy
               ? "Submitting…"
-              : selected.length > 0
-                ? `Add ${selected.length} Trustline${selected.length > 1 ? "s" : ""} · 1 Transaction`
-                : "Select Assets to Continue"}
+              : selected.length > 1
+                ? `Add ${selected.length} Trustlines · 1 Tx`
+                : selected.length === 1
+                  ? "Add Trustline · 1 Tx"
+                  : "Add Trustlines"}
           </Button>
-        ) : (
-          <div className="mt-6 flex gap-3">
-            <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              loading={busy}
-              disabled={!valid || busy}
-              onClick={() => void handleAdd(code, issuer)}
-            >
-              Add Trustline
-            </Button>
-          </div>
-        )}
+        </div>
       </div>
     </Modal>
   );
