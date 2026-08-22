@@ -544,7 +544,7 @@ export function Dashboard() {
                             {acct.label}
                           </p>
                           <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
-                            {shortenAddr(acct.publicKey, 6, 6)}
+                            {privacyMode ? "••••••" : `${fmtAmount(xlm?.balance ?? "0")} XLM`}
                           </p>
                         </div>
                       </div>
@@ -704,7 +704,6 @@ export function Dashboard() {
                 </button>
               )}
             </div>
-            <NetworkDropdown network={network} onSwitch={switchNetwork} />
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
@@ -758,7 +757,6 @@ export function Dashboard() {
                 <h1 className="display-h text-[34px] leading-tight text-white font-bold">
                   {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
                 </h1>
-                {view === "home" && <NetworkDropdown network={network} onSwitch={switchNetwork} />}
               </div>
             )}
 
