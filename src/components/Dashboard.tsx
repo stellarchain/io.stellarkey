@@ -502,7 +502,7 @@ export function Dashboard() {
           </button>
         </nav>
 
-        {/* Trezor Suite Multi-Account Tree Section */}
+                {/* Trezor Suite Multi-Account Tree Section */}
         <div className="mt-5 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
@@ -519,9 +519,10 @@ export function Dashboard() {
                 </button>
               </div>
 
-              <div className="space-y-1 max-h-[220px] overflow-y-auto pr-0.5">
+              <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-0.5 scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
+                  const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                   return (
                     <button
                       key={acct.id}
@@ -530,25 +531,32 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-all ${
+                      className={`flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.1] border border-white/10 text-white font-semibold shadow-sm"
-                          : "text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                          ? "bg-white/[0.08] border border-white/15 text-white font-semibold shadow-md shadow-black/40"
+                          : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar seed={acct.publicKey} size={24} />
+                        <div className="relative shrink-0">
+                          <Avatar seed={acct.publicKey} size={28} />
+                          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 border border-white/20 text-[9px] font-bold text-neutral-300">
+                            {idxNum}
+                          </span>
+                        </div>
                         <div className="min-w-0">
-                          <p className="truncate text-[13px] leading-tight font-medium text-white">
+                          <p className="truncate text-[13px] leading-tight font-semibold text-white">
                             {acct.label}
                           </p>
-                          <p className="mono truncate text-[10.5px] text-neutral-500">
-                            {shortenAddr(acct.publicKey, 4, 4)}
+                          <p className="mono truncate text-[11px] text-neutral-400">
+                            {isActive && balances
+                              ? `${fmtAmount(xlm?.balance ?? "0")} XLM`
+                              : shortenAddr(acct.publicKey, 4, 4)}
                           </p>
                         </div>
                       </div>
                       {isActive && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF] shrink-0" />
+                        <span className="h-2 w-2 rounded-full bg-[#0A84FF] shadow-[0_0_8px_#0A84FF] shrink-0" />
                       )}
                     </button>
                   );
@@ -556,12 +564,13 @@ export function Dashboard() {
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-2 pt-1">
+            <div className="flex flex-col items-center gap-2.5 pt-1">
               <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-500 mb-0.5">
                 Accs
               </span>
               {accounts.map((acct) => {
                 const isActive = acct.id === activeAccount?.id;
+                const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
                 return (
                   <button
                     key={acct.id}
@@ -570,24 +579,24 @@ export function Dashboard() {
                       triggerHaptic("selection");
                       selectAccount(acct.id);
                     }}
-                    className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-2xl transition-all ${
                       isActive
-                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-md"
+                        ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-md shadow-blue-500/25"
                         : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                     }`}
-                    title={`${acct.label} (${shortenAddr(acct.publicKey, 4, 4)})`}
+                    title={`${acct.label} (#${idxNum}) - ${shortenAddr(acct.publicKey, 4, 4)}`}
                   >
-                    <Avatar seed={acct.publicKey} size={26} />
-                    {isActive && (
-                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-[#0A84FF] border-2 border-black" />
-                    )}
+                    <Avatar seed={acct.publicKey} size={28} />
+                    <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-black border border-white/20 text-[9px] font-bold text-white">
+                      {idxNum}
+                    </span>
                   </button>
                 );
               })}
               <button
                 type="button"
                 onClick={() => openSettings("addAccount")}
-                className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
                 title="Derive Next Account"
               >
                 <IconPlus size={14} />
