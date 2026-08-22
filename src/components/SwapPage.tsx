@@ -18,6 +18,7 @@ export function SwapPage() {
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState<number>(0.5); // 0.5% default
   const [showSettings, setShowSettings] = useState(false);
+  const [invertRate, setInvertRate] = useState(false);
   const [route, setRoute] = useState<{
     dest: string;
     destMin: string;
@@ -152,6 +153,11 @@ export function SwapPage() {
   const exchangeRate =
     route && amountNum > 0
       ? (parseFloat(route.dest) / amountNum).toFixed(6)
+      : null;
+
+  const reverseExchangeRate =
+    route && parseFloat(route.dest) > 0
+      ? (amountNum / parseFloat(route.dest)).toFixed(6)
       : null;
 
   return (
@@ -330,12 +336,21 @@ export function SwapPage() {
       {/* Route Info & Guaranteed Minimum */}
       {route && (
         <div className="panel-inset mt-4 p-4 space-y-2 text-[12.5px]">
-          <div className="flex justify-between text-neutral-400">
-            <span>Rate</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              setInvertRate((r) => !r);
+            }}
+            className="flex justify-between w-full text-neutral-400 hover:text-white transition-colors cursor-pointer"
+          >
+            <span>Rate (Tap to flip)</span>
             <span className="mono text-white">
-              1 {sendAsset?.code} ≈ {exchangeRate} {destAsset?.code}
+              {invertRate
+                ? `1 ${destAsset?.code} ≈ ${reverseExchangeRate} ${sendAsset?.code}`
+                : `1 ${sendAsset?.code} ≈ ${exchangeRate} ${destAsset?.code}`}
             </span>
-          </div>
+          </button>
           <div className="flex justify-between text-neutral-400">
             <span>Min. Received (Guarantee)</span>
             <span className="mono text-white">
