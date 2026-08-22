@@ -15,7 +15,7 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 function AddAssetInner({ onClose }: { onClose: () => void }) {
-  const { trustAssets, refresh, balances, network } = useWallet();
+  const { trustAssets, refresh, balances, network, activeAccount } = useWallet();
   const [search, setSearch] = useState("");
   const [code, setCode] = useState("");
   const [issuer, setIssuer] = useState("");
@@ -275,6 +275,19 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
             </p>
           )}
         </div>
+
+        {/* Hardware Device Indicator */}
+        {activeAccount?.hardware && (
+          <div className="mt-3 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+            <div className="flex items-center gap-2">
+              <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+              <span className="font-semibold">
+                Sign Trustline on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+              </span>
+            </div>
+            <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
+          </div>
+        )}
 
         <div className="mt-4">
           <ErrorText message={error ?? ""} />
