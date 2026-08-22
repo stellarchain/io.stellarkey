@@ -10,7 +10,7 @@ import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
 import { lookupKnownAsset } from "@/lib/assets";
 import type { Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
-import { Avatar, Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { Avatar, Button, ErrorText, Modal, ModalHeader, SegmentedControl } from "./ui";
 import {
   IconCamera,
   IconCheck,
@@ -21,6 +21,7 @@ import {
 
 type Stage = "form" | "review" | "sending" | "done";
 type MemoType = "text" | "id" | "hash";
+type FeeTier = "normal" | "priority" | "urgent";
 
 export function SendModal({
   open,
@@ -59,6 +60,7 @@ function SendInner({
   });
   const [memoType, setMemoType] = useState<MemoType>("text");
   const [memo, setMemo] = useState(prefill?.memo ?? "");
+  const [feeTier, setFeeTier] = useState<FeeTier>("normal");
   const [error, setError] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -132,6 +134,9 @@ function SendInner({
 
   const reserveBlocked = selectedAsset?.isNative === true && isValidAmount(amount) && amountNum > maxSendable;
   const canReview = (destOk || Boolean(fedResolvedAddr)) && amountOk && memoOk && !reserveBlocked;
+
+  const feeStroops = feeTier === "urgent" ? 500 : feeTier === "priority" ? 200 : 100;
+  const feeXlm = (feeStroops / 10_000_000).toFixed(7);
 
   async function handleConfirm() {
     if (!selectedAsset) return;
@@ -242,7 +247,7 @@ function SendInner({
               </div>
             </div>
 
-            <div className="panel-inset mt-7 divide-y divide-white/[0.08]">
+            <div className="panel-inset mt-6 divide-y divide-white/[0.08]">
               <Row label="To">
                 <span className="mono text-[12px] break-all text-white">{effectiveDestination}</span>
               </Row>
@@ -270,9 +275,28 @@ function SendInner({
               )}
               <Row label="Network Fee">
                 <span className="mono text-[13px] text-neutral-300">
-                  0.00001 XLM <span className="text-[11px] text-neutral-500">(100 stroops · Fast)</span>
+                  {feeXlm} XLM <span className="text-[11px] text-neutral-500">({feeStroops} stroops)</span>
                 </span>
               </Row>
+            </div>
+
+            {/* Priority Fee Tier Selector */}
+            <div className="mt-4">
+              <label className="block text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-1.5">
+                Speed & Priority Tier
+              </label>
+              <SegmentedControl<FeeTier>
+                value={feeTier}
+                onChange={(t) => {
+                  triggerHaptic("selection");
+                  setFeeTier(t);
+                }}
+                options={[
+                  { value: "normal", label: "Normal (~5s)" },
+                  { value: "priority", label: "Priority (~3s)" },
+                  { value: "urgent", label: "Urgent (~1s)" },
+                ]}
+              />
             </div>
 
             <div className="mt-5">
