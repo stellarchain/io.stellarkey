@@ -20,6 +20,7 @@ import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
 import type { AccountMeta } from "@/lib/types";
 import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
+import { PaperWalletModal } from "./PaperWalletModal";
 import {
   Avatar,
   Button,
@@ -108,6 +109,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [adding, setAdding] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [fundingTestnet, setFundingTestnet] = useState(false);
+
+  const [paperModalData, setPaperModalData] = useState<{
+    secretOrPhrase: string;
+    kind: "mnemonic" | "secret";
+  } | null>(null);
 
   const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
   const [editLabel, setEditLabel] = useState("");
@@ -641,17 +647,31 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                   {revealed}
                 </p>
               </div>
-              <button
-                type="button"
-                className="mt-4 flex items-center gap-1.5 px-1 text-[14px] font-semibold text-[#0A84FF]"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setRevealed(null);
-                  setRevealPw("");
-                }}
-              >
-                <IconEyeOff size={14} /> Hide Secret Key
-              </button>
+
+              <div className="mt-3.5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setPaperModalData({ secretOrPhrase: revealed, kind: "secret" });
+                  }}
+                  className="chip flex items-center gap-1.5"
+                >
+                  <IconDownload size={13} />
+                  <span>Print Paper Wallet Certificate</span>
+                </button>
+                <button
+                  type="button"
+                  className="chip flex items-center gap-1.5 text-neutral-400"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setRevealed(null);
+                    setRevealPw("");
+                  }}
+                >
+                  <IconEyeOff size={13} /> Hide Key
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -1141,17 +1161,30 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                   ))}
                 </div>
               </div>
-              <button
-                type="button"
-                className="mt-4 flex items-center gap-1.5 px-1 text-[14px] font-semibold text-[#0A84FF]"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setRevealedPhrase(null);
-                  setPhrasePw("");
-                }}
-              >
-                <IconEyeOff size={14} /> Hide Recovery Phrase
-              </button>
+              <div className="mt-3.5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setPaperModalData({ secretOrPhrase: revealedPhrase, kind: "mnemonic" });
+                  }}
+                  className="chip flex items-center gap-1.5"
+                >
+                  <IconDownload size={13} />
+                  <span>Print Paper Wallet Certificate</span>
+                </button>
+                <button
+                  type="button"
+                  className="chip flex items-center gap-1.5 text-neutral-400"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setRevealedPhrase(null);
+                    setPhrasePw("");
+                  }}
+                >
+                  <IconEyeOff size={13} /> Hide Phrase
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -1246,6 +1279,19 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </Notice>
           )}
         </div>
+      )}
+
+      {/* Paper Wallet Modal */}
+      {paperModalData && activeAccount && (
+        <PaperWalletModal
+          open
+          onClose={() => setPaperModalData(null)}
+          accountLabel={activeAccount.label}
+          publicKey={activeAccount.publicKey}
+          secretOrPhrase={paperModalData.secretOrPhrase}
+          kind={paperModalData.kind}
+          path={activeAccount.path}
+        />
       )}
 
       {/* Rename Account Modal */}
