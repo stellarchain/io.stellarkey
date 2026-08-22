@@ -30,13 +30,13 @@ import {
   Field,
   Modal,
   ModalHeader,
+  NetworkBadge,
   QrScannerBox,
   SegmentedControl,
   Spinner,
   Toggle,
 } from "./ui";
 import {
-  IconAlert,
   IconCheck,
   IconDownload,
   IconExternal,
@@ -86,7 +86,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     restoreAccountByIndex,
     mergeAccount,
     fundFromFriendbot,
-    lock,
     resetWallet,
     contacts,
     addContact,
@@ -144,7 +143,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [ksBusy, setKsBusy] = useState(false);
 
   const [contactName, setContactName] = useState("");
-  const [contactSearch, setContactSearch] = useState("");
+
   const [showContactScanner, setShowContactScanner] = useState(false);
   const [contactAddr, setContactAddr] = useState("");
   const [contactError, setContactError] = useState<string | null>(null);
@@ -510,12 +509,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   }
 
   const sortedContacts = useMemo(() => {
-    const q = contactSearch.trim().toLowerCase();
-    const list = contacts.filter(
-      (c) => !q || c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q)
-    );
-    return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts, contactSearch]);
+    return [...contacts].sort((a, b) => a.name.localeCompare(b.name));
+  }, [contacts]);
 
   const autoLockLabel =
     autoLockMs === 60000
@@ -544,7 +539,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           : "root";
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[560px] px-5 pb-[150px]">
+    <div className="fade-up mx-auto w-full max-w-[1000px] px-5 pb-[150px]">
       {/* Subpage Navigation */}
       {sub !== "root" && (
         <>
@@ -609,11 +604,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         </>
       )}
 
-      {/* ---------- ROOT SETTINGS ---------- */}
+            {/* ---------- ROOT SETTINGS ---------- */}
       {sub === "root" && (
         <>
           {/* Security Health Score Card */}
-          <div className="fade-up mb-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div className="fade-up mb-6 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#30D158]/15 text-[#30D158]">
@@ -646,247 +641,221 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </div>
           </div>
 
-          <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-            Security & Backup
-          </p>
-          {contacts.length > 2 && (
-            <div className="search-field mb-3 flex items-center gap-2">
-              <input
-                placeholder="Search contacts by name or key..."
-                value={contactSearch}
-                onChange={(e) => setContactSearch(e.target.value)}
-                className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-neutral-500"
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {/* Column 1: Security & Backup */}
+            <div className="space-y-4">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  Security & Backup
+                </p>
+                <div className="list-group">
+                  <RowButton
+                    icon={<IconKey size={16} />}
+                    tint="#30D158"
+                    label="Recovery Phrase"
+                    value={hasMnemonicVault ? "12 words" : "Not available"}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      if (hasMnemonicVault) setSub("phrase");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconShield size={16} />}
+                    tint="#0A84FF"
+                    label="Account Signers & Multi-Sig"
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("signers");
+                      void handleLoadSigners();
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconLock size={16} />}
+                    tint="#5E5CE6"
+                    label="Air-Gapped Cold QR Signer"
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("airsigner");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconEye size={16} />}
+                    tint="#0A84FF"
+                    label="Reveal Secret Key"
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("reveal");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconDownload size={16} />}
+                    tint="#FF9F0A"
+                    label="Export Encrypted Keystore"
+                    onClick={handleExportKeystore}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconFingerprint size={16} />}
+                    tint="#5E5CE6"
+                    label="Touch ID / Face ID"
+                    as="div"
+                    sep
+                  >
+                    <Toggle
+                      on={biometricsEnabled}
+                      onChange={() => toggleBiometrics(!biometricsEnabled)}
+                    />
+                  </RowButton>
+                  <RowButton
+                    icon={<IconLock size={16} />}
+                    tint="#64D2FF"
+                    label="Auto-Lock Timer"
+                    value={autoLockLabel}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("autolock");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconRefresh size={16} />}
+                    tint="#FF9F0A"
+                    label="Audio & Haptic Feedback"
+                    as="div"
+                    sep
+                  >
+                    <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
+                  </RowButton>
+                  <RowButton
+                    as="div"
+                    icon={<IconShield size={16} />}
+                    tint="#BF5AF2"
+                    label="Hide Balances (Privacy)"
+                  >
+                    <Toggle on={privacyMode} onChange={togglePrivacy} />
+                  </RowButton>
+                </div>
+              </div>
             </div>
-          )}
-          <div className="list-group">
-            <RowButton
-              icon={<IconKey size={16} />}
-              tint="#30D158"
-              label="Recovery Phrase"
-              value={hasMnemonicVault ? "12 words" : "Not available"}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                if (hasMnemonicVault) setSub("phrase");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconShield size={16} />}
-              tint="#0A84FF"
-              label="Account Signers & Multi-Sig"
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("signers");
-                void handleLoadSigners();
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconLock size={16} />}
-              tint="#5E5CE6"
-              label="Air-Gapped Cold QR Signer"
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("airsigner");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconWallet size={16} />}
-              tint="#30D158"
-              label="Connected Apps & dApps"
-              value={`${connectedDapps.length} Active`}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("dapps");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconWallet size={16} />}
-              tint="#64D2FF"
-              label="Primary Display Currency"
-              value={fiatCurrency}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("currency");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconKey size={16} />}
-              tint="#FF9F0A"
-              label="Soroban Smart Contracts Hub"
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("soroban");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconEye size={16} />}
-              tint="#0A84FF"
-              label="Reveal Secret Key"
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("reveal");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconDownload size={16} />}
-              tint="#FF9F0A"
-              label="Export Encrypted Keystore"
-              onClick={handleExportKeystore}
-              sep
-            />
-            <RowButton
-              icon={<IconFingerprint size={16} />}
-              tint="#5E5CE6"
-              label="Touch ID / Face ID"
-              as="div"
-              sep
-            >
-              <Toggle
-                on={biometricsEnabled}
-                onChange={() => toggleBiometrics(!biometricsEnabled)}
-              />
-            </RowButton>
-            <RowButton
-              icon={<IconLock size={16} />}
-              tint="#64D2FF"
-              label="Auto-Lock Timer"
-              value={autoLockLabel}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("autolock");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconRefresh size={16} />}
-              tint="#FF9F0A"
-              label="Audio & Haptic Feedback"
-              as="div"
-              sep
-            >
-              <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
-            </RowButton>
-            <RowButton
-              as="div"
-              icon={<IconShield size={16} />}
-              tint="#BF5AF2"
-              label="Hide Balances (Privacy)"
-            >
-              <Toggle on={privacyMode} onChange={togglePrivacy} />
-            </RowButton>
-          </div>
 
-          <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2 pt-6">
-            Accounts & Contacts
-          </p>
-          <div className="list-group">
-            {activeAccount && (
-              <RowButton
-                icon={<Avatar seed={activeAccount.publicKey} size={29} />}
-                label={activeAccount.label}
-                sub={shortenAddr(activeAccount.publicKey, 6, 6)}
-                chevron
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setSub("accounts");
-                }}
-                sep
-              />
-            )}
-            <RowButton
-              icon={<IconWallet size={16} />}
-              tint="#32D74B"
-              label="Manage Accounts"
-              value={`${accounts.length} active`}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("accounts");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconPlus size={16} />}
-              tint="#FF375F"
-              label="Address Book"
-              value={`${contacts.length} contacts`}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("contacts");
-              }}
-            />
-          </div>
+            {/* Column 2: Accounts, Tools & Network */}
+            <div className="space-y-6">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  Accounts & Network
+                </p>
+                <div className="list-group">
+                  {activeAccount && (
+                    <RowButton
+                      icon={<Avatar seed={activeAccount.publicKey} size={29} />}
+                      label={activeAccount.label}
+                      sub={shortenAddr(activeAccount.publicKey, 6, 6)}
+                      chevron
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setSub("accounts");
+                      }}
+                      sep
+                    />
+                  )}
+                  <RowButton
+                    icon={<IconWallet size={16} />}
+                    tint="#30D158"
+                    label="Address Book"
+                    value={`${contacts.length} Contacts`}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("contacts");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconWallet size={16} />}
+                    tint="#64D2FF"
+                    label="Primary Display Currency"
+                    value={fiatCurrency}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("currency");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconKey size={16} />}
+                    tint="#FF9F0A"
+                    label="Soroban Smart Contracts Hub"
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("soroban");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<IconWallet size={16} />}
+                    tint="#5E5CE6"
+                    label="Connected Apps & dApps"
+                    value={`${connectedDapps.length} Active`}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("dapps");
+                    }}
+                    sep
+                  />
+                  <RowButton
+                    icon={<NetworkBadge network={network} />}
+                    label="Network"
+                    value={NETWORKS[network].label}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("network");
+                    }}
+                  />
+                </div>
+              </div>
 
-          <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2 pt-6">
-            Network & Session
-          </p>
-          <div className="list-group">
-            <RowButton
-              icon={<IconSwapGlyph />}
-              tint="#FF9F0A"
-              label="Stellar Network"
-              value={network === "mainnet" ? "Mainnet" : "Testnet"}
-              chevron
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("network");
-              }}
-              sep
-            />
-            <RowButton
-              icon={<IconLock size={16} />}
-              tint="#FF453A"
-              label="Lock Wallet Now"
-              onClick={() => {
-                triggerHaptic("warning");
-                lock();
-              }}
-            />
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  Danger Zone
+                </p>
+                <div className="list-group">
+                  <RowButton
+                    icon={<IconTrash size={16} />}
+                    label="Reset Wallet"
+                    danger
+                    onClick={() => {
+                      triggerHaptic("warning");
+                      setConfirmReset(true);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-
-          <div className="list-group mt-6">
-            <RowButton
-              icon={<IconAlert size={16} />}
-              tint="#FF453A"
-              label="Reset Wallet"
-              danger
-              onClick={() => {
-                triggerHaptic("warning");
-                setConfirmReset(true);
-              }}
-            />
-          </div>
-
-          <p className="px-1 pt-5 text-center text-[12px] leading-relaxed text-neutral-500">
-            Wallet · Client-side encrypted self-custody
-          </p>
         </>
       )}
 
       {/* ---------- AUTO-LOCK TIMER ---------- */}
       {sub === "autolock" && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="list-group">
             {[
               { ms: 60000, label: "1 Minute" },
               { ms: 300000, label: "5 Minutes" },
-              { ms: 900000, label: "15 Minutes (Default)" },
+              { ms: 900000, label: "15 Minutes" },
               { ms: 1800000, label: "30 Minutes" },
               { ms: 3600000, label: "1 Hour" },
               { ms: 0, label: "Never" },
@@ -894,7 +863,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               <button
                 key={opt.ms}
                 type="button"
-                className={`row-hover flex w-full items-center justify-between px-4 py-3.5 text-left ${
+                className={`flex w-full items-center justify-between px-4 py-3.5 text-left ${
                   i > 0 ? "ios-sep" : ""
                 }`}
                 onClick={() => {
@@ -2091,19 +2060,4 @@ function Notice({ tone, children }: { tone?: "pos"; children: React.ReactNode })
   );
 }
 
-function IconSwapGlyph() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16.5 4 21 8.5 16.5 13M21 8.5H8M7.5 20 3 15.5 7.5 11M3 15.5h13" />
-    </svg>
-  );
-}
+

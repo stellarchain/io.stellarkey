@@ -976,7 +976,7 @@ export function Dashboard() {
               </div>
             </div>
           ) : view === "activity" ? (
-            <section className="fade-up pt-2 max-w-[720px] mx-auto">
+            <section className="fade-up pt-2 max-w-[1000px] mx-auto">
               {/* Filter Pills & Export CSV */}
               <div className="flex items-center justify-between gap-2 pb-2.5 pt-1">
                 <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
