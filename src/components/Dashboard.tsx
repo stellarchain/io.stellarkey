@@ -502,27 +502,33 @@ export function Dashboard() {
           </button>
         </nav>
 
-                {/* Trezor Suite Multi-Account Tree Section */}
+                        {/* Trezor Suite Multi-Account Section */}
         <div className="mt-5 pt-4 border-t border-white/[0.08] flex-1 w-full space-y-2">
           {!sidebarCollapsed ? (
             <>
+              {/* Trezor Device / Wallet Category Header */}
               <div className="flex items-center justify-between px-1 pb-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  Accounts ({accounts.length})
-                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#30D158]" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-300">
+                    Stellar Wallet ({accounts.length})
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => openSettings("addAccount")}
-                  className="text-[11.5px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
+                  className="text-[11px] font-semibold text-[#0A84FF] hover:underline flex items-center gap-0.5"
                 >
-                  <IconPlus size={12} /> Add
+                  <IconPlus size={11} /> Add
                 </button>
               </div>
 
-              <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-0.5 scrollbar-none">
+              {/* Accounts List */}
+              <div className="space-y-1.5 max-h-[250px] overflow-y-auto pr-0.5 scrollbar-none">
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
                   const idxNum = acct.index !== undefined ? acct.index + 1 : 1;
+                  const pathStr = acct.path ?? `m/44'/148'/${acct.index ?? 0}'`;
                   return (
                     <button
                       key={acct.id}
@@ -531,9 +537,9 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         selectAccount(acct.id);
                       }}
-                      className={`flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
+                      className={`group flex w-full items-center justify-between rounded-2xl p-2.5 text-left transition-all ${
                         isActive
-                          ? "bg-white/[0.08] border border-white/15 text-white font-semibold shadow-md shadow-black/40"
+                          ? "bg-white/[0.08] border-l-[3px] border-l-[#0A84FF] border-y border-r border-white/15 text-white font-semibold shadow-md shadow-black/40"
                           : "text-neutral-300 hover:bg-white/[0.04] hover:text-white border border-transparent"
                       }`}
                     >
@@ -548,19 +554,32 @@ export function Dashboard() {
                           <p className="truncate text-[13px] leading-tight font-semibold text-white">
                             {acct.label}
                           </p>
-                          <p className="mono truncate text-[11px] text-neutral-400">
+                          <p className="mono truncate text-[10.5px] text-neutral-400">
                             {isActive && balances
                               ? `${fmtAmount(xlm?.balance ?? "0")} XLM`
-                              : shortenAddr(acct.publicKey, 4, 4)}
+                              : pathStr}
                           </p>
                         </div>
                       </div>
-                      {isActive && (
+                      {isActive ? (
                         <span className="h-2 w-2 rounded-full bg-[#0A84FF] shadow-[0_0_8px_#0A84FF] shrink-0" />
+                      ) : (
+                        <span className="mono text-[10px] text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                          #{idxNum}
+                        </span>
                       )}
                     </button>
                   );
                 })}
+
+                <button
+                  type="button"
+                  onClick={() => openSettings("addAccount")}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-white/[0.04] hover:border-white/25 transition-all mt-1"
+                >
+                  <IconPlus size={13} />
+                  <span>Add Stellar Account</span>
+                </button>
               </div>
             </>
           ) : (
