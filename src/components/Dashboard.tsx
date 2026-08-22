@@ -410,12 +410,7 @@ export function Dashboard() {
           </button>
         </div>
 
-        {/* Active Account Identity Card */}
-        {activeAccount && (
-          <div className={`mt-3 w-full ${sidebarCollapsed ? "flex justify-center" : ""}`}>
-            <AccountMenu onManageAccounts={() => openSettings("accounts")} compact={sidebarCollapsed} />
-          </div>
-        )}
+
 
         {/* Primary Navigation */}
         <nav className="mt-4 space-y-1.5 flex-1 w-full" aria-label="Desktop Navigation">
