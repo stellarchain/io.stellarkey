@@ -7,7 +7,7 @@ import { NETWORKS } from "@/lib/stellar";
 import { buildSep7PayUri } from "@/lib/payuri";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, Modal, ModalHeader } from "./ui";
-import { IconAlert, IconShare } from "./icons";
+import { IconAlert, IconDownload, IconShare } from "./icons";
 
 export function ReceiveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
@@ -111,6 +111,16 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
             >
               <IconShare size={12} /> Share
             </Button>
+          )}
+          {qrDataUrl && (
+            <a
+              href={qrDataUrl}
+              download="stellar-receive-qr.png"
+              onClick={() => triggerHaptic("selection")}
+              className="chip flex items-center gap-1.5 text-[12px]"
+            >
+              <IconDownload size={13} /> Save QR
+            </a>
           )}
           <button
             type="button"
