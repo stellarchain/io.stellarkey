@@ -121,7 +121,7 @@ export function Onboarding() {
             Own your money.
           </h1>
           <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-neutral-300">
-            Polaris generates and encrypts your keys locally in your browser.
+            Wallet generates and encrypts your keys locally in your browser.
             Zero telemetry, zero custody, zero tracking — just pure Stellar.
           </p>
         </div>
@@ -378,7 +378,7 @@ export function Onboarding() {
           completeSetup();
         }}
       >
-        Enter Polaris
+        Enter Wallet
       </Button>
     </StepShell>
   );

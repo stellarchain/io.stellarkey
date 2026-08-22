@@ -1,11 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1f9aff"/>
-      <stop offset="1" stop-color="#0a84ff"/>
+    <linearGradient id="app-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0A84FF"/>
+      <stop offset="100%" stop-color="#5E5CE6"/>
     </linearGradient>
+    <linearGradient id="card-top" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#64D2FF"/>
+      <stop offset="100%" stop-color="#0A84FF"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="4" width="64" height="60" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
   </defs>
-  <rect width="64" height="64" rx="14.5" fill="url(#bg)"/>
-  <circle cx="32" cy="30" r="17" fill="#ffffff" opacity="0.18"/>
-  <path d="M32 10c1.7 13.5 8.8 20.6 22 22v0c-13.2 1.4-20.3 8.5-22 22v0c-1.7-13.5-8.8-20.6-22-22v0c13.2-1.4 20.3-8.5 22-22Z" fill="#ffffff"/>
+  
+  <!-- Back Card Layer -->
+  <rect x="12" y="10" width="40" height="12" rx="4" fill="url(#card-top)" opacity="0.85"/>
+  
+  <!-- Main Wallet Body -->
+  <rect x="6" y="16" width="52" height="38" rx="9" fill="url(#app-bg)" filter="url(#shadow)"/>
+  <rect x="6.5" y="16.5" width="51" height="37" rx="8.5" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+  
+  <!-- Stitching Line -->
+  <path d="M6 24h52" stroke="rgba(255,255,255,0.18)" stroke-width="1.2" stroke-dasharray="2 2"/>
+  
+  <!-- Wallet Clasp -->
+  <path d="M38 27h20v16H38a8 8 0 0 1 0-16Z" fill="#121214" stroke="rgba(255,255,255,0.2)" stroke-width="1.2"/>
+  <circle cx="46" cy="35" r="3.5" fill="#30D158"/>
+  <circle cx="46" cy="35" r="1.5" fill="#FFFFFF"/>
 </svg>

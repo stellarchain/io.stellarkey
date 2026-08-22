@@ -18,17 +18,35 @@ function base(size = 16) {
 
 export function LogoMark({ size = 34 }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
       <defs>
-        <linearGradient id="logo-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="logo-wallet-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#0A84FF" />
           <stop offset="100%" stopColor="#5E5CE6" />
         </linearGradient>
+        <linearGradient id="logo-card-top" x1="0" y1="0" x2="64" y2="0" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#64D2FF" />
+          <stop offset="100%" stopColor="#0A84FF" />
+        </linearGradient>
+        <filter id="logo-shadow" x="0" y="4" width="64" height="60" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+          <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.45" />
+        </filter>
       </defs>
-      <circle cx="16" cy="16" r="14" fill="#0A84FF" fillOpacity="0.15" stroke="url(#logo-glow)" strokeWidth="1.5" />
-      <polygon points="16,6 20,16 16,13 12,16" fill="url(#logo-glow)" />
-      <polygon points="16,26 20,16 16,19 12,16" fill="#0A84FF" fillOpacity="0.6" />
-      <circle cx="16" cy="16" r="2.5" fill="#FFFFFF" />
+      
+      {/* Back Card Layer */}
+      <rect x="12" y="10" width="40" height="12" rx="4" fill="url(#logo-card-top)" opacity="0.85" />
+      
+      {/* Main Wallet Body */}
+      <rect x="6" y="16" width="52" height="38" rx="9" fill="url(#logo-wallet-bg)" filter="url(#logo-shadow)" />
+      <rect x="6.5" y="16.5" width="51" height="37" rx="8.5" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+      
+      {/* Stitching Line */}
+      <path d="M6 24h52" stroke="rgba(255,255,255,0.18)" strokeWidth="1.2" strokeDasharray="2 2" />
+      
+      {/* Wallet Clasp */}
+      <path d="M38 27h20v16H38a8 8 0 0 1 0-16Z" fill="#121214" stroke="rgba(255,255,255,0.2)" strokeWidth="1.2" />
+      <circle cx="46" cy="35" r="3.5" fill="#30D158" />
+      <circle cx="46" cy="35" r="1.5" fill="#FFFFFF" />
     </svg>
   );
 }

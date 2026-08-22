@@ -402,6 +402,16 @@ export function removeStoredAccount(accountId: string): VaultFile | null {
   return vault;
 }
 
+export function updateAccountLabel(accountId: string, newLabel: string): VaultFile | null {
+  const vault = readVault();
+  if (!vault) return null;
+  const acc = vault.accounts.find((a) => a.id === accountId);
+  if (!acc) return null;
+  acc.label = newLabel.trim() || acc.label;
+  persist(vault);
+  return vault;
+}
+
 export function getArchivedAccounts(): AccountMeta[] {
   const vault = readVault();
   return (vault?.archivedAccounts ?? []).map(stripSecret);
@@ -483,7 +493,7 @@ export function looksLikeMnemonic(text: string): boolean {
   return words.length === 12 || words.length === 24;
 }
 
-const KEYSTORE_FORMAT = "polaris-keystore/v1";
+const KEYSTORE_FORMAT = "wallet-keystore/v1";
 
 export interface KeystoreFile {
   format: string;
@@ -531,8 +541,12 @@ export async function importKeystore(
   keystorePassword: string,
 ): Promise<AccountMeta> {
   const parsed = JSON.parse(json) as KeystoreFile;
-  if (!parsed || parsed.format !== KEYSTORE_FORMAT || !parsed.crypto) {
-    throw new Error("Invalid Polaris keystore format");
+  if (
+    !parsed ||
+    (parsed.format !== KEYSTORE_FORMAT && parsed.format !== "polaris-keystore/v1") ||
+    !parsed.crypto
+  ) {
+    throw new Error("Invalid Wallet keystore format");
   }
   const secret = await decryptString(parsed.crypto, keystorePassword);
   return addStoredAccount({ secret });

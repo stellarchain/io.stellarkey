@@ -36,7 +36,7 @@ export function LockScreen() {
       <div className={`w-full ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />
-          <h1 className="display-h mt-4 text-[26px] font-bold text-white">Polaris</h1>
+          <h1 className="display-h mt-4 text-[26px] font-bold text-white">Wallet</h1>
           <p className="mt-1 text-[13.5px] text-neutral-400">
             Enter your password to unlock your vault
           </p>
