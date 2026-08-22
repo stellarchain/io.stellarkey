@@ -4,9 +4,15 @@ import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
+import {
+  connectLedgerDevice,
+  connectTrezorDevice,
+  getStellarDerivationPath,
+  type HardwareDeviceType,
+} from "@/lib/hardware";
 import { Button, ErrorText, Field, Modal, ModalHeader, SegmentedControl } from "./ui";
 
-type Mode = "generate" | "import" | "watch";
+type Mode = "generate" | "import" | "hardware" | "watch";
 
 export function AddAccountModal({
   open,
@@ -20,8 +26,12 @@ export function AddAccountModal({
 }
 
 function AddAccountInner({ onClose }: { onClose: () => void }) {
-  const { accounts, addAccount, addWatchOnly } = useWallet();
+  const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWallet();
   const [mode, setMode] = useState<Mode>("generate");
+  const [hardwareDevice, setHardwareDevice] = useState<HardwareDeviceType>("ledger");
+  const [hardwareIndex, setHardwareIndex] = useState(0);
+  void setHardwareIndex;
+  const [hardwareKey, setHardwareKey] = useState("");
   const [label, setLabel] = useState("");
   const [secretInput, setSecretInput] = useState("");
   const [watchKey, setWatchKey] = useState("");
@@ -31,11 +41,43 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
   const watchValid = isValidPublicAddress(watchKey.trim());
   const importValid = validateStellarSecret(secretInput);
 
+  async function handleConnectHardware() {
+    setError(null);
+    setBusy(true);
+    try {
+      const info =
+        hardwareDevice === "ledger"
+          ? await connectLedgerDevice(hardwareIndex)
+          : await connectTrezorDevice(hardwareIndex);
+      setHardwareKey(info.publicKey);
+      if (!label) {
+        setLabel(info.label);
+      }
+      triggerHaptic("success");
+    } catch (e) {
+      triggerHaptic("error");
+      setError(e instanceof Error ? e.message : "Failed to connect hardware device.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleCreate() {
     setError(null);
     setBusy(true);
     try {
-      if (mode === "watch") {
+      if (mode === "hardware") {
+        if (!hardwareKey) {
+          throw new Error("Please connect your hardware device first.");
+        }
+        await addHardwareAccount({
+          publicKey: hardwareKey,
+          device: hardwareDevice,
+          path: getStellarDerivationPath(hardwareIndex),
+          label: label || undefined,
+          index: hardwareIndex,
+        });
+      } else if (mode === "watch") {
         await addWatchOnly(watchKey.trim(), label || undefined);
       } else {
         await addAccount({
@@ -49,6 +91,7 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
       setLabel("");
       setSecretInput("");
       setWatchKey("");
+      setHardwareKey("");
       setMode("generate");
     } catch (e) {
       triggerHaptic("error");
@@ -62,12 +105,15 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
     !busy &&
     (mode === "generate" ||
       (mode === "import" && importValid) ||
+      (mode === "hardware" && Boolean(hardwareKey)) ||
       (mode === "watch" && watchValid));
 
   const subtitle =
-    mode === "watch"
-      ? "Track any address — balances only, no keys"
-      : `Derives at m/44'/148'/${accounts.length}'`;
+    mode === "hardware"
+      ? "Connect Ledger or Trezor via WebUSB"
+      : mode === "watch"
+        ? "Track any address — balances only, no keys"
+        : `Derives at m/44'/148'/${accounts.length}'`;
 
   return (
     <Modal open onClose={onClose} dismissable={!busy}>
@@ -79,7 +125,8 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
           options={[
             { value: "generate", label: "Derive" },
             { value: "import", label: "Import" },
-            { value: "watch", label: "Watch Only" },
+            { value: "hardware", label: "Hardware" },
+            { value: "watch", label: "Watch" },
           ]}
         />
 
@@ -146,6 +193,78 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
                 autoComplete="off"
               />
             </Field>
+          )}
+
+          {mode === "hardware" && (
+            <div className="space-y-3.5">
+              {/* Device Selector */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setHardwareDevice("ledger");
+                    setHardwareKey("");
+                  }}
+                  className={`rounded-2xl border p-3 text-left transition-all ${
+                    hardwareDevice === "ledger"
+                      ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
+                      : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  <p className="text-[14px] font-bold text-white flex items-center gap-1.5">
+                    <span>🔒 Ledger</span>
+                  </p>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">Nano S / X / Stax</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setHardwareDevice("trezor");
+                    setHardwareKey("");
+                  }}
+                  className={`rounded-2xl border p-3 text-left transition-all ${
+                    hardwareDevice === "trezor"
+                      ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
+                      : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
+                  }`}
+                >
+                  <p className="text-[14px] font-bold text-white flex items-center gap-1.5">
+                    <span>🛡️ Trezor</span>
+                  </p>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">Model One / T / Safe</p>
+                </button>
+              </div>
+
+              {/* Derivation Path Index */}
+              <div className="flex items-center justify-between px-1 text-[12px] text-neutral-300">
+                <span>Derivation Path:</span>
+                <span className="mono font-semibold text-[#0A84FF]">
+                  {getStellarDerivationPath(hardwareIndex)}
+                </span>
+              </div>
+
+              {hardwareKey ? (
+                <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3 text-[12px] space-y-1">
+                  <p className="font-semibold text-[#30D158]">✓ Device Connected</p>
+                  <p className="mono select-all break-all text-neutral-300 text-[11px]">
+                    {hardwareKey}
+                  </p>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full !py-2.5 text-[13.5px] font-semibold"
+                  loading={busy}
+                  onClick={() => void handleConnectHardware()}
+                >
+                  Connect {hardwareDevice === "ledger" ? "Ledger" : "Trezor"} via WebUSB
+                </Button>
+              )}
+            </div>
           )}
 
           {mode === "watch" && (

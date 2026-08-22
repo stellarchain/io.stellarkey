@@ -385,6 +385,23 @@ function SendInner({
               </div>
             )}
 
+            {/* Hardware Security Badge */}
+            {activeAccount?.hardware && (
+              <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#0A84FF]/[0.08] border border-[#0A84FF]/30 text-[12px]">
+                <div className="flex items-center gap-2 text-[#0A84FF]">
+                  <span className="text-[14px]">
+                    {activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}
+                  </span>
+                  <span className="font-semibold">
+                    Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+                  </span>
+                </div>
+                <span className="mono text-[11px] text-neutral-400">
+                  {activeAccount.path ?? "m/44'/148'/0'"}
+                </span>
+              </div>
+            )}
+
             {/* Transaction Safety Shield Verification */}
             <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#30D158]/[0.06] border border-[#30D158]/20 text-[12px]">
               <div className="flex items-center gap-2 text-[#30D158]">
