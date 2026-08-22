@@ -28,7 +28,7 @@ export function BatchSendModal({
 }
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
-  const { balances, sendBatch, refresh, contacts } = useWallet();
+  const { balances, sendBatch, refresh, contacts, activeAccount } = useWallet();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");
@@ -321,6 +321,19 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                   className="input text-[13px]"
                 />
               </div>
+
+              {/* Hardware Device Indicator */}
+              {activeAccount?.hardware && (
+                <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+                  <div className="flex items-center gap-2">
+                    <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+                    <span className="font-semibold">
+                      Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+                    </span>
+                  </div>
+                  <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
+                </div>
+              )}
 
               {/* Summary calculation */}
               <div className="panel-inset p-3 space-y-1 text-[12px]">

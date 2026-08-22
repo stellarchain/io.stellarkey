@@ -12,7 +12,7 @@ import { Button, ErrorText } from "./ui";
 import { IconAlert, IconChevronDown, IconSliders, IconSwap } from "./icons";
 
 export function SwapPage() {
-  const { balances, swap, network, refresh } = useWallet();
+  const { balances, swap, network, refresh, activeAccount } = useWallet();
   const [sendKey, setSendKey] = useState("native");
   const [destKey, setDestKey] = useState("");
   const [amount, setAmount] = useState("");
@@ -294,6 +294,17 @@ export function SwapPage() {
 
           {stage === "review" && route ? (
             <div className="mt-4 space-y-3">
+              {activeAccount?.hardware && (
+                <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+                  <div className="flex items-center gap-2">
+                    <span>{activeAccount.hardware === "ledger" ? "🔒" : "🛡️"}</span>
+                    <span className="font-semibold">
+                      Sign Swap on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+                    </span>
+                  </div>
+                  <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
+                </div>
+              )}
               <div className="panel-inset p-4 space-y-2.5 text-[13px]">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
                   Review Swap Details & Routing
