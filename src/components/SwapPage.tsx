@@ -211,7 +211,7 @@ export function SwapPage() {
                 <span className="mono text-[11px]">
                   Bal: {fmtAmount(sendAsset.balance)}
                 </span>
-                {[0.5, 1].map((f) => (
+                {[0.25, 0.5, 0.75, 1].map((f) => (
                   <button
                     key={f}
                     type="button"
@@ -228,7 +228,7 @@ export function SwapPage() {
                     }}
                     className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-300 hover:bg-white/20 hover:text-white"
                   >
-                    {f === 1 ? "Max" : "50%"}
+                    {f === 1 ? "Max" : `${f * 100}%`}
                   </button>
                 ))}
               </div>
