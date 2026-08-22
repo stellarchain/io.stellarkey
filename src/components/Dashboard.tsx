@@ -9,6 +9,7 @@ import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo }
 import type { ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
+import { fetchAssetPrices, estimatePortfolioUsd, type AssetPrices } from "@/lib/prices";
 import { playTapSound } from "@/lib/sounds";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
@@ -109,6 +110,7 @@ export function Dashboard() {
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
+  const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [phraseOpen, setPhraseOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -141,6 +143,23 @@ export function Dashboard() {
     return () => document.removeEventListener("visibilitychange", onVisChange);
   }, []);
 
+  // Fetch USD prices for held non-native assets (mainnet)
+  useEffect(() => {
+    if (network !== "mainnet" || !balances || balances.length === 0) return;
+    let alive = true;
+    void (async () => {
+      const codes = balances
+        .filter((b) => !b.isNative && parseFloat(b.balance) > 0)
+        .map((b) => b.code);
+      if (codes.length === 0) return;
+      const prices = await fetchAssetPrices(codes);
+      if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [network, balances]);
+
   // PWA install prompt capture
   useEffect(() => {
     function onInstallPrompt(e: Event) {
@@ -170,9 +189,10 @@ export function Dashboard() {
   }, [accounts, selectAccount]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
+  // Active-account fiat value includes priced non-native assets (USDC, BTC, ...)
   const usdValue =
-    network === "mainnet" && xlmPriceUsd !== null
-      ? parseFloat(xlm?.balance ?? "0") * xlmPriceUsd
+    network === "mainnet" && balances !== null && xlmPriceUsd !== null
+      ? estimatePortfolioUsd(balances, xlmPriceUsd, assetPrices)
       : null;
 
   // Aggregated net worth across every account in the wallet

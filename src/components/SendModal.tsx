@@ -43,7 +43,7 @@ function SendInner({
   onClose: () => void;
   prefill?: PayUriPayload | null;
 }) {
-  const { balances, send, network, refresh, contacts, activeAccount } = useWallet();
+  const { balances, send, network, refresh, contacts, activeAccount, activity } = useWallet();
   const [stage, setStage] = useState<Stage>("form");
   const [destination, setDestination] = useState(prefill?.destination ?? "");
   const [amount, setAmount] = useState(
@@ -100,6 +100,19 @@ function SendInner({
     () => options.find((b) => b.key === assetKey) ?? null,
     [options, assetKey],
   );
+
+  // Recent recipients derived from outgoing activity (most recent first)
+  const recentRecipients = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const a of activity) {
+      const cp = a.counterparty;
+      if (!cp || a.direction !== "out") continue;
+      if (isValidPublicAddress(cp) && !seen.has(cp)) {
+        seen.set(cp, new Date(a.createdAt).getTime());
+      }
+    }
+    return [...seen.keys()].slice(0, 3);
+  }, [activity]);
 
   const isFederation = destination.includes("*");
 
@@ -580,6 +593,24 @@ function SendInner({
                         className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
                       >
                         {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {recentRecipients.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-neutral-500">Recent:</span>
+                    {recentRecipients.map((addr) => (
+                      <button
+                        key={addr}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          handleDestinationChange(addr);
+                        }}
+                        className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
+                      >
+                        {addr.slice(0, 6)}…{addr.slice(-4)}
                       </button>
                     ))}
                   </div>
