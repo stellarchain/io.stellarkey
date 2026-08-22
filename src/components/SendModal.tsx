@@ -8,7 +8,7 @@ import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
 import { lookupKnownAsset } from "@/lib/assets";
-import { fetchFeeStats, type FeeStats } from "@/lib/api";
+import { fetchFeeStats, fetchAccountSignerInfo, type AccountSignerInfo, type FeeStats } from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Modal, ModalHeader, QrScannerBox, SegmentedControl } from "./ui";
@@ -43,7 +43,7 @@ function SendInner({
   onClose: () => void;
   prefill?: PayUriPayload | null;
 }) {
-  const { balances, send, network, refresh, contacts } = useWallet();
+  const { balances, send, network, refresh, contacts, activeAccount } = useWallet();
   const [stage, setStage] = useState<Stage>("form");
   const [destination, setDestination] = useState(prefill?.destination ?? "");
   const [amount, setAmount] = useState(
@@ -68,6 +68,8 @@ function SendInner({
   const [resolvingFed, setResolvingFed] = useState(false);
   const [fedResolvedAddr, setFedResolvedAddr] = useState<string | null>(null);
 
+  const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
+
   // Fetch live fee surge stats on mount
   useEffect(() => {
     let alive = true;
@@ -79,6 +81,19 @@ function SendInner({
       alive = false;
     };
   }, [network]);
+
+  // Fetch account signer config to detect multi-sig requirements
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      if (!activeAccount) return;
+      const info = await fetchAccountSignerInfo(activeAccount.publicKey, network);
+      if (alive) setSignerInfo(info);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [activeAccount, network]);
 
   const options = useMemo(() => balances ?? [], [balances]);
   const selectedAsset = useMemo(
@@ -147,6 +162,13 @@ function SendInner({
 
   const reserveBlocked = selectedAsset?.isNative === true && isValidAmount(amount) && amountNum > maxSendable;
   const canReview = (destOk || Boolean(fedResolvedAddr)) && amountOk && memoOk && !reserveBlocked;
+
+  // Multisig: warn when our signature alone can't meet the medium threshold
+  const myWeight =
+    signerInfo && activeAccount
+      ? (signerInfo.signers.find((s) => s.key === activeAccount.publicKey)?.weight ?? 0)
+      : 1;
+  const needsCosigners = signerInfo !== null && signerInfo.thresholds.med_threshold > myWeight;
 
   // Dynamic fee calculation from live fee stats
   const normalStroops = liveFeeStats?.modeAcceptedFee ?? 100;
@@ -336,6 +358,18 @@ function SendInner({
                 <span className="mono">{remainingBalance} {selectedAsset?.code}</span>
               </div>
             </div>
+
+            {/* Multi-sig cosigner requirement warning */}
+            {needsCosigners && (
+              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FF9F0A]">
+                <span className="shrink-0 text-[16px]">✍️</span>
+                <span>
+                  <strong>Multi-signature account.</strong> Your signature weight ({myWeight}) is
+                  below the required threshold ({signerInfo?.thresholds.med_threshold}). Additional
+                  signatures are needed before this transaction reaches the ledger.
+                </span>
+              </div>
+            )}
 
             {/* Transaction Safety Shield Verification */}
             <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#30D158]/[0.06] border border-[#30D158]/20 text-[12px]">
