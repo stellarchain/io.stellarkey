@@ -24,6 +24,7 @@ import {
   Modal,
   ModalHeader,
   SegmentedControl,
+  Spinner,
   Toggle,
 } from "./ui";
 import {
@@ -35,6 +36,7 @@ import {
   IconFingerprint,
   IconLock,
   IconPlus,
+  IconRefresh,
   IconShield,
   IconTrash,
   IconWallet,
@@ -59,9 +61,12 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     switchNetwork,
     accounts,
     activeAccount,
+    archivedAccounts,
     selectAccount,
     addAccount,
     removeAccount,
+    restoreArchivedAccount,
+    restoreAccountByIndex,
     lock,
     resetWallet,
     contacts,
@@ -89,6 +94,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [importSecret, setImportSecret] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -159,6 +165,26 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       setAddError(e instanceof Error ? e.message : "Could not add account.");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleScanAndRestore() {
+    setScanning(true);
+    try {
+      let restoredCount = 0;
+      for (let i = 0; i < 5; i++) {
+        if (!accounts.some((a) => a.index === i)) {
+          await restoreAccountByIndex(i);
+          restoredCount++;
+        }
+      }
+      triggerHaptic("success");
+      toast(restoredCount > 0 ? `Restored ${restoredCount} account(s)` : "All derived accounts are active", "info");
+    } catch (e) {
+      triggerHaptic("error");
+      toast(e instanceof Error ? e.message : "Scan failed", "error");
+    } finally {
+      setScanning(false);
     }
   }
 
@@ -595,7 +621,61 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               }}
               sep
             />
+            {hasMnemonicVault && (
+              <RowButton
+                icon={scanning ? <Spinner /> : <IconRefresh size={15} />}
+                tint="#30D158"
+                label={scanning ? "Scanning HD Accounts…" : "Scan & Restore Derived Accounts"}
+                sub="Checks HD indexes 0–4"
+                onClick={() => {
+                  if (!scanning) void handleScanAndRestore();
+                }}
+                sep
+              />
+            )}
           </div>
+
+          {/* Archived / Deleted Accounts Section */}
+          {archivedAccounts.length > 0 && (
+            <div className="mt-6">
+              <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+                Deleted / Archived Accounts
+              </p>
+              <div className="list-group">
+                {archivedAccounts.map((acct, i) => (
+                  <div
+                    key={acct.id}
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      i > 0 ? "ios-sep" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar seed={acct.publicKey} size={30} />
+                      <div className="min-w-0">
+                        <p className="truncate text-[14.5px] font-semibold text-white">
+                          {acct.label}
+                        </p>
+                        <p className="mono truncate text-[11px] text-neutral-400">
+                          {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      className="!h-8 !px-3 !text-[12px]"
+                      onClick={async () => {
+                        triggerHaptic("success");
+                        await restoreArchivedAccount(acct.id);
+                        toast(`Restored "${acct.label}"`, "success");
+                      }}
+                    >
+                      Restore
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {keystoreJson !== null ? (
             <div className="list-group fade-up mt-4 space-y-3 p-4">
@@ -663,7 +743,10 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 danger
                 onClick={() => {
                   triggerHaptic("warning");
-                  if (activeAccount) removeAccount(activeAccount.id);
+                  if (activeAccount) {
+                    removeAccount(activeAccount.id);
+                    toast("Account archived", "info");
+                  }
                 }}
               />
             </div>
@@ -828,7 +911,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                       key={i}
                       className="rounded-xl bg-white/[0.05] border border-white/10 px-2 py-2 text-center text-[13px] text-white"
                     >
-                      <span className="mr-1.5 text-[11px] text-neutral-500">{i + 1}</span>
+                      <span className="mr-1.5 text-[10.5px] text-neutral-500">{i + 1}</span>
                       {w}
                     </span>
                   ))}

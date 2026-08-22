@@ -10,15 +10,16 @@ import {
   IconCheck,
   IconDownload,
   IconKey,
+  IconRefresh,
   IconSend,
   LogoMark,
 } from "./icons";
 
-type Mode = "create" | "import";
+type Mode = "create" | "import" | "restore";
 type Step = "choose" | "password" | "reveal";
 
 export function Onboarding() {
-  const { createWallet, completeSetup, resetWallet } = useWallet();
+  const { createWallet, completeSetup, resetWallet, hasDeletedWalletBackup, restoreDeletedWallet } = useWallet();
   const [step, setStep] = useState<Step>("choose");
   const [mode, setMode] = useState<Mode>("create");
   const [secretInput, setSecretInput] = useState("");
@@ -35,6 +36,25 @@ export function Onboarding() {
 
   async function handlePasswordSubmit() {
     setError(null);
+
+    if (mode === "restore") {
+      if (!password) {
+        setError("Please enter your vault password.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await restoreDeletedWallet(password);
+        triggerHaptic("success");
+      } catch (e) {
+        triggerHaptic("error");
+        setError(e instanceof Error ? e.message : "Incorrect password.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (!passwordValid) {
       setError("Password must be at least 8 characters.");
       triggerHaptic("warning");
@@ -130,6 +150,23 @@ export function Onboarding() {
           </Button>
         </div>
 
+        {hasDeletedWalletBackup && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setMode("restore");
+                setStep("password");
+              }}
+              className="flex items-center gap-2 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 px-4 py-2 text-[13px] font-medium text-[#30D158] hover:bg-[#30D158]/15 transition-colors"
+            >
+              <IconRefresh size={14} />
+              <span>Restore Previously Reset Wallet</span>
+            </button>
+          </div>
+        )}
+
         <div className="mt-16 grid w-full max-w-3xl gap-6 sm:grid-cols-3">
           {[
             {
@@ -178,12 +215,26 @@ export function Onboarding() {
   if (step === "password") {
     return (
       <StepShell
-        stepLabel={mode === "create" ? "Step 1 of 2" : "Import Wallet"}
-        title={mode === "create" ? "Create Your Password" : "Import Your Vault"}
+        stepLabel={
+          mode === "create"
+            ? "Step 1 of 2"
+            : mode === "restore"
+              ? "Restore Deleted Wallet"
+              : "Import Wallet"
+        }
+        title={
+          mode === "create"
+            ? "Create Your Password"
+            : mode === "restore"
+              ? "Enter Wallet Password"
+              : "Import Your Vault"
+        }
         subtitle={
           mode === "create"
             ? "This password encrypts your master seed locally on this device."
-            : "Enter your private key or 12/24-word phrase and set a vault password."
+            : mode === "restore"
+              ? "Enter the password you used for your previous wallet to restore all accounts and keys."
+              : "Enter your private key or 12/24-word phrase and set a vault password."
         }
         onBack={backToChoose}
         backDisabled={busy}
@@ -201,29 +252,34 @@ export function Onboarding() {
           </Field>
         )}
         <div className="space-y-4">
-          <Field label="Vault Password" hint="Minimum 8 characters">
+          <Field label="Vault Password" hint={mode === "restore" ? undefined : "Minimum 8 characters"}>
             <input
               className="input text-[14px]"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter strong password"
-              autoComplete="new-password"
-            />
-          </Field>
-          <Field label="Confirm Password">
-            <input
-              className="input text-[14px]"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repeat password"
-              autoComplete="new-password"
+              placeholder="Enter password"
+              autoComplete={mode === "restore" ? "current-password" : "new-password"}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void handlePasswordSubmit();
+                if (e.key === "Enter" && mode === "restore") void handlePasswordSubmit();
               }}
             />
           </Field>
+          {mode !== "restore" && (
+            <Field label="Confirm Password">
+              <input
+                className="input text-[14px]"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat password"
+                autoComplete="new-password"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handlePasswordSubmit();
+                }}
+              />
+            </Field>
+          )}
         </div>
         <ErrorText message={error ?? ""} />
         <Button
@@ -232,7 +288,11 @@ export function Onboarding() {
           disabled={busy}
           onClick={() => void handlePasswordSubmit()}
         >
-          {mode === "create" ? "Continue to Secret Phrase" : "Unlock & Import"}
+          {mode === "create"
+            ? "Continue to Secret Phrase"
+            : mode === "restore"
+              ? "Restore Wallet"
+              : "Unlock & Import"}
         </Button>
       </StepShell>
     );

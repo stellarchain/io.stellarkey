@@ -17,6 +17,7 @@ export interface VaultFile {
   version: 1 | 2;
   mnemonic?: EncryptedPayload;
   accounts: StoredAccount[];
+  archivedAccounts?: StoredAccount[];
   activeAccountId: string | null;
 }
 
