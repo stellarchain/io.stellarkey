@@ -118,6 +118,7 @@ interface WalletContextValue {
     assetCode: string;
     issuer?: string | null;
     memoText?: string;
+    feeStroops?: number;
   }) => Promise<{ hash: string }>;
   sendBatch: (params: {
     payments: Array<{
@@ -503,6 +504,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       assetCode: string;
       issuer?: string | null;
       memoText?: string;
+      feeStroops?: number;
     }) => {
       if (!activeAccount) throw new Error("No active account");
       const secretKey = getSecretKey(activeAccount.id);

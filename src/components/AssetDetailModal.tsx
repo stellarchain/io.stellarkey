@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
-import { fmtAmount } from "@/lib/format";
+import { fmtAmount, fmtFiat } from "@/lib/format";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, ErrorText, Modal, ModalHeader } from "./ui";
@@ -17,7 +17,8 @@ export function AssetDetailModal({
   asset: AssetBalance | null;
   onClose: () => void;
 }) {
-  const { network, trustAsset, refresh, privacyMode } = useWallet();
+  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency } = useWallet();
+  const [calcAmount, setCalcAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +26,18 @@ export function AssetDetailModal({
 
   const known = lookupKnownAsset(asset.code);
   const balance = parseFloat(asset.balance);
+
+  // Approximate USD rate
+  const assetUsdRate = asset.isNative
+    ? xlmPriceUsd ?? 0.12
+    : asset.code === "USDC" || asset.code === "EURC"
+      ? 1.0
+      : asset.code === "AQUA"
+        ? 0.0012
+        : 0;
+
+  const parsedCalc = parseFloat(calcAmount || asset.balance);
+  const calculatedVal = !Number.isNaN(parsedCalc) && assetUsdRate > 0 ? parsedCalc * assetUsdRate : null;
 
   async function handleRemove() {
     if (!asset || !asset.issuer) return;
@@ -74,6 +87,32 @@ export function AssetDetailModal({
             </p>
           )}
         </div>
+
+        {/* Live Asset Valuation & Converter Box */}
+        {assetUsdRate > 0 && !privacyMode && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              <span>Valuation Calculator</span>
+              <span className="mono text-[#30D158]">{fiatCurrency}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder={fmtAmount(asset.balance)}
+                value={calcAmount}
+                onChange={(e) => setCalcAmount(e.target.value.replace(/,/g, "."))}
+                className="input mono !h-8 text-[13px] flex-1"
+              />
+              <span className="text-[13px] font-medium text-neutral-300">
+                {asset.code} =
+              </span>
+              <span className="mono text-[14px] font-semibold text-white">
+                {calculatedVal !== null ? fmtFiat(calculatedVal, fiatCurrency) : "—"}
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="panel-inset mt-5 divide-y divide-white/[0.08]">
           <Row label="Type">
