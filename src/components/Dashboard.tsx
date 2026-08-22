@@ -1165,9 +1165,14 @@ export function Dashboard() {
                 <div className="space-y-4 mt-2">
                   {groupedActivity.map((group) => (
                     <div key={group.title}>
-                      <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                        {group.title}
-                      </p>
+                      <div className="flex items-center justify-between px-2 pb-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                          {group.title}
+                        </p>
+                        <span className="text-[11px] text-neutral-500 hidden sm:inline">
+                          {group.items.length} transaction{group.items.length > 1 ? "s" : ""}
+                        </span>
+                      </div>
                       <div className="list-group">
                         {group.items.map((item, i) => {
                           const incoming = item.direction === "in";
