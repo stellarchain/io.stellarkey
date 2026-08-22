@@ -60,7 +60,7 @@ export function AssetDetailModal({
   }
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal open onClose={onClose} wide>
       <ModalHeader
         title={asset.code}
         subtitle={known?.name ?? (asset.isNative ? "Stellar Lumens" : "Custom Asset")}
