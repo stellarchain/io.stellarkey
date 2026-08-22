@@ -47,7 +47,7 @@ export function PhraseModal({ open, onClose }: { open: boolean; onClose: () => v
           subtitle="Your 12 words recreate the entire wallet"
           onClose={handleClose}
         />
-        <div className="px-6 pb-6 pt-5">
+        <div className="p-6">
           <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3">
             <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
             <p className="text-[11.5px] leading-relaxed text-[#FF9F0A]">

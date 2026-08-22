@@ -94,7 +94,7 @@ Explorer: ${explorerUrl}`;
         })}
         onClose={onClose}
       />
-      <div className="px-6 py-6">
+      <div className="p-6">
         {/* Status Badge & Amount */}
         <div className="flex flex-col items-center pb-3 pt-1">
           <span

@@ -131,7 +131,7 @@ function AddAccountInner({
   return (
     <Modal open onClose={onClose} dismissable={!busy}>
       <ModalHeader title="Add Account" subtitle={subtitle} onClose={onClose} />
-      <div className="px-6 pb-6 pt-5">
+      <div className="p-6">
         <SegmentedControl<Mode>
           value={mode}
           onChange={setMode}
