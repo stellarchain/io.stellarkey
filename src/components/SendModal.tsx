@@ -111,6 +111,12 @@ function SendInner({
 
   const amountNum = parseFloat(amount || "0");
   const balanceNum = selectedAsset ? parseFloat(selectedAsset.balance) : 0;
+  const trustlinesCount = (balances ?? []).filter((b) => !b.isNative).length;
+  const requiredReserve = selectedAsset?.isNative ? 1.0 + trustlinesCount * 0.5 : 0;
+  const maxSendable = selectedAsset?.isNative
+    ? Math.max(0, balanceNum - requiredReserve)
+    : balanceNum;
+
   const amountOk =
     isValidAmount(amount) && selectedAsset !== null && amountNum <= balanceNum;
 
@@ -124,8 +130,7 @@ function SendInner({
           ? /^[0-9a-fA-F]{64}$/.test(memo.trim()) || memo.trim() === ""
           : true;
 
-  const reserveBlocked =
-    selectedAsset?.isNative === true && isValidAmount(amount) && amountNum > balanceNum - 1;
+  const reserveBlocked = selectedAsset?.isNative === true && isValidAmount(amount) && amountNum > maxSendable;
   const canReview = (destOk || Boolean(fedResolvedAddr)) && amountOk && memoOk && !reserveBlocked;
 
   async function handleConfirm() {
@@ -264,7 +269,9 @@ function SendInner({
                 </Row>
               )}
               <Row label="Network Fee">
-                <span className="text-[13px] text-neutral-400">0.00001 XLM</span>
+                <span className="mono text-[13px] text-neutral-300">
+                  0.00001 XLM <span className="text-[11px] text-neutral-500">(100 stroops · Fast)</span>
+                </span>
               </Row>
             </div>
 
@@ -329,7 +336,7 @@ function SendInner({
                 {selectedAsset && (
                   <>
                     <span className="mono mr-1 text-[11px] text-neutral-400">
-                      {fmtAmount(selectedAsset.balance)} {selectedAsset.code}
+                      Avail: {fmtAmount(maxSendable)} {selectedAsset.code}
                     </span>
                     {[0.25, 0.5, 1].map((f) => (
                       <button
@@ -339,11 +346,7 @@ function SendInner({
                         onClick={() => {
                           triggerHaptic("selection");
                           setAmount(
-                            parseFloat(
-                              (
-                                Math.max(0, balanceNum - (selectedAsset.isNative ? 1 : 0)) * f
-                              ).toFixed(7),
-                            ).toString(),
+                            parseFloat((maxSendable * f).toFixed(7)).toString(),
                           );
                         }}
                       >
@@ -354,8 +357,8 @@ function SendInner({
                 )}
               </div>
               {reserveBlocked && (
-                <p className="mt-2 text-[11px] text-[#FF9F0A]">
-                  Reserve note: 1 XLM is reserved for base balance.
+                <p className="mt-2 text-[11.5px] text-[#FF9F0A] leading-relaxed">
+                  Reserve safeguard: {requiredReserve} XLM must remain in your account for base balance and active trustlines.
                 </p>
               )}
             </div>
