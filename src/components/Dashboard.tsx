@@ -17,6 +17,7 @@ import { SettingsPage } from "./SettingsPage";
 import { Avatar, Button, CopyButton, Dropdown, NetworkBadge, Spinner } from "./ui";
 import { AddAssetModal } from "./AddAssetModal";
 import { AssetDetailModal } from "./AssetDetailModal";
+import { BatchSendModal } from "./BatchSendModal";
 import { CommandPalette } from "./CommandPalette";
 import { ReceiveModal } from "./ReceiveModal";
 import { SendModal } from "./SendModal";
@@ -53,6 +54,8 @@ export function Dashboard() {
     switchNetwork,
     activeAccount,
     balances,
+    claimableBalances,
+    claimAirdrop,
     activity,
     activityCursor,
     dataLoading,
@@ -71,6 +74,7 @@ export function Dashboard() {
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [sendOpen, setSendOpen] = useState(false);
+  const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<PayUriPayload | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [addAssetOpen, setAddAssetOpen] = useState(false);
@@ -82,6 +86,7 @@ export function Dashboard() {
   const [scrolled, setScrolled] = useState(false);
   const [fundBusy, setFundBusy] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
+  const [claimingAll, setClaimingAll] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -200,6 +205,22 @@ export function Dashboard() {
     }
   }
 
+  async function handleClaimAllAirdrops() {
+    if (claimableBalances.length === 0) return;
+    setClaimingAll(true);
+    triggerHaptic("selection");
+    try {
+      for (const item of claimableBalances) {
+        await claimAirdrop(item.id);
+      }
+      triggerHaptic("success");
+    } catch {
+      triggerHaptic("error");
+    } finally {
+      setClaimingAll(false);
+    }
+  }
+
   function handleExportCsv() {
     if (filteredActivity.length === 0) return;
     triggerHaptic("selection");
@@ -236,6 +257,11 @@ export function Dashboard() {
         setSendPrefill(null);
         setSendOpen(true);
       },
+    },
+    {
+      id: "batch-send",
+      label: "Batch payment disperse (Multi-Send)",
+      run: () => setBatchSendOpen(true),
     },
     { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
     { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
@@ -374,6 +400,32 @@ export function Dashboard() {
           </>
         ) : view === "home" ? (
           <>
+            {/* Pending Airdrops / Claimable Balances Alert Banner */}
+            {claimableBalances.length > 0 && (
+              <div className="fade-up mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="text-[20px] shrink-0">🎁</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold text-white">
+                      {claimableBalances.length} Pending Airdrop{claimableBalances.length > 1 ? "s" : ""}
+                    </p>
+                    <p className="truncate text-[11px] text-neutral-300">
+                      {claimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary"
+                  className="!h-8 !px-3 !text-[12px] shrink-0"
+                  loading={claimingAll}
+                  disabled={claimingAll}
+                  onClick={() => void handleClaimAllAirdrops()}
+                >
+                  Claim All
+                </Button>
+              </div>
+            )}
+
             {/* Hero Total Balance */}
             <section className="fade-up flex flex-col items-center pb-6 pt-4 text-center">
               <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
@@ -477,16 +529,28 @@ export function Dashboard() {
             <section className="fade-up mt-6">
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setAddAssetOpen(true);
-                  }}
-                  className="text-[13px] font-semibold text-[#0A84FF] hover:underline"
-                >
-                  + Add Asset
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setBatchSendOpen(true);
+                    }}
+                    className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                  >
+                    Multi-Send
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setAddAssetOpen(true);
+                    }}
+                    className="text-[13px] font-semibold text-[#0A84FF] hover:underline"
+                  >
+                    + Add Asset
+                  </button>
+                </div>
               </div>
               <div className="list-group">
                 {balances === null &&
@@ -761,6 +825,7 @@ export function Dashboard() {
       </nav>
 
       <SendModal open={sendOpen} onClose={() => setSendOpen(false)} prefill={sendPrefill} />
+      <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
       <ReceiveModal open={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
       <AssetDetailModal asset={detailAsset} onClose={() => setDetailAsset(null)} />

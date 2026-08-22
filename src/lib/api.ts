@@ -66,6 +66,115 @@ export async function fetchBalances(
   return nativeBal ? [nativeBal, ...list] : list;
 }
 
+export interface ClaimableBalanceItem {
+  id: string;
+  assetCode: string;
+  issuer: string | null;
+  amount: string;
+  sponsor?: string;
+}
+
+export async function fetchClaimableBalances(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<ClaimableBalanceItem[]> {
+  const cfg = NETWORKS[network];
+  const data = await getJson<{
+    _embedded?: {
+      records?: Array<{
+        id: string;
+        asset: string;
+        amount: string;
+        sponsor?: string;
+      }>;
+    };
+  }>(`${cfg.horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`);
+
+  const records = data?._embedded?.records ?? [];
+  return records.map((r) => {
+    const isNative = r.asset === "native";
+    const parts = r.asset.split(":");
+    const code = isNative ? "XLM" : parts[0] ?? "UNKNOWN";
+    const issuer = isNative ? null : parts[1] ?? null;
+    return {
+      id: r.id,
+      assetCode: code,
+      issuer,
+      amount: r.amount,
+      sponsor: r.sponsor,
+    };
+  });
+}
+
+export async function claimClaimableBalance(params: {
+  network: NetworkKey;
+  secretKey: string;
+  balanceId: string;
+}): Promise<{ hash: string }> {
+  const { network, secretKey, balanceId } = params;
+  const cfg = NETWORKS[network];
+  const kp = Keypair.fromSecret(secretKey);
+  const source = await getJson<{ sequence: string }>(
+    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+
+  const tx = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+    fee: BASE_FEE,
+    networkPassphrase: cfg.networkPassphrase,
+  })
+    .addOperation(
+      Operation.claimClaimableBalance({
+        balanceId,
+      }),
+    )
+    .setTimeout(180)
+    .build();
+  tx.sign(kp);
+
+  try {
+    return await submitSignedTx(tx, network);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function mergeAccount(params: {
+  network: NetworkKey;
+  secretKey: string;
+  destination: string;
+}): Promise<{ hash: string }> {
+  const { network, secretKey, destination } = params;
+  if (!isValidPublicAddress(destination)) {
+    throw new SendError("Destination is not a valid Stellar address.");
+  }
+  const cfg = NETWORKS[network];
+  const kp = Keypair.fromSecret(secretKey);
+  const source = await getJson<{ sequence: string }>(
+    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+  );
+  if (!source) throw new SendError("Account does not exist on this network.");
+
+  const tx = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+    fee: BASE_FEE,
+    networkPassphrase: cfg.networkPassphrase,
+  })
+    .addOperation(
+      Operation.accountMerge({
+        destination,
+      }),
+    )
+    .setTimeout(180)
+    .build();
+  tx.sign(kp);
+
+  try {
+    return await submitSignedTx(tx, network);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
 interface RawOperation {
   id: string;
   type: string;
@@ -138,6 +247,15 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         counterparty: isIncoming ? op.from ?? null : op.to ?? null,
       };
     }
+    case "claim_claimable_balance":
+      return {
+        ...base,
+        title: "Claimed Airdrop",
+        direction: "in",
+        amount: op.amount ?? null,
+        assetCode: assetCodeOf(op),
+        counterparty: null,
+      };
     case "change_trust":
       return {
         ...base,
@@ -314,6 +432,55 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
         destination,
         amount: normalizeAmount(amount),
         asset: isNative ? Asset.native() : new Asset(assetCode, issuer!),
+      }),
+    );
+  }
+
+  if (memoText) builder.addMemo(Memo.text(memoText));
+
+  const tx = builder.setTimeout(180).build();
+  tx.sign(kp);
+
+  try {
+    return await submitSignedTx(tx, network);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function sendBatchPayments(params: {
+  network: NetworkKey;
+  secretKey: string;
+  payments: Array<{
+    destination: string;
+    amount: string;
+    assetCode: string;
+    issuer?: string | null;
+  }>;
+  memoText?: string;
+}): Promise<{ hash: string }> {
+  const { network, secretKey, payments, memoText } = params;
+  if (payments.length === 0) throw new SendError("No recipients provided.");
+
+  const cfg = NETWORKS[network];
+  const kp = Keypair.fromSecret(secretKey);
+  const source = await getJson<{ sequence: string }>(
+    `${cfg.horizonUrl}/accounts/${kp.publicKey()}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+
+  const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+    fee: String(parseInt(BASE_FEE, 10) * payments.length),
+    networkPassphrase: cfg.networkPassphrase,
+  });
+
+  for (const p of payments) {
+    const isNative = p.assetCode === "XLM";
+    builder.addOperation(
+      Operation.payment({
+        destination: p.destination,
+        amount: normalizeAmount(p.amount),
+        asset: isNative ? Asset.native() : new Asset(p.assetCode, p.issuer!),
       }),
     );
   }
