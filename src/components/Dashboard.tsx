@@ -65,6 +65,7 @@ export function Dashboard() {
     selectAccount,
     contacts,
     balances,
+    pendingTxs,
     accountBalances,
     claimableBalances,
     claimAirdrop,
@@ -888,6 +889,18 @@ export function Dashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Column: Hero Portfolio & Assets */}
               <div className="lg:col-span-7 space-y-6">
+                {/* Live confirmation banner for broadcast-but-unconfirmed txs */}
+                {pendingTxs.length > 0 && (
+                  <div className="fade-up mb-3 flex items-center gap-2.5 rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 px-4 py-3">
+                    <Spinner />
+                    <p className="text-[12.5px] font-medium text-white">
+                      {pendingTxs.length === 1
+                        ? "1 transaction confirming on-chain…"
+                        : `${pendingTxs.length} transactions confirming on-chain…`}
+                    </p>
+                  </div>
+                )}
+
                 {/* Pending Airdrops / Claimable Balances Alert Banner */}
                 {claimableBalances.length > 0 && (
                   <div className="fade-up flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
@@ -1004,12 +1017,12 @@ export function Dashboard() {
                     </div>
                   )}
 
-                  {/* 4 Primary Action Buttons */}
-                  <div className="mt-6 grid w-full max-w-[420px] grid-cols-4 gap-2.5">
+                  {/* 4 Primary Action Buttons — iOS circle style */}
+                  <div className="mt-6 flex w-full max-w-[420px] items-start justify-between px-2">
                     <ActionButton
-                      icon={<IconSend size={18} />}
+                      icon={<IconSend size={22} />}
                       label="Send"
-                      filled
+                      variant="primary"
                       disabled={activeAccount?.watchOnly === true}
                       onClick={() => {
                         setSendPrefill(null);
@@ -1017,17 +1030,17 @@ export function Dashboard() {
                       }}
                     />
                     <ActionButton
-                      icon={<IconArrowDownLeft size={18} />}
+                      icon={<IconArrowDownLeft size={22} />}
                       label="Receive"
                       onClick={() => setReceiveOpen(true)}
                     />
                     <ActionButton
-                      icon={<IconSwap size={18} />}
+                      icon={<IconSwap size={22} />}
                       label="Swap"
                       onClick={() => switchTab("swap")}
                     />
                     <ActionButton
-                      icon={<IconPlus size={18} />}
+                      icon={<IconPlus size={22} />}
                       label="Add"
                       onClick={() => setAddAssetOpen(true)}
                     />
@@ -1513,37 +1526,43 @@ function ActionButton({
   icon,
   label,
   onClick,
-  filled = false,
+  variant = "glass",
   disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  filled?: boolean;
+  variant?: "primary" | "glass";
   disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
-      title={
-        disabled
-          ? "Watch-only accounts cannot sign transactions"
-          : undefined
-      }
+      title={disabled ? "Watch-only accounts cannot sign transactions" : undefined}
       onClick={() => {
         if (disabled) return;
         triggerHaptic("selection");
         onClick();
       }}
-      className={`flex h-[52px] items-center justify-center gap-1.5 rounded-2xl text-[14px] font-semibold transition-all active:scale-[0.96] shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-        filled
-          ? "bg-[#0A84FF] text-white hover:bg-[#0071E3]"
-          : "bg-white/[0.08] text-white hover:bg-white/[0.12]"
-      }`}
+      className="group flex w-[68px] flex-col items-center gap-2 outline-none"
     >
-      {icon}
-      <span>{label}</span>
+      <span
+        className={`flex h-14 w-14 items-center justify-center rounded-full transition-all duration-200 group-active:scale-90 group-active:opacity-80 disabled:cursor-not-allowed disabled:opacity-40 ${
+          variant === "primary"
+            ? "bg-gradient-to-b from-[#2E9BFF] to-[#0A84FF] text-white shadow-[0_8px_24px_-6px_rgba(10,132,255,0.65)]"
+            : "border border-white/[0.12] bg-white/[0.08] text-white shadow-sm backdrop-blur-md group-hover:bg-white/[0.14]"
+        }`}
+      >
+        {icon}
+      </span>
+      <span
+        className={`text-[11.5px] font-semibold tracking-tight ${
+          disabled ? "text-neutral-600" : "text-neutral-200"
+        }`}
+      >
+        {label}
+      </span>
     </button>
   );
 }

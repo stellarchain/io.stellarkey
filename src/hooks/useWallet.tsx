@@ -76,6 +76,8 @@ interface WalletContextValue {
   claimableBalances: ClaimableBalanceItem[];
   activity: ActivityItem[];
   activityCursor: string | null;
+  /** Transactions broadcast but not yet confirmed on-chain */
+  pendingTxs: Array<{ hash: string; label: string }>;
   dataLoading: boolean;
   loadingMore: boolean;
   xlmPriceUsd: number | null;
@@ -171,6 +173,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [claimableBalances, setClaimableBalances] = useState<ClaimableBalanceItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
+  const [pendingTxs, setPendingTxs] = useState<Array<{ hash: string; label: string }>>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
@@ -354,7 +357,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const confirmAndRefresh = useCallback(
     async (hash: string, label: string) => {
+      setPendingTxs((prev) => [...prev, { hash, label }]);
       const outcome = await api.waitForTransaction(network, hash);
+      setPendingTxs((prev) => prev.filter((p) => p.hash !== hash));
       if (outcome === true) {
         toast(`${label} confirmed`, "success");
       } else if (outcome === false) {
@@ -756,6 +761,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       claimableBalances,
       activity,
       activityCursor,
+      pendingTxs,
       dataLoading,
       loadingMore,
       xlmPriceUsd,
@@ -813,6 +819,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       claimableBalances,
       activity,
       activityCursor,
+      pendingTxs,
       dataLoading,
       loadingMore,
       xlmPriceUsd,
