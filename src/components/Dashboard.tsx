@@ -77,6 +77,7 @@ export function Dashboard() {
     dataLoading,
     loadingMore,
     xlmPriceUsd,
+    priceData,
     unfunded,
     privacyMode,
     togglePrivacy,
@@ -1341,13 +1342,35 @@ export function Dashboard() {
                                   : shortenAddr(asset.issuer ?? "", 6, 6)}
                             </span>
                           </span>
-                          <div className="hidden sm:block mr-2">
+                          <div className="hidden sm:flex items-center gap-2 mr-2 shrink-0">
                             <Sparkline
-                              values={[0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]}
-                              width={60}
-                              height={24}
-                              color={known?.color ?? (asset.isNative ? "#30D158" : "#0A84FF")}
+                              values={
+                                asset.isNative && priceData?.points && priceData.points.length > 5
+                                  ? priceData.points.slice(-12).map((p) => p.p)
+                                  : [0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]
+                              }
+                              width={54}
+                              height={22}
+                              color={
+                                known?.color ??
+                                (asset.isNative
+                                  ? (priceData?.changePct ?? 0) >= 0
+                                    ? "#30D158"
+                                    : "#FF453A"
+                                  : "#0A84FF")
+                              }
                             />
+                            {asset.isNative && priceData && (
+                              <span
+                                className="mono text-[10.5px] font-semibold rounded px-1.5 py-0.5"
+                                style={{
+                                  color: (priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A",
+                                  background: (priceData.changePct ?? 0) >= 0 ? "rgba(48,209,88,0.14)" : "rgba(255,69,58,0.14)",
+                                }}
+                              >
+                                {(priceData.changePct ?? 0) >= 0 ? "+" : ""}{priceData.changePct.toFixed(1)}%
+                              </span>
+                            )}
                           </div>
                           <span className="text-right">
                             <span className="mono block text-[15.5px] font-medium leading-tight text-white">

@@ -43,7 +43,7 @@ import {
   type InitializeOptions,
   type VaultRestoreResult,
 } from "@/lib/vault";
-import { deleteContact, loadContacts, saveContact, type Contact } from "@/lib/contacts";
+import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
 import type { FiatCurrency } from "@/lib/format";
@@ -100,6 +100,7 @@ interface WalletContextValue {
   contacts: Contact[];
   addContact: (contact: Contact) => void;
   removeContact: (address: string) => void;
+  toggleContactFavorite: (address: string) => void;
 
   createWallet: (
     password: string,
@@ -619,6 +620,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const removeContact = useCallback((address: string) => {
     setContacts(deleteContact(address));
   }, []);
+  const toggleContactFavorite = useCallback((address: string) => {
+    setContacts(toggleFavoriteContact(address));
+  }, []);
 
   const send = useCallback(
     async (params: {
@@ -826,6 +830,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       contacts,
       addContact,
       removeContact,
+      toggleContactFavorite,
       createWallet,
       revealRecoveryPhrase,
       completeSetup,
@@ -885,6 +890,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       contacts,
       addContact,
       removeContact,
+      toggleContactFavorite,
       createWallet,
       revealRecoveryPhrase,
       completeSetup,

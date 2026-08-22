@@ -255,11 +255,14 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                             <option value="" disabled className="bg-neutral-900 text-neutral-400">
                               + Contact
                             </option>
-                            {contacts.map((c) => (
-                              <option key={c.address} value={c.address} className="bg-neutral-900 text-white">
-                                {c.name} ({shortenAddr(c.address, 4, 4)})
-                              </option>
-                            ))}
+                            {contacts
+                              .slice()
+                              .sort((a, b) => (a.favorite && !b.favorite ? -1 : !a.favorite && b.favorite ? 1 : 0))
+                              .map((c) => (
+                                <option key={c.address} value={c.address} className="bg-neutral-900 text-white">
+                                  {c.favorite ? "★ " : ""}{c.name} ({shortenAddr(c.address, 4, 4)})
+                                </option>
+                              ))}
                           </select>
                         )}
                         {rows.length > 1 && (
