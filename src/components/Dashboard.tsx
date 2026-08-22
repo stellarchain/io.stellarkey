@@ -14,7 +14,7 @@ import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import { SettingsPage } from "./SettingsPage";
-import { Avatar, Button, CopyButton, Dropdown, NetworkBadge, Spinner } from "./ui";
+import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Spinner } from "./ui";
 import { AddAssetModal } from "./AddAssetModal";
 import { AssetDetailModal } from "./AssetDetailModal";
 import { BatchSendModal } from "./BatchSendModal";
@@ -96,6 +96,7 @@ export function Dashboard() {
   const [fundBusy, setFundBusy] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimingAll, setClaimingAll] = useState(false);
+  const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -588,35 +589,47 @@ export function Dashboard() {
           )}
         </nav>
 
-        {/* Footer Controls */}
+                {/* Footer Controls */}
         <div className="pt-4 border-t border-white/[0.08] space-y-2 w-full">
           {!sidebarCollapsed ? (
             <>
               <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="icon-btn !h-8 !w-8"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      togglePrivacy();
+                    }}
+                    title={privacyMode ? "Show balances" : "Hide balances"}
+                  >
+                    {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn !h-8 !w-8"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      void refresh();
+                    }}
+                    disabled={dataLoading}
+                    title="Refresh Network Data"
+                  >
+                    {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="icon-btn !h-8 !w-8"
                   onClick={() => {
                     triggerHaptic("selection");
-                    togglePrivacy();
+                    setNetworkModalOpen(true);
                   }}
-                  title={privacyMode ? "Show balances" : "Hide balances"}
+                  className="cursor-pointer transition-transform active:scale-95"
+                  title="Switch Network"
                 >
-                  {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                  <NetworkBadge network={network} />
                 </button>
-                <button
-                  type="button"
-                  className="icon-btn !h-8 !w-8"
-                  onClick={() => {
-                    triggerHaptic("light");
-                    void refresh();
-                  }}
-                  disabled={dataLoading}
-                  title="Refresh Network Data"
-                >
-                  {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
-                </button>
-                <NetworkDropdown network={network} onSwitch={switchNetwork} />
               </div>
 
               <button
@@ -648,13 +661,15 @@ export function Dashboard() {
                 type="button"
                 className="icon-btn !h-9 !w-9"
                 onClick={() => {
-                  triggerHaptic("light");
-                  void refresh();
+                  triggerHaptic("selection");
+                  setNetworkModalOpen(true);
                 }}
-                disabled={dataLoading}
-                title="Refresh Network Data"
+                title={`Network: ${network}`}
               >
-                {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
+                />
               </button>
               <button
                 type="button"
@@ -1375,6 +1390,12 @@ export function Dashboard() {
         onClose={() => setPaletteOpen(false)}
         actions={paletteActions}
       />
+      <NetworkModal
+        open={networkModalOpen}
+        onClose={() => setNetworkModalOpen(false)}
+        network={network}
+        onSwitch={switchNetwork}
+      />
     </div>
   );
 }
@@ -1427,47 +1448,85 @@ function ActionButton({
   );
 }
 
-function NetworkDropdown({
+function NetworkModal({
+  open,
+  onClose,
   network,
   onSwitch,
 }: {
+  open: boolean;
+  onClose: () => void;
   network: NetworkKey;
   onSwitch: (n: NetworkKey) => void;
 }) {
+  if (!open) return null;
   return (
-    <Dropdown
-      trigger={() => (
-        <span className="cursor-pointer">
-          <NetworkBadge network={network} />
-        </span>
-      )}
-    >
-      {(close) => (
-        <>
-          {(["testnet", "mainnet"] as NetworkKey[]).map((n) => (
+    <Modal open onClose={onClose}>
+      <ModalHeader
+        title="Switch Network"
+        subtitle="Select active Stellar blockchain environment"
+        onClose={onClose}
+      />
+      <div className="p-6 space-y-3">
+        {(
+          [
+            {
+              id: "mainnet",
+              title: "Stellar Mainnet",
+              desc: "Live public ledger with real assets, DEX liquidity, and production settlement.",
+              color: "#30D158",
+            },
+            {
+              id: "testnet",
+              title: "Stellar Testnet",
+              desc: "Free testing environment funded with 10,000 test XLM via SDF Friendbot.",
+              color: "#FF9F0A",
+            },
+          ] as const
+        ).map((n) => {
+          const isActive = network === n.id;
+          return (
             <button
-              key={n}
+              key={n.id}
               type="button"
-              className="menu-item"
               onClick={() => {
                 triggerHaptic("selection");
-                onSwitch(n);
-                close();
+                onSwitch(n.id);
+                onClose();
               }}
+              className={`flex w-full items-start justify-between rounded-2xl border p-4 text-left transition-all ${
+                isActive
+                  ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
+                  : "border-white/10 bg-white/[0.03] text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
             >
-              <span
-                className="badge-dot"
-                style={{ background: n === "mainnet" ? "#30d158" : "#ff9f0a" }}
-              />
-              <span className="capitalize">{n}</span>
-              {n === network && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
+              <div className="flex items-start gap-3 min-w-0 pr-2">
+                <span
+                  className="mt-1 h-3 w-3 rounded-full shrink-0 shadow-sm"
+                  style={{ background: n.color }}
+                />
+                <div className="min-w-0">
+                  <p className="text-[15px] font-semibold text-white leading-tight">
+                    {n.title}
+                  </p>
+                  <p className="text-[12px] leading-relaxed text-neutral-400 pt-1">
+                    {n.desc}
+                  </p>
+                </div>
+              </div>
+              {isActive && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0A84FF] text-white shrink-0">
+                  <IconCheck size={11} />
+                </span>
               )}
             </button>
-          ))}
-        </>
-      )}
-    </Dropdown>
+          );
+        })}
+        <Button variant="ghost" className="w-full mt-2" onClick={onClose}>
+          Done
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
