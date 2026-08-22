@@ -582,7 +582,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 : sub === "addAccount"
                   ? "Add Account"
                   : sub === "contacts"
-                    ? "Address Book"
+                    ? `Address Book (${contacts.length})`
                     : sub === "addContact"
                       ? "New Contact"
                       : sub === "autolock"

@@ -226,6 +226,12 @@ export function SwapPage() {
           <p className="text-[11px] text-neutral-400">
             Transactions revert if the execution price changes by more than this percentage.
           </p>
+          {slippage > 2.0 && (
+            <div className="flex items-center gap-2 rounded-xl bg-[#FF9F0A]/10 border border-[#FF9F0A]/25 p-2.5 text-[11.5px] text-[#FF9F0A]">
+              <IconAlert size={14} className="shrink-0" />
+              <span>High slippage setting may result in suboptimal trade execution.</span>
+            </div>
+          )}
         </div>
       )}
 
