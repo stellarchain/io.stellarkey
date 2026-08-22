@@ -32,6 +32,7 @@ import { ExplorePage } from "./ExplorePage";
 import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import { CurrencyConverterModal } from "./CurrencyConverterModal";
 import { NetworkStatsModal } from "./NetworkStatsModal";
+import { TrezorModal } from "./TrezorModal";
 import {
   IconArrowDownLeft,
   IconCompass,
@@ -109,6 +110,7 @@ export function Dashboard() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [converterOpen, setConverterOpen] = useState(false);
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
+  const [trezorModalOpen, setTrezorModalOpen] = useState(false);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
   const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -550,7 +552,7 @@ export function Dashboard() {
       { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Network Stats & Gas Savings", run: () => setNetworkStatsOpen(true) },
-      { id: "trezor-connect", label: "Connect Trezor Hardware Wallet (Model One / T / Safe)", run: () => setAddAccountOpen(true) },
+      { id: "trezor-suite", label: "Trezor Hardware Suite (Safe 3 / Model T / Model One)", run: () => setTrezorModalOpen(true) },
       { id: "ledger-connect", label: "Connect Ledger Hardware Wallet (Nano S / X / Stax)", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
@@ -1882,6 +1884,7 @@ export function Dashboard() {
       <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
+      <TrezorModal open={trezorModalOpen} onClose={() => setTrezorModalOpen(false)} />
       <CurrencyConverterModal
         open={converterOpen}
         onClose={() => setConverterOpen(false)}
