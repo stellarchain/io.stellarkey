@@ -69,6 +69,7 @@ export type SettingsSub =
   | "airsigner"
   | "dapps"
   | "soroban"
+  | "hardware"
   | "currency";
 type Sub = SettingsSub;
 
@@ -584,9 +585,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                                   ? "Connected dApps"
                                   : sub === "soroban"
                                     ? "Soroban Contracts"
-                                    : sub === "currency"
-                                      ? "Display Currency"
-                                      : "Network"}
+                                    : sub === "hardware"
+                                      ? "Hardware Wallets"
+                                      : sub === "currency"
+                                        ? "Display Currency"
+                                        : "Network"}
           </h1>
         </>
       )}
@@ -669,7 +672,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setShowAddAccount(true);
+                      setSub("hardware");
                     }}
                     sep
                   />
@@ -1671,6 +1674,135 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               </pre>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ---------- HARDWARE WALLETS (LEDGER & TREZOR) ---------- */}
+      {sub === "hardware" && (
+        <div className="space-y-5">
+          <p className="text-[13px] text-neutral-300 leading-relaxed">
+            Connect your physical hardware wallet for institutional-grade cold storage security.
+            Your private keys never leave the device, and every transaction requires physical confirmation.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Trezor Device Card */}
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 flex flex-col justify-between shadow-xl space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">🛡️</span>
+                    <div>
+                      <h3 className="text-[16px] font-bold text-white">Trezor</h3>
+                      <p className="text-[11.5px] text-neutral-400">Safe 3 · Model T · Model One</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400">
+                    WebUSB Ready
+                  </span>
+                </div>
+                <p className="text-[12px] text-neutral-400 leading-relaxed">
+                  Open-source hardware architecture with on-screen touchscreen or tactile pin verification.
+                </p>
+              </div>
+              <Button
+                className="w-full !py-2.5 text-[13.5px] font-semibold !bg-[#0A84FF] text-white"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setShowAddAccount(true);
+                }}
+              >
+                Connect Trezor Device
+              </Button>
+            </div>
+
+            {/* Ledger Device Card */}
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 flex flex-col justify-between shadow-xl space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">🔒</span>
+                    <div>
+                      <h3 className="text-[16px] font-bold text-white">Ledger</h3>
+                      <p className="text-[11.5px] text-neutral-400">Stax · Nano X · Nano S Plus</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-[10.5px] font-semibold text-[#64D2FF]">
+                    WebHID Ready
+                  </span>
+                </div>
+                <p className="text-[12px] text-neutral-400 leading-relaxed">
+                  Certified Secure Element chip (EAL6+) with dedicated Stellar Ledger app integration.
+                </p>
+              </div>
+              <Button
+                className="w-full !py-2.5 text-[13.5px] font-semibold !bg-white !text-black hover:!bg-neutral-200"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setShowAddAccount(true);
+                }}
+              >
+                Connect Ledger Device
+              </Button>
+            </div>
+          </div>
+
+          {/* Connected Hardware Accounts */}
+          {accounts.some((a) => a.hardware) && (
+            <div>
+              <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                Connected Hardware Accounts
+              </p>
+              <div className="list-group">
+                {accounts
+                  .filter((a) => a.hardware)
+                  .map((acct, i) => (
+                    <div
+                      key={acct.id}
+                      className={`flex items-center justify-between gap-3 px-4 py-3.5 ${
+                        i > 0 ? "ios-sep" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xl">
+                          {acct.hardware === "trezor" ? "🛡️" : "🔒"}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-white">
+                            {acct.label}
+                          </p>
+                          <p className="mono truncate text-[11.5px] text-neutral-400">
+                            {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-md bg-[#0A84FF]/20 text-[#64D2FF] text-[11px] font-bold">
+                        {acct.hardware === "trezor" ? "Trezor Safe" : "Ledger Nano"}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Security Best Practices */}
+          <div className="panel-inset p-4 space-y-2 text-[12px] text-neutral-300">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+              Hardware Security Checklist
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-[#30D158]">✓</span>
+              <span>Always verify the destination address and amount on the physical device screen.</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[#30D158]">✓</span>
+              <span>Ensure your device firmware and the Stellar app are up to date.</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[#30D158]">✓</span>
+              <span>Never type your hardware wallet recovery seed into any computer or phone.</span>
+            </div>
+          </div>
         </div>
       )}
 
