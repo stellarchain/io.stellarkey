@@ -1460,25 +1460,25 @@ function UnfundedCard({
   onFund: () => void;
 }) {
   return (
-    <section className="fade-up flex flex-col items-center px-4 pb-10 pt-14 text-center">
-      <span className="gold-bubble h-[72px] w-[72px]">
-        <IconWallet size={28} />
+    <section className="fade-up flex flex-col items-center px-6 py-12 text-center panel max-w-xl mx-auto">
+      <span className="gold-bubble h-[76px] w-[76px] shadow-xl">
+        <IconWallet size={32} />
       </span>
-      <h2 className="display-h mt-6 text-[26px] text-white">Activate your account</h2>
-      <p className="mt-3 max-w-sm text-[15px] leading-relaxed text-neutral-300">
-        Stellar accounts must hold a minimum reserve of 1 XLM to exist.{" "}
+      <h2 className="display-h mt-6 text-[28px] text-white font-bold">Activate your account</h2>
+      <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-300">
+        Stellar accounts must hold a minimum base reserve of 1 XLM to exist on-chain.{" "}
         {network === "testnet"
-          ? "On testnet, Friendbot will fund you with 10,000 free XLM instantly."
-          : "On mainnet, have someone send you at least 1 XLM from an existing account."}
+          ? "On testnet, Friendbot will fund your account with 10,000 free test XLM instantly."
+          : "On mainnet, transfer at least 1 XLM from an existing wallet to activate your public address."}
       </p>
       {network === "testnet" && (
         <Button
-          className="mt-8 w-full max-w-[360px]"
+          className="mt-8 w-full max-w-[360px] !py-3.5 text-[15px] font-semibold"
           loading={fundBusy}
           disabled={fundBusy}
           onClick={onFund}
         >
-          Claim 10,000 Test XLM
+          Claim 10,000 Test XLM (Friendbot)
         </Button>
       )}
       {fundError && <p className="mt-4 max-w-md text-xs text-[#FF453A]">{fundError}</p>}
