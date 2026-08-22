@@ -144,6 +144,10 @@ export function PaperWalletModal({
             </div>
             <div className="flex items-center gap-1.5">
               <IconCheck size={12} className="text-[#30D158]" />
+              <span>Compatible with Trezor & Ledger hardware recovery standards (BIP-39 / SLIP-0010).</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <IconCheck size={12} className="text-[#30D158]" />
               <span>Anyone with these keys controls 100% of funds on this account.</span>
             </div>
           </div>
