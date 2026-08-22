@@ -26,6 +26,32 @@ export function AssetDetailModal({
       : null,
   );
   const [issuerInfo, setIssuerInfo] = useState<IssuerDetails | null>(null);
+  const [alertTarget, setAlertTarget] = useState<string>(() => {
+    if (!asset || typeof window === "undefined") return "";
+    try {
+      const alerts = JSON.parse(window.localStorage.getItem("wallet.price-alerts.v1") ?? "{}");
+      return alerts[asset.code] ? String(alerts[asset.code]) : "";
+    } catch {
+      return "";
+    }
+  });
+  const [showAlertInput, setShowAlertInput] = useState(false);
+
+  function handleSaveAlert(target: string) {
+    setAlertTarget(target);
+    if (!asset || typeof window === "undefined") return;
+    try {
+      const alerts = JSON.parse(window.localStorage.getItem("wallet.price-alerts.v1") ?? "{}");
+      if (target.trim() && parseFloat(target) > 0) {
+        alerts[asset.code] = parseFloat(target);
+      } else {
+        delete alerts[asset.code];
+      }
+      window.localStorage.setItem("wallet.price-alerts.v1", JSON.stringify(alerts));
+    } catch {
+      // Ignore
+    }
+  }
 
   // Fetch USD price for this asset when the modal opens
   useEffect(() => {
@@ -209,6 +235,56 @@ export function AssetDetailModal({
                 {calculatedVal !== null ? fmtFiat(calculatedVal, fiatCurrency) : "—"}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Target Price Alert Box */}
+        {unitPrice !== null && (
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2 text-[12px]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-semibold text-neutral-300">
+                <span>🔔 Price Target Alert</span>
+                {alertTarget && (
+                  <span className="text-[10px] rounded-full bg-[#0A84FF]/20 text-[#0A84FF] px-2 py-0.5 font-bold">
+                    Active: {fmtFiat(parseFloat(alertTarget), fiatCurrency)}
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setShowAlertInput((s) => !s);
+                }}
+                className="text-[11.5px] font-medium text-[#0A84FF] hover:underline"
+              >
+                {showAlertInput ? "Done" : alertTarget ? "Edit Alert" : "+ Set Alert"}
+              </button>
+            </div>
+            {showAlertInput && (
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder={`e.g. ${(unitPrice * 1.25).toFixed(3)}`}
+                  value={alertTarget}
+                  onChange={(e) => handleSaveAlert(e.target.value.replace(/[^0-9.]/g, ""))}
+                  className="input mono !h-8 text-[13px] flex-1"
+                />
+                {alertTarget && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      handleSaveAlert("");
+                    }}
+                    className="text-[11px] text-[#FF453A] hover:underline px-1"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
