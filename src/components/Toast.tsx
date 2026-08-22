@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { triggerHaptic } from "@/lib/haptics";
 import { IconCheck } from "./icons";
 
 type ToastKind = "success" | "error" | "info";
@@ -36,6 +37,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const toast = useCallback((message: string, kind: ToastKind = "info") => {
     const id = nextId.current++;
+    triggerHaptic(kind === "success" ? "success" : kind === "error" ? "error" : "light");
     setToasts((prev) => [...prev.slice(-2), { id, message, kind }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -47,39 +49,40 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-6 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4">
+      {/* iOS Dynamic Island style floating pill toast */}
+      <div className="pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="menu fade-up pointer-events-auto flex w-full items-center gap-3 !rounded-full !py-3 pl-4 pr-5"
+            className="fade-up pointer-events-auto flex items-center gap-2.5 rounded-full border border-white/15 bg-neutral-900/90 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-all"
           >
             <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
               style={{
                 background:
                   t.kind === "success"
-                    ? "rgba(69,214,200,0.12)"
+                    ? "rgba(48,209,88,0.2)"
                     : t.kind === "error"
-                      ? "rgba(255,63,0,0.12)"
-                      : "rgba(253,218,36,0.14)",
+                      ? "rgba(255,69,58,0.2)"
+                      : "rgba(10,132,255,0.2)",
                 color:
                   t.kind === "success"
-                    ? "#45d6c8"
+                    ? "#30D158"
                     : t.kind === "error"
-                      ? "#ff3f00"
-                      : "#fdda24",
+                      ? "#FF453A"
+                      : "#0A84FF",
               }}
             >
               {t.kind === "success" ? (
-                <IconCheck size={13} />
+                <IconCheck size={11} />
               ) : (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                   <path d="M12 8v5M12 16.5h.01" />
                   <circle cx="12" cy="12" r="9" />
                 </svg>
               )}
             </span>
-            <p className="truncate text-[13px] font-medium text-ink">{t.message}</p>
+            <p className="truncate text-[13px] font-semibold text-white tracking-tight">{t.message}</p>
           </div>
         ))}
       </div>
