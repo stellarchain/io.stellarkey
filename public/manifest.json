@@ -7,13 +7,35 @@
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",
-  "categories": ["finance"],
+  "categories": [
+    "finance"
+  ],
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Send Payment",
+      "short_name": "Send",
+      "url": "/?action=send",
+      "description": "Open a new payment"
+    },
+    {
+      "name": "Receive Funds",
+      "short_name": "Receive",
+      "url": "/?action=receive",
+      "description": "Show your address QR"
+    },
+    {
+      "name": "Swap Assets",
+      "short_name": "Swap",
+      "url": "/?action=swap",
+      "description": "DEX swap between assets"
     }
   ]
 }
