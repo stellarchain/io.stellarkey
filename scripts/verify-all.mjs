@@ -102,6 +102,25 @@ try {
   await page.click("button:has-text('5 Minutes')");
   await page.waitForSelector("text=5 Minutes");
 
+  // 6.5 Hardware Wallets (Trezor & Ledger) Hub Verification
+  console.log("Testing Hardware Wallets (Trezor & Ledger) Hub...");
+  await page.click("nav button:has-text('Settings')");
+  await page.click("button:has-text('Hardware Wallets')");
+  await page.waitForSelector("text=Trezor");
+  await page.waitForSelector("text=Safe 3 · Model T · Model One");
+  await page.waitForSelector("text=Ledger");
+
+  // Connect Trezor Device
+  await page.click("button:has-text('Connect Trezor Device')");
+  await page.waitForSelector("text=🛡️ Trezor");
+  await page.click("button:has-text('Connect Trezor via WebUSB')");
+  await page.waitForSelector("text=✓ Device Connected");
+  await page.click("button:has-text('Import Hardware Account')");
+  await page.waitForTimeout(500);
+
+  // Return to Settings
+  await page.click("nav button:has-text('Settings')");
+
   // 7. Address Book (Contacts) Verification
   console.log("Testing Address Book / Contacts...");
   await page.click("button:has-text('Address Book')");

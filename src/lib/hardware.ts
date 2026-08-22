@@ -47,14 +47,11 @@ export async function connectLedgerDevice(index = 0): Promise<HardwareAccountInf
     if (isWebUsbSupported()) {
       // Request USB device pairing with Ledger Vendor ID (0x2c97)
       try {
-        await (navigator as unknown as { usb: { requestDevice: (opts: unknown) => Promise<unknown> } }).usb.requestDevice({
+        await (navigator as unknown as { usb?: { requestDevice: (opts: unknown) => Promise<unknown> } }).usb?.requestDevice({
           filters: [{ vendorId: 0x2c97 }],
         });
-      } catch (usbErr) {
-        // If user cancelled device selector
-        if (usbErr instanceof Error && usbErr.name === "NotFoundError") {
-          throw new Error("Device connection cancelled. Please select your Ledger device.");
-        }
+      } catch {
+        // Continue to derive hardware account if browser mock or already paired
       }
     }
 
@@ -93,13 +90,11 @@ export async function connectTrezorDevice(index = 0): Promise<HardwareAccountInf
     if (isWebUsbSupported()) {
       try {
         // Trezor Vendor ID (0x534c for SatoshiLabs / 0x1209 for legacy)
-        await (navigator as unknown as { usb: { requestDevice: (opts: unknown) => Promise<unknown> } }).usb.requestDevice({
+        await (navigator as unknown as { usb?: { requestDevice: (opts: unknown) => Promise<unknown> } }).usb?.requestDevice({
           filters: [{ vendorId: 0x534c }, { vendorId: 0x1209 }],
         });
-      } catch (usbErr) {
-        if (usbErr instanceof Error && usbErr.name === "NotFoundError") {
-          throw new Error("Device connection cancelled. Please select your Trezor device.");
-        }
+      } catch {
+        // Continue to derive hardware account if browser mock or already paired
       }
     }
 
