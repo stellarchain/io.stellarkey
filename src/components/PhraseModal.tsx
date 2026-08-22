@@ -51,7 +51,7 @@ export function PhraseModal({ open, onClose }: { open: boolean; onClose: () => v
           <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3">
             <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
             <p className="text-[11.5px] leading-relaxed text-[#FF9F0A]">
-              These words recreate your wallet at m/44&apos;/148&apos;/account&apos;. Write them
+              These words recreate your wallet at m/44&apos;/148&apos;/account&apos; (compatible with Trezor &amp; Ledger). Write them
               down safely offline — anyone with them controls your funds.
             </p>
           </div>
