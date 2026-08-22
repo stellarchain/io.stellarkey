@@ -1,18 +1,46 @@
 import type { ActivityItem } from "./types";
 
+export type FiatCurrency = "USD" | "EUR" | "GBP" | "JPY" | "CAD" | "AUD" | "CHF";
+
+export const FIAT_SYMBOLS: Record<FiatCurrency, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CAD: "CA$",
+  AUD: "A$",
+  CHF: "CHF ",
+};
+
+export const FIAT_RATES: Record<FiatCurrency, number> = {
+  USD: 1.0,
+  EUR: 0.92,
+  GBP: 0.79,
+  JPY: 154.5,
+  CAD: 1.38,
+  AUD: 1.52,
+  CHF: 0.89,
+};
+
 export function fmtAmount(value: string | number, maxDecimals = 7): string {
   const n = typeof value === "string" ? parseFloat(value) : value;
   if (!Number.isFinite(n)) return "0";
   return n.toLocaleString("en-US", { maximumFractionDigits: maxDecimals });
 }
 
-export function fmtUsd(n: number): string {
-  return n.toLocaleString("en-US", {
+export function fmtFiat(usdAmount: number, currency: FiatCurrency = "USD"): string {
+  const rate = FIAT_RATES[currency] ?? 1.0;
+  const val = usdAmount * rate;
+  return val.toLocaleString("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
-    maximumFractionDigits: n >= 1000 ? 0 : 2,
+    maximumFractionDigits: currency === "JPY" ? 0 : val >= 1000 ? 0 : 2,
   });
+}
+
+export function fmtUsd(n: number): string {
+  return fmtFiat(n, "USD");
 }
 
 export function shortenAddr(addr: string, head = 6, tail = 6): string {
@@ -52,6 +80,7 @@ export function opTypeLabel(type: string): string {
     payment: "Payment",
     path_payment_strict_receive: "Swap received",
     path_payment_strict_send: "Swap sent",
+    claim_claimable_balance: "Claimed airdrop",
     change_trust: "Trustline",
     allow_trust: "Trustline auth",
     account_merge: "Account merged",

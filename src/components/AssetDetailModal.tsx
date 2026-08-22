@@ -78,9 +78,19 @@ export function AssetDetailModal({
         <div className="panel-inset mt-5 divide-y divide-white/[0.08]">
           <Row label="Type">
             <span className="text-[13px] text-white">
-              {asset.isNative ? "Native XLM" : "Credit Alphanum"}
+              {asset.isNative ? "Native Lumens" : "Credit Alphanum"}
             </span>
           </Row>
+          {known?.anchorDomain && (
+            <Row label="Anchor / Domain">
+              <span className="flex items-center gap-1.5 text-[13px] text-[#30D158] font-medium">
+                <span>{known.anchorDomain}</span>
+                <span className="text-[9px] rounded bg-[#30D158]/15 px-1 py-0.5 font-bold uppercase tracking-wider">
+                  Verified
+                </span>
+              </span>
+            </Row>
+          )}
           {!asset.isNative && asset.issuer && (
             <Row label="Issuer">
               <span className="mono text-[12px] break-all text-neutral-300">
