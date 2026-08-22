@@ -13,6 +13,7 @@ const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
 const AUTOLOCK_KEY = "polaris.autolock.v1";
 const BIOMETRICS_KEY = "polaris.biometrics.v1";
+const TRASH_KEY = "polaris.trash.v1";
 
 let sessionPassword: string | null = null;
 let sessionMnemonic: string | null = null;
@@ -86,10 +87,36 @@ export function loadVault(): VaultFile | null {
   return readVault();
 }
 
+export function hasDeletedVault(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.localStorage.getItem(TRASH_KEY));
+}
+
 export function wipeVault(): void {
+  const current = readVault();
+  if (current && typeof window !== "undefined") {
+    window.localStorage.setItem(TRASH_KEY, JSON.stringify(current));
+  }
   lockVault();
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(VAULT_KEY);
+  }
+}
+
+export async function restoreDeletedVault(password: string): Promise<VaultFile> {
+  if (typeof window === "undefined") throw new Error("No window context");
+  const raw = window.localStorage.getItem(TRASH_KEY);
+  if (!raw) throw new Error("No deleted wallet backup found in trash.");
+
+  const trashVault = JSON.parse(raw) as VaultFile;
+  persist(trashVault);
+  window.localStorage.removeItem(TRASH_KEY);
+  return unlockVault(password);
+}
+
+export function permanentlyDeleteTrash(): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(TRASH_KEY);
   }
 }
 
@@ -359,6 +386,13 @@ export function removeStoredAccount(accountId: string): VaultFile | null {
   if (vault.accounts.length <= 1) {
     throw new Error("Cannot remove the only account in the wallet");
   }
+
+  const target = vault.accounts.find((a) => a.id === accountId);
+  if (target) {
+    if (!vault.archivedAccounts) vault.archivedAccounts = [];
+    vault.archivedAccounts.push(target);
+  }
+
   vault.accounts = vault.accounts.filter((a) => a.id !== accountId);
   if (vault.activeAccountId === accountId) {
     vault.activeAccountId = vault.accounts[0].id;
@@ -366,6 +400,65 @@ export function removeStoredAccount(accountId: string): VaultFile | null {
   sessionSecrets.delete(accountId);
   persist(vault);
   return vault;
+}
+
+export function getArchivedAccounts(): AccountMeta[] {
+  const vault = readVault();
+  return (vault?.archivedAccounts ?? []).map(stripSecret);
+}
+
+export async function restoreArchivedAccount(accountId: string): Promise<AccountMeta> {
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  if (!sessionPassword) throw new VaultLockedError();
+
+  const targetIdx = (vault.archivedAccounts ?? []).findIndex((a) => a.id === accountId);
+  if (targetIdx === -1 || !vault.archivedAccounts) {
+    throw new Error("Archived account not found");
+  }
+
+  const [account] = vault.archivedAccounts.splice(targetIdx, 1);
+  vault.accounts.push(account);
+  vault.activeAccountId = account.id;
+  persist(vault);
+
+  if (account.index !== undefined && sessionMnemonic) {
+    const kp = await keypairFromMnemonicIndex(sessionMnemonic, account.index);
+    sessionSecrets.set(account.id, kp.secret());
+  } else if (account.secret) {
+    const s = await decryptString(account.secret, sessionPassword);
+    sessionSecrets.set(account.id, s);
+  }
+
+  return stripSecret(account);
+}
+
+export async function restoreAccountByIndex(
+  index: number,
+  label?: string,
+): Promise<AccountMeta> {
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  if (!sessionMnemonic) throw new Error("Wallet has no recovery phrase in memory");
+
+  const existing = vault.accounts.find((a) => a.index === index);
+  if (existing) return stripSecret(existing);
+
+  const kp = await keypairFromMnemonicIndex(sessionMnemonic, index);
+  const account: StoredAccount = {
+    id: randomHex(8),
+    label: label?.trim() || `Account ${index + 1}`,
+    publicKey: kp.publicKey(),
+    createdAt: Date.now(),
+    index,
+    path: stellarAccountPath(index),
+  };
+
+  vault.accounts.push(account);
+  vault.activeAccountId = account.id;
+  persist(vault);
+  sessionSecrets.set(account.id, kp.secret());
+  return stripSecret(account);
 }
 
 export function setActiveStoredAccount(accountId: string): VaultFile | null {

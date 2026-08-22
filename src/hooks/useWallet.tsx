@@ -15,6 +15,8 @@ import type { PriceRange } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
 import {
   addStoredAccount,
+  getArchivedAccounts,
+  hasDeletedVault,
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
   getSecretKey,
@@ -25,6 +27,9 @@ import {
   loadVault,
   lockVault,
   removeStoredAccount,
+  restoreAccountByIndex as restoreAccountByIndexVault,
+  restoreArchivedAccount as restoreArchivedAccountVault,
+  restoreDeletedVault,
   saveAutoLockPref,
   saveBiometricsPref,
   saveNetworkPref,
@@ -57,6 +62,8 @@ interface WalletContextValue {
   network: NetworkKey;
   accounts: AccountMeta[];
   activeAccount: AccountMeta | null;
+  archivedAccounts: AccountMeta[];
+  hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
   activity: ActivityItem[];
   activityCursor: string | null;
@@ -87,9 +94,12 @@ interface WalletContextValue {
   unlock: (password: string) => Promise<void>;
   lock: () => void;
   resetWallet: () => void;
+  restoreDeletedWallet: (password: string) => Promise<void>;
   selectAccount: (id: string) => void;
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
   removeAccount: (id: string) => void;
+  restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
+  restoreAccountByIndex: (index: number) => Promise<AccountMeta>;
   switchNetwork: (network: NetworkKey) => void;
   refresh: () => Promise<void>;
   loadMoreActivity: () => Promise<void>;
@@ -121,6 +131,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [network, setNetworkState] = useState<NetworkKey>("testnet");
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
+  const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
+  const [hasDeletedWalletBackup, setHasDeletedWalletBackup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -154,12 +166,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAutoLockMsState(loadAutoLockPref());
       setBiometricsEnabledState(loadBiometricsPref());
       setContacts(loadContacts());
+      setHasDeletedWalletBackup(hasDeletedVault());
       const vault = loadVault();
       if (!vault || vault.accounts.length === 0) {
         setPhase("empty");
         return;
       }
       setAccounts(vault.accounts.map(stripSecret));
+      setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
       setActiveId(vault.activeAccountId ?? vault.accounts[0].id);
       setPhase("locked");
     })();
@@ -254,9 +268,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (opts?.mnemonic) initOpts.mnemonic = opts.mnemonic;
       const { account, revealed } = await initializeVault(password, initOpts);
       setAccounts([stripSecret(account)]);
+      setArchivedAccounts([]);
       setActiveId(account.id);
       setBalances(null);
       setActivity([]);
+      setHasDeletedWalletBackup(false);
       return {
         account,
         revealed,
@@ -277,6 +293,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const unlock = useCallback(async (password: string) => {
     const vault = await unlockVault(password);
     setAccounts(vault.accounts.map(stripSecret));
+    setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     setBalances(null);
     setActivity([]);
@@ -290,11 +307,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const resetWallet = useCallback(() => {
     wipeVault();
     setAccounts([]);
+    setArchivedAccounts([]);
     setActiveId(null);
     setBalances(null);
     setActivity([]);
     setPriceData(null);
+    setHasDeletedWalletBackup(true);
     setPhase("empty");
+  }, []);
+
+  const restoreDeletedWallet = useCallback(async (password: string) => {
+    const vault = await restoreDeletedVault(password);
+    setAccounts(vault.accounts.map(stripSecret));
+    setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
+    setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
+    setBalances(null);
+    setActivity([]);
+    setHasDeletedWalletBackup(false);
+    setPhase("unlocked");
   }, []);
 
   const selectAccount = useCallback((id: string) => {
@@ -320,6 +350,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const remaining = removeStoredAccount(id);
     if (!remaining) {
       setAccounts([]);
+      setArchivedAccounts([]);
       setActiveId(null);
       setBalances(null);
       setActivity([]);
@@ -327,10 +358,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setAccounts(remaining.accounts.map(stripSecret));
+    setArchivedAccounts((remaining.archivedAccounts ?? []).map(stripSecret));
     setActiveId(remaining.activeAccountId);
     setBalances(null);
     setActivity([]);
     setActivityCursor(null);
+  }, []);
+
+  const restoreArchivedAccount = useCallback(async (id: string) => {
+    const restored = await restoreArchivedAccountVault(id);
+    setAccounts((prev) => [...prev, restored]);
+    setArchivedAccounts(getArchivedAccounts());
+    setActiveId(restored.id);
+    setBalances(null);
+    setActivity([]);
+    setActivityCursor(null);
+    return restored;
+  }, []);
+
+  const restoreAccountByIndex = useCallback(async (index: number) => {
+    const restored = await restoreAccountByIndexVault(index);
+    setAccounts((prev) => {
+      if (prev.some((a) => a.id === restored.id)) return prev;
+      return [...prev, restored];
+    });
+    setActiveId(restored.id);
+    setBalances(null);
+    setActivity([]);
+    setActivityCursor(null);
+    return restored;
   }, []);
 
   const switchNetwork = useCallback((net: NetworkKey) => {
@@ -473,6 +529,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network,
       accounts,
       activeAccount,
+      archivedAccounts,
+      hasDeletedWalletBackup,
       balances,
       activity,
       activityCursor,
@@ -499,9 +557,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unlock,
       lock,
       resetWallet,
+      restoreDeletedWallet,
       selectAccount,
       addAccount,
       removeAccount,
+      restoreArchivedAccount,
+      restoreAccountByIndex,
       switchNetwork,
       refresh,
       loadMoreActivity,
@@ -515,6 +576,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network,
       accounts,
       activeAccount,
+      archivedAccounts,
+      hasDeletedWalletBackup,
       balances,
       activity,
       activityCursor,
@@ -541,9 +604,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unlock,
       lock,
       resetWallet,
+      restoreDeletedWallet,
       selectAccount,
       addAccount,
       removeAccount,
+      restoreArchivedAccount,
+      restoreAccountByIndex,
       switchNetwork,
       refresh,
       loadMoreActivity,
