@@ -59,6 +59,8 @@ export function PriceChart({
   const up = coords[coords.length - 1].p >= coords[0].p;
   const stroke = up ? "#30D158" : "#FF453A";
   const hoverPt = hover !== null ? coords[hover] : null;
+  const startPrice = points[0]?.p ?? 1;
+  const hoverDeltaPct = hoverPt ? ((hoverPt.p - startPrice) / startPrice) * 100 : null;
 
   function updateHoverPosition(clientX: number) {
     if (!svgRef.current) return;
@@ -93,6 +95,18 @@ export function PriceChart({
             <span className="text-[12px] text-neutral-400">
               {timeLabel(hoverPt.t, range)}
             </span>
+            {hoverDeltaPct !== null && (
+              <span
+                className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
+                style={{
+                  color: hoverDeltaPct >= 0 ? "#30D158" : "#FF453A",
+                  background: hoverDeltaPct >= 0 ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
+                }}
+              >
+                {hoverDeltaPct >= 0 ? "+" : ""}
+                {hoverDeltaPct.toFixed(2)}%
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 text-[11.5px] text-neutral-400">

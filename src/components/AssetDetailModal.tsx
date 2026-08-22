@@ -17,7 +17,10 @@ export function AssetDetailModal({
   asset: AssetBalance | null;
   onClose: () => void;
 }) {
-  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency } = useWallet();
+  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, balances } = useWallet();
+  const trustlinesCount = (balances ?? []).filter((b) => !b.isNative).length;
+  const totalReserve = 1.0 + trustlinesCount * 0.5;
+  const spendableBalance = Math.max(0, parseFloat(asset?.balance ?? "0") - totalReserve).toFixed(4);
   const [calcAmount, setCalcAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +90,30 @@ export function AssetDetailModal({
             </p>
           )}
         </div>
+
+        {/* Stellar Reserve Health & Breakdown for Native XLM */}
+        {asset.isNative && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2.5 text-[12px]">
+            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              <span>Account Reserve Breakdown</span>
+              <span className="mono text-[#30D158]">Healthy</span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-neutral-300">
+                <span>Base Account Reserve</span>
+                <span className="mono">1.0000 XLM</span>
+              </div>
+              <div className="flex justify-between text-neutral-300">
+                <span>Trustline Reserves ({trustlinesCount} × 0.5 XLM)</span>
+                <span className="mono">{(trustlinesCount * 0.5).toFixed(4)} XLM</span>
+              </div>
+              <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
+                <span>Spendable Balance</span>
+                <span className="mono text-[#30D158]">{spendableBalance} XLM</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Live Asset Valuation & Converter Box */}
         {assetUsdRate > 0 && !privacyMode && (

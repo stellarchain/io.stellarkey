@@ -194,6 +194,27 @@ export function SwapPage() {
               </button>
             ))}
           </div>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <span className="text-[11.5px] text-neutral-400">Custom Slippage:</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                step="0.1"
+                min="0.05"
+                max="10"
+                placeholder={String(slippage)}
+                value={slippage}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!Number.isNaN(val) && val > 0 && val <= 20) {
+                    setSlippage(val);
+                  }
+                }}
+                className="input mono !h-7 !w-20 text-[12px] text-center"
+              />
+              <span className="text-[12px] font-bold text-neutral-400">%</span>
+            </div>
+          </div>
           <p className="text-[11px] text-neutral-400">
             Transactions revert if the execution price changes by more than this percentage.
           </p>
