@@ -38,7 +38,11 @@ function PaletteInner({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return actions;
-    return actions.filter((a) => a.label.toLowerCase().includes(q));
+    return actions.filter(
+      (a) =>
+        a.label.toLowerCase().includes(q) ||
+        (a.hint ?? "").toLowerCase().includes(q),
+    );
   }, [actions, query]);
   const cursor = Math.max(0, Math.min(cursorRaw, filtered.length - 1));
 
@@ -65,7 +69,7 @@ function PaletteInner({
           <input
             ref={inputRef}
             className="w-full bg-transparent text-[15px] font-medium text-white outline-none placeholder:text-neutral-500"
-            placeholder="Type a command or action…"
+            placeholder="Type a command or search action…"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -121,7 +125,7 @@ function PaletteInner({
             >
               <span>{a.label}</span>
               {a.hint && (
-                <span className="text-[11px] text-neutral-400 font-mono">{a.hint}</span>
+                <span className="mono text-[12px] text-neutral-400">{a.hint}</span>
               )}
             </button>
           ))}

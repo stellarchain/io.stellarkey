@@ -331,6 +331,17 @@ function SendInner({
               </div>
             </div>
 
+            {/* Transaction Safety Shield Verification */}
+            <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#30D158]/[0.06] border border-[#30D158]/20 text-[12px]">
+              <div className="flex items-center gap-2 text-[#30D158]">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#30D158]/20">
+                  <IconCheck size={12} />
+                </span>
+                <span className="font-semibold">Safety Shield Verified</span>
+              </div>
+              <span className="text-[11px] text-neutral-400">Ed25519 · Non-Custodial</span>
+            </div>
+
             {error && (
               <div className="mt-4">
                 <ErrorText message={error} />
