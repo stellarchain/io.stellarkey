@@ -28,8 +28,11 @@ import { ReceiveModal } from "./ReceiveModal";
 import { SendModal } from "./SendModal";
 import { SwapPage } from "./SwapPage";
 import { TxDetailModal } from "./TxDetailModal";
+import { ExplorePage } from "./ExplorePage";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
 import {
   IconArrowDownLeft,
+  IconCompass,
   IconArrowUpRight,
   IconCheck,
   IconChevronDown,
@@ -52,7 +55,7 @@ import {
   LogoMark,
 } from "./icons";
 
-type View = "home" | "activity" | "swap" | "settings";
+type View = "home" | "activity" | "swap" | "explore" | "settings";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -101,6 +104,7 @@ export function Dashboard() {
   const [addAssetOpen, setAddAssetOpen] = useState(false);
   const [settingsSub, setSettingsSub] = useState<SettingsSub>("root");
   const [settingsKey, setSettingsKey] = useState(0);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [detailAsset, setDetailAsset] = useState<AssetBalance | null>(null);
   const [txDetail, setTxDetail] = useState<ActivityItem | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -273,21 +277,55 @@ export function Dashboard() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const isInput =
+        document.activeElement?.tagName === "INPUT" ||
+        document.activeElement?.tagName === "TEXTAREA" ||
+        document.activeElement?.tagName === "SELECT";
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((o) => !o);
-      } else if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
-        const index = parseInt(e.key, 10) - 1;
-        if (accounts[index]) {
-          e.preventDefault();
-          selectAccount(accounts[index].id);
-          triggerHaptic("selection");
-        }
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "1") {
+        e.preventDefault();
+        switchTab("home");
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "2") {
+        e.preventDefault();
+        switchTab("activity");
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "3") {
+        e.preventDefault();
+        switchTab("swap");
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "4") {
+        e.preventDefault();
+        switchTab("explore");
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "5") {
+        e.preventDefault();
+        openSettings("root");
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && !isInput) {
+        e.preventDefault();
+        setSendOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && !isInput) {
+        e.preventDefault();
+        setReceiveOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w" && !isInput) {
+        e.preventDefault();
+        switchTab("swap");
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b" && !isInput) {
+        e.preventDefault();
+        setBatchSendOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "h" && !isInput) {
+        e.preventDefault();
+        togglePrivacy();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l" && !isInput) {
+        e.preventDefault();
+        lock();
+      } else if (e.key === "?" && !isInput && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [accounts, selectAccount]);
+  }, [accounts, selectAccount, togglePrivacy, lock]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
   // Active-account fiat value includes priced non-native assets (USDC, BTC, ...)
@@ -453,6 +491,8 @@ export function Dashboard() {
       },
       { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
+      { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
+      { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
       {
         id: "copy",
@@ -694,6 +734,22 @@ export function Dashboard() {
 
             <button
               type="button"
+              onClick={() => switchTab("explore")}
+              className={`group relative flex w-full items-center rounded-xl transition-all ${
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+              } text-[13.5px] font-semibold ${
+                view === "explore"
+                  ? "bg-[#0A84FF] text-white shadow-sm"
+                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+              }`}
+              title={sidebarCollapsed ? "Explore (⌘4)" : undefined}
+            >
+              <IconCompass size={18} />
+              {!sidebarCollapsed && <span>Explore</span>}
+            </button>
+
+            <button
+              type="button"
               onClick={() => openSettings("root")}
               className={`group relative flex w-full items-center rounded-xl transition-all ${
                 sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
@@ -702,7 +758,7 @@ export function Dashboard() {
                   ? "bg-[#0A84FF] text-white shadow-sm"
                   : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
               }`}
-              title={sidebarCollapsed ? "Settings (⌘4)" : undefined}
+              title={sidebarCollapsed ? "Settings (⌘5)" : undefined}
             >
               <IconGear size={18} />
               {!sidebarCollapsed && <span>Settings</span>}
@@ -911,7 +967,7 @@ export function Dashboard() {
         <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
-              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view.charAt(0).toUpperCase() + view.slice(1)}
+              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "explore" ? "Ecosystem & dApps" : view.charAt(0).toUpperCase() + view.slice(1)}
             </h2>
           </div>
 
@@ -1028,6 +1084,8 @@ export function Dashboard() {
             <SettingsPage key={settingsKey} initialSub={settingsSub} />
           ) : view === "swap" ? (
             <SwapPage />
+          ) : view === "explore" ? (
+            <ExplorePage />
           ) : view === "home" && unfunded ? (
             <>
               <UnfundedCard
@@ -1671,6 +1729,14 @@ export function Dashboard() {
         </button>
         <button
           type="button"
+          className={`tab-item ${view === "explore" ? "active" : ""}`}
+          onClick={() => switchTab("explore")}
+        >
+          <IconCompass size={22} />
+          <span>Explore</span>
+        </button>
+        <button
+          type="button"
           className={`tab-item ${view === "settings" ? "active" : ""}`}
           onClick={() => openSettings("root")}
         >
@@ -1685,6 +1751,7 @@ export function Dashboard() {
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
       <AssetDetailModal asset={detailAsset} onClose={() => setDetailAsset(null)} />
       <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
