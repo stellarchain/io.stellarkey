@@ -132,7 +132,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [merging, setMerging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const backupInputRef = useRef<HTMLInputElement>(null);
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -696,25 +695,31 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     onClick={handleDownloadBackup}
                     sep
                   />
-                  <RowButton
-                    icon={<IconRefresh size={16} />}
-                    tint="#5E5CE6"
-                    label="Restore From Backup File"
-                    value={restoringBackup ? "Restoring…" : undefined}
-                    onClick={() => backupInputRef.current?.click()}
-                    sep
-                  />
-                  <input
-                    ref={backupInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void handleRestoreBackupFile(f);
-                      e.target.value = "";
-                    }}
-                  />
+                  <label
+                    className="row-hover flex w-full cursor-pointer items-center gap-3.5 px-4 py-3.5 text-left ios-sep"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white shadow-sm">
+                      <IconRefresh size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[14px] font-medium text-white">
+                        Restore From Backup File
+                      </span>
+                      {restoringBackup && (
+                        <span className="block text-[11px] text-[#BF5AF2]">Restoring…</span>
+                      )}
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/json,.json,application/octet-stream"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handleRestoreBackupFile(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                   <RowButton
                     icon={<IconFingerprint size={16} />}
                     tint="#5E5CE6"
