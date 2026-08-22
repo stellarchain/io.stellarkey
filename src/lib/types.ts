@@ -11,6 +11,8 @@ export interface StoredAccount {
   path?: string;
   /** v1 legacy: individually encrypted secret key */
   secret?: EncryptedPayload;
+  /** Track-only: no secret key exists for this account */
+  watchOnly?: boolean;
 }
 
 export interface VaultFile {
@@ -28,6 +30,7 @@ export interface AccountMeta {
   createdAt: number;
   index?: number;
   path?: string;
+  watchOnly?: boolean;
 }
 
 export type { NetworkKey, EncryptedPayload };

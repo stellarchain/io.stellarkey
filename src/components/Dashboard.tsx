@@ -101,6 +101,7 @@ export function Dashboard() {
   const [claimingAll, setClaimingAll] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [phraseOpen, setPhraseOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -156,6 +157,19 @@ export function Dashboard() {
     network === "mainnet" && xlmPriceUsd !== null
       ? parseFloat(xlm?.balance ?? "0") * xlmPriceUsd
       : null;
+
+  // Aggregated net worth across every account in the wallet
+  const totalAllXlm = useMemo(
+    () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
+    [accountBalances],
+  );
+  const totalAllUsd =
+    network === "mainnet" && xlmPriceUsd !== null ? totalAllXlm * xlmPriceUsd : null;
+  const heroXlm = portfolioView === "all" ? totalAllXlm : parseFloat(xlm?.balance ?? "0");
+  const heroUsd =
+    portfolioView === "all"
+      ? totalAllUsd
+      : usdValue;
 
   const q = query.trim().toLowerCase();
   const filteredAssets = useMemo(() => {
@@ -548,6 +562,11 @@ export function Dashboard() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[13px] leading-tight font-medium text-white">
                             {acct.label}
+                            {acct.watchOnly && (
+                              <span className="ml-1.5 rounded-md bg-[#64D2FF]/15 px-1 py-px align-middle text-[9px] font-bold uppercase tracking-wide text-[#64D2FF]">
+                                Watch
+                              </span>
+                            )}
                           </p>
                           <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                             {(() => {
@@ -868,14 +887,40 @@ export function Dashboard() {
 
                 {/* Hero Total Balance */}
                 <section className="panel fade-up flex flex-col items-center p-6 text-center">
-                  <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
+                  {accounts.length > 1 && (
+                <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
+                  {(
+                    [
+                      { id: "active", label: activeAccount?.label ?? "Active" },
+                      { id: "all", label: `All (${accounts.length})` },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setPortfolioView(opt.id);
+                      }}
+                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+                        portfolioView === opt.id
+                          ? "bg-[#0A84FF] text-white shadow-sm"
+                          : "text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
                   <h2 className="mt-1.5 text-[44px] sm:text-[54px] font-bold leading-none tracking-tight text-white">
                     {balances === null ? (
                       <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
                     ) : privacyMode ? (
                       "••••••"
                     ) : (
-                      fmtAmount(xlm?.balance ?? "0")
+                      fmtAmount(heroXlm)
                     )}
                     {!privacyMode && balances !== null && (
                       <span className="mono text-[22px] sm:text-[24px] font-normal text-neutral-400 ml-2">XLM</span>
@@ -891,7 +936,7 @@ export function Dashboard() {
                         className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
                         title="Click to cycle currency"
                       >
-                        <span>≈ {fmtFiat(usdValue, fiatCurrency)}</span>
+                        <span>≈ {fmtFiat(heroUsd ?? 0, fiatCurrency)}</span>
                         <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
                           {fiatCurrency}
                         </span>
@@ -936,6 +981,7 @@ export function Dashboard() {
                       icon={<IconSend size={18} />}
                       label="Send"
                       filled
+                      disabled={activeAccount?.watchOnly === true}
                       onClick={() => {
                         setSendPrefill(null);
                         setSendOpen(true);
@@ -1439,20 +1485,29 @@ function ActionButton({
   label,
   onClick,
   filled = false,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   filled?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
+      title={
+        disabled
+          ? "Watch-only accounts cannot sign transactions"
+          : undefined
+      }
       onClick={() => {
+        if (disabled) return;
         triggerHaptic("selection");
         onClick();
       }}
-      className={`flex h-[52px] items-center justify-center gap-1.5 rounded-2xl text-[14px] font-semibold transition-all active:scale-[0.96] shadow-sm ${
+      className={`flex h-[52px] items-center justify-center gap-1.5 rounded-2xl text-[14px] font-semibold transition-all active:scale-[0.96] shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
         filled
           ? "bg-[#0A84FF] text-white hover:bg-[#0071E3]"
           : "bg-white/[0.08] text-white hover:bg-white/[0.12]"
