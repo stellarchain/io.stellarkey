@@ -10,6 +10,7 @@ import type { ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
 import { PriceChart } from "./PriceChart";
+import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import { SettingsPage } from "./SettingsPage";
@@ -147,6 +148,41 @@ export function Dashboard() {
       );
     });
   }, [activity, activityFilter, q]);
+
+  // Group activity deterministically by date label
+  const groupedActivity = useMemo(() => {
+    const map = new Map<string, ActivityItem[]>();
+    for (const item of filteredActivity) {
+      const d = new Date(item.createdAt);
+      const key = Number.isNaN(d.getTime())
+        ? "Activity"
+        : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const existing = map.get(key);
+      if (existing) {
+        existing.push(item);
+      } else {
+        map.set(key, [item]);
+      }
+    }
+    return Array.from(map.entries()).map(([title, items]) => ({ title, items }));
+  }, [filteredActivity]);
+
+  // Allocation distribution calculation
+  const allocationShares = useMemo(() => {
+    if (!balances || balances.length === 0) return [];
+    const total = balances.reduce((acc, b) => acc + Math.max(0, parseFloat(b.balance)), 0);
+    if (total <= 0) return [];
+    return balances.map((b) => {
+      const known = lookupKnownAsset(b.code);
+      const val = Math.max(0, parseFloat(b.balance));
+      const pct = (val / total) * 100;
+      return {
+        code: b.code,
+        pct,
+        color: known?.color ?? (b.isNative ? "#0A84FF" : `hsl(${assetHue(b.key)}, 70%, 50%)`),
+      };
+    });
+  }, [balances]);
 
   async function handleFund() {
     if (!activeAccount) return;
@@ -354,6 +390,22 @@ export function Dashboard() {
                 )}
               </div>
 
+              {/* Portfolio Allocation Distribution Bar */}
+              {allocationShares.length > 0 && !privacyMode && (
+                <div className="mt-4 w-full max-w-[360px]">
+                  <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
+                    {allocationShares.map((s) => (
+                      <div
+                        key={s.code}
+                        style={{ width: `${s.pct}%`, background: s.color }}
+                        className="h-full transition-all"
+                        title={`${s.code}: ${s.pct.toFixed(1)}%`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* 4 Primary Action Buttons */}
               <div className="mt-6 grid w-full max-w-[420px] grid-cols-4 gap-2.5">
                 <ActionButton
@@ -406,7 +458,7 @@ export function Dashboard() {
               <PriceCard />
             </div>
 
-            {/* Assets List */}
+            {/* Assets List with Sparklines */}
             <section className="fade-up mt-6">
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
@@ -483,6 +535,14 @@ export function Dashboard() {
                               : shortenAddr(asset.issuer ?? "", 6, 6)}
                         </span>
                       </span>
+                      <div className="hidden sm:block mr-2">
+                        <Sparkline
+                          values={[0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]}
+                          width={60}
+                          height={24}
+                          color={known?.color ?? (asset.isNative ? "#30D158" : "#0A84FF")}
+                        />
+                      </div>
                       <span className="text-right">
                         <span className="mono block text-[15.5px] font-medium leading-tight text-white">
                           {privacyMode ? "••••••" : fmtAmount(asset.balance)}
@@ -531,86 +591,98 @@ export function Dashboard() {
               ))}
             </div>
 
-            <div className="list-group mt-2">
-              {filteredActivity.length === 0 && (
+            {filteredActivity.length === 0 ? (
+              <div className="list-group mt-2">
                 <p className="px-4 py-12 text-center text-[14px] text-neutral-500">
                   No activity found
                 </p>
-              )}
-              {filteredActivity.map((item, i) => {
-                const incoming = item.direction === "in";
-                const neutral = item.direction === "neutral";
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
-                      i > 0 ? "ios-sep" : ""
-                    }`}
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setTxDetail(item);
-                    }}
-                  >
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                      style={{
-                        color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
-                        background: neutral
-                          ? "rgba(100,210,255,0.12)"
-                          : incoming
-                            ? "rgba(48,209,88,0.14)"
-                            : "rgba(255,69,58,0.14)",
-                      }}
-                    >
-                      {item.type === "change_trust" ? (
-                        <IconShield size={16} />
-                      ) : neutral ? (
-                        <IconSwap size={16} />
-                      ) : incoming ? (
-                        <IconArrowDownLeft size={16} />
-                      ) : (
-                        <IconArrowUpRight size={16} />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-semibold leading-tight text-white">
-                        {item.title}
-                      </span>
-                      <span className="block truncate text-[12px] leading-tight text-neutral-400">
-                        {timeAgo(item.createdAt)}
-                        {item.counterparty
-                          ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
-                          : ""}
-                      </span>
-                    </span>
-                    {item.amount !== null && (
-                      <span
-                        className="mono shrink-0 text-right text-[15px] font-medium"
-                        style={{
-                          color: privacyMode
-                            ? "var(--color-faint)"
-                            : neutral
-                              ? "#FFFFFF"
-                              : incoming
-                                ? "#30D158"
-                                : "#FF453A",
-                        }}
-                      >
-                        {privacyMode
-                          ? "••••••"
-                          : `${incoming ? "+" : "−"}${fmtAmount(item.amount)}`}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+              </div>
+            ) : (
+              <div className="space-y-4 mt-2">
+                {groupedActivity.map((group) => (
+                  <div key={group.title}>
+                    <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                      {group.title}
+                    </p>
+                    <div className="list-group">
+                      {group.items.map((item, i) => {
+                        const incoming = item.direction === "in";
+                        const neutral = item.direction === "neutral";
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+                              i > 0 ? "ios-sep" : ""
+                            }`}
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              setTxDetail(item);
+                            }}
+                          >
+                            <span
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                              style={{
+                                color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+                                background: neutral
+                                  ? "rgba(100,210,255,0.12)"
+                                  : incoming
+                                    ? "rgba(48,209,88,0.14)"
+                                    : "rgba(255,69,58,0.14)",
+                              }}
+                            >
+                              {item.type === "change_trust" ? (
+                                <IconShield size={16} />
+                              ) : neutral ? (
+                                <IconSwap size={16} />
+                              ) : incoming ? (
+                                <IconArrowDownLeft size={16} />
+                              ) : (
+                                <IconArrowUpRight size={16} />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[15px] font-semibold leading-tight text-white">
+                                {item.title}
+                              </span>
+                              <span className="block truncate text-[12px] leading-tight text-neutral-400">
+                                {timeAgo(item.createdAt)}
+                                {item.counterparty
+                                  ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
+                                  : ""}
+                              </span>
+                            </span>
+                            {item.amount !== null && (
+                              <span
+                                className="mono shrink-0 text-right text-[15px] font-medium"
+                                style={{
+                                  color: privacyMode
+                                    ? "var(--color-faint)"
+                                    : neutral
+                                      ? "#FFFFFF"
+                                      : incoming
+                                        ? "#30D158"
+                                        : "#FF453A",
+                                }}
+                              >
+                                {privacyMode
+                                  ? "••••••"
+                                  : `${incoming ? "+" : "−"}${fmtAmount(item.amount)}`}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {activityCursor && (
               <button
                 type="button"
-                className="mt-3 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
+                className="mt-4 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
                 onClick={() => {
                   triggerHaptic("selection");
                   void loadMoreActivity();
