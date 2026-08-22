@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
-import { POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
+import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconPlus, IconSearch } from "./icons";
@@ -26,6 +26,10 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     [balances],
   );
 
+  const matchedKnown = useMemo(() => {
+    return lookupKnownAsset(code.trim().toUpperCase());
+  }, [code]);
+
   const filteredPopular = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return POPULAR_ASSETS;
@@ -33,7 +37,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       (a) =>
         a.code.toLowerCase().includes(q) ||
         a.name.toLowerCase().includes(q) ||
-        (a.description ?? "").toLowerCase().includes(q),
+        (a.anchorDomain ?? "").toLowerCase().includes(q),
     );
   }, [search]);
 
@@ -60,11 +64,10 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   }
 
   function handleSelectPopular(asset: KnownAsset) {
-    const iss = network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer);
-    if (!iss) return;
-    setCode(asset.code);
-    setIssuer(iss);
     triggerHaptic("selection");
+    setCode(asset.code);
+    const iss = network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer);
+    if (iss) setIssuer(iss);
   }
 
   return (
@@ -161,6 +164,13 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
               onChange={(e) => setIssuer(e.target.value.trim())}
             />
           </Field>
+
+          {matchedKnown?.anchorDomain && (
+            <div className="flex items-center justify-between rounded-xl bg-[#30D158]/10 border border-[#30D158]/20 px-3 py-1.5 text-[11.5px] text-[#30D158]">
+              <span className="font-semibold">✓ Verified Issuer: {matchedKnown.name}</span>
+              <span className="font-mono text-neutral-300">{matchedKnown.anchorDomain}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-4">
@@ -196,7 +206,7 @@ export function ConfirmModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => void;
   title: string;
   body: string;
   confirmLabel: string;
@@ -224,39 +234,28 @@ function ConfirmInner({
   danger = false,
 }: {
   onClose: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => void;
   title: string;
   body: string;
   confirmLabel: string;
   danger?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-
-  async function handleConfirm() {
-    setBusy(true);
-    try {
-      await onConfirm();
-      onClose();
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Modal open onClose={onClose}>
       <ModalHeader title={title} onClose={onClose} />
-      <div className="px-6 py-5">
-        <p className="text-[13.5px] leading-relaxed text-neutral-300">{body}</p>
+      <div className="px-6 py-6">
+        <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
         <div className="mt-6 flex gap-3">
-          <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
+          <Button variant="ghost" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
             className="flex-1"
-            loading={busy}
-            disabled={busy}
-            onClick={() => void handleConfirm()}
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
           >
             {confirmLabel}
           </Button>
