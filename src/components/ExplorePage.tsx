@@ -130,6 +130,18 @@ const DAPPS: DApp[] = [
     iconBg: "from-green-500 to-lime-600",
     iconEmoji: "🌱",
   },
+  {
+    id: "trezor-suite",
+    name: "Trezor Suite",
+    category: "tools",
+    categoryLabel: "Hardware & Tools",
+    description: "Official desktop and web suite for Trezor hardware cold storage (Safe 3, Model T, Model One) on Stellar.",
+    url: "https://suite.trezor.io",
+    iconBg: "from-emerald-600 to-teal-800",
+    iconEmoji: "🛡️",
+    featured: true,
+    tvlOrVolume: "Hardware Security",
+  },
 ];
 
 const CATEGORIES = [
