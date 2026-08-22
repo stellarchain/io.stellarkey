@@ -150,6 +150,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
 
   const [confirmReset, setConfirmReset] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [addAccountMode, setAddAccountMode] = useState<"generate" | "hardware">("generate");
+  const [addAccountDevice, setAddAccountDevice] = useState<"ledger" | "trezor">("trezor");
   const [showPhrase, setShowPhrase] = useState(false);
   const hasMnemonicVault = hasMnemonicAlias();
   const [pingMs, setPingMs] = useState<number | null>(null);
@@ -1709,6 +1711,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 className="w-full !py-2.5 text-[13.5px] font-semibold !bg-[#0A84FF] text-white"
                 onClick={() => {
                   triggerHaptic("selection");
+                  setAddAccountMode("hardware");
+                  setAddAccountDevice("trezor");
                   setShowAddAccount(true);
                 }}
               >
@@ -1739,6 +1743,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 className="w-full !py-2.5 text-[13.5px] font-semibold !bg-white !text-black hover:!bg-neutral-200"
                 onClick={() => {
                   triggerHaptic("selection");
+                  setAddAccountMode("hardware");
+                  setAddAccountDevice("ledger");
                   setShowAddAccount(true);
                 }}
               >
@@ -1938,7 +1944,15 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       )}
 
       {/* Add Account Modal */}
-      <AddAccountModal open={showAddAccount} onClose={() => setShowAddAccount(false)} />
+      <AddAccountModal
+        open={showAddAccount}
+        initialMode={addAccountMode}
+        initialDevice={addAccountDevice}
+        onClose={() => {
+          setShowAddAccount(false);
+          setAddAccountMode("generate");
+        }}
+      />
 
       {/* Recovery Phrase Modal */}
       <PhraseModal open={showPhrase} onClose={() => setShowPhrase(false)} />

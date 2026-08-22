@@ -17,18 +17,30 @@ type Mode = "generate" | "import" | "hardware" | "watch";
 export function AddAccountModal({
   open,
   onClose,
+  initialMode = "generate",
+  initialDevice = "ledger",
 }: {
   open: boolean;
   onClose: () => void;
+  initialMode?: Mode;
+  initialDevice?: HardwareDeviceType;
 }) {
   if (!open) return null;
-  return <AddAccountInner onClose={onClose} />;
+  return <AddAccountInner onClose={onClose} initialMode={initialMode} initialDevice={initialDevice} />;
 }
 
-function AddAccountInner({ onClose }: { onClose: () => void }) {
+function AddAccountInner({
+  onClose,
+  initialMode = "generate",
+  initialDevice = "ledger",
+}: {
+  onClose: () => void;
+  initialMode?: Mode;
+  initialDevice?: HardwareDeviceType;
+}) {
   const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWallet();
-  const [mode, setMode] = useState<Mode>("generate");
-  const [hardwareDevice, setHardwareDevice] = useState<HardwareDeviceType>("ledger");
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [hardwareDevice, setHardwareDevice] = useState<HardwareDeviceType>(initialDevice);
   const [hardwareIndex, setHardwareIndex] = useState(0);
   void setHardwareIndex;
   const [hardwareKey, setHardwareKey] = useState("");
@@ -310,7 +322,9 @@ function AddAccountInner({ onClose }: { onClose: () => void }) {
             ? "Create Account"
             : mode === "import"
               ? "Import Account"
-              : "Track Address"}
+              : mode === "hardware"
+                ? "Import Hardware Account"
+                : "Track Address"}
         </Button>
       </div>
     </Modal>
