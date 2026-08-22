@@ -373,13 +373,25 @@ export function SwapPage() {
             <span>Estimated Network Fee</span>
             <span className="mono text-neutral-300">0.00001 XLM (100 stroops)</span>
           </div>
-          <div className="flex justify-between text-neutral-400">
-            <span>Route Path</span>
-            <span className="mono text-neutral-300">
-              {route.intermediates.length === 0
-                ? "Direct DEX Pool"
-                : `${sendAsset?.code} → ${route.intermediates.map((p) => p.getCode()).join(" → ")} → ${destAsset?.code}`}
-            </span>
+          <div className="flex justify-between items-center text-neutral-400">
+            <span>Route Hops</span>
+            <div className="flex items-center gap-1">
+              <span className="mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded-md text-[11px]">
+                {sendAsset?.code}
+              </span>
+              {route.intermediates.map((p, idx) => (
+                <span key={idx} className="flex items-center gap-1">
+                  <span className="text-[10px] text-neutral-500">➔</span>
+                  <span className="mono font-semibold text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-md text-[11px]">
+                    {p.getCode()}
+                  </span>
+                </span>
+              ))}
+              <span className="text-[10px] text-neutral-500">➔</span>
+              <span className="mono font-semibold text-[#30D158] bg-[#30D158]/10 px-2 py-0.5 rounded-md text-[11px]">
+                {destAsset?.code}
+              </span>
+            </div>
           </div>
         </div>
       )}

@@ -131,6 +131,13 @@ Explorer: ${explorerUrl}`;
 
         {/* Action Links */}
         <div className="mt-5 flex flex-wrap gap-2">
+          {item.counterparty && (
+            <CopyButton
+              value={item.counterparty}
+              label={incoming ? "Copy Sender" : "Copy Recipient"}
+              className="chip flex-1 justify-center"
+            />
+          )}
           <CopyButton value={item.hash} label="Copy Hash" className="chip flex-1 justify-center" />
           <button
             type="button"
