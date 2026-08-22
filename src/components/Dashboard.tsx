@@ -79,6 +79,7 @@ export function Dashboard() {
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [counterpartyFilter, setCounterpartyFilter] = useState<string | null>(null);
+  const [hideDust, setHideDust] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<PayUriPayload | null>(null);
@@ -142,16 +143,18 @@ export function Dashboard() {
 
   const q = query.trim().toLowerCase();
   const filteredAssets = useMemo(() => {
-    if (!q) return balances;
-    return (
-      balances?.filter(
-        (b) =>
-          b.code.toLowerCase().includes(q) ||
-          (b.issuer ?? "").toLowerCase().includes(q) ||
-          (lookupKnownAsset(b.code)?.name ?? "").toLowerCase().includes(q),
-      ) ?? []
+    let list = balances ?? [];
+    if (hideDust) {
+      list = list.filter((b) => b.isNative || parseFloat(b.balance) > 0.0001);
+    }
+    if (!q) return list;
+    return list.filter(
+      (b) =>
+        b.code.toLowerCase().includes(q) ||
+        (b.issuer ?? "").toLowerCase().includes(q) ||
+        (lookupKnownAsset(b.code)?.name ?? "").toLowerCase().includes(q),
     );
-  }, [balances, q]);
+  }, [balances, hideDust, q]);
 
   const filteredActivity = useMemo(() => {
     return activity.filter((a) => {
@@ -601,6 +604,18 @@ export function Dashboard() {
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setHideDust((d) => !d);
+                    }}
+                    className={`text-[12px] font-medium transition-colors ${
+                      hideDust ? "text-[#0A84FF] font-semibold" : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    {hideDust ? "Dust Hidden" : "Hide Dust"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
