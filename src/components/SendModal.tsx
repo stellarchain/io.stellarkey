@@ -260,19 +260,36 @@ function SendInner({
       dismissable={stage !== "sending"}
       wide
     >
-      <div className="px-6 pb-6 pt-7">
+      <ModalHeader
+        title={
+          stage === "done"
+            ? "Payment Sent"
+            : stage === "review" || stage === "sending"
+              ? "Review Transfer"
+              : "Send Payment"
+        }
+        subtitle={
+          stage === "done"
+            ? `Confirmed on Stellar ${NETWORKS[network].label}`
+            : stage === "review" || stage === "sending"
+              ? "Verify details before broadcasting"
+              : `Transfer assets on Stellar ${NETWORKS[network].label}`
+        }
+        onClose={stage === "sending" ? undefined : onClose}
+      />
+      <div className="p-6">
         {stage === "done" ? (
-          <div className="flex flex-col items-center py-8">
+          <div className="flex flex-col items-center py-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-5 text-xl font-light text-white">Payment Sent</p>
-            <p className="mt-1.5 text-[13px] text-neutral-400">
-              Confirmed on Stellar {NETWORKS[network].label}.
+            <p className="display-h mt-4 text-xl font-light text-white">Payment Confirmed</p>
+            <p className="mt-1 text-[13px] text-neutral-400">
+              Successfully broadcasted on Stellar {NETWORKS[network].label}.
             </p>
             {hash && (
               <a
-                className="chip mt-5"
+                className="chip mt-4"
                 href={NETWORKS[network].explorerTxUrl(hash)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -280,16 +297,13 @@ function SendInner({
                 View on Explorer <IconExternal size={11} />
               </a>
             )}
-            <Button variant="ghost" className="mt-7 w-full" onClick={onClose}>
+            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
               Done
             </Button>
           </div>
         ) : stage === "review" || stage === "sending" ? (
           <>
-            <p className="eyebrow mb-6 text-center">
-              {stage === "sending" ? "Confirming…" : "Review Transfer"}
-            </p>
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center pb-2">
               <p className="display-h text-[36px] text-white">
                 {fmtAmount(amount)}
               </p>
@@ -459,14 +473,7 @@ function SendInner({
             </div>
           </>
         ) : (
-          <>
-            <ModalHeader
-              title="Send Payment"
-              subtitle={`Transfer assets on Stellar ${NETWORKS[network].label}`}
-              onClose={onClose}
-            />
-
-            <div className="mt-5 space-y-4">
+          <div className="space-y-4">
                             {/* Asset picker and Amount Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Asset picker */}
@@ -786,8 +793,7 @@ function SendInner({
               >
                 Review Transfer
               </Button>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </Modal>

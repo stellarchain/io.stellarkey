@@ -145,29 +145,31 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal open onClose={busy ? () => undefined : onClose} dismissable={!busy} wide>
-      <div className="px-6 pb-6 pt-7">
+      <ModalHeader
+        title={success ? "Batch Broadcasted" : "Multi-Send Disperse"}
+        subtitle={
+          success
+            ? `Successfully sent to ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
+            : "Send payments to multiple recipients in 1 transaction"
+        }
+        onClose={busy ? undefined : onClose}
+      />
+      <div className="p-6">
         {success ? (
-          <div className="flex flex-col items-center py-8 text-center">
+          <div className="flex flex-col items-center py-4 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-5 text-xl font-light text-white">Batch Payment Broadcasted</p>
-            <p className="mt-1.5 text-[13px] text-neutral-400">
+            <p className="display-h mt-4 text-xl font-light text-white">Batch Payment Broadcasted</p>
+            <p className="mt-1 text-[13px] text-neutral-400">
               Successfully sent to {validRows.length} recipient{validRows.length > 1 ? "s" : ""} in a single atomic transaction.
             </p>
-            <Button variant="ghost" className="mt-7 w-full" onClick={onClose}>
+            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
               Done
             </Button>
           </div>
         ) : (
-          <>
-            <ModalHeader
-              title="Multi-Send Disperse"
-              subtitle="Send payments to multiple recipients in 1 transaction"
-              onClose={onClose}
-            />
-
-            <div className="mt-5 space-y-4">
+          <div className="space-y-4">
               {/* Asset picker */}
               <div>
                 <label className="field-label">Asset</label>
@@ -372,8 +374,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
               >
                 {busy ? "Broadcasting…" : `Disperse to ${validRows.length} Recipient${validRows.length > 1 ? "s" : ""}`}
               </Button>
-            </div>
-          </>
+          </div>
         )}
       </div>
     </Modal>
