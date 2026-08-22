@@ -7,6 +7,7 @@ import {
   importKeystore,
   revealSecret,
   validateStellarSecret,
+  isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
 import { validateContact } from "@/lib/contacts";
@@ -54,7 +55,8 @@ export type SettingsSub =
   | "addContact"
   | "network"
   | "phrase"
-  | "autolock";
+  | "autolock"
+  | "merge";
 type Sub = SettingsSub;
 
 export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
@@ -70,6 +72,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     renameAccount,
     restoreArchivedAccount,
     restoreAccountByIndex,
+    mergeAccount,
     lock,
     resetWallet,
     contacts,
@@ -106,6 +109,10 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const [editContactName, setEditContactName] = useState("");
   const [editContactAddr, setEditContactAddr] = useState("");
   const [editContactError, setEditContactError] = useState<string | null>(null);
+
+  const [mergeDest, setMergeDest] = useState("");
+  const [mergeError, setMergeError] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -223,6 +230,31 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
+  async function handleMergeAccount() {
+    if (!activeAccount || !isValidPublicAddress(mergeDest.trim())) {
+      setMergeError("Enter a valid destination Stellar public key.");
+      return;
+    }
+    if (mergeDest.trim() === activeAccount.publicKey) {
+      setMergeError("Cannot merge an account into itself.");
+      return;
+    }
+    setMerging(true);
+    setMergeError(null);
+    try {
+      await mergeAccount(mergeDest.trim());
+      triggerHaptic("success");
+      toast("Account merged successfully", "success");
+      removeAccount(activeAccount.id);
+      setSub("accounts");
+    } catch (e) {
+      triggerHaptic("error");
+      setMergeError(e instanceof Error ? e.message : "Account merge failed.");
+    } finally {
+      setMerging(false);
+    }
+  }
+
   async function handleExportKeystore() {
     if (!activeAccount) return;
     const json = await exportKeystoreUnlocked(activeAccount.id);
@@ -301,7 +333,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
   const backTarget: Sub | null =
     sub === "root"
       ? null
-      : sub === "addAccount"
+      : sub === "addAccount" || sub === "merge"
         ? "accounts"
         : sub === "addContact"
           ? "contacts"
@@ -354,9 +386,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                       ? "New Contact"
                       : sub === "autolock"
                         ? "Auto-Lock Timer"
-                        : sub === "phrase"
-                          ? "Recovery Phrase"
-                          : "Network"}
+                        : sub === "merge"
+                          ? "Merge Account"
+                          : sub === "phrase"
+                            ? "Recovery Phrase"
+                            : "Network"}
           </h1>
         </>
       )}
@@ -786,7 +820,19 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           />
 
           {accounts.length > 1 && (
-            <div className="list-group mt-6">
+            <div className="list-group mt-6 space-y-1">
+              <RowButton
+                icon={<IconWallet size={15} />}
+                tint="#FF9F0A"
+                label="Merge Account & Recover Reserve"
+                sub="Dissolve account into destination"
+                chevron
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setSub("merge");
+                }}
+                sep
+              />
               <RowButton
                 icon={<IconTrash size={15} />}
                 tint="#FF453A"
@@ -803,6 +849,74 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </div>
           )}
         </>
+      )}
+
+      {/* ---------- MERGE ACCOUNT ---------- */}
+      {sub === "merge" && (
+        <div className="space-y-4">
+          <Notice tone="pos">
+            Account merge transfers all remaining lumens (including the 1.0 XLM base reserve) to the destination account and permanently closes this account on the network.
+          </Notice>
+
+          <div className="list-group p-4 space-y-4">
+            <Field label="Destination Stellar Address" hint="Must be an existing active account">
+              <input
+                className="input mono text-[13px]"
+                placeholder="G..."
+                value={mergeDest}
+                onChange={(e) => setMergeDest(e.target.value.trim())}
+                spellCheck={false}
+              />
+            </Field>
+
+            {accounts.filter((a) => a.id !== activeAccount?.id).length > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                  Or select one of your accounts
+                </p>
+                <div className="space-y-1.5">
+                  {accounts
+                    .filter((a) => a.id !== activeAccount?.id)
+                    .map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setMergeDest(a.publicKey);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl border p-2.5 text-left transition-colors ${
+                          mergeDest === a.publicKey
+                            ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white"
+                            : "border-white/10 bg-white/[0.04] text-neutral-300 hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Avatar seed={a.publicKey} size={24} />
+                          <span className="truncate text-[13px] font-medium">{a.label}</span>
+                        </div>
+                        <span className="mono text-[11px] text-neutral-400">
+                          {shortenAddr(a.publicKey, 4, 4)}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <ErrorText message={mergeError ?? ""} />
+
+          <Button
+            variant="danger"
+            className="w-full !py-3.5 text-[15px] font-semibold"
+            loading={merging}
+            disabled={!mergeDest || merging}
+            onClick={() => void handleMergeAccount()}
+          >
+            Confirm & Merge Account
+          </Button>
+        </div>
       )}
 
       {/* ---------- ADD ACCOUNT ---------- */}

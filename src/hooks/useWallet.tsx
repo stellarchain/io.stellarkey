@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { Asset } from "@stellar/stellar-sdk";
 import * as api from "@/lib/api";
-import type { PriceRange } from "@/lib/api";
+import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
 import {
   addStoredAccount,
@@ -66,6 +66,7 @@ interface WalletContextValue {
   archivedAccounts: AccountMeta[];
   hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
+  claimableBalances: ClaimableBalanceItem[];
   activity: ActivityItem[];
   activityCursor: string | null;
   dataLoading: boolean;
@@ -113,6 +114,17 @@ interface WalletContextValue {
     issuer?: string | null;
     memoText?: string;
   }) => Promise<{ hash: string }>;
+  sendBatch: (params: {
+    payments: Array<{
+      destination: string;
+      amount: string;
+      assetCode: string;
+      issuer?: string | null;
+    }>;
+    memoText?: string;
+  }) => Promise<{ hash: string }>;
+  claimAirdrop: (balanceId: string) => Promise<{ hash: string }>;
+  mergeAccount: (destination: string) => Promise<{ hash: string }>;
   trustAsset: (params: { code: string; issuer: string; add: boolean }) => Promise<{ hash: string }>;
   swap: (params: {
     sendCode: string;
@@ -137,6 +149,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [hasDeletedWalletBackup, setHasDeletedWalletBackup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
+  const [claimableBalances, setClaimableBalances] = useState<ClaimableBalanceItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -189,13 +202,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataLoading(true);
     try {
       const cachedSeries = priceCache.current[priceRange];
-      const [bals, acts, price, series] = await Promise.all([
+      const [bals, claims, acts, price, series] = await Promise.all([
         api.fetchBalances(activeAccount.publicKey, network),
+        api.fetchClaimableBalances(activeAccount.publicKey, network),
         api.fetchActivity(activeAccount.publicKey, network),
         network === "mainnet" ? api.fetchXlmPrice() : Promise.resolve(null),
         cachedSeries ? Promise.resolve(cachedSeries) : api.fetchXlmSeries(priceRange),
       ]);
       setBalances(bals);
+      setClaimableBalances(claims);
       setActivity(acts.items);
       setActivityCursor(acts.nextCursor);
       if (price !== null) setXlmPriceUsd(price);
@@ -273,6 +288,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setArchivedAccounts([]);
       setActiveId(account.id);
       setBalances(null);
+      setClaimableBalances([]);
       setActivity([]);
       setHasDeletedWalletBackup(false);
       return {
@@ -298,6 +314,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setPhase("unlocked");
   }, []);
@@ -312,6 +329,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts([]);
     setActiveId(null);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setPriceData(null);
     setHasDeletedWalletBackup(true);
@@ -324,6 +342,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setHasDeletedWalletBackup(false);
     setPhase("unlocked");
@@ -334,6 +353,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!vault) return;
     setActiveId(id);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
   }, []);
@@ -343,6 +363,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
     return account;
@@ -355,6 +376,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setArchivedAccounts([]);
       setActiveId(null);
       setBalances(null);
+      setClaimableBalances([]);
       setActivity([]);
       setPhase("empty");
       return;
@@ -363,6 +385,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((remaining.archivedAccounts ?? []).map(stripSecret));
     setActiveId(remaining.activeAccountId);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
   }, []);
@@ -380,6 +403,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts(getArchivedAccounts());
     setActiveId(restored.id);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
     return restored;
@@ -393,6 +417,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
     setActiveId(restored.id);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
     return restored;
@@ -402,6 +427,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     saveNetworkPref(net);
     setNetworkState(net);
     setBalances(null);
+    setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
     setXlmPriceUsd(null);
@@ -450,6 +476,50 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const result = await api.sendPayment({ network, secretKey, ...params });
       toast("Transaction submitted — confirming…", "info");
       void confirmAndRefresh(result.hash, "Payment");
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
+
+  const sendBatch = useCallback(
+    async (params: {
+      payments: Array<{
+        destination: string;
+        amount: string;
+        assetCode: string;
+        issuer?: string | null;
+      }>;
+      memoText?: string;
+    }) => {
+      if (!activeAccount) throw new Error("No active account");
+      const secretKey = getSecretKey(activeAccount.id);
+      const result = await api.sendBatchPayments({ network, secretKey, ...params });
+      toast("Batch transaction submitted — confirming…", "info");
+      void confirmAndRefresh(result.hash, "Batch Payment");
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
+
+  const claimAirdrop = useCallback(
+    async (balanceId: string) => {
+      if (!activeAccount) throw new Error("No active account");
+      const secretKey = getSecretKey(activeAccount.id);
+      const result = await api.claimClaimableBalance({ network, secretKey, balanceId });
+      toast("Claiming airdrop — confirming…", "info");
+      void confirmAndRefresh(result.hash, "Airdrop claim");
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
+
+  const mergeAccount = useCallback(
+    async (destination: string) => {
+      if (!activeAccount) throw new Error("No active account");
+      const secretKey = getSecretKey(activeAccount.id);
+      const result = await api.mergeAccount({ network, secretKey, destination });
+      toast("Merging account — confirming…", "info");
+      void confirmAndRefresh(result.hash, "Account merge");
       return result;
     },
     [activeAccount, network, toast, confirmAndRefresh],
@@ -541,6 +611,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       archivedAccounts,
       hasDeletedWalletBackup,
       balances,
+      claimableBalances,
       activity,
       activityCursor,
       dataLoading,
@@ -577,6 +648,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      sendBatch,
+      claimAirdrop,
+      mergeAccount,
       trustAsset,
       swap,
       fundFromFriendbot,
@@ -589,6 +663,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       archivedAccounts,
       hasDeletedWalletBackup,
       balances,
+      claimableBalances,
       activity,
       activityCursor,
       dataLoading,
@@ -625,6 +700,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      sendBatch,
+      claimAirdrop,
+      mergeAccount,
       trustAsset,
       swap,
       fundFromFriendbot,
