@@ -1,12 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { fmtAmount, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconClose, IconExternal } from "./icons";
+import { IconCheck, IconClose, IconExternal, IconShare } from "./icons";
 
 export function TxDetailModal({
   item,
@@ -16,14 +17,47 @@ export function TxDetailModal({
   onClose: () => void;
 }) {
   const { network, privacyMode } = useWallet();
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
   if (!item) return null;
 
   const incoming = item.direction === "in";
   const neutral = item.direction === "neutral";
 
+  const explorerUrl = NETWORKS[network].explorerTxUrl(item.hash);
   const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
     item.hash,
   )}&network=${network}`;
+
+  const receiptSummary = `Stellar Transaction Receipt
+Title: ${item.title}
+Status: ${item.successful ? "Confirmed" : "Failed"}
+Network: Stellar ${NETWORKS[network].label}
+Amount: ${item.amount ? `${item.amount} ${item.assetCode ?? "XLM"}` : "N/A"}
+Date: ${new Date(item.createdAt).toLocaleString("en-US")}
+Counterparty: ${item.counterparty ?? "N/A"}
+Hash: ${item.hash}
+Explorer: ${explorerUrl}`;
+
+  async function handleShareReceipt() {
+    triggerHaptic("selection");
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: `Stellar Receipt: ${item?.title}`,
+          text: receiptSummary,
+          url: explorerUrl,
+        });
+        triggerHaptic("success");
+      } catch {
+        void 0;
+      }
+    } else {
+      await navigator.clipboard.writeText(receiptSummary);
+      setCopiedReceipt(true);
+      triggerHaptic("success");
+      window.setTimeout(() => setCopiedReceipt(false), 2000);
+    }
+  }
 
   return (
     <Modal open onClose={onClose}>
@@ -91,9 +125,17 @@ export function TxDetailModal({
         {/* Action Links */}
         <div className="mt-5 flex flex-wrap gap-2">
           <CopyButton value={item.hash} label="Copy Hash" className="chip flex-1 justify-center" />
+          <button
+            type="button"
+            onClick={() => void handleShareReceipt()}
+            className="chip flex-1 justify-center flex items-center gap-1.5 text-white"
+          >
+            <IconShare size={12} />
+            <span>{copiedReceipt ? "Copied Receipt!" : "Share Receipt"}</span>
+          </button>
           <a
             className="chip flex-1 justify-center"
-            href={NETWORKS[network].explorerTxUrl(item.hash)}
+            href={explorerUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => triggerHaptic("light")}
