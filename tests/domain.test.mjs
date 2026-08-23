@@ -1,15 +1,26 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  Account,
   Asset,
   Keypair,
+  MuxedAccount,
   Networks,
+  Operation,
   StrKey,
   TransactionBuilder,
+  xdr,
 } from "@stellar/stellar-sdk";
 
-import { fetchActivity, fetchBalances, sendBatchPayments, sendPayment } from "../src/lib/api.ts";
+import {
+  fetchAccountSignerInfo,
+  fetchActivity,
+  fetchBalances,
+  sendBatchPayments,
+  sendPayment,
+} from "../src/lib/api.ts";
 import { lookupKnownAsset, POPULAR_ASSETS } from "../src/lib/assets.ts";
 import {
   fmtAmount,
@@ -19,7 +30,13 @@ import {
 } from "../src/lib/format.ts";
 import { assetPriceKey, estimatePortfolioUsd, getUnitPrice } from "../src/lib/prices.ts";
 import { parseFiatRates } from "../src/lib/prices.ts";
-import { applyMultisigConfig } from "../src/lib/multisig.ts";
+import {
+  applyMultisigConfig,
+  cosignTransaction,
+  explainTransaction,
+  requiredWeightForTx,
+} from "../src/lib/multisig.ts";
+import * as multisig from "../src/lib/multisig.ts";
 import {
   assetMetadataCacheKey,
   extractCurrencyInfo,
@@ -33,6 +50,11 @@ import {
   deriveSacContractId,
   spendableAssetBalance,
 } from "../src/lib/transaction-intent.ts";
+import {
+  assertReviewCanBeSigned,
+  reviewTransactionEnvelope,
+} from "../src/lib/transaction-review.ts";
+import * as transactionReview from "../src/lib/transaction-review.ts";
 
 const USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 
@@ -61,6 +83,18 @@ function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
   return calls;
+}
+
+function buildReviewTransaction(source, operations, options = {}) {
+  const builder = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: String(100 * operations.length),
+    networkPassphrase: Networks.TESTNET,
+  });
+  for (const operation of operations) builder.addOperation(operation);
+  if (options.memo) builder.addMemo(options.memo);
+  return options.timeout === 0
+    ? builder.setTimeout(0).build()
+    : builder.setTimebounds(0, options.timeout ?? Math.floor(Date.now() / 1000) + 300).build();
 }
 
 test("normalizes Stellar amounts without floating-point loss", () => {
@@ -247,6 +281,1296 @@ test("multisig rejects duplicate signers before querying Horizon", async (t) => 
     /signer addresses must be unique/i,
   );
   assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("account merge requires the source account high threshold", () => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  const tx = buildReviewTransaction(source, [
+    Operation.accountMerge({ destination }),
+  ]);
+
+  assert.equal(
+    requiredWeightForTx(tx, {
+      low_threshold: 1,
+      med_threshold: 2,
+      high_threshold: 3,
+    }),
+    3,
+  );
+});
+
+test("transaction review is fail-closed and preserves operation source and asset identity", async (t) => {
+  const transactionSource = Keypair.random();
+  const operationSource = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  const issuedAsset = new Asset("USDC", USDC_ISSUER);
+  const tx = buildReviewTransaction(transactionSource, [
+    Operation.payment({
+      source: operationSource.publicKey(),
+      destination,
+      amount: "4.25",
+      asset: issuedAsset,
+    }),
+    Operation.beginSponsoringFutureReserves({
+      sponsoredId: destination,
+    }),
+  ]);
+
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const publicKey = String(url).split("/accounts/")[1];
+    if (![transactionSource.publicKey(), operationSource.publicKey()].includes(publicKey)) {
+      throw new Error(`Unexpected Horizon URL: ${url}`);
+    }
+    return new Response(JSON.stringify({
+      thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 3 },
+      signers: [{ key: publicKey, weight: 3, type: "ed25519_public_key" }],
+    }), { status: 200 });
+  });
+
+  const review = await explainTransaction(tx.toXdr(), "testnet");
+  assert.equal(review.network, "testnet");
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /unsupported.*beginSponsoringFutureReserves/i);
+  assert.deepEqual(review.authorizations.map((entry) => entry.source).sort(), [
+    operationSource.publicKey(),
+    transactionSource.publicKey(),
+  ].sort());
+  for (const expectedLine of [
+    { label: "Operation source", value: operationSource.publicKey(), kind: "address" },
+    { label: "Asset", value: `USDC:${USDC_ISSUER}`, kind: "mono" },
+    { label: "Amount", value: "4.2500000", kind: "mono" },
+    { label: "Destination", value: destination, kind: "address" },
+  ]) {
+    assert.ok(review.operations[0].lines.some((line) =>
+      line.label === expectedLine.label &&
+      line.value === expectedLine.value &&
+      line.kind === expectedLine.kind
+    ));
+  }
+});
+
+test("transaction explanation exposes exact minimum and maximum time bounds", async (t) => {
+  const source = Keypair.random();
+  const now = Math.floor(Date.now() / 1000);
+  const minTime = String(now + 30);
+  const maxTime = String(now + 300);
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .setTimebounds(Number(minTime), Number(maxTime))
+    .build();
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+  }), { status: 200 }));
+
+  const explanation = await explainTransaction(tx.toXdr(), "testnet");
+
+  assert.deepEqual(explanation.timeBounds, { minTime, maxTime });
+});
+
+test("fee review formats arbitrarily large stroop strings without Number conversion", () => {
+  assert.equal(typeof transactionReview.formatStroopFeeXlm, "function");
+  assert.equal(
+    transactionReview.formatStroopFeeXlm("9007199254740993"),
+    "900719925.4740993",
+  );
+});
+
+test("exact signing-review values use a non-truncating breakable presentation", () => {
+  assert.equal(typeof transactionReview.EXACT_REVIEW_VALUE_CLASS, "string");
+  assert.match(transactionReview.EXACT_REVIEW_VALUE_CLASS, /\bbreak-all\b/);
+  assert.match(transactionReview.EXACT_REVIEW_VALUE_CLASS, /\bwhitespace-pre-wrap\b/);
+  assert.doesNotMatch(transactionReview.EXACT_REVIEW_VALUE_CLASS, /\btruncate\b|\bline-clamp/);
+});
+
+test("approval signing stays bound to the exact reviewed XDR and network", () => {
+  assert.equal(typeof transactionReview.reviewedEnvelopeForSigning, "function");
+  const binding = { xdr: "XDR-A", network: "testnet" };
+
+  assert.equal(
+    transactionReview.reviewedEnvelopeForSigning(binding, "  XDR-A  ", "testnet"),
+    "XDR-A",
+  );
+  assert.equal(
+    transactionReview.reviewedEnvelopeForSigning(binding, "XDR-B", "testnet"),
+    null,
+  );
+  assert.equal(
+    transactionReview.reviewedEnvelopeForSigning(binding, "XDR-A", "mainnet"),
+    null,
+  );
+});
+
+test("approval review renders every security-sensitive address in full", () => {
+  const source = readFileSync(
+    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    "utf8",
+  );
+  const approvalReview = source
+    .split("Transaction explanation review (before signing)")[1]
+    ?.split("{outcome && !outcome.submitted")[0];
+
+  assert.ok(approvalReview, "expected the Approvals review section");
+  assert.doesNotMatch(approvalReview, /<HashValue\b/);
+  assert.match(approvalReview, /l\.kind === "address"[\s\S]*EXACT_REVIEW_VALUE_CLASS/);
+});
+
+test("local signer revalidates live authorization around password access", () => {
+  const source = readFileSync(
+    new URL("../src/components/SettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const handler = source
+    .split("async function handleAirSign()")[1]
+    ?.split("function toggleSound")[0];
+  assert.ok(handler, "expected the local signer handler");
+
+  const firstAuthorization = handler.indexOf("await assertCanAddTransactionSignature");
+  const passwordAccess = handler.indexOf("await revealSecret");
+  const secondAuthorization = handler.indexOf(
+    "await assertCanAddTransactionSignature",
+    firstAuthorization + 1,
+  );
+  const signing = handler.indexOf("tx.sign(kp)");
+  assert.ok(firstAuthorization >= 0 && firstAuthorization < passwordAccess);
+  assert.ok(passwordAccess < secondAuthorization && secondAuthorization < signing);
+});
+
+test("local signer preserves decoded effects and offers authorization retry", () => {
+  const source = readFileSync(
+    new URL("../src/components/SettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /function handleAirAuthorizationRetry\(\)/);
+  assert.match(source, />\s*Retry Authorization\s*</);
+});
+
+test("multisig signer-info loading discards stale account or network responses", () => {
+  const source = readFileSync(
+    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /signerInfoRequestGeneration\s*=\s*useRef/);
+  assert.match(source, /requestGeneration\s*!==\s*signerInfoRequestGeneration\.current/);
+  assert.match(source, /interface SignerInfoBinding/);
+  assert.match(source, /signerInfoIdentityRef/);
+  assert.match(source, /requestedIdentity\s*!==\s*signerInfoIdentityRef\.current/);
+  assert.match(source, /infoBinding\.accountPublicKey\s*===\s*activeAccount\.publicKey/);
+  assert.match(source, /infoBinding\.network\s*===\s*network/);
+});
+
+test("multisig UI never presents unavailable signer state as single-signature", () => {
+  const source = readFileSync(
+    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    "utf8",
+  );
+  const uiSource = readFileSync(
+    new URL("../src/components/ui.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /const signerInfoUnavailable\s*=\s*!infoLoading\s*&&\s*!info/);
+  assert.match(source, /Signer configuration unavailable/);
+  assert.match(source, /value:\s*"configure",\s*label:\s*"Configure",\s*disabled:\s*!info/);
+  assert.match(source, /tab === "configure" && info &&/);
+  assert.match(uiSource, /disabled\?: boolean/);
+  assert.match(uiSource, /disabled=\{opt\.disabled\}/);
+});
+
+test("multisig configuration enforces Stellar's 20 additional-signer limit before Horizon", async (t) => {
+  assert.equal(typeof multisig.hasAdditionalSignerCapacity, "function");
+  assert.equal(multisig.hasAdditionalSignerCapacity(19), true);
+  assert.equal(multisig.hasAdditionalSignerCapacity(20), false);
+
+  const account = Keypair.random();
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("network should not be queried");
+  });
+  await assert.rejects(
+    applyMultisigConfig({
+      network: "testnet",
+      accountPublicKey: account.publicKey(),
+      secretKey: account.secret(),
+      config: {
+        signers: [
+          { key: account.publicKey(), weight: 1 },
+          ...Array.from({ length: 21 }, () => ({ key: Keypair.random().publicKey(), weight: 1 })),
+        ],
+        low: 1,
+        medium: 1,
+        high: 1,
+      },
+    }),
+    /at most 20 additional signers/i,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("account signer info rejects an incomplete Horizon account response", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({}), { status: 200 }));
+
+  assert.equal(
+    await fetchAccountSignerInfo(Keypair.random().publicKey(), "testnet"),
+    null,
+  );
+});
+
+test("account signer info rejects malformed thresholds and signer entries", async (t) => {
+  const account = Keypair.random();
+  let responseIndex = 0;
+  const responses = [
+    {
+      thresholds: { low_threshold: -1, med_threshold: 1.5, high_threshold: 256 },
+      signers: [{ key: account.publicKey(), weight: 1, type: "ed25519_public_key" }],
+    },
+    {
+      thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+      signers: [{ key: "not-a-stellar-signer", weight: -1, type: "unknown" }],
+    },
+  ];
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify(responses[responseIndex++]), { status: 200 }));
+
+  assert.equal(await fetchAccountSignerInfo(account.publicKey(), "testnet"), null);
+  assert.equal(await fetchAccountSignerInfo(account.publicKey(), "testnet"), null);
+});
+
+test("cosigning requires explicit network confirmation before any network or key access", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("network should not be queried");
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: null,
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      secretKey: source.secret(),
+    }),
+    /confirm.*testnet.*before signing/i,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("cosigning binds the confirmation to the exact selected network", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("network should not be queried");
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "mainnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      secretKey: source.secret(),
+    }),
+    /confirmed network.*selected mainnet/i,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("cosigning blocks expired envelopes before any network or key access", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ], { timeout: Math.floor(Date.now() / 1000) - 10 });
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("network should not be queried");
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      secretKey: source.secret(),
+    }),
+    /expired/i,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("cosigning rechecks expiry after asynchronous authorization and before submit", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ], { timeout: 200 });
+  let nowMs = 100_000;
+  let submitted = false;
+  t.mock.method(Date, "now", () => nowMs);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      nowMs = 200_000;
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: "must-not-submit" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      secretKey: source.secret(),
+    }),
+    /expired/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("multisig configuration returns a partial envelope when current high threshold is unmet", async (t) => {
+  const account = Keypair.random();
+  const cosigner = Keypair.random();
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    calls.push({ url: stringUrl, init });
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: cosigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      return new Response(JSON.stringify({ hash: "must-not-submit" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [
+        { key: account.publicKey(), weight: 1 },
+        { key: cosigner.publicKey(), weight: 1 },
+      ],
+      low: 1,
+      medium: 2,
+      high: 2,
+    },
+  });
+
+  assert.equal(outcome.submitted, false);
+  assert.ok(outcome.xdr);
+  assert.equal(calls.some((call) => call.url.endsWith("/transactions")), false);
+});
+
+test("multisig replaces a signer at full capacity without exceeding 20 additional signers", async (t) => {
+  const account = Keypair.random();
+  const currentCosigners = Array.from({ length: 20 }, () => Keypair.random());
+  const removed = currentCosigners.at(-1);
+  const replacement = Keypair.random();
+  let submittedXdr = null;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+          ...currentCosigners.map((signer) => ({
+            key: signer.publicKey(),
+            weight: 1,
+            type: "ed25519_public_key",
+          })),
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submittedXdr = new URLSearchParams(init.body).get("tx");
+      return new Response(JSON.stringify({ hash: "capacity-safe" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const desiredCosigners = [...currentCosigners.slice(0, 19), replacement];
+  const partial = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [
+        { key: account.publicKey(), weight: 1 },
+        ...desiredCosigners.map((signer) => ({ key: signer.publicKey(), weight: 1 })),
+      ],
+      low: 2,
+      medium: 2,
+      high: 2,
+    },
+  });
+  assert.equal(partial.submitted, false);
+
+  const tx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);
+  const lowerIndex = tx.operations.findIndex(
+    (operation) => operation.type === "setOptions" && operation.highThreshold === 0,
+  );
+  const removeIndex = tx.operations.findIndex(
+    (operation) =>
+      operation.type === "setOptions" &&
+      operation.signer?.ed25519PublicKey === removed.publicKey() &&
+      operation.signer.weight === 0,
+  );
+  const addIndex = tx.operations.findIndex(
+    (operation) =>
+      operation.type === "setOptions" &&
+      operation.signer?.ed25519PublicKey === replacement.publicKey() &&
+      operation.signer.weight === 1,
+  );
+  assert.ok(lowerIndex >= 0 && lowerIndex < removeIndex && removeIndex < addIndex);
+
+  const simulatedSigners = new Map(
+    currentCosigners.map((signer) => [signer.publicKey(), 1]),
+  );
+  let finalMasterWeight = 1;
+  let finalThresholds = { low: 2, medium: 2, high: 2 };
+  for (const operation of tx.operations) {
+    if (operation.type !== "setOptions") continue;
+    if (operation.masterWeight !== undefined) finalMasterWeight = operation.masterWeight;
+    if (operation.lowThreshold !== undefined) finalThresholds.low = operation.lowThreshold;
+    if (operation.medThreshold !== undefined) finalThresholds.medium = operation.medThreshold;
+    if (operation.highThreshold !== undefined) finalThresholds.high = operation.highThreshold;
+    if (operation.signer && "ed25519PublicKey" in operation.signer) {
+      if (operation.signer.weight === 0) simulatedSigners.delete(operation.signer.ed25519PublicKey);
+      else simulatedSigners.set(operation.signer.ed25519PublicKey, operation.signer.weight);
+    }
+    assert.ok(simulatedSigners.size <= 20, "transition exceeded the protocol signer limit");
+  }
+  assert.equal(finalMasterWeight, 1);
+  assert.deepEqual(finalThresholds, { low: 2, medium: 2, high: 2 });
+  assert.deepEqual([...simulatedSigners.keys()].sort(), desiredCosigners.map((s) => s.publicKey()).sort());
+
+  const submitted = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: partial.xdr,
+    signerPublicKey: removed.publicKey(),
+    secretKey: removed.secret(),
+  });
+  assert.equal(submitted.submitted, true);
+  assert.ok(submittedXdr);
+});
+
+test("multisig recovery transitions lower the high threshold before removing signers", async (t) => {
+  const account = Keypair.random();
+  const cosigner = Keypair.random();
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: cosigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [{ key: account.publicKey(), weight: 1 }],
+      low: 0,
+      medium: 0,
+      high: 0,
+    },
+  });
+  const tx = TransactionBuilder.fromXdr(outcome.xdr, Networks.TESTNET);
+
+  assert.equal(tx.operations[0].type, "setOptions");
+  assert.equal(tx.operations[0].highThreshold, 0);
+  assert.equal(tx.operations[1].type, "setOptions");
+  assert.equal(tx.operations[1].signer.ed25519PublicKey, cosigner.publicKey());
+  assert.equal(tx.operations[1].signer.weight, 0);
+  assert.equal(tx.operations.at(-1).highThreshold, 0);
+  assert.equal(outcome.submitted, false);
+});
+
+test("recovery restores a zero-weight master before removing recovery signers", async (t) => {
+  const account = Keypair.random();
+  const recovery = Keypair.random();
+  let submittedXdr = null;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: account.publicKey(), weight: 0, type: "ed25519_public_key" },
+          { key: recovery.publicKey(), weight: 2, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submittedXdr = new URLSearchParams(init.body).get("tx");
+      return new Response(JSON.stringify({ hash: "recovered" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const partial = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [{ key: account.publicKey(), weight: 1 }],
+      low: 0,
+      medium: 0,
+      high: 0,
+    },
+  });
+  const partialTx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);
+
+  assert.equal(partial.submitted, false);
+  assert.equal(partialTx.operations[0].type, "setOptions");
+  assert.equal(partialTx.operations[0].masterWeight, 1);
+
+  const recovered = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: partial.xdr,
+    signerPublicKey: recovery.publicKey(),
+    secretKey: recovery.secret(),
+  });
+
+  assert.equal(recovered.submitted, true);
+  assert.equal(recovered.hash, "recovered");
+  assert.ok(submittedXdr);
+  const submitted = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET);
+  const final = submitted.operations.at(-1);
+  assert.equal(final.type, "setOptions");
+  assert.equal(final.masterWeight, 1);
+  assert.equal(final.lowThreshold, 0);
+  assert.equal(final.medThreshold, 0);
+  assert.equal(final.highThreshold, 0);
+});
+
+test("threshold classification follows each operation's actual Stellar security level", () => {
+  const source = Keypair.random();
+  const thresholds = { low_threshold: 1, med_threshold: 2, high_threshold: 3 };
+  const homeDomain = buildReviewTransaction(source, [
+    Operation.setOptions({ homeDomain: "example.com" }),
+  ]);
+  const signerChange = buildReviewTransaction(source, [
+    Operation.setOptions({
+      signer: { ed25519PublicKey: Keypair.random().publicKey(), weight: 1 },
+    }),
+  ]);
+  const claim = buildReviewTransaction(source, [
+    Operation.claimClaimableBalance({ balanceId: `00000000${"00".repeat(32)}` }),
+  ]);
+
+  assert.equal(requiredWeightForTx(homeDomain, thresholds), 2);
+  assert.equal(requiredWeightForTx(signerChange, thresholds), 3);
+  assert.equal(requiredWeightForTx(claim, thresholds), 1);
+});
+
+test("cosigning requires every effective source account to meet its own threshold", async (t) => {
+  const transactionSource = Keypair.random();
+  const operationSource = Keypair.random();
+  const secondOperationSigner = Keypair.random();
+  const tx = buildReviewTransaction(transactionSource, [
+    Operation.payment({
+      source: operationSource.publicKey(),
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(transactionSource);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    calls.push({ url: stringUrl, init });
+    if (stringUrl.endsWith(`/accounts/${transactionSource.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{ key: transactionSource.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${operationSource.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: operationSource.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: secondOperationSigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      return new Response(JSON.stringify({ hash: "must-not-submit" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: tx.toXdr(),
+    signerPublicKey: operationSource.publicKey(),
+    secretKey: operationSource.secret(),
+  });
+
+  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.authorizations.length, 2);
+  assert.equal(
+    outcome.authorizations.find((entry) => entry.source === transactionSource.publicKey()).satisfied,
+    true,
+  );
+  assert.equal(
+    outcome.authorizations.find((entry) => entry.source === operationSource.publicKey()).satisfied,
+    false,
+  );
+  assert.equal(calls.some((call) => call.url.endsWith("/transactions")), false);
+});
+
+test("cosigning evaluates signer and threshold mutations in operation order", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.setOptions({ medThreshold: 2 }),
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(source);
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: "must-not-submit" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: tx.toXdr(),
+    signerPublicKey: source.publicKey(),
+    secretKey: source.secret(),
+  });
+
+  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.authorizations[0].satisfied, false);
+  assert.equal(submitted, false);
+});
+
+test("cosigning applies earlier signer-weight changes before later authorization checks", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.setOptions({ masterWeight: 0 }),
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(source);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    throw new Error("transaction must not be submitted");
+  });
+
+  const outcome = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: tx.toXdr(),
+    signerPublicKey: source.publicKey(),
+    secretKey: source.secret(),
+  });
+
+  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.authorizations[0].satisfied, false);
+});
+
+test("cosigning never adds a redundant signature after every source is authorized", async (t) => {
+  const source = Keypair.random();
+  const redundantSigner = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(source);
+  let submittedSignatureCount = 0;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [
+          { key: source.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: redundantSigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      const submittedXdr = new URLSearchParams(init.body).get("tx");
+      submittedSignatureCount = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET).signatures.length;
+      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: tx.toXdr(),
+    signerPublicKey: redundantSigner.publicKey(),
+    secretKey: redundantSigner.secret(),
+  });
+
+  assert.equal(outcome.submitted, true);
+  assert.equal(outcome.addedSignature, false);
+  assert.equal(submittedSignatureCount, 1);
+});
+
+test("cosigning rejects a signer that cannot help any unsatisfied source", async (t) => {
+  const transactionSource = Keypair.random();
+  const redundantSigner = Keypair.random();
+  const operationSource = Keypair.random();
+  const operationCosigner = Keypair.random();
+  const tx = buildReviewTransaction(transactionSource, [
+    Operation.payment({
+      source: operationSource.publicKey(),
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(transactionSource);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${transactionSource.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [
+          { key: transactionSource.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: redundantSigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${operationSource.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: operationSource.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: operationCosigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    throw new Error("transaction must not be submitted");
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: redundantSigner.publicKey(),
+      secretKey: redundantSigner.secret(),
+    }),
+    /does not contribute.*unsatisfied source/i,
+  );
+  assert.equal(tx.signatures.length, 1);
+});
+
+test("zero thresholds still require a recognized transaction signature", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  let submittedSignatureCount = 0;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+        signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      const submittedXdr = new URLSearchParams(init.body).get("tx");
+      submittedSignatureCount = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET).signatures.length;
+      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await cosignTransaction({
+    network: "testnet",
+    confirmedNetwork: "testnet",
+    xdr: tx.toXdr(),
+    signerPublicKey: source.publicKey(),
+    secretKey: source.secret(),
+  });
+
+  assert.equal(outcome.submitted, true);
+  assert.equal(outcome.addedSignature, true);
+  assert.equal(submittedSignatureCount, 1);
+});
+
+test("cosigning fails closed when a required source has unsupported signer types", async (t) => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  const submitMock = t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        signers: [
+          { key: source.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: StrKey.encodeSha256Hash(new Uint8Array(32)), weight: 1, type: "sha256_hash" },
+        ],
+      }), { status: 200 });
+    }
+    throw new Error("transaction must not be submitted");
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      secretKey: source.secret(),
+    }),
+    /unsupported signer types/i,
+  );
+  assert.equal(submitMock.mock.callCount(), 1);
+});
+
+test("transaction review blocks unsupported v2 preconditions", () => {
+  const source = Keypair.random();
+  const builder = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  });
+  builder
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .setTimebounds(0, Math.floor(Date.now() / 1000) + 300)
+    .setLedgerbounds(100, 200)
+    .setMinAccountSequence("1")
+    .setMinAccountSequenceAge(30n)
+    .setMinAccountSequenceLedgerGap(2);
+  const review = reviewTransactionEnvelope(builder.build().toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /ledger bounds/i);
+  assert.match(review.blockingReasons.join(" "), /minimum account sequence/i);
+  assert.match(review.blockingReasons.join(" "), /sequence age/i);
+  assert.match(review.blockingReasons.join(" "), /sequence ledger gap/i);
+});
+
+test("offline authorization rechecks expiry at the moment of signing", () => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ], { timeout: 200 });
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet", 100);
+
+  assert.equal(review.signable, true);
+  assert.throws(
+    () => assertReviewCanBeSigned(review, true, 200),
+    /expired/i,
+  );
+});
+
+test("trustline flag review distinguishes unchanged flags from cleared flags", () => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.setTrustLineFlags({
+      trustor: Keypair.random().publicKey(),
+      asset: new Asset("USDC", source.publicKey()),
+      flags: { authorized: true },
+    }),
+  ]);
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+  const lines = new Map(review.operations[0].lines.map((line) => [line.label, line.value]));
+
+  assert.equal(lines.get("Authorized"), "true");
+  assert.equal(lines.get("Maintain liabilities"), "Unchanged");
+  assert.equal(lines.get("Clawback enabled"), "Unchanged");
+});
+
+test("review never advertises classic operations unsupported by Trezor as signable", () => {
+  const source = Keypair.random();
+  const asset = new Asset("USDC", source.publicKey());
+  const tx = buildReviewTransaction(source, [
+    Operation.setTrustLineFlags({
+      trustor: Keypair.random().publicKey(),
+      asset,
+      flags: { authorized: true },
+    }),
+    Operation.clawback({
+      asset,
+      from: Keypair.random().publicKey(),
+      amount: "1",
+    }),
+    Operation.clawbackClaimableBalance({ balanceId: `00000000${"00".repeat(32)}` }),
+  ]);
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.deepEqual(review.operations.map((operation) => operation.signable), [false, false, false]);
+  assert.match(review.blockingReasons.join(" "), /setTrustLineFlags/i);
+  assert.match(review.blockingReasons.join(" "), /clawback/i);
+});
+
+test("review blocks signed-payload signer mutations unsupported by Trezor", () => {
+  const source = Keypair.random();
+  const signedPayload = StrKey.encodeSignedPayload(
+    new xdr.SignerKeyEd25519SignedPayload({
+      ed25519: Keypair.random().rawPublicKey(),
+      payload: new Uint8Array([1, 2, 3]),
+    }).toXdr(),
+  );
+  const tx = buildReviewTransaction(source, [
+    Operation.setOptions({
+      signer: { ed25519SignedPayload: signedPayload, weight: 1 },
+    }),
+  ]);
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.equal(review.operations[0].signable, false);
+  assert.match(review.blockingReasons.join(" "), /signed.payload.*Trezor/i);
+});
+
+test("review blocks allowTrust maintain-liabilities authorization unsupported by Trezor", () => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.allowTrust({
+      trustor: Keypair.random().publicKey(),
+      assetCode: "USDC",
+      authorize: 2,
+    }),
+  ]);
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.equal(review.operations[0].signable, false);
+  assert.match(review.blockingReasons.join(" "), /maintain.liabilities.*Trezor/i);
+});
+
+test("allowTrust review normalizes a muxed operation source to the issuer G-address", () => {
+  const issuer = Keypair.random();
+  const muxedIssuer = new MuxedAccount(new Account(issuer.publicKey(), "0"), "42");
+  const tx = new TransactionBuilder(new Account(Keypair.random().publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.allowTrust({
+      source: muxedIssuer.accountId(),
+      trustor: Keypair.random().publicKey(),
+      assetCode: "USD",
+      authorize: true,
+    }))
+    .setTimeout(300)
+    .build();
+
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+  const assetLine = review.operations[0].lines.find((line) => line.label === "Asset");
+
+  assert.equal(assetLine?.value, `USD:${issuer.publicKey()}`);
+});
+
+test("review blocks time bounds Trezor cannot represent exactly", () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+    timebounds: { minTime: "0", maxTime: "9007199254740992" },
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /time bounds.*Trezor.*exact/i);
+});
+
+test("review blocks imported envelopes without time bounds", () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .setTimeout(300)
+    .build();
+  const envelope = tx.toEnvelope();
+  envelope.v1.tx.cond = xdr.Preconditions.precondNone();
+  const review = reviewTransactionEnvelope(envelope.toXdr("base64"), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /time bounds.*required.*Trezor/i);
+});
+
+test("review blocks invalid UTF-8 text memo bytes and preserves their hex identity", () => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  const envelope = tx.toEnvelope();
+  envelope.v1.tx.memo = xdr.Memo.memoText(new Uint8Array([0xff, 0xfe]));
+  const review = reviewTransactionEnvelope(envelope.toXdr("base64"), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.deepEqual(review.memo, { type: "text", value: "fffe" });
+  assert.match(review.memoText, /text.*fffe/i);
+  assert.match(review.blockingReasons.join(" "), /text memo.*UTF-8.*Trezor/i);
+});
+
+test("review blocks zero-operation envelopes", () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  }).setTimeout(300).build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /at least one operation/i);
+});
+
+test("offline source authorization normalizes a muxed source to its base account", () => {
+  const source = Keypair.random();
+  const muxed = new MuxedAccount(new Account(source.publicKey(), "0"), "42");
+  const tx = new TransactionBuilder(muxed, {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .setTimeout(300)
+    .build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.deepEqual(review.effectiveSources, [source.publicKey()]);
+  assert.doesNotThrow(() => assertReviewCanBeSigned(review, true));
+});
+
+test("offline authorization accepts a delegated positive-weight cosigner", async (t) => {
+  assert.equal(typeof multisig.assertCanAddTransactionSignature, "function");
+  const source = Keypair.random();
+  const delegated = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [
+      { key: source.publicKey(), weight: 0, type: "ed25519_public_key" },
+      { key: delegated.publicKey(), weight: 1, type: "ed25519_public_key" },
+    ],
+  }), { status: 200 }));
+
+  await assert.doesNotReject(multisig.assertCanAddTransactionSignature({
+    transaction: tx,
+    network: "testnet",
+    signerPublicKey: delegated.publicKey(),
+  }));
+});
+
+test("offline authorization rejects a zero-weight master before key access", async (t) => {
+  assert.equal(typeof multisig.assertCanAddTransactionSignature, "function");
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [{ key: source.publicKey(), weight: 0, type: "ed25519_public_key" }],
+  }), { status: 200 }));
+
+  await assert.rejects(
+    multisig.assertCanAddTransactionSignature({
+      transaction: tx,
+      network: "testnet",
+      signerPublicKey: source.publicKey(),
+    }),
+    /not a positive-weight signer/i,
+  );
+});
+
+test("offline authorization rejects an already-present signature without querying Horizon", async (t) => {
+  assert.equal(typeof multisig.assertCanAddTransactionSignature, "function");
+  const source = Keypair.random();
+  const delegated = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  tx.sign(delegated);
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("duplicate detection must happen before Horizon");
+  });
+
+  await assert.rejects(
+    multisig.assertCanAddTransactionSignature({
+      transaction: tx,
+      network: "testnet",
+      signerPublicKey: delegated.publicKey(),
+    }),
+    /already contains.*signature/i,
+  );
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("offline review blocks unsupported effects and requires network confirmation", () => {
+  const source = Keypair.random();
+  const outsider = Keypair.random();
+  const tx = buildReviewTransaction(source, [
+    Operation.beginSponsoringFutureReserves({ sponsoredId: outsider.publicKey() }),
+  ]);
+  const blockedReview = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+  assert.equal(blockedReview.signable, false);
+  assert.throws(
+    () => assertReviewCanBeSigned(blockedReview, true),
+    /unsupported operation/i,
+  );
+
+  const safeTx = buildReviewTransaction(source, [
+    Operation.payment({
+      destination: outsider.publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }),
+  ]);
+  const safeReview = reviewTransactionEnvelope(safeTx.toXdr(), "testnet");
+  assert.doesNotThrow(() => assertReviewCanBeSigned(safeReview, true));
+  assert.throws(
+    () => assertReviewCanBeSigned(safeReview, false),
+    /confirm testnet before signing/i,
+  );
+});
+
+test("transaction review does not claim the deprecated inflation operation is signable", () => {
+  const source = Keypair.random();
+  const tx = buildReviewTransaction(source, [Operation.inflation()]);
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /unsupported operation: inflation/i);
 });
 
 test("payment preserves an ID memo in the signed XDR", async (t) => {

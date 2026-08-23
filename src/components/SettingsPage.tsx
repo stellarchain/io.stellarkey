@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
 import {
     importKeystore,
@@ -14,6 +15,12 @@ import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
 import { shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
+import {
+  assertReviewCanBeSigned,
+  reviewTransactionEnvelope,
+  type TransactionReview,
+} from "@/lib/transaction-review";
+import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
 import type { AccountMeta } from "@/lib/types";
 import { useToast } from "./Toast";
@@ -120,6 +127,22 @@ export function SettingsPage({
   const [signedXdr, setSignedXdr] = useState<string | null>(null);
   const [airError, setAirError] = useState<string | null>(null);
   const [airBusy, setAirBusy] = useState(false);
+  const [airReview, setAirReview] = useState<TransactionReview | null>(null);
+  const [airReviewedXdr, setAirReviewedXdr] = useState("");
+  const [airAuthorizedSigner, setAirAuthorizedSigner] = useState<string | null>(null);
+  const [airNetworkConfirmed, setAirNetworkConfirmed] = useState(false);
+  const airReviewGeneration = useRef(0);
+  const airSignerReady = Boolean(
+    airReview &&
+    airReview.network === network &&
+    airReviewedXdr === airXdr.trim() &&
+    activeAccount &&
+    airAuthorizedSigner === activeAccount.publicKey,
+  );
+
+  useEffect(() => {
+    airReviewGeneration.current += 1;
+  }, [activeAccount?.publicKey, network]);
 
   async function handlePing() {
     setPinging(true);
@@ -133,16 +156,120 @@ export function SettingsPage({
     }
   }
 
+  async function handleAirReview() {
+    if (!activeAccount || !airXdr.trim()) return;
+    const reviewedXdr = airXdr.trim();
+    const reviewedNetwork = network;
+    const reviewedAccount = activeAccount.publicKey;
+    const requestGeneration = ++airReviewGeneration.current;
+    setAirBusy(true);
+    setAirError(null);
+    setSignedXdr(null);
+    setAirReview(null);
+    setAirReviewedXdr("");
+    setAirAuthorizedSigner(null);
+    try {
+      const review = reviewTransactionEnvelope(reviewedXdr, reviewedNetwork);
+      setAirReview(review);
+      setAirReviewedXdr(reviewedXdr);
+      setAirNetworkConfirmed(false);
+      if (!review.signable) {
+        triggerHaptic("error");
+        return;
+      }
+      await assertCanAddTransactionSignature({
+        transaction: review.transaction,
+        network: reviewedNetwork,
+        signerPublicKey: reviewedAccount,
+      });
+      if (requestGeneration !== airReviewGeneration.current) return;
+      setAirAuthorizedSigner(reviewedAccount);
+      triggerHaptic("selection");
+    } catch (error) {
+      if (requestGeneration !== airReviewGeneration.current) return;
+      triggerHaptic("error");
+      setAirError(error instanceof Error ? error.message : "Could not decode the envelope.");
+    } finally {
+      setAirBusy(false);
+    }
+  }
+
+  async function handleAirAuthorizationRetry() {
+    if (!activeAccount || !airReview || !airReviewedXdr) return;
+    if (airReview.network !== network || airReviewedXdr !== airXdr.trim()) {
+      setAirError("The envelope or selected network changed. Decode and review it again.");
+      return;
+    }
+    const requestGeneration = ++airReviewGeneration.current;
+    const reviewedAccount = activeAccount.publicKey;
+    setAirBusy(true);
+    setAirError(null);
+    setAirAuthorizedSigner(null);
+    try {
+      const refreshedReview = reviewTransactionEnvelope(airReviewedXdr, network);
+      if (!refreshedReview.signable) {
+        throw new Error(refreshedReview.blockingReasons.join(" "));
+      }
+      await assertCanAddTransactionSignature({
+        transaction: refreshedReview.transaction,
+        network,
+        signerPublicKey: reviewedAccount,
+      });
+      if (requestGeneration !== airReviewGeneration.current) return;
+      setAirReview(refreshedReview);
+      setAirAuthorizedSigner(reviewedAccount);
+      triggerHaptic("selection");
+    } catch (error) {
+      if (requestGeneration !== airReviewGeneration.current) return;
+      triggerHaptic("error");
+      setAirError(error instanceof Error ? error.message : "Signer authorization failed.");
+    } finally {
+      setAirBusy(false);
+    }
+  }
+
   async function handleAirSign() {
-    if (!activeAccount || !airXdr.trim() || !airPw) return;
+    if (!activeAccount || !airReview || !airSignerReady || !airPw) return;
+    const requestGeneration = airReviewGeneration.current;
+    const reviewedXdr = airReviewedXdr;
+    const reviewedNetwork = network;
+    const reviewedAccount = activeAccount.publicKey;
     setAirBusy(true);
     setAirError(null);
     try {
+      if (
+        airReview.network !== reviewedNetwork ||
+        reviewedXdr !== airXdr.trim() ||
+        airAuthorizedSigner !== reviewedAccount
+      ) {
+        throw new Error("The selected network changed. Review the envelope again before signing.");
+      }
+      const currentReview = reviewTransactionEnvelope(reviewedXdr, reviewedNetwork);
+      assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
+      await assertCanAddTransactionSignature({
+        transaction: currentReview.transaction,
+        network: reviewedNetwork,
+        signerPublicKey: reviewedAccount,
+      });
+      if (requestGeneration !== airReviewGeneration.current) {
+        throw new Error("The account or network changed. Review the envelope again before signing.");
+      }
       const secret = await revealSecret(activeAccount.id, airPw);
       if (!secret) throw new Error("Incorrect password.");
-      const { Keypair, TransactionBuilder } = await import("@stellar/stellar-sdk");
       const kp = Keypair.fromSecret(secret);
-      const tx = TransactionBuilder.fromXdr(airXdr.trim(), NETWORKS[network].networkPassphrase);
+      if (kp.publicKey() !== reviewedAccount) {
+        throw new Error("The unlocked key does not match the active account.");
+      }
+      await assertCanAddTransactionSignature({
+        transaction: currentReview.transaction,
+        network: reviewedNetwork,
+        signerPublicKey: reviewedAccount,
+      });
+      if (requestGeneration !== airReviewGeneration.current) {
+        throw new Error("The account or network changed. Review the envelope again before signing.");
+      }
+      const tx = currentReview.transaction;
+      assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
       tx.sign(kp);
       setSignedXdr(tx.toXdr());
       triggerHaptic("success");
@@ -307,7 +434,7 @@ export function SettingsPage({
                     : sub === "merge"
                       ? "Merge Account"
                       : sub === "airsigner"
-                            ? "Air-Gapped Signer"
+                            ? "Local XDR Signer"
                             : sub === "dapps"
                               ? "Connected dApps"
                               : sub === "soroban"
@@ -406,7 +533,8 @@ export function SettingsPage({
                   <RowButton
                     icon={<IconLock size={16} />}
                     tint="#5E5CE6"
-                    label="Air-Gapped Cold QR Signer"
+                    label="Local XDR Signer"
+                    sub="Review online, sign locally, never submit"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
@@ -867,11 +995,13 @@ export function SettingsPage({
         </div>
       )}
 
-      {/* ---------- AIR-GAPPED TRANSACTION SIGNER ---------- */}
+      {/* ---------- LOCAL TRANSACTION SIGNER ---------- */}
       {sub === "airsigner" && (
         <div className="space-y-4">
           <p className="text-[13px] text-neutral-300 leading-relaxed">
-            Sign raw Stellar transaction envelopes offline with zero network connectivity. Perfect for air-gapped cold storage.
+            Sign an imported envelope locally without submitting it. Current signer weights are
+            verified through Horizon before the encrypted key is requested; the key never leaves
+            this device.
           </p>
 
           <Field label="Unsigned Transaction XDR" hint="Paste transaction envelope">
@@ -880,37 +1010,154 @@ export function SettingsPage({
               placeholder="AAAAAG..."
               value={airXdr}
               onChange={(e) => {
+                airReviewGeneration.current += 1;
                 setAirXdr(e.target.value);
                 setSignedXdr(null);
+                setAirReview(null);
+                setAirReviewedXdr("");
+                setAirAuthorizedSigner(null);
+                setAirNetworkConfirmed(false);
+                setAirPw("");
+                setAirError(null);
               }}
               className="input mono text-[12px] resize-none"
             />
           </Field>
 
-          <Field label="Wallet Password" hint="To unlock your private key in memory">
-            <input
-              type="password"
-              placeholder="Enter password"
-              value={airPw}
-              onChange={(e) => setAirPw(e.target.value)}
-              className="input text-[13.5px]"
-            />
-          </Field>
+          {!airReview && (
+            <Button
+              className="w-full"
+              loading={airBusy}
+              disabled={!airXdr.trim() || airBusy}
+              onClick={() => void handleAirReview()}
+            >
+              Decode & Review Transaction
+            </Button>
+          )}
+
+          {airReview && (
+            <div className="space-y-3">
+              <div className="panel-inset divide-y divide-white/[0.08] px-4 text-[12.5px]">
+                <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="text-neutral-400">Selected network</span>
+                  <span className="font-semibold text-white">{airReview.networkLabel}</span>
+                </div>
+                <div className="space-y-1 py-2.5">
+                  <span className="text-neutral-400">Transaction source</span>
+                  <p className="mono break-all text-[11px] text-neutral-200">{airReview.source}</p>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="text-neutral-400">Fee</span>
+                  <span className="mono text-neutral-200">{airReview.feeXlm} XLM</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="text-neutral-400">Memo</span>
+                  <span className="mono break-all text-right text-neutral-200">
+                    {airReview.memoText ?? "None"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="text-neutral-400">Time bounds</span>
+                  <span className="mono text-right text-neutral-200">
+                    {airReview.timeBounds
+                      ? `${airReview.timeBounds.minTime} – ${airReview.timeBounds.maxTime ?? "no expiry"}`
+                      : "None"}
+                  </span>
+                </div>
+              </div>
+
+              {airReview.operations.map((operation, index) => (
+                <div
+                  key={`${operation.type}-${index}`}
+                  className={`rounded-2xl border p-3.5 ${
+                    operation.signable
+                      ? "border-white/[0.08] bg-white/[0.03]"
+                      : "border-[#FF453A]/30 bg-[#FF453A]/[0.06]"
+                  }`}
+                >
+                  <p className="text-[13px] font-semibold text-white">
+                    {index + 1}. {operation.title}
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {operation.lines.map((line, lineIndex) => (
+                      <div key={`${line.label}-${lineIndex}`} className="text-[11.5px]">
+                        <p className="text-neutral-500">{line.label}</p>
+                        <p className="mono break-all text-neutral-200">{line.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {!airReview.signable && (
+                <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                  Signing blocked: {airReview.blockingReasons.join(" ")}
+                </div>
+              )}
+
+              {activeAccount && !airSignerReady && airReview.signable && airError && (
+                <div className="space-y-2">
+                  <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                    Signing blocked: current on-chain signer authorization could not be proven for
+                    the active account.
+                  </div>
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    disabled={airBusy}
+                    loading={airBusy}
+                    onClick={() => void handleAirAuthorizationRetry()}
+                  >
+                    Retry Authorization
+                  </Button>
+                </div>
+              )}
+
+              {airReview.signable &&
+                activeAccount &&
+                airSignerReady && (
+                  <>
+                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-3.5 text-[12px] leading-relaxed text-neutral-300">
+                      <input
+                        type="checkbox"
+                        checked={airNetworkConfirmed}
+                        onChange={(event) => setAirNetworkConfirmed(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 accent-[#0A84FF]"
+                      />
+                      <span>
+                        I confirm this envelope should execute on <strong>{airReview.networkLabel}</strong>.
+                        XDR itself does not encode a network.
+                      </span>
+                    </label>
+
+                    <Field label="Wallet Password" hint="Unlocked only after this review">
+                      <input
+                        type="password"
+                        placeholder="Enter password"
+                        value={airPw}
+                        onChange={(e) => setAirPw(e.target.value)}
+                        className="input text-[13.5px]"
+                      />
+                    </Field>
+
+                    <Button
+                      className="w-full"
+                      loading={airBusy}
+                      disabled={!airPw || !airNetworkConfirmed || airBusy}
+                      onClick={() => void handleAirSign()}
+                    >
+                      Sign Reviewed Transaction Locally
+                    </Button>
+                  </>
+                )}
+            </div>
+          )}
 
           {airError && (
             <div className="mt-2">
               <ErrorText message={airError} />
             </div>
           )}
-
-          <Button
-            className="w-full"
-            loading={airBusy}
-            disabled={!airXdr.trim() || !airPw || airBusy}
-            onClick={() => void handleAirSign()}
-          >
-            Sign Transaction Offline
-          </Button>
 
           {signedXdr && (
             <div className="fade-up panel-inset mt-4 p-4 space-y-2">

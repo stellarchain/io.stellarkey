@@ -41,6 +41,7 @@ mockTrezorMethod("stellarGetAddress", async () => ({
 }));
 
 const hardware = await import("../src/lib/hardware.ts");
+const { cosignTransaction } = await import("../src/lib/multisig.ts");
 
 test("rejects invalid Stellar derivation indices", () => {
   assert.throws(() => hardware.getStellarDerivationPath(-1), /index/i);
@@ -115,6 +116,64 @@ test("serializes the complete Stellar transaction fee for device signing", async
   await hardware.signTrezorTransaction(tx, "m/44'/148'/0'");
 
   assert.equal(signingRequest.transaction.fee, Number(tx.fee));
+});
+
+test("cosigning rechecks expiry after asynchronous Trezor signing", async (t) => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      asset: Asset.native(),
+      amount: "1",
+    }))
+    .setTimebounds(0, 200)
+    .build();
+  let nowMs = 100_000;
+  let submitted = false;
+  t.mock.method(Date, "now", () => nowMs);
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{ key: source.publicKey(), weight: 1, type: "ed25519_public_key" }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: "must-not-submit" }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+  mockTrezorMethod("stellarSignTransaction", async () => {
+    nowMs = 200_000;
+    return {
+      success: true,
+      payload: {
+        publicKey: rawPublicKeyHex(source.publicKey()),
+        signature: transactionSignatureHex(source, tx),
+      },
+    };
+  });
+
+  await assert.rejects(
+    cosignTransaction({
+      network: "testnet",
+      confirmedNetwork: "testnet",
+      xdr: tx.toXdr(),
+      signerPublicKey: source.publicKey(),
+      hardwareSigner: {
+        device: "trezor",
+        path: "m/44'/148'/0'",
+        publicKey: source.publicKey(),
+      },
+    }),
+    /expired/i,
+  );
+  assert.equal(submitted, false);
 });
 
 test("converts Stellar decimal amounts to stroops without floating-point loss", async () => {

@@ -14,7 +14,11 @@ import * as api from "@/lib/api";
 import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
 import * as msig from "@/lib/multisig";
-import type { CosignOutcome, MultisigConfig } from "@/lib/multisig";
+import type {
+  CosignOutcome,
+  MultisigConfig,
+  MultisigConfigOutcome,
+} from "@/lib/multisig";
 import {
   addStoredAccount,
   addHardwareAccount as addHardwareAccountVault,
@@ -197,9 +201,9 @@ interface WalletContextValue {
     intermediates: Asset[];
   }) => Promise<{ hash: string }>;
   /** Apply a multi-sig signer/threshold configuration to the active account */
-  applyMultisigConfig: (config: MultisigConfig) => Promise<{ hash: string }>;
+  applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
-  disableMultisig: () => Promise<{ hash: string }>;
+  disableMultisig: () => Promise<MultisigConfigOutcome>;
   /** Sign a payment with our key only and return the envelope XDR for co-signing */
   prepareCosignPayment: (params: {
     destination: string;
@@ -210,7 +214,7 @@ interface WalletContextValue {
     feeStroops?: number;
   }) => Promise<{ xdr: string }>;
   /** Co-sign a shared envelope XDR; submits automatically once weight suffices */
-  cosignTransaction: (xdr: string) => Promise<CosignOutcome>;
+  cosignTransaction: (xdr: string, confirmedNetwork: NetworkKey | null) => Promise<CosignOutcome>;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -981,8 +985,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         secretKey,
         hardwareSigner: hw,
       });
-      toast("Multi-sig configuration submitted — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Multi-sig update");
+      if (result.submitted && result.hash) {
+        toast("Multi-sig configuration submitted — confirming…", "info");
+        void confirmAndRefresh(result.hash, "Multi-sig update");
+      } else {
+        toast("Configuration signed — additional approval required", "info");
+      }
       return result;
     },
     [activeAccount, network, toast, confirmAndRefresh],
@@ -1001,8 +1009,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       secretKey,
       hardwareSigner: hw,
     });
-    toast("Multi-sig disabled — confirming…", "info");
-    void confirmAndRefresh(result.hash, "Multi-sig disabled");
+    if (result.submitted && result.hash) {
+      toast("Multi-sig disabled — confirming…", "info");
+      void confirmAndRefresh(result.hash, "Multi-sig disabled");
+    } else {
+      toast("Disable request signed — additional approval required", "info");
+    }
     return result;
   }, [activeAccount, network, toast, confirmAndRefresh]);
 
@@ -1030,12 +1042,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   );
 
   const cosignTransaction = useCallback(
-    async (xdr: string) => {
+    async (xdr: string, confirmedNetwork: NetworkKey | null) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
       const result = await msig.cosignTransaction({
         network,
+        confirmedNetwork,
         xdr,
         signerPublicKey: activeAccount.publicKey,
         secretKey,
