@@ -52,7 +52,7 @@ function RenameAccountInner({
           <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
             Preset &amp; Emoji
           </label>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex flex-wrap items-center gap-1.5">
             {[
               { emoji: "⚡", name: "Trading" },
               { emoji: "💼", name: "Treasury" },
@@ -90,11 +90,11 @@ function RenameAccountInner({
           />
         </Field>
 
-        <div className="flex gap-3 pt-1">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button className="flex-1" disabled={!label.trim()} onClick={handleSave}>
+          <Button disabled={!label.trim()} onClick={handleSave}>
             Save Label
           </Button>
         </div>

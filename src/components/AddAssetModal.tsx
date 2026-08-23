@@ -24,8 +24,8 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   // Multi-select: queued trustlines added atomically in ONE transaction
   const [selected, setSelected] = useState<Array<{ code: string; issuer: string }>>([]);
 
-  const existingCodes = useMemo(
-    () => new Set((balances ?? []).map((b) => b.code.toUpperCase())),
+  const existingAssets = useMemo(
+    () => new Set((balances ?? []).filter((b) => b.issuer).map((b) => `${b.code.toUpperCase()}:${b.issuer}`)),
     [balances],
   );
 
@@ -44,21 +44,21 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     triggerHaptic("selection");
     const iss =
       (network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
-    setSelected((prev) => {
-      const exists = prev.some(
-        (s) => `${s.code}:${s.issuer}` === `${asset.code}:${iss}`,
-      );
-      return exists
-        ? prev.filter((s) => `${s.code}:${s.issuer}` !== `${asset.code}:${iss}`)
-        : [...prev, { code: asset.code.toUpperCase(), issuer: iss }];
-    });
+    // Codes in the directory can be mixed-case (e.g. "yXLM"); the queue stores
+    // them uppercased, so the dedupe key must be normalized the same way.
+    const key = `${asset.code.toUpperCase()}:${iss}`;
+    setSelected((prev) =>
+      prev.some((s) => `${s.code}:${s.issuer}` === key)
+        ? prev.filter((s) => `${s.code}:${s.issuer}` !== key)
+        : [...prev, { code: asset.code.toUpperCase(), issuer: iss }],
+    );
   }
 
   function queueCustom() {
     triggerHaptic("medium");
     const c = code.trim().toUpperCase();
     const iss = issuer.trim();
-    if (!c || !isValidPublicAddress(iss)) {
+    if (!/^[A-Z0-9]{1,12}$/.test(c) || !isValidPublicAddress(iss)) {
       setError("Enter a valid asset code and issuer first.");
       return;
     }
@@ -129,13 +129,13 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         </p>
         <div className="grid max-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
           {filteredPopular.map((asset) => {
-            const alreadyAdded = existingCodes.has(asset.code.toUpperCase());
             const iss =
               (network === "mainnet"
                 ? asset.mainnetIssuer
                 : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
+            const alreadyAdded = existingAssets.has(`${asset.code.toUpperCase()}:${iss}`);
             const isSelected = selected.some(
-              (s) => `${s.code}:${s.issuer}` === `${asset.code}:${iss}`,
+              (s) => `${s.code}:${s.issuer}` === `${asset.code.toUpperCase()}:${iss}`,
             );
             const available = Boolean(iss);
 
@@ -195,7 +195,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           <Button
             variant="secondary"
             className="!h-9 shrink-0 !px-3 !text-[12px]"
-            disabled={!code.trim() || !isValidPublicAddress(issuer)}
+            disabled={!/^[A-Z0-9]{1,12}$/.test(code.trim().toUpperCase()) || !isValidPublicAddress(issuer)}
             onClick={queueCustom}
           >
             Queue
@@ -229,7 +229,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           ) : (
             <div className="scrollbar-none max-h-[120px] space-y-1 overflow-y-auto">
               {selected.map((s) => {
-                const known = lookupKnownAsset(s.code);
+                const known = lookupKnownAsset(s.code, s.issuer, network);
                 return (
                   <div
                     key={`${s.code}:${s.issuer}`}
@@ -298,7 +298,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer actions */}
-        <div className="mt-4 flex gap-3">
+        <div className="mt-6 flex gap-3">
           <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
@@ -372,13 +372,12 @@ function ConfirmInner({
       <ModalHeader title={title} subtitle="Please confirm this action" onClose={onClose} />
       <div className="p-6">
         <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
-        <div className="mt-6 flex gap-3">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
-            className="flex-1"
             onClick={() => {
               onConfirm();
               onClose();

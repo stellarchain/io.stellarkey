@@ -2,13 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { NETWORKS } from "@/lib/stellar";
+import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { fmtAmount, fmtFiat } from "@/lib/format";
-import { fetchIssuerDetails, getCachedAssetLogo, type IssuerDetails } from "@/lib/toml";
+import {
+  assetMetadataCacheKey,
+  fetchIssuerDetails,
+  getCachedAssetLogo,
+  selectCurrentAssetMetadata,
+  type BoundAssetMetadata,
+} from "@/lib/toml";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, CopyButton, ErrorText, Modal, ModalHeader } from "./ui";
+import { assetPriceKey } from "@/lib/prices";
+import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
+import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
 import { IconExternal, IconTrash } from "./icons";
 
 export function AssetDetailModal({
@@ -18,40 +26,24 @@ export function AssetDetailModal({
   asset: AssetBalance | null;
   onClose: () => void;
 }) {
-  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, balances } = useWallet();
+  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, fiatRates, minimumBalanceXlm } = useWallet();
+  const horizonUrl = getHorizonUrl(network);
+  const metadataIdentity = asset && !asset.isNative && asset.issuer
+    ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)
+    : null;
   const [prices, setPrices] = useState<Record<string, number>>({});
-  const [logoUrl, setLogoUrl] = useState<string | null>(() =>
-    asset && !asset.isNative && asset.issuer
-      ? getCachedAssetLogo(asset.code, asset.issuer)
+  const [metadata, setMetadata] = useState<BoundAssetMetadata | null>(() =>
+    metadataIdentity && asset?.issuer
+      ? {
+          identity: metadataIdentity,
+          logoUrl: getCachedAssetLogo(asset.code, asset.issuer, horizonUrl),
+          issuerInfo: null,
+        }
       : null,
   );
-  const [issuerInfo, setIssuerInfo] = useState<IssuerDetails | null>(null);
-  const [alertTarget, setAlertTarget] = useState<string>(() => {
-    if (!asset || typeof window === "undefined") return "";
-    try {
-      const alerts = JSON.parse(window.localStorage.getItem("wallet.price-alerts.v1") ?? "{}");
-      return alerts[asset.code] ? String(alerts[asset.code]) : "";
-    } catch {
-      return "";
-    }
-  });
-  const [showAlertInput, setShowAlertInput] = useState(false);
-
-  function handleSaveAlert(target: string) {
-    setAlertTarget(target);
-    if (!asset || typeof window === "undefined") return;
-    try {
-      const alerts = JSON.parse(window.localStorage.getItem("wallet.price-alerts.v1") ?? "{}");
-      if (target.trim() && parseFloat(target) > 0) {
-        alerts[asset.code] = parseFloat(target);
-      } else {
-        delete alerts[asset.code];
-      }
-      window.localStorage.setItem("wallet.price-alerts.v1", JSON.stringify(alerts));
-    } catch {
-      // Ignore
-    }
-  }
+  const currentMetadata = selectCurrentAssetMetadata(metadataIdentity, metadata);
+  const logoUrl = currentMetadata?.logoUrl ?? null;
+  const issuerInfo = currentMetadata?.issuerInfo ?? null;
 
   // Fetch USD price for this asset when the modal opens
   useEffect(() => {
@@ -59,7 +51,7 @@ export function AssetDetailModal({
     let alive = true;
     void (async () => {
       const { fetchAssetPrices } = await import("@/lib/prices");
-      const p = await fetchAssetPrices([asset.code]);
+      const p = await fetchAssetPrices([{ code: asset.code, issuer: asset.issuer, network }]);
       if (alive && Object.keys(p).length > 0) setPrices(p);
     })();
     return () => {
@@ -68,53 +60,53 @@ export function AssetDetailModal({
   }, [asset, network]);
 
   useEffect(() => {
-    if (!asset || asset.isNative || !asset.issuer) return;
+    if (!asset || asset.isNative || !asset.issuer || !metadataIdentity) return;
     const code = asset.code;
     const issuer = asset.issuer;
+    const identity = metadataIdentity;
     let alive = true;
+    const cachedLogo = getCachedAssetLogo(code, issuer, horizonUrl);
+    queueMicrotask(() => {
+      if (alive) {
+        setMetadata({ identity, logoUrl: cachedLogo, issuerInfo: null });
+      }
+    });
     void (async () => {
-      const details = await fetchIssuerDetails(code, issuer, NETWORKS[network].horizonUrl);
+      const details = await fetchIssuerDetails(code, issuer, horizonUrl);
       if (alive && details) {
-        setIssuerInfo(details);
-        if (details.logoUrl) setLogoUrl(details.logoUrl);
+        setMetadata((previous) => ({
+          identity,
+          logoUrl:
+            details.logoUrl ??
+            (previous?.identity === identity ? previous.logoUrl : null),
+          issuerInfo: details,
+        }));
       }
     })();
     return () => {
       alive = false;
     };
-  }, [asset, network]);
+  }, [asset, horizonUrl, metadataIdentity]);
 
   const unitPrice =
-    asset && asset.isNative
+    asset && asset.isNative && network === "mainnet"
       ? xlmPriceUsd
       : asset
-        ? prices[asset.code.trim().toUpperCase()] ?? null
+        ? prices[assetPriceKey(network, asset.code, asset.issuer)] ?? null
         : null;
   const totalUsd =
     asset && unitPrice !== null ? parseFloat(asset.balance) * unitPrice : null;
-  const trustlinesCount = (balances ?? []).filter((b) => !b.isNative).length;
-  const totalReserve = 1.0 + trustlinesCount * 0.5;
-  const spendableBalance = Math.max(0, parseFloat(asset?.balance ?? "0") - totalReserve).toFixed(4);
-  const [calcAmount, setCalcAmount] = useState("");
+  const balanceSummary = asset
+    ? assetDetailBalanceSummary(asset, minimumBalanceXlm)
+    : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!asset) return null;
 
-  const known = lookupKnownAsset(asset.code);
+  const known = lookupKnownAsset(asset.code, asset.issuer, network);
+  const sacContractId = deriveSacContractId(asset, NETWORKS[network].networkPassphrase);
   const balance = parseFloat(asset.balance);
-
-  // Approximate USD rate
-  const assetUsdRate = asset.isNative
-    ? xlmPriceUsd ?? 0.12
-    : asset.code === "USDC" || asset.code === "EURC"
-      ? 1.0
-      : asset.code === "AQUA"
-        ? 0.0012
-        : 0;
-
-  const parsedCalc = parseFloat(calcAmount || asset.balance);
-  const calculatedVal = !Number.isNaN(parsedCalc) && assetUsdRate > 0 ? parsedCalc * assetUsdRate : null;
 
   async function handleRemove() {
     if (!asset || !asset.issuer) return;
@@ -177,114 +169,48 @@ export function AssetDetailModal({
           {!privacyMode && unitPrice !== null && (
             <div className="mt-3 flex items-baseline justify-center gap-2">
               <span className="mono text-[14px] font-semibold text-[#30D158]">
-                {fmtFiat(unitPrice, fiatCurrency)}
+                {fmtFiat(unitPrice, fiatCurrency, fiatRates)}
               </span>
               <span className="text-[11px] text-neutral-500">per {asset.code}</span>
               <span className="text-neutral-600">·</span>
               <span className="mono text-[12px] font-medium text-neutral-300">
-                {fmtFiat(totalUsd ?? 0, fiatCurrency)} total
+                {fmtFiat(totalUsd ?? 0, fiatCurrency, fiatRates)} total
               </span>
             </div>
           )}
         </div>
 
-        {/* Stellar Reserve Health & Breakdown for Native XLM */}
-        {asset.isNative && (
+        {/* Liability-aware balance availability for every asset. */}
+        {balanceSummary && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2.5 text-[12px]">
             <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              <span>Account Reserve Breakdown</span>
-              <span className="mono text-[#30D158]">Healthy</span>
+              <span>Balance Availability</span>
+              <span className="mono text-neutral-300">{asset.code}</span>
             </div>
             <div className="space-y-1.5">
+              {asset.isNative && (
+                <div className="flex justify-between text-neutral-300">
+                  <span>Live Minimum Balance</span>
+                  <span className="mono">
+                    {balanceSummary.minimumBalance === null
+                      ? "Loading…"
+                      : `${fmtAmount(balanceSummary.minimumBalance)} XLM`}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-neutral-300">
-                <span>Base Account Reserve</span>
-                <span className="mono">1.0000 XLM</span>
-              </div>
-              <div className="flex justify-between text-neutral-300">
-                <span>Trustline Reserves ({trustlinesCount} × 0.5 XLM)</span>
-                <span className="mono">{(trustlinesCount * 0.5).toFixed(4)} XLM</span>
+                <span>Selling Liabilities</span>
+                <span className="mono">
+                  {fmtAmount(balanceSummary.sellingLiabilities)} {asset.code}
+                </span>
               </div>
               <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
                 <span>Spendable Balance</span>
-                <span className="mono text-[#30D158]">{spendableBalance} XLM</span>
+                <span className="mono text-[#30D158]">
+                  {fmtAmount(balanceSummary.spendable)} {asset.code}
+                </span>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Live Asset Valuation & Converter Box */}
-        {assetUsdRate > 0 && !privacyMode && (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              <span>Valuation Calculator</span>
-              <span className="mono text-[#30D158]">{fiatCurrency}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder={fmtAmount(asset.balance)}
-                value={calcAmount}
-                onChange={(e) => setCalcAmount(e.target.value.replace(/,/g, "."))}
-                className="input mono !h-8 text-[13px] flex-1"
-              />
-              <span className="text-[13px] font-medium text-neutral-300">
-                {asset.code} =
-              </span>
-              <span className="mono text-[14px] font-semibold text-white">
-                {calculatedVal !== null ? fmtFiat(calculatedVal, fiatCurrency) : "—"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Target Price Alert Box */}
-        {unitPrice !== null && (
-          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3 space-y-2 text-[12px]">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 font-semibold text-neutral-300">
-                <span>🔔 Price Target Alert</span>
-                {alertTarget && (
-                  <span className="text-[10px] rounded-full bg-[#0A84FF]/20 text-[#0A84FF] px-2 py-0.5 font-bold">
-                    Active: {fmtFiat(parseFloat(alertTarget), fiatCurrency)}
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setShowAlertInput((s) => !s);
-                }}
-                className="text-[11.5px] font-medium text-[#0A84FF] hover:underline"
-              >
-                {showAlertInput ? "Done" : alertTarget ? "Edit Alert" : "+ Set Alert"}
-              </button>
-            </div>
-            {showAlertInput && (
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder={`e.g. ${(unitPrice * 1.25).toFixed(3)}`}
-                  value={alertTarget}
-                  onChange={(e) => handleSaveAlert(e.target.value.replace(/[^0-9.]/g, ""))}
-                  className="input mono !h-8 text-[13px] flex-1"
-                />
-                {alertTarget && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      handleSaveAlert("");
-                    }}
-                    className="text-[11px] text-[#FF453A] hover:underline px-1"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -295,37 +221,33 @@ export function AssetDetailModal({
             </span>
           </Row>
           {(known?.anchorDomain || issuerInfo?.domain) && (
-            <Row label="Verified Domain">
+            <Row label="Issuer Domain">
               <a
                 href={`https://${known?.anchorDomain ?? issuerInfo?.domain}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-[13px] text-[#30D158] font-medium hover:underline"
+                className="flex items-center gap-1.5 text-[13px] text-neutral-200 font-medium hover:underline"
               >
                 <span>{known?.anchorDomain ?? issuerInfo?.domain}</span>
-                <span className="text-[9px] rounded bg-[#30D158]/15 px-1 py-0.5 font-bold uppercase tracking-wider">
-                  Verified
-                </span>
+                {(known || issuerInfo?.assetDeclared) && (
+                  <span className="text-[9px] rounded bg-[#30D158]/15 px-1 py-0.5 font-bold uppercase tracking-wider text-[#30D158]">
+                    Asset declared
+                  </span>
+                )}
               </a>
             </Row>
           )}
-          {issuerInfo?.orgName && (
+          {issuerInfo?.assetDeclared && issuerInfo.orgName && (
             <Row label="Organization">
               <span className="text-[13px] text-white font-medium">{issuerInfo.orgName}</span>
             </Row>
           )}
-          {known?.anchorDomain && (
-            <Row label="Compliance (SEP-0008)">
-              <span className="text-[12px] font-semibold text-[#30D158]">
-                ✓ Regulated & Asset Anchored
-              </span>
-            </Row>
-          )}
           {!asset.isNative && asset.issuer && (
             <Row label="Issuer">
-              <span className="mono text-[12px] break-all text-neutral-300">
-                {asset.issuer}
-              </span>
+              <HashValue
+                value={asset.issuer}
+                className="justify-end text-[12px] text-neutral-300"
+              />
             </Row>
           )}
           {asset.limit && (
@@ -339,13 +261,10 @@ export function AssetDetailModal({
             <span className="text-[13px] text-white capitalize">{NETWORKS[network].label}</span>
           </Row>
           <Row label="Soroban SAC ID">
-            <span className="mono text-[11px] text-neutral-400 truncate max-w-[200px]">
-              {asset.isNative
-                ? "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-                : asset.issuer
-                  ? `C${asset.issuer.slice(1, 10)}...${asset.issuer.slice(-6)}`
-                  : "Native WASM SAC"}
-            </span>
+            <HashValue
+              value={sacContractId}
+              className="justify-end text-[11px] text-neutral-400"
+            />
           </Row>
         </div>
 
@@ -358,22 +277,14 @@ export function AssetDetailModal({
         {/* Action Buttons */}
         <div className="mt-5 flex flex-wrap gap-2">
           <CopyButton
-            value={
-              asset.isNative
-                ? "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-                : asset.issuer ?? ""
-            }
-            label={asset.isNative ? "Copy SAC ID" : "Copy Issuer"}
+            value={sacContractId}
+            label="Copy SAC ID"
             className="chip flex-1 justify-center"
           />
           <a
             className="chip flex-1 justify-center"
             href={
-              asset.isNative
-                ? `${NETWORKS[network].explorerAccountUrl("CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC")}`
-                : asset.issuer
-                  ? NETWORKS[network].explorerAccountUrl(asset.issuer)
-                  : "#"
+              NETWORKS[network].explorerAccountUrl(sacContractId)
             }
             target="_blank"
             rel="noopener noreferrer"

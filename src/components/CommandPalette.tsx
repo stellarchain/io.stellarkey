@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
 import { IconSearch } from "./icons";
+import { MODAL_PANEL_CLASS } from "./ui";
 
 export interface PaletteAction {
   id: string;
@@ -55,7 +56,7 @@ function PaletteInner({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/75 p-4 pt-[15vh] backdrop-blur-md"
+      className="modal-overlay fixed inset-0 z-50 flex items-start justify-center bg-black/75 p-4 pt-[15vh] backdrop-blur-md"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {
           triggerHaptic("selection");
@@ -63,7 +64,7 @@ function PaletteInner({
         }
       }}
     >
-      <div className="fade-up w-full max-w-[540px] overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#121214]/95 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+      <div className={`modal-dialog w-full max-w-xl overflow-hidden ${MODAL_PANEL_CLASS}`}>
         <div className="flex items-center gap-3 border-b border-white/[0.08] px-5 py-4">
           <IconSearch size={18} className="text-neutral-400 shrink-0" />
           <input

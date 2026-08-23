@@ -6,7 +6,8 @@ import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { buildSep7PayUri } from "@/lib/payuri";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, CopyButton, Modal, ModalHeader } from "./ui";
+import { Button, CopyButton, HashValue, Modal, ModalHeader, Select } from "./ui";
+import { FiatValue } from "./FiatValue";
 import { IconAlert, IconDownload, IconShare } from "./icons";
 
 export function ReceiveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -99,7 +100,7 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
 
         {/* Dynamic Request Pill */}
         {showCustomRequest && requestAmount.trim() && (
-          <div className="fade-in mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
+          <div className="fade-up mb-3 flex items-center gap-1.5 rounded-full bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-3.5 py-1 text-[12px] font-semibold text-[#0A84FF]">
             <span>Requesting {requestAmount} {selectedAsset?.code ?? "XLM"}</span>
           </div>
         )}
@@ -120,9 +121,11 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <p className="mono mt-4 select-all break-all text-center text-[12.5px] leading-relaxed text-neutral-300 max-w-sm">
-          {address}
-        </p>
+        <HashValue
+          full
+          value={address}
+          className="mt-4 justify-center text-center text-[12.5px] leading-relaxed text-neutral-300"
+        />
 
         {/* Action buttons */}
         <div className="mt-4 flex flex-wrap justify-center items-center gap-2">
@@ -160,27 +163,23 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
 
         {/* Custom request configuration */}
         {showCustomRequest && (
-          <div className="fade-in mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3 text-left">
+          <div className="fade-up mt-4 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3 text-left">
             <p className="text-[12px] font-semibold text-white">Dynamic Payment Request (SEP-0007)</p>
             {balances && balances.length > 1 && (
               <div>
                 <label className="block text-[11px] font-medium text-neutral-400 mb-1">
                   Requested Asset
                 </label>
-                <select
+                <Select
                   value={selectedAssetKey}
-                  onChange={(e) => {
-                    triggerHaptic("selection");
-                    setSelectedAssetKey(e.target.value);
-                  }}
-                  className="input text-[13px] cursor-pointer"
-                >
-                  {balances.map((b) => (
-                    <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
-                      {b.code}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedAssetKey}
+                  ariaLabel="Requested asset"
+                  className="text-[13px]"
+                  options={(balances ?? []).map((b) => ({
+                    value: b.key,
+                    label: b.code,
+                  }))}
+                />
               </div>
             )}
             <div className="grid grid-cols-2 gap-2">
@@ -194,6 +193,13 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
                   inputMode="decimal"
                   value={requestAmount}
                   onChange={(e) => setRequestAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                />
+                <FiatValue
+                  amount={requestAmount}
+                  code={selectedAsset?.code ?? "XLM"}
+                  issuer={selectedAsset?.issuer}
+                  isNative={selectedAsset?.isNative}
+                  className="mt-1 block text-[11px] text-neutral-500"
                 />
               </div>
               <div>

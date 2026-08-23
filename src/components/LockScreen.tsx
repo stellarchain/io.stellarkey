@@ -5,10 +5,10 @@ import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { Button, ErrorText, Field } from "./ui";
-import { IconFingerprint, IconLedger, IconTrezor, LogoMark } from "./icons";
+import { IconTrezor, LogoMark } from "./icons";
 
 export function LockScreen() {
-  const { unlock, biometricsEnabled } = useWallet();
+  const { unlock } = useWallet();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,28 +29,6 @@ export function LockScreen() {
       window.setTimeout(() => setShaking(false), 450);
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function handleBiometricUnlock() {
-    triggerHaptic("selection");
-    if (typeof window !== "undefined" && window.PublicKeyCredential) {
-      try {
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        const cred = await navigator.credentials.get({
-          publicKey: {
-            challenge,
-            timeout: 60000,
-            userVerification: "preferred",
-          },
-        });
-        if (cred) {
-          triggerHaptic("success");
-        }
-      } catch {
-        // User cancel or fallback to password
-      }
     }
   }
 
@@ -97,30 +75,12 @@ export function LockScreen() {
             </Button>
           </form>
 
-          {biometricsEnabled && (
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => void handleBiometricUnlock()}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] py-2.5 text-[13px] font-medium text-white transition-colors hover:bg-white/[0.08]"
-              >
-                <IconFingerprint size={18} className="text-[#0A84FF]" />
-                <span>Unlock with Touch ID</span>
-              </button>
-            </div>
-          )}
-
           <div className="mt-3 pt-3 border-t border-white/[0.08] flex items-center justify-center gap-2">
             <span className="text-[11px] text-neutral-400 font-medium flex items-center gap-1.5">
               <span>Hardware Backed:</span>
               <span className="flex items-center gap-1 text-emerald-400 font-semibold">
                 <IconTrezor size={13} />
                 <span>Trezor</span>
-              </span>
-              <span>·</span>
-              <span className="flex items-center gap-1 text-[#64D2FF] font-semibold">
-                <IconLedger size={13} />
-                <span>Ledger</span>
               </span>
             </span>
           </div>

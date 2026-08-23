@@ -21,6 +21,11 @@ export interface StoredAccount {
 export interface VaultFile {
   version: 1 | 2;
   mnemonic?: EncryptedPayload;
+  /**
+   * Password canary for vaults holding no secret key material (hardware /
+   * watch-only): lets unlock verify the password even with nothing to decrypt.
+   */
+  passwordCheck?: EncryptedPayload;
   accounts: StoredAccount[];
   archivedAccounts?: StoredAccount[];
   activeAccountId: string | null;
@@ -45,6 +50,7 @@ export interface AssetBalance {
   code: string;
   issuer: string | null;
   balance: string;
+  sellingLiabilities: string;
   limit: string | null;
   isNative: boolean;
 }
@@ -56,6 +62,7 @@ export interface ActivityItem {
   direction: "in" | "out" | "neutral";
   amount: string | null;
   assetCode: string | null;
+  assetIssuer: string | null;
   counterparty: string | null;
   hash: string;
   createdAt: string;

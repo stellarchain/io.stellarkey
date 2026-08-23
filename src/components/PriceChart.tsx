@@ -85,10 +85,10 @@ export function PriceChart({
 
   return (
     <div className="relative select-none">
-      {/* Interactive Price HUD */}
-      <div className="mb-2 flex items-baseline justify-between min-h-[28px]">
+      {/* Interactive Price HUD — fixed-height slot so hover never shifts layout */}
+      <div className="mb-2 flex h-[30px] items-center justify-between">
         {hoverPt ? (
-          <div className="fade-in flex items-baseline gap-2">
+          <div className="fade-up flex items-baseline gap-2">
             <span className="mono text-[20px] font-semibold text-white">
               {fmtUsd(hoverPt.p)}
             </span>
@@ -154,7 +154,7 @@ export function PriceChart({
 
         {/* Interactive hover line & dot */}
         {hoverPt && (
-          <g className="fade-in">
+          <g>
             <line
               x1={hoverPt.x}
               y1={0}

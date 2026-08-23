@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Stellar Wallet
 
-## Getting Started
+A self-custodial Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Vault encryption, transaction construction, and signing happen in the browser. The app talks directly to Stellar Horizon and never sends secret keys or recovery phrases to an application server.
 
-First, run the development server:
+## Supported capabilities
+
+- Mainnet and testnet balances, activity, trustlines, claimable balances, payments, batch payments, account merge, and Stellar DEX strict-send swaps
+- Exact seven-decimal Stellar amount arithmetic, typed memos, live base-reserve calculation, multisig envelopes, and SEP-7 unsigned payment links
+- Password-encrypted local vaults and backups, encrypted private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
+- Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup
+
+Ledger signing is not implemented and is intentionally unavailable. The app never creates a simulated Ledger account. Biometric unlock is also unavailable until it can be backed by a real passkey or smart-account authorization flow.
+
+## Asset and price safety
+
+Credit assets are identified by the complete `(network, code, issuer)` tuple. A matching code alone is never treated as verified or assigned a price. The built-in directory currently contains Circle USDC on mainnet/testnet and EURC on testnet only; custom assets always expose their issuer.
+
+Portfolio values are shown only for mainnet assets with a verified price mapping. Testnet balances are never assigned monetary value. XLM, verified asset prices, and fiat exchange rates come from live CoinGecko data and are cached briefly in memory.
+
+## Local development
+
+Requires Node.js 22 or later.
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Verification commands:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run audit:prod
+npm run build
+```
 
-## Learn More
+CI runs the same checks on pushes and pull requests.
 
-To learn more about Next.js, take a look at the following resources:
+## Security and deployment notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Serve the production build over HTTPS. Custom Horizon URLs should also use HTTPS.
+- Security headers are configured in `next.config.ts`, including CSP, clickjacking protection, MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect.
+- The CSP permits outbound HTTPS because users can configure a Horizon endpoint and asset metadata/logos may live on issuer domains.
+- Reset deletes all `polaris.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
+- SEP-7 callback requests and signed/origin-domain requests are rejected until the app can execute and verify those flows fully.
+- The Trezor dependency tree has no known high or critical production advisories after the pinned `protobufjs` remediation. Remaining low-severity upstream findings are enforced below the CI failure threshold.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This remains financial software: test every release with small amounts and verify addresses, asset issuers, memos, network, and transaction details on the signing device before broadcasting.

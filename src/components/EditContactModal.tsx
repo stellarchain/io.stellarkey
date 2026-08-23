@@ -3,63 +3,81 @@
 import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
-import { isValidPublicAddress } from "@/lib/vault";
-import type { Contact } from "@/lib/contacts";
+import { validateContact, type Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
 
 export function EditContactModal({
+  open,
   contact,
   onClose,
 }: {
+  open: boolean;
+  /** null → create mode ("New Contact"), Contact → edit mode. */
   contact: Contact | null;
   onClose: () => void;
 }) {
-  if (!contact) return null;
-  return <EditContactInner key={contact.address} contact={contact} onClose={onClose} />;
+  if (!open) return null;
+  return (
+    <EditContactInner key={contact?.address ?? "new"} contact={contact} onClose={onClose} />
+  );
 }
 
 function EditContactInner({
   contact,
   onClose,
 }: {
-  contact: Contact;
+  contact: Contact | null;
   onClose: () => void;
 }) {
-  const { addContact, removeContact } = useWallet();
+  const { contacts, addContact, removeContact } = useWallet();
   const { toast } = useToast();
-  const [name, setName] = useState(contact.name);
-  const [address, setAddress] = useState(contact.address);
+  const [name, setName] = useState(contact?.name ?? "");
+  const [address, setAddress] = useState(contact?.address ?? "");
   const [error, setError] = useState<string | null>(null);
+  const isEdit = contact !== null;
 
   function handleSave() {
     const trimmedName = name.trim();
     const trimmedAddr = address.trim();
-    if (!trimmedName) {
-      setError("Please enter a contact name.");
+    const err = validateContact(trimmedName, trimmedAddr);
+    if (err) {
+      setError(err);
       return;
     }
-    if (!isValidPublicAddress(trimmedAddr)) {
-      setError("Invalid Stellar public address (must start with G).");
+    const taken = contacts.some(
+      (c) =>
+        c.address.toLowerCase() === trimmedAddr.toLowerCase() &&
+        c.address.toLowerCase() !== (contact?.address ?? "").toLowerCase(),
+    );
+    if (taken) {
+      setError("That address is already saved.");
       return;
     }
-    // Update contact
-    removeContact(contact.address);
-    addContact({
-      name: trimmedName,
-      address: trimmedAddr,
-      favorite: contact.favorite,
-    });
+    if (isEdit) removeContact(contact.address);
+    addContact({ name: trimmedName, address: trimmedAddr, favorite: contact?.favorite });
     triggerHaptic("success");
-    toast("Contact updated", "success");
+    toast(isEdit ? "Contact updated" : "Contact saved", "success");
+    onClose();
+  }
+
+  function handleDelete() {
+    if (!contact) return;
+    removeContact(contact.address);
+    triggerHaptic("success");
+    toast("Contact deleted", "info");
     onClose();
   }
 
   return (
     <Modal open onClose={onClose}>
       <ModalHeader
-        title="Edit Contact"
-        subtitle="Update saved address book entry"
+        title={isEdit ? "Edit Contact" : "New Contact"}
+        subtitle={
+          isEdit
+            ? "Update saved contact"
+            : "Save a Stellar address for quick payments"
+        }
         onClose={onClose}
       />
       <div className="p-6 space-y-4">
@@ -71,6 +89,9 @@ function EditContactInner({
             placeholder="e.g. Alice"
             maxLength={24}
             autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSave();
+            }}
           />
         </Field>
         <Field label="Stellar Public Key">
@@ -81,17 +102,27 @@ function EditContactInner({
             placeholder="G..."
             spellCheck={false}
             autoComplete="off"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSave();
+            }}
           />
         </Field>
         <ErrorText message={error ?? ""} />
-        <div className="flex gap-3 pt-1">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button className="flex-1" onClick={handleSave}>
-            Save Changes
-          </Button>
+          <Button onClick={handleSave}>{isEdit ? "Save Changes" : "Save Contact"}</Button>
         </div>
+        {isEdit && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="w-full rounded-xl border border-[#FF453A]/25 bg-[#FF453A]/10 py-2.5 text-[13.5px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/15"
+          >
+            Delete Contact
+          </button>
+        )}
       </div>
     </Modal>
   );

@@ -4,7 +4,6 @@ import {
   Account,
   Asset,
   Keypair,
-  Memo,
   Operation,
   TransactionBuilder,
   BASE_FEE,
@@ -15,16 +14,23 @@ import type { ActivityItem, AssetBalance } from "./types";
 import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
 import { isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
+import { signHardwareTx, type HardwareSigner } from "./hardware";
+import { getHorizonJson, HorizonRequestError } from "./horizon";
+import {
+  buildStellarMemo,
+  calculateMinimumBalance,
+  toStellarAsset,
+  type StellarMemoInput,
+} from "./stellar-domain";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 
 export async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
+    return await getHorizonJson<T>(url);
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") return null;
+    throw error;
   }
 }
 
@@ -33,6 +39,7 @@ interface RawBalance {
   asset_code?: string;
   asset_issuer?: string;
   balance: string;
+  selling_liabilities?: string;
   limit?: string;
 }
 
@@ -56,6 +63,7 @@ export async function fetchBalances(
       code: isNative ? "XLM" : b.asset_code ?? "UNKNOWN",
       issuer: isNative ? null : b.asset_issuer ?? null,
       balance: b.balance,
+      sellingLiabilities: b.selling_liabilities ?? "0",
       limit: b.limit ?? null,
       isNative,
     };
@@ -64,6 +72,33 @@ export async function fetchBalances(
   }
 
   return nativeBal ? [nativeBal, ...list] : list;
+}
+
+export async function fetchMinimumNativeBalance(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<string> {
+  const horizonUrl = getHorizonUrl(network);
+  const [account, ledgers] = await Promise.all([
+    getJson<{
+      subentry_count?: number;
+      num_sponsoring?: number;
+      num_sponsored?: number;
+    }>(`${horizonUrl}/accounts/${publicKey}`),
+    getHorizonJson<{
+      _embedded?: { records?: Array<{ base_reserve_in_stroops?: string }> };
+    }>(`${horizonUrl}/ledgers?order=desc&limit=1`),
+  ]);
+  const baseReserveStroops = ledgers._embedded?.records?.[0]?.base_reserve_in_stroops;
+  if (!baseReserveStroops || !/^\d+$/.test(baseReserveStroops)) {
+    throw new Error("Horizon did not return the current base reserve.");
+  }
+  return calculateMinimumBalance({
+    baseReserveStroops,
+    subentryCount: account?.subentry_count ?? 0,
+    numSponsoring: account?.num_sponsoring ?? 0,
+    numSponsored: account?.num_sponsored ?? 0,
+  });
 }
 
 
@@ -130,19 +165,20 @@ export async function fetchClaimableBalances(
 
 export async function claimClaimableBalance(params: {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   balanceId: string;
 }): Promise<{ hash: string }> {
   const { network, secretKey, balanceId } = params;
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const tx = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
     fee: BASE_FEE,
     networkPassphrase: cfg.networkPassphrase,
   })
@@ -153,10 +189,9 @@ export async function claimClaimableBalance(params: {
     )
     .setTimeout(180)
     .build();
-  tx.sign(kp);
 
   try {
-    return await submitSignedTx(tx, network);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -164,7 +199,8 @@ export async function claimClaimableBalance(params: {
 
 export async function mergeAccount(params: {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   destination: string;
 }): Promise<{ hash: string }> {
   const { network, secretKey, destination } = params;
@@ -173,13 +209,13 @@ export async function mergeAccount(params: {
   }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Account does not exist on this network.");
 
-  const tx = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
     fee: BASE_FEE,
     networkPassphrase: cfg.networkPassphrase,
   })
@@ -190,10 +226,9 @@ export async function mergeAccount(params: {
     )
     .setTimeout(180)
     .build();
-  tx.sign(kp);
 
   try {
-    return await submitSignedTx(tx, network);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -257,16 +292,44 @@ interface RawOperation {
   asset_type?: string;
   asset_code?: string;
   asset_issuer?: string;
+  source_asset_type?: string;
   source_asset_code?: string;
+  source_asset_issuer?: string;
   source_amount?: string;
-  dest_asset_code?: string;
-  dest_amount?: string;
+  selling_asset_type?: string;
+  selling_asset_code?: string;
+  selling_asset_issuer?: string;
+  buying_asset_type?: string;
+  buying_asset_code?: string;
+  buying_asset_issuer?: string;
+  buy_amount?: string;
+  asset?: string;
+  balance_id?: string;
   into?: string;
 }
 
 function assetCodeOf(op: RawOperation): string | null {
   if (op.asset_type === "native") return "XLM";
   return op.asset_code ?? null;
+}
+
+function activityAssetFields(
+  assetType?: string,
+  assetCode?: string,
+  assetIssuer?: string,
+): Pick<ActivityItem, "assetCode" | "assetIssuer"> {
+  if (assetType === "native") return { assetCode: "XLM", assetIssuer: null };
+  if (assetCode && assetIssuer) return { assetCode, assetIssuer };
+  return { assetCode: null, assetIssuer: null };
+}
+
+function claimableAssetFields(asset?: string): Pick<ActivityItem, "assetCode" | "assetIssuer"> {
+  if (asset === "native") return { assetCode: "XLM", assetIssuer: null };
+  if (!asset) return { assetCode: null, assetIssuer: null };
+  const separator = asset.indexOf(":");
+  return separator > 0 && separator < asset.length - 1
+    ? { assetCode: asset.slice(0, separator), assetIssuer: asset.slice(separator + 1) }
+    : { assetCode: null, assetIssuer: null };
 }
 
 function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
@@ -287,6 +350,7 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         direction: isMe ? "in" : "out",
         amount: op.starting_balance ?? null,
         assetCode: "XLM",
+        assetIssuer: null,
         counterparty: isMe ? op.funder ?? null : op.account ?? null,
       };
     }
@@ -298,6 +362,7 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         direction: isIncoming ? "in" : "out",
         amount: op.amount ?? null,
         assetCode: assetCodeOf(op),
+        assetIssuer: op.asset_type === "native" ? null : op.asset_issuer ?? null,
         counterparty: isIncoming ? op.from ?? null : op.to ?? null,
       };
     }
@@ -308,8 +373,9 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         ...base,
         title: "DEX Swap",
         direction: "neutral",
-        amount: op.amount ?? op.dest_amount ?? null,
-        assetCode: op.dest_asset_code ?? (op.asset_type === "native" ? "XLM" : null),
+        amount: op.amount ?? null,
+        assetCode: assetCodeOf(op),
+        assetIssuer: op.asset_type === "native" ? null : op.asset_issuer ?? null,
         counterparty: isIncoming ? op.from ?? null : op.to ?? null,
       };
     }
@@ -318,8 +384,45 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         ...base,
         title: "Claimed Airdrop",
         direction: "in",
+        amount: null,
+        assetCode: null,
+        assetIssuer: null,
+        counterparty: null,
+      };
+    case "create_claimable_balance":
+      return {
+        ...base,
+        title: "Created Claimable Balance",
+        direction: "out",
         amount: op.amount ?? null,
-        assetCode: assetCodeOf(op),
+        ...claimableAssetFields(op.asset),
+        counterparty: null,
+      };
+    case "manage_sell_offer":
+    case "create_passive_sell_offer":
+      return {
+        ...base,
+        title: "Trade Offer",
+        direction: "neutral",
+        amount: op.amount ?? null,
+        ...activityAssetFields(
+          op.selling_asset_type,
+          op.selling_asset_code,
+          op.selling_asset_issuer,
+        ),
+        counterparty: null,
+      };
+    case "manage_buy_offer":
+      return {
+        ...base,
+        title: "Trade Offer",
+        direction: "neutral",
+        amount: op.buy_amount ?? null,
+        ...activityAssetFields(
+          op.buying_asset_type,
+          op.buying_asset_code,
+          op.buying_asset_issuer,
+        ),
         counterparty: null,
       };
     case "change_trust":
@@ -329,6 +432,7 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         direction: "neutral",
         amount: null,
         assetCode: op.asset_code ?? null,
+        assetIssuer: op.asset_issuer ?? null,
         counterparty: op.asset_issuer ?? null,
       };
     case "account_merge":
@@ -338,6 +442,7 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         direction: op.into === publicKey ? "in" : "out",
         amount: null,
         assetCode: "XLM",
+        assetIssuer: null,
         counterparty: op.into ?? null,
       };
     default:
@@ -345,8 +450,9 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
         ...base,
         title: op.type.replace(/_/g, " "),
         direction: "neutral",
-        amount: op.amount ?? null,
-        assetCode: assetCodeOf(op),
+        amount: null,
+        assetCode: null,
+        assetIssuer: null,
         counterparty: null,
       };
   }
@@ -386,7 +492,7 @@ export async function fundWithFriendbot(
   }
 }
 
-function minimalAccount(publicKey: string, sequence: string) {
+export function minimalAccount(publicKey: string, sequence: string) {
   return new Account(publicKey, sequence);
 }
 
@@ -412,6 +518,7 @@ export function explainSubmitError(err: unknown): string {
     if (txCode === "tx_insufficient_fee") return "Fee was too low for network conditions.";
     if (txCode === "tx_insufficient_balance") return "Insufficient balance to cover payment and reserve.";
     if (opCodes.includes("op_underfunded")) return "Insufficient balance for this payment.";
+    if (opCodes.includes("op_low_reserve")) return "The amount is below Stellar's current minimum balance requirement.";
     if (opCodes.includes("op_no_destination")) return "Destination account does not exist. Activate it with XLM first.";
     if (opCodes.includes("op_no_trust")) return "Destination account does not trust this asset.";
     if (opCodes.includes("op_line_full")) return "Destination trustline limit exceeded.";
@@ -419,6 +526,32 @@ export function explainSubmitError(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return "Transaction failed on the Stellar network.";
+}
+
+export function resolveSource(
+  secretKey: string | undefined,
+  hardwareSigner?: HardwareSigner,
+): { kp: Keypair | null; publicKey: string } {
+  if (hardwareSigner) return { kp: null, publicKey: hardwareSigner.publicKey };
+  if (!secretKey) throw new SendError("No signing credential available.");
+  const kp = Keypair.fromSecret(secretKey);
+  return { kp, publicKey: kp.publicKey() };
+}
+
+export async function signAndSubmit(
+  tx: Transaction,
+  network: NetworkKey,
+  kp: Keypair | null,
+  hardwareSigner?: HardwareSigner,
+): Promise<{ hash: string }> {
+  if (hardwareSigner) {
+    await signHardwareTx(tx, hardwareSigner);
+  } else if (kp) {
+    tx.sign(kp);
+  } else {
+    throw new SendError("No signing credential available.");
+  }
+  return submitSignedTx(tx, network);
 }
 
 export async function submitSignedTx(
@@ -446,35 +579,39 @@ export async function submitSignedTx(
 
 export interface SendPaymentParams {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   destination: string;
   amount: string;
   assetCode: string;
   issuer?: string | null;
+  memo?: StellarMemoInput;
+  /** @deprecated Use `memo` so the memo type is preserved. */
   memoText?: string;
   feeStroops?: number;
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<{ hash: string }> {
   const { network, secretKey, destination, amount, assetCode, issuer, memoText, feeStroops = 100 } = params;
+  const memo = buildStellarMemo(
+    params.memo ?? (memoText ? { type: "text", value: memoText } : null),
+  );
 
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
   }
-  if (memoText && new TextEncoder().encode(memoText).length > 28) {
-    throw new SendError("Memo must be 28 bytes or fewer.");
-  }
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
   const destExists = await getJson(`${horizonUrl}/accounts/${destination}`) !== null;
-  const isNative = assetCode === "XLM";
+  const paymentAsset = toStellarAsset(assetCode, issuer);
+  const isNative = paymentAsset.isNative();
 
   if (!destExists && !isNative) {
     throw new SendError(
@@ -482,7 +619,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
     );
   }
 
-  const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
     fee: String(feeStroops),
     networkPassphrase: cfg.networkPassphrase,
   });
@@ -499,18 +636,17 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
       Operation.payment({
         destination,
         amount: normalizeAmount(amount),
-        asset: isNative ? Asset.native() : new Asset(assetCode, issuer!),
+        asset: paymentAsset,
       }),
     );
   }
 
-  if (memoText) builder.addMemo(Memo.text(memoText));
+  if (memo) builder.addMemo(memo);
 
   const tx = builder.setTimeout(180).build();
-  tx.sign(kp);
 
   try {
-    return await submitSignedTx(tx, network);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -518,49 +654,95 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
 
 export async function sendBatchPayments(params: {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   payments: Array<{
     destination: string;
     amount: string;
     assetCode: string;
     issuer?: string | null;
   }>;
+  memo?: StellarMemoInput;
+  /** @deprecated Use `memo` so the memo type is preserved. */
   memoText?: string;
 }): Promise<{ hash: string }> {
   const { network, secretKey, payments, memoText } = params;
+  const memo = buildStellarMemo(
+    params.memo ?? (memoText ? { type: "text", value: memoText } : null),
+  );
   if (payments.length === 0) throw new SendError("No recipients provided.");
+  if (payments.length > 100) {
+    throw new SendError("A Stellar transaction can contain at most 100 operations.");
+  }
+
+  const prepared = payments.map((payment) => {
+    const destination = payment.destination.trim();
+    if (!isValidPublicAddress(destination)) {
+      throw new SendError("One of the recipients is not a valid Stellar address.");
+    }
+    return {
+      ...payment,
+      destination,
+      amount: normalizeAmount(payment.amount),
+      asset: toStellarAsset(payment.assetCode, payment.issuer),
+    };
+  });
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
-    fee: String(parseInt(BASE_FEE, 10) * payments.length),
+  const uniqueDestinations = [...new Set(prepared.map((payment) => payment.destination))];
+  const destinationEntries = await Promise.all(
+    uniqueDestinations.map(async (destination) => [
+      destination,
+      destination === publicKey || (await getJson(`${horizonUrl}/accounts/${destination}`)) !== null,
+    ] as const),
+  );
+  const destinationExists = new Map(destinationEntries);
+  const activatedInTransaction = new Set<string>();
+
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: BASE_FEE,
     networkPassphrase: cfg.networkPassphrase,
   });
 
-  for (const p of payments) {
-    const isNative = p.assetCode === "XLM";
-    builder.addOperation(
-      Operation.payment({
-        destination: p.destination,
-        amount: normalizeAmount(p.amount),
-        asset: isNative ? Asset.native() : new Asset(p.assetCode, p.issuer!),
-      }),
-    );
+  for (const payment of prepared) {
+    const exists = destinationExists.get(payment.destination) === true;
+    if (!exists && !payment.asset.isNative()) {
+      throw new SendError(
+        `Destination ${payment.destination} must be activated with XLM before receiving ${payment.asset.getCode()}.`,
+      );
+    }
+    if (!exists && !activatedInTransaction.has(payment.destination)) {
+      builder.addOperation(
+        Operation.createAccount({
+          destination: payment.destination,
+          startingBalance: payment.amount,
+        }),
+      );
+      activatedInTransaction.add(payment.destination);
+    } else {
+      builder.addOperation(
+        Operation.payment({
+          destination: payment.destination,
+          amount: payment.amount,
+          asset: payment.asset,
+        }),
+      );
+    }
   }
 
-  if (memoText) builder.addMemo(Memo.text(memoText));
+  if (memo) builder.addMemo(memo);
 
   const tx = builder.setTimeout(180).build();
-  tx.sign(kp);
 
   try {
-    return await submitSignedTx(tx, network);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -568,7 +750,8 @@ export async function sendBatchPayments(params: {
 
 export async function changeTrust(params: {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   code: string;
   issuer: string;
   add: boolean;
@@ -583,13 +766,13 @@ export async function changeTrust(params: {
     throw new SendError("Issuer is not a valid Stellar address.");
   }
 
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const tx = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
+  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
     fee: BASE_FEE,
     networkPassphrase: cfg.networkPassphrase,
   })
@@ -601,10 +784,9 @@ export async function changeTrust(params: {
     )
     .setTimeout(180)
     .build();
-  tx.sign(kp);
 
   try {
-    return await submitSignedTx(tx, network);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -617,7 +799,8 @@ export async function changeTrust(params: {
  */
 export async function changeTrustBatch(params: {
   network: NetworkKey;
-  secretKey: string;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
   assets: Array<{ code: string; issuer: string }>;
 }): Promise<{ hash: string; added: number }> {
   const { network, secretKey, assets } = params;
@@ -641,14 +824,14 @@ export async function changeTrustBatch(params: {
     seen.add(key);
   }
 
-  const kp = Keypair.fromSecret(secretKey);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
   const source = await getJson<{ sequence: string }>(
-    `${horizonUrl}/accounts/${kp.publicKey()}`,
+    `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const builder = new TransactionBuilder(minimalAccount(kp.publicKey(), source.sequence), {
-    fee: String(parseInt(BASE_FEE, 10) * assets.length),
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+    fee: BASE_FEE,
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -662,10 +845,9 @@ export async function changeTrustBatch(params: {
   }
 
   const tx = builder.setTimeout(180).build();
-  tx.sign(kp);
 
   try {
-    const result = await submitSignedTx(tx, network);
+    const result = await signAndSubmit(tx, network, kp, params.hardwareSigner);
     return { hash: result.hash, added: assets.length };
   } catch (err) {
     throw new SendError(explainSubmitError(err));

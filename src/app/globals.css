@@ -272,6 +272,14 @@ body::after {
     margin-bottom: 8px;
   }
 
+  .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-faint);
+    padding-bottom: 6px;
+  }
+
   .search-field {
     display: flex;
     align-items: center;
@@ -339,6 +347,7 @@ body::after {
     border-radius: 999px;
     padding: 7px 14px;
     cursor: pointer;
+    white-space: nowrap;
     transition: all 0.18s ease;
     background: rgba(118, 118, 128, 0.24);
   }
@@ -460,44 +469,23 @@ body::after {
     color: var(--color-ink);
   }
 
-  /* ---------- Sheets ---------- */
+  /* ---------- Overlays & popovers ---------- */
 
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 18px;
-    background: rgba(0, 0, 0, 0.55);
-    -webkit-backdrop-filter: blur(10px);
-    backdrop-filter: blur(10px);
-    animation: fadeIn 0.2s ease;
+  .modal-overlay {
+    animation: overlayIn 0.22s ease both;
   }
-
-  .modal-card {
-    width: 100%;
-    max-width: 430px;
-    max-height: calc(100vh - 36px);
-    overflow-y: auto;
-    background: #1f1f21;
-    border-radius: 22px;
-    box-shadow:
-      0 44px 90px -24px rgba(0, 0, 0, 1),
-      inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
-    animation: sheetUp 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+  .modal-overlay.closing {
+    animation: overlayOut 0.18s ease both;
   }
-  .modal-card.wide {
-    max-width: 560px;
+  .modal-dialog {
+    animation: dialogIn 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
   }
-
-  .grabber {
-    width: 36px;
-    height: 5px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.22);
-    margin: 8px auto 2px;
+  .modal-dialog.closing {
+    animation: dialogOut 0.16s ease both;
+  }
+  .menu-pop {
+    animation: menuPop 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+    transform-origin: var(--pop-origin, top);
   }
 
   /* ---------- List rows ---------- */
@@ -612,15 +600,32 @@ body::after {
     transform: translateX(100%);
   }
 }
-@keyframes fadeIn {
+@keyframes overlayIn {
   from {
     opacity: 0;
   }
 }
-@keyframes sheetUp {
+@keyframes overlayOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dialogIn {
   from {
     opacity: 0;
-    transform: translateY(22px) scale(0.96);
+    transform: translateY(16px) scale(0.96);
+  }
+}
+@keyframes dialogOut {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@keyframes menuPop {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-shift, -4px)) scale(0.97);
   }
 }
 @keyframes fadeUp {

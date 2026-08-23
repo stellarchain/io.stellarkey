@@ -3,11 +3,19 @@
 import { useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
-import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
+import { fmtAmount, isValidAmount, memoByteLength, shortenAddr } from "@/lib/format";
+import {
+  compareStellarAmounts,
+  splitStellarAmount,
+  sumStellarAmounts,
+  stroopsToAmount,
+} from "@/lib/stellar-domain";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { spendableAssetBalance } from "@/lib/transaction-intent";
+import { Button, ErrorText, Modal, ModalHeader, Select } from "./ui";
+import { FiatValue } from "./FiatValue";
 import { useToast } from "./Toast";
-import { IconCheck, IconChevronDown, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
+import { IconCheck, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
 
 interface RecipientRow {
   id: string;
@@ -28,7 +36,7 @@ export function BatchSendModal({
 }
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
-  const { balances, sendBatch, refresh, contacts, activeAccount } = useWallet();
+  const { balances, minimumBalanceXlm, sendBatch, refresh, contacts, activeAccount } = useWallet();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");
@@ -48,25 +56,35 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
     [options, assetKey],
   );
 
-  const totalAmount = useMemo(() => {
-    return rows.reduce((acc, r) => {
-      const v = parseFloat(r.amount);
-      return acc + (Number.isNaN(v) ? 0 : v);
-    }, 0);
-  }, [rows]);
+  const totalAmount = useMemo(
+    () => sumStellarAmounts(rows.filter((r) => isValidAmount(r.amount)).map((r) => r.amount)),
+    [rows],
+  );
 
-  const balanceNum = selectedAsset ? parseFloat(selectedAsset.balance) : 0;
   const validRows = rows.filter(
     (r) => isValidPublicAddress(r.destination.trim()) && isValidAmount(r.amount),
   );
+  const feeXlm = stroopsToAmount(BigInt(validRows.length * 100));
+  const maxSendable = selectedAsset?.isNative
+    ? minimumBalanceXlm === null
+      ? "0"
+      : spendableAssetBalance(selectedAsset, [minimumBalanceXlm, feeXlm])
+    : selectedAsset
+      ? spendableAssetBalance(selectedAsset)
+      : "0";
 
   const canSubmit =
     validRows.length > 0 &&
     validRows.length === rows.filter((r) => r.destination.trim() || r.amount.trim()).length &&
-    totalAmount <= balanceNum &&
+    compareStellarAmounts(totalAmount, maxSendable) <= 0 &&
+    memoByteLength(memo) <= 28 &&
     !busy;
 
   function handleAddRow() {
+    if (rows.length >= 100) {
+      toast("Stellar transactions support at most 100 operations.", "error");
+      return;
+    }
     triggerHaptic("selection");
     setRows((prev) => [...prev, { id: String(Date.now()), destination: "", amount: "" }]);
   }
@@ -90,11 +108,11 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   }
 
   function handleSplitEqually() {
-    if (rows.length === 0 || balanceNum <= 0) return;
+    if (rows.length === 0 || compareStellarAmounts(maxSendable, "0") <= 0) return;
     triggerHaptic("selection");
-    const splitAmount = (balanceNum / rows.length).toFixed(4).replace(/\.?0+$/, "");
-    setRows((prev) => prev.map((r) => ({ ...r, amount: splitAmount })));
-    toast(`Split ${fmtAmount(balanceNum)} ${selectedAsset?.code} equally`, "info");
+    const splitAmounts = splitStellarAmount(maxSendable, rows.length);
+    setRows((prev) => prev.map((r, index) => ({ ...r, amount: splitAmounts[index] })));
+    toast(`Split ${fmtAmount(maxSendable)} ${selectedAsset?.code} equally`, "info");
   }
 
   function handleParseCsv() {
@@ -112,8 +130,11 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
       }
     }
     if (parsed.length > 0) {
-      setRows(parsed);
+      setRows(parsed.slice(0, 100));
       setShowCsvInput(false);
+      if (parsed.length > 100) {
+        setError("Only the first 100 recipients were imported (Stellar's operation limit).");
+      }
       triggerHaptic("success");
     }
   }
@@ -130,7 +151,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
           assetCode: selectedAsset.code,
           issuer: selectedAsset.issuer,
         })),
-        memoText: memo.trim() || undefined,
+        memo: memo.trim() ? { type: "text", value: memo.trim() } : undefined,
       });
       setSuccess(true);
       triggerHaptic("success");
@@ -173,26 +194,16 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
               {/* Asset picker */}
               <div>
                 <label className="field-label">Asset</label>
-                <div className="relative">
-                  <select
-                    value={assetKey}
-                    onChange={(e) => {
-                      triggerHaptic("selection");
-                      setAssetKey(e.target.value);
-                    }}
-                    className="input pr-10 cursor-pointer text-[14px]"
-                  >
-                    {options.map((b) => (
-                      <option key={b.key} value={b.key} className="bg-neutral-900 text-white">
-                        {b.code} · Balance: {fmtAmount(b.balance)}
-                      </option>
-                    ))}
-                  </select>
-                  <IconChevronDown
-                    size={16}
-                    className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400"
-                  />
-                </div>
+                <Select
+                  value={assetKey}
+                  onChange={setAssetKey}
+                  ariaLabel="Asset"
+                  options={options.map((b) => ({
+                    value: b.key,
+                    label: b.code,
+                    sublabel: `Balance: ${fmtAmount(b.balance)}`,
+                  }))}
+                />
               </div>
 
               {/* Mode toggle: Manual vs CSV */}
@@ -247,25 +258,24 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                           Recipient #{idx + 1}
                         </span>
                         {contacts.length > 0 && (
-                          <select
-                            onChange={(e) => {
-                              if (e.target.value) handleSelectContactForRow(row.id, e.target.value);
+                          <Select
+                            size="sm"
+                            value=""
+                            onChange={(v) => {
+                              if (v) handleSelectContactForRow(row.id, v);
                             }}
-                            defaultValue=""
-                            className="bg-transparent text-[11px] font-medium text-[#0A84FF] outline-none cursor-pointer"
-                          >
-                            <option value="" disabled className="bg-neutral-900 text-neutral-400">
-                              + Contact
-                            </option>
-                            {contacts
+                            placeholder="+ Contact"
+                            ariaLabel="Fill from contact"
+                            className="!border-transparent !bg-transparent !px-1.5 !py-0.5 text-[11px] font-medium !text-[#0A84FF] hover:!bg-white/[0.06]"
+                            options={contacts
                               .slice()
                               .sort((a, b) => (a.favorite && !b.favorite ? -1 : !a.favorite && b.favorite ? 1 : 0))
-                              .map((c) => (
-                                <option key={c.address} value={c.address} className="bg-neutral-900 text-white">
-                                  {c.favorite ? "★ " : ""}{c.name} ({shortenAddr(c.address, 4, 4)})
-                                </option>
-                              ))}
-                          </select>
+                              .map((c) => ({
+                                value: c.address,
+                                label: `${c.favorite ? "★ " : ""}${c.name}`,
+                                sublabel: shortenAddr(c.address, 4, 4),
+                              }))}
+                          />
                         )}
                         {rows.length > 1 && (
                           <button
@@ -349,25 +359,32 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="flex justify-between text-white font-semibold">
                   <span>Total Disperse</span>
-                  <span className="mono">
-                    {totalAmount.toFixed(4)} {selectedAsset?.code}
+                  <span className="mono flex items-baseline gap-2">
+                    {fmtAmount(totalAmount)} {selectedAsset?.code}
+                    <FiatValue
+                      amount={totalAmount}
+                      code={selectedAsset?.code ?? "XLM"}
+                      issuer={selectedAsset?.issuer}
+                      isNative={selectedAsset?.isNative}
+                      className="text-[11px] font-normal text-neutral-400"
+                    />
                   </span>
                 </div>
-                {totalAmount > balanceNum && (
+                {compareStellarAmounts(totalAmount, maxSendable) > 0 && (
                   <p className="text-[11px] text-[#FF453A] pt-1">
-                    Exceeds available balance ({fmtAmount(balanceNum)} {selectedAsset?.code})
+                    Exceeds spendable balance ({fmtAmount(maxSendable)} {selectedAsset?.code})
                   </p>
                 )}
               </div>
 
               {error && (
-                <div className="mt-4">
+                <div>
                   <ErrorText message={error} />
                 </div>
               )}
 
               <Button
-                className="mt-6 w-full"
+                className="!mt-6 w-full"
                 loading={busy}
                 disabled={!canSubmit}
                 onClick={() => void handleBatchSend()}

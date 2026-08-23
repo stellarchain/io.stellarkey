@@ -1,33 +1,25 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import {
-  exportKeystoreUnlocked,
-  exportVaultBackup,
     importKeystore,
   revealSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
-import { testHorizonPing, fetchAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
-import { validateContact } from "@/lib/contacts";
+import { testHorizonPing } from "@/lib/api";
 import type { NetworkKey } from "@/lib/stellar";
-import { NETWORKS } from "@/lib/stellar";
+import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
 import { shortenAddr } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
 import type { AccountMeta } from "@/lib/types";
-import type { Contact } from "@/lib/contacts";
 import { useToast } from "./Toast";
-import { PaperWalletModal } from "./PaperWalletModal";
 import { RenameAccountModal } from "./RenameAccountModal";
-import { EditContactModal } from "./EditContactModal";
 import { ResetWalletModal } from "./ResetWalletModal";
-import { ConfirmModal } from "./AddAssetModal";
 import { AddAccountModal } from "./AddAccountModal";
-import { PhraseModal } from "./PhraseModal";
 import {
   Avatar,
   Button,
@@ -35,22 +27,16 @@ import {
   ErrorText,
   Field,
   NetworkBadge,
-  QrScannerBox,
   SegmentedControl,
   Spinner,
   Toggle,
 } from "./ui";
 import {
   IconCheck,
-  IconDownload,
-  IconExternal,
-  IconEye,
-  IconEyeOff,
   IconFingerprint,
   IconLock,
   IconPlus,
   IconRefresh,
-  IconShare,
   IconShield,
   IconTrash,
   IconWallet,
@@ -61,14 +47,10 @@ import {
 
 export type SettingsSub =
   | "root"
-  | "reveal"
   | "accounts"
-  | "contacts"
-  | "addContact"
   | "network"
   | "autolock"
   | "merge"
-  | "signers"
   | "airsigner"
   | "dapps"
   | "soroban"
@@ -76,7 +58,15 @@ export type SettingsSub =
   | "currency";
 type Sub = SettingsSub;
 
-export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
+export function SettingsPage({
+  initialSub = "root",
+  onOpenBackupWizard,
+  onOpenMultisigStudio,
+}: {
+  initialSub?: Sub;
+  onOpenBackupWizard?: () => void;
+  onOpenMultisigStudio?: () => void;
+}) {
   const {
     network,
     switchNetwork,
@@ -89,122 +79,47 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     restoreAccountByIndex,
     mergeAccount,
     fundFromFriendbot,
-    contacts,
-    addContact,
-    removeContact,
-    toggleContactFavorite,
     privacyMode,
     togglePrivacy,
     autoLockMs,
     changeAutoLockMs,
-    biometricsEnabled,
-    toggleBiometrics,
     fiatCurrency,
-    cycleFiatCurrency,
-    restoreWalletFromBackup,
+    changeFiatCurrency,
   } = useWallet();
   const { toast } = useToast();
 
   const [sub, setSub] = useState<Sub>(initialSub);
-
-  const [revealPw, setRevealPw] = useState("");
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [revealError, setRevealError] = useState<string | null>(null);
-  const [revealing, setRevealing] = useState(false);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
 
   const [scanning, setScanning] = useState(false);
   const [fundingTestnet, setFundingTestnet] = useState(false);
 
-  const [paperModalData, setPaperModalData] = useState<{
-    secretOrPhrase: string;
-    kind: "mnemonic" | "secret";
-  } | null>(null);
-
   const [editingAccount, setEditingAccount] = useState<AccountMeta | null>(null);
-
-  const [editingContact, setEditingContact] = useState<Contact | null>(null);
-
 
   const [mergeDest, setMergeDest] = useState("");
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const backupInputRef = useRef<HTMLInputElement>(null);
-  const [restoringBackup, setRestoringBackup] = useState(false);
-  const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
   const [ksPassword, setKsPassword] = useState("");
   const [ksError, setKsError] = useState<string | null>(null);
   const [ksBusy, setKsBusy] = useState(false);
 
-  const [contactName, setContactName] = useState("");
-
-  const [showContactScanner, setShowContactScanner] = useState(false);
-  const [contactAddr, setContactAddr] = useState("");
-  const [contactError, setContactError] = useState<string | null>(null);
-
   const [confirmReset, setConfirmReset] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [addAccountMode, setAddAccountMode] = useState<"generate" | "hardware">("generate");
   const [addAccountDevice, setAddAccountDevice] = useState<"ledger" | "trezor">("trezor");
-  const [showPhrase, setShowPhrase] = useState(false);
   const hasMnemonicVault = hasMnemonicAlias();
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [pinging, setPinging] = useState(false);
-
-  const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
-  const [signerLoading, setSignerLoading] = useState(false);
 
   const [airXdr, setAirXdr] = useState("");
   const [airPw, setAirPw] = useState("");
   const [signedXdr, setSignedXdr] = useState<string | null>(null);
   const [airError, setAirError] = useState<string | null>(null);
   const [airBusy, setAirBusy] = useState(false);
-  const [connectedDapps, setConnectedDapps] = useState<Array<{ name: string; origin: string; icon: string }>>([
-    { name: "StellarX DEX", origin: "https://www.stellarx.com", icon: "🌌" },
-    { name: "Soroswap AMM", origin: "https://soroswap.finance", icon: "🔄" },
-    { name: "Blend Protocol", origin: "https://blend.capital", icon: "💧" },
-  ]);
-
-  const [contractIdInput, setContractIdInput] = useState("");
-  const [contractMethod, setContractMethod] = useState("balance");
-  const [simulatingContract, setSimulatingContract] = useState(false);
-  const [simulationResult, setSimulationResult] = useState<string | null>(null);
-
-  function handleDisconnectDapp(origin: string) {
-    triggerHaptic("selection");
-    setConnectedDapps((prev) => prev.filter((d) => d.origin !== origin));
-    toast("dApp session disconnected", "info");
-  }
-
-  function handleDisconnectAllDapps() {
-    triggerHaptic("warning");
-    setConnectedDapps([]);
-    toast("All dApp sessions revoked", "success");
-  }
-
-  async function handleSimulateContract() {
-    if (!contractIdInput.trim()) return;
-    setSimulatingContract(true);
-    setSimulationResult(null);
-    triggerHaptic("selection");
-    try {
-      await new Promise((r) => setTimeout(r, 600));
-      setSimulationResult(JSON.stringify({
-        status: "SUCCESS",
-        auth: [{ address: activeAccount?.publicKey, type: "ContractAuth" }],
-        minResourceFee: "100 stroops",
-        returnValue: "Contract simulation completed with 0 errors.",
-      }, null, 2));
-      triggerHaptic("success");
-    } finally {
-      setSimulatingContract(false);
-    }
-  }
-
 
   async function handlePing() {
     setPinging(true);
@@ -215,17 +130,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       triggerHaptic("success");
     } finally {
       setPinging(false);
-    }
-  }
-
-  async function handleLoadSigners() {
-    if (!activeAccount) return;
-    setSignerLoading(true);
-    try {
-      const info = await fetchAccountSignerInfo(activeAccount.publicKey, network);
-      setSignerInfo(info);
-    } finally {
-      setSignerLoading(false);
     }
   }
 
@@ -256,25 +160,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     setSoundEnabled(on);
     if (on) triggerHaptic("selection");
   }
-
-  async function handleReveal() {
-    if (!activeAccount) return;
-    setRevealing(true);
-    setRevealError(null);
-    try {
-      setRevealed(await revealSecret(activeAccount.id, revealPw));
-      triggerHaptic("success");
-    } catch (e) {
-      triggerHaptic("error");
-      setRevealError(e instanceof Error ? e.message : "Failed to decrypt.");
-    } finally {
-      setRevealing(false);
-    }
-  }
-
-
-
-
 
   async function handleScanAndRestore() {
     setScanning(true);
@@ -335,61 +220,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
-  async function handleExportKeystore() {
-    if (!activeAccount) return;
-    const json = await exportKeystoreUnlocked(activeAccount.id);
-    if (!json) return;
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `wallet-${activeAccount.label.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    triggerHaptic("success");
-    toast("Encrypted keystore downloaded", "success");
-  }
-
-  function handleDownloadBackup() {
-    triggerHaptic("success");
-    try {
-      const json = exportVaultBackup();
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast("Encrypted wallet backup downloaded", "success");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Backup failed.", "error");
-    }
-  }
-
-  async function handleRestoreBackupFile(file: File) {
-    const json = await file.text();
-    setPendingBackupJson(json);
-  }
-
-  async function handleConfirmRestore() {
-    if (!pendingBackupJson) return;
-    setRestoringBackup(true);
-    try {
-      const result = await restoreWalletFromBackup(pendingBackupJson);
-      triggerHaptic("success");
-      toast(
-        `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"} — enter the backup's password to unlock`,
-        "success",
-      );
-      // No reload: phase flips to "locked" and LockScreen renders immediately
-    } catch (e) {
-      setRestoringBackup(false);
-      triggerHaptic("error");
-      toast(e instanceof Error ? e.message : "Restore failed.", "error");
-    }
-  }
-
   async function handleImportKeystoreFile(file: File) {
     setKeystoreJson(await file.text());
     setKsPassword("");
@@ -415,81 +245,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     }
   }
 
-  function handleExportContacts() {
-    if (contacts.length === 0) return;
-    triggerHaptic("selection");
-    const json = JSON.stringify(contacts, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `wallet-contacts-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    triggerHaptic("success");
-    toast("Contacts exported to JSON", "success");
-  }
-
-  async function handleShareContact(c: Contact) {
-    triggerHaptic("selection");
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      try {
-        await navigator.share({
-          title: `Stellar Contact: ${c.name}`,
-          text: `${c.name}: ${c.address}`,
-        });
-        triggerHaptic("success");
-      } catch {
-        void 0;
-      }
-    } else {
-      await navigator.clipboard.writeText(`${c.name}: ${c.address}`);
-      toast("Contact copied to clipboard", "info");
-      triggerHaptic("success");
-    }
-  }
-  async function handleImportContactsFile(file: File) {
-    try {
-      const text = await file.text();
-      const list = JSON.parse(text) as Contact[];
-      if (!Array.isArray(list)) throw new Error("Invalid contacts file format.");
-      let imported = 0;
-      for (const c of list) {
-        if (c.name && c.address && !contacts.some((existing) => existing.address === c.address)) {
-          addContact(c);
-          imported++;
-        }
-      }
-      triggerHaptic("success");
-      toast(`Imported ${imported} new contact${imported === 1 ? "" : "s"}`, "success");
-    } catch {
-      triggerHaptic("error");
-      toast("Failed to parse contacts JSON", "error");
-    }
-  }
-
-  function handleSaveContact() {
-    const err = validateContact(contactName, contactAddr);
-    if (err) {
-      setContactError(err);
-      return;
-    }
-    if (contacts.some((c) => c.address === contactAddr.trim())) {
-      setContactError("That address is already saved.");
-      return;
-    }
-    addContact({ name: contactName.trim(), address: contactAddr.trim() });
-    triggerHaptic("success");
-    toast("Contact saved", "success");
-    setContactName("");
-    setContactAddr("");
-    setSub("contacts");
-  }
-
-  const sortedContacts = useMemo(() => {
-    return [...contacts].sort((a, b) => a.name.localeCompare(b.name));
-  }, [contacts]);
-
   const autoLockLabel =
     autoLockMs === 60000
       ? "1 Minute"
@@ -508,7 +263,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
     accounts.length;
 
   const backTarget: Sub | null =
-    sub === "root" ? null : sub === "merge" ? "accounts" : sub === "addContact" ? "contacts" : "root";
+    sub === "root" ? null : sub === "merge" ? "accounts" : "root";
 
   return (
     <div className="fade-up mx-auto w-full max-w-[1000px] px-5 pb-[150px]">
@@ -545,31 +300,23 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           </div>
 
           <h1 className="display-h mb-5 text-[28px] font-bold text-white">
-            {sub === "reveal"
-              ? "Reveal Secret Key"
-              : sub === "accounts"
+            {sub === "accounts"
                 ? "Accounts"
-                : sub === "contacts"
-                    ? `Address Book (${contacts.length})`
-                    : sub === "addContact"
-                      ? "New Contact"
-                      : sub === "autolock"
-                        ? "Auto-Lock Timer"
-                        : sub === "merge"
-                          ? "Merge Account"
-                          : sub === "signers"
-                              ? "Signers & Multi-Sig"
-                              : sub === "airsigner"
-                                ? "Air-Gapped Signer"
-                                : sub === "dapps"
-                                  ? "Connected dApps"
-                                  : sub === "soroban"
-                                    ? "Soroban Contracts"
-                                    : sub === "hardware"
-                                      ? "Hardware Wallets"
-                                      : sub === "currency"
-                                        ? "Display Currency"
-                                        : "Network"}
+                : sub === "autolock"
+                    ? "Auto-Lock Timer"
+                    : sub === "merge"
+                      ? "Merge Account"
+                      : sub === "airsigner"
+                            ? "Air-Gapped Signer"
+                            : sub === "dapps"
+                              ? "Connected dApps"
+                              : sub === "soroban"
+                                ? "Soroban Contracts"
+                                : sub === "hardware"
+                                  ? "Hardware Wallets"
+                                  : sub === "currency"
+                                    ? "Display Currency"
+                                    : "Network"}
           </h1>
         </>
       )}
@@ -620,26 +367,26 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 </p>
                 <div className="list-group">
                   <RowButton
-                    icon={<IconKey size={16} />}
+                    icon={<IconShield size={16} />}
                     tint="#30D158"
-                    label="Recovery Phrase"
-                    value={hasMnemonicVault ? "12 words" : "Not available"}
+                    label="Backup & Recovery"
+                    sub="Guided backup, phrase, keys & restore"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      if (hasMnemonicVault) setShowPhrase(true);
+                      onOpenBackupWizard?.();
                     }}
                     sep
                   />
                   <RowButton
                     icon={<IconShield size={16} />}
                     tint="#0A84FF"
-                    label="Account Signers & Multi-Sig"
+                    label="Multi-Sig Studio"
+                    sub="Signers, thresholds & co-signing"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("signers");
-                      void handleLoadSigners();
+                      onOpenMultisigStudio?.();
                     }}
                     sep
                   />
@@ -647,8 +394,8 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     icon={<IconShield size={16} />}
                     tint="#64D2FF"
                     label="Hardware Wallets"
-                    value="Ledger & Trezor"
-                    sub="WebUSB on-device cold storage keys"
+                    value="Trezor"
+                    sub="On-device signing via Trezor Connect"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
@@ -668,66 +415,12 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     sep
                   />
                   <RowButton
-                    icon={<IconEye size={16} />}
-                    tint="#0A84FF"
-                    label="Reveal Secret Key"
-                    chevron
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSub("reveal");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconDownload size={16} />}
-                    tint="#FF9F0A"
-                    label="Export Encrypted Keystore"
-                    onClick={handleExportKeystore}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconDownload size={16} />}
-                    tint="#0A84FF"
-                    label="Download Full Wallet Backup"
-                    sub="All accounts · password-encrypted file"
-                    onClick={handleDownloadBackup}
-                    sep
-                  />
-                                    <RowButton
-                    icon={<IconRefresh size={16} />}
-                    tint="#5E5CE6"
-                    label="Restore From Backup File"
-                    value={restoringBackup ? "Restoring…" : undefined}
-                    onClick={() => {
-                      // Single activation via sibling input — no label double-fire
-                      backupInputRef.current?.click();
-                    }}
-                    sep
-                  />
-                  <input
-                    ref={backupInputRef}
-                    type="file"
-                    accept="application/json,.json,application/octet-stream"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      void handleRestoreBackupFile(f);
-                      e.target.value = "";
-                    }}
-                  />
-                  <RowButton
                     icon={<IconFingerprint size={16} />}
                     tint="#5E5CE6"
                     label="Touch ID / Face ID"
-                    as="div"
+                    value="Unavailable"
                     sep
-                  >
-                    <Toggle
-                      on={biometricsEnabled}
-                      onChange={() => toggleBiometrics(!biometricsEnabled)}
-                    />
-                  </RowButton>
+                  />
                   <RowButton
                     icon={<IconLock size={16} />}
                     tint="#64D2FF"
@@ -761,11 +454,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
               </div>
             </div>
 
-            {/* Column 2: Accounts, Tools & Network */}
+            {/* Column 2: Accounts & Tools */}
             <div className="space-y-6">
               <div>
                 <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Accounts & Network
+                  Accounts
                 </p>
                 <div className="list-group">
                   {activeAccount && (
@@ -783,18 +476,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                   )}
                   <RowButton
                     icon={<IconWallet size={16} />}
-                    tint="#30D158"
-                    label="Address Book"
-                    value={`${contacts.length} Contacts`}
-                    chevron
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSub("contacts");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconWallet size={16} />}
                     tint="#64D2FF"
                     label="Primary Display Currency"
                     value={fiatCurrency}
@@ -809,6 +490,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     icon={<IconKey size={16} />}
                     tint="#FF9F0A"
                     label="Soroban Smart Contracts Hub"
+                    value="Unavailable"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
@@ -820,7 +502,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     icon={<IconWallet size={16} />}
                     tint="#5E5CE6"
                     label="Connected Apps & dApps"
-                    value={`${connectedDapps.length} Active`}
+                    value="Unavailable"
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
@@ -828,6 +510,15 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     }}
                     sep
                   />
+                </div>
+              </div>
+
+              {/* Network — its own section */}
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  Network
+                </p>
+                <div className="list-group">
                   <RowButton
                     icon={<NetworkBadge network={network} />}
                     label="Network"
@@ -895,79 +586,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             The wallet will automatically lock and wipe memory after the selected period of inactivity.
           </p>
         </div>
-      )}
-
-      {/* ---------- REVEAL SECRET KEY ---------- */}
-      {sub === "reveal" && (
-        <>
-          {revealed ? (
-            <>
-              <div className="list-group p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[13px] font-semibold text-white">
-                    {activeAccount?.label}
-                  </span>
-                  <CopyButton value={revealed} label="Copy Secret" />
-                </div>
-                <p className="mono mt-3 select-all break-all text-[13px] leading-relaxed text-neutral-200 bg-black/40 p-3 rounded-xl border border-white/10">
-                  {revealed}
-                </p>
-              </div>
-
-              <div className="mt-3.5 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setPaperModalData({ secretOrPhrase: revealed, kind: "secret" });
-                  }}
-                  className="chip flex items-center gap-1.5"
-                >
-                  <IconDownload size={13} />
-                  <span>Print Paper Wallet Certificate</span>
-                </button>
-                <button
-                  type="button"
-                  className="chip flex items-center gap-1.5 text-neutral-400"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setRevealed(null);
-                    setRevealPw("");
-                  }}
-                >
-                  <IconEyeOff size={13} /> Hide Key
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <Notice>
-                Anyone with this private key has full control of your account. Enter your password to decrypt it.
-              </Notice>
-              <div className="mt-4 flex gap-2">
-                <input
-                  className="input flex-1 text-[13.5px]"
-                  type="password"
-                  placeholder="Wallet Password"
-                  value={revealPw}
-                  onChange={(e) => setRevealPw(e.target.value)}
-                  autoComplete="current-password"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void handleReveal();
-                  }}
-                />
-                <Button
-                  loading={revealing}
-                  disabled={!revealPw || revealing}
-                  onClick={() => void handleReveal()}
-                >
-                  Reveal
-                </Button>
-              </div>
-              {revealError && <p className="mt-3 px-1 text-[13px] text-[#FF453A]">{revealError}</p>}
-            </>
-          )}
-        </>
       )}
 
       {/* ---------- ACCOUNTS ---------- */}
@@ -1249,258 +867,6 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         </div>
       )}
 
-      {/* ---------- CONTACTS / ADDRESS BOOK ---------- */}
-      {sub === "contacts" && (
-        <>
-          {contacts.length === 0 ? (
-            <p className="px-1 pb-3 text-[13.5px] text-neutral-400">
-              Saved addresses appear in quick send selectors and autocomplete.
-            </p>
-          ) : (
-            <div className="list-group">
-              {sortedContacts.map((c, i) => (
-                <div
-                  key={c.address}
-                  className={`flex items-center gap-3 px-4 py-3.5 ${
-                    i > 0 ? "ios-sep" : ""
-                  }`}
-                >
-                  <div className="relative shrink-0">
-                    <Avatar seed={c.address} size={34} />
-                    {c.favorite && (
-                      <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-black text-[9px] font-bold shadow-sm">
-                        ★
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <p className="truncate text-[15.5px] font-semibold leading-tight text-white">
-                        {c.name}
-                      </p>
-                      {c.favorite && (
-                        <span className="rounded-md bg-[#FFD60A]/15 px-1.5 py-0.5 text-[9.5px] font-bold text-[#FFD60A] uppercase tracking-wide">
-                          VIP
-                        </span>
-                      )}
-                    </div>
-                    <p className="mono truncate text-[12px] leading-tight text-neutral-400">
-                      {c.address}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      toggleContactFavorite(c.address);
-                    }}
-                    className={`icon-btn !h-8 !w-8 transition-colors ${
-                      c.favorite ? "!text-[#FFD60A]" : "!text-neutral-500 hover:!text-[#FFD60A]"
-                    }`}
-                    title={c.favorite ? "Unmark Favorite" : "Pin as Favorite"}
-                    aria-label="Toggle Favorite"
-                  >
-                    <span className="text-[14px]">{c.favorite ? "★" : "☆"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setEditingContact(c);
-                    }}
-                    className="rounded-lg bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.14] hover:text-white transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleShareContact(c)}
-                    className="icon-btn !h-8 !w-8 hover:!text-[#0A84FF]"
-                    title="Share Contact"
-                  >
-                    <IconShare size={13} />
-                  </button>
-                  <a
-                    href={NETWORKS[network].explorerAccountUrl(c.address)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="icon-btn !h-8 !w-8 hover:!text-[#0A84FF]"
-                    title="View on Stellarchain"
-                    onClick={() => triggerHaptic("light")}
-                  >
-                    <IconExternal size={13} />
-                  </a>
-                  <CopyButton
-                    value={c.address}
-                    label=""
-                    iconSize={13}
-                    className="icon-btn !h-8 !w-8"
-                  />
-                  <button
-                    type="button"
-                    className="icon-btn !h-8 !w-8 hover:!text-[#FF453A]"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      removeContact(c.address);
-                    }}
-                    aria-label={`Delete ${c.name}`}
-                  >
-                    <IconTrash size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="flex-1 rounded-2xl bg-white/[0.08] py-3.5 text-center text-[14px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
-              onClick={() => {
-                triggerHaptic("selection");
-                setSub("addContact");
-              }}
-            >
-              + Add New Contact
-            </button>
-            {contacts.length > 0 && (
-              <button
-                type="button"
-                className="rounded-2xl bg-white/[0.08] px-4 py-3.5 text-center text-[13px] font-semibold text-neutral-300 hover:bg-white/[0.12] transition-colors"
-                onClick={handleExportContacts}
-              >
-                Export JSON
-              </button>
-            )}
-            <label className="rounded-2xl bg-white/[0.08] px-4 py-3.5 text-center text-[13px] font-semibold text-neutral-300 hover:bg-white/[0.12] transition-colors cursor-pointer">
-              <span>Import JSON</span>
-              <input
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void handleImportContactsFile(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
-          </div>
-        </>
-      )}
-
-      {/* ---------- ADD CONTACT ---------- */}
-      {sub === "addContact" && (
-        <>
-          <div className="list-group space-y-4 p-4">
-            <Field label="Contact Name">
-              <input
-                className="input text-[13.5px]"
-                placeholder="e.g. Alice, Coinbase, Treasury"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                maxLength={24}
-              />
-            </Field>
-            <div>
-              <div className="flex items-center justify-between pb-1">
-                <label className="field-label !pb-0">Stellar Public Key</label>
-                <button
-                  type="button"
-                  onClick={() => setShowContactScanner((s) => !s)}
-                  className="text-[12px] font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
-                >
-                  <span>{showContactScanner ? "Hide Camera" : "Scan QR"}</span>
-                </button>
-              </div>
-              <input
-                className="input mono text-[13.5px]"
-                placeholder="G..."
-                value={contactAddr}
-                onChange={(e) => setContactAddr(e.target.value)}
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </div>
-            {showContactScanner && (
-              <QrScannerBox
-                onScan={(val) => {
-                  setContactAddr(val);
-                  setShowContactScanner(false);
-                  triggerHaptic("success");
-                }}
-              />
-            )}
-          </div>
-          <ErrorText message={contactError ?? ""} />
-          <Button
-            className="mt-4 w-full !py-3.5 text-[15px] font-semibold"
-            onClick={handleSaveContact}
-          >
-            Save Contact
-          </Button>
-        </>
-      )}
-
-      {/* ---------- SIGNERS & MULTI-SIG INSPECTOR ---------- */}
-      {sub === "signers" && (
-        <div className="space-y-4">
-          <div className="panel-inset p-4 space-y-3 text-[13px]">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Account Thresholds
-            </p>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-white/[0.04] p-2.5">
-                <span className="block text-[11px] text-neutral-400">Low</span>
-                <span className="mono text-[16px] font-bold text-white">
-                  {signerInfo?.thresholds.low_threshold ?? 0}
-                </span>
-              </div>
-              <div className="rounded-xl bg-white/[0.04] p-2.5">
-                <span className="block text-[11px] text-neutral-400">Medium</span>
-                <span className="mono text-[16px] font-bold text-white">
-                  {signerInfo?.thresholds.med_threshold ?? 1}
-                </span>
-              </div>
-              <div className="rounded-xl bg-white/[0.04] p-2.5">
-                <span className="block text-[11px] text-neutral-400">High</span>
-                <span className="mono text-[16px] font-bold text-white">
-                  {signerInfo?.thresholds.high_threshold ?? 1}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="panel-inset p-4 space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Authorized Signers ({signerInfo?.signers.length ?? 1})
-            </p>
-            <div className="space-y-2">
-              {signerLoading ? (
-                <div className="skeleton h-12 w-full rounded-xl" />
-              ) : (
-                signerInfo?.signers.map((s) => (
-                  <div
-                    key={s.key}
-                    className="flex items-center justify-between rounded-xl bg-white/[0.03] p-3 text-[12.5px]"
-                  >
-                    <div className="min-w-0 pr-2">
-                      <p className="mono truncate text-white">{s.key}</p>
-                      <p className="text-[11px] text-neutral-400 capitalize">{s.type.replace(/_/g, " ")}</p>
-                    </div>
-                    <span className="mono rounded-lg bg-[#0A84FF]/15 px-2 py-0.5 font-bold text-[#0A84FF] shrink-0">
-                      Weight: {s.weight}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          <Button variant="secondary" className="w-full" onClick={() => void handleLoadSigners()}>
-            Refresh Signers from Horizon
-          </Button>
-        </div>
-      )}
-
       {/* ---------- AIR-GAPPED TRANSACTION SIGNER ---------- */}
       {sub === "airsigner" && (
         <div className="space-y-4">
@@ -1547,7 +913,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
           </Button>
 
           {signedXdr && (
-            <div className="fade-in panel-inset mt-4 p-4 space-y-2">
+            <div className="fade-up panel-inset mt-4 p-4 space-y-2">
               <p className="text-[12px] font-bold text-[#30D158]">✓ Transaction Signed Successfully</p>
               <div className="mono select-all break-all rounded-xl bg-black/40 p-2.5 text-[11px] text-neutral-300 max-h-32 overflow-y-auto">
                 {signedXdr}
@@ -1562,44 +928,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {sub === "dapps" && (
         <div className="space-y-4">
           <p className="text-[13px] text-neutral-300 leading-relaxed">
-            Manage web3 applications and decentralized exchanges connected to your wallet.
+            Wallet Standard dApp sessions are not implemented in this build.
           </p>
-
-          <div className="list-group">
-            {connectedDapps.length === 0 ? (
-              <p className="px-4 py-8 text-center text-[13.5px] text-neutral-500">
-                No active dApp sessions connected.
-              </p>
-            ) : (
-              connectedDapps.map((d, i) => (
-                <div
-                  key={d.origin}
-                  className={`flex items-center justify-between gap-3 px-4 py-3.5 ${i > 0 ? "ios-sep" : ""}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[22px] shrink-0">{d.icon}</span>
-                    <div className="min-w-0">
-                      <p className="truncate text-[15px] font-semibold text-white">{d.name}</p>
-                      <p className="mono truncate text-[11.5px] text-neutral-400">{d.origin}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDisconnectDapp(d.origin)}
-                    className="rounded-lg bg-white/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#FF453A] hover:bg-[#FF453A]/15 transition-colors"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ))
-            )}
+          <div className="panel-inset p-4 text-[12.5px] leading-relaxed text-neutral-400">
+            No sites can connect to this wallet, and the app does not claim or retain external sessions.
           </div>
-
-          {connectedDapps.length > 0 && (
-            <Button variant="danger" className="w-full" onClick={handleDisconnectAllDapps}>
-              Disconnect All Sessions
-            </Button>
-          )}
         </div>
       )}
 
@@ -1607,49 +940,11 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
       {sub === "soroban" && (
         <div className="space-y-4">
           <p className="text-[13px] text-neutral-300 leading-relaxed">
-            Simulate and interact directly with native Soroban WASM smart contracts on Stellar {NETWORKS[network].label}.
+            Soroban invocation and RPC simulation are not wired into this wallet build.
           </p>
-
-          <Field label="Contract ID" hint="Starts with 'C...' (56 chars)">
-            <input
-              type="text"
-              placeholder="CA3D5KRYNZFQPWDFX3G..."
-              value={contractIdInput}
-              onChange={(e) => {
-                setContractIdInput(e.target.value);
-                setSimulationResult(null);
-              }}
-              className="input mono text-[13px]"
-            />
-          </Field>
-
-          <Field label="Contract Function Method">
-            <input
-              type="text"
-              placeholder="e.g. balance, transfer, mint"
-              value={contractMethod}
-              onChange={(e) => setContractMethod(e.target.value)}
-              className="input mono text-[13px]"
-            />
-          </Field>
-
-          <Button
-            className="w-full"
-            loading={simulatingContract}
-            disabled={!contractIdInput.trim() || simulatingContract}
-            onClick={() => void handleSimulateContract()}
-          >
-            Simulate Contract Invocation
-          </Button>
-
-          {simulationResult && (
-            <div className="fade-in panel-inset p-4 space-y-2">
-              <p className="text-[12px] font-bold text-[#30D158]">✓ Simulation Succeeded</p>
-              <pre className="mono select-all break-all rounded-xl bg-black/40 p-2.5 text-[11px] text-neutral-300 max-h-36 overflow-y-auto">
-                {simulationResult}
-              </pre>
-            </div>
-          )}
+          <div className="panel-inset p-4 text-[12.5px] leading-relaxed text-neutral-400">
+            A future implementation must use Stellar RPC simulation, show the exact authorization tree and resource fee, then submit the same simulated transaction. No placeholder result is shown here.
+          </div>
         </div>
       )}
 
@@ -1676,7 +971,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                     </div>
                   </div>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400">
-                    WebUSB Ready
+                    Trezor Connect
                   </span>
                 </div>
                 <p className="text-[12px] text-neutral-400 leading-relaxed">
@@ -1709,24 +1004,16 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                       <p className="text-[11.5px] text-neutral-400">Stax · Nano X · Nano S Plus</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/30 text-[10.5px] font-semibold text-[#64D2FF]">
-                    WebHID Ready
+                  <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10.5px] font-semibold text-neutral-400">
+                    Not Available
                   </span>
                 </div>
                 <p className="text-[12px] text-neutral-400 leading-relaxed">
-                  Certified Secure Element chip (EAL6+) with dedicated Stellar Ledger app integration.
+                  Ledger signing is intentionally disabled until a real Stellar transport and on-device verification flow are implemented.
                 </p>
               </div>
-              <Button
-                className="w-full !py-2.5 text-[13.5px] font-semibold !bg-white !text-black hover:!bg-neutral-200"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setAddAccountMode("hardware");
-                  setAddAccountDevice("ledger");
-                  setShowAddAccount(true);
-                }}
-              >
-                Connect Ledger Device
+              <Button className="w-full !py-2.5 text-[13.5px] font-semibold" disabled>
+                Ledger Integration Unavailable
               </Button>
             </div>
           </div>
@@ -1817,7 +1104,7 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
                 }`}
                 onClick={() => {
                   triggerHaptic("selection");
-                  if (fiatCurrency !== curr.id) cycleFiatCurrency();
+                  if (fiatCurrency !== curr.id) changeFiatCurrency(curr.id);
                 }}
               >
                 <div className="flex items-center gap-3">
@@ -1859,22 +1146,19 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
             </p>
             <div className="flex justify-between text-neutral-300">
               <span>Status</span>
-              <span className="flex items-center gap-1.5 text-[#30D158] font-medium">
-                <span className="h-2 w-2 rounded-full bg-[#30D158] animate-pulse" /> Operational
+              <span className={`flex items-center gap-1.5 font-medium ${pingMs === null ? "text-neutral-400" : "text-[#30D158]"}`}>
+                <span className={`h-2 w-2 rounded-full ${pingMs === null ? "bg-neutral-500" : "bg-[#30D158]"}`} />
+                {pingMs === null ? "Not checked" : "Reachable"}
               </span>
             </div>
             <div className="flex justify-between text-neutral-300">
-              <span>Protocol Version</span>
-              <span className="mono font-semibold text-white">Stellar Protocol 21</span>
-            </div>
-            <div className="flex justify-between text-neutral-300">
-              <span>Base Transaction Fee</span>
-              <span className="mono text-white">0.00001 XLM (100 stroops)</span>
+              <span>Protocol Minimum Fee</span>
+              <span className="mono text-white">0.00001 XLM / operation</span>
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Horizon Endpoint</span>
               <span className="mono text-[11px] text-neutral-400 truncate max-w-[200px]">
-                {NETWORKS[network].horizonUrl}
+                {getHorizonUrl(network)}
               </span>
             </div>
             <div className="flex justify-between items-center text-neutral-300 pt-1">
@@ -1932,43 +1216,10 @@ export function SettingsPage({ initialSub = "root" }: { initialSub?: Sub }) {
         }}
       />
 
-      {/* Recovery Phrase Modal */}
-      <PhraseModal open={showPhrase} onClose={() => setShowPhrase(false)} />
-
-      {/* Restore confirmation */}
-      <ConfirmModal
-        open={pendingBackupJson !== null}
-        onClose={() => setPendingBackupJson(null)}
-        title="Restore From Backup?"
-        body="Your current wallet will be replaced by the backup (the previous one stays recoverable from internal trash). After restoring, unlock with the backup's password."
-        confirmLabel="Restore Wallet"
-        danger
-        onConfirm={() => void handleConfirmRestore()}
-      />
-
-      {/* Paper Wallet Modal */}
-      {paperModalData && activeAccount && (
-        <PaperWalletModal
-          open
-          onClose={() => setPaperModalData(null)}
-          accountLabel={activeAccount.label}
-          publicKey={activeAccount.publicKey}
-          secretOrPhrase={paperModalData.secretOrPhrase}
-          kind={paperModalData.kind}
-          path={activeAccount.path}
-        />
-      )}
-
       {/* Rename Account Modal */}
       <RenameAccountModal
         account={editingAccount}
         onClose={() => setEditingAccount(null)}
-      />
-
-      {/* Edit Contact Modal */}
-      <EditContactModal
-        contact={editingContact}
-        onClose={() => setEditingContact(null)}
       />
 
       {/* Reset Confirmation Modal */}
@@ -2072,5 +1323,3 @@ function Notice({ tone, children }: { tone?: "pos"; children: React.ReactNode })
     </div>
   );
 }
-
-
