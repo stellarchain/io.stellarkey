@@ -1,45 +1,42 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
-import { NETWORKS } from "@/lib/stellar";
+import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
-import { fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
+import { assetMetadataCacheKey, fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
 import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
-import { fmtAmount, fmtFiat, fmtUsd, generateActivityCsv, shortenAddr, timeAgo } from "@/lib/format";
+import {
+  fmtAmount,
+  fmtFiat,
+  fmtUsd,
+  formatActivityAmount,
+  generateActivityCsv,
+  shortenAddr,
+  timeAgo,
+} from "@/lib/format";
 import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
-import { fetchAssetPrices, estimatePortfolioUsd, type AssetPrices } from "@/lib/prices";
+import { fetchAssetPrices, estimatePortfolioUsd, getUnitPrice, type AssetPrices } from "@/lib/prices";
 import { playTapSound } from "@/lib/sounds";
+import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
-import { SettingsPage } from "./SettingsPage";
-import { AddAccountModal } from "./AddAccountModal";
-import { PhraseModal } from "./PhraseModal";
-import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Spinner } from "./ui";
-import { AddAssetModal } from "./AddAssetModal";
-import { AssetDetailModal } from "./AssetDetailModal";
-import { BatchSendModal } from "./BatchSendModal";
-import { CommandPalette } from "./CommandPalette";
-import { ReceiveModal } from "./ReceiveModal";
-import { SendModal } from "./SendModal";
-import { SwapPage } from "./SwapPage";
-import { TxDetailModal } from "./TxDetailModal";
-import { ExplorePage } from "./ExplorePage";
-import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
-import { CurrencyConverterModal } from "./CurrencyConverterModal";
-import { NetworkStatsModal } from "./NetworkStatsModal";
-import { TrezorModal } from "./TrezorModal";
-import { RenameAccountModal } from "./RenameAccountModal";
+import type { Contact } from "@/lib/contacts";
+import { FiatValue } from "./FiatValue";
+import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner } from "./ui";
 import {
   IconArrowDownLeft,
-  IconCompass,
+  IconAlert,
   IconTrezor,
   IconLedger,
   IconArrowUpRight,
+  IconBook,
+  IconCalculator,
   IconCheck,
   IconChevronDown,
   IconClose,
@@ -61,7 +58,26 @@ import {
   LogoMark,
 } from "./icons";
 
-type View = "home" | "activity" | "swap" | "explore" | "settings";
+const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
+const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
+const AddressBookPage = dynamic(() => import("./AddressBookPage").then((m) => m.AddressBookPage), { ssr: false });
+const BackupWizardModal = dynamic(() => import("./BackupWizardModal").then((m) => m.BackupWizardModal), { ssr: false });
+const MultiSigStudioModal = dynamic(() => import("./MultiSigStudioModal").then((m) => m.MultiSigStudioModal), { ssr: false });
+const AddAssetModal = dynamic(() => import("./AddAssetModal").then((m) => m.AddAssetModal), { ssr: false });
+const AssetDetailModal = dynamic(() => import("./AssetDetailModal").then((m) => m.AssetDetailModal), { ssr: false });
+const BatchSendModal = dynamic(() => import("./BatchSendModal").then((m) => m.BatchSendModal), { ssr: false });
+const CommandPalette = dynamic(() => import("./CommandPalette").then((m) => m.CommandPalette), { ssr: false });
+const ReceiveModal = dynamic(() => import("./ReceiveModal").then((m) => m.ReceiveModal), { ssr: false });
+const SendModal = dynamic(() => import("./SendModal").then((m) => m.SendModal), { ssr: false });
+const SwapPage = dynamic(() => import("./SwapPage").then((m) => m.SwapPage), { ssr: false });
+const TxDetailModal = dynamic(() => import("./TxDetailModal").then((m) => m.TxDetailModal), { ssr: false });
+const KeyboardShortcutsModal = dynamic(() => import("./KeyboardShortcutsModal").then((m) => m.KeyboardShortcutsModal), { ssr: false });
+const CurrencyConverterModal = dynamic(() => import("./CurrencyConverterModal").then((m) => m.CurrencyConverterModal), { ssr: false });
+const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) => m.NetworkStatsModal), { ssr: false });
+const TrezorModal = dynamic(() => import("./TrezorModal").then((m) => m.TrezorModal), { ssr: false });
+const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
+
+type View = "home" | "activity" | "swap" | "contacts" | "settings";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -84,6 +100,7 @@ export function Dashboard() {
     activity,
     activityCursor,
     dataLoading,
+    dataError,
     loadingMore,
     xlmPriceUsd,
     priceData,
@@ -91,6 +108,7 @@ export function Dashboard() {
     privacyMode,
     togglePrivacy,
     fiatCurrency,
+    fiatRates,
     cycleFiatCurrency,
     refresh,
     loadMoreActivity,
@@ -103,6 +121,7 @@ export function Dashboard() {
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [counterpartyFilter, setCounterpartyFilter] = useState<string | null>(null);
   const [hideDust, setHideDust] = useState(false);
+  const [hideActivityDust, setHideActivityDust] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<PayUriPayload | null>(null);
@@ -137,7 +156,7 @@ export function Dashboard() {
       return next;
     });
   };
-  const [nodePing, setNodePing] = useState<number | null>(42);
+  const [nodePing, setNodePing] = useState<number | null>(null);
   const [detailAsset, setDetailAsset] = useState<AssetBalance | null>(null);
   const [txDetail, setTxDetail] = useState<ActivityItem | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -155,7 +174,8 @@ export function Dashboard() {
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [assetLogos, setAssetLogos] = useState<Record<string, string>>({});
-  const [phraseOpen, setPhraseOpen] = useState(false);
+  const [backupWizardOpen, setBackupWizardOpen] = useState(false);
+  const [multisigOpen, setMultisigOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -205,34 +225,33 @@ export function Dashboard() {
     return () => document.removeEventListener("visibilitychange", onVisChange);
   }, []);
 
-  // Fetch USD prices for held non-native assets (mainnet)
+  // Testnet tokens have no monetary value, even when they reuse a production code.
   useEffect(() => {
-    if (network !== "mainnet" || !balances || balances.length === 0) return;
+    if (network !== "mainnet" || !balances || balances.length === 0) {
+      return;
+    }
     let alive = true;
     void (async () => {
-      const codes = balances
-        .filter((b) => !b.isNative && parseFloat(b.balance) > 0)
-        .map((b) => b.code);
-      if (codes.length === 0) return;
-      const prices = await fetchAssetPrices(codes);
+      const pricedAssets = balances
+        .filter((b) => !b.isNative && b.issuer !== null && parseFloat(b.balance) > 0)
+        .map((b) => ({ code: b.code, issuer: b.issuer, network }));
+      const prices = await fetchAssetPrices(pricedAssets);
       if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
 
       // Resolve token logos for custom assets (cached per code:issuer)
-      const customCodes = balances.filter((b) => !b.isNative && !b.issuer && !lookupKnownAsset(b.code));
-      void customCodes; // known assets already have colors
       const customAssets = balances.filter(
         (b): b is AssetBalance & { issuer: string } =>
-          !b.isNative && b.issuer !== null && !lookupKnownAsset(b.code),
+          !b.isNative && b.issuer !== null && !lookupKnownAsset(b.code, b.issuer, network),
       );
       for (const b of customAssets) {
-        const key = `${b.code}:${b.issuer}`;
+        const key = assetMetadataCacheKey(b.code, b.issuer, getHorizonUrl(network));
         if (assetLogos[key]) continue;
-        const cached = getCachedAssetLogo(b.code, b.issuer);
+        const cached = getCachedAssetLogo(b.code, b.issuer, getHorizonUrl(network));
         if (cached) {
           setAssetLogos((prev) => ({ ...prev, [key]: cached }));
           continue;
         }
-        void fetchAssetLogo(b.code, b.issuer, NETWORKS[network].horizonUrl).then((url) => {
+        void fetchAssetLogo(b.code, b.issuer, getHorizonUrl(network)).then((url) => {
           if (alive && url) setAssetLogos((prev) => ({ ...prev, [key]: url }));
         });
       }
@@ -314,10 +333,8 @@ export function Dashboard() {
     const ping = async () => {
       try {
         const start = performance.now();
-        const res = await fetch(NETWORKS[network].horizonUrl, { method: "GET", signal: AbortSignal.timeout(4000) });
-        if (res.ok && alive) {
-          setNodePing(Math.round(performance.now() - start));
-        }
+        const res = await fetch(getHorizonUrl(network), { method: "GET", signal: AbortSignal.timeout(4000) });
+        if (alive) setNodePing(res.ok ? Math.round(performance.now() - start) : null);
       } catch {
         if (alive) setNodePing(null);
       }
@@ -351,7 +368,7 @@ export function Dashboard() {
         switchTab("swap");
       } else if ((e.metaKey || e.ctrlKey) && e.key === "4") {
         e.preventDefault();
-        switchTab("explore");
+        switchTab("contacts");
       } else if ((e.metaKey || e.ctrlKey) && e.key === "5") {
         e.preventDefault();
         openSettings("root");
@@ -382,11 +399,33 @@ export function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [accounts, selectAccount, togglePrivacy, lock]);
 
+  // Infinite scroll for Activity — iOS-style forever scroll: an IntersectionObserver
+  // sentinel near the list end pulls the next page automatically.
+  const loadMoreRef = useRef(loadMoreActivity);
+  useEffect(() => {
+    loadMoreRef.current = loadMoreActivity;
+  }, [loadMoreActivity]);
+  const activitySentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (view !== "activity" || !activityCursor) return;
+    const el = activitySentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMoreRef.current();
+      },
+      // Start fetching well before the user reaches the bottom
+      { rootMargin: "600px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [view, activityCursor, loadingMore]);
+
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
-  // Active-account fiat value includes priced non-native assets (USDC, BTC, ...)
+  // Only verified mainnet asset identities participate in portfolio valuation.
   const usdValue =
     network === "mainnet" && balances !== null && xlmPriceUsd !== null
-      ? estimatePortfolioUsd(balances, xlmPriceUsd, assetPrices)
+      ? estimatePortfolioUsd(balances, xlmPriceUsd, assetPrices, network)
       : null;
 
   // Aggregated net worth across every account in the wallet
@@ -402,6 +441,24 @@ export function Dashboard() {
       ? totalAllUsd
       : usdValue;
 
+  // Fiat value of an activity item's amount at current prices (null when unpriced)
+  function activityFiat(item: ActivityItem): number | null {
+    if (item.amount === null) return null;
+    const amount = parseFloat(item.amount);
+    if (!Number.isFinite(amount)) return null;
+    const code = item.assetCode;
+    if (!code) return null;
+    const unit = getUnitPrice(
+      code,
+      item.assetIssuer,
+      network,
+      code === "XLM" && item.assetIssuer === null,
+      xlmPriceUsd,
+      assetPrices,
+    );
+    return unit === null ? null : amount * unit;
+  }
+
   const q = query.trim().toLowerCase();
   const filteredAssets = useMemo(() => {
     let list = balances ?? [];
@@ -413,7 +470,7 @@ export function Dashboard() {
         (b) =>
           b.code.toLowerCase().includes(q) ||
           (b.issuer ?? "").toLowerCase().includes(q) ||
-          (lookupKnownAsset(b.code)?.name ?? "").toLowerCase().includes(q),
+          (lookupKnownAsset(b.code, b.issuer, network)?.name ?? "").toLowerCase().includes(q),
       );
     }
     return list.slice().sort((a, b) => {
@@ -421,7 +478,7 @@ export function Dashboard() {
       const bPinned = pinnedAssets.includes(b.key) ? 1 : 0;
       return bPinned - aPinned;
     });
-  }, [balances, hideDust, q, pinnedAssets]);
+  }, [balances, hideDust, network, q, pinnedAssets]);
 
   const filteredActivity = useMemo(() => {
     return activity.filter((a) => {
@@ -430,17 +487,37 @@ export function Dashboard() {
       if (activityFilter === "out" && a.direction !== "out") return false;
       if (activityFilter === "swap" && a.direction !== "neutral") return false;
       if (activityFilter === "trust" && a.type !== "change_trust") return false;
-      if (activityAssetFilter !== "all" && (a.assetCode ?? "XLM").toUpperCase() !== activityAssetFilter.toUpperCase()) return false;
+      if (
+        activityAssetFilter !== "all" &&
+        activityAssetPresentation(a).identity !== activityAssetFilter
+      ) return false;
+      if (hideActivityDust && a.amount !== null && parseFloat(a.amount) < 0.1) return false;
 
       if (!q) return true;
       return (
         a.title.toLowerCase().includes(q) ||
         (a.assetCode ?? "").toLowerCase().includes(q) ||
+        (a.assetIssuer ?? "").toLowerCase().includes(q) ||
         (a.counterparty ?? "").toLowerCase().includes(q) ||
         a.hash.toLowerCase().includes(q)
       );
     });
-  }, [activity, activityFilter, activityAssetFilter, counterpartyFilter, q]);
+  }, [activity, activityFilter, activityAssetFilter, counterpartyFilter, hideActivityDust, q]);
+
+  const activityAssetOptions = useMemo(() => {
+    const assets = new Map<string, { value: string; label: string; sublabel?: string }>();
+    for (const item of activity) {
+      const presentedAsset = activityAssetPresentation(item);
+      if (!presentedAsset.identity || !presentedAsset.code) continue;
+      if (assets.has(presentedAsset.identity)) continue;
+      assets.set(presentedAsset.identity, {
+        value: presentedAsset.identity,
+        label: presentedAsset.code,
+        sublabel: presentedAsset.issuerDisplay ?? "Native",
+      });
+    }
+    return [...assets.values()];
+  }, [activity]);
 
   // Group activity deterministically by date label
   const groupedActivity = useMemo(() => {
@@ -462,20 +539,33 @@ export function Dashboard() {
 
   // Allocation distribution calculation
   const allocationShares = useMemo(() => {
-    if (!balances || balances.length === 0) return [];
-    const total = balances.reduce((acc, b) => acc + Math.max(0, parseFloat(b.balance)), 0);
+    if (network !== "mainnet" || !balances || balances.length === 0) return [];
+    const valued = balances.flatMap((balance) => {
+      const unit = getUnitPrice(
+        balance.code,
+        balance.issuer,
+        network,
+        balance.isNative,
+        xlmPriceUsd,
+        assetPrices,
+      );
+      const amount = parseFloat(balance.balance);
+      return unit !== null && Number.isFinite(amount) && amount > 0
+        ? [{ balance, value: amount * unit }]
+        : [];
+    });
+    const total = valued.reduce((sum, item) => sum + item.value, 0);
     if (total <= 0) return [];
-    return balances.map((b) => {
-      const known = lookupKnownAsset(b.code);
-      const val = Math.max(0, parseFloat(b.balance));
-      const pct = (val / total) * 100;
+    return valued.map(({ balance: b, value }) => {
+      const known = lookupKnownAsset(b.code, b.issuer, network);
+      const pct = (value / total) * 100;
       return {
         code: b.code,
         pct,
         color: known?.color ?? (b.isNative ? "#0A84FF" : `hsl(${assetHue(b.key)}, 70%, 50%)`),
       };
     });
-  }, [balances]);
+  }, [assetPrices, balances, network, xlmPriceUsd]);
 
   async function handleFund() {
     if (!activeAccount) return;
@@ -536,6 +626,12 @@ export function Dashboard() {
     window.scrollTo({ top: 0 });
   }
 
+  function handleSendToContact(c: Contact) {
+    triggerHaptic("selection");
+    setSendPrefill({ destination: c.address });
+    setSendOpen(true);
+  }
+
   const paletteActions = useMemo(
     () => [
       {
@@ -553,11 +649,9 @@ export function Dashboard() {
       },
       { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
-      { id: "explore", label: "Explore dApps & Ecosystem", run: () => switchTab("explore") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
-      { id: "stats", label: "Network Stats & Gas Savings", run: () => setNetworkStatsOpen(true) },
+      { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
       { id: "trezor-suite", label: "Trezor Hardware Suite (Safe 3 / Model T / Model One)", run: () => setTrezorModalOpen(true) },
-      { id: "ledger-connect", label: "Connect Ledger Hardware Wallet (Nano S / X / Stax)", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "rename-account", label: "Rename Active Account", hint: activeAccount?.label, run: () => setRenamingAccount(activeAccount) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
@@ -601,12 +695,13 @@ export function Dashboard() {
       },
       {
         id: "secret",
-        label: "Reveal secret key",
-        run: () => openSettings("reveal"),
+        label: "Backup & recovery wizard",
+        run: () => setBackupWizardOpen(true),
       },
-      { id: "phrase", label: "View recovery phrase", run: () => setPhraseOpen(true) },
+      { id: "phrase", label: "Reveal recovery phrase or secret key", run: () => setBackupWizardOpen(true) },
       { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
-      { id: "contacts", label: "Manage contacts", run: () => openSettings("contacts") },
+      { id: "multisig", label: "Multi-Sig Studio (signers & co-signing)", run: () => setMultisigOpen(true) },
+      { id: "contacts", label: "Open Contacts", run: () => switchTab("contacts") },
       { id: "lock", label: "Lock wallet", run: lock },
     ],
     [
@@ -801,18 +896,23 @@ export function Dashboard() {
 
             <button
               type="button"
-              onClick={() => switchTab("explore")}
+              onClick={() => switchTab("contacts")}
               className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
               } text-[13.5px] font-semibold ${
-                view === "explore"
+                view === "contacts"
                   ? "bg-[#0A84FF] text-white shadow-sm"
                   : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
               }`}
-              title={sidebarCollapsed ? "Explore (⌘4)" : undefined}
+              title={sidebarCollapsed ? "Contacts (⌘4)" : undefined}
             >
-              <IconCompass size={18} />
-              {!sidebarCollapsed && <span>Explore</span>}
+              <div className="flex items-center gap-2.5">
+                <IconBook size={18} />
+                {!sidebarCollapsed && <span>Contacts</span>}
+              </div>
+              {!sidebarCollapsed && contacts.length > 0 && (
+                <span className="mono text-[11px] font-normal opacity-80">{contacts.length}</span>
+              )}
             </button>
 
             <button
@@ -888,10 +988,19 @@ export function Dashboard() {
                               )}
                             </p>
                             <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
-                              {privacyMode ? "••••••" : `${fmtAmount(xlm?.balance ?? "0")} XLM`}
+                              {privacyMode
+                                ? "••••••"
+                                : `${fmtAmount(accountBalances[acct.publicKey] ?? 0)} XLM`}
                             </p>
                           </div>
                         </div>
+                        {/* Fiat value at the end of the row (Trezor Suite style) */}
+                        <FiatValue
+                          amount={accountBalances[acct.publicKey] ?? 0}
+                          code="XLM"
+                          prefix=""
+                          className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300"
+                        />
                       </button>
                     );
                   })}
@@ -961,6 +1070,17 @@ export function Dashboard() {
                     title="Refresh Network Data"
                   >
                     {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn !h-8 !w-8"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setConverterOpen(true);
+                    }}
+                    title="Live Currency Converter & Calculator"
+                  >
+                    <IconCalculator size={15} />
                   </button>
                 </div>
                 <button
@@ -1046,16 +1166,33 @@ export function Dashboard() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
+      <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto [scrollbar-gutter:stable]">
         {/* Desktop macOS Top Window Header Bar */}
         <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
-              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "explore" ? "Ecosystem & dApps" : view.charAt(0).toUpperCase() + view.slice(1)}
+              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "contacts" ? "Contacts" : view.charAt(0).toUpperCase() + view.slice(1)}
             </h2>
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Live Horizon Latency Indicator */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setNetworkStatsOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] font-mono text-neutral-300 transition-colors cursor-pointer"
+              title="View observed network status"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: nodePing !== null ? "#30d158" : "#ff9f0a" }}
+              />
+              <span>{nodePing !== null ? `${nodePing}ms` : "Unavailable"}</span>
+            </button>
+
             <div className="search-field !py-1.5 !px-3 w-64">
               <IconSearch size={14} className="text-neutral-400 shrink-0" />
               <input
@@ -1077,35 +1214,6 @@ export function Dashboard() {
                 </button>
               )}
             </div>
-
-            {/* Live Horizon Latency Indicator */}
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setNetworkStatsOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] font-mono text-neutral-300 transition-colors cursor-pointer"
-              title="Click to view network performance & gas savings"
-            >
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ background: nodePing !== null ? "#30d158" : "#ff9f0a" }}
-              />
-              <span>{nodePing !== null ? `${nodePing}ms` : "Live"}</span>
-            </button>
-
-            <button
-              type="button"
-              className="chip !py-1.5 !px-2.5 text-[12px] flex items-center gap-1"
-              onClick={() => {
-                triggerHaptic("selection");
-                setConverterOpen(true);
-              }}
-              title="Live Currency Converter & Calculator"
-            >
-              <span>💱 Calculator</span>
-            </button>
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
@@ -1193,12 +1301,23 @@ export function Dashboard() {
 
         {/* Responsive Content Body */}
         <div className="mx-auto w-full max-w-[1200px] px-5 py-4 md:py-8 pb-[150px] md:pb-12">
+          {dataError && (
+            <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 px-4 py-3 text-[12.5px] text-[#FF9F0A]">
+              <span className="flex min-w-0 items-center gap-2">
+                <IconAlert size={15} className="shrink-0" />
+                <span className="truncate">{dataError}</span>
+              </span>
+              <button type="button" className="shrink-0 font-semibold hover:underline" onClick={() => void refresh()}>
+                Retry
+              </button>
+            </div>
+          )}
           {view === "settings" ? (
-            <SettingsPage key={settingsKey} initialSub={settingsSub} />
+            <SettingsPage key={settingsKey} initialSub={settingsSub} onOpenBackupWizard={() => setBackupWizardOpen(true)} onOpenMultisigStudio={() => setMultisigOpen(true)} />
           ) : view === "swap" ? (
             <SwapPage />
-          ) : view === "explore" ? (
-            <ExplorePage />
+          ) : view === "contacts" ? (
+            <AddressBookPage onSendTo={handleSendToContact} />
           ) : view === "home" && unfunded ? (
             <>
               <UnfundedCard
@@ -1304,7 +1423,7 @@ export function Dashboard() {
                         className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
                         title="Click to cycle currency"
                       >
-                        <span>≈ {fmtFiat(heroUsd ?? 0, fiatCurrency)}</span>
+                        <span>≈ {fmtFiat(heroUsd ?? 0, fiatCurrency, fiatRates)}</span>
                         <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
                           {fiatCurrency}
                         </span>
@@ -1343,13 +1462,12 @@ export function Dashboard() {
                     </div>
                   )}
 
-                  {/* Primary Actions — iOS tinted squircles */}
-                  <div className="mt-7 flex w-full max-w-[420px] items-start justify-between px-1 sm:px-3">
+                  {/* Primary Actions — iOS-style circular quick actions */}
+                  <div className="mt-8 flex w-full max-w-[360px] items-start justify-between px-4">
                     <ActionButton
-                      icon={<IconSend size={24} />}
+                      icon={<IconSend size={21} />}
                       label="Send"
-                      accent="blue"
-                      filled
+                      primary
                       disabled={activeAccount?.watchOnly === true}
                       onClick={() => {
                         setSendPrefill(null);
@@ -1357,21 +1475,18 @@ export function Dashboard() {
                       }}
                     />
                     <ActionButton
-                      icon={<IconArrowDownLeft size={24} />}
+                      icon={<IconArrowDownLeft size={21} />}
                       label="Receive"
-                      accent="green"
                       onClick={() => setReceiveOpen(true)}
                     />
                     <ActionButton
-                      icon={<IconSwap size={24} />}
+                      icon={<IconSwap size={21} />}
                       label="Swap"
-                      accent="purple"
                       onClick={() => switchTab("swap")}
                     />
                     <ActionButton
-                      icon={<IconPlus size={24} />}
+                      icon={<IconPlus size={21} />}
                       label="Add"
-                      accent="orange"
                       onClick={() => setAddAssetOpen(true)}
                     />
                   </div>
@@ -1454,7 +1569,7 @@ export function Dashboard() {
                       </p>
                     )}
                     {filteredAssets?.map((asset, i) => {
-                      const known = lookupKnownAsset(asset.code);
+                      const known = lookupKnownAsset(asset.code, asset.issuer, network);
                       const hue = assetHue(asset.key);
                       const isPinned = pinnedAssets.includes(asset.key);
                       return (
@@ -1488,7 +1603,13 @@ export function Dashboard() {
                             {(() => {
                               const logoUrl =
                                 !asset.isNative && asset.issuer
-                                ? assetLogos[`${asset.code}:${asset.issuer}`]
+                                ? assetLogos[
+                                    assetMetadataCacheKey(
+                                      asset.code,
+                                      asset.issuer,
+                                      getHorizonUrl(network),
+                                    )
+                                  ]
                                 : undefined;
                               const bgStyle = known
                                 ? { background: known.color }
@@ -1532,23 +1653,13 @@ export function Dashboard() {
                               </span>
                             </span>
 
+                            {asset.isNative && priceData?.points && priceData.points.length > 5 && (
                             <div className="hidden sm:flex items-center gap-2 mr-2 shrink-0">
                               <Sparkline
-                                values={
-                                  asset.isNative && priceData?.points && priceData.points.length > 5
-                                    ? priceData.points.slice(-12).map((p) => p.p)
-                                    : [0.12, 0.124, 0.122, 0.129, 0.135, 0.132, 0.141]
-                                }
+                                values={priceData.points.slice(-12).map((p) => p.p)}
                                 width={54}
                                 height={22}
-                                color={
-                                  known?.color ??
-                                  (asset.isNative
-                                    ? (priceData?.changePct ?? 0) >= 0
-                                      ? "#30D158"
-                                      : "#FF453A"
-                                    : "#0A84FF")
-                                }
+                                color={(priceData.changePct ?? 0) >= 0 ? "#30D158" : "#FF453A"}
                               />
                               {asset.isNative && priceData && (
                                 <span
@@ -1562,14 +1673,15 @@ export function Dashboard() {
                                 </span>
                               )}
                             </div>
+                            )}
 
                             <span className="text-right">
                               <span className="mono block text-[15.5px] font-medium leading-tight text-white">
                                 {privacyMode ? "••••••" : fmtAmount(asset.balance)}
                               </span>
-                              {asset.isNative && !privacyMode && network === "mainnet" && xlmPriceUsd !== null && (
+                              {asset.isNative && !privacyMode && xlmPriceUsd !== null && (
                                 <span className="block text-[12px] leading-tight text-neutral-400">
-                                  {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency)}
+                                  {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency, fiatRates)}
                                 </span>
                               )}
                             </span>
@@ -1608,7 +1720,10 @@ export function Dashboard() {
                       {activity.slice(0, 5).map((item) => {
                         const incoming = item.direction === "in";
                         const neutral = item.direction === "neutral";
+                        const presentedAsset = activityAssetPresentation(item);
+                        const presentedAmount = formatActivityAmount(item);
                         const matchedContact = contacts.find((c) => c.address === item.counterparty);
+                        const fiatValue = privacyMode ? null : activityFiat(item);
                         return (
                           <button
                             key={item.id}
@@ -1639,15 +1754,35 @@ export function Dashboard() {
                                 </p>
                                 <p className="truncate text-[11px] text-neutral-400">
                                   {matchedContact ? matchedContact.name : timeAgo(item.createdAt)}
+                                  {presentedAsset.issuerDisplay
+                                    ? ` · ${presentedAsset.issuerDisplay}`
+                                    : ""}
                                 </p>
                               </div>
                             </div>
-                            {item.amount && (
-                              <span
-                                className="mono text-[13px] font-medium shrink-0"
-                                style={{ color: incoming ? "#30D158" : "#FF453A" }}
-                              >
-                                {incoming ? "+" : "−"}{fmtAmount(item.amount)}
+                            {item.amount !== null && (
+                              <span className="shrink-0 text-right">
+                                <span
+                                  className="mono block text-[13px] font-medium leading-tight"
+                                  style={{
+                                    color: privacyMode
+                                      ? "var(--color-faint)"
+                                      : neutral
+                                        ? "#FFFFFF"
+                                        : incoming
+                                          ? "#30D158"
+                                          : "#FF453A",
+                                  }}
+                                >
+                                  {privacyMode
+                                    ? "••••••"
+                                    : `${presentedAmount}${presentedAsset.code ? ` ${presentedAsset.code}` : ""}`}
+                                </span>
+                                {fiatValue !== null && (
+                                  <span className="block text-[10.5px] leading-tight text-neutral-500">
+                                    ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
+                                  </span>
+                                )}
                               </span>
                             )}
                           </button>
@@ -1691,22 +1826,34 @@ export function Dashboard() {
                 </div>
 
                 <div className="flex items-center gap-2 self-end sm:self-auto">
-                  {/* Asset Code Filter */}
-                  <select
-                    value={activityAssetFilter}
-                    onChange={(e) => {
+                  <button
+                    type="button"
+                    onClick={() => {
                       triggerHaptic("selection");
-                      setActivityAssetFilter(e.target.value);
+                      setHideActivityDust((d) => !d);
                     }}
-                    className="chip !h-7 !py-0 !px-2 text-[11.5px] bg-white/[0.04] border border-white/10 text-neutral-300 rounded-xl cursor-pointer"
+                    title="Hide payments below 0.1 (spam dust)"
+                    className={`shrink-0 text-[12px] font-medium transition-colors ${
+                      hideActivityDust
+                        ? "text-[#0A84FF] font-semibold"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
                   >
-                    <option value="all" className="bg-neutral-900 text-white">All Assets</option>
-                    {(balances ?? []).map((b) => (
-                      <option key={b.key} value={b.code} className="bg-neutral-900 text-white">
-                        {b.code}
-                      </option>
-                    ))}
-                  </select>
+                    {hideActivityDust ? "Dust Hidden" : "Hide Dust"}
+                  </button>
+
+                  {/* Asset Code Filter */}
+                  <Select
+                    size="sm"
+                    value={activityAssetFilter}
+                    onChange={setActivityAssetFilter}
+                    ariaLabel="Filter by asset"
+                    className="mono !h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
+                    options={[
+                      { value: "all", label: "All Assets" },
+                      ...activityAssetOptions,
+                    ]}
+                  />
 
                   {filteredActivity.length > 0 && (
                     <button
@@ -1763,7 +1910,10 @@ export function Dashboard() {
                         {group.items.map((item, i) => {
                           const incoming = item.direction === "in";
                           const neutral = item.direction === "neutral";
+                          const presentedAsset = activityAssetPresentation(item);
+                          const presentedAmount = formatActivityAmount(item);
                           const matchedContact = contacts.find((c) => c.address === item.counterparty);
+                          const fiatValue = privacyMode ? null : activityFiat(item);
                           return (
                             <button
                               key={item.id}
@@ -1808,24 +1958,34 @@ export function Dashboard() {
                                     : item.counterparty
                                       ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
                                       : ""}
+                                  {presentedAsset.issuerDisplay
+                                    ? ` · ${presentedAsset.issuerDisplay}`
+                                    : ""}
                                 </span>
                               </span>
                               {item.amount !== null && (
-                                <span
-                                  className="mono shrink-0 text-right text-[15px] font-medium"
-                                  style={{
-                                    color: privacyMode
-                                      ? "var(--color-faint)"
-                                      : neutral
-                                        ? "#FFFFFF"
-                                        : incoming
-                                          ? "#30D158"
-                                          : "#FF453A",
-                                  }}
-                                >
-                                  {privacyMode
-                                    ? "••••••"
-                                    : `${incoming ? "+" : "−"}${fmtAmount(item.amount)}`}
+                                <span className="shrink-0 text-right">
+                                  <span
+                                    className="mono block text-[15px] font-medium leading-tight"
+                                    style={{
+                                      color: privacyMode
+                                        ? "var(--color-faint)"
+                                        : neutral
+                                          ? "#FFFFFF"
+                                          : incoming
+                                            ? "#30D158"
+                                            : "#FF453A",
+                                    }}
+                                  >
+                                    {privacyMode
+                                      ? "••••••"
+                                      : `${presentedAmount}${presentedAsset.code ? ` ${presentedAsset.code}` : ""}`}
+                                  </span>
+                                  {fiatValue !== null && (
+                                    <span className="block text-[11.5px] leading-tight text-neutral-500">
+                                      ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
+                                    </span>
+                                  )}
                                 </span>
                               )}
                             </button>
@@ -1837,17 +1997,16 @@ export function Dashboard() {
                 </div>
               )}
 
+              {/* Infinite-scroll sentinel — forever scroll, no button */}
               {activityCursor && (
-                <button
-                  type="button"
-                  className="mt-4 w-full rounded-2xl bg-white/[0.08] py-3.5 text-center text-[15px] font-semibold text-[#0A84FF] hover:bg-white/[0.12] transition-colors"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    void loadMoreActivity();
-                  }}
-                >
-                  {loadingMore ? <Spinner /> : "Load More Activity"}
-                </button>
+                <div ref={activitySentinelRef} className="flex justify-center py-5">
+                  {loadingMore && <Spinner size={18} />}
+                </div>
+              )}
+              {!activityCursor && filteredActivity.length > 0 && (
+                <p className="py-5 text-center text-[11.5px] text-neutral-500">
+                  You&rsquo;re all caught up
+                </p>
               )}
             </section>
           ) : null}
@@ -1882,11 +2041,11 @@ export function Dashboard() {
         </button>
         <button
           type="button"
-          className={`tab-item ${view === "explore" ? "active" : ""}`}
-          onClick={() => switchTab("explore")}
+          className={`tab-item ${view === "contacts" ? "active" : ""}`}
+          onClick={() => switchTab("contacts")}
         >
-          <IconCompass size={22} />
-          <span>Explore</span>
+          <IconBook size={22} />
+          <span>Contacts</span>
         </button>
         <button
           type="button"
@@ -1902,8 +2061,12 @@ export function Dashboard() {
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
       <ReceiveModal open={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
-      <AssetDetailModal asset={detailAsset} onClose={() => setDetailAsset(null)} />
-      <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
+      <AssetDetailModal
+        key={`${network}:${detailAsset?.key ?? "closed"}`}
+        asset={detailAsset}
+        onClose={() => setDetailAsset(null)}
+      />
+      <TxDetailModal key={txDetail?.hash ?? "closed"} item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
       <TrezorModal open={trezorModalOpen} onClose={() => setTrezorModalOpen(false)} />
@@ -1928,7 +2091,8 @@ export function Dashboard() {
         onSwitch={switchNetwork}
       />
       <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
-      <PhraseModal open={phraseOpen} onClose={() => setPhraseOpen(false)} />
+      <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
+      <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
     </div>
   );
 }
@@ -1951,28 +2115,17 @@ function Chevron() {
   );
 }
 
-type ActionAccent = "blue" | "green" | "purple" | "orange";
-
-const ACTION_STYLES: Record<ActionAccent, string> = {
-  blue: "border-transparent bg-gradient-to-b from-[#2E9BFF] to-[#0A84FF] text-white shadow-[0_10px_28px_-8px_rgba(10,132,255,0.75)]",
-  green: "border-[#30D158]/25 bg-[#30D158]/[0.14] text-[#30D158]",
-  purple: "border-[#BF5AF2]/25 bg-[#BF5AF2]/[0.14] text-[#BF5AF2]",
-  orange: "border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.14] text-[#FF9F0A]",
-};
-
 function ActionButton({
   icon,
   label,
   onClick,
-  accent,
-  filled = false,
+  primary = false,
   disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  accent: ActionAccent;
-  filled?: boolean;
+  primary?: boolean;
   disabled?: boolean;
 }) {
   return (
@@ -1986,18 +2139,20 @@ function ActionButton({
         playTapSound();
         onClick();
       }}
-      className="group flex w-[72px] flex-col items-center gap-2 outline-none sm:w-[84px]"
+      className="group flex w-[68px] flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
       <span
-        className={`flex h-14 w-14 items-center justify-center rounded-[22px] border backdrop-blur-md transition-all duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-active:scale-90 group-active:brightness-125 disabled:cursor-not-allowed disabled:opacity-40 sm:h-16 sm:w-16 sm:rounded-[26px] ${
-          filled ? ACTION_STYLES[accent] : `${ACTION_STYLES[accent]} bg-white/[0.05]`
-        }`}
+        className={`flex h-[60px] w-[60px] items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[90ms] ${
+          primary
+            ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
+            : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
+        } ${disabled ? "opacity-30" : ""}`}
       >
         {icon}
       </span>
       <span
-        className={`text-[11.5px] font-semibold tracking-tight transition-colors ${
-          disabled ? "text-neutral-600" : "text-neutral-200 group-hover:text-white"
+        className={`text-[12px] font-medium tracking-[-0.01em] transition-colors ${
+          disabled ? "text-neutral-600" : "text-neutral-300 group-hover:text-white"
         }`}
       >
         {label}
@@ -2025,7 +2180,7 @@ function NetworkModal({
         subtitle="Select active Stellar blockchain environment"
         onClose={onClose}
       />
-      <div className="p-6 space-y-3">
+      <div className="p-6 space-y-4">
         {(
           [
             {
@@ -2080,7 +2235,7 @@ function NetworkModal({
             </button>
           );
         })}
-        <Button variant="ghost" className="w-full mt-2" onClick={onClose}>
+        <Button variant="ghost" className="w-full" onClick={onClose}>
           Done
         </Button>
       </div>
@@ -2232,10 +2387,10 @@ function UnfundedCard({
       </span>
       <h2 className="display-h mt-6 text-[28px] text-white font-bold">Activate your account</h2>
       <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-300">
-        Stellar accounts must hold a minimum base reserve of 1 XLM to exist on-chain.{" "}
+        Stellar accounts must meet the network&apos;s current minimum balance to exist on-chain.{" "}
         {network === "testnet"
           ? "On testnet, Friendbot will fund your account with 10,000 free test XLM instantly."
-          : "On mainnet, transfer at least 1 XLM from an existing wallet to activate your public address."}
+          : "On mainnet, transfer enough XLM from an existing wallet to cover the live reserve and transaction fees."}
       </p>
       {network === "testnet" && (
         <Button
@@ -2269,6 +2424,7 @@ function PriceCard() {
     activeAccount,
     network,
     fiatCurrency,
+    fiatRates,
   } = useWallet();
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
@@ -2277,8 +2433,7 @@ function PriceCard() {
     () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
     [accountBalances],
   );
-  const isMainnet = network === "mainnet";
-  const canShowPortfolio = isMainnet && totalAllXlm > 0 && priceData !== null;
+  const canShowPortfolio = network === "mainnet" && totalAllXlm > 0 && priceData !== null;
   const mode = canShowPortfolio ? chartMode : "market";
 
   // Portfolio series: your total balance × historical XLM price
@@ -2315,7 +2470,7 @@ function PriceCard() {
   const up = (changePct ?? 0) >= 0;
 
   return (
-    <section className="panel fade-up p-5">
+    <section className="panel fade-up relative p-5">
       {/* Mode toggle */}
       {canShowPortfolio && (
         <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
@@ -2344,11 +2499,11 @@ function PriceCard() {
         </div>
       )}
 
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-[12.5px] font-semibold text-neutral-400">{headerLabel}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2.5">
-            <span className="text-[24px] font-bold tracking-tight text-white">
+          <div className="mt-0.5 flex flex-nowrap items-center gap-2.5">
+            <span className="whitespace-nowrap text-[24px] font-bold tracking-tight text-white">
               {mode === "portfolio" && currentValue !== null
                 ? fmtUsd(currentValue)
                 : priceData
@@ -2357,14 +2512,14 @@ function PriceCard() {
             </span>
             {mode === "portfolio"
               ? currentValue !== null && fiatCurrency !== "USD" && (
-                  <span className="mono text-[12px] text-neutral-400">
-                    ≈ {fmtFiat(currentValue, fiatCurrency)}
+                  <span className="mono shrink-0 whitespace-nowrap text-[12px] text-neutral-400">
+                    ≈ {fmtFiat(currentValue, fiatCurrency, fiatRates)}
                   </span>
                 )
               : null}
             {changePct !== null && (
               <span
-                className="rounded-lg px-2 py-0.5 text-[12px] font-semibold"
+                className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-semibold"
                 style={{
                   color: up ? "#30D158" : "#FF453A",
                   background: up ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
@@ -2376,23 +2531,6 @@ function PriceCard() {
             )}
           </div>
         </div>
-        <div className="flex gap-1 rounded-xl bg-white/[0.06] p-1 pt-1">
-          {ranges.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                void changePriceRange(r);
-              }}
-              className={`rounded-lg px-2.5 py-1 text-[12px] font-semibold transition-all ${
-                priceRange === r ? "bg-white/[0.18] text-white shadow-sm" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="mt-3">
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
@@ -2403,12 +2541,36 @@ function PriceCard() {
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}
       </div>
-      {mode === "portfolio" && (
-        <p className="mt-2 text-[10.5px] text-neutral-500">
-          Estimated from your current balance × historical XLM price.
+      {/* Range selector — own full-width row under the chart (iOS Stocks style),
+          so the header can never wrap and change height between tabs */}
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-white/[0.06] p-1">
+        {ranges.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              void changePriceRange(r);
+            }}
+            className={`rounded-lg px-2.5 py-1 text-center text-[12px] font-semibold transition-all ${
+              priceRange === r ? "bg-white/[0.18] text-white shadow-sm" : "text-neutral-400 hover:text-white"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      {/* Reserved footer slot — identical height in both tab modes */}
+      <p className="mt-2 flex h-[16px] items-center text-[10.5px] text-neutral-500">
+        {mode === "portfolio"
+          ? "Estimated from your current balance × historical XLM price."
+          : ""}
+      </p>
+      {priceLoading && (
+        <p className="pointer-events-none absolute bottom-3.5 right-4 text-[10px] text-neutral-500">
+          Updating…
         </p>
       )}
-      {priceLoading && <p className="mt-1 text-right text-[10px] text-neutral-500">Updating…</p>}
     </section>
   );
 }

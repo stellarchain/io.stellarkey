@@ -93,13 +93,14 @@ export function hasDeletedVault(): boolean {
 }
 
 export function wipeVault(): void {
-  const current = readVault();
-  if (current && typeof window !== "undefined") {
-    window.localStorage.setItem(TRASH_KEY, JSON.stringify(current));
-  }
   lockVault();
   if (typeof window !== "undefined") {
-    window.localStorage.removeItem(VAULT_KEY);
+    const keys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key && (key.startsWith("polaris.") || key.startsWith("wallet."))) keys.push(key);
+    }
+    for (const key of keys) window.localStorage.removeItem(key);
   }
 }
 
@@ -154,6 +155,8 @@ function stripSecret(account: StoredAccount): AccountMeta {
     publicKey: account.publicKey,
     createdAt: account.createdAt,
     ...(account.index !== undefined ? { index: account.index, path: account.path } : {}),
+    ...(account.hardware ? { hardware: account.hardware } : {}),
+    ...(account.watchOnly || account.hardware === "ledger" ? { watchOnly: true } : {}),
   };
 }
 
@@ -235,6 +238,51 @@ async function createDerivedVault(
   return { account: stripSecret(account), revealed: mnemonic };
 }
 
+/**
+ * Create a vault containing ONLY a hardware-wallet account — no mnemonic, no
+ * local secrets. A password canary is stored so unlock can still verify the
+ * password cryptographically.
+ */
+export async function initializeHardwareVault(
+  password: string,
+  account: {
+    publicKey: string;
+    path: string;
+    index: number;
+    device: "ledger" | "trezor";
+    label?: string;
+  },
+): Promise<{ account: AccountMeta }> {
+  if (account.device !== "trezor") {
+    throw new Error("Ledger is not supported in this build. No account was imported.");
+  }
+  if (password.length < 8) {
+    throw new Error("Password must be at least 8 characters");
+  }
+  if (!isValidPublicAddress(account.publicKey)) {
+    throw new Error("Invalid Stellar address read from device.");
+  }
+  const stored: StoredAccount = {
+    id: randomHex(8),
+    label: account.label?.trim() || (account.device === "trezor" ? "Trezor 1" : "Ledger 1"),
+    publicKey: account.publicKey,
+    createdAt: Date.now(),
+    index: account.index,
+    path: account.path,
+    hardware: account.device,
+  };
+  const vault: VaultFile = {
+    version: 1,
+    passwordCheck: await encryptString("polaris-vault-ok", password),
+    accounts: [stored],
+    activeAccountId: stored.id,
+  };
+  persist(vault);
+  sessionPassword = password;
+  sessionMnemonic = null;
+  return { account: stripSecret(stored) };
+}
+
 export async function unlockVault(password: string): Promise<VaultFile> {
   const vault = readVault();
   if (!vault || vault.accounts.length === 0) {
@@ -272,17 +320,36 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   }
 
   const firstAcc = vault.accounts[0];
-  if (!firstAcc?.secret) {
+  const firstWithSecret = vault.accounts.find((a) => a.secret);
+  if (!firstAcc) {
+    throw new Error("Corrupt vault: no accounts found");
+  }
+  if (!firstWithSecret) {
+    // Hardware / watch-only vaults hold no encrypted key material — verify
+    // against the password canary written at creation when one exists.
+    if (vault.passwordCheck) {
+      try {
+        await decryptString(vault.passwordCheck, password);
+      } catch {
+        throw new Error("Incorrect password.");
+      }
+    }
+    sessionPassword = password;
+    return vault;
+  }
+  const firstSecret = firstWithSecret.secret;
+  if (!firstSecret) {
     throw new Error("Corrupt vault: no encrypted key found");
   }
   try {
-    const s0 = await decryptString(firstAcc.secret, password);
-    sessionSecrets.set(firstAcc.id, s0);
+    const s0 = await decryptString(firstSecret, password);
+    sessionSecrets.set(firstWithSecret.id, s0);
   } catch {
     throw new Error("Incorrect password.");
   }
 
-  for (const acc of vault.accounts.slice(1)) {
+  for (const acc of vault.accounts) {
+    if (acc.id === firstWithSecret.id) continue;
     if (acc.secret) {
       try {
         const s = await decryptString(acc.secret, password);
@@ -438,6 +505,9 @@ export async function addHardwareAccount(params: {
   index?: number;
 }): Promise<AccountMeta> {
   const { publicKey, device, path, label, index } = params;
+  if (device !== "trezor") {
+    throw new Error("Ledger is not supported in this build. No account was imported.");
+  }
   if (!StrKey.isValidEd25519PublicKey(publicKey.trim())) {
     throw new Error("Invalid Stellar public key");
   }
@@ -454,8 +524,8 @@ export async function addHardwareAccount(params: {
 
   const account: StoredAccount = {
     id: randomHex(8),
-    label: label?.trim() || `${device === "ledger" ? "Ledger" : "Trezor"} ${(index ?? 0) + 1}`,
-    emoji: device === "ledger" ? "🔒" : "🛡️",
+    label: label?.trim() || `Trezor ${(index ?? 0) + 1}`,
+    emoji: "🛡️",
     publicKey: pk,
     createdAt: Date.now(),
     hardware: device,
@@ -606,48 +676,256 @@ export function exportKeystore(accountId: string): string | null {
   return JSON.stringify(payload, null, 2);
 }
 
+/* ------------------------------------------------------------------ */
+/* Full wallet backup. v2 encrypts the ENTIRE payload — vault,         */
+/* contacts, settings, tx notes — with the wallet password; only the   */
+/* envelope marker stays plaintext. Legacy v1 plaintext backups still  */
+/* restore (vault only).                                               */
+/* ------------------------------------------------------------------ */
 
-/**
- * Export the ENTIRE encrypted vault (all accounts + mnemonic) as a portable
- * JSON backup. The file is already password-encrypted at rest — no plaintext
- * secrets are ever written.
- */
-export function exportVaultBackup(): string {
-  const vault = readVault();
-  if (!vault) throw new Error("No wallet to back up.");
-  const payload = {
-    kind: "stellar-wallet-backup",
-    exportedAt: new Date().toISOString(),
-    network: loadNetworkPref(),
-    vault,
+const BACKUP_KIND = "stellar-wallet-backup";
+const CONTACTS_KEY = "polaris.contacts.v1";
+const PRIVACY_KEY = "polaris.privacy.v1";
+const SOUND_KEY = "wallet.sound.v1";
+const CURRENCY_KEY = "wallet.currency.v1";
+const TX_NOTES_KEY = "wallet.tx-notes.v1";
+
+function isEncryptedPayload(value: unknown): value is EncryptedPayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<EncryptedPayload>;
+  return (
+    typeof candidate.salt === "string" &&
+    typeof candidate.iv === "string" &&
+    typeof candidate.ciphertext === "string"
+  );
+}
+
+interface TxNoteEnvelope {
+  version: 2;
+  crypto: EncryptedPayload;
+}
+
+function isTxNoteEnvelope(value: unknown): value is TxNoteEnvelope {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<TxNoteEnvelope>;
+  return candidate.version === 2 && isEncryptedPayload(candidate.crypto);
+}
+
+async function writePrivateTxNotes(
+  notes: Record<string, string>,
+  password: string,
+): Promise<void> {
+  const envelope: TxNoteEnvelope = {
+    version: 2,
+    crypto: await encryptString(JSON.stringify(notes), password),
   };
-  return JSON.stringify(payload, null, 2);
+  window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(envelope));
+}
+
+async function readPrivateTxNotes(password: string): Promise<Record<string, string>> {
+  const stored = readLocalJson(TX_NOTES_KEY);
+  if (stored === null) return {};
+  if (isTxNoteEnvelope(stored)) {
+    try {
+      const decoded = JSON.parse(await decryptString(stored.crypto, password)) as unknown;
+      if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return {};
+      return Object.fromEntries(
+        Object.entries(decoded).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+    } catch {
+      throw new Error("Private transaction notes could not be decrypted.");
+    }
+  }
+
+  // One-time migration from the legacy plaintext map and the short-lived
+  // per-note encrypted format.
+  const legacy = stored && typeof stored === "object" && !Array.isArray(stored)
+    ? (stored as Record<string, unknown>)
+    : {};
+  const notes: Record<string, string> = {};
+  for (const [hash, value] of Object.entries(legacy)) {
+    if (typeof value === "string") notes[hash] = value;
+    else if (isEncryptedPayload(value)) {
+      try {
+        notes[hash] = await decryptString(value, password);
+      } catch {
+        // Skip only the corrupt legacy record; valid notes are still migrated.
+      }
+    }
+  }
+  await writePrivateTxNotes(notes, password);
+  return notes;
+}
+
+export async function loadPrivateTxNote(transactionHash: string): Promise<string> {
+  const password = sessionPassword;
+  if (!password) throw new VaultLockedError();
+  const notes = await readPrivateTxNotes(password);
+  return notes[transactionHash] ?? "";
+}
+
+export async function savePrivateTxNote(
+  transactionHash: string,
+  note: string,
+): Promise<void> {
+  const password = sessionPassword;
+  if (!password) throw new VaultLockedError();
+  const key = transactionHash.trim();
+  if (!key) throw new Error("Transaction hash is required.");
+  const notes = await readPrivateTxNotes(password);
+  const value = note.trim();
+  if (value) notes[key] = value;
+  else delete notes[key];
+  await writePrivateTxNotes(notes, password);
+}
+
+interface BackupSettings {
+  network: "testnet" | "mainnet";
+  fiatCurrency: string | null;
+  autoLockMs: number | null;
+  biometrics: boolean;
+  privacy: boolean;
+  sound: boolean;
+}
+
+interface FullBackupPayload {
+  exportedAt: string;
+  vault: VaultFile;
+  contacts: unknown[];
+  settings?: BackupSettings;
+  txNotes: Record<string, unknown>;
 }
 
 export interface VaultRestoreResult {
   accountCount: number;
   hasMnemonic: boolean;
+  contactCount: number;
 }
 
-/**
- * Restore a full vault from a backup file. Replaces any existing wallet —
- * the caller must confirm with the user first. The restored wallet stays
- * locked; unlocking requires the ORIGINAL password of the backup.
- */
-export function restoreVaultBackup(json: string): VaultRestoreResult {
+export interface VaultBackupInfo {
+  accountCount: number;
+  contactCount: number;
+  hasMnemonic: boolean;
+  hasSettings: boolean;
+  exportedAt?: string;
+}
+
+function readLocalJson(key: string): unknown {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the file is a valid v2 fully-encrypted backup envelope. */
+export function isEncryptedBackup(json: string): boolean {
+  try {
+    const p = JSON.parse(json) as { kind?: string; version?: number; crypto?: unknown };
+    return p.kind === BACKUP_KIND && p.version === 2 && Boolean(p.crypto);
+  } catch {
+    return false;
+  }
+}
+
+async function decodeBackup(
+  json: string,
+  password?: string,
+): Promise<{ payload: FullBackupPayload }> {
   let parsed: {
     kind?: string;
-    vault?: VaultFile;
+    version?: number;
+    crypto?: EncryptedPayload;
   };
   try {
-    parsed = JSON.parse(json) as typeof parsed;
+    parsed = JSON.parse(json);
   } catch {
     throw new Error("Not a valid backup file.");
   }
-  if (parsed.kind !== "stellar-wallet-backup" || !parsed.vault) {
+  if (parsed.kind !== BACKUP_KIND) {
     throw new Error("This file is not a Wallet backup.");
   }
-  const vault = parsed.vault;
+  if (parsed.version !== 2 || !parsed.crypto) {
+    throw new Error(
+      "This backup uses the legacy plaintext format, which is no longer supported. Create a fresh encrypted backup from the source wallet.",
+    );
+  }
+  if (!password) {
+    throw new Error("This backup is encrypted — enter its password first.");
+  }
+  let plaintext: string;
+  try {
+    plaintext = await decryptString(parsed.crypto, password);
+  } catch {
+    throw new Error("Incorrect password for this backup file.");
+  }
+  const payload = JSON.parse(plaintext) as FullBackupPayload;
+  if (!payload.vault) throw new Error("Backup contains no wallet data.");
+  return { payload };
+}
+
+/** Summarize a backup file (requires the backup password). */
+export async function inspectVaultBackup(
+  json: string,
+  password?: string,
+): Promise<VaultBackupInfo> {
+  const { payload } = await decodeBackup(json, password);
+  return {
+    accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
+    contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
+    hasMnemonic: Boolean(payload.vault.mnemonic),
+    hasSettings: Boolean(payload.settings),
+    exportedAt: payload.exportedAt || undefined,
+  };
+}
+
+/**
+ * Export the ENTIRE wallet — vault (all accounts + mnemonic), contacts,
+ * settings and private tx notes — as a single AES-256-GCM encrypted file,
+ * locked by the wallet password. No plaintext metadata is ever written.
+ */
+export async function exportVaultBackup(): Promise<string> {
+  const vault = readVault();
+  if (!vault) throw new Error("No wallet to back up.");
+  if (!sessionPassword) throw new VaultLockedError();
+
+  const contactsRaw = readLocalJson(CONTACTS_KEY);
+  const notesRaw = readLocalJson(TX_NOTES_KEY);
+  const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
+  const payload: FullBackupPayload = {
+    exportedAt: new Date().toISOString(),
+    vault,
+    contacts: Array.isArray(contactsRaw) ? contactsRaw : [],
+    settings: {
+      network: loadNetworkPref(),
+      fiatCurrency: window.localStorage.getItem(CURRENCY_KEY),
+      autoLockMs: autoLockRaw !== null ? Number(autoLockRaw) : null,
+      biometrics: false,
+      privacy: window.localStorage.getItem(PRIVACY_KEY) === "1",
+      sound: window.localStorage.getItem(SOUND_KEY) !== "0",
+    },
+    txNotes:
+      notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
+        ? (notesRaw as Record<string, unknown>)
+        : {},
+  };
+  const crypto = await encryptString(JSON.stringify(payload), sessionPassword);
+  return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
+}
+
+/**
+ * Restore a full wallet from a backup file. Replaces any existing wallet —
+ * the caller must confirm with the user first. v2 backups need the backup's
+ * password (they are fully encrypted) and also restore contacts, settings
+ * and tx notes. The restored wallet stays locked afterwards.
+ */
+export async function restoreVaultBackup(
+  json: string,
+  password?: string,
+): Promise<VaultRestoreResult> {
+  const { payload } = await decodeBackup(json, password);
+  const vault = payload.vault;
   if (
     (vault.version !== 1 && vault.version !== 2) ||
     !Array.isArray(vault.accounts) ||
@@ -655,19 +933,33 @@ export function restoreVaultBackup(json: string): VaultRestoreResult {
   ) {
     throw new Error("Backup contains no recoverable accounts.");
   }
-  // Move any current wallet to trash so restore is itself reversible
-  const current = readVault();
-  if (current) {
-    window.localStorage.setItem(TRASH_KEY, JSON.stringify(current));
-  }
   persist(vault);
+  window.localStorage.removeItem(TRASH_KEY);
   sessionSecrets.clear();
   sessionMnemonic = null;
+
+  // Full-wallet restore — overwrite the satellite stores too
+  window.localStorage.setItem(CONTACTS_KEY, JSON.stringify(payload.contacts ?? []));
+  window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(payload.txNotes ?? {}));
+  if (payload.settings) {
+    const s = payload.settings;
+    window.localStorage.setItem(NETWORK_KEY, s.network);
+    if (s.fiatCurrency) window.localStorage.setItem(CURRENCY_KEY, s.fiatCurrency);
+    if (s.autoLockMs !== null) {
+      window.localStorage.setItem(AUTOLOCK_KEY, String(s.autoLockMs));
+    }
+    window.localStorage.removeItem(BIOMETRICS_KEY);
+    window.localStorage.setItem(PRIVACY_KEY, s.privacy ? "1" : "0");
+    window.localStorage.setItem(SOUND_KEY, s.sound ? "1" : "0");
+  }
+
   return {
     accountCount: vault.accounts.length,
     hasMnemonic: Boolean(vault.mnemonic),
+    contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
   };
 }
+
 
 export async function exportKeystoreUnlocked(accountId: string): Promise<string | null> {
   const secret = sessionSecrets.get(accountId);

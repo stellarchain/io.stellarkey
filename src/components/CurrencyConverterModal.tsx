@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { FIAT_RATES } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, Modal, ModalHeader } from "./ui";
+import { Button, Modal, ModalHeader, Select } from "./ui";
 import { IconSwap } from "./icons";
 
 interface UnitPriceOption {
@@ -24,31 +23,37 @@ export function CurrencyConverterModal({
   onClose: () => void;
   onOpenSwap?: () => void;
 }) {
-  const { xlmPriceUsd } = useWallet();
+  const { xlmPriceUsd, fiatRates } = useWallet();
   const [fromCode, setFromCode] = useState("XLM");
   const [toCode, setToCode] = useState("USD");
   const [fromAmount, setFromAmount] = useState("100");
 
   const units: UnitPriceOption[] = useMemo(() => {
-    const xlmUsd = xlmPriceUsd ?? 0.125;
+    const names: Record<string, string> = {
+      USD: "US Dollar",
+      EUR: "Euro",
+      GBP: "British Pound",
+      JPY: "Japanese Yen",
+      CAD: "Canadian Dollar",
+      AUD: "Australian Dollar",
+      CHF: "Swiss Franc",
+    };
+    const fiatUnits = Object.entries(fiatRates)
+      .filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0)
+      .map(([code, perUsd]) => ({
+        code,
+        name: names[code] ?? code,
+        usdPrice: 1 / perUsd,
+        isFiat: true,
+      }));
     return [
-      { code: "XLM", name: "Stellar Lumens", usdPrice: xlmUsd, isStellar: true },
-      { code: "USDC", name: "USD Coin", usdPrice: 1.0, isStellar: true },
-      { code: "EURC", name: "Euro Coin", usdPrice: 1.08, isStellar: true },
-      { code: "BTC", name: "Bitcoin", usdPrice: 65000, isStellar: true },
-      { code: "ETH", name: "Ethereum", usdPrice: 3500, isStellar: true },
-      { code: "USD", name: "US Dollar", usdPrice: 1.0, isFiat: true },
-      { code: "EUR", name: "Euro", usdPrice: 1 / (FIAT_RATES.EUR ?? 0.92), isFiat: true },
-      { code: "GBP", name: "British Pound", usdPrice: 1 / (FIAT_RATES.GBP ?? 0.79), isFiat: true },
-      { code: "JPY", name: "Japanese Yen", usdPrice: 1 / (FIAT_RATES.JPY ?? 154.5), isFiat: true },
-      { code: "CAD", name: "Canadian Dollar", usdPrice: 1 / (FIAT_RATES.CAD ?? 1.38), isFiat: true },
-      { code: "AUD", name: "Australian Dollar", usdPrice: 1 / (FIAT_RATES.AUD ?? 1.52), isFiat: true },
-      { code: "CHF", name: "Swiss Franc", usdPrice: 1 / (FIAT_RATES.CHF ?? 0.89), isFiat: true },
+      { code: "XLM", name: "Stellar Lumens", usdPrice: xlmPriceUsd ?? 0, isStellar: true },
+      ...fiatUnits,
     ];
-  }, [xlmPriceUsd]);
+  }, [xlmPriceUsd, fiatRates]);
 
   const fromUnit = units.find((u) => u.code === fromCode) ?? units[0];
-  const toUnit = units.find((u) => u.code === toCode) ?? units[5];
+  const toUnit = units.find((u) => u.code === toCode) ?? units[1];
 
   const parsedFrom = parseFloat(fromAmount) || 0;
   const rate = toUnit.usdPrice > 0 ? fromUnit.usdPrice / toUnit.usdPrice : 0;
@@ -68,10 +73,10 @@ export function CurrencyConverterModal({
     <Modal open onClose={onClose} wide>
       <ModalHeader
         title="Live Currency Converter"
-        subtitle="Real-time fiat & crypto exchange rates"
+        subtitle="Current XLM price and live fiat exchange rates"
         onClose={onClose}
       />
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-4">
         {/* Converter Card */}
         <div className="rounded-3xl bg-white/[0.03] border border-white/10 p-5 space-y-4 shadow-xl">
           {/* From Input */}
@@ -88,20 +93,19 @@ export function CurrencyConverterModal({
                 placeholder="0.00"
                 className="input mono !h-12 text-[20px] font-semibold flex-1"
               />
-              <select
+              <Select
                 value={fromCode}
-                onChange={(e) => {
-                  triggerHaptic("selection");
-                  setFromCode(e.target.value);
-                }}
-                className="input !h-12 text-[14px] font-semibold !w-32 cursor-pointer"
-              >
-                {units.map((u) => (
-                  <option key={u.code} value={u.code} className="bg-neutral-900 text-white">
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+                onChange={setFromCode}
+                ariaLabel="Convert from"
+                panelMinWidth={230}
+                className="!h-12 !w-32 text-[14px] font-semibold"
+                options={units.map((u) => ({
+                  value: u.code,
+                  label: u.code,
+                  sublabel: u.name,
+                  triggerLabel: u.code,
+                }))}
+              />
             </div>
           </div>
 
@@ -130,20 +134,19 @@ export function CurrencyConverterModal({
                     })
                   : "0.00"}
               </div>
-              <select
+              <Select
                 value={toCode}
-                onChange={(e) => {
-                  triggerHaptic("selection");
-                  setToCode(e.target.value);
-                }}
-                className="input !h-12 text-[14px] font-semibold !w-32 cursor-pointer"
-              >
-                {units.map((u) => (
-                  <option key={u.code} value={u.code} className="bg-neutral-900 text-white">
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+                onChange={setToCode}
+                ariaLabel="Convert to"
+                panelMinWidth={230}
+                className="!h-12 !w-32 text-[14px] font-semibold"
+                options={units.map((u) => ({
+                  value: u.code,
+                  label: u.code,
+                  sublabel: u.name,
+                  triggerLabel: u.code,
+                }))}
+              />
             </div>
           </div>
         </div>

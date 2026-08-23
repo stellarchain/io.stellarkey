@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
+import { exportKeystoreUnlocked, exportVaultBackup } from "@/lib/vault";
+import { openPaperWalletPrint } from "@/lib/paperwallet";
+import { useToast } from "./Toast";
 import { Button, Modal, ModalHeader } from "./ui";
-import { IconAlert, IconCheck } from "./icons";
+import { IconAlert, IconCheck, IconLock } from "./icons";
 
 export function PaperWalletModal({
   open,
@@ -14,6 +17,8 @@ export function PaperWalletModal({
   secretOrPhrase,
   kind,
   path,
+  accountId,
+  networkLabel,
 }: {
   open: boolean;
   onClose: () => void;
@@ -22,9 +27,13 @@ export function PaperWalletModal({
   secretOrPhrase: string;
   kind: "mnemonic" | "secret";
   path?: string;
+  /** Enables the encrypted keystore export for secret-key certificates. */
+  accountId?: string;
+  networkLabel?: string;
 }) {
   const [pubQr, setPubQr] = useState<string | null>(null);
   const [secQr, setSecQr] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     let alive = true;
@@ -57,10 +66,57 @@ export function PaperWalletModal({
     };
   }, [publicKey, secretOrPhrase]);
 
-  function handlePrint() {
+  function handleExportPdf() {
+    if (!pubQr || !secQr) return;
     triggerHaptic("selection");
-    if (typeof window !== "undefined") {
-      window.print();
+    openPaperWalletPrint({
+      accountLabel,
+      publicKey,
+      secretOrPhrase,
+      kind,
+      path,
+      networkLabel,
+      pubQrDataUrl: pubQr,
+      secQrDataUrl: secQr,
+    });
+  }
+
+  async function handleEncryptedExport() {
+    triggerHaptic("selection");
+    try {
+      let json: string;
+      let filename: string;
+      if (kind === "secret") {
+        if (!accountId) return;
+        const keystore = await exportKeystoreUnlocked(accountId);
+        if (!keystore) {
+          triggerHaptic("error");
+          toast("Encrypted export unavailable for this account type", "error");
+          return;
+        }
+        json = keystore;
+        filename = `wallet-${accountLabel.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
+      } else {
+        json = await exportVaultBackup();
+        filename = `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      }
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      triggerHaptic("success");
+      toast(
+        kind === "secret"
+          ? "Encrypted keystore downloaded — unlocks with your wallet password"
+          : "Encrypted vault backup downloaded — unlocks with your wallet password",
+        "success",
+      );
+    } catch (e) {
+      triggerHaptic("error");
+      toast(e instanceof Error ? e.message : "Encrypted export failed.", "error");
     }
   }
 
@@ -97,7 +153,7 @@ export function PaperWalletModal({
           </div>
 
           {/* 2-Column QR Grid: Public vs Secret */}
-          <div className="mt-6 grid grid-cols-2 gap-6">
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
             {/* Public Key Column */}
             <div className="flex flex-col items-center rounded-2xl border border-black/15 p-4 text-center bg-neutral-50">
               <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-2">
@@ -153,15 +209,30 @@ export function PaperWalletModal({
           </div>
         </div>
 
-        {/* Print Action Buttons */}
-        <div className="mt-6 flex gap-3 print:hidden">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>
+        {/* Export Actions */}
+        <div className="mt-6 grid grid-cols-2 gap-3 print:hidden">
+          <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button className="flex-1 !bg-white !text-black hover:!bg-neutral-200" onClick={handlePrint}>
-            Print / Save as PDF
+          <Button onClick={handleExportPdf} disabled={!pubQr || !secQr}>
+            Export PDF Certificate
           </Button>
         </div>
+        <button
+          type="button"
+          onClick={() => void handleEncryptedExport()}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] py-2.5 text-[12.5px] font-semibold text-neutral-300 transition-colors hover:border-[#0A84FF]/40 hover:text-[#0A84FF] print:hidden"
+        >
+          <IconLock size={13} />
+          <span>
+            Download encrypted file instead
+            <span className="font-normal text-neutral-500">
+              {" "}
+              · {kind === "secret" ? "keystore .json" : "vault backup .json"} · locked by your
+              wallet password
+            </span>
+          </span>
+        </button>
       </div>
     </Modal>
   );

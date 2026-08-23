@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { connectTrezorDevice, getStellarDerivationPath } from "@/lib/hardware";
+import { connectTrezorDevice, getStellarDerivationPath, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconExternal, IconTrezor } from "./icons";
@@ -18,14 +18,24 @@ export function TrezorModal({
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connectedInfo, setConnectedInfo] = useState<{ publicKey: string; path: string } | null>(null);
+  const [connectedInfo, setConnectedInfo] = useState<{
+    publicKey: string;
+    path: string;
+    index: number;
+  } | null>(null);
+
+  // Preload + init the connect bundle as soon as the modal opens so the
+  // click below can open the official device interaction immediately.
+  useEffect(() => {
+    if (open) warmTrezorConnect();
+  }, [open]);
 
   async function handleConnectTrezor() {
     setError(null);
     setBusy(true);
     try {
       const info = await connectTrezorDevice(index);
-      setConnectedInfo({ publicKey: info.publicKey, path: info.path });
+      setConnectedInfo({ publicKey: info.publicKey, path: info.path, index: info.index });
       triggerHaptic("success");
     } catch (e) {
       triggerHaptic("error");
@@ -43,8 +53,8 @@ export function TrezorModal({
         publicKey: connectedInfo.publicKey,
         device: "trezor",
         path: connectedInfo.path,
-        label: `Trezor Account ${index + 1}`,
-        index,
+        label: `Trezor Account ${connectedInfo.index + 1}`,
+        index: connectedInfo.index,
       });
       triggerHaptic("success");
       onClose();
@@ -62,10 +72,10 @@ export function TrezorModal({
     <Modal open onClose={onClose} wide>
       <ModalHeader
         title="Trezor Hardware Suite"
-        subtitle="Cold storage key management via WebUSB & Trezor Connect"
+        subtitle="Cold-storage signing through Trezor Connect"
         onClose={onClose}
       />
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-4">
         {/* Device Hero Card */}
         <div className="rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-950/40 via-zinc-900 to-black p-5 flex items-center justify-between shadow-xl">
           <div className="space-y-1">
@@ -100,12 +110,13 @@ export function TrezorModal({
               <button
                 key={i}
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   triggerHaptic("selection");
                   setIndex(i);
                   setConnectedInfo(null);
                 }}
-                className={`flex-1 py-1.5 rounded-xl text-[12px] font-semibold transition-all ${
+                className={`flex-1 py-1.5 rounded-xl text-[12px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                   index === i
                     ? "bg-[#0A84FF] text-white shadow-sm"
                     : "bg-white/[0.06] text-neutral-400 hover:text-white"
@@ -135,7 +146,7 @@ export function TrezorModal({
               loading={busy}
               onClick={() => void handleImportAccount()}
             >
-              Import Trezor Account {index + 1}
+              Import Trezor Account {connectedInfo.index + 1}
             </Button>
           </div>
         ) : (
@@ -144,7 +155,7 @@ export function TrezorModal({
             loading={busy}
             onClick={() => void handleConnectTrezor()}
           >
-            <IconTrezor size={18} /> Connect Trezor via WebUSB
+            <IconTrezor size={18} /> Connect with Trezor Connect
           </Button>
         )}
 
@@ -168,7 +179,7 @@ export function TrezorModal({
           </a>
         </div>
 
-        <Button variant="ghost" className="w-full mt-2" onClick={onClose}>
+        <Button variant="ghost" className="w-full" onClick={onClose}>
           Close
         </Button>
       </div>

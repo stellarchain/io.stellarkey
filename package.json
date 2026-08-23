@@ -6,10 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
+    "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.0.0",
+    "@trezor/connect-web": "^9.7.3",
     "next": "16.3.2",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -26,5 +32,8 @@
     "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "protobufjs": "7.6.5"
   }
 }

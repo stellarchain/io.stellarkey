@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
-import { Button, Modal, ModalHeader } from "./ui";
+import { fetchFeeStats, testHorizonPing, type FeeStats } from "@/lib/api";
+import { stroopsToAmount } from "@/lib/stellar-domain";
+import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconShield } from "./icons";
 
 export function NetworkStatsModal({
@@ -12,19 +15,38 @@ export function NetworkStatsModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { network, activity } = useWallet();
+  const { network, activity, minimumBalanceXlm } = useWallet();
+  const [feeStats, setFeeStats] = useState<FeeStats | null>(null);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void Promise.all([fetchFeeStats(network), testHorizonPing(network)])
+      .then(([fees, latency]) => {
+        if (!alive) return;
+        setFeeStats(fees);
+        setLatencyMs(latency);
+        setError(null);
+      })
+      .catch((cause) => {
+        if (alive) setError(cause instanceof Error ? cause.message : "Unable to load network statistics.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [network, open]);
+
   if (!open) return null;
 
   const totalTxCount = activity.length;
-  // Estimated gas savings: Ethereum average tx = ~$4.50, Stellar = ~$0.00001
-  const ethSavingsUsd = (totalTxCount * 4.5).toFixed(2);
-
 
   return (
     <Modal open onClose={onClose} wide>
       <ModalHeader
-        title="Network Efficiency & Stats"
-        subtitle={`Stellar ${NETWORKS[network].label} Performance & Eco-Score`}
+        title="Network Status"
+        subtitle={`Observed data from Stellar ${NETWORKS[network].label}`}
         onClose={onClose}
       />
       <div className="p-6 space-y-4">
@@ -33,13 +55,13 @@ export function NetworkStatsModal({
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-semibold text-emerald-400 mb-2">
               <IconShield size={12} />
-              <span>100% Carbon Neutral</span>
+              <span>No Proof-of-Work Mining</span>
             </div>
             <h3 className="text-[17px] font-bold text-white tracking-tight">
-              Eco-Friendly Stellar Consensus (SCP)
+              Stellar Consensus Protocol
             </h3>
             <p className="text-[12px] text-neutral-400 mt-1 max-w-sm">
-              Powered by the Federated Byzantine Agreement with zero energy-intensive Proof-of-Work mining.
+              Federated Byzantine Agreement reaches consensus without proof-of-work mining.
             </p>
           </div>
           <div className="text-right">
@@ -51,28 +73,28 @@ export function NetworkStatsModal({
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Avg Finality Speed
+              Horizon Response
             </p>
-            <p className="mono text-[22px] font-bold text-white mt-1">~3.5s</p>
-            <p className="text-[11px] text-emerald-400 font-medium mt-0.5">Instant Settlement</p>
+            <p className="mono text-[22px] font-bold text-white mt-1">{latencyMs === null ? "—" : `${latencyMs}ms`}</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">Measured from this browser</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Avg Network Fee
+              Accepted Base Fee
             </p>
-            <p className="mono text-[22px] font-bold text-[#30D158] mt-1">$0.000001</p>
-            <p className="text-[11px] text-neutral-400 mt-0.5">100 stroops (0.00001 XLM)</p>
+            <p className="mono text-[22px] font-bold text-[#30D158] mt-1">
+              {feeStats ? stroopsToAmount(BigInt(feeStats.modeAcceptedFee)) : "—"} XLM
+            </p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">Horizon fee distribution mode</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Est. Gas Fees Saved
+              Loaded Activity
             </p>
-            <p className="mono text-[22px] font-bold text-[#64D2FF] mt-1">
-              ${totalTxCount > 0 ? ethSavingsUsd : "45.00+"}
-            </p>
-            <p className="text-[11px] text-neutral-400 mt-0.5">vs. Ethereum network</p>
+            <p className="mono text-[22px] font-bold text-[#64D2FF] mt-1">{totalTxCount}</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">Operations loaded in this session</p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
@@ -84,26 +106,32 @@ export function NetworkStatsModal({
           </div>
         </div>
 
-        {/* Ledger Base Reserve Breakdown */}
+        {error && <ErrorText message={error} />}
+
+        {/* Live account reserve */}
         <div className="panel-inset p-4 space-y-2 text-[12.5px]">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Stellar Base Reserve Standards (SEP)
+            Active Account Reserve
           </p>
           <div className="flex justify-between text-neutral-300">
-            <span>Base Account Minimum</span>
-            <span className="mono font-semibold text-white">1.0000 XLM</span>
+            <span>Current Minimum Balance</span>
+            <span className="mono font-semibold text-white">
+              {minimumBalanceXlm === null ? "—" : `${minimumBalanceXlm} XLM`}
+            </span>
           </div>
           <div className="flex justify-between text-neutral-300">
-            <span>Trustline / Signer Reserve</span>
-            <span className="mono font-semibold text-white">0.5000 XLM per entry</span>
+            <span>Last Ledger Base Fee</span>
+            <span className="mono font-semibold text-white">
+              {feeStats ? `${feeStats.lastLedgerBaseFee} stroops` : "—"}
+            </span>
           </div>
           <div className="flex items-center gap-1.5 pt-1 text-[11px] text-emerald-400">
             <IconCheck size={12} />
-            <span>100% refundable upon trustline removal or account merge.</span>
+            <span>Minimum balance includes subentries and sponsorship deltas reported by Horizon.</span>
           </div>
         </div>
 
-        <Button variant="ghost" className="w-full mt-2" onClick={onClose}>
+        <Button variant="ghost" className="w-full" onClick={onClose}>
           Close
         </Button>
       </div>

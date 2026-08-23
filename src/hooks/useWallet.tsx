@@ -13,6 +13,8 @@ import type { Asset } from "@stellar/stellar-sdk";
 import * as api from "@/lib/api";
 import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
 import * as swapLib from "@/lib/swap";
+import * as msig from "@/lib/multisig";
+import type { CosignOutcome, MultisigConfig } from "@/lib/multisig";
 import {
   addStoredAccount,
   addHardwareAccount as addHardwareAccountVault,
@@ -23,8 +25,8 @@ import {
   revealMnemonic as revealMnemonicVault,
   getSecretKey,
   initializeVault,
+  initializeHardwareVault,
   loadAutoLockPref,
-  loadBiometricsPref,
   loadNetworkPref,
   loadVault,
   lockVault,
@@ -34,7 +36,6 @@ import {
   restoreDeletedVault,
   restoreVaultBackup,
   saveAutoLockPref,
-  saveBiometricsPref,
   saveNetworkPref,
   setActiveStoredAccount,
   unlockVault,
@@ -48,8 +49,11 @@ import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type C
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
 import type { FiatCurrency } from "@/lib/format";
+import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
-import { NETWORKS, type NetworkKey } from "@/lib/stellar";
+import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
+import { getHorizonUrl, type NetworkKey } from "@/lib/stellar";
+import type { StellarMemoInput } from "@/lib/stellar-domain";
 
 type Phase = "loading" | "empty" | "locked" | "unlocked";
 
@@ -60,7 +64,20 @@ function stripSecret(account: StoredAccount): AccountMeta {
     publicKey: account.publicKey,
     createdAt: account.createdAt,
     ...(account.index !== undefined ? { index: account.index, path: account.path } : {}),
-    ...(account.watchOnly ? { watchOnly: true } : {}),
+    ...(account.watchOnly || account.hardware === "ledger" ? { watchOnly: true } : {}),
+    ...(account.hardware ? { hardware: account.hardware } : {}),
+  };
+}
+
+function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined {
+  if (!acc?.hardware) return undefined;
+  if (acc.hardware === "ledger") {
+    throw new Error("Ledger transaction signing is not yet supported in this build.");
+  }
+  return {
+    device: "trezor",
+    publicKey: acc.publicKey,
+    path: acc.path ?? "m/44'/148'/0'",
   };
 }
 
@@ -75,6 +92,8 @@ interface WalletContextValue {
   archivedAccounts: AccountMeta[];
   hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
+  minimumBalanceXlm: string | null;
+  dataError: string | null;
   /** Native XLM balance per publicKey — kept warm so the sidebar never flashes zero */
   accountBalances: Record<string, number>;
   claimableBalances: ClaimableBalanceItem[];
@@ -93,11 +112,11 @@ interface WalletContextValue {
   privacyMode: boolean;
   togglePrivacy: () => void;
   fiatCurrency: FiatCurrency;
+  fiatRates: FiatRates;
   cycleFiatCurrency: () => void;
+  changeFiatCurrency: (currency: FiatCurrency) => void;
   autoLockMs: number;
   changeAutoLockMs: (ms: number) => void;
-  biometricsEnabled: boolean;
-  toggleBiometrics: (enabled: boolean) => void;
   contacts: Contact[];
   addContact: (contact: Contact) => void;
   removeContact: (address: string) => void;
@@ -107,6 +126,17 @@ interface WalletContextValue {
     password: string,
     opts?: { secret?: string; mnemonic?: string; label?: string },
   ) => Promise<{ account: AccountMeta; revealed: string; kind: "mnemonic" | "secret" }>;
+  /** Create a vault around a hardware-only account (Trezor/Ledger) — no phrase, no local secrets */
+  createHardwareVault: (
+    password: string,
+    account: {
+      publicKey: string;
+      path: string;
+      index: number;
+      device: "ledger" | "trezor";
+      label?: string;
+    },
+  ) => Promise<{ account: AccountMeta }>;
   revealRecoveryPhrase: (password: string) => Promise<string>;
   completeSetup: () => void;
   unlock: (password: string) => Promise<void>;
@@ -114,7 +144,7 @@ interface WalletContextValue {
   resetWallet: () => void;
   restoreDeletedWallet: (password: string) => Promise<void>;
   /** Replace the entire wallet from a backup file; wallet returns to locked state */
-  restoreWalletFromBackup: (json: string) => Promise<VaultRestoreResult>;
+  restoreWalletFromBackup: (json: string, password?: string) => Promise<VaultRestoreResult>;
   selectAccount: (id: string) => void;
   addAccount: (opts: { secret?: string; label?: string }) => Promise<AccountMeta>;
   /** Track a public key without holding its secret (read-only) */
@@ -140,7 +170,7 @@ interface WalletContextValue {
     amount: string;
     assetCode: string;
     issuer?: string | null;
-    memoText?: string;
+    memo?: StellarMemoInput;
     feeStroops?: number;
   }) => Promise<{ hash: string }>;
   sendBatch: (params: {
@@ -150,7 +180,7 @@ interface WalletContextValue {
       assetCode: string;
       issuer?: string | null;
     }>;
-    memoText?: string;
+    memo?: StellarMemoInput;
   }) => Promise<{ hash: string }>;
   claimAirdrop: (balanceId: string) => Promise<{ hash: string }>;
   mergeAccount: (destination: string) => Promise<{ hash: string }>;
@@ -166,6 +196,21 @@ interface WalletContextValue {
     destMin: string;
     intermediates: Asset[];
   }) => Promise<{ hash: string }>;
+  /** Apply a multi-sig signer/threshold configuration to the active account */
+  applyMultisigConfig: (config: MultisigConfig) => Promise<{ hash: string }>;
+  /** Remove all cosigners and reset thresholds to single-sig defaults */
+  disableMultisig: () => Promise<{ hash: string }>;
+  /** Sign a payment with our key only and return the envelope XDR for co-signing */
+  prepareCosignPayment: (params: {
+    destination: string;
+    amount: string;
+    assetCode: string;
+    issuer?: string | null;
+    memo?: StellarMemoInput;
+    feeStroops?: number;
+  }) => Promise<{ xdr: string }>;
+  /** Co-sign a shared envelope XDR; submits automatically once weight suffices */
+  cosignTransaction: (xdr: string) => Promise<CosignOutcome>;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -180,14 +225,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [hasDeletedWalletBackup, setHasDeletedWalletBackup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
+  const [minimumBalanceXlm, setMinimumBalanceXlm] = useState<string | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
   // Session-scoped cache so switching accounts shows last-known data instantly (no zero flash)
   const snapshotCache = useRef<
-    Map<string, { balances: AssetBalance[]; activity: ActivityItem[]; cursor: string | null }>
+    Map<string, {
+      balances: AssetBalance[];
+      activity: ActivityItem[];
+      cursor: string | null;
+      minimumBalanceXlm: string;
+    }>
   >(new Map());
+  const refreshGeneration = useRef(0);
+  const accountBalanceGeneration = useRef(0);
   const [claimableBalances, setClaimableBalances] = useState<ClaimableBalanceItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
+  // Mirror of `activity` for readers inside callbacks (declared before any effect)
+  const activityRef = useRef<ActivityItem[]>([]);
   const [pendingTxs, setPendingTxs] = useState<Array<{ hash: string; label: string }>>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -198,8 +254,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const priceCache = useRef<Partial<Record<PriceRange, api.PriceSeries>>>({});
   const [privacyMode, setPrivacyMode] = useState(false);
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
+  const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
-  const [biometricsEnabled, setBiometricsEnabledState] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
 
   const activeAccount = useMemo(
@@ -207,6 +263,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [accounts, activeId],
   );
   const unfunded = phase === "unlocked" && balances !== null && balances.length === 0;
+
+  // Load the Connect bundle before a transaction click. The Trezor-hosted
+  // popup must be opened while browser user activation is still available,
+  // so signing should not first wait for a cold dynamic import.
+  useEffect(() => {
+    if (phase === "unlocked" && activeAccount?.hardware === "trezor") {
+      warmTrezorConnect();
+    }
+  }, [phase, activeAccount?.hardware]);
 
   useEffect(() => {
     let alive = true;
@@ -239,7 +304,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setAutoLockMsState(loadAutoLockPref());
-      setBiometricsEnabledState(loadBiometricsPref());
       setContacts(loadContacts());
       setHasDeletedWalletBackup(hasDeletedVault());
       const vault = loadVault();
@@ -259,24 +323,42 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!activeAccount) return;
+    const generation = ++refreshGeneration.current;
+    const cacheKey = `${network}:${activeAccount.publicKey}`;
     setDataLoading(true);
+    setDataError(null);
     try {
       const cachedSeries = priceCache.current[priceRange];
-      const [bals, claims, acts, price, series] = await Promise.all([
+      const [bals, minimumBalance, claims, acts, price, series, currentFiatRates] = await Promise.all([
         api.fetchBalances(activeAccount.publicKey, network),
+        api.fetchMinimumNativeBalance(activeAccount.publicKey, network),
         api.fetchClaimableBalances(activeAccount.publicKey, network),
         api.fetchActivity(activeAccount.publicKey, network),
-        network === "mainnet" ? api.fetchXlmPrice() : Promise.resolve(null),
+        // The market chart remains useful on testnet, but portfolio valuation
+        // explicitly ignores all testnet balances.
+        api.fetchXlmPrice(),
         cachedSeries ? Promise.resolve(cachedSeries) : api.fetchXlmSeries(priceRange),
+        fetchFiatRates(),
       ]);
+      if (generation !== refreshGeneration.current) return;
       setBalances(bals);
+      setMinimumBalanceXlm(minimumBalance);
       setClaimableBalances(claims);
-      setActivity(acts.items);
-      setActivityCursor(acts.nextCursor);
-      snapshotCache.current.set(activeAccount.publicKey, {
+      // Merge the fresh first page into any already-loaded history instead of
+      // replacing it — the poll must never wipe pages the user scrolled through.
+      const hadHistory = activityRef.current.length > 0;
+      setActivity((prev) => {
+        if (prev.length === 0) return acts.items;
+        const seen = new Set(prev.map((i) => i.id));
+        const fresh = acts.items.filter((i) => !seen.has(i.id));
+        return fresh.length > 0 ? [...fresh, ...prev] : prev;
+      });
+      if (!hadHistory) setActivityCursor(acts.nextCursor);
+      snapshotCache.current.set(cacheKey, {
         balances: bals,
         activity: acts.items,
         cursor: acts.nextCursor,
+        minimumBalanceXlm: minimumBalance,
       });
       const nativeBal = bals.find((b) => b.isNative);
       setAccountBalances((prev) => ({
@@ -284,15 +366,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         [activeAccount.publicKey]: nativeBal ? parseFloat(nativeBal.balance) : 0,
       }));
       if (price !== null) setXlmPriceUsd(price);
+      setFiatRates(currentFiatRates);
       if (series !== null) {
         priceCache.current[series.range] = series;
         setPriceData(series);
       }
-    } catch {
-      // Resolve to empty state rather than leaving skeletons up forever
-      setBalances((prev) => prev ?? []);
+    } catch (error) {
+      if (generation === refreshGeneration.current) {
+        setDataError(error instanceof Error ? error.message : "Unable to refresh wallet data.");
+      }
     } finally {
-      setDataLoading(false);
+      if (generation === refreshGeneration.current) setDataLoading(false);
     }
   }, [activeAccount, network, priceRange]);
 
@@ -302,12 +386,55 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   useEffect(() => {
+    activityRef.current = activity;
+  }, [activity]);
+
+  // Keep a fresh XLM balance for every account in the vault — the sidebar
+  // and the aggregate portfolio read this map, so it must cover all
+  // accounts, not just ones visited this session.
+  const refreshAccountBalances = useCallback(async () => {
+    if (accounts.length === 0) return;
+    const generation = ++accountBalanceGeneration.current;
+    const results = await Promise.allSettled(
+      accounts.map(async (acct) => ({
+        key: acct.publicKey,
+        bal: await api.fetchNativeBalance(acct.publicKey, network),
+      })),
+    );
+    if (generation !== accountBalanceGeneration.current) return;
+    setAccountBalances((prev) => {
+      const next = { ...prev };
+      for (const r of results) {
+        // Record 0 for unfunded wallets too; only skip true network failures (null)
+        if (r.status === "fulfilled" && r.value.bal !== null) {
+          next[r.value.key] = r.value.bal;
+        }
+      }
+      return next;
+    });
+  }, [accounts, network]);
+
+  const accountBalancesRef = useRef(refreshAccountBalances);
+  useEffect(() => {
+    accountBalancesRef.current = refreshAccountBalances;
+  }, [refreshAccountBalances]);
+
+  useEffect(() => {
     if (phase !== "unlocked" || !activeAccount) return;
     void refreshRef.current();
     const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
       void refreshRef.current();
+      void accountBalancesRef.current();
     }, POLL_MS);
-    return () => window.clearInterval(timer);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [phase, activeAccount, network]);
 
   // Real-time Horizon Server-Sent Event stream
@@ -320,11 +447,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ) {
       return;
     }
-    const cfg = NETWORKS[network];
+    const horizonUrl = getHorizonUrl(network);
     let es: EventSource | null = null;
     try {
       es = new EventSource(
-        `${cfg.horizonUrl}/accounts/${activeAccount.publicKey}/operations?cursor=now`,
+        `${horizonUrl}/accounts/${activeAccount.publicKey}/operations?cursor=now`,
       );
       es.onmessage = () => {
         triggerHaptic("success");
@@ -340,55 +467,55 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [phase, activeAccount, network]);
 
 
-  // Warm-fetch every account's balance in parallel so the sidebar can show
-  // live totals for all accounts without switching to them.
   useEffect(() => {
     if (phase !== "unlocked" || accounts.length === 0) return;
-    let alive = true;
-    void (async () => {
-      const results = await Promise.allSettled(
-        accounts.map(async (acct) => ({
-          key: acct.publicKey,
-          bal: await api.fetchNativeBalance(acct.publicKey, network),
-        })),
-      );
-      if (!alive) return;
-      setAccountBalances((prev) => {
-        const next = { ...prev };
-        for (const r of results) {
-          // Record 0 for inactive wallets too; only skip true network failures (null)
-          if (r.status === "fulfilled" && r.value.bal !== null && !(r.value.key in next)) {
-            next[r.value.key] = r.value.bal;
-          }
-        }
-        return next;
-      });
-    })();
-    return () => {
-      alive = false;
-    };
+    void accountBalancesRef.current();
   }, [phase, accounts, network]);
 
-  function lockVaultAndReset() {
+  const lockVaultAndReset = useCallback(() => {
     lockVault();
+    refreshGeneration.current += 1;
+    accountBalanceGeneration.current += 1;
     setPhase("locked");
-  }
+    setDataLoading(false);
+  }, []);
 
   useEffect(() => {
     if (phase !== "unlocked" || autoLockMs <= 0) return;
-    let timer = window.setTimeout(() => lockVaultAndReset(), autoLockMs);
-    const bump = () => {
+    let lastActivity = Date.now();
+    let timer: number;
+    const schedule = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => lockVaultAndReset(), autoLockMs);
+      const remaining = Math.max(0, autoLockMs - (Date.now() - lastActivity));
+      timer = window.setTimeout(checkExpired, remaining);
     };
+    const checkExpired = () => {
+      if (Date.now() - lastActivity >= autoLockMs) {
+        lockVaultAndReset();
+        return;
+      }
+      schedule();
+    };
+    const bump = () => {
+      lastActivity = Date.now();
+      schedule();
+    };
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") checkExpired();
+    };
+    schedule();
     window.addEventListener("pointerdown", bump);
     window.addEventListener("keydown", bump);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("pointerdown", bump);
       window.removeEventListener("keydown", bump);
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, [phase, autoLockMs]);
+  }, [phase, autoLockMs, lockVaultAndReset]);
 
   const confirmAndRefresh = useCallback(
     async (hash: string, label: string) => {
@@ -420,6 +547,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setArchivedAccounts([]);
       setActiveId(account.id);
       setBalances(null);
+      setMinimumBalanceXlm(null);
+      setDataError(null);
       setClaimableBalances([]);
       setActivity([]);
       setHasDeletedWalletBackup(false);
@@ -428,6 +557,32 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         revealed,
         kind: (hasMnemonic() ? "mnemonic" : "secret") as "mnemonic" | "secret",
       };
+    },
+    [],
+  );
+
+  const createHardwareVault = useCallback(
+    async (
+      password: string,
+      account: {
+        publicKey: string;
+        path: string;
+        index: number;
+        device: "ledger" | "trezor";
+        label?: string;
+      },
+    ) => {
+      const result = await initializeHardwareVault(password, account);
+      setAccounts([result.account]);
+      setArchivedAccounts([]);
+      setActiveId(result.account.id);
+      setBalances(null);
+      setMinimumBalanceXlm(null);
+      setDataError(null);
+      setClaimableBalances([]);
+      setActivity([]);
+      setHasDeletedWalletBackup(false);
+      return result;
     },
     [],
   );
@@ -446,6 +601,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
     setPhase("unlocked");
@@ -453,7 +610,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const lock = useCallback(() => {
     lockVaultAndReset();
-  }, []);
+  }, [lockVaultAndReset]);
 
   const resetWallet = useCallback(() => {
     wipeVault();
@@ -461,9 +618,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts([]);
     setActiveId(null);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
+    setAccountBalances({});
+    snapshotCache.current.clear();
     setActivity([]);
     setPriceData(null);
-    setHasDeletedWalletBackup(true);
+    setHasDeletedWalletBackup(false);
     setPhase("empty");
   }, []);
 
@@ -478,21 +639,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("unlocked");
   }, []);
 
-  const restoreWalletFromBackup = useCallback(async (json: string): Promise<VaultRestoreResult> => {
-    const result = restoreVaultBackup(json);
+  const restoreWalletFromBackup = useCallback(async (json: string, password?: string): Promise<VaultRestoreResult> => {
+    const result = await restoreVaultBackup(json, password);
     const vault = loadVault();
     if (vault) {
       setAccounts(vault.accounts.map(stripSecret));
       setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
       setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     }
+    setContacts(loadContacts());
     setBalances(null);
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
     setPendingTxs([]);
     clearSessionSecrets();
-    setHasDeletedWalletBackup(true);
+    setHasDeletedWalletBackup(false);
     // Wallet is restored but LOCKED — unlock with the backup's password
     setPhase("locked");
     return result;
@@ -502,25 +664,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const vault = setActiveStoredAccount(id);
     if (!vault) return;
     const target = vault.accounts.find((a) => a.id === id);
-    const cached = target ? snapshotCache.current.get(target.publicKey) : undefined;
+    refreshGeneration.current += 1;
+    const cached = target
+      ? snapshotCache.current.get(`${network}:${target.publicKey}`)
+      : undefined;
     // Show last-known snapshot instantly; background poll refreshes it within POLL_MS
     if (cached) {
       setBalances(cached.balances);
       setActivity(cached.activity);
       setActivityCursor(cached.cursor);
+      setMinimumBalanceXlm(cached.minimumBalanceXlm);
     } else {
       setBalances(null);
       setActivity([]);
       setActivityCursor(null);
+      setMinimumBalanceXlm(null);
     }
+    setClaimableBalances([]);
+    setDataError(null);
     setActiveId(id);
-  }, []);
+  }, [network]);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
     const account = await addStoredAccount(opts);
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -539,6 +710,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAccounts((prev) => [...prev, stripSecret(account)]);
       setActiveId(account.id);
       setBalances(null);
+      setMinimumBalanceXlm(null);
+      setDataError(null);
       setActivity([]);
       setActivityCursor(null);
       void refresh();
@@ -552,6 +725,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -590,6 +765,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setArchivedAccounts(getArchivedAccounts());
     setActiveId(restored.id);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -604,6 +781,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
     setActiveId(restored.id);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -611,9 +790,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const switchNetwork = useCallback((net: NetworkKey) => {
+    refreshGeneration.current += 1;
+    accountBalanceGeneration.current += 1;
     saveNetworkPref(net);
     setNetworkState(net);
     setBalances(null);
+    setMinimumBalanceXlm(null);
+    setDataError(null);
+    setAccountBalances({});
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -636,8 +820,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return [...prev, ...more.items.filter((i) => !seen.has(i.id))];
       });
       setActivityCursor(more.nextCursor);
-    } catch {
-      void 0;
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Unable to load more activity.");
     } finally {
       setLoadingMore(false);
     }
@@ -659,15 +843,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       amount: string;
       assetCode: string;
       issuer?: string | null;
-      memoText?: string;
+      memo?: StellarMemoInput;
       feeStroops?: number;
     }) => {
       if (!activeAccount) throw new Error("No active account");
       if (activeAccount.watchOnly) {
         throw new Error("This is a watch-only account — switch to a signing account to send.");
       }
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.sendPayment({ network, secretKey, ...params });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.sendPayment({ network, secretKey, hardwareSigner: hw, ...params });
       toast("Transaction submitted — confirming…", "info");
       void confirmAndRefresh(result.hash, "Payment");
       return result;
@@ -683,14 +868,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         assetCode: string;
         issuer?: string | null;
       }>;
-      memoText?: string;
+      memo?: StellarMemoInput;
     }) => {
       if (!activeAccount) throw new Error("No active account");
       if (activeAccount.watchOnly) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.sendBatchPayments({ network, secretKey, ...params });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.sendBatchPayments({ network, secretKey, hardwareSigner: hw, ...params });
       toast("Batch transaction submitted — confirming…", "info");
       void confirmAndRefresh(result.hash, "Batch Payment");
       return result;
@@ -701,8 +887,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const claimAirdrop = useCallback(
     async (balanceId: string) => {
       if (!activeAccount) throw new Error("No active account");
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.claimClaimableBalance({ network, secretKey, balanceId });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.claimClaimableBalance({ network, secretKey, hardwareSigner: hw, balanceId });
       toast("Claiming airdrop — confirming…", "info");
       void confirmAndRefresh(result.hash, "Airdrop claim");
       return result;
@@ -713,8 +900,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const mergeAccount = useCallback(
     async (destination: string) => {
       if (!activeAccount) throw new Error("No active account");
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.mergeAccount({ network, secretKey, destination });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.mergeAccount({ network, secretKey, hardwareSigner: hw, destination });
       toast("Merging account — confirming…", "info");
       void confirmAndRefresh(result.hash, "Account merge");
       return result;
@@ -725,8 +913,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trustAsset = useCallback(
     async (params: { code: string; issuer: string; add: boolean }) => {
       if (!activeAccount) throw new Error("No active account");
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.changeTrust({ network, secretKey, ...params });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.changeTrust({ network, secretKey, hardwareSigner: hw, ...params });
       toast(params.add ? "Trustline submitted — confirming…" : "Removing trustline…", "info");
       void confirmAndRefresh(result.hash, params.add ? "Trustline" : "Trustline removal");
       return result;
@@ -737,8 +926,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trustAssets = useCallback(
     async (assets: Array<{ code: string; issuer: string }>) => {
       if (!activeAccount) throw new Error("No active account");
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await api.changeTrustBatch({ network, secretKey, assets });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await api.changeTrustBatch({ network, secretKey, hardwareSigner: hw, assets });
       toast(
         `${result.added} trustlines submitted in 1 transaction — confirming…`,
         "info",
@@ -760,8 +950,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       intermediates: Asset[];
     }) => {
       if (!activeAccount) throw new Error("No active account");
-      const secretKey = getSecretKey(activeAccount.id);
-      const result = await swapLib.swapStrictSend({ network, secretKey, ...params });
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await swapLib.swapStrictSend({ network, secretKey, hardwareSigner: hw, ...params });
       toast("Swap submitted — confirming…", "info");
       void confirmAndRefresh(result.hash, "Swap");
       return result;
@@ -774,6 +965,90 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     await api.fundWithFriendbot(activeAccount.publicKey, network);
     await refreshRef.current();
   }, [activeAccount, network]);
+
+  const applyMultisigConfig = useCallback(
+    async (config: MultisigConfig) => {
+      if (!activeAccount) throw new Error("No active account");
+      if (activeAccount.watchOnly) {
+        throw new Error("Watch-only accounts cannot sign transactions.");
+      }
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await msig.applyMultisigConfig({
+        network,
+        accountPublicKey: activeAccount.publicKey,
+        config,
+        secretKey,
+        hardwareSigner: hw,
+      });
+      toast("Multi-sig configuration submitted — confirming…", "info");
+      void confirmAndRefresh(result.hash, "Multi-sig update");
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
+
+  const disableMultisig = useCallback(async () => {
+    if (!activeAccount) throw new Error("No active account");
+    if (activeAccount.watchOnly) {
+      throw new Error("Watch-only accounts cannot sign transactions.");
+    }
+    const hw = hardwareSignerFor(activeAccount);
+    const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+    const result = await msig.disableMultisig({
+      network,
+      accountPublicKey: activeAccount.publicKey,
+      secretKey,
+      hardwareSigner: hw,
+    });
+    toast("Multi-sig disabled — confirming…", "info");
+    void confirmAndRefresh(result.hash, "Multi-sig disabled");
+    return result;
+  }, [activeAccount, network, toast, confirmAndRefresh]);
+
+  const prepareCosignPayment = useCallback(
+    async (params: {
+      destination: string;
+      amount: string;
+      assetCode: string;
+      issuer?: string | null;
+      memo?: StellarMemoInput;
+      feeStroops?: number;
+    }) => {
+      if (!activeAccount) throw new Error("No active account");
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      return msig.prepareCosignPayment({
+        network,
+        sourcePublicKey: activeAccount.publicKey,
+        secretKey,
+        hardwareSigner: hw,
+        ...params,
+      });
+    },
+    [activeAccount, network],
+  );
+
+  const cosignTransaction = useCallback(
+    async (xdr: string) => {
+      if (!activeAccount) throw new Error("No active account");
+      const hw = hardwareSignerFor(activeAccount);
+      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
+      const result = await msig.cosignTransaction({
+        network,
+        xdr,
+        signerPublicKey: activeAccount.publicKey,
+        secretKey,
+        hardwareSigner: hw,
+      });
+      if (result.submitted && result.hash) {
+        toast("Transaction submitted — confirming…", "info");
+        void confirmAndRefresh(result.hash, "Co-signed transaction");
+      }
+      return result;
+    },
+    [activeAccount, network, toast, confirmAndRefresh],
+  );
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
@@ -816,14 +1091,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const changeFiatCurrency = useCallback((currency: FiatCurrency) => {
+    if (!FIAT_LIST.includes(currency)) return;
+    setFiatCurrencyState(currency);
+    window.localStorage.setItem("wallet.currency.v1", currency);
+    triggerHaptic("selection");
+  }, []);
+
   const changeAutoLockMs = useCallback((ms: number) => {
     saveAutoLockPref(ms);
     setAutoLockMsState(ms);
-  }, []);
-
-  const toggleBiometrics = useCallback((enabled: boolean) => {
-    saveBiometricsPref(enabled);
-    setBiometricsEnabledState(enabled);
   }, []);
 
   const value = useMemo<WalletContextValue>(
@@ -836,6 +1113,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       archivedAccounts,
       hasDeletedWalletBackup,
       balances,
+      minimumBalanceXlm,
+      dataError,
       claimableBalances,
       activity,
       activityCursor,
@@ -851,16 +1130,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       privacyMode,
       togglePrivacy,
       fiatCurrency,
+      fiatRates,
       cycleFiatCurrency,
+      changeFiatCurrency,
       autoLockMs,
       changeAutoLockMs,
-      biometricsEnabled,
-      toggleBiometrics,
       contacts,
       addContact,
       removeContact,
       toggleContactFavorite,
       createWallet,
+      createHardwareVault,
       revealRecoveryPhrase,
       completeSetup,
       unlock,
@@ -886,6 +1166,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       trustAsset,
       trustAssets,
       swap,
+      applyMultisigConfig,
+      disableMultisig,
+      prepareCosignPayment,
+      cosignTransaction,
       fundFromFriendbot,
     }),
     [
@@ -897,6 +1181,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       hasDeletedWalletBackup,
       accountBalances,
       balances,
+      minimumBalanceXlm,
+      dataError,
       claimableBalances,
       activity,
       activityCursor,
@@ -912,16 +1198,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       privacyMode,
       togglePrivacy,
       fiatCurrency,
+      fiatRates,
       cycleFiatCurrency,
+      changeFiatCurrency,
       autoLockMs,
       changeAutoLockMs,
-      biometricsEnabled,
-      toggleBiometrics,
       contacts,
       addContact,
       removeContact,
       toggleContactFavorite,
       createWallet,
+      createHardwareVault,
       revealRecoveryPhrase,
       completeSetup,
       unlock,
@@ -947,6 +1234,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       trustAsset,
       trustAssets,
       swap,
+      applyMultisigConfig,
+      disableMultisig,
+      prepareCosignPayment,
+      cosignTransaction,
       fundFromFriendbot,
     ],
   );

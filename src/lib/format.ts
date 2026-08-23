@@ -1,4 +1,5 @@
 import type { ActivityItem } from "./types";
+import { activityAssetPresentation } from "./transaction-intent";
 
 export type FiatCurrency = "USD" | "EUR" | "GBP" | "JPY" | "CAD" | "AUD" | "CHF";
 
@@ -12,25 +13,58 @@ export const FIAT_SYMBOLS: Record<FiatCurrency, string> = {
   CHF: "CHF ",
 };
 
-export const FIAT_RATES: Record<FiatCurrency, number> = {
-  USD: 1.0,
-  EUR: 0.92,
-  GBP: 0.79,
-  JPY: 154.5,
-  CAD: 1.38,
-  AUD: 1.52,
-  CHF: 0.89,
-};
-
 export function fmtAmount(value: string | number, maxDecimals = 7): string {
-  const n = typeof value === "string" ? parseFloat(value) : value;
-  if (!Number.isFinite(n)) return "0";
-  return n.toLocaleString("en-US", { maximumFractionDigits: maxDecimals });
+  const decimals = Math.max(0, Math.floor(maxDecimals));
+  const raw = typeof value === "number"
+    ? Number.isFinite(value)
+      ? value.toLocaleString("en-US", {
+          useGrouping: false,
+          maximumFractionDigits: decimals,
+        })
+      : ""
+    : value.trim();
+  const match = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(raw);
+  if (!match) return "0";
+
+  const negative = match[1] === "-";
+  let integer = match[2].replace(/^0+(?=\d)/, "");
+  const fraction = match[3] ?? "";
+  let keptFraction = fraction.slice(0, decimals);
+
+  if (fraction.length > decimals && fraction[decimals] >= "5") {
+    if (decimals === 0) {
+      integer = (BigInt(integer) + BigInt(1)).toString();
+    } else {
+      const width = integer.length + decimals;
+      const scaled = `${integer}${keptFraction.padEnd(decimals, "0")}`;
+      const rounded = (BigInt(scaled) + BigInt(1)).toString().padStart(width, "0");
+      integer = rounded.slice(0, -decimals);
+      keptFraction = rounded.slice(-decimals);
+    }
+  }
+
+  keptFraction = keptFraction.replace(/0+$/, "");
+  const isZero = /^0+$/.test(integer) && keptFraction.length === 0;
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative && !isZero ? "-" : ""}${grouped}${keptFraction ? `.${keptFraction}` : ""}`;
 }
 
-export function fmtFiat(usdAmount: number, currency: FiatCurrency = "USD"): string {
+export function formatActivityAmount(
+  activity: Pick<ActivityItem, "amount" | "direction">,
+): string | null {
+  if (activity.amount === null) return null;
+  const sign = activity.direction === "neutral" ? "" : activity.direction === "in" ? "+" : "−";
+  return `${sign}${fmtAmount(activity.amount)}`;
+}
+
+export function fmtFiat(
+  usdAmount: number,
+  currency: FiatCurrency = "USD",
+  rates: Partial<Record<FiatCurrency, number>> = { USD: 1 },
+): string {
   if (!Number.isFinite(usdAmount)) return "$0.00";
-  const rate = FIAT_RATES[currency] ?? 1.0;
+  const rate = currency === "USD" ? 1 : rates[currency];
+  if (rate === undefined) return "Rate unavailable";
   const val = usdAmount * rate;
   const digits = currency === "JPY" ? 0 : 2;
   return val.toLocaleString("en-US", {
@@ -71,9 +105,7 @@ export function memoByteLength(raw: string): number {
   return new TextEncoder().encode(raw).length;
 }
 
-export function normalizeAmount(raw: string): string {
-  return parseFloat(raw).toString();
-}
+export { normalizeStellarAmount as normalizeAmount } from "./stellar-domain";
 
 export function opTypeLabel(type: string): string {
   switch (type) {
@@ -109,7 +141,7 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
     const type = opTypeLabel(item.type);
     const dir = item.direction;
     const amt = item.amount ?? "";
-    const asset = item.assetCode ?? "XLM";
+    const asset = activityAssetPresentation(item).detailLabel ?? "";
     const cp = item.counterparty ?? "";
     const status = item.successful ? "SUCCESS" : "FAILED";
     const hash = item.hash;

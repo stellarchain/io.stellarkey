@@ -2,15 +2,14 @@
 
 import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
+import { hasMnemonic, isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import {
-  connectLedgerDevice,
   connectTrezorDevice,
   getStellarDerivationPath,
   type HardwareDeviceType,
 } from "@/lib/hardware";
-import { IconLedger, IconTrezor } from "./icons";
+import { IconTrezor } from "./icons";
 import { Button, ErrorText, Field, Modal, ModalHeader, SegmentedControl } from "./ui";
 
 type Mode = "generate" | "import" | "hardware" | "watch";
@@ -19,7 +18,7 @@ export function AddAccountModal({
   open,
   onClose,
   initialMode = "generate",
-  initialDevice = "ledger",
+  initialDevice = "trezor",
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,15 +32,21 @@ export function AddAccountModal({
 function AddAccountInner({
   onClose,
   initialMode = "generate",
-  initialDevice = "ledger",
+  initialDevice = "trezor",
 }: {
   onClose: () => void;
   initialMode?: Mode;
   initialDevice?: HardwareDeviceType;
 }) {
   const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWallet();
-  const [mode, setMode] = useState<Mode>(initialMode);
-  const [hardwareDevice, setHardwareDevice] = useState<HardwareDeviceType>(initialDevice);
+  // Deriving needs the vault mnemonic — hardware/secret vaults don't have one
+  const [hasMnemonicVault] = useState(() => hasMnemonic());
+  const [mode, setMode] = useState<Mode>(
+    !hasMnemonicVault && initialMode === "generate" ? "import" : initialMode,
+  );
+  const [hardwareDevice] = useState<HardwareDeviceType>(
+    initialDevice === "trezor" ? "trezor" : "trezor",
+  );
   const [hardwareIndex, setHardwareIndex] = useState(0);
   void setHardwareIndex;
   const [hardwareKey, setHardwareKey] = useState("");
@@ -58,10 +63,7 @@ function AddAccountInner({
     setError(null);
     setBusy(true);
     try {
-      const info =
-        hardwareDevice === "ledger"
-          ? await connectLedgerDevice(hardwareIndex)
-          : await connectTrezorDevice(hardwareIndex);
+      const info = await connectTrezorDevice(hardwareIndex);
       setHardwareKey(info.publicKey);
       if (!label) {
         setLabel(info.label);
@@ -105,7 +107,7 @@ function AddAccountInner({
       setSecretInput("");
       setWatchKey("");
       setHardwareKey("");
-      setMode("generate");
+      setMode(hasMnemonicVault ? "generate" : "import");
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Could not add account.");
@@ -123,7 +125,7 @@ function AddAccountInner({
 
   const subtitle =
     mode === "hardware"
-      ? "Connect Ledger or Trezor via WebUSB"
+      ? "Connect with Trezor Connect"
       : mode === "watch"
         ? "Track any address — balances only, no keys"
         : `Derives at m/44'/148'/${accounts.length}'`;
@@ -136,7 +138,7 @@ function AddAccountInner({
           value={mode}
           onChange={setMode}
           options={[
-            { value: "generate", label: "Derive" },
+            ...(hasMnemonicVault ? [{ value: "generate" as Mode, label: "Derive" }] : []),
             { value: "import", label: "Import" },
             { value: "hardware", label: "Hardware" },
             { value: "watch", label: "Watch" },
@@ -148,7 +150,7 @@ function AddAccountInner({
             <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
               Account Preset & Emoji
             </label>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { emoji: "⚡", name: "Trading" },
                 { emoji: "💼", name: "Treasury" },
@@ -210,47 +212,12 @@ function AddAccountInner({
 
           {mode === "hardware" && (
             <div className="space-y-3.5">
-              {/* Device Selector */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setHardwareDevice("ledger");
-                    setHardwareKey("");
-                  }}
-                  className={`rounded-2xl border p-3 text-left transition-all ${
-                    hardwareDevice === "ledger"
-                      ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
-                      : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  <p className="text-[14px] font-bold text-white flex items-center gap-2">
-                    <IconLedger size={18} className="text-[#64D2FF]" />
-                    <span>Ledger</span>
-                  </p>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">Nano S / X / Stax</p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setHardwareDevice("trezor");
-                    setHardwareKey("");
-                  }}
-                  className={`rounded-2xl border p-3 text-left transition-all ${
-                    hardwareDevice === "trezor"
-                      ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
-                      : "border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  <p className="text-[14px] font-bold text-white flex items-center gap-2">
-                    <IconTrezor size={18} className="text-emerald-400" />
-                    <span>Trezor</span>
-                  </p>
-                  <p className="text-[11px] text-neutral-400 mt-0.5">Model One / T / Safe</p>
-                </button>
+              <div className="rounded-2xl border border-[#0A84FF] bg-[#0A84FF]/10 p-3 text-left text-white shadow-sm">
+                <p className="flex items-center gap-2 text-[14px] font-bold text-white">
+                  <IconTrezor size={18} className="text-emerald-400" />
+                  <span>Trezor</span>
+                </p>
+                <p className="mt-0.5 text-[11px] text-neutral-400">Model One / T / Safe</p>
               </div>
 
               {/* Derivation Path Index */}
@@ -276,7 +243,7 @@ function AddAccountInner({
                   loading={busy}
                   onClick={() => void handleConnectHardware()}
                 >
-                  Connect {hardwareDevice === "ledger" ? "Ledger" : "Trezor"} via WebUSB
+                  Connect with Trezor Connect
                 </Button>
               )}
             </div>
@@ -316,7 +283,7 @@ function AddAccountInner({
         </div>
 
         <Button
-          className="mt-5 w-full !py-3.5 text-[15px] font-semibold"
+          className="mt-6 w-full !py-3.5 text-[15px] font-semibold"
           loading={busy}
           disabled={!canSubmit}
           onClick={() => void handleCreate()}

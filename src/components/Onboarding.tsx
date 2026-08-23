@@ -1,42 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
+import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
+import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, CopyButton, ErrorText, Field } from "./ui";
+import { Button, CopyButton, ErrorText, Field, HashValue, Notice } from "./ui";
 import {
   IconAlert,
   IconCheck,
   IconDownload,
   IconKey,
+  IconPlus,
   IconRefresh,
-  IconSend,
   IconShield,
+  IconTrezor,
   LogoMark,
 } from "./icons";
 
-type Mode = "create" | "import" | "restore";
-type Step = "choose" | "password" | "reveal" | "verify";
+type Mode = "create" | "import" | "restore" | "hardware";
+type Step = "choose" | "hardware" | "password" | "reveal" | "verify";
+
+/* Ambient background — two soft light fields drifting behind everything */
+function Ambient() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="absolute -top-40 left-1/2 h-[480px] w-[720px] -translate-x-1/2 rounded-full bg-[#0A84FF]/[0.13] blur-[120px]" />
+      <div className="absolute -bottom-52 -left-40 h-[420px] w-[560px] rounded-full bg-[#5E5CE6]/[0.10] blur-[110px]" />
+      <div className="absolute -right-48 top-1/3 h-[380px] w-[480px] rounded-full bg-[#30D158]/[0.06] blur-[110px]" />
+    </div>
+  );
+}
 
 export function Onboarding() {
-  const { createWallet, completeSetup, resetWallet, hasDeletedWalletBackup, restoreDeletedWallet, restoreWalletFromBackup } = useWallet();
-  const [restoringFile, setRestoringFile] = useState(false);
-
-  async function handleRestoreBackupFile(file: File) {
-    const json = await file.text();
-    setRestoringFile(true);
-    try {
-      const result = await restoreWalletFromBackup(json);
-      triggerHaptic("success");
-      // Phase flips to "locked" — LockScreen renders with the restored wallet
-      void result;
-    } catch (e) {
-      setRestoringFile(false);
-      triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Restore failed.");
-    }
-  }
+  const {
+    createWallet,
+    completeSetup,
+    resetWallet,
+    restoreWalletFromBackup,
+    createHardwareVault,
+  } = useWallet();
+  const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
+  const [hwInfo, setHwInfo] = useState<{ publicKey: string; path: string; index: number } | null>(null);
   const [step, setStep] = useState<Step>("choose");
   const [mode, setMode] = useState<Mode>("create");
   const [secretInput, setSecretInput] = useState("");
@@ -48,13 +53,93 @@ export function Onboarding() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [challengeIndices, setChallengeIndices] = useState<number[]>([2, 6, 10]);
+  const [wordBank, setWordBank] = useState<string[]>([]);
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
+  const [verifyFailed, setVerifyFailed] = useState(false);
+
+  // Preload + init the connect bundle when the user lands on the hardware
+  // step so the device interaction can start immediately after their click.
+  useEffect(() => {
+    if (step === "hardware") warmTrezorConnect();
+  }, [step]);
 
   const passwordValid = password.length >= 8;
   const passwordsMatch = password === confirmPassword;
 
+  async function handleRestoreBackupFile(file: File) {
+    const json = await file.text();
+    if (isEncryptedBackup(json)) {
+      // Fully-encrypted backup — ask for the backup's password first
+      setPendingBackupJson(json);
+      setError(null);
+      setMode("restore");
+      setStep("password");
+      return;
+    }
+    triggerHaptic("error");
+    setError(
+      "This file is not an encrypted Wallet backup — it may be an outdated legacy export.",
+    );
+  }
+
+  function go(to: Step, m?: Mode) {
+    triggerHaptic("selection");
+    if (m) setMode(m);
+    setError(null);
+    setStep(to);
+  }
+
+  async function handleTrezorConnect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const info = await connectTrezorDevice(0);
+      setHwInfo({ publicKey: info.publicKey, path: info.path, index: info.index });
+      triggerHaptic("success");
+    } catch (e) {
+      triggerHaptic("error");
+      setError(e instanceof Error ? e.message : "Could not reach a Trezor device.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handlePasswordSubmit() {
     setError(null);
+
+    if (mode === "hardware") {
+      if (!passwordValid) {
+        setError("Password must be at least 8 characters.");
+        triggerHaptic("warning");
+        return;
+      }
+      if (!passwordsMatch) {
+        setError("Passwords do not match.");
+        triggerHaptic("warning");
+        return;
+      }
+      if (!hwInfo) {
+        setError("Connect your Trezor first.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await createHardwareVault(password, {
+          publicKey: hwInfo.publicKey,
+          path: hwInfo.path,
+          index: hwInfo.index,
+          device: "trezor",
+        });
+        triggerHaptic("success");
+        completeSetup();
+      } catch (e) {
+        triggerHaptic("error");
+        setError(e instanceof Error ? e.message : "Could not create the vault.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
 
     if (mode === "restore") {
       if (!password) {
@@ -63,7 +148,8 @@ export function Onboarding() {
       }
       setBusy(true);
       try {
-        await restoreDeletedWallet(password);
+        if (!pendingBackupJson) throw new Error("Choose an encrypted backup file first.");
+        await restoreWalletFromBackup(pendingBackupJson, password);
         triggerHaptic("success");
       } catch (e) {
         triggerHaptic("error");
@@ -128,166 +214,259 @@ export function Onboarding() {
     setSecretInput("");
   }
 
+  /** Enter the verification quiz with 3 random distinct word positions. */
+  function startVerify() {
+    const words = (revealed ?? "").split(" ");
+    if (words.length < 12) {
+      completeSetup();
+      return;
+    }
+    const picked = new Set<number>();
+    while (picked.size < 3) picked.add(Math.floor(Math.random() * words.length));
+    const indices = [...picked].sort((a, b) => a - b);
+    // Word bank: the 3 targets + 4 distractor words from the phrase, shuffled
+    const distractors = words
+      .map((w, i) => ({ w, i }))
+      .filter(({ i }) => !indices.includes(i))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 4)
+      .map(({ w }) => w);
+    setWordBank([...indices.map((i) => words[i]), ...distractors].sort(() => Math.random() - 0.5));
+    setChallengeIndices(indices);
+    setSelectedWords([]);
+    setVerifyFailed(false);
+    triggerHaptic("selection");
+    setStep("verify");
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* CHOOSE — the landing                                                */
+  /* ------------------------------------------------------------------ */
   if (step === "choose") {
     return (
-      <div className="fade-up relative z-10 mx-auto flex min-h-screen w-full max-w-4xl flex-col items-center justify-center px-6 py-16">
-        <div className="flex flex-col items-center text-center">
-          <LogoMark size={64} />
-          <p className="eyebrow mt-8">Self-Custodial Stellar Wallet</p>
-          <h1 className="display-h mt-4 max-w-3xl text-[44px] font-bold text-white sm:text-[64px] tracking-tight">
-            Own your keys.
-            <br />
-            Own your money.
-          </h1>
-          <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-neutral-300">
-            Wallet generates and encrypts your keys locally in your browser.
-            Zero telemetry, zero custody, zero tracking — just pure Stellar.
-          </p>
-        </div>
+      <div className="relative z-10 min-h-screen w-full overflow-hidden">
+        <Ambient />
+        <div className="fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-14 lg:grid-cols-2 lg:gap-16">
+          {/* Brand / pitch column */}
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <LogoMark size={56} />
+            <p className="eyebrow mt-7">Self-Custodial Stellar Wallet</p>
+            <h1 className="display-h mt-4 text-[42px] font-bold leading-[1.04] tracking-tight text-white sm:text-[56px]">
+              Own your keys.
+              <br />
+              Own your money.
+            </h1>
+            <p className="mt-5 max-w-md text-[15.5px] leading-relaxed text-neutral-300">
+              Keys are generated and encrypted locally in your browser. Zero telemetry,
+              zero custody, zero tracking — just pure Stellar.
+            </p>
 
-        <div className="mt-10 flex flex-col gap-3 sm:flex-row w-full max-w-xs sm:max-w-md">
-          <Button
-            className="flex-1 !py-3.5 text-[15px] font-semibold shadow-lg shadow-blue-500/20"
-            onClick={() => {
-              triggerHaptic("selection");
-              setMode("create");
-              setStep("password");
-            }}
-          >
-            <IconKey size={16} /> Create New Wallet
-          </Button>
-          <Button
-            variant="ghost"
-            className="flex-1 !py-3.5 text-[15px] font-semibold"
-            onClick={() => {
-              triggerHaptic("selection");
-              setMode("import");
-              setStep("password");
-            }}
-          >
-            <IconDownload size={16} /> Import Phrase / Key
-          </Button>
-        </div>
-
-        {/* Hardware Wallet Connect Option */}
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setMode("create");
-              setStep("password");
-            }}
-            className="flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-2 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white"
-          >
-            <IconShield size={14} className="text-[#64D2FF]" />
-            <span>Connect Hardware (Ledger / Trezor)</span>
-          </button>
-        </div>
-
-        {hasDeletedWalletBackup && (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setMode("restore");
-                setStep("password");
-              }}
-              className="flex items-center gap-2 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 px-4 py-2 text-[13px] font-medium text-[#30D158] hover:bg-[#30D158]/15 transition-colors"
-            >
-              <IconRefresh size={14} />
-              <span>Restore Previously Reset Wallet</span>
-            </button>
+            <ul className="mt-9 hidden w-full max-w-md space-y-0 lg:block">
+              {[
+                {
+                  icon: <IconKey size={16} className="text-[#0A84FF]" />,
+                  title: "Keys stay local",
+                  body: "SLIP-0010 HD derivation — nothing ever leaves the device.",
+                },
+                {
+                  icon: <IconShield size={16} className="text-[#5E5CE6]" />,
+                  title: "Encrypted vault",
+                  body: "AES-256-GCM with PBKDF2, sealed by your password.",
+                },
+                {
+                  icon: <IconCheck size={16} className="text-[#30D158]" />,
+                  title: "Full Stellar toolkit",
+                  body: "DEX swaps, multi-sig, hardware keys, trustlines, pay links.",
+                },
+              ].map((f, i) => (
+                <li
+                  key={f.title}
+                  className={`flex items-start gap-3.5 py-3.5 ${i > 0 ? "border-t border-white/[0.07]" : ""}`}
+                >
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
+                    {f.icon}
+                  </span>
+                  <span>
+                    <span className="block text-[14px] font-semibold text-white">{f.title}</span>
+                    <span className="mt-0.5 block text-[12.5px] leading-relaxed text-neutral-400">
+                      {f.body}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-        )}
 
-        {/* Restore from a full wallet backup file */}
-        <div className="mt-3">
-          <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-2 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white">
-            <IconDownload size={14} />
-            <span>{restoringFile ? "Restoring…" : "Restore From Backup File"}</span>
-            <input
-              type="file"
-              accept="application/json,.json,application/octet-stream"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleRestoreBackupFile(f);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </div>
-
-        <div className="mt-16 grid w-full max-w-3xl gap-6 sm:grid-cols-3">
-          {[
-            {
-              icon: <IconKey size={18} className="text-[#0A84FF]" />,
-              title: "Keys Stay Local",
-              body: "Derived via SLIP-0010 HD algorithms and never sent to any server.",
-            },
-            {
-              icon: <ShieldGlyph />,
-              title: "Encrypted Vault",
-              body: "Sealed using authenticated AES-GCM and PBKDF2 key derivation.",
-            },
-            {
-              icon: <IconSend size={18} className="text-[#30D158]" />,
-              title: "SOTA In-App Swaps",
-              body: "Direct integration with the Stellar DEX orderbooks and path payments.",
-            },
-          ].map((f) => (
-            <div
-              key={f.title}
-              className="flex flex-col items-center text-center p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-md"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/[0.06] mb-3">
-                {f.icon}
-              </span>
-              <p className="text-[14.5px] font-semibold text-white">{f.title}</p>
-              <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-400">
-                {f.body}
+          {/* Action card */}
+          <div className="mx-auto w-full max-w-[440px]">
+            <div className="rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+              <p className="px-1 pb-4 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+                Get started
               </p>
-            </div>
-          ))}
-        </div>
+              <div className="space-y-2.5">
+                <OnboardPath
+                  icon={<IconPlus size={17} />}
+                  tint="#0A84FF"
+                  title="Create New Wallet"
+                  sub="Generate a fresh 12-word recovery phrase"
+                  onClick={() => go("password", "create")}
+                  primary
+                />
+                <OnboardPath
+                  icon={<IconDownload size={17} />}
+                  tint="#5E5CE6"
+                  title="Import Existing Wallet"
+                  sub="Secret key or 12/24-word recovery phrase"
+                  onClick={() => go("password", "import")}
+                />
+                <OnboardPath
+                  icon={<IconTrezor size={17} />}
+                  tint="#34d399"
+                  title="Connect Trezor"
+                  sub="Pair directly — no recovery phrase needed"
+                  onClick={() => go("hardware", "hardware")}
+                />
+                <label className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
+                    <IconRefresh size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-semibold text-white">
+                      Restore From Backup
+                    </span>
+                    <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
+                      Encrypted wallet-backup .json file
+                    </span>
+                  </span>
+                  <input
+                    type="file"
+                    accept="application/json,.json,application/octet-stream"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleRestoreBackupFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {error && <ErrorText message={error} />}
+              </div>
 
-        <div className="mt-16 flex flex-col items-center gap-1.5 text-center">
-          <p className="text-[12px] text-neutral-400">
-            Connected to Stellar Testnet by default · Switchable to Mainnet anytime
-          </p>
-          <p className="text-[11px] text-neutral-500">
-            Send · Receive · In-App DEX Swaps · Trustlines · Contacts · SEP-0007 Pay Links
-          </p>
+            </div>
+
+            <p className="mt-5 text-center text-[11.5px] text-neutral-500">
+              Starts on Stellar Testnet · switch to Mainnet anytime
+            </p>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (step === "password") {
+  /* ------------------------------------------------------------------ */
+  /* HARDWARE — pair a Trezor directly, no phrase                        */
+  /* ------------------------------------------------------------------ */
+  if (step === "hardware") {
     return (
       <StepShell
-        stepLabel={
+        current={1}
+        total={2}
+        eyebrow="Hardware Wallet"
+        title="Connect your Trezor"
+        subtitle="Your Stellar address is read directly from the device at m/44'/148'/0' — no recovery phrase, no local keys."
+        onBack={backToChoose}
+        backDisabled={busy}
+      >
+        {!hwInfo ? (
+          <>
+            <Notice>
+              Plug in and unlock your Trezor. This only reads the public address — nothing is
+              signed, and keys never leave the device.
+            </Notice>
+            {error && <ErrorText message={error} />}
+            <Button
+              className="w-full"
+              loading={busy}
+              disabled={busy}
+              onClick={() => void handleTrezorConnect()}
+            >
+              Connect with Trezor Connect
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-[#30D158]/25 bg-[#30D158]/[0.07] p-4">
+              <p className="flex items-center gap-2 text-[12px] font-semibold text-[#30D158]">
+                <IconCheck size={13} /> Address read from device
+              </p>
+              <HashValue
+                full
+                value={hwInfo.publicKey}
+                className="mt-2.5 justify-center text-center text-[12.5px] leading-loose text-white"
+              />
+              <p className="mono mt-2 text-center text-[11px] text-neutral-500">{hwInfo.path}</p>
+            </div>
+            <p className="text-center text-[11.5px] text-neutral-500">
+              Does it match the address shown on your Trezor screen?
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="ghost" onClick={() => setHwInfo(null)}>
+                Re-check
+              </Button>
+              <Button
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setStep("password");
+                }}
+              >
+                Yes, Continue
+              </Button>
+            </div>
+          </>
+        )}
+      </StepShell>
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PASSWORD (create / import / restore / hardware)                     */
+  /* ------------------------------------------------------------------ */
+  if (step === "password") {
+    const restoreViaBackup = pendingBackupJson !== null;
+    return (
+      <StepShell
+        current={mode === "hardware" ? 2 : 1}
+        total={mode === "create" ? 3 : mode === "hardware" ? 2 : 1}
+        eyebrow={
           mode === "create"
-            ? "Step 1 of 2"
+            ? "Create Wallet"
             : mode === "restore"
-              ? "Restore Deleted Wallet"
-              : "Import Wallet"
+              ? "Restore Wallet"
+              : mode === "hardware"
+                ? "Hardware Wallet"
+                : "Import Wallet"
         }
         title={
           mode === "create"
-            ? "Create Your Password"
+            ? "Secure your vault"
             : mode === "restore"
-              ? "Enter Wallet Password"
-              : "Import Your Vault"
+              ? restoreViaBackup
+                ? "Unlock your backup"
+                : "Recover your wallet"
+              : mode === "hardware"
+                ? "Secure your vault"
+                : "Import your wallet"
         }
         subtitle={
           mode === "create"
-            ? "This password encrypts your master seed locally on this device."
+            ? "This password encrypts your master seed on this device. It cannot be recovered — make it strong."
             : mode === "restore"
-              ? "Enter the password you used for your previous wallet to restore all accounts and keys."
-              : "Enter your private key or 12/24-word phrase and set a vault password."
+              ? restoreViaBackup
+                ? "Enter the wallet password that was used when this encrypted backup was created."
+                : "Enter the password of your previously reset wallet to bring it back."
+              : mode === "hardware"
+                ? "This password locks the app on this device and encrypts anything you add later. Your keys never leave the Trezor."
+                : "Paste your secret key or recovery phrase, then choose a password to seal this vault."
         }
         onBack={backToChoose}
         backDisabled={busy}
@@ -304,275 +483,326 @@ export function Onboarding() {
             />
           </Field>
         )}
-        <div className="space-y-4">
-          <Field label="Vault Password" hint={mode === "restore" ? undefined : "Minimum 8 characters"}>
+        <Field
+          label="Vault Password"
+          hint={mode === "restore" ? undefined : "Minimum 8 characters"}
+        >
+          <input
+            className="input text-[14px]"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter password"
+            autoComplete={mode === "restore" ? "current-password" : "new-password"}
+            autoFocus={mode !== "import"}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && mode === "restore") void handlePasswordSubmit();
+            }}
+          />
+        </Field>
+        {mode !== "restore" && (
+          <Field label="Confirm Password">
             <input
               className="input text-[14px]"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              autoComplete={mode === "restore" ? "current-password" : "new-password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repeat password"
+              autoComplete="new-password"
               onKeyDown={(e) => {
-                if (e.key === "Enter" && mode === "restore") void handlePasswordSubmit();
+                if (e.key === "Enter") void handlePasswordSubmit();
               }}
             />
           </Field>
-          {mode !== "restore" && (
-            <Field label="Confirm Password">
-              <input
-                className="input text-[14px]"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Repeat password"
-                autoComplete="new-password"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handlePasswordSubmit();
-                }}
-              />
-            </Field>
-          )}
-        </div>
-        <ErrorText message={error ?? ""} />
+        )}
+        {error && <ErrorText message={error} />}
         <Button
-          className="w-full !py-3.5 text-[15px] font-semibold"
+          className="w-full"
           loading={busy}
           disabled={busy}
           onClick={() => void handlePasswordSubmit()}
         >
           {mode === "create"
-            ? "Continue to Secret Phrase"
+            ? "Continue"
             : mode === "restore"
-              ? "Restore Wallet"
-              : "Unlock & Import"}
+              ? restoreViaBackup
+                ? "Decrypt & Restore"
+                : "Restore Wallet"
+              : mode === "hardware"
+                ? "Create Vault"
+                : "Unlock & Import"}
         </Button>
       </StepShell>
     );
   }
+
+  /* ------------------------------------------------------------------ */
+  /* REVEAL — recovery phrase                                            */
+  /* ------------------------------------------------------------------ */
+  if (step === "reveal") {
+    return (
+      <StepShell
+        current={2}
+        total={3}
+        eyebrow="Create Wallet"
+        title="Back up your recovery phrase"
+        subtitle="The only way to recover this wallet. Write the words down in order and keep them offline."
+        onBack={() => {
+          resetWallet();
+          setStep("choose");
+          setRevealed(null);
+          setSaved(false);
+          setPassword("");
+          setConfirmPassword("");
+        }}
+        backLabel="Start Over"
+      >
+        <div className="flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3">
+          <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
+          <p className="text-[11.5px] leading-relaxed text-[#FF9F0A]">
+            Anyone with these words controls your funds. Never share them — not even with
+            support.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              {revealedKind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}
+            </span>
+            <CopyButton value={revealed ?? ""} label="Copy" />
+          </div>
+          {revealedKind === "mnemonic" ? (
+            <div className="grid grid-cols-3 gap-2">
+              {revealed?.split(" ").map((w, i) => (
+                <span
+                  key={i}
+                  className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-center text-[13px] text-white"
+                >
+                  <span className="mr-1.5 text-[10.5px] text-neutral-500">{i + 1}</span>
+                  {w}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mono select-all break-all text-[13px] leading-relaxed text-white">
+              {revealed}
+            </p>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="flex items-start gap-2.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 text-left transition-colors hover:bg-white/[0.05]"
+          onClick={() => {
+            triggerHaptic("selection");
+            setSaved((s) => !s);
+          }}
+        >
+          <span
+            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all ${
+              saved ? "border-[#0A84FF] bg-[#0A84FF] text-white" : "border-white/20 bg-white/[0.05]"
+            }`}
+          >
+            {saved && <IconCheck size={12} />}
+          </span>
+          <span className="text-[12.5px] leading-relaxed text-neutral-300">
+            I have written the {revealedKind === "mnemonic" ? "words" : "key"} down and stored
+            them somewhere safe and offline.
+          </span>
+        </button>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="ghost" disabled={!saved} onClick={() => {
+            triggerHaptic("success");
+            completeSetup();
+          }}>
+            Skip for Now
+          </Button>
+          <Button disabled={!saved} onClick={startVerify}>
+            Verify Backup
+          </Button>
+        </div>
+        <p className="text-center text-[11px] text-neutral-500">
+          Verifying takes 20 seconds and proves your backup works.
+        </p>
+      </StepShell>
+    );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* VERIFY — word challenge (reachable + randomized)                    */
+  /* ------------------------------------------------------------------ */
+  const words = (revealed ?? "").split(" ");
+  const targetWords = challengeIndices.map((idx) => words[idx] ?? "");
+  const isCorrect =
+    selectedWords.length === targetWords.length &&
+    selectedWords.every((w, i) => w === targetWords[i]);
 
   return (
     <StepShell
-      stepLabel="Step 2 of 2"
-      title="Save Your Recovery Phrase"
-      subtitle="The only way to recover your wallet if you clear your browser or change devices. Write it down in order."
+      current={3}
+      total={3}
+      eyebrow="Create Wallet"
+      title="Verify your backup"
+      subtitle="Tap the requested words in order to confirm your written copy."
       onBack={() => {
-        resetWallet();
-        setStep("choose");
-        setRevealed(null);
-        setSaved(false);
-        setPassword("");
-        setConfirmPassword("");
+        triggerHaptic("selection");
+        setStep("reveal");
       }}
-      backLabel="Start Over"
     >
-      <div className="rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-4">
-        <div className="flex gap-3">
-          <IconAlert size={16} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
-          <p className="text-[12.5px] leading-relaxed text-[#FF9F0A]">
-            Anyone with these words controls your funds. Never share them with anyone, including support.
-          </p>
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <span className="text-[12.5px] font-semibold uppercase tracking-wider text-neutral-400">
-            {revealedKind === "mnemonic" ? "12-Word Recovery Phrase" : "Secret Key"}
-          </span>
-          <CopyButton value={revealed ?? ""} label="Copy" />
-        </div>
-        {revealedKind === "mnemonic" ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
-            {revealed?.split(" ").map((w, i) => (
-              <span
-                key={i}
-                className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-center text-[13px] text-white"
-              >
-                <span className="mr-1.5 text-[10.5px] text-neutral-500">{i + 1}</span>
-                {w}
+      <div className="grid grid-cols-3 gap-2">
+        {challengeIndices.map((idx, i) => {
+          const filled = selectedWords[i];
+          const wrong = verifyFailed && selectedWords.length === targetWords.length;
+          return (
+            <div
+              key={idx}
+              className={`flex min-h-[64px] flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-colors ${
+                wrong
+                  ? "border-[#FF453A]/40 bg-[#FF453A]/[0.07]"
+                  : filled
+                    ? "border-[#0A84FF]/40 bg-[#0A84FF]/[0.08]"
+                    : "border-white/10 bg-white/[0.03]"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase text-neutral-500">
+                Word #{idx + 1}
               </span>
-            ))}
-          </div>
-        ) : (
-          <p className="mono select-all break-all text-[13px] leading-relaxed text-white">
-            {revealed}
-          </p>
-        )}
+              <span className="mono mt-0.5 text-[14px] font-bold text-white">
+                {filled ?? "—"}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      <button
-        type="button"
-        className="flex items-start gap-3 text-left pt-1"
-        onClick={() => {
-          triggerHaptic("selection");
-          setSaved((s) => !s);
-        }}
-      >
-        <span
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition-all ${
-            saved
-              ? "border-[#30D158] bg-[#30D158] text-black"
-              : "border-white/20 bg-white/[0.05]"
-          }`}
-        >
-          {saved && <IconCheck size={12} />}
-        </span>
-        <span className="text-[13px] leading-relaxed text-neutral-300">
-          I have written down and stored my recovery phrase in a safe place.
-        </span>
-      </button>
+      <div>
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          Word Bank
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {wordBank.map((w) => {
+            const isPicked = selectedWords.includes(w);
+            return (
+              <button
+                key={w}
+                type="button"
+                disabled={isPicked || selectedWords.length >= targetWords.length}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setVerifyFailed(false);
+                  setSelectedWords((prev) => [...prev, w]);
+                }}
+                className={`chip !py-1.5 !px-3.5 text-[13px] font-medium transition-all ${
+                  isPicked
+                    ? "cursor-not-allowed bg-white/5 opacity-30"
+                    : "hover:bg-white/[0.12] active:scale-95"
+                }`}
+              >
+                {w}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      <div className="flex flex-col gap-2.5 w-full">
-        {revealedKind === "mnemonic" && (
-          <Button
-            variant="secondary"
-            className="w-full !py-3 text-[14px] font-semibold"
-            disabled={!saved}
+      {verifyFailed && (
+        <p className="flex items-center justify-between text-[12px] text-[#FF453A]">
+          Not quite — check your written copy.
+          <button
+            type="button"
+            className="font-semibold hover:underline"
             onClick={() => {
               triggerHaptic("selection");
-              // Pick 3 random distinct indices between 0 and 11
-              const words = (revealed ?? "").split(" ");
-              if (words.length >= 12) {
-                setChallengeIndices([2, 6, 10]);
-                setSelectedWords([]);
-                setStep("verify");
-              } else {
-                completeSetup();
-              }
+              setVerifyFailed(false);
+              setSelectedWords([]);
             }}
           >
-            ✓ Test Backup Knowledge (Recommended)
-          </Button>
-        )}
-        <Button
-          className="w-full !py-3.5 text-[15px] font-semibold"
-          disabled={!saved}
-          onClick={() => {
+            Try Again
+          </button>
+        </p>
+      )}
+
+      <Button
+        className="w-full"
+        disabled={selectedWords.length < targetWords.length}
+        onClick={() => {
+          if (isCorrect) {
             triggerHaptic("success");
             completeSetup();
-          }}
-        >
-          Enter Wallet
-        </Button>
-      </div>
-    </StepShell>
-  );
-
-  if (step === "verify") {
-    const words = (revealed ?? "").split(" ");
-    const targetWords = challengeIndices.map((idx) => words[idx] ?? "");
-    const allOptions = Array.from(new Set([...targetWords, words[0], words[3], words[7], words[11]])).filter(Boolean).sort();
-    const isCorrect =
-      selectedWords.length === 3 &&
-      selectedWords.every((w, i) => w === targetWords[i]);
-
-    return (
-      <StepShell
-        stepLabel="Step 4 of 4"
-        title="Verify Your Phrase"
-        subtitle="Select the requested words to confirm your physical backup"
-        onBack={() => {
-          triggerHaptic("selection");
-          setStep("reveal");
+          } else {
+            triggerHaptic("error");
+            setVerifyFailed(true);
+          }
         }}
       >
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
-            <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-              Tap the matching words in order:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {challengeIndices.map((idx, i) => (
-                <div
-                  key={idx}
-                  className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-center min-h-[56px] flex flex-col items-center justify-center"
-                >
-                  <span className="text-[10px] text-neutral-500 font-bold uppercase">
-                    Word #{idx + 1}
-                  </span>
-                  <span className="mono text-[14px] font-bold text-white mt-0.5">
-                    {selectedWords[i] ?? "—"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {isCorrect ? "✓ Phrase Verified — Enter Wallet" : "Confirm Words"}
+      </Button>
+    </StepShell>
+  );
+}
 
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-2 px-1">
-              Word Bank:
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {allOptions.map((w) => {
-                const isPicked = selectedWords.includes(w);
-                return (
-                  <button
-                    key={w}
-                    type="button"
-                    disabled={isPicked || selectedWords.length >= 3}
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSelectedWords((prev) => [...prev, w]);
-                    }}
-                    className={`chip !py-1.5 !px-3 text-[13px] font-medium transition-all ${
-                      isPicked
-                        ? "opacity-30 cursor-not-allowed bg-white/5"
-                        : "hover:bg-white/[0.12] active:scale-95"
-                    }`}
-                  >
-                    {w}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+/* ------------------------------------------------------------------ */
+/* Pieces                                                              */
+/* ------------------------------------------------------------------ */
 
-          {selectedWords.length > 0 && !isCorrect && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setSelectedWords([]);
-              }}
-              className="text-[12px] text-[#FF453A] hover:underline"
-            >
-              Clear & Try Again
-            </button>
-          )}
-
-          <div className="pt-2 flex flex-col gap-2">
-            <Button
-              className="w-full !py-3.5 text-[15px] font-semibold"
-              disabled={!isCorrect}
-              onClick={() => {
-                triggerHaptic("success");
-                completeSetup();
-              }}
-            >
-              {isCorrect ? "✓ Phrase Verified — Enter Wallet" : "Select All 3 Words"}
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full !py-2 text-[13px] text-neutral-400"
-              onClick={() => {
-                triggerHaptic("selection");
-                completeSetup();
-              }}
-            >
-              Skip Verification & Enter
-            </Button>
-          </div>
-        </div>
-      </StepShell>
-    );
-  }
-
-  return null;
+function OnboardPath({
+  icon,
+  tint,
+  title,
+  sub,
+  onClick,
+  primary = false,
+}: {
+  icon: React.ReactNode;
+  tint: string;
+  title: string;
+  sub: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-all active:scale-[0.99] ${
+        primary
+          ? "border-[#0A84FF]/40 bg-[#0A84FF]/[0.10] hover:bg-[#0A84FF]/[0.16]"
+          : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]"
+      }`}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+        style={{ background: `${tint}1f`, color: tint }}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-semibold text-white">{title}</span>
+        <span className="mt-0.5 block text-[12px] leading-snug text-neutral-400 line-clamp-2">{sub}</span>
+      </span>
+      <svg
+        width="7"
+        height="12"
+        viewBox="0 0 8 14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={`shrink-0 transition-colors ${primary ? "text-[#0A84FF]" : "text-neutral-600 group-hover:text-neutral-400"}`}
+      >
+        <path d="m1.5 1.5 5 5.5-5 5.5" />
+      </svg>
+    </button>
+  );
 }
 
 function StepShell({
-  stepLabel,
+  eyebrow,
+  current,
+  total,
   title,
   subtitle,
   children,
@@ -580,7 +810,9 @@ function StepShell({
   backLabel = "Back",
   backDisabled = false,
 }: {
-  stepLabel: string;
+  eyebrow: string;
+  current: number;
+  total: number;
   title: string;
   subtitle: string;
   children: React.ReactNode;
@@ -589,42 +821,48 @@ function StepShell({
   backDisabled?: boolean;
 }) {
   return (
-    <div className="fade-up relative z-10 mx-auto flex min-h-screen w-full max-w-[440px] sm:max-w-[520px] md:max-w-[560px] flex-col justify-center px-6 py-16">
-      <div className="mb-8 flex items-center justify-between">
-        <LogoMark size={42} />
-        <p className="eyebrow">{stepLabel}</p>
-      </div>
-      <h1 className="display-h text-[30px] font-bold text-white tracking-tight">{title}</h1>
-      <p className="mt-2 text-[14px] leading-relaxed text-neutral-400">{subtitle}</p>
-      <div className="mt-6 space-y-4">{children}</div>
-      {onBack && (
-        <button
-          type="button"
-          className="mx-auto mt-7 block text-[13px] text-neutral-400 transition-colors hover:text-white"
-          onClick={onBack}
-          disabled={backDisabled}
-        >
-          ← {backLabel}
-        </button>
-      )}
-    </div>
-  );
-}
+    <div className="relative z-10 min-h-screen w-full overflow-hidden">
+      <Ambient />
+      <div className="fade-up relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-6 py-14">
+        <div className="mb-6 flex items-center justify-between">
+          <LogoMark size={38} />
+          <p className="eyebrow">{eyebrow}</p>
+        </div>
 
-function ShieldGlyph() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#5E5CE6"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3 5 6v5c0 4.7 3 8.4 7 10 4-1.6 7-5.3 7-10V6l-7-3Z" />
-      <path d="m9.2 12 2 2 3.6-4" />
-    </svg>
+        {/* Progress dots */}
+        <div className="mb-6 flex items-center gap-1.5">
+          {Array.from({ length: total }, (_, i) => (
+            <span
+              key={i}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i + 1 < current
+                  ? "w-5 bg-[#30D158]"
+                  : i + 1 === current
+                    ? "w-5 bg-[#0A84FF]"
+                    : "w-1.5 bg-white/15"
+              }`}
+            />
+          ))}
+        </div>
+
+        <h1 className="display-h text-[30px] font-bold tracking-tight text-white">{title}</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-neutral-400">{subtitle}</p>
+
+        <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+          {children}
+        </div>
+
+        {onBack && (
+          <button
+            type="button"
+            className="mx-auto mt-6 block text-[13px] text-neutral-400 transition-colors hover:text-white"
+            onClick={onBack}
+            disabled={backDisabled}
+          >
+            ← {backLabel}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

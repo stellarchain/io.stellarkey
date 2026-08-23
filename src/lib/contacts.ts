@@ -10,12 +10,24 @@ export interface Contact {
   favorite?: boolean;
 }
 
+function normalizeContact(value: unknown): Contact | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<Contact>;
+  if (typeof candidate.name !== "string" || typeof candidate.address !== "string") return null;
+  const name = candidate.name.trim();
+  const address = candidate.address.trim();
+  if (!name || !isValidPublicAddress(address)) return null;
+  return { name, address, favorite: candidate.favorite === true };
+}
+
 export function loadContacts(): Contact[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(KEY);
-    const parsed = raw ? (JSON.parse(raw) as Contact[]) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed)
+      ? parsed.map(normalizeContact).filter((contact): contact is Contact => contact !== null)
+      : [];
   } catch {
     return [];
   }
@@ -26,10 +38,12 @@ function persist(contacts: Contact[]): void {
 }
 
 export function saveContact(contact: Contact): Contact[] {
+  const normalized = normalizeContact(contact);
+  if (!normalized) throw new Error("Contact has an invalid name or Stellar address.");
   const contacts = loadContacts().filter(
-    (c) => c.address.toLowerCase() !== contact.address.toLowerCase(),
+    (c) => c.address !== normalized.address,
   );
-  const next = [...contacts, contact].sort((a, b) => {
+  const next = [...contacts, normalized].sort((a, b) => {
     if (a.favorite && !b.favorite) return -1;
     if (!a.favorite && b.favorite) return 1;
     return a.name.localeCompare(b.name);
@@ -39,9 +53,10 @@ export function saveContact(contact: Contact): Contact[] {
 }
 
 export function toggleFavoriteContact(address: string): Contact[] {
+  const normalizedAddress = address.trim();
   const contacts = loadContacts();
   const next = contacts.map((c) =>
-    c.address.toLowerCase() === address.toLowerCase()
+    c.address === normalizedAddress
       ? { ...c, favorite: !c.favorite }
       : c,
   ).sort((a, b) => {
@@ -54,8 +69,9 @@ export function toggleFavoriteContact(address: string): Contact[] {
 }
 
 export function deleteContact(address: string): Contact[] {
+  const normalizedAddress = address.trim();
   const next = loadContacts().filter(
-    (c) => c.address.toLowerCase() !== address.toLowerCase(),
+    (c) => c.address !== normalizedAddress,
   );
   persist(next);
   return next;

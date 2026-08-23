@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
-import { fmtAmount, opTypeLabel } from "@/lib/format";
+import { formatActivityAmount, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, CopyButton, Modal, ModalHeader } from "./ui";
+import { loadPrivateTxNote, savePrivateTxNote } from "@/lib/vault";
+import { Button, CopyButton, HashValue, Modal, ModalHeader } from "./ui";
+import { FiatValue } from "./FiatValue";
 import { IconCheck, IconClose, IconExternal, IconShare } from "./icons";
+import { activityAssetPresentation } from "@/lib/transaction-intent";
 
 export function TxDetailModal({
   item,
@@ -18,35 +21,38 @@ export function TxDetailModal({
 }) {
   const { network, privacyMode } = useWallet();
   const [copiedReceipt, setCopiedReceipt] = useState(false);
-  const [note, setNote] = useState<string>(() => {
-    if (!item || typeof window === "undefined") return "";
-    try {
-      const notes = JSON.parse(window.localStorage.getItem("wallet.tx-notes.v1") ?? "{}");
-      return notes[item.hash] ?? "";
-    } catch {
-      return "";
-    }
-  });
+  const [note, setNote] = useState("");
+  const [noteError, setNoteError] = useState<string | null>(null);
 
-  function handleSaveNote(val: string) {
-    setNote(val);
-    if (!item || typeof window === "undefined") return;
+  useEffect(() => {
+    let alive = true;
+    if (!item) return;
+    void loadPrivateTxNote(item.hash)
+      .then((value) => {
+        if (alive) setNote(value);
+      })
+      .catch((cause) => {
+        if (alive) setNoteError(cause instanceof Error ? cause.message : "Unable to decrypt note.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [item]);
+
+  async function handleSaveNote() {
+    if (!item) return;
+    setNoteError(null);
     try {
-      const notes = JSON.parse(window.localStorage.getItem("wallet.tx-notes.v1") ?? "{}");
-      if (val.trim()) {
-        notes[item.hash] = val.trim();
-      } else {
-        delete notes[item.hash];
-      }
-      window.localStorage.setItem("wallet.tx-notes.v1", JSON.stringify(notes));
-    } catch {
-      // Ignore
+      await savePrivateTxNote(item.hash, note);
+    } catch (cause) {
+      setNoteError(cause instanceof Error ? cause.message : "Unable to encrypt note.");
     }
   }
   if (!item) return null;
 
   const incoming = item.direction === "in";
-  const neutral = item.direction === "neutral";
+  const presentedAsset = activityAssetPresentation(item);
+  const presentedAmount = formatActivityAmount(item);
 
   const explorerUrl = NETWORKS[network].explorerTxUrl(item.hash);
   const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
@@ -57,7 +63,8 @@ export function TxDetailModal({
 Title: ${item.title}
 Status: ${item.successful ? "Confirmed" : "Failed"}
 Network: Stellar ${NETWORKS[network].label}
-Amount: ${item.amount ? `${item.amount} ${item.assetCode ?? "XLM"}` : "N/A"}
+Amount: ${presentedAmount ? `${presentedAmount}${presentedAsset.detailLabel ? ` ${presentedAsset.detailLabel}` : ""}` : "N/A"}
+Asset Issuer: ${presentedAsset.issuer ?? (presentedAsset.isNative ? "Native" : "N/A")}
 Date: ${new Date(item.createdAt).toLocaleString("en-US")}
 Counterparty: ${item.counterparty ?? "N/A"}
 Hash: ${item.hash}
@@ -111,13 +118,25 @@ Explorer: ${explorerUrl}`;
           </p>
           {item.amount !== null && (
             <p className="display-h mt-1 text-[32px] font-light text-white">
-              {privacyMode
-                ? "••••••"
-                : `${neutral ? "" : incoming ? "+" : "−"}${fmtAmount(item.amount)}`}{" "}
-              <span className="mono text-[18px] text-neutral-400 font-normal">
-                {item.assetCode ?? "XLM"}
-              </span>
+              {privacyMode ? "••••••" : presentedAmount}{" "}
+              {presentedAsset.code && (
+                <span
+                  className="mono text-[18px] text-neutral-400 font-normal"
+                  title={presentedAsset.detailLabel ?? undefined}
+                >
+                  {presentedAsset.code}
+                </span>
+              )}
             </p>
+          )}
+          {item.amount !== null && presentedAsset.code && (
+            <FiatValue
+              amount={item.amount}
+              code={presentedAsset.code}
+              issuer={presentedAsset.issuer}
+              isNative={presentedAsset.isNative}
+              className="mt-1 text-[12.5px] text-neutral-400"
+            />
           )}
         </div>
 
@@ -130,9 +149,18 @@ Explorer: ${explorerUrl}`;
           </Row>
           {item.counterparty && (
             <Row label={incoming ? (item.type === "create_account" ? "Funder" : "From") : "To"}>
-              <span className="mono text-[12px] break-all text-neutral-300">
-                {item.counterparty}
-              </span>
+              <HashValue
+                value={item.counterparty}
+                className="justify-end text-[12px] text-neutral-300"
+              />
+            </Row>
+          )}
+          {presentedAsset.issuer && (
+            <Row label="Asset Issuer">
+              <HashValue
+                value={presentedAsset.issuer}
+                className="justify-end text-[12px] text-neutral-300"
+              />
             </Row>
           )}
           {item.type === "create_account" && (
@@ -148,9 +176,10 @@ Explorer: ${explorerUrl}`;
             </span>
           </Row>
           <Row label="Tx Hash">
-            <span className="mono text-[12px] break-all text-neutral-400">
-              {item.hash}
-            </span>
+            <HashValue
+              value={item.hash}
+              className="justify-end text-[12px] text-neutral-400"
+            />
           </Row>
         </div>
 
@@ -163,10 +192,12 @@ Explorer: ${explorerUrl}`;
             type="text"
             placeholder="e.g. 🧾 Freelance Design Invoice #104"
             value={note}
-            onChange={(e) => handleSaveNote(e.target.value)}
+            onChange={(e) => setNote(e.target.value)}
+            onBlur={() => void handleSaveNote()}
             className="input text-[13px] !h-8"
             maxLength={60}
           />
+          {noteError && <p role="alert" className="text-[11px] text-[#FF453A]">{noteError}</p>}
         </div>
 
         {/* Action Links */}
@@ -207,7 +238,7 @@ Explorer: ${explorerUrl}`;
           </a>
         </div>
 
-        <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
+        <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
           Close
         </Button>
       </div>

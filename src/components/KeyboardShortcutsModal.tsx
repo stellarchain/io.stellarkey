@@ -1,6 +1,6 @@
 "use client";
 
-import { Modal, ModalHeader } from "./ui";
+import { Button, Modal, ModalHeader } from "./ui";
 import { IconKeyboard } from "./icons";
 
 interface ShortcutItem {
@@ -14,7 +14,7 @@ const SHORTCUTS: ShortcutItem[] = [
   { keys: ["⌘", "1"], description: "Navigate to Home", category: "navigation" },
   { keys: ["⌘", "2"], description: "Navigate to Activity", category: "navigation" },
   { keys: ["⌘", "3"], description: "Navigate to DEX Swap", category: "navigation" },
-  { keys: ["⌘", "4"], description: "Navigate to Ecosystem Explore", category: "navigation" },
+  { keys: ["⌘", "4"], description: "Navigate to Contacts", category: "navigation" },
   { keys: ["⌘", "5"], description: "Navigate to Settings", category: "navigation" },
   { keys: ["⌘", "S"], description: "Quick Send Funds", category: "actions" },
   { keys: ["⌘", "R"], description: "Quick Receive / Payment Request", category: "actions" },
@@ -41,7 +41,7 @@ export function KeyboardShortcutsModal({
         subtitle="macOS & Web Pro Hotkeys"
         onClose={onClose}
       />
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-4">
         <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/[0.04] border border-white/[0.08] text-xs text-neutral-300">
           <IconKeyboard size={15} className="text-[#0A84FF] shrink-0" />
           <span>Press these keys anytime to instantly navigate and trigger actions.</span>
@@ -100,6 +100,10 @@ export function KeyboardShortcutsModal({
             </div>
           </div>
         </div>
+
+        <Button variant="ghost" className="w-full" onClick={onClose}>
+          Close
+        </Button>
       </div>
     </Modal>
   );

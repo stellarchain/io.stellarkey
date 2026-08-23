@@ -177,6 +177,24 @@ export function IconRefresh(p: IconProps) {
   );
 }
 
+export function IconCalculator(p: IconProps) {
+  return (
+    <svg {...base(p.size)} className={p.className}>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="8" y1="6" x2="16" y2="6" />
+      <path d="M16 10h.01" />
+      <path d="M12 10h.01" />
+      <path d="M8 10h.01" />
+      <path d="M12 14h.01" />
+      <path d="M8 14h.01" />
+      <path d="M16 14h.01" />
+      <path d="M12 18h.01" />
+      <path d="M8 18h.01" />
+      <path d="M16 18h.01" />
+    </svg>
+  );
+}
+
 export function IconTrash(p: IconProps) {
   return (
     <svg {...base(p.size)} className={p.className}>
@@ -222,6 +240,17 @@ export function IconSwap(p: IconProps) {
       <path d="M20 7H4" />
       <path d="m8 21-4-4 4-4" />
       <path d="M4 17h16" />
+    </svg>
+  );
+}
+
+export function IconUsers(p: IconProps) {
+  return (
+    <svg {...base(p.size)} className={p.className}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }

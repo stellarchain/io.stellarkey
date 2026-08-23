@@ -28,13 +28,12 @@ export function ResetWalletModal({
             Without a backup of your recovery phrase, all funds will be permanently lost.
           </span>
         </p>
-        <div className="mt-6 flex gap-3">
-          <Button variant="ghost" className="flex-1" onClick={onClose}>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
             variant="danger"
-            className="flex-1"
             onClick={() => {
               triggerHaptic("error");
               onClose();
