@@ -744,7 +744,7 @@ export function SegmentedControl<T extends string>({
   onChange,
 }: {
   value: T;
-  options: { label: string; value: T }[];
+  options: { label: string; value: T; disabled?: boolean }[];
   onChange: (val: T) => void;
 }) {
   return (
@@ -755,14 +755,17 @@ export function SegmentedControl<T extends string>({
           <button
             key={opt.value}
             type="button"
+            disabled={opt.disabled}
             onClick={() => {
-              if (!active) {
+              if (!active && !opt.disabled) {
                 triggerHaptic("selection");
                 onChange(opt.value);
               }
             }}
             className={`relative flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-all ${
-              active
+              opt.disabled
+                ? "cursor-not-allowed text-neutral-600 opacity-60"
+                : active
                 ? "bg-white/[0.18] text-white shadow-sm font-semibold"
                 : "text-neutral-400 hover:text-white"
             }`}

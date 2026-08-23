@@ -4,23 +4,23 @@
  * co-signing, and cosigner-envelope merging with weight-aware submission.
  *
  * Threshold model (Stellar): every operation needs a minimum signing weight
- * (low/med/high). Payments and most ops are "med"; setOptions is "high".
+ * (low/med/high). Payments and most operations are medium; signer/threshold
+ * changes and account merge are high.
  */
 import {
-  Asset,
-  FeeBumpTransaction,
   Keypair,
   Operation,
   TransactionBuilder,
+  extractBaseAddress,
   type Transaction,
 } from "@stellar/stellar-sdk";
 import {
+  type AccountSignerInfo,
   explainSubmitError,
   fetchAccountSignerInfo,
   getJson,
   minimalAccount,
   resolveSource,
-  signAndSubmit,
   submitSignedTx,
   SendError,
 } from "./api";
@@ -29,6 +29,11 @@ import { normalizeAmount } from "./format";
 import { isValidPublicAddress } from "./vault";
 import { signHardwareTx, type HardwareSigner } from "./hardware";
 import { buildStellarMemo, toStellarAsset, type StellarMemoInput } from "./stellar-domain";
+import {
+  assertReviewTimeValid,
+  reviewTransactionEnvelope,
+  type ReviewedOperation,
+} from "./transaction-review";
 
 export interface MultisigSignerEntry {
   key: string;
@@ -43,26 +48,67 @@ export interface MultisigConfig {
   high: number;
 }
 
+export interface MultisigConfigOutcome {
+  submitted: boolean;
+  hash?: string;
+  xdr: string;
+  collectedWeight: number;
+  requiredWeight: number;
+  signedKeys: string[];
+}
+
+/** Stellar AccountEntry stores at most 20 additional signers; the master key is separate. */
+export const MAX_ADDITIONAL_ACCOUNT_SIGNERS = 20;
+
+export function hasAdditionalSignerCapacity(additionalSignerCount: number): boolean {
+  return Number.isInteger(additionalSignerCount) &&
+    additionalSignerCount >= 0 &&
+    additionalSignerCount < MAX_ADDITIONAL_ACCOUNT_SIGNERS;
+}
+
 export function totalWeight(signers: { weight: number }[]): number {
   return signers.reduce((sum, s) => sum + s.weight, 0);
 }
 
 /** Signing weight a transaction requires, derived from its operation types. */
+export function thresholdLevelForOperation(
+  op: Transaction["operations"][number],
+): "low" | "medium" | "high" {
+  if (op.type === "accountMerge") return "high";
+  if (op.type === "setOptions") {
+    return op.signer !== undefined ||
+      op.masterWeight !== undefined ||
+      op.lowThreshold !== undefined ||
+      op.medThreshold !== undefined ||
+      op.highThreshold !== undefined
+      ? "high"
+      : "medium";
+  }
+  if (
+    op.type === "bumpSequence" ||
+    op.type === "allowTrust" ||
+    op.type === "setTrustLineFlags" ||
+    op.type === "claimClaimableBalance"
+  ) {
+    return "low";
+  }
+  return "medium";
+}
+
 export function requiredWeightForTx(tx: Transaction, thresholds: {
   low_threshold: number;
   med_threshold: number;
   high_threshold: number;
 }): number {
-  let required = 0;
-  for (const op of tx.operations) {
-    let level: number;
-    if (op.type === "setOptions") level = thresholds.high_threshold;
-    else if (op.type === "bumpSequence" || op.type === "allowTrust" || op.type === "setTrustLineFlags") {
-      level = thresholds.low_threshold;
-    } else level = thresholds.med_threshold;
-    if (level > required) required = level;
-  }
-  return required;
+  return tx.operations.reduce((required, op) => {
+    const level = thresholdLevelForOperation(op);
+    const weight = level === "low"
+      ? thresholds.low_threshold
+      : level === "high"
+        ? thresholds.high_threshold
+        : thresholds.med_threshold;
+    return Math.max(required, weight);
+  }, thresholds.low_threshold);
 }
 
 /** Apply a full signer/threshold configuration to an account (setOptions). */
@@ -72,7 +118,7 @@ export async function applyMultisigConfig(params: {
   config: MultisigConfig;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
-}): Promise<{ hash: string }> {
+}): Promise<MultisigConfigOutcome> {
   const { network, accountPublicKey, config } = params;
 
   const thresholds = [config.low, config.medium, config.high];
@@ -81,6 +127,12 @@ export async function applyMultisigConfig(params: {
   }
   if (new Set(config.signers.map((signer) => signer.key)).size !== config.signers.length) {
     throw new SendError("Signer addresses must be unique.");
+  }
+  const additionalSignerCount = config.signers.filter(
+    (signer) => signer.key !== accountPublicKey && signer.weight > 0,
+  ).length;
+  if (additionalSignerCount > MAX_ADDITIONAL_ACCOUNT_SIGNERS) {
+    throw new SendError("A Stellar account can have at most 20 additional signers.");
   }
 
   for (const s of config.signers) {
@@ -106,30 +158,98 @@ export async function applyMultisigConfig(params: {
   const source = await getJson<{ sequence: string }>(`${horizonUrl}/accounts/${accountPublicKey}`);
   if (!source) throw new SendError("Account does not exist on this network.");
   const current = await fetchAccountSignerInfo(accountPublicKey, network);
+  if (!current) throw new SendError("Account signer configuration could not be loaded.");
+  if (current.signers.some((signer) => signer.type !== "ed25519_public_key")) {
+    throw new SendError(
+      "This account uses signer types this configuration editor cannot safely modify.",
+    );
+  }
 
   const builder = new TransactionBuilder(minimalAccount(accountPublicKey, source.sequence), {
     fee: "100",
     networkPassphrase: cfg.networkPassphrase,
   });
 
-  // 1) Remove cosigners that are absent from the new configuration
-  const keep = new Set(config.signers.map((s) => s.key));
-  for (const s of current?.signers ?? []) {
-    if (s.key === accountPublicKey) continue;
-    if (!keep.has(s.key)) {
-      builder.addOperation(
-        Operation.setOptions({ signer: { ed25519PublicKey: s.key, weight: 0 } }),
-      );
-    }
+  // Restore the master and increase existing signer weights before weakening
+  // access. At full capacity, lower the current high threshold, remove only
+  // enough obsolete signers to open slots, then add their replacements. The
+  // final exact threshold/master state remains last and the transaction atomic.
+  const desiredByKey = new Map(config.signers.map((signer) => [signer.key, signer.weight]));
+  const currentByKey = new Map(current.signers.map((signer) => [signer.key, signer.weight]));
+  const currentMasterWeight = currentByKey.get(accountPublicKey) ?? 0;
+  const currentAdditionalSigners = current.signers.filter(
+    (signer) => signer.key !== accountPublicKey && signer.weight > 0,
+  );
+  if (currentAdditionalSigners.length > MAX_ADDITIONAL_ACCOUNT_SIGNERS) {
+    throw new SendError("The current account exceeds Stellar's additional-signer limit.");
   }
-  // 2) Upsert cosigners
+  const additions = config.signers.filter((signer) =>
+    signer.key !== accountPublicKey &&
+    signer.weight > 0 &&
+    (currentByKey.get(signer.key) ?? 0) === 0
+  );
+  const obsoleteSigners = currentAdditionalSigners.filter(
+    (signer) => (desiredByKey.get(signer.key) ?? 0) === 0,
+  );
+  const availableSlots = MAX_ADDITIONAL_ACCOUNT_SIGNERS - currentAdditionalSigners.length;
+  const slotsToCreate = Math.max(0, additions.length - availableSlots);
+  if (slotsToCreate > obsoleteSigners.length) {
+    throw new SendError("The requested signer replacement cannot fit within Stellar's signer limit.");
+  }
+  const capacityRemovals = obsoleteSigners.slice(0, slotsToCreate);
+  const capacityRemovalKeys = new Set(capacityRemovals.map((signer) => signer.key));
+
+  if (own.weight > currentMasterWeight) {
+    builder.addOperation(Operation.setOptions({ masterWeight: own.weight }));
+  }
   for (const s of config.signers) {
     if (s.key === accountPublicKey) continue;
+    const currentWeight = currentByKey.get(s.key) ?? 0;
+    if (currentWeight <= 0 || s.weight <= currentWeight) continue;
     builder.addOperation(
       Operation.setOptions({ signer: { ed25519PublicKey: s.key, weight: s.weight } }),
     );
   }
-  // 3) Thresholds + master weight last (single atomic transaction)
+
+  const weakensSignerSet =
+    own.weight < (currentByKey.get(accountPublicKey) ?? 0) ||
+    current.signers.some((signer) => {
+      if (signer.key === accountPublicKey) return false;
+      const desired = config.signers.find((entry) => entry.key === signer.key);
+      return !desired || desired.weight < signer.weight;
+    });
+  if (weakensSignerSet && current.thresholds.high_threshold > 0) {
+    builder.addOperation(Operation.setOptions({ highThreshold: 0 }));
+  }
+
+  for (const signer of capacityRemovals) {
+    builder.addOperation(
+      Operation.setOptions({ signer: { ed25519PublicKey: signer.key, weight: 0 } }),
+    );
+  }
+
+  for (const signer of additions) {
+    builder.addOperation(
+      Operation.setOptions({ signer: { ed25519PublicKey: signer.key, weight: signer.weight } }),
+    );
+  }
+
+  for (const s of config.signers) {
+    if (s.key === accountPublicKey || s.weight <= 0) continue;
+    const currentWeight = currentByKey.get(s.key);
+    if (currentWeight === undefined || s.weight >= currentWeight) continue;
+    builder.addOperation(
+      Operation.setOptions({ signer: { ed25519PublicKey: s.key, weight: s.weight } }),
+    );
+  }
+
+  for (const signer of obsoleteSigners) {
+    if (capacityRemovalKeys.has(signer.key)) continue;
+    builder.addOperation(
+      Operation.setOptions({ signer: { ed25519PublicKey: signer.key, weight: 0 } }),
+    );
+  }
+
   builder.addOperation(
     Operation.setOptions({
       masterWeight: own.weight,
@@ -140,8 +260,48 @@ export async function applyMultisigConfig(params: {
   );
 
   const tx = builder.setTimeout(180).build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), network);
+  if (kp) tx.sign(kp);
+  else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+  assertReviewTimeValid(review);
+
+  const context: AuthorizationContext = {
+    sourceInfo: new Map([[extractBaseAddress(accountPublicKey), current]]),
+    requirements: authorizationRequirements(tx),
+  };
+  const evaluation = authorizationEvaluationFromContext(tx, context);
+  const collected = evaluation.authorizations.reduce(
+    (sum, authorization) => sum + authorization.collectedWeight,
+    0,
+  );
+  const required = evaluation.authorizations.reduce(
+    (sum, authorization) => sum + authorization.requiredWeight,
+    0,
+  );
+  const signedKeys = new Set(
+    evaluation.authorizations.flatMap((authorization) => authorization.signedKeys),
+  );
+  if (!evaluation.authorizations.every((authorization) => authorization.satisfied)) {
+    return {
+      submitted: false,
+      xdr: tx.toXdr(),
+      collectedWeight: collected,
+      requiredWeight: required,
+      signedKeys: [...signedKeys],
+    };
+  }
+
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    assertReviewTimeValid(review);
+    const result = await submitSignedTx(tx, network);
+    return {
+      submitted: true,
+      hash: result.hash,
+      xdr: tx.toXdr(),
+      collectedWeight: collected,
+      requiredWeight: required,
+      signedKeys: [...signedKeys],
+    };
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -153,7 +313,7 @@ export async function disableMultisig(params: {
   accountPublicKey: string;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
-}): Promise<{ hash: string }> {
+}): Promise<MultisigConfigOutcome> {
   return applyMultisigConfig({
     ...params,
     config: {
@@ -238,18 +398,16 @@ export async function prepareCosignPayment(params: {
 
 /* ---------------- Co-signing (merge envelopes, submit when full) ---------------- */
 
-export interface TxOpExplanation {
-  type: string;
-  title: string;
-  lines: { label: string; value: string; kind?: "text" | "mono" | "address" }[];
-  risk: "none" | "warn" | "danger";
-}
+export type TxOpExplanation = ReviewedOperation;
 
 export interface TxExplanation {
+  network: NetworkKey;
+  networkLabel: string;
   source: string;
   feeXlm: string;
   sequence: string;
   memoText?: string;
+  timeBounds?: { minTime: string; maxTime: string | null };
   /** epoch seconds, when the envelope has a maxTime timebound */
   expiresAt?: number;
   operations: TxOpExplanation[];
@@ -257,246 +415,50 @@ export interface TxExplanation {
   requiredWeight: number;
   signedKeys: string[];
   operationCount: number;
-  /** Envelope network passphrase differs from the active network */
-  networkMismatch: boolean;
+  signable: boolean;
+  blockingReasons: string[];
+  authorizations: SourceAuthorization[];
   hasDangerOps: boolean;
 }
 
-function assetCodeOf(asset: Asset): string {
-  return asset.isNative() ? "XLM" : asset.getCode();
-}
-
-function explainOp(op: Transaction["operations"][number]): TxOpExplanation {
-  switch (op.type) {
-    case "payment":
-      return {
-        type: op.type,
-        risk: "none",
-        title: `Send ${op.amount} ${assetCodeOf(op.asset)}`,
-        lines: [
-          { label: "To", value: op.destination, kind: "address" },
-          { label: "Amount", value: `${op.amount} ${assetCodeOf(op.asset)}`, kind: "mono" },
-        ],
-      };
-    case "createAccount":
-      return {
-        type: op.type,
-        risk: "none",
-        title: "Create & fund a new account",
-        lines: [
-          { label: "New account", value: op.destination, kind: "address" },
-          { label: "Starting balance", value: `${op.startingBalance} XLM`, kind: "mono" },
-        ],
-      };
-    case "changeTrust": {
-      const removing = parseFloat(op.limit) === 0;
-      return {
-        type: op.type,
-        risk: "none",
-        title: `${removing ? "Remove" : "Add"} trustline — ${assetCodeOf(op.line as Asset)}`,
-        lines: [
-          { label: "Asset", value: assetCodeOf(op.line as Asset), kind: "mono" },
-          { label: "Issuer", value: (op.line as Asset).getIssuer() ?? "", kind: "address" },
-        ],
-      };
-    }
-    case "pathPaymentStrictSend":
-      return {
-        type: op.type,
-        risk: "none",
-        title: `Swap ${op.sendAmount} ${assetCodeOf(op.sendAsset)} → ${assetCodeOf(op.destAsset)}`,
-        lines: [
-          { label: "You send", value: `${op.sendAmount} ${assetCodeOf(op.sendAsset)}`, kind: "mono" },
-          { label: "Min. received", value: `${op.destMin} ${assetCodeOf(op.destAsset)}`, kind: "mono" },
-          { label: "Destination", value: op.destination, kind: "address" },
-          { label: "Route hops", value: String(op.path.length), kind: "mono" },
-        ],
-      };
-    case "pathPaymentStrictReceive":
-      return {
-        type: op.type,
-        risk: "none",
-        title: `Swap → ${op.destAmount} ${assetCodeOf(op.destAsset)}`,
-        lines: [
-          { label: "Max. send", value: `${op.sendMax} ${assetCodeOf(op.sendAsset)}`, kind: "mono" },
-          { label: "You receive", value: `${op.destAmount} ${assetCodeOf(op.destAsset)}`, kind: "mono" },
-          { label: "Destination", value: op.destination, kind: "address" },
-        ],
-      };
-    case "accountMerge":
-      return {
-        type: op.type,
-        risk: "danger",
-        title: "Close account & merge all funds",
-        lines: [
-          { label: "Receives everything", value: op.destination, kind: "address" },
-          { label: "Effect", value: "Permanently closes the source account" },
-        ],
-      };
-    case "setOptions": {
-      const lines: TxOpExplanation["lines"] = [];
-      if (op.signer) {
-        const key =
-          "ed25519PublicKey" in op.signer ? String(op.signer.ed25519PublicKey) : "custom signer";
-        const w = Number(op.signer.weight ?? 0);
-        lines.push({
-          label: w === 0 ? "Remove signer" : "Add/update signer",
-          value: key,
-          kind: "address",
-        });
-        if (w > 0) lines.push({ label: "Signer weight", value: String(w), kind: "mono" });
-      }
-      if (op.masterWeight !== undefined) {
-        lines.push({ label: "Master weight", value: String(op.masterWeight), kind: "mono" });
-      }
-      if (
-        op.lowThreshold !== undefined ||
-        op.medThreshold !== undefined ||
-        op.highThreshold !== undefined
-      ) {
-        lines.push({
-          label: "Thresholds L/M/H",
-          value: `${op.lowThreshold ?? "—"} / ${op.medThreshold ?? "—"} / ${op.highThreshold ?? "—"}`,
-          kind: "mono",
-        });
-      }
-      if (op.homeDomain !== undefined) {
-        lines.push({ label: "Home domain", value: String(op.homeDomain) });
-      }
-      if (lines.length === 0) lines.push({ label: "Detail", value: "Account flag changes" });
-      return {
-        type: op.type,
-        risk: "danger",
-        title: "Change signers / thresholds",
-        lines,
-      };
-    }
-    case "claimClaimableBalance":
-      return {
-        type: op.type,
-        risk: "none",
-        title: "Claim a claimable balance",
-        lines: [{ label: "Balance ID", value: op.balanceId, kind: "mono" }],
-      };
-    case "manageData":
-      return {
-        type: op.type,
-        risk: "warn",
-        title: `Set data entry "${op.name}"`,
-        lines: [{ label: "Name", value: op.name, kind: "mono" }],
-      };
-    case "bumpSequence":
-      return {
-        type: op.type,
-        risk: "warn",
-        title: "Bump account sequence",
-        lines: [{ label: "Bump to", value: String(op.bumpTo), kind: "mono" }],
-      };
-    case "manageSellOffer":
-    case "createPassiveSellOffer":
-      return {
-        type: op.type,
-        risk: "none",
-        title: `Offer: sell ${op.amount} ${assetCodeOf(op.selling)} for ${assetCodeOf(op.buying)}`,
-        lines: [
-          { label: "Selling", value: `${op.amount} ${assetCodeOf(op.selling)}`, kind: "mono" },
-          { label: "Price", value: `${op.price} ${assetCodeOf(op.buying)}`, kind: "mono" },
-        ],
-      };
-    case "manageBuyOffer":
-      return {
-        type: op.type,
-        risk: "none",
-        title: `Offer: buy ${op.buyAmount} ${assetCodeOf(op.buying)}`,
-        lines: [
-          { label: "Buying", value: `${op.buyAmount} ${assetCodeOf(op.buying)}`, kind: "mono" },
-          { label: "Selling", value: assetCodeOf(op.selling), kind: "mono" },
-          { label: "Price", value: `${op.price} ${assetCodeOf(op.buying)}`, kind: "mono" },
-        ],
-      };
-    case "allowTrust":
-    case "setTrustLineFlags":
-      return {
-        type: op.type,
-        risk: "warn",
-        title: "Change trustline authorization",
-        lines: [{ label: "Operation", value: op.type, kind: "mono" }],
-      };
-    case "clawback":
-    case "clawbackClaimableBalance":
-      return {
-        type: op.type,
-        risk: "danger",
-        title: "Claw back funds",
-        lines: [{ label: "Operation", value: op.type, kind: "mono" }],
-      };
-    case "invokeHostFunction":
-    case "extendFootprintTtl":
-    case "restoreFootprint":
-      return {
-        type: op.type,
-        risk: "warn",
-        title: "Smart contract interaction",
-        lines: [{ label: "Note", value: "Contract call details are not decodable here" }],
-      };
-    default:
-      return {
-        type: op.type,
-        risk: "warn",
-        title: op.type,
-        lines: [{ label: "Note", value: "Unrecognized operation type — review carefully" }],
-      };
-  }
+export interface SourceAuthorization {
+  source: string;
+  collectedWeight: number;
+  requiredWeight: number;
+  signedKeys: string[];
+  satisfied: boolean;
 }
 
 /**
  * Decode a transaction envelope into a human-readable explanation for
- * pre-signature review: plain-English operations, risk flags, expiry,
- * network check, and the current signature-weight status of the source
- * account — WITHOUT signing anything.
+ * pre-signature review under an explicitly selected network, including exact
+ * operation effects, expiry, and every source account's authorization state.
  */
 export async function explainTransaction(
   xdr: string,
   network: NetworkKey,
 ): Promise<TxExplanation> {
-  const cfg = NETWORKS[network];
-  let tx: Transaction | FeeBumpTransaction;
-  try {
-    tx = TransactionBuilder.fromXdr(xdr.trim(), cfg.networkPassphrase);
-  } catch {
-    throw new SendError("That doesn't look like a valid transaction envelope (base64 XDR).");
-  }
-  if (tx instanceof FeeBumpTransaction) {
-    throw new SendError("Fee-bump envelopes are not supported — share the inner transaction envelope.");
-  }
-
-  const info = await fetchAccountSignerInfo(tx.source, network);
-  const signerEntries: MultisigSignerEntry[] = (info?.signers ?? []).map((s) => ({
-    key: s.key,
-    weight: s.weight,
-  }));
-  const thresholds = info?.thresholds ?? { low_threshold: 0, med_threshold: 1, high_threshold: 1 };
-  const { collected, signedKeys } = verifySignedKeys(tx, signerEntries);
-
-  const operations = tx.operations.map(explainOp);
+  const review = reviewTransactionEnvelope(xdr, network);
+  const authorizations = await authorizationStatus(review.transaction, network);
+  const signedKeys = new Set(authorizations.flatMap((entry) => entry.signedKeys));
   return {
-    source: tx.source,
-    feeXlm: (Number(tx.fee) / 10_000_000).toFixed(7),
-    sequence: tx.sequence,
-    memoText:
-      tx.memo.type === "text"
-        ? String(tx.memo.value ?? "")
-        : tx.memo.type === "id"
-          ? `id: ${String(tx.memo.value)}`
-          : undefined,
-    expiresAt: tx.timeBounds ? Number(tx.timeBounds.maxTime) : undefined,
-    operations,
-    collectedWeight: collected,
-    requiredWeight: requiredWeightForTx(tx, thresholds),
+    network: review.network,
+    networkLabel: review.networkLabel,
+    source: review.source,
+    feeXlm: review.feeXlm,
+    sequence: review.sequence,
+    memoText: review.memoText,
+    timeBounds: review.timeBounds,
+    expiresAt: review.expiresAt,
+    operations: review.operations,
+    operationCount: review.operationCount,
+    signable: review.signable,
+    blockingReasons: review.blockingReasons,
+    hasDangerOps: review.hasDangerOps,
+    collectedWeight: authorizations.reduce((sum, entry) => sum + entry.collectedWeight, 0),
+    requiredWeight: authorizations.reduce((sum, entry) => sum + entry.requiredWeight, 0),
     signedKeys: [...signedKeys],
-    operationCount: tx.operations.length,
-    networkMismatch: tx.networkPassphrase !== cfg.networkPassphrase,
-    hasDangerOps: operations.some((o) => o.risk === "danger"),
+    authorizations,
   };
 }
 
@@ -511,6 +473,7 @@ export interface CosignOutcome {
   signedKeys: string[];
   addedSignature: boolean;
   operationCount: number;
+  authorizations: SourceAuthorization[];
 }
 
 function verifySignedKeys(tx: Transaction, signers: MultisigSignerEntry[]): {
@@ -541,42 +504,315 @@ function verifySignedKeys(tx: Transaction, signers: MultisigSignerEntry[]): {
   return { collected, signedKeys };
 }
 
+type ThresholdLevel = "low" | "medium" | "high";
+
+interface AuthorizationContext {
+  sourceInfo: Map<string, AccountSignerInfo>;
+  requirements: Map<string, Set<ThresholdLevel>>;
+}
+
+function authorizationRequirements(tx: Transaction): Map<string, Set<ThresholdLevel>> {
+  const requirements = new Map<string, Set<ThresholdLevel>>();
+  // The transaction source always authorizes the envelope at its low threshold,
+  // even when every operation overrides its own source account.
+  requirements.set(extractBaseAddress(tx.source), new Set<ThresholdLevel>(["low"]));
+  for (const operation of tx.operations) {
+    const source = extractBaseAddress(operation.source ?? tx.source);
+    const levels = requirements.get(source) ?? new Set<ThresholdLevel>();
+    levels.add(thresholdLevelForOperation(operation));
+    requirements.set(source, levels);
+  }
+  return requirements;
+}
+
+async function loadAuthorizationContext(
+  tx: Transaction,
+  network: NetworkKey,
+): Promise<AuthorizationContext> {
+  const requirements = authorizationRequirements(tx);
+  const entries = await Promise.all(
+    [...requirements.keys()].map(async (source) => {
+      const info = await fetchAccountSignerInfo(source, network);
+      if (!info) throw new SendError(`Required source account ${source} was not found on ${NETWORKS[network].label}.`);
+      if (info.signers.some((signer) => signer.type !== "ed25519_public_key")) {
+        throw new SendError(
+          `Required source account ${source} uses unsupported signer types. This wallet will not guess their authorization state.`,
+        );
+      }
+      return [source, info] as const;
+    }),
+  );
+  return { sourceInfo: new Map(entries), requirements };
+}
+
+function authorizationStatusFromContext(
+  tx: Transaction,
+  context: AuthorizationContext,
+): SourceAuthorization[] {
+  return authorizationEvaluationFromContext(tx, context).authorizations;
+}
+
+interface AuthorizationCheck {
+  source: string;
+  operationIndex: number | null;
+  collectedWeight: number;
+  requiredWeight: number;
+  signedKeys: string[];
+  satisfied: boolean;
+  signerWeights: Map<string, number>;
+}
+
+interface AuthorizationEvaluation {
+  authorizations: SourceAuthorization[];
+  checks: AuthorizationCheck[];
+}
+
+interface SignerAuthorizationStatus {
+  alreadySigned: boolean;
+  legitimateSigner: boolean;
+  contributesToUnsatisfiedSource: boolean;
+}
+
+interface MutableAuthorizationState {
+  masterKey: string;
+  thresholds: AccountSignerInfo["thresholds"];
+  signers: Map<string, number>;
+  hasOpaqueSignerMutation: boolean;
+  merged: boolean;
+}
+
+function thresholdWeight(
+  thresholds: AccountSignerInfo["thresholds"],
+  level: ThresholdLevel,
+): number {
+  const configured = level === "low"
+    ? thresholds.low_threshold
+    : level === "high"
+      ? thresholds.high_threshold
+      : thresholds.med_threshold;
+  // Stellar Core still requires a recognized authorization at threshold zero.
+  return Math.max(1, configured);
+}
+
+function applyAuthorizationMutation(
+  state: MutableAuthorizationState,
+  operation: Transaction["operations"][number],
+): void {
+  if (operation.type === "accountMerge") {
+    state.merged = true;
+    return;
+  }
+  if (operation.type !== "setOptions") return;
+
+  if (operation.masterWeight !== undefined) {
+    state.signers.set(state.masterKey, operation.masterWeight);
+  }
+  if (operation.lowThreshold !== undefined) {
+    state.thresholds.low_threshold = operation.lowThreshold;
+  }
+  if (operation.medThreshold !== undefined) {
+    state.thresholds.med_threshold = operation.medThreshold;
+  }
+  if (operation.highThreshold !== undefined) {
+    state.thresholds.high_threshold = operation.highThreshold;
+  }
+  if (!operation.signer) return;
+  if ("ed25519PublicKey" in operation.signer && operation.signer.ed25519PublicKey) {
+    state.signers.set(operation.signer.ed25519PublicKey, Number(operation.signer.weight ?? 0));
+  } else {
+    state.hasOpaqueSignerMutation = true;
+  }
+}
+
+function authorizationEvaluationFromContext(
+  tx: Transaction,
+  context: AuthorizationContext,
+): AuthorizationEvaluation {
+  const states = new Map<string, MutableAuthorizationState>();
+  for (const [source, info] of context.sourceInfo) {
+    states.set(source, {
+      masterKey: extractBaseAddress(source),
+      thresholds: { ...info.thresholds },
+      signers: new Map(info.signers.map((signer) => [signer.key, signer.weight])),
+      hasOpaqueSignerMutation: false,
+      merged: false,
+    });
+  }
+
+  const checks: AuthorizationCheck[] = [];
+  const check = (sourceValue: string, level: ThresholdLevel, operationIndex: number | null) => {
+    const source = extractBaseAddress(sourceValue);
+    const state = states.get(source);
+    if (!state) throw new SendError(`Signer information for ${source} is unavailable.`);
+    if (state.merged) {
+      throw new SendError(`Cannot prove authorization for operation ${Number(operationIndex) + 1}: source ${source} was merged earlier in the transaction.`);
+    }
+    if (state.hasOpaqueSignerMutation) {
+      throw new SendError(
+        `Cannot prove ordered authorization for source ${source} after an unsupported signer-type change.`,
+      );
+    }
+    const signerEntries = [...state.signers].map(([key, weight]) => ({ key, weight }));
+    const { collected, signedKeys } = verifySignedKeys(tx, signerEntries);
+    const requiredWeight = thresholdWeight(state.thresholds, level);
+    checks.push({
+      source,
+      operationIndex,
+      collectedWeight: collected,
+      requiredWeight,
+      signedKeys: [...signedKeys],
+      satisfied: collected >= requiredWeight,
+      signerWeights: new Map(state.signers),
+    });
+  };
+
+  check(tx.source, "low", null);
+  tx.operations.forEach((operation, operationIndex) => {
+    const source = extractBaseAddress(operation.source ?? tx.source);
+    check(source, thresholdLevelForOperation(operation), operationIndex);
+    const state = states.get(source);
+    if (!state) throw new SendError(`Signer information for ${source} is unavailable.`);
+    applyAuthorizationMutation(state, operation);
+  });
+
+  const authorizations = [...context.requirements.keys()].map((source) => {
+    const sourceChecks = checks.filter((entry) => entry.source === source);
+    const representative = sourceChecks.reduce((current, candidate) => {
+      const currentDeficit = current.requiredWeight - current.collectedWeight;
+      const candidateDeficit = candidate.requiredWeight - candidate.collectedWeight;
+      if (candidateDeficit !== currentDeficit) {
+        return candidateDeficit > currentDeficit ? candidate : current;
+      }
+      return candidate.requiredWeight > current.requiredWeight ? candidate : current;
+    });
+    return {
+      source,
+      collectedWeight: representative.collectedWeight,
+      requiredWeight: representative.requiredWeight,
+      signedKeys: [...new Set(sourceChecks.flatMap((entry) => entry.signedKeys))],
+      satisfied: sourceChecks.every((entry) => entry.satisfied),
+    };
+  });
+  return { authorizations, checks };
+}
+
+function transactionHasSignatureFrom(tx: Transaction, signerPublicKey: string): boolean {
+  let signer: Keypair;
+  try {
+    signer = Keypair.fromPublicKey(signerPublicKey);
+  } catch {
+    return false;
+  }
+  const hash = tx.hash();
+  return tx.signatures.some((signature) => {
+    try {
+      return signer.verify(hash, signature.signature.toBytes());
+    } catch {
+      return false;
+    }
+  });
+}
+
+function signerAuthorizationStatus(
+  tx: Transaction,
+  evaluation: AuthorizationEvaluation,
+  signerPublicKey: string,
+): SignerAuthorizationStatus {
+  return {
+    alreadySigned: transactionHasSignatureFrom(tx, signerPublicKey),
+    legitimateSigner: evaluation.checks.some(
+      (check) => (check.signerWeights.get(signerPublicKey) ?? 0) > 0,
+    ),
+    contributesToUnsatisfiedSource: evaluation.checks.some(
+      (check) =>
+        !check.satisfied &&
+        (check.signerWeights.get(signerPublicKey) ?? 0) > 0,
+    ),
+  };
+}
+
+/**
+ * Prove from current on-chain signer state that this key may add one useful
+ * signature. This is intentionally reusable by connected and local signing.
+ */
+export async function assertCanAddTransactionSignature(params: {
+  transaction: Transaction;
+  network: NetworkKey;
+  signerPublicKey: string;
+}): Promise<void> {
+  if (transactionHasSignatureFrom(params.transaction, params.signerPublicKey)) {
+    throw new SendError("This envelope already contains a signature from the active account.");
+  }
+  const context = await loadAuthorizationContext(params.transaction, params.network);
+  const evaluation = authorizationEvaluationFromContext(params.transaction, context);
+  const status = signerAuthorizationStatus(
+    params.transaction,
+    evaluation,
+    params.signerPublicKey,
+  );
+  if (!status.legitimateSigner) {
+    throw new SendError(
+      "The active account is not a positive-weight signer for any required source account.",
+    );
+  }
+  if (!status.contributesToUnsatisfiedSource) {
+    throw new SendError(
+      "The active account does not contribute weight to any unsatisfied authorization check.",
+    );
+  }
+}
+
+async function authorizationStatus(
+  tx: Transaction,
+  network: NetworkKey,
+): Promise<SourceAuthorization[]> {
+  return authorizationStatusFromContext(tx, await loadAuthorizationContext(tx, network));
+}
+
 /**
  * Import a (partially-signed) transaction envelope, add our signature if it
  * is missing, and submit once the collected weight meets the threshold.
  */
 export async function cosignTransaction(params: {
   network: NetworkKey;
+  confirmedNetwork: NetworkKey | null;
   xdr: string;
   signerPublicKey: string;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
 }): Promise<CosignOutcome> {
-  const cfg = NETWORKS[params.network];
-  let tx: Transaction | FeeBumpTransaction;
-  try {
-    tx = TransactionBuilder.fromXdr(params.xdr.trim(), cfg.networkPassphrase);
-  } catch {
-    throw new SendError("That doesn't look like a valid transaction envelope (base64 XDR).");
+  const review = reviewTransactionEnvelope(params.xdr, params.network);
+  if (!params.confirmedNetwork) {
+    throw new SendError(`Confirm ${review.networkLabel} before signing this imported envelope.`);
   }
-  if (tx instanceof FeeBumpTransaction) {
-    throw new SendError("Fee-bump envelopes are not supported — share the inner transaction envelope.");
+  if (params.confirmedNetwork !== params.network) {
+    throw new SendError(
+      `The confirmed network (${NETWORKS[params.confirmedNetwork].label}) no longer matches the selected ${review.networkLabel}. Review again before signing.`,
+    );
+  }
+  if (!review.signable) throw new SendError(review.blockingReasons.join(" "));
+
+  const tx = review.transaction;
+  const context = await loadAuthorizationContext(tx, params.network);
+  assertReviewTimeValid(review);
+  let evaluation = authorizationEvaluationFromContext(tx, context);
+  const signerStatus = signerAuthorizationStatus(tx, evaluation, params.signerPublicKey);
+  if (!signerStatus.legitimateSigner) {
+    throw new SendError("The selected account is not a signer for any source account in this transaction.");
   }
 
-  const info = await fetchAccountSignerInfo(tx.source, params.network);
-  if (!info) throw new SendError("Source account was not found on this network.");
-  const signerEntries: MultisigSignerEntry[] = info.signers.map((s) => ({
-    key: s.key,
-    weight: s.weight,
-  }));
-  const required = requiredWeightForTx(tx, info.thresholds);
-
-  let { collected, signedKeys } = verifySignedKeys(tx, signerEntries);
+  let authorizations = evaluation.authorizations;
+  let signedKeys = new Set(authorizations.flatMap((entry) => entry.signedKeys));
 
   let addedSignature = false;
-  if (!signedKeys.has(params.signerPublicKey)) {
-    if (!signerEntries.some((s) => s.key === params.signerPublicKey)) {
-      throw new SendError("The selected account is not a signer on this transaction's source account.");
+  if (
+    !authorizations.every((entry) => entry.satisfied) &&
+    !signerStatus.alreadySigned
+  ) {
+    if (!signerStatus.contributesToUnsatisfiedSource) {
+      throw new SendError(
+        "The selected signer does not contribute weight to any unsatisfied source account.",
+      );
     }
     const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
     if (publicKey !== params.signerPublicKey) {
@@ -584,12 +820,18 @@ export async function cosignTransaction(params: {
     }
     if (kp) tx.sign(kp);
     else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+    assertReviewTimeValid(review);
     addedSignature = true;
-    ({ collected, signedKeys } = verifySignedKeys(tx, signerEntries));
+    evaluation = authorizationEvaluationFromContext(tx, context);
+    authorizations = evaluation.authorizations;
+    signedKeys = new Set(authorizations.flatMap((entry) => entry.signedKeys));
   }
 
-  if (collected >= required) {
+  const collected = authorizations.reduce((sum, entry) => sum + entry.collectedWeight, 0);
+  const required = authorizations.reduce((sum, entry) => sum + entry.requiredWeight, 0);
+  if (authorizations.every((entry) => entry.satisfied)) {
     try {
+      assertReviewTimeValid(review);
       const res = await submitSignedTx(tx, params.network);
       return {
         submitted: true,
@@ -600,6 +842,7 @@ export async function cosignTransaction(params: {
         signedKeys: [...signedKeys],
         addedSignature,
         operationCount: tx.operations.length,
+        authorizations,
       };
     } catch (err) {
       throw new SendError(explainSubmitError(err));
@@ -614,5 +857,6 @@ export async function cosignTransaction(params: {
     signedKeys: [...signedKeys],
     addedSignature,
     operationCount: tx.operations.length,
+    authorizations,
   };
 }

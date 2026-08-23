@@ -5,6 +5,7 @@ import {
   Asset,
   Keypair,
   Operation,
+  StrKey,
   TransactionBuilder,
   BASE_FEE,
   type Transaction,
@@ -247,21 +248,76 @@ export interface AccountSignerInfo {
   }>;
 }
 
+function isByteWeight(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255;
+}
+
+function isSignerKeyValid(type: string, key: string): boolean {
+  try {
+    if (type === "ed25519_public_key") return StrKey.isValidEd25519PublicKey(key);
+    if (type === "ed25519_signed_payload") return StrKey.isValidSignedPayload(key);
+    if (type === "preauth_tx") return StrKey.decodePreAuthTx(key).length === 32;
+    if (type === "sha256_hash") return StrKey.decodeSha256Hash(key).length === 32;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function parseAccountSignerInfo(
+  value: unknown,
+  accountPublicKey: string,
+): AccountSignerInfo | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const thresholds = record.thresholds;
+  const signers = record.signers;
+  if (!thresholds || typeof thresholds !== "object" || !Array.isArray(signers)) return null;
+
+  const thresholdRecord = thresholds as Record<string, unknown>;
+  const low = thresholdRecord.low_threshold;
+  const medium = thresholdRecord.med_threshold;
+  const high = thresholdRecord.high_threshold;
+  if (!isByteWeight(low) || !isByteWeight(medium) || !isByteWeight(high)) return null;
+
+  const parsedSigners: AccountSignerInfo["signers"] = [];
+  const seenKeys = new Set<string>();
+  for (const value of signers) {
+    if (!value || typeof value !== "object") return null;
+    const signer = value as Record<string, unknown>;
+    if (
+      typeof signer.key !== "string" ||
+      typeof signer.type !== "string" ||
+      !isByteWeight(signer.weight) ||
+      !isSignerKeyValid(signer.type, signer.key) ||
+      seenKeys.has(signer.key)
+    ) {
+      return null;
+    }
+    seenKeys.add(signer.key);
+    parsedSigners.push({ key: signer.key, type: signer.type, weight: signer.weight });
+  }
+  if (!parsedSigners.some(
+    (signer) => signer.type === "ed25519_public_key" && signer.key === accountPublicKey,
+  )) {
+    return null;
+  }
+
+  return {
+    thresholds: { low_threshold: low, med_threshold: medium, high_threshold: high },
+    signers: parsedSigners,
+  };
+}
+
 export async function fetchAccountSignerInfo(
   publicKey: string,
   network: NetworkKey,
 ): Promise<AccountSignerInfo | null> {
   const horizonUrl = getHorizonUrl(network);
-  const data = await getJson<{
-    thresholds?: { low_threshold: number; med_threshold: number; high_threshold: number };
-    signers?: Array<{ key: string; weight: number; type: string }>;
-  }>(`${horizonUrl}/accounts/${publicKey}`);
+  const data = await getJson<unknown>(`${horizonUrl}/accounts/${publicKey}`);
 
   if (!data) return null;
-  return {
-    thresholds: data.thresholds ?? { low_threshold: 0, med_threshold: 1, high_threshold: 1 },
-    signers: data.signers ?? [{ key: publicKey, weight: 1, type: "ed25519_public_key" }],
-  };
+  return parseAccountSignerInfo(data, publicKey);
 }
 
 export async function testHorizonPing(network: NetworkKey): Promise<number | null> {

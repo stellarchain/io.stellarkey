@@ -5,8 +5,19 @@ import { useWallet } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { fetchAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
 import { isValidPublicAddress } from "@/lib/vault";
-import { totalWeight, explainTransaction, type CosignOutcome, type TxExplanation } from "@/lib/multisig";
+import {
+  hasAdditionalSignerCapacity,
+  totalWeight,
+  explainTransaction,
+  type CosignOutcome,
+  type MultisigConfigOutcome,
+  type TxExplanation,
+} from "@/lib/multisig";
 import { triggerHaptic } from "@/lib/haptics";
+import {
+  EXACT_REVIEW_VALUE_CLASS,
+  reviewedEnvelopeForSigning,
+} from "@/lib/transaction-review";
 import {
   Avatar,
   Button,
@@ -35,6 +46,18 @@ interface CosignerDraft {
   weight: number;
 }
 
+interface ApprovalReviewBinding {
+  xdr: string;
+  network: "mainnet" | "testnet";
+  explanation: TxExplanation;
+}
+
+interface SignerInfoBinding {
+  accountPublicKey: string;
+  network: "mainnet" | "testnet";
+  info: AccountSignerInfo | null;
+}
+
 export function MultiSigStudioModal({
   open,
   onClose,
@@ -58,8 +81,10 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
 
   const [tab, setTab] = useState<Tab>("overview");
-  const [info, setInfo] = useState<AccountSignerInfo | null>(null);
-  const [infoLoading, setInfoLoading] = useState(true);
+  const [infoBinding, setInfoBinding] = useState<SignerInfoBinding | null>(null);
+  const signerInfoRequestGeneration = useRef(0);
+  const signerInfoIdentity = `${activeAccount?.publicKey ?? ""}:${network}`;
+  const signerInfoIdentityRef = useRef(signerInfoIdentity);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -74,20 +99,65 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   const [reviewing, setReviewing] = useState(false);
   const [disableConfirm, setDisableConfirm] = useState(false);
   const [configured, setConfigured] = useState(false);
+  const [configOutcome, setConfigOutcome] = useState<MultisigConfigOutcome | null>(null);
 
   // Approvals state
   const [xdrInput, setXdrInput] = useState("");
-  const [review, setReview] = useState<TxExplanation | null>(null);
-  const [reviewExpired, setReviewExpired] = useState(false);
-  const [reviewExpiryLabel, setReviewExpiryLabel] = useState("");
+  const [reviewBinding, setReviewBinding] = useState<ApprovalReviewBinding | null>(null);
+  const [reviewClockMs, setReviewClockMs] = useState(() => Date.now());
   const [outcome, setOutcome] = useState<CosignOutcome | null>(null);
+  const [networkConfirmed, setNetworkConfirmed] = useState(false);
+  const reviewRequestGeneration = useRef(0);
+  const review = reviewedEnvelopeForSigning(reviewBinding, xdrInput, network)
+    ? reviewBinding?.explanation ?? null
+    : null;
+  const reviewExpired = Boolean(
+    review?.expiresAt !== undefined && review.expiresAt * 1000 <= reviewClockMs,
+  );
+  const reviewExpiryLabel = review?.expiresAt === undefined
+    ? ""
+    : reviewExpired
+      ? "Expired"
+      : `in ~${Math.max(1, Math.round((review.expiresAt * 1000 - reviewClockMs) / 60000))} min`;
+
+  useEffect(() => {
+    reviewRequestGeneration.current += 1;
+  }, [network]);
+
+  useEffect(() => {
+    signerInfoIdentityRef.current = signerInfoIdentity;
+  }, [signerInfoIdentity]);
+
+  useEffect(() => {
+    if (review?.expiresAt === undefined) return;
+    const timer = window.setInterval(() => setReviewClockMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [review?.expiresAt]);
 
   const loadInfo = useCallback(async () => {
     if (!activeAccount) return;
-    // Both setStates land after the await — safe for react-hooks/set-state-in-effect
-    const result = await fetchAccountSignerInfo(activeAccount.publicKey, network);
-    setInfo(result);
-    setInfoLoading(false);
+    const requestedAccountPublicKey = activeAccount.publicKey;
+    const requestedNetwork = network;
+    const requestedIdentity = `${requestedAccountPublicKey}:${requestedNetwork}`;
+    if (requestedIdentity !== signerInfoIdentityRef.current) return;
+    const requestGeneration = ++signerInfoRequestGeneration.current;
+    let result: AccountSignerInfo | null = null;
+    try {
+      result = await fetchAccountSignerInfo(requestedAccountPublicKey, requestedNetwork);
+    } catch {
+      // Network and malformed-response failures share the same fail-closed UI state.
+    }
+    if (
+      requestGeneration !== signerInfoRequestGeneration.current ||
+      requestedIdentity !== signerInfoIdentityRef.current
+    ) {
+      return;
+    }
+    setInfoBinding({
+      accountPublicKey: requestedAccountPublicKey,
+      network: requestedNetwork,
+      info: result,
+    });
   }, [activeAccount, network]);
 
   const loadInfoRef = useRef(loadInfo);
@@ -97,8 +167,20 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void loadInfoRef.current();
+    return () => {
+      signerInfoRequestGeneration.current += 1;
+    };
   }, [loadInfo]);
 
+  const infoBindingIsCurrent = Boolean(
+    activeAccount &&
+      infoBinding &&
+      infoBinding.accountPublicKey === activeAccount.publicKey &&
+      infoBinding.network === network,
+  );
+  const info = infoBindingIsCurrent ? infoBinding?.info ?? null : null;
+  const infoLoading = !infoBindingIsCurrent;
+  const signerInfoUnavailable = !infoLoading && !info;
   const ownKey = activeAccount?.publicKey ?? "";
   const existingCosigners = useMemo(
     () => (info?.signers ?? []).filter((s) => s.key !== ownKey),
@@ -110,8 +192,12 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
   /** Seed the Configure form from the on-chain state. */
   function openConfigure() {
+    if (!info) {
+      setError("Signer configuration must be verified before it can be changed.");
+      return;
+    }
     triggerHaptic("selection");
-    setOwnWeight(info?.signers.find((s) => s.key === ownKey)?.weight ?? 1);
+    setOwnWeight(info.signers.find((s) => s.key === ownKey)?.weight ?? 1);
     setCosigners(
       existingCosigners.map((s) => ({ key: s.key, weight: s.weight })),
     );
@@ -122,6 +208,10 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
   function addCosigner(key: string) {
     const k = key.trim();
+    if (!hasAdditionalSignerCapacity(cosigners.length)) {
+      setError("A Stellar account can have at most 20 additional signers.");
+      return;
+    }
     if (!isValidPublicAddress(k)) {
       setError("Enter a valid Stellar address (starts with G).");
       return;
@@ -162,16 +252,17 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await applyMultisigConfig({
+      const result = await applyMultisigConfig({
         signers: [{ key: ownKey, weight: ownWeight }, ...cosigners],
         low: thresholds.low,
         medium: thresholds.medium,
         high: thresholds.high,
       });
       triggerHaptic("success");
-      setConfigured(true);
+      setConfigOutcome(result.submitted ? null : result);
+      setConfigured(result.submitted);
       setReviewing(false);
-      await loadInfo();
+      if (result.submitted) await loadInfo();
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Configuration failed.");
@@ -185,11 +276,12 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await disableMultisig();
+      const result = await disableMultisig();
       triggerHaptic("success");
       setDisableConfirm(false);
-      setConfigured(true);
-      await loadInfo();
+      setConfigOutcome(result.submitted ? null : result);
+      setConfigured(result.submitted);
+      if (result.submitted) await loadInfo();
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Failed to disable multi-sig.");
@@ -199,26 +291,21 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   }
 
   async function handleReview() {
+    const reviewedXdr = xdrInput.trim();
+    const reviewedNetwork = network;
+    const requestGeneration = ++reviewRequestGeneration.current;
     setBusy(true);
     setError(null);
     setOutcome(null);
     try {
-      const explanation = await explainTransaction(xdrInput.trim(), network);
-      // Expiry is computed once here — Date.now() is not allowed during render
-      const now = Date.now();
-      const expired =
-        explanation.expiresAt !== undefined && explanation.expiresAt * 1000 < now;
-      setReviewExpired(expired);
-      setReviewExpiryLabel(
-        explanation.expiresAt === undefined
-          ? ""
-          : expired
-            ? "Expired"
-            : `in ~${Math.max(1, Math.round((explanation.expiresAt * 1000 - now) / 60000))} min`,
-      );
-      setReview(explanation);
+      const explanation = await explainTransaction(reviewedXdr, reviewedNetwork);
+      if (requestGeneration !== reviewRequestGeneration.current) return;
+      setReviewClockMs(Date.now());
+      setReviewBinding({ xdr: reviewedXdr, network: reviewedNetwork, explanation });
+      setNetworkConfirmed(false);
       triggerHaptic("selection");
     } catch (e) {
+      if (requestGeneration !== reviewRequestGeneration.current) return;
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Could not decode the envelope.");
     } finally {
@@ -227,13 +314,23 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   }
 
   async function handleCosign() {
+    const reviewedXdr = reviewedEnvelopeForSigning(reviewBinding, xdrInput, network);
+    if (!review || !reviewedXdr || !reviewBinding) {
+      setReviewBinding(null);
+      setNetworkConfirmed(false);
+      setError("The envelope or selected network changed. Review it again before signing.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setOutcome(null);
     try {
-      const result = await cosignTransaction(xdrInput.trim());
+      const result = await cosignTransaction(
+        reviewedXdr,
+        networkConfirmed ? reviewBinding.network : null,
+      );
       setOutcome(result);
-      setReview(null);
+      setReviewBinding(null);
       triggerHaptic(result.submitted ? "success" : "selection");
       if (!result.submitted) {
         toast("Signature added — share the updated envelope", "info");
@@ -265,7 +362,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
           }}
           options={[
             { value: "overview", label: "Overview" },
-            { value: "configure", label: "Configure" },
+            { value: "configure", label: "Configure", disabled: !info },
             { value: "approvals", label: "Approvals" },
           ]}
         />
@@ -276,6 +373,17 @@ function StudioInner({ onClose }: { onClose: () => void }) {
             {infoLoading ? (
               <div className="flex justify-center py-10">
                 <Spinner size={22} />
+              </div>
+            ) : signerInfoUnavailable ? (
+              <div className="space-y-3">
+                <Notice tone="warn">
+                  <strong>Signer configuration unavailable.</strong> This account may be
+                  unfunded, Horizon may be unavailable, or the returned signer data could not be
+                  verified. Configuration remains disabled until valid on-chain state is loaded.
+                </Notice>
+                <Button className="w-full" disabled>
+                  Configuration Unavailable
+                </Button>
               </div>
             ) : (
               <>
@@ -412,7 +520,22 @@ function StudioInner({ onClose }: { onClose: () => void }) {
         )}
 
         {/* ============================== CONFIGURE ============================== */}
-        {tab === "configure" && (
+        {tab === "configure" && !info && (
+          <div className="mt-5">
+            {infoLoading ? (
+              <div className="flex justify-center py-10">
+                <Spinner size={22} />
+              </div>
+            ) : (
+              <Notice tone="warn">
+                Signer configuration unavailable. Return to Overview and wait until valid
+                on-chain signer state can be verified.
+              </Notice>
+            )}
+          </div>
+        )}
+
+        {tab === "configure" && info && (
           <div className="mt-5 space-y-5">
             {reviewing ? (
               <>
@@ -518,6 +641,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                       className="input mono flex-1 text-[12.5px]"
                       placeholder="Cosigner address (G...)"
                       value={newKey}
+                      disabled={!hasAdditionalSignerCapacity(cosigners.length)}
                       spellCheck={false}
                       autoComplete="off"
                       onChange={(e) => setNewKey(e.target.value)}
@@ -528,6 +652,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                     <Button
                       variant="secondary"
                       className="!h-10 shrink-0 !px-3.5 text-[12.5px]"
+                      disabled={!hasAdditionalSignerCapacity(cosigners.length)}
                       onClick={() => addCosigner(newKey)}
                     >
                       <IconUserPlus size={14} /> Add
@@ -540,13 +665,19 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         <button
                           key={c.address}
                           type="button"
+                          disabled={!hasAdditionalSignerCapacity(cosigners.length)}
                           onClick={() => addCosigner(c.address)}
-                          className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
+                          className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {c.name}
                         </button>
                       ))}
                     </div>
+                  )}
+                  {!hasAdditionalSignerCapacity(cosigners.length) && (
+                    <p className="mt-2 px-1 text-[11.5px] text-[#FF9F0A]">
+                      Stellar permits at most 20 additional account signers.
+                    </p>
                   )}
                 </div>
 
@@ -677,9 +808,11 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                     placeholder="AAAAAG… paste the partially-signed envelope from the creator"
                     value={xdrInput}
                     onChange={(e) => {
+                      reviewRequestGeneration.current += 1;
                       setXdrInput(e.target.value);
-                      setReview(null);
+                      setReviewBinding(null);
                       setOutcome(null);
+                      setNetworkConfirmed(false);
                       setError(null);
                     }}
                     className="input mono resize-none text-[12px]"
@@ -703,12 +836,6 @@ function StudioInner({ onClose }: { onClose: () => void }) {
             {/* ---------- Transaction explanation review (before signing) ---------- */}
             {review && !outcome && (
               <>
-                {review.networkMismatch && (
-                  <Notice tone="warn">
-                    This envelope targets a different network than the one you are on. Do not
-                    sign it here.
-                  </Notice>
-                )}
                 {review.hasDangerOps && (
                   <Notice tone="warn">
                     <strong>High-risk transaction.</strong> It can change who controls the
@@ -718,21 +845,51 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                 {reviewExpired && (
                   <Notice tone="warn">This envelope has expired — it will be rejected on submission.</Notice>
                 )}
+                {!review.signable && (
+                  <Notice tone="warn">
+                    <strong>This envelope cannot be signed here.</strong>{" "}
+                    {review.blockingReasons.join(" ")}
+                  </Notice>
+                )}
 
                 {/* Meta */}
                 <div className="panel-inset divide-y divide-white/[0.08] px-4 text-[12.5px]">
                   <div className="flex items-center justify-between gap-4 py-2.5">
+                    <span className="shrink-0 text-neutral-400">Selected network</span>
+                    <span className="font-semibold text-white">{review.networkLabel}</span>
+                  </div>
+                  <div className="flex items-start justify-between gap-4 py-2.5">
                     <span className="shrink-0 text-neutral-400">Source account</span>
-                    <HashValue value={review.source} head={6} tail={6} className="text-[12px] text-neutral-200" />
+                    <span
+                      className={`${EXACT_REVIEW_VALUE_CLASS} mono text-right text-[11.5px] text-neutral-200`}
+                    >
+                      {review.source}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between gap-4 py-2.5">
                     <span className="shrink-0 text-neutral-400">Network fee</span>
                     <span className="mono text-neutral-300">{review.feeXlm} XLM</span>
                   </div>
+                  <div className="flex items-center justify-between gap-4 py-2.5">
+                    <span className="shrink-0 text-neutral-400">Minimum time</span>
+                    <span className="mono text-right text-neutral-300">
+                      {review.timeBounds?.minTime ?? "None"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 py-2.5">
+                    <span className="shrink-0 text-neutral-400">Maximum time</span>
+                    <span className="mono text-right text-neutral-300">
+                      {review.timeBounds?.maxTime ?? "No expiry"}
+                    </span>
+                  </div>
                   {review.memoText && (
-                    <div className="flex items-center justify-between gap-4 py-2.5">
+                    <div className="flex items-start justify-between gap-4 py-2.5">
                       <span className="shrink-0 text-neutral-400">Memo</span>
-                      <span className="truncate text-neutral-200">{review.memoText}</span>
+                      <span
+                        className={`${EXACT_REVIEW_VALUE_CLASS} mono text-right text-neutral-200`}
+                      >
+                        {review.memoText}
+                      </span>
                     </div>
                   )}
                   {review.expiresAt !== undefined && (
@@ -749,6 +906,21 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                       {review.collectedWeight} / {review.requiredWeight} weight
                     </span>
                   </div>
+                  {review.authorizations.map((authorization) => (
+                    <div key={authorization.source} className="space-y-1 py-2.5">
+                      <div className="flex items-start justify-between gap-4">
+                        <span className="shrink-0 text-neutral-400">Required source</span>
+                        <span
+                          className={`${EXACT_REVIEW_VALUE_CLASS} mono text-right text-[11.5px] text-neutral-200`}
+                        >
+                          {authorization.source}
+                        </span>
+                      </div>
+                      <p className="text-right font-mono text-[11px] text-neutral-500">
+                        {authorization.collectedWeight} / {authorization.requiredWeight} weight
+                      </p>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Operations in plain English */}
@@ -785,14 +957,26 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                       </div>
                       <div className="mt-2 space-y-1.5">
                         {op.lines.map((l, j) => (
-                          <div key={j} className="flex items-center justify-between gap-3 text-[12px]">
+                          <div key={j} className="flex items-start justify-between gap-3 text-[12px]">
                             <span className="shrink-0 text-neutral-500">{l.label}</span>
                             {l.kind === "address" ? (
-                              <HashValue value={l.value} head={5} tail={5} className="text-[11.5px] text-neutral-200" />
+                              <span
+                                className={`${EXACT_REVIEW_VALUE_CLASS} mono text-right text-[11.5px] text-neutral-200`}
+                              >
+                                {l.value}
+                              </span>
                             ) : l.kind === "mono" ? (
-                              <span className="mono truncate text-neutral-200">{l.value}</span>
+                              <span
+                                className={`${EXACT_REVIEW_VALUE_CLASS} mono text-right text-neutral-200`}
+                              >
+                                {l.value}
+                              </span>
                             ) : (
-                              <span className="truncate text-right text-neutral-300">{l.value}</span>
+                              <span
+                                className={`${EXACT_REVIEW_VALUE_CLASS} text-right text-neutral-300`}
+                              >
+                                {l.value}
+                              </span>
                             )}
                           </div>
                         ))}
@@ -801,13 +985,38 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
 
+                <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] p-3.5 text-[12px] leading-relaxed text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={networkConfirmed}
+                    onChange={(event) => setNetworkConfirmed(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#0A84FF]"
+                  />
+                  <span>
+                    I confirm this envelope should execute on <strong>{review.networkLabel}</strong>.
+                    XDR does not encode its network; the selected network changes the signed hash.
+                  </span>
+                </label>
+
                 {error && <ErrorText message={error} />}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Button variant="ghost" disabled={busy} onClick={() => setReview(null)}>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      reviewRequestGeneration.current += 1;
+                      setReviewBinding(null);
+                      setNetworkConfirmed(false);
+                    }}
+                  >
                     Back
                   </Button>
-                  <Button loading={busy} disabled={busy} onClick={() => void handleCosign()}>
+                  <Button
+                    loading={busy}
+                    disabled={busy || !networkConfirmed || !review.signable || reviewExpired}
+                    onClick={() => void handleCosign()}
+                  >
                     Sign as {activeAccount.label}
                   </Button>
                 </div>
@@ -859,6 +1068,24 @@ function StudioInner({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
+          </div>
+        )}
+
+        {configOutcome && (
+          <div className="mt-5 space-y-3 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.06] p-4">
+            <p className="text-[13px] font-semibold text-[#FF9F0A]">
+              Additional approval required
+            </p>
+            <p className="text-[11.5px] leading-relaxed text-neutral-400">
+              The current high threshold is {configOutcome.requiredWeight}; this device supplied
+              weight {configOutcome.collectedWeight}. Share this atomic configuration envelope
+              with another current signer, then import it under Approvals.
+            </p>
+            <CopyButton
+              value={configOutcome.xdr}
+              label="Copy Configuration Envelope"
+              className="chip w-full justify-center"
+            />
           </div>
         )}
 
