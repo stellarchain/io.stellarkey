@@ -760,7 +760,7 @@ export function Dashboard() {
 
                                     {/* Apple Native iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
-        className={`hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky top-0 h-screen transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`app-safe-sticky-top hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky h-screen transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           sidebarCollapsed ? "w-[72px]" : "w-[260px] lg:w-[280px]"
         }`}
       >
@@ -1177,7 +1177,7 @@ export function Dashboard() {
       {/* Main Content Area */}
       <main data-app-scroll-owner className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
         {/* Desktop macOS Top Window Header Bar */}
-        <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
+        <header className="app-safe-sticky-top hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
               {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "contacts" ? "Contacts" : view.charAt(0).toUpperCase() + view.slice(1)}
@@ -1226,7 +1226,7 @@ export function Dashboard() {
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
-        <div className={`md:hidden sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
+        <div className={`app-safe-sticky-top md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[56px] items-center justify-between">
               <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
