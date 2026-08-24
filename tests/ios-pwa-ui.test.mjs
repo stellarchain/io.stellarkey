@@ -89,6 +89,22 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(toast, /app-safe-toast/);
 });
 
+test("the mobile wallet header begins directly below the iOS safe area", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+
+  assert.match(
+    dashboard,
+    /app-safe-sticky-top md:hidden sticky[\s\S]*?<div className="flex h-\[44px\] items-center justify-between">/,
+  );
+  assert.match(
+    dashboard,
+    /className="flex min-h-11 items-center gap-2 rounded-full/,
+  );
+  assert.ok(
+    (dashboard.match(/className="icon-btn !h-11 !w-11"/g) ?? []).length >= 3,
+  );
+});
+
 test("asset favorites are discoverable directly in the dashboard list", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   const assetDetail = read("src/components/AssetDetailModal.tsx");
