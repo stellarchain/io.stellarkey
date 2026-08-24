@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { fmtAmount, isValidAmount, memoByteLength, shortenAddr } from "@/lib/format";
@@ -8,14 +8,15 @@ import {
   compareStellarAmounts,
   splitStellarAmount,
   sumStellarAmounts,
-  stroopsToAmount,
 } from "@/lib/stellar-domain";
+import { networkFeeXlm } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
 import { spendableAssetBalance } from "@/lib/transaction-intent";
+import type { SubmissionResult } from "@/lib/submission";
 import { Button, ErrorText, Modal, ModalHeader, Select } from "./ui";
 import { FiatValue } from "./FiatValue";
 import { useToast } from "./Toast";
-import { IconCheck, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
+import { IconAlert, IconCheck, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
 
 interface RecipientRow {
   id: string;
@@ -36,7 +37,7 @@ export function BatchSendModal({
 }
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
-  const { balances, minimumBalanceXlm, sendBatch, refresh, contacts, activeAccount } = useWallet();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, sendBatch, refresh, contacts, activeAccount, submissionStatus } = useWallet();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");
@@ -48,7 +49,22 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   const [showCsvInput, setShowCsvInput] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [submission, setSubmission] = useState<SubmissionResult | null>(null);
+  const trackedSubmissionStatus = submission ? submissionStatus(submission) : null;
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive || trackedSubmissionStatus !== "failed") return;
+      setSubmission(null);
+      setError("Batch transaction failed on-chain. Review the recipients and retry when ready.");
+      triggerHaptic("error");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackedSubmissionStatus]);
 
   const options = useMemo(() => balances ?? [], [balances]);
   const selectedAsset = useMemo(
@@ -64,7 +80,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   const validRows = rows.filter(
     (r) => isValidPublicAddress(r.destination.trim()) && isValidAmount(r.amount),
   );
-  const feeXlm = stroopsToAmount(BigInt(validRows.length * 100));
+  const feeXlm = networkFeeXlm(recommendedBaseFeeStroops, validRows.length);
   const maxSendable = selectedAsset?.isNative
     ? minimumBalanceXlm === null
       ? "0"
@@ -144,7 +160,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await sendBatch({
+      const result = await sendBatch({
         payments: validRows.map((r) => ({
           destination: r.destination.trim(),
           amount: r.amount.trim(),
@@ -153,8 +169,8 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
         })),
         memo: memo.trim() ? { type: "text", value: memo.trim() } : undefined,
       });
-      setSuccess(true);
-      triggerHaptic("success");
+      setSubmission(result);
+      triggerHaptic(result.status === "status_unknown" ? "warning" : "success");
       window.setTimeout(() => void refresh(), 4000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Batch transaction failed.");
@@ -167,26 +183,53 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={busy ? () => undefined : onClose} dismissable={!busy} wide>
       <ModalHeader
-        title={success ? "Batch Broadcasted" : "Multi-Send Disperse"}
+        title={
+          trackedSubmissionStatus === "status_unknown"
+            ? "Batch Status Unknown"
+            : submission
+              ? trackedSubmissionStatus === "confirmed" ? "Batch Confirmed" : "Batch Accepted"
+              : "Multi-Send Disperse"
+        }
         subtitle={
-          success
-            ? `Successfully sent to ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
+          trackedSubmissionStatus === "status_unknown"
+            ? "Do not resubmit blindly — canonical hash tracking is active"
+            : submission
+              ? trackedSubmissionStatus === "confirmed"
+                ? `Confirmed for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
+                : `Accepted for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
             : "Send payments to multiple recipients in 1 transaction"
         }
         onClose={busy ? undefined : onClose}
       />
       <div className="p-6">
-        {success ? (
+        {submission ? (
           <div className="flex flex-col items-center py-4 text-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
-              <IconCheck size={28} />
+            <span className={`flex h-16 w-16 items-center justify-center rounded-full border ${
+              trackedSubmissionStatus === "status_unknown"
+                ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
+                : "border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]"
+            }`}>
+              {trackedSubmissionStatus === "status_unknown" ? <IconAlert size={28} /> : <IconCheck size={28} />}
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Batch Payment Broadcasted</p>
-            <p className="mt-1 text-[13px] text-neutral-400">
-              Successfully sent to {validRows.length} recipient{validRows.length > 1 ? "s" : ""} in a single atomic transaction.
+            <p className="display-h mt-4 text-xl font-light text-white">
+              {trackedSubmissionStatus === "status_unknown"
+                ? "Submission Status Unknown"
+                : trackedSubmissionStatus === "confirmed"
+                  ? "Batch Confirmed"
+                  : "Batch Accepted"}
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-neutral-400">
+              {trackedSubmissionStatus === "status_unknown"
+                ? "Horizon did not confirm acceptance. Do not resubmit blindly; the wallet will keep polling this hash."
+                : trackedSubmissionStatus === "confirmed"
+                  ? `The atomic payment for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} is confirmed on-chain.`
+                  : `Horizon accepted the atomic payment for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""}. Confirmation tracking continues.`}
+            </p>
+            <p className="mt-4 w-full break-all rounded-xl bg-white/[0.04] p-3 font-mono text-[10.5px] text-neutral-300">
+              {submission.network} · {submission.hash}
             </p>
             <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
-              Done
+              {trackedSubmissionStatus === "status_unknown" ? "Close and Keep Tracking" : "Done"}
             </Button>
           </div>
         ) : (
@@ -369,6 +412,10 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                       className="text-[11px] font-normal text-neutral-400"
                     />
                   </span>
+                </div>
+                <div className="flex justify-between text-neutral-300">
+                  <span>Network Fee</span>
+                  <span className="mono">{feeXlm} XLM</span>
                 </div>
                 {compareStellarAmounts(totalAmount, maxSendable) > 0 && (
                   <p className="text-[11px] text-[#FF453A] pt-1">

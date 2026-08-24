@@ -19,6 +19,7 @@ import {
   explainSubmitError,
   fetchAccountSignerInfo,
   getJson,
+  loadRecommendedBaseFee,
   minimalAccount,
   resolveSource,
   submitSignedTx,
@@ -34,6 +35,7 @@ import {
   reviewTransactionEnvelope,
   type ReviewedOperation,
 } from "./transaction-review";
+import type { SubmissionPreparedCallback, SubmissionResult } from "./submission";
 
 export interface MultisigSignerEntry {
   key: string;
@@ -49,8 +51,8 @@ export interface MultisigConfig {
 }
 
 export interface MultisigConfigOutcome {
-  submitted: boolean;
-  hash?: string;
+  /** Null means the envelope still needs additional signatures. */
+  submission: SubmissionResult | null;
   xdr: string;
   collectedWeight: number;
   requiredWeight: number;
@@ -118,6 +120,8 @@ export async function applyMultisigConfig(params: {
   config: MultisigConfig;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
 }): Promise<MultisigConfigOutcome> {
   const { network, accountPublicKey, config } = params;
 
@@ -164,9 +168,10 @@ export async function applyMultisigConfig(params: {
       "This account uses signer types this configuration editor cannot safely modify.",
     );
   }
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const builder = new TransactionBuilder(minimalAccount(accountPublicKey, source.sequence), {
-    fee: "100",
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -283,7 +288,7 @@ export async function applyMultisigConfig(params: {
   );
   if (!evaluation.authorizations.every((authorization) => authorization.satisfied)) {
     return {
-      submitted: false,
+      submission: null,
       xdr: tx.toXdr(),
       collectedWeight: collected,
       requiredWeight: required,
@@ -293,10 +298,9 @@ export async function applyMultisigConfig(params: {
 
   try {
     assertReviewTimeValid(review);
-    const result = await submitSignedTx(tx, network);
+    const result = await submitSignedTx(tx, network, 15_000, params.onPrepared);
     return {
-      submitted: true,
-      hash: result.hash,
+      submission: result,
       xdr: tx.toXdr(),
       collectedWeight: collected,
       requiredWeight: required,
@@ -313,6 +317,8 @@ export async function disableMultisig(params: {
   accountPublicKey: string;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
 }): Promise<MultisigConfigOutcome> {
   return applyMultisigConfig({
     ...params,
@@ -345,7 +351,7 @@ export async function prepareCosignPayment(params: {
   hardwareSigner?: HardwareSigner;
 }): Promise<{ xdr: string }> {
   const { network, destination, amount, assetCode, issuer, memoText } = params;
-  const feeStroops = params.feeStroops ?? 100;
+  const feeStroops = await loadRecommendedBaseFee(network, params.feeStroops);
   const memo = buildStellarMemo(
     params.memo ?? (memoText ? { type: "text", value: memoText } : null),
   );
@@ -464,8 +470,8 @@ export async function explainTransaction(
 
 
 export interface CosignOutcome {
-  submitted: boolean;
-  hash?: string;
+  /** Null means the updated envelope still needs additional signatures. */
+  submission: SubmissionResult | null;
   /** Updated envelope including any signature we added. */
   xdr: string;
   collectedWeight: number;
@@ -780,6 +786,7 @@ export async function cosignTransaction(params: {
   signerPublicKey: string;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
+  onPrepared?: SubmissionPreparedCallback;
 }): Promise<CosignOutcome> {
   const review = reviewTransactionEnvelope(params.xdr, params.network);
   if (!params.confirmedNetwork) {
@@ -832,10 +839,9 @@ export async function cosignTransaction(params: {
   if (authorizations.every((entry) => entry.satisfied)) {
     try {
       assertReviewTimeValid(review);
-      const res = await submitSignedTx(tx, params.network);
+      const res = await submitSignedTx(tx, params.network, 15_000, params.onPrepared);
       return {
-        submitted: true,
-        hash: res.hash,
+        submission: res,
         xdr: tx.toXdr(),
         collectedWeight: collected,
         requiredWeight: required,
@@ -850,7 +856,7 @@ export async function cosignTransaction(params: {
   }
 
   return {
-    submitted: false,
+    submission: null,
     xdr: tx.toXdr(),
     collectedWeight: collected,
     requiredWeight: required,

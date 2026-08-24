@@ -1,11 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { shortenAddr } from "@/lib/format";
 import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
+import { networkFeeXlm } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
+import type { SubmissionResult } from "@/lib/submission";
+import {
+  addTrustlineSelection,
+  MAX_TRUSTLINE_SELECTIONS,
+  toggleTrustlineSelection,
+} from "@/lib/transaction-intent";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconLedger, IconPlus, IconSearch, IconTrezor } from "./icons";
 
@@ -15,14 +22,42 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 function AddAssetInner({ onClose }: { onClose: () => void }) {
-  const { trustAssets, refresh, balances, network, activeAccount } = useWallet();
+  const { trustAssets, refresh, balances, network, activeAccount, recommendedBaseFeeStroops, submissionStatus } = useWallet();
   const [search, setSearch] = useState("");
   const [code, setCode] = useState("");
   const [issuer, setIssuer] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Multi-select: queued trustlines added atomically in ONE transaction
   const [selected, setSelected] = useState<Array<{ code: string; issuer: string }>>([]);
+  const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
+  const selectedFeeXlm = networkFeeXlm(
+    recommendedBaseFeeStroops,
+    Math.min(selected.length, MAX_TRUSTLINE_SELECTIONS),
+  );
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedSubmissionStatus === "confirmed") {
+        triggerHaptic("success");
+        void refresh();
+        onClose();
+        return;
+      }
+      if (trackedSubmissionStatus === "failed") {
+        setPendingSubmission(null);
+        setError("Trustline transaction failed on-chain. Review the selection and retry.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [onClose, refresh, trackedSubmissionStatus]);
 
   const existingAssets = useMemo(
     () => new Set((balances ?? []).filter((b) => b.issuer).map((b) => `${b.code.toUpperCase()}:${b.issuer}`)),
@@ -46,12 +81,12 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       (network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
     // Codes in the directory can be mixed-case (e.g. "yXLM"); the queue stores
     // them uppercased, so the dedupe key must be normalized the same way.
-    const key = `${asset.code.toUpperCase()}:${iss}`;
-    setSelected((prev) =>
-      prev.some((s) => `${s.code}:${s.issuer}` === key)
-        ? prev.filter((s) => `${s.code}:${s.issuer}` !== key)
-        : [...prev, { code: asset.code.toUpperCase(), issuer: iss }],
-    );
+    const update = toggleTrustlineSelection(selected, {
+      code: asset.code.toUpperCase(),
+      issuer: iss,
+    });
+    setSelected(update.selected);
+    setError(update.error);
   }
 
   function queueCustom() {
@@ -62,16 +97,10 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
       setError("Enter a valid asset code and issuer first.");
       return;
     }
-    const key = `${c}:${iss}`;
-    const alreadyQueued = selected.some((s) => `${s.code}:${s.issuer}` === key);
-    // Dedupe atomically inside the updater so rapid clicks can't create duplicates
-    setSelected((prev) =>
-      prev.some((s) => `${s.code}:${s.issuer}` === key)
-        ? prev
-        : [...prev, { code: c, issuer: iss }],
-    );
-    if (alreadyQueued) {
-      setError(`${c} is already queued.`);
+    const update = addTrustlineSelection(selected, { code: c, issuer: iss });
+    setSelected(update.selected);
+    if (update.error) {
+      setError(update.error);
       return;
     }
     setError(null);
@@ -80,6 +109,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   }
 
   async function handleAddBatch() {
+    if (pendingSubmission) return;
     // Defensive dedupe before submit
     const seen = new Set<string>();
     const unique = selected.filter((s) => {
@@ -92,10 +122,9 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await trustAssets(unique);
-      triggerHaptic("success");
-      onClose();
-      window.setTimeout(() => void refresh(), 4000);
+      const result = await trustAssets(unique);
+      setPendingSubmission(result);
+      triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Batch trustline failed.");
@@ -268,10 +297,9 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
               })}
             </div>
           )}
-          {selected.length > 1 && (
+          {selected.length > 0 && (
             <p className="pt-2 text-[11px] text-neutral-400">
-              Fee: {(selected.length * 0.00001).toFixed(5)} XLM ({selected.length * 100} stroops)
-              — one atomic transaction.
+              Fee: {selectedFeeXlm} XLM — one atomic transaction.
             </p>
           )}
         </div>
@@ -294,6 +322,22 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="mt-4">
+          {pendingSubmission && (
+            <div className={`mb-3 rounded-xl border p-3 text-[12px] leading-relaxed ${
+              trackedSubmissionStatus === "status_unknown"
+                ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
+                : "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#64D2FF]"
+            }`}>
+              {trackedSubmissionStatus === "status_unknown"
+                ? "Trustline status unknown. Do not resubmit blindly."
+                : trackedSubmissionStatus === "confirmed"
+                  ? "Trustline transaction confirmed."
+                  : "Trustline transaction accepted and confirming."}
+              <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
+                {pendingSubmission.network} · {pendingSubmission.hash}
+              </span>
+            </div>
+          )}
           <ErrorText message={error ?? ""} />
         </div>
 
@@ -305,7 +349,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           <Button
             className="flex-[2]"
             loading={busy}
-            disabled={selected.length === 0 || busy}
+            disabled={selected.length === 0 || busy || Boolean(pendingSubmission)}
             onClick={() => void handleAddBatch()}
           >
             {busy

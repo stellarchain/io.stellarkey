@@ -14,8 +14,13 @@ import {
 } from "@/lib/toml";
 import type { AssetBalance } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
+import {
+  assetDetailSubmissionView,
+  type SubmissionResult,
+} from "@/lib/submission";
 import { assetPriceKey } from "@/lib/prices";
 import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
+import { networkFeeXlm } from "@/lib/api";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
 import { IconExternal, IconTrash } from "./icons";
 
@@ -26,7 +31,7 @@ export function AssetDetailModal({
   asset: AssetBalance | null;
   onClose: () => void;
 }) {
-  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, fiatRates, minimumBalanceXlm } = useWallet();
+  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, fiatRates, minimumBalanceXlm, recommendedBaseFeeStroops, submissionStatus } = useWallet();
   const horizonUrl = getHorizonUrl(network);
   const metadataIdentity = asset && !asset.isNative && asset.issuer
     ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)
@@ -101,6 +106,35 @@ export function AssetDetailModal({
     : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
+  const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
+  const submissionView = assetDetailSubmissionView(
+    error,
+    pendingSubmission,
+    trackedSubmissionStatus,
+  );
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedSubmissionStatus === "confirmed") {
+        triggerHaptic("success");
+        void refresh();
+        onClose();
+        return;
+      }
+      if (trackedSubmissionStatus === "failed") {
+        setPendingSubmission(null);
+        setError("Trustline removal failed on-chain. Check the balance and retry.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [onClose, refresh, trackedSubmissionStatus]);
 
   if (!asset) return null;
 
@@ -109,14 +143,13 @@ export function AssetDetailModal({
   const balance = parseFloat(asset.balance);
 
   async function handleRemove() {
-    if (!asset || !asset.issuer) return;
+    if (!asset || !asset.issuer || pendingSubmission) return;
     setBusy(true);
     setError(null);
     try {
-      await trustAsset({ code: asset.code, issuer: asset.issuer, add: false });
-      triggerHaptic("success");
-      onClose();
-      window.setTimeout(() => void refresh(), 4000);
+      const result = await trustAsset({ code: asset.code, issuer: asset.issuer, add: false });
+      setPendingSubmission(result);
+      triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Failed to remove trustline.");
@@ -268,9 +301,23 @@ export function AssetDetailModal({
           </Row>
         </div>
 
-        {error && (
+        {(submissionView.notice || submissionView.error) && (
           <div className="mt-4">
-            <ErrorText message={error} />
+            {submissionView.notice && pendingSubmission && (
+              <div className={`mb-3 rounded-xl border p-3 text-[12px] leading-relaxed ${
+                submissionView.notice.tone === "warn"
+                  ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
+                  : submissionView.notice.tone === "success"
+                    ? "border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]"
+                    : "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#64D2FF]"
+              }`}>
+                {submissionView.notice.message}
+                <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
+                  {pendingSubmission.network} · {pendingSubmission.hash}
+                </span>
+              </div>
+            )}
+            {submissionView.error && <ErrorText message={submissionView.error} />}
           </div>
         )}
 
@@ -301,14 +348,20 @@ export function AssetDetailModal({
                 Send or swap all {asset.code} balance before removing this trustline.
               </p>
             ) : (
-              <Button
-                variant="danger"
-                className="w-full flex items-center justify-center gap-2 !py-2.5 text-[13px]"
-                loading={busy}
-                onClick={() => void handleRemove()}
-              >
-                <IconTrash size={14} /> Remove Trustline & Reclaim Reserve
-              </Button>
+              <div className="space-y-2">
+                <p className="text-center text-[11.5px] text-neutral-500">
+                  Network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
+                </p>
+                <Button
+                  variant="danger"
+                  className="w-full flex items-center justify-center gap-2 !py-2.5 text-[13px]"
+                  loading={busy}
+                  disabled={busy || Boolean(pendingSubmission)}
+                  onClick={() => void handleRemove()}
+                >
+                  <IconTrash size={14} /> Remove Trustline & Reclaim Reserve
+                </Button>
+              </div>
             )}
           </div>
         )}

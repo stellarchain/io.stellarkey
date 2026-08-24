@@ -58,6 +58,38 @@ import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/l
 import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
 import { getHorizonUrl, type NetworkKey } from "@/lib/stellar";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
+import {
+  applyTransactionPoll,
+  clearDurableMergeReconciliations,
+  createMergeReconciliation,
+  isTrackingTaskCurrent,
+  loadDurableMergeReconciliations,
+  mergeReconciliationPresentation,
+  parsePendingTransactions,
+  pendingTransactionFromSubmission,
+  pendingTransactionFromPrepared,
+  pendingTransactionPresentation,
+  persistMergeReconciliation,
+  persistMergeReconciliationQueue,
+  reconcileMergeRecovery,
+  removeTrackedTransaction,
+  resolutionForExpiredLookup,
+  runPreparedBroadcast,
+  serializeMergeReconciliations,
+  submissionLifecycleStatus,
+  trackPendingTransaction,
+  trackedEnvelopeSubmissionStatus,
+  transactionIdentity,
+  upsertMergeReconciliation,
+  type MergeReconciliation,
+  type PendingTransaction,
+  type PendingTransactionAction,
+  type PreparedSubmissionIdentity,
+  type SubmissionPreparedCallback,
+  type SubmissionLifecycleStatus,
+  type SubmissionResult,
+  type TransactionTrackingState,
+} from "@/lib/submission";
 
 type Phase = "loading" | "empty" | "locked" | "unlocked";
 
@@ -86,7 +118,19 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
 }
 
 const POLL_MS = 15_000;
+const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v1";
+const MERGE_RECONCILIATION_STORAGE_KEY = "wallet.merge-reconciliations.v2";
+const LEGACY_MERGE_RECONCILIATION_SESSION_KEY = "wallet.merge-reconciliations.v1";
 const FIAT_LIST: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
+
+function restoreStorageValue(storage: Storage, key: string, value: string | null): void {
+  try {
+    if (value === null) storage.removeItem(key);
+    else storage.setItem(key, value);
+  } catch {
+    // The original persistence error remains authoritative; no POST follows.
+  }
+}
 
 interface WalletContextValue {
   phase: Phase;
@@ -97,14 +141,25 @@ interface WalletContextValue {
   hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
   minimumBalanceXlm: string | null;
+  /** Bounded per-operation fee selected once for the active network. */
+  recommendedBaseFeeStroops: number;
   dataError: string | null;
   /** Native XLM balance per publicKey — kept warm so the sidebar never flashes zero */
   accountBalances: Record<string, number>;
   claimableBalances: ClaimableBalanceItem[];
   activity: ActivityItem[];
   activityCursor: string | null;
-  /** Transactions broadcast but not yet confirmed on-chain */
-  pendingTxs: Array<{ hash: string; label: string }>;
+  /** Accepted or transport-ambiguous transactions tracked by canonical hash. */
+  pendingTxs: PendingTransaction[];
+  retryPendingTransaction: (transaction: PendingTransaction) => void;
+  /** Account merge submissions awaiting safe, on-chain-verified local reconciliation. */
+  mergeReconciliations: MergeReconciliation[];
+  retryMergeReconciliation: (record: MergeReconciliation) => void;
+  submissionStatus: (submission: SubmissionResult) => SubmissionLifecycleStatus;
+  envelopeSubmissionStatus: (
+    xdr: string,
+    network: NetworkKey,
+  ) => SubmissionLifecycleStatus | null;
   dataLoading: boolean;
   loadingMore: boolean;
   xlmPriceUsd: number | null;
@@ -176,7 +231,7 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
-  }) => Promise<{ hash: string }>;
+  }) => Promise<SubmissionResult>;
   sendBatch: (params: {
     payments: Array<{
       destination: string;
@@ -185,12 +240,12 @@ interface WalletContextValue {
       issuer?: string | null;
     }>;
     memo?: StellarMemoInput;
-  }) => Promise<{ hash: string }>;
-  claimAirdrop: (balanceId: string) => Promise<{ hash: string }>;
-  mergeAccount: (destination: string) => Promise<{ hash: string }>;
-  trustAsset: (params: { code: string; issuer: string; add: boolean }) => Promise<{ hash: string }>;
+  }) => Promise<SubmissionResult>;
+  claimAirdrop: (balanceId: string) => Promise<SubmissionResult>;
+  mergeAccount: (destination: string) => Promise<SubmissionResult>;
+  trustAsset: (params: { code: string; issuer: string; add: boolean }) => Promise<SubmissionResult>;
   /** Atomically add multiple trustlines in one transaction */
-  trustAssets: (assets: Array<{ code: string; issuer: string }>) => Promise<{ hash: string; added: number }>;
+  trustAssets: (assets: Array<{ code: string; issuer: string }>) => Promise<SubmissionResult & { added: number }>;
   swap: (params: {
     sendCode: string;
     sendIssuer?: string | null;
@@ -199,7 +254,7 @@ interface WalletContextValue {
     destIssuer?: string | null;
     destMin: string;
     intermediates: Asset[];
-  }) => Promise<{ hash: string }>;
+  }) => Promise<SubmissionResult>;
   /** Apply a multi-sig signer/threshold configuration to the active account */
   applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
@@ -230,6 +285,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
   const [minimumBalanceXlm, setMinimumBalanceXlm] = useState<string | null>(null);
+  const [recommendedFeeSelection, setRecommendedFeeSelection] = useState<{
+    network: NetworkKey;
+    baseFeeStroops: number;
+  }>(() => ({ network: "testnet", baseFeeStroops: api.selectRecommendedBaseFee(null) }));
+  const recommendedBaseFeeStroops = recommendedFeeSelection.network === network
+    ? recommendedFeeSelection.baseFeeStroops
+    : api.selectRecommendedBaseFee(null);
+  const feeSelectionGeneration = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
   // Session-scoped cache so switching accounts shows last-known data instantly (no zero flash)
@@ -248,7 +311,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
   // Mirror of `activity` for readers inside callbacks (declared before any effect)
   const activityRef = useRef<ActivityItem[]>([]);
-  const [pendingTxs, setPendingTxs] = useState<Array<{ hash: string; label: string }>>([]);
+  const [transactionTracking, setTransactionTracking] = useState<TransactionTrackingState>({
+    pending: [],
+    resolutions: {},
+  });
+  const transactionTrackingRef = useRef<TransactionTrackingState>({ pending: [], resolutions: {} });
+  const pendingTxs = transactionTracking.pending;
+  const submissionResolutions = transactionTracking.resolutions;
+  const [mergeReconciliations, setMergeReconciliations] = useState<MergeReconciliation[]>([]);
+  const mergeReconciliationsRef = useRef<MergeReconciliation[]>([]);
+  const [pendingTxsHydrated, setPendingTxsHydrated] = useState(false);
+  const pendingPolls = useRef(new Set<string>());
+  const pendingPollTimers = useRef(new Map<string, number>());
+  const mergeReconciliationInFlight = useRef(new Set<string>());
+  const mergeReconciliationTimers = useRef(new Map<string, number>());
+  const trackingTaskGeneration = useRef(0);
+  const [trackingRestartNonce, setTrackingRestartNonce] = useState(0);
   const [dataLoading, setDataLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
@@ -267,6 +345,79 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [accounts, activeId],
   );
   const unfunded = phase === "unlocked" && balances !== null && balances.length === 0;
+
+  useEffect(() => {
+    const generation = ++feeSelectionGeneration.current;
+    void api.loadRecommendedBaseFee(network).then((fee) => {
+      if (generation === feeSelectionGeneration.current) {
+        setRecommendedFeeSelection({ network, baseFeeStroops: fee });
+      }
+    });
+  }, [network]);
+
+  const commitTransactionTracking = useCallback(
+    (update: (current: TransactionTrackingState) => TransactionTrackingState) => {
+      const next = update(transactionTrackingRef.current);
+      transactionTrackingRef.current = next;
+      setTransactionTracking(next);
+    },
+    [],
+  );
+
+  const commitMergeReconciliations = useCallback(
+    (update: (current: MergeReconciliation[]) => MergeReconciliation[]) => {
+      const next = update(mergeReconciliationsRef.current);
+      mergeReconciliationsRef.current = next;
+      setMergeReconciliations(next);
+    },
+    [],
+  );
+
+  const invalidateTrackingTasks = useCallback(() => {
+    trackingTaskGeneration.current += 1;
+    for (const timer of pendingPollTimers.current.values()) window.clearTimeout(timer);
+    pendingPollTimers.current.clear();
+    pendingPolls.current.clear();
+    for (const timer of mergeReconciliationTimers.current.values()) window.clearTimeout(timer);
+    mergeReconciliationTimers.current.clear();
+    mergeReconciliationInFlight.current.clear();
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      commitTransactionTracking((current) => ({
+        ...current,
+        pending: parsePendingTransactions(window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY)),
+      }));
+      const restoredMerges = loadDurableMergeReconciliations(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          window.sessionStorage,
+          LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
+        );
+      commitMergeReconciliations(() => restoredMerges);
+      setPendingTxsHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [commitMergeReconciliations, commitTransactionTracking]);
+
+  useEffect(() => {
+    if (!pendingTxsHydrated) return;
+    window.sessionStorage.setItem(PENDING_TX_STORAGE_KEY, JSON.stringify(pendingTxs));
+    if (mergeReconciliations.length === 0) {
+      window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(
+        MERGE_RECONCILIATION_STORAGE_KEY,
+        serializeMergeReconciliations(mergeReconciliations),
+      );
+    }
+  }, [mergeReconciliations, pendingTxs, pendingTxsHydrated]);
 
   // Load the Connect bundle before a transaction click. The Trezor-hosted
   // popup must be opened while browser user activation is still available,
@@ -521,21 +672,273 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, [phase, autoLockMs, lockVaultAndReset]);
 
-  const confirmAndRefresh = useCallback(
-    async (hash: string, label: string) => {
-      setPendingTxs((prev) => [...prev, { hash, label }]);
-      const outcome = await api.waitForTransaction(network, hash);
-      setPendingTxs((prev) => prev.filter((p) => p.hash !== hash));
-      if (outcome === true) {
-        toast(`${label} confirmed`, "success");
-      } else if (outcome === false) {
-        toast(`${label} failed on-chain`, "error");
-      } else {
-        toast(`${label} is still confirming`, "info");
+  const pollPendingRef = useRef<(transaction: PendingTransaction) => Promise<void>>(async () => {});
+  const pollPending = useCallback(async (transaction: PendingTransaction) => {
+    const startedGeneration = trackingTaskGeneration.current;
+    const identity = transactionIdentity(transaction);
+    if (pendingPolls.current.has(identity)) return;
+    pendingPolls.current.add(identity);
+    const scheduled = pendingPollTimers.current.get(identity);
+    if (scheduled !== undefined) {
+      window.clearTimeout(scheduled);
+      pendingPollTimers.current.delete(identity);
+    }
+
+    const expired = transaction.expiresAt !== undefined &&
+      transaction.expiresAt * 1000 <= Date.now();
+    const expiredLookup = expired
+      ? await api.lookupCanonicalTransaction(transaction.network, transaction.hash)
+      : null;
+    const outcome = expiredLookup
+      ? resolutionForExpiredLookup(expiredLookup)
+      : await api.waitForTransaction(transaction.network, transaction.hash);
+    if (startedGeneration === trackingTaskGeneration.current) {
+      pendingPolls.current.delete(identity);
+    }
+    if (!isTrackingTaskCurrent(
+      startedGeneration,
+      trackingTaskGeneration.current,
+      transaction,
+      transactionTrackingRef.current.pending,
+    )) {
+      return;
+    }
+    if (outcome === true || outcome === false) {
+      const resolvedAt = Date.now();
+      if (outcome && transaction.action?.kind === "reconcile_account_merge") {
+        const reconciliation = createMergeReconciliation(transaction);
+        persistMergeReconciliation(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          reconciliation,
+        );
+        commitMergeReconciliations((current) =>
+          upsertMergeReconciliation(current, reconciliation));
+      } else if (!outcome && transaction.action?.kind === "reconcile_account_merge") {
+        const nextMerges = mergeReconciliationsRef.current.filter((record) =>
+          transactionIdentity(record) !== identity);
+        persistMergeReconciliationQueue(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          nextMerges,
+        );
+        const timer = mergeReconciliationTimers.current.get(identity);
+        if (timer !== undefined) window.clearTimeout(timer);
+        mergeReconciliationTimers.current.delete(identity);
+        commitMergeReconciliations(() => nextMerges);
       }
+      commitTransactionTracking((current) =>
+        applyTransactionPoll(current, transaction, outcome, resolvedAt).tracking);
+      const failedMessage = expiredLookup === "not_found"
+        ? `${transaction.label} expired and was not found on-chain. It can be reviewed and retried.`
+        : `${transaction.label} failed on-chain`;
+      toast(outcome ? `${transaction.label} confirmed` : failedMessage, outcome ? "success" : "error");
       await refreshRef.current();
-    },
-    [network, toast],
+      return;
+    }
+
+    // An expired envelope with an unavailable lookup stays conservatively
+    // locked, but automatic polling stops. The dashboard exposes a bounded
+    // manual status check so outages cannot create an infinite request loop.
+    if (expired) return;
+
+    const timer = window.setTimeout(() => {
+      pendingPollTimers.current.delete(identity);
+      if (!isTrackingTaskCurrent(
+        startedGeneration,
+        trackingTaskGeneration.current,
+        transaction,
+        transactionTrackingRef.current.pending,
+      )) {
+        return;
+      }
+      void pollPendingRef.current(transaction);
+    }, POLL_MS);
+    pendingPollTimers.current.set(identity, timer);
+  }, [commitMergeReconciliations, commitTransactionTracking, toast]);
+
+  useEffect(() => {
+    pollPendingRef.current = pollPending;
+  }, [pollPending]);
+
+  const restoredPendingStarted = useRef(false);
+  useEffect(() => {
+    if (!pendingTxsHydrated || restoredPendingStarted.current) return;
+    restoredPendingStarted.current = true;
+    for (const transaction of pendingTxs) void pollPendingRef.current(transaction);
+  }, [pendingTxs, pendingTxsHydrated]);
+
+  useEffect(() => () => {
+    invalidateTrackingTasks();
+  }, [invalidateTrackingTasks]);
+
+  const prepareSubmissionTracking = useCallback((
+    prepared: PreparedSubmissionIdentity,
+    label: string,
+    action?: PendingTransactionAction,
+  ) => {
+    const identity = transactionIdentity(prepared);
+    const current = transactionTrackingRef.current;
+    if (
+      current.pending.some((entry) => transactionIdentity(entry) === identity) ||
+      current.resolutions[identity]?.status === "confirmed"
+    ) {
+      throw new Error("This exact transaction is already being tracked.");
+    }
+
+    const provisional = pendingTransactionFromPrepared(prepared, label, action);
+    const nextTracking = trackPendingTransaction(current, provisional);
+    const previousPending = window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY);
+    const previousMerges = action?.kind === "reconcile_account_merge"
+      ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
+      : null;
+    const reconciliation = action?.kind === "reconcile_account_merge"
+      ? createMergeReconciliation(prepared)
+      : null;
+
+    try {
+      // For account merge, write the cross-session recovery handle first. A
+      // crash after this point still leaves enough authority-free data to
+      // inspect Horizon safely on the next launch.
+      if (reconciliation) {
+        persistMergeReconciliation(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          reconciliation,
+        );
+      }
+      window.sessionStorage.setItem(
+        PENDING_TX_STORAGE_KEY,
+        JSON.stringify(nextTracking.pending),
+      );
+    } catch (error) {
+      restoreStorageValue(window.sessionStorage, PENDING_TX_STORAGE_KEY, previousPending);
+      if (reconciliation) {
+        restoreStorageValue(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          previousMerges,
+        );
+      }
+      throw error;
+    }
+
+    commitTransactionTracking(() => nextTracking);
+    if (reconciliation) {
+      commitMergeReconciliations((records) =>
+        upsertMergeReconciliation(records, reconciliation));
+    }
+  }, [commitMergeReconciliations, commitTransactionTracking]);
+
+  const discardPreparedSubmission = useCallback((
+    prepared: PreparedSubmissionIdentity,
+    action?: PendingTransactionAction,
+  ) => {
+    const identity = transactionIdentity(prepared);
+    const nextTracking = removeTrackedTransaction(transactionTrackingRef.current, prepared);
+    const nextMerges = action?.kind === "reconcile_account_merge"
+      ? mergeReconciliationsRef.current.filter((record) =>
+          transactionIdentity(record) !== identity)
+      : mergeReconciliationsRef.current;
+    const previousPending = window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY);
+    const previousMerges = action?.kind === "reconcile_account_merge"
+      ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
+      : null;
+
+    try {
+      window.sessionStorage.setItem(
+        PENDING_TX_STORAGE_KEY,
+        JSON.stringify(nextTracking.pending),
+      );
+      if (action?.kind === "reconcile_account_merge") {
+        if (nextMerges.length === 0) {
+          window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
+        } else {
+          window.localStorage.setItem(
+            MERGE_RECONCILIATION_STORAGE_KEY,
+            serializeMergeReconciliations(nextMerges),
+          );
+        }
+      }
+    } catch (error) {
+      restoreStorageValue(window.sessionStorage, PENDING_TX_STORAGE_KEY, previousPending);
+      if (action?.kind === "reconcile_account_merge") {
+        restoreStorageValue(
+          window.localStorage,
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          previousMerges,
+        );
+      }
+      throw error;
+    }
+
+    commitTransactionTracking(() => nextTracking);
+    if (action?.kind === "reconcile_account_merge") {
+      const timer = mergeReconciliationTimers.current.get(identity);
+      if (timer !== undefined) window.clearTimeout(timer);
+      mergeReconciliationTimers.current.delete(identity);
+      commitMergeReconciliations(() => nextMerges);
+    }
+  }, [commitMergeReconciliations, commitTransactionTracking]);
+
+  const trackSubmission = useCallback((
+    result: SubmissionResult,
+    label: string,
+    action?: PendingTransactionAction,
+  ) => {
+    const pending = pendingTransactionFromSubmission(result, label, action);
+    if (!pending) {
+      const confirmed: PendingTransaction = {
+        hash: result.hash,
+        network: result.network,
+        label,
+        status: "confirming",
+        createdAt: Date.now(),
+        ...(action ? { action } : {}),
+      };
+      commitTransactionTracking((current) =>
+        applyTransactionPoll(current, confirmed, true).tracking);
+      toast(`${label} confirmed`, "success");
+      void refreshRef.current();
+      return;
+    }
+    commitTransactionTracking((current) => trackPendingTransaction(current, pending));
+    const presentation = pendingTransactionPresentation(pending);
+    toast(presentation.detail, "info");
+    void pollPendingRef.current(pending);
+  }, [commitTransactionTracking, toast]);
+
+  const runTrackedBroadcast = useCallback(async <T,>(
+    label: string,
+    action: PendingTransactionAction | undefined,
+    broadcast: (onPrepared: SubmissionPreparedCallback) => Promise<T>,
+    submissionFromResult: (result: T) => SubmissionResult | null,
+  ): Promise<T> => {
+    return runPreparedBroadcast({
+      broadcast,
+      prepare: (identity) => prepareSubmissionTracking(identity, label, action),
+      discard: (identity) => discardPreparedSubmission(identity, action),
+      finalize: (result) => {
+        const submission = submissionFromResult(result);
+        if (submission) trackSubmission(submission, label, action);
+      },
+    });
+  }, [discardPreparedSubmission, prepareSubmissionTracking, trackSubmission]);
+
+  const retryPendingTransaction = useCallback((transaction: PendingTransaction) => {
+    void pollPendingRef.current(transaction);
+  }, []);
+
+  const submissionStatus = useCallback(
+    (submission: SubmissionResult) =>
+      submissionLifecycleStatus(submission, submissionResolutions),
+    [submissionResolutions],
+  );
+
+  const envelopeSubmissionStatus = useCallback(
+    (xdr: string, selectedNetwork: NetworkKey) =>
+      trackedEnvelopeSubmissionStatus(xdr, selectedNetwork, transactionTracking),
+    [transactionTracking],
   );
 
   const createWallet = useCallback(
@@ -617,7 +1020,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [lockVaultAndReset]);
 
   const resetWallet = useCallback(() => {
+    invalidateTrackingTasks();
     wipeVault();
+    clearDurableMergeReconciliations(
+      window.localStorage,
+      MERGE_RECONCILIATION_STORAGE_KEY,
+      window.sessionStorage,
+      LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
+    );
+    window.sessionStorage.removeItem(PENDING_TX_STORAGE_KEY);
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -628,9 +1039,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     snapshotCache.current.clear();
     setActivity([]);
     setPriceData(null);
+    commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
+    commitMergeReconciliations(() => []);
     setHasDeletedWalletBackup(false);
     setPhase("empty");
-  }, []);
+  }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
 
   const restoreDeletedWallet = useCallback(async (password: string) => {
     const vault = await restoreDeletedVault(password);
@@ -644,7 +1057,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const restoreWalletFromBackup = useCallback(async (json: string, password?: string): Promise<VaultRestoreResult> => {
-    const result = await restoreVaultBackup(json, password);
+    invalidateTrackingTasks();
+    let result: VaultRestoreResult;
+    try {
+      result = await restoreVaultBackup(json, password);
+    } catch (error) {
+      setTrackingRestartNonce((current) => current + 1);
+      throw error;
+    }
     const vault = loadVault();
     if (vault) {
       setAccounts(vault.accounts.map(stripSecret));
@@ -656,13 +1076,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
-    setPendingTxs([]);
+    commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
+    commitMergeReconciliations(() => []);
+    clearDurableMergeReconciliations(
+      window.localStorage,
+      MERGE_RECONCILIATION_STORAGE_KEY,
+      window.sessionStorage,
+      LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
+    );
+    window.sessionStorage.removeItem(PENDING_TX_STORAGE_KEY);
     clearSessionSecrets();
     setHasDeletedWalletBackup(false);
     // Wallet is restored but LOCKED — unlock with the backup's password
     setPhase("locked");
     return result;
-  }, []);
+  }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
 
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
@@ -755,6 +1183,148 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
   }, []);
+
+  const reconcileMergeRecordRef = useRef<(record: MergeReconciliation) => Promise<void>>(
+    async () => {},
+  );
+  const reconcileMergeRecord = useCallback(async (record: MergeReconciliation) => {
+    const startedGeneration = trackingTaskGeneration.current;
+    const identity = transactionIdentity(record);
+    if (
+      !isTrackingTaskCurrent(
+        startedGeneration,
+        trackingTaskGeneration.current,
+        record,
+        mergeReconciliationsRef.current,
+      ) ||
+      mergeReconciliationInFlight.current.has(identity) ||
+      mergeReconciliationTimers.current.has(identity) ||
+      record.status === "status_unknown" ||
+      record.status === "source_active" ||
+      (record.status === "last_account" && accounts.length <= 1)
+    ) {
+      return;
+    }
+
+    mergeReconciliationInFlight.current.add(identity);
+    try {
+      const result = await reconcileMergeRecovery(
+        record,
+        accounts,
+        Date.now(),
+        api.lookupCanonicalTransaction,
+        api.inspectConfirmedAccountMerge,
+        (accountId) => {
+          if (!isTrackingTaskCurrent(
+            startedGeneration,
+            trackingTaskGeneration.current,
+            record,
+            mergeReconciliationsRef.current,
+          )) {
+            throw new Error("Stale merge reconciliation was cancelled.");
+          }
+          removeAccount(accountId);
+        },
+      );
+
+      if (!isTrackingTaskCurrent(
+        startedGeneration,
+        trackingTaskGeneration.current,
+        record,
+        mergeReconciliationsRef.current,
+      )) {
+        return;
+      }
+
+      const current = mergeReconciliationsRef.current;
+      const stillQueued = current.some((candidate) =>
+        transactionIdentity(candidate) === identity);
+      if (!stillQueued) return;
+      const nextMerges = result.record
+        ? upsertMergeReconciliation(current, result.record)
+        : current.filter((candidate) => transactionIdentity(candidate) !== identity);
+      persistMergeReconciliationQueue(
+        window.localStorage,
+        MERGE_RECONCILIATION_STORAGE_KEY,
+        nextMerges,
+      );
+      commitMergeReconciliations(() => nextMerges);
+
+      if (result.outcome === "retry" && result.record) {
+        const timer = window.setTimeout(() => {
+          mergeReconciliationTimers.current.delete(identity);
+          if (!isTrackingTaskCurrent(
+            startedGeneration,
+            trackingTaskGeneration.current,
+            record,
+            mergeReconciliationsRef.current,
+          )) {
+            return;
+          }
+          void reconcileMergeRecordRef.current(result.record!);
+        }, POLL_MS);
+        mergeReconciliationTimers.current.set(identity, timer);
+      }
+
+      if (result.outcome === "removed") {
+        toast("Confirmed merged account archived locally", "success");
+      } else if (result.outcome === "last_account" && record.status !== "last_account") {
+        toast("Account merge confirmed. Add another local account before archiving this final key.", "info");
+      } else if (result.outcome === "source_active") {
+        toast("Merge history was verified, but the source account is active again. Local removal was stopped.", "info");
+      } else if (result.outcome === "retry" && record.status !== "retry") {
+        toast(mergeReconciliationPresentation("retry").message, "info");
+      } else if (result.outcome === "status_unknown") {
+        toast(mergeReconciliationPresentation("status_unknown").message, "info");
+      }
+    } finally {
+      if (startedGeneration === trackingTaskGeneration.current) {
+        mergeReconciliationInFlight.current.delete(identity);
+      }
+    }
+  }, [accounts, commitMergeReconciliations, removeAccount, toast]);
+
+  useEffect(() => {
+    reconcileMergeRecordRef.current = reconcileMergeRecord;
+  }, [reconcileMergeRecord]);
+
+  const retryMergeReconciliation = useCallback((record: MergeReconciliation) => {
+    const identity = transactionIdentity(record);
+    const pendingTransaction = transactionTrackingRef.current.pending.find((candidate) =>
+      transactionIdentity(candidate) === identity);
+    if (pendingTransaction) {
+      void pollPendingRef.current(pendingTransaction);
+      return;
+    }
+    const current = mergeReconciliationsRef.current;
+    if (!current.some((candidate) => transactionIdentity(candidate) === identity)) return;
+    const pending: MergeReconciliation = { ...record, status: "pending" };
+    const next = upsertMergeReconciliation(current, pending);
+    persistMergeReconciliationQueue(
+      window.localStorage,
+      MERGE_RECONCILIATION_STORAGE_KEY,
+      next,
+    );
+    commitMergeReconciliations(() => next);
+    void reconcileMergeRecordRef.current(pending);
+  }, [commitMergeReconciliations]);
+
+  useEffect(() => {
+    if (trackingRestartNonce === 0) return;
+    for (const transaction of transactionTrackingRef.current.pending) {
+      void pollPendingRef.current(transaction);
+    }
+    for (const record of mergeReconciliationsRef.current) {
+      void reconcileMergeRecordRef.current(record);
+    }
+  }, [trackingRestartNonce]);
+
+  useEffect(() => {
+    if (!pendingTxsHydrated || phase === "loading" || accounts.length === 0) return;
+    for (const record of mergeReconciliations) {
+      void reconcileMergeRecordRef.current(record);
+    }
+  }, [accounts, mergeReconciliations, pendingTxsHydrated, phase]);
 
   const renameAccount = useCallback((id: string, newLabel: string) => {
     updateAccountLabel(id, newLabel);
@@ -856,12 +1426,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.sendPayment({ network, secretKey, hardwareSigner: hw, ...params });
-      toast("Transaction submitted — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Payment");
-      return result;
+      return runTrackedBroadcast(
+        "Payment",
+        undefined,
+        (onPrepared) => api.sendPayment({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          ...params,
+          feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const sendBatch = useCallback(
@@ -880,12 +1459,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.sendBatchPayments({ network, secretKey, hardwareSigner: hw, ...params });
-      toast("Batch transaction submitted — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Batch Payment");
-      return result;
+      return runTrackedBroadcast(
+        "Batch Payment",
+        undefined,
+        (onPrepared) => api.sendBatchPayments({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          ...params,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const claimAirdrop = useCallback(
@@ -893,12 +1481,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.claimClaimableBalance({ network, secretKey, hardwareSigner: hw, balanceId });
-      toast("Claiming airdrop — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Airdrop claim");
-      return result;
+      return runTrackedBroadcast(
+        "Airdrop claim",
+        undefined,
+        (onPrepared) => api.claimClaimableBalance({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          balanceId,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const mergeAccount = useCallback(
@@ -906,12 +1503,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.mergeAccount({ network, secretKey, hardwareSigner: hw, destination });
-      toast("Merging account — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Account merge");
-      return result;
+      return runTrackedBroadcast(
+        "Account merge",
+        { kind: "reconcile_account_merge" },
+        (onPrepared) => api.mergeAccount({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          destination,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const trustAsset = useCallback(
@@ -919,12 +1525,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.changeTrust({ network, secretKey, hardwareSigner: hw, ...params });
-      toast(params.add ? "Trustline submitted — confirming…" : "Removing trustline…", "info");
-      void confirmAndRefresh(result.hash, params.add ? "Trustline" : "Trustline removal");
-      return result;
+      return runTrackedBroadcast(
+        params.add ? "Trustline" : "Trustline removal",
+        undefined,
+        (onPrepared) => api.changeTrust({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          ...params,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const trustAssets = useCallback(
@@ -932,15 +1547,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await api.changeTrustBatch({ network, secretKey, hardwareSigner: hw, assets });
-      toast(
-        `${result.added} trustlines submitted in 1 transaction — confirming…`,
-        "info",
+      const result = await runTrackedBroadcast(
+        `${assets.length} trustlines`,
+        undefined,
+        (onPrepared) => api.changeTrustBatch({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          assets,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (outcome) => outcome,
       );
-      void confirmAndRefresh(result.hash, `${result.added} trustlines`);
       return result;
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const swap = useCallback(
@@ -956,12 +1578,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await swapLib.swapStrictSend({ network, secretKey, hardwareSigner: hw, ...params });
-      toast("Swap submitted — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Swap");
-      return result;
+      return runTrackedBroadcast(
+        "Swap",
+        undefined,
+        (onPrepared) => swapLib.swapStrictSend({
+          network,
+          secretKey,
+          hardwareSigner: hw,
+          ...params,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (result) => result,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
   const fundFromFriendbot = useCallback(async () => {
@@ -978,22 +1609,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await msig.applyMultisigConfig({
-        network,
-        accountPublicKey: activeAccount.publicKey,
-        config,
-        secretKey,
-        hardwareSigner: hw,
-      });
-      if (result.submitted && result.hash) {
-        toast("Multi-sig configuration submitted — confirming…", "info");
-        void confirmAndRefresh(result.hash, "Multi-sig update");
-      } else {
+      const result = await runTrackedBroadcast(
+        "Multi-sig update",
+        undefined,
+        (onPrepared) => msig.applyMultisigConfig({
+          network,
+          accountPublicKey: activeAccount.publicKey,
+          config,
+          secretKey,
+          hardwareSigner: hw,
+          feeStroops: recommendedBaseFeeStroops,
+          onPrepared,
+        }),
+        (outcome) => outcome.submission,
+      );
+      if (!result.submission) {
         toast("Configuration signed — additional approval required", "info");
       }
       return result;
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast],
   );
 
   const disableMultisig = useCallback(async () => {
@@ -1003,20 +1638,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     const hw = hardwareSignerFor(activeAccount);
     const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-    const result = await msig.disableMultisig({
-      network,
-      accountPublicKey: activeAccount.publicKey,
-      secretKey,
-      hardwareSigner: hw,
-    });
-    if (result.submitted && result.hash) {
-      toast("Multi-sig disabled — confirming…", "info");
-      void confirmAndRefresh(result.hash, "Multi-sig disabled");
-    } else {
+    const result = await runTrackedBroadcast(
+      "Multi-sig disabled",
+      undefined,
+      (onPrepared) => msig.disableMultisig({
+        network,
+        accountPublicKey: activeAccount.publicKey,
+        secretKey,
+        hardwareSigner: hw,
+        feeStroops: recommendedBaseFeeStroops,
+        onPrepared,
+      }),
+      (outcome) => outcome.submission,
+    );
+    if (!result.submission) {
       toast("Disable request signed — additional approval required", "info");
     }
     return result;
-  }, [activeAccount, network, toast, confirmAndRefresh]);
+  }, [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast]);
 
   const prepareCosignPayment = useCallback(
     async (params: {
@@ -1036,9 +1675,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         secretKey,
         hardwareSigner: hw,
         ...params,
+        feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
       });
     },
-    [activeAccount, network],
+    [activeAccount, network, recommendedBaseFeeStroops],
   );
 
   const cosignTransaction = useCallback(
@@ -1046,21 +1686,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
       const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await msig.cosignTransaction({
-        network,
-        confirmedNetwork,
-        xdr,
-        signerPublicKey: activeAccount.publicKey,
-        secretKey,
-        hardwareSigner: hw,
-      });
-      if (result.submitted && result.hash) {
-        toast("Transaction submitted — confirming…", "info");
-        void confirmAndRefresh(result.hash, "Co-signed transaction");
-      }
-      return result;
+      return runTrackedBroadcast(
+        "Co-signed transaction",
+        undefined,
+        (onPrepared) => msig.cosignTransaction({
+          network,
+          confirmedNetwork,
+          xdr,
+          signerPublicKey: activeAccount.publicKey,
+          secretKey,
+          hardwareSigner: hw,
+          onPrepared,
+        }),
+        (outcome) => outcome.submission,
+      );
     },
-    [activeAccount, network, toast, confirmAndRefresh],
+    [activeAccount, network, runTrackedBroadcast],
   );
 
   const changePriceRange = useCallback(
@@ -1127,11 +1768,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       hasDeletedWalletBackup,
       balances,
       minimumBalanceXlm,
+      recommendedBaseFeeStroops,
       dataError,
       claimableBalances,
       activity,
       activityCursor,
       pendingTxs,
+      retryPendingTransaction,
+      mergeReconciliations,
+      retryMergeReconciliation,
+      submissionStatus,
+      envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
       xlmPriceUsd,
@@ -1195,11 +1842,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       accountBalances,
       balances,
       minimumBalanceXlm,
+      recommendedBaseFeeStroops,
       dataError,
       claimableBalances,
       activity,
       activityCursor,
       pendingTxs,
+      retryPendingTransaction,
+      mergeReconciliations,
+      retryMergeReconciliation,
+      submissionStatus,
+      envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
       xlmPriceUsd,

@@ -9,7 +9,7 @@ import {
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
-import { testHorizonPing } from "@/lib/api";
+import { networkFeeXlm, testHorizonPing } from "@/lib/api";
 import type { NetworkKey } from "@/lib/stellar";
 import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
@@ -23,6 +23,10 @@ import {
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
 import type { AccountMeta } from "@/lib/types";
+import {
+  mergeReconciliationPresentation,
+  type SubmissionResult,
+} from "@/lib/submission";
 import { useToast } from "./Toast";
 import { RenameAccountModal } from "./RenameAccountModal";
 import { ResetWalletModal } from "./ResetWalletModal";
@@ -92,6 +96,10 @@ export function SettingsPage({
     changeAutoLockMs,
     fiatCurrency,
     changeFiatCurrency,
+    recommendedBaseFeeStroops,
+    mergeReconciliations,
+    retryMergeReconciliation,
+    submissionStatus,
   } = useWallet();
   const { toast } = useToast();
 
@@ -107,6 +115,37 @@ export function SettingsPage({
   const [mergeDest, setMergeDest] = useState("");
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+  const [mergePending, setMergePending] = useState<SubmissionResult | null>(null);
+  const trackedMergeStatus = mergePending ? submissionStatus(mergePending) : null;
+  const activeMergeReconciliation = mergeReconciliations.find((record) =>
+    record.network === network &&
+    (!record.sourcePublicKey || record.sourcePublicKey === activeAccount?.publicKey));
+  const activeMergePresentation = activeMergeReconciliation
+    ? mergeReconciliationPresentation(activeMergeReconciliation.status)
+    : null;
+  const mergeFlowLocked = Boolean(mergePending || activeMergeReconciliation);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedMergeStatus === "confirmed") {
+        setMergePending(null);
+        setSub("accounts");
+        triggerHaptic("success");
+        return;
+      }
+      if (trackedMergeStatus === "failed") {
+        setMergePending(null);
+        setMergeError("Account merge failed on-chain. Verify the destination and retry when ready.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackedMergeStatus]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [keystoreJson, setKeystoreJson] = useState<string | null>(null);
@@ -309,6 +348,10 @@ export function SettingsPage({
   }
 
   async function handleMergeAccount() {
+    if (mergeFlowLocked) {
+      setMergeError("An account merge recovery is already being tracked. Check its final status before starting another merge.");
+      return;
+    }
     if (!activeAccount || !isValidPublicAddress(mergeDest.trim())) {
       setMergeError("Enter a valid destination Stellar public key.");
       return;
@@ -320,11 +363,9 @@ export function SettingsPage({
     setMerging(true);
     setMergeError(null);
     try {
-      await mergeAccount(mergeDest.trim());
-      triggerHaptic("success");
-      toast("Account merged successfully", "success");
-      removeAccount(activeAccount.id);
-      setSub("accounts");
+      const result = await mergeAccount(mergeDest.trim());
+      setMergePending(result);
+      triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
       setMergeError(e instanceof Error ? e.message : "Account merge failed.");
@@ -719,6 +760,23 @@ export function SettingsPage({
       {/* ---------- ACCOUNTS ---------- */}
       {sub === "accounts" && (
         <>
+          {activeMergeReconciliation && activeMergePresentation && (
+            <Notice tone="warn">
+              {activeMergePresentation.message}
+              <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
+                {activeMergeReconciliation.network} · {activeMergeReconciliation.hash}
+              </span>
+              {activeMergePresentation.manualCheck && (
+                <button
+                  type="button"
+                  className="mt-2 min-h-11 rounded-xl border border-white/15 px-3 text-[12px] font-semibold text-white"
+                  onClick={() => retryMergeReconciliation(activeMergeReconciliation)}
+                >
+                  Check Status
+                </button>
+              )}
+            </Notice>
+          )}
           <div className="list-group">
             {accounts.map((acct, i) => (
               <div
@@ -933,6 +991,9 @@ export function SettingsPage({
           <Notice tone="pos">
             Account merge transfers all remaining lumens (including the 1.0 XLM base reserve) to the destination account and permanently closes this account on the network.
           </Notice>
+          <p className="px-1 text-[12px] text-neutral-400">
+            Selected network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
+          </p>
 
           <div className="list-group p-4 space-y-4">
             <Field label="Destination Stellar Address" hint="Must be an existing active account">
@@ -940,6 +1001,7 @@ export function SettingsPage({
                 className="input mono text-[13px]"
                 placeholder="G..."
                 value={mergeDest}
+                disabled={mergeFlowLocked}
                 onChange={(e) => setMergeDest(e.target.value.trim())}
                 spellCheck={false}
               />
@@ -983,11 +1045,23 @@ export function SettingsPage({
 
           <ErrorText message={mergeError ?? ""} />
 
+          {mergePending && (
+            <Notice tone={trackedMergeStatus === "status_unknown" ? "warn" : "pos"}>
+              {trackedMergeStatus === "status_unknown"
+                ? "Account-merge status is unknown."
+                : trackedMergeStatus === "confirmed"
+                  ? "Account merge is confirmed."
+                  : "Account merge was accepted and is confirming."} Do not resubmit blindly or
+              remove the local account yet. Tracking {mergePending.network} transaction{" "}
+              {mergePending.hash}.
+            </Notice>
+          )}
+
           <Button
             variant="danger"
             className="w-full !py-3.5 text-[15px] font-semibold"
             loading={merging}
-            disabled={!mergeDest || merging}
+            disabled={!mergeDest || merging || mergeFlowLocked}
             onClick={() => void handleMergeAccount()}
           >
             Confirm & Merge Account
@@ -1399,8 +1473,10 @@ export function SettingsPage({
               </span>
             </div>
             <div className="flex justify-between text-neutral-300">
-              <span>Protocol Minimum Fee</span>
-              <span className="mono text-white">0.00001 XLM / operation</span>
+              <span>Selected Network Fee</span>
+              <span className="mono text-white">
+                {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM / operation
+              </span>
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Horizon Endpoint</span>
@@ -1556,14 +1632,22 @@ function RowButton({
   );
 }
 
-function Notice({ tone, children }: { tone?: "pos"; children: React.ReactNode }) {
+function Notice({ tone, children }: { tone?: "pos" | "warn"; children: React.ReactNode }) {
   return (
     <div
       className="mt-4 rounded-2xl px-4 py-3 text-[13px] leading-relaxed border"
       style={{
-        background: tone === "pos" ? "rgba(48,209,88,0.08)" : "rgba(255,255,255,0.04)",
-        borderColor: tone === "pos" ? "rgba(48,209,88,0.2)" : "rgba(255,255,255,0.08)",
-        color: tone === "pos" ? "#30D158" : "var(--color-muted)",
+        background: tone === "pos"
+          ? "rgba(48,209,88,0.08)"
+          : tone === "warn"
+            ? "rgba(255,159,10,0.08)"
+            : "rgba(255,255,255,0.04)",
+        borderColor: tone === "pos"
+          ? "rgba(48,209,88,0.2)"
+          : tone === "warn"
+            ? "rgba(255,159,10,0.25)"
+            : "rgba(255,255,255,0.08)",
+        color: tone === "pos" ? "#30D158" : tone === "warn" ? "#FF9F0A" : "var(--color-muted)",
       }}
     >
       {children}
