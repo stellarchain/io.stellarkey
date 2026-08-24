@@ -1200,7 +1200,7 @@ export function Dashboard() {
       {/* Main Content Area */}
       <main data-app-scroll-owner className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
         {/* Desktop macOS Top Window Header Bar */}
-        <header className="app-safe-sticky-top hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky z-20 backdrop-blur-xl">
+        <header className="app-scroll-sticky-top hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
               {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "contacts" ? "Contacts" : view.charAt(0).toUpperCase() + view.slice(1)}

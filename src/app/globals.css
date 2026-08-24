@@ -40,6 +40,11 @@
   top: var(--app-safe-area-top);
 }
 
+/* Sticky controls inside a scrollport already positioned below the safe area. */
+.app-scroll-sticky-top {
+  top: 0;
+}
+
 @media (display-mode: standalone) {
   :root {
     --app-safe-area-top: env(safe-area-inset-top, 0px);

@@ -72,8 +72,13 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
     /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-toast\s*\{[\s\S]*?calc\(1\.5rem \+ var\(--app-safe-area-top\)\)/,
   );
   assert.match(css, /\.app-safe-sticky-top\s*\{[\s\S]*?top:\s*var\(--app-safe-area-top\);/);
+  assert.match(css, /\.app-scroll-sticky-top\s*\{[\s\S]*?top:\s*0;/);
   assert.match(dashboard, /app-safe-top/);
-  assert.ok((dashboard.match(/app-safe-sticky-top/g) ?? []).length >= 3);
+  assert.equal((dashboard.match(/app-safe-sticky-top/g) ?? []).length, 2);
+  assert.match(
+    dashboard,
+    /<header className="app-scroll-sticky-top hidden md:flex[\s\S]*?sticky/,
+  );
   assert.doesNotMatch(dashboard, /sticky top-0/);
   assert.ok((onboarding.match(/app-safe-top/g) ?? []).length >= 2);
   assert.ok((onboarding.match(/app-safe-top-pad-14/g) ?? []).length >= 2);
