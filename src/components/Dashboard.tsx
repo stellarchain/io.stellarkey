@@ -1626,14 +1626,16 @@ export function Dashboard() {
                           <button
                             type="button"
                             onClick={() => togglePinAsset(asset.key)}
-                            className={`h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[13px] transition-all ${
+                            aria-pressed={isPinned}
+                            aria-label={isPinned ? `Remove ${asset.code} from favorites` : `Mark ${asset.code} as favorite`}
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[18px] transition-colors ${
                               isPinned
-                                ? "text-[#FFD60A] opacity-100"
-                                : "text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-neutral-300"
+                                ? "text-[#FFD60A]"
+                                : "text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-200"
                             }`}
-                            title={isPinned ? "Unpin asset" : "Pin asset to top"}
+                            title={isPinned ? `Remove ${asset.code} from favorites` : `Mark ${asset.code} as favorite`}
                           >
-                            ★
+                            {isPinned ? "★" : "☆"}
                           </button>
 
                           <button
