@@ -277,6 +277,13 @@ export function Dashboard() {
     return () => window.removeEventListener("beforeinstallprompt", onInstallPrompt);
   }, []);
 
+  function handleInstallApp() {
+    if (!installEvt) return;
+    triggerHaptic("selection");
+    void installEvt.prompt();
+    setInstallEvt(null);
+  }
+
   // Native-feel pull-to-refresh on touch devices
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1128,20 +1135,6 @@ export function Dashboard() {
                 </button>
               </div>
 
-              {installEvt && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    void installEvt.prompt();
-                    setInstallEvt(null);
-                  }}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#0A84FF]/15 py-2 text-[12px] font-semibold text-[#0A84FF] hover:bg-[#0A84FF]/25 transition-colors"
-                >
-                  ⬇ <span>Install App</span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={() => {
@@ -1345,7 +1338,14 @@ export function Dashboard() {
             </div>
           )}
           {view === "settings" ? (
-            <SettingsPage key={settingsKey} initialSub={settingsSub} onOpenBackupWizard={() => setBackupWizardOpen(true)} onOpenMultisigStudio={() => setMultisigOpen(true)} />
+            <SettingsPage
+              key={settingsKey}
+              initialSub={settingsSub}
+              installAvailable={Boolean(installEvt)}
+              onInstallApp={handleInstallApp}
+              onOpenBackupWizard={() => setBackupWizardOpen(true)}
+              onOpenMultisigStudio={() => setMultisigOpen(true)}
+            />
           ) : view === "swap" ? (
             <SwapPage />
           ) : view === "contacts" ? (
