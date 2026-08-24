@@ -50,7 +50,7 @@ test("Next viewport disables pinch and form-focus zoom", () => {
   assert.match(layout, /userScalable:\s*false,/);
 });
 
-test("mobile scrolling has one document owner and touch-safe scrollbar policy", () => {
+test("mobile scrolling has one document owner and hides scrollbar chrome", () => {
   const css = read("src/app/globals.css");
   const dashboard = read("src/components/Dashboard.tsx");
   const ui = read("src/components/ui.tsx");
@@ -60,16 +60,18 @@ test("mobile scrolling has one document owner and touch-safe scrollbar policy", 
   assert.match(css, /touch-action:\s*pan-x pan-y;/);
   assert.match(
     css,
-    /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?html\s*\{[\s\S]*?scrollbar-gutter:\s*stable;[\s\S]*?::\-webkit-scrollbar/,
+    /\*\s*\{[\s\S]*?scrollbar-width:\s*none;/,
   );
-  assert.doesNotMatch(
+  assert.match(
     css,
-    /@media\s*\(hover:\s*none\),\s*\(pointer:\s*coarse\)[\s\S]*?scrollbar-width:\s*none/,
+    /\*::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none !important;/,
   );
+  assert.doesNotMatch(css, /scrollbar-gutter|::-webkit-scrollbar-thumb/);
   assert.match(
     dashboard,
     /<main[^>]*data-app-scroll-owner[^>]*className="[^"]*md:h-screen md:overflow-y-auto[^"]*"/,
   );
+  assert.doesNotMatch(dashboard, /scrollbar-gutter/);
   assert.doesNotMatch(dashboard, /<main className="[^"]*(?<!md:)overflow-y-auto/);
   assert.match(ui, /querySelector<HTMLElement>\("\[data-app-scroll-owner\]"\)/);
   assert.match(ui, /lockedScrollOwner\.style\.overflow = scrollOwnerOverflowBeforeLock/);
