@@ -75,7 +75,7 @@ export function TrezorModal({
         subtitle="Cold-storage signing through Trezor Connect"
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         {/* Device Hero Card */}
         <div className="rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-950/40 via-zinc-900 to-black p-5 flex items-center justify-between shadow-xl">
           <div className="space-y-1">

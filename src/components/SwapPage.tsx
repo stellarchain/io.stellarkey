@@ -286,7 +286,7 @@ export function SwapPage() {
                     setError(null);
                   }
                 }}
-                className="input mono !h-7 !w-20 text-[12px] text-center"
+                className="input mono !h-11 !w-20 text-center text-base md:!h-7 sm:text-[12px]"
               />
               <span className="text-[12px] font-bold text-neutral-400">%</span>
             </div>

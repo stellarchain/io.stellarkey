@@ -89,7 +89,7 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
         subtitle={`Your ${NETWORKS[network].label} account`}
         onClose={onClose}
       />
-      <div className="flex flex-col items-center p-6 text-center">
+      <div className="flex flex-col items-center p-4 text-center sm:p-6">
         {/* Active Account Identity Pill */}
         {activeAccount && (
           <div className="mb-3 flex items-center gap-1.5 rounded-full bg-white/[0.06] border border-white/10 px-3 py-1 text-[12px] text-neutral-200">
@@ -188,7 +188,7 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
                   Amount (optional)
                 </label>
                 <input
-                  className="input text-[13px]"
+                  className="input text-base sm:text-[13px]"
                   placeholder="e.g. 50"
                   inputMode="decimal"
                   value={requestAmount}
@@ -207,7 +207,7 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
                   Memo (optional)
                 </label>
                 <input
-                  className="input text-[13px]"
+                  className="input text-base sm:text-[13px]"
                   placeholder="e.g. Dinner"
                   value={requestMemo}
                   onChange={(e) => setRequestMemo(e.target.value)}

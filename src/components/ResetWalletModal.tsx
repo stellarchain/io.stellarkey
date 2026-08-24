@@ -21,7 +21,7 @@ export function ResetWalletModal({
         subtitle="Destructive action — irreversible"
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <p className="text-[13.5px] leading-relaxed text-neutral-300">
           This permanently erases all encrypted private keys and recovery phrases in this browser.{" "}
           <span className="text-[#FF453A] font-semibold">

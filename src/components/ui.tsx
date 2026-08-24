@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { triggerHaptic } from "@/lib/haptics";
+import { calculatePopoverPosition, type PopoverPosition } from "@/lib/popover";
 import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
 
 /** Shared panel chrome for modal surfaces (Modal, CommandPalette). */
@@ -20,13 +21,29 @@ const ModalLabelContext = React.createContext<{
 
 /* Reference-counted body scroll lock so nested overlays don't fight. */
 let scrollLockCount = 0;
+let bodyOverflowBeforeLock = "";
+let lockedScrollOwner: HTMLElement | null = null;
+let scrollOwnerOverflowBeforeLock = "";
 function lockBodyScroll() {
   scrollLockCount += 1;
-  if (scrollLockCount === 1) document.body.style.overflow = "hidden";
+  if (scrollLockCount !== 1) return;
+  bodyOverflowBeforeLock = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  lockedScrollOwner = document.querySelector<HTMLElement>("[data-app-scroll-owner]");
+  if (lockedScrollOwner) {
+    scrollOwnerOverflowBeforeLock = lockedScrollOwner.style.overflow;
+    lockedScrollOwner.style.overflow = "hidden";
+  }
 }
 function unlockBodyScroll() {
   scrollLockCount = Math.max(0, scrollLockCount - 1);
-  if (scrollLockCount === 0) document.body.style.overflow = "";
+  if (scrollLockCount !== 0) return;
+  document.body.style.overflow = bodyOverflowBeforeLock;
+  if (lockedScrollOwner) {
+    lockedScrollOwner.style.overflow = scrollOwnerOverflowBeforeLock;
+  }
+  lockedScrollOwner = null;
+  scrollOwnerOverflowBeforeLock = "";
 }
 
 export function Modal({
@@ -145,7 +162,7 @@ export function Modal({
         <div
           ref={panelRef}
           tabIndex={-1}
-          className={`modal-dialog relative max-h-[90dvh] w-full overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
+          className={`modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
             wide ? "max-w-xl" : "max-w-md"
           }${closing ? " closing" : ""}`}
         >
@@ -168,7 +185,7 @@ export function ModalHeader({
 }) {
   const labels = React.useContext(ModalLabelContext);
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.08] bg-[#121214]/80 px-6 py-4 backdrop-blur-xl">
+    <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.08] bg-[#121214]/80 px-4 py-4 backdrop-blur-xl sm:px-6">
       <div>
         <h2 id={labels?.titleId} className="text-[17px] font-bold tracking-tight text-white">{title}</h2>
         {subtitle ? (
@@ -198,15 +215,6 @@ export function ModalHeader({
 /* Popover engine — shared portal positioning for Select and Dropdown. */
 /* ------------------------------------------------------------------ */
 
-interface PopoverPos {
-  top?: number;
-  bottom?: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-  openUp: boolean;
-}
-
 function usePopover({
   open,
   onClose,
@@ -223,7 +231,7 @@ function usePopover({
   minWidth?: number;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<PopoverPos | null>(null);
+  const [pos, setPos] = useState<PopoverPosition | null>(null);
 
   // Position against the anchor; flip above when space below runs out.
   useEffect(() => {
@@ -232,32 +240,32 @@ function usePopover({
       const anchor = anchorRef.current;
       if (!anchor) return;
       const r = anchor.getBoundingClientRect();
-      const gap = 6;
-      const margin = 8;
-      const spaceBelow = window.innerHeight - r.bottom - gap - margin;
-      const spaceAbove = r.top - gap - margin;
-      const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
-      const width = Math.min(320, Math.max(r.width, matchAnchorWidth ? 0 : minWidth, minWidth));
-      const desiredLeft = align === "right" ? r.right - width : r.left;
-      const left = Math.min(
-        Math.max(margin, desiredLeft),
-        Math.max(margin, window.innerWidth - width - margin),
-      );
-      setPos({
-        top: openUp ? undefined : r.bottom + gap,
-        bottom: openUp ? window.innerHeight - r.top + gap : undefined,
-        left,
-        width,
-        maxHeight: Math.max(120, Math.min(300, openUp ? spaceAbove : spaceBelow)),
-        openUp,
-      });
+      const visualViewport = window.visualViewport;
+      setPos(calculatePopoverPosition({
+        anchor: r,
+        viewport: {
+          top: visualViewport?.offsetTop ?? 0,
+          left: visualViewport?.offsetLeft ?? 0,
+          width: visualViewport?.width ?? window.innerWidth,
+          height: visualViewport?.height ?? window.innerHeight,
+        },
+        layoutViewportHeight: window.innerHeight,
+        align,
+        matchAnchorWidth,
+        minWidth,
+      }));
     }
+    const visualViewport = window.visualViewport;
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    visualViewport?.addEventListener("resize", update);
+    visualViewport?.addEventListener("scroll", update);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      visualViewport?.removeEventListener("resize", update);
+      visualViewport?.removeEventListener("scroll", update);
     };
   }, [open, anchorRef, align, matchAnchorWidth, minWidth]);
 
@@ -287,7 +295,7 @@ function usePopover({
   return { panelRef, pos };
 }
 
-function popoverStyle(pos: PopoverPos): React.CSSProperties {
+function popoverStyle(pos: PopoverPosition): React.CSSProperties {
   return {
     top: pos.top,
     bottom: pos.bottom,
@@ -987,11 +995,11 @@ export function QrScannerBox({
           placeholder="Paste scanned address or URI..."
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
-          className="input mono text-[12px] flex-1 !h-8"
+          className="input mono flex-1 !h-11 text-base md:!h-8 sm:text-[12px]"
         />
         <Button
           variant="secondary"
-          className="!h-8 !px-3 text-[12px]"
+          className="!h-11 !px-3 text-[12px] md:!h-8"
           onClick={() => {
             if (inputVal.trim()) {
               triggerHaptic("success");

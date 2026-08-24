@@ -1175,7 +1175,7 @@ export function Dashboard() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto [scrollbar-gutter:stable]">
+      <main data-app-scroll-owner className="flex-1 min-w-0 md:h-screen md:overflow-y-auto md:[scrollbar-gutter:stable]">
         {/* Desktop macOS Top Window Header Bar */}
         <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
@@ -1208,7 +1208,7 @@ export function Dashboard() {
                 placeholder="Search assets, activity…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="w-full bg-transparent text-[13px] text-white outline-none placeholder:text-neutral-500"
+                className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13px]"
               />
               {query && (
                 <button
@@ -1227,7 +1227,7 @@ export function Dashboard() {
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
         <div className={`md:hidden sticky top-0 z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
-          <div className="mx-auto w-full max-w-[560px] px-5">
+          <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[56px] items-center justify-between">
               <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
               <div className="flex items-center gap-1">
@@ -1288,7 +1288,7 @@ export function Dashboard() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     aria-label="Search"
-                    className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
+                    className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13.5px]"
                   />
                   {query && (
                     <button
@@ -1309,7 +1309,7 @@ export function Dashboard() {
         </div>
 
         {/* Responsive Content Body */}
-        <div className="mx-auto w-full max-w-[1200px] px-5 py-4 md:py-8 pb-[150px] md:pb-12">
+        <div className="mx-auto w-full max-w-[1200px] min-w-0 px-4 md:px-5 py-4 pb-[150px] md:py-8 md:pb-12">
           {dataError && (
             <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 px-4 py-3 text-[12.5px] text-[#FF9F0A]">
               <span className="flex min-w-0 items-center gap-2">
@@ -2224,7 +2224,7 @@ function NetworkModal({
         subtitle="Select active Stellar blockchain environment"
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         {(
           [
             {

@@ -452,7 +452,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
         subtitle={`Shared control for ${activeAccount.label} · ${network === "testnet" ? "Testnet" : "Mainnet"}`}
         onClose={busy ? undefined : onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <SegmentedControl<Tab>
           value={tab}
           onChange={(t) => {
@@ -746,7 +746,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                   {/* Add signer */}
                   <div className="mt-2.5 flex gap-2">
                     <input
-                      className="input mono flex-1 text-[12.5px]"
+                      className="input mono flex-1 text-base sm:text-[12.5px]"
                       placeholder="Cosigner address (G...)"
                       value={newKey}
                       disabled={!hasAdditionalSignerCapacity(cosigners.length)}
@@ -854,7 +854,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                                 Math.max(0, Math.min(255, parseInt(e.target.value, 10) || 0)),
                               )
                             }
-                            className="input mono !h-9 text-center text-[13px]"
+                            className="input mono !h-11 text-center text-base md:!h-9 sm:text-[13px]"
                           />
                         </div>
                       ))}
@@ -923,7 +923,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                       setNetworkConfirmed(false);
                       setError(null);
                     }}
-                    className="input mono resize-none text-[12px]"
+                    className="input mono resize-none text-base sm:text-[12px]"
                     spellCheck={false}
                   />
                 </div>

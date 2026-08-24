@@ -76,7 +76,7 @@ export function CurrencyConverterModal({
         subtitle="Current XLM price and live fiat exchange rates"
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         {/* Converter Card */}
         <div className="rounded-3xl bg-white/[0.03] border border-white/10 p-5 space-y-4 shadow-xl">
           {/* From Input */}

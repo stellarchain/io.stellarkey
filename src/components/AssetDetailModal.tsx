@@ -165,7 +165,7 @@ export function AssetDetailModal({
         subtitle={known?.name ?? (asset.isNative ? "Stellar Lumens" : "Custom Asset")}
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <div className="flex flex-col items-center pb-2 pt-1">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element

@@ -434,7 +434,7 @@ export function SettingsPage({
     sub === "root" ? null : sub === "merge" ? "accounts" : "root";
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[1000px] px-5 pb-[150px]">
+    <div className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
       {/* Subpage Navigation */}
       {sub !== "root" && (
         <>
@@ -998,7 +998,7 @@ export function SettingsPage({
           <div className="list-group p-4 space-y-4">
             <Field label="Destination Stellar Address" hint="Must be an existing active account">
               <input
-                className="input mono text-[13px]"
+                className="input mono text-base sm:text-[13px]"
                 placeholder="G..."
                 value={mergeDest}
                 disabled={mergeFlowLocked}
@@ -1094,7 +1094,7 @@ export function SettingsPage({
                 setAirPw("");
                 setAirError(null);
               }}
-              className="input mono text-[12px] resize-none"
+              className="input mono text-base resize-none sm:text-[12px]"
             />
           </Field>
 
@@ -1210,7 +1210,7 @@ export function SettingsPage({
                         placeholder="Enter password"
                         value={airPw}
                         onChange={(e) => setAirPw(e.target.value)}
-                        className="input text-[13.5px]"
+                        className="input text-base sm:text-[13.5px]"
                       />
                     </Field>
 

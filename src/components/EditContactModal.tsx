@@ -80,10 +80,10 @@ function EditContactInner({
         }
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         <Field label="Contact Name">
           <input
-            className="input text-[14px]"
+            className="input text-base sm:text-[14px]"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Alice"
@@ -96,7 +96,7 @@ function EditContactInner({
         </Field>
         <Field label="Stellar Public Key">
           <input
-            className="input mono text-[13px]"
+            className="input mono text-base sm:text-[13px]"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="G..."

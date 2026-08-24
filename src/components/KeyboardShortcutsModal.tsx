@@ -41,7 +41,7 @@ export function KeyboardShortcutsModal({
         subtitle="macOS & Web Pro Hotkeys"
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/[0.04] border border-white/[0.08] text-xs text-neutral-300">
           <IconKeyboard size={15} className="text-[#0A84FF] shrink-0" />
           <span>Press these keys anytime to instantly navigate and trigger actions.</span>
