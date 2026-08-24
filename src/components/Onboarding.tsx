@@ -5,7 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, CopyButton, ErrorText, Field, HashValue, Notice } from "./ui";
+import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
 import {
   IconAlert,
   IconCheck,
@@ -825,7 +825,16 @@ function StepShell({
       <Ambient />
       <div className="fade-up relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-6 py-14">
         <div className="mb-6 flex items-center justify-between">
-          <LogoMark size={38} />
+          {onBack ? (
+            <IOSBackButton
+              onClick={onBack}
+              label={backLabel}
+              disabled={backDisabled}
+              className="-ml-1"
+            />
+          ) : (
+            <LogoMark size={38} />
+          )}
           <p className="eyebrow">{eyebrow}</p>
         </div>
 
@@ -851,17 +860,6 @@ function StepShell({
         <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
           {children}
         </div>
-
-        {onBack && (
-          <button
-            type="button"
-            className="mx-auto mt-6 block text-[13px] text-neutral-400 transition-colors hover:text-white"
-            onClick={onBack}
-            disabled={backDisabled}
-          >
-            ← {backLabel}
-          </button>
-        )}
       </div>
     </div>
   );

@@ -14,6 +14,35 @@ export const MODAL_PANEL_CLASS =
 const POPOVER_PANEL_CLASS =
   "menu-pop fixed z-[70] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-[#1e1e22]/95 p-1.5 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
 
+export function IOSBackButton({
+  onClick,
+  label = "Back",
+  disabled = false,
+  className = "",
+}: {
+  onClick: () => void;
+  label?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => {
+        triggerHaptic("selection");
+        onClick();
+      }}
+      className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 ${className}`}
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
+        <IconChevronDown size={21} className="rotate-90" />
+      </span>
+    </button>
+  );
+}
+
 const ModalLabelContext = React.createContext<{
   titleId: string;
   descriptionId: string;
