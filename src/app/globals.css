@@ -54,6 +54,12 @@
   }
 }
 
+@media (display-mode: standalone) and (min-width: 768px) {
+  .app-safe-toast {
+    top: calc(1.5rem + var(--app-safe-area-top));
+  }
+}
+
 html {
   background: #000000;
   -webkit-text-size-adjust: 100%;
