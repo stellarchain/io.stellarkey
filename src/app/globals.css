@@ -36,6 +36,10 @@
   padding-top: calc(3rem + var(--app-safe-area-top));
 }
 
+.app-safe-sticky-top {
+  top: var(--app-safe-area-top);
+}
+
 @media (display-mode: standalone) {
   :root {
     --app-safe-area-top: env(safe-area-inset-top, 0px);
@@ -407,7 +411,7 @@ body::after {
 
   .nav-blur {
     position: sticky;
-    top: 0;
+    top: var(--app-safe-area-top);
     z-index: 40;
     background: rgba(0, 0, 0, 0.75);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
