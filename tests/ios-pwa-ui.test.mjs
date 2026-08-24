@@ -73,8 +73,19 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   );
   assert.match(css, /\.app-safe-sticky-top\s*\{[\s\S]*?top:\s*var\(--app-safe-area-top\);/);
   assert.match(css, /\.app-scroll-sticky-top\s*\{[\s\S]*?top:\s*0;/);
-  assert.match(dashboard, /app-safe-top/);
-  assert.equal((dashboard.match(/app-safe-sticky-top/g) ?? []).length, 2);
+  assert.match(css, /\.app-safe-dashboard\s*\{[\s\S]*?padding-top:\s*0;/);
+  assert.match(
+    css,
+    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-dashboard\s*\{[\s\S]*?padding-top:\s*var\(--app-safe-area-top\);/,
+  );
+  assert.match(
+    css,
+    /\.app-mobile-sticky-header\s*\{[\s\S]*?top:\s*0;[\s\S]*?padding-top:\s*var\(--app-safe-area-top\);[\s\S]*?background:\s*#000000;/,
+  );
+  assert.match(css, /\.nav-blur\s*\{[\s\S]*?top:\s*0;/);
+  assert.match(dashboard, /app-safe-dashboard/);
+  assert.doesNotMatch(dashboard, /className="app-safe-top relative/);
+  assert.equal((dashboard.match(/app-safe-sticky-top/g) ?? []).length, 1);
   assert.match(
     dashboard,
     /<header className="app-scroll-sticky-top hidden md:flex[\s\S]*?sticky/,
@@ -94,7 +105,7 @@ test("the mobile wallet header begins directly below the iOS safe area", () => {
 
   assert.match(
     dashboard,
-    /app-safe-sticky-top md:hidden sticky[\s\S]*?<div className="flex h-\[44px\] items-center justify-between">/,
+    /app-mobile-sticky-header md:hidden sticky[\s\S]*?<div className="flex h-\[44px\] items-center justify-between">/,
   );
   assert.match(
     dashboard,

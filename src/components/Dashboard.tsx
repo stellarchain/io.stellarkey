@@ -759,7 +759,7 @@ export function Dashboard() {
   );
 
   return (
-    <div className="app-safe-top relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
+    <div className="app-safe-dashboard relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
       {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
@@ -1242,7 +1242,7 @@ export function Dashboard() {
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
-        <div className={`app-safe-sticky-top md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
+        <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[44px] items-center justify-between">
               <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
