@@ -77,3 +77,14 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(ui, /modal-overlay app-safe-overlay/);
   assert.match(toast, /app-safe-toast/);
 });
+
+test("asset favorites are discoverable directly in the dashboard list", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const assetDetail = read("src/components/AssetDetailModal.tsx");
+
+  assert.match(dashboard, /aria-pressed=\{isPinned\}/);
+  assert.match(dashboard, /aria-label=\{isPinned\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\}/);
+  assert.match(dashboard, /\{isPinned \? "★" : "☆"\}/);
+  assert.doesNotMatch(dashboard, /text-neutral-600 opacity-0 group-hover:opacity-100/);
+  assert.doesNotMatch(assetDetail, /Mark .* as favorite|togglePinAsset|pinnedAssets/);
+});
