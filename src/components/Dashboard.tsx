@@ -1251,12 +1251,12 @@ export function Dashboard() {
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
         <div className={`app-safe-sticky-top md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
-            <div className="flex h-[56px] items-center justify-between">
+            <div className="flex h-[44px] items-center justify-between">
               <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="icon-btn !h-11 !w-11"
                   onClick={() => {
                     triggerHaptic("selection");
                     togglePrivacy();
@@ -1267,7 +1267,7 @@ export function Dashboard() {
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="icon-btn !h-11 !w-11"
                   onClick={() => {
                     triggerHaptic("light");
                     void refresh();
@@ -1279,7 +1279,7 @@ export function Dashboard() {
                 </button>
                 <button
                   type="button"
-                  className="icon-btn"
+                  className="icon-btn !h-11 !w-11"
                   onClick={() => openSettings("root")}
                   aria-label="Settings"
                 >
@@ -2380,7 +2380,7 @@ function AccountMenu({
         ) : (
           <button
             type="button"
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
+            className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
           >
             <Avatar seed={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">
