@@ -19,6 +19,10 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Next 16 blocks dev chunks requested through a LAN hostname unless it is
+  // explicitly trusted. Allow this private /24 so phone/tablet testing keeps
+  // working when DHCP assigns the development machine a new final octet.
+  allowedDevOrigins: ["192.168.0.*"],
   poweredByHeader: false,
   async headers() {
     return [
