@@ -5,14 +5,21 @@ import {
   Asset,
   Operation,
   TransactionBuilder,
-  BASE_FEE,
 } from "@stellar/stellar-sdk";
 import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
 import { normalizeAmount } from "./format";
-import { getJson, SendError, explainSubmitError, resolveSource, signAndSubmit } from "./api";
+import {
+  getJson,
+  loadRecommendedBaseFee,
+  SendError,
+  explainSubmitError,
+  resolveSource,
+  signAndSubmit,
+} from "./api";
 import type { HardwareSigner } from "./hardware";
 import { getHorizonJson } from "./horizon";
 import { amountToStroops, toStellarAsset } from "./stellar-domain";
+import type { SubmissionPreparedCallback, SubmissionResult } from "./submission";
 
 export interface SwapRoute {
   destinationAmount: string;
@@ -97,7 +104,9 @@ export async function swapStrictSend(params: {
   destIssuer?: string | null;
   destMin: string;
   intermediates: Asset[];
-}): Promise<{ hash: string }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
   const { network } = params;
   const cfg = NETWORKS[network];
   const horizonUrl = getHorizonUrl(network);
@@ -106,9 +115,10 @@ export async function swapStrictSend(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const tx = new TransactionBuilder(new Account(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   })
     .addOperation(
@@ -125,7 +135,7 @@ export async function swapStrictSend(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }

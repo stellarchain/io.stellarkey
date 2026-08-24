@@ -19,6 +19,11 @@ import {
   reviewedEnvelopeForSigning,
 } from "@/lib/transaction-review";
 import {
+  approvalSubmissionGuard,
+  configSubmissionAfterResolution,
+  type SubmissionResult,
+} from "@/lib/submission";
+import {
   Avatar,
   Button,
   CopyButton,
@@ -77,6 +82,9 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     applyMultisigConfig,
     disableMultisig,
     cosignTransaction,
+    submissionStatus,
+    envelopeSubmissionStatus,
+    pendingTxs,
   } = useWallet();
   const { toast } = useToast();
 
@@ -98,7 +106,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   const [customHigh, setCustomHigh] = useState(2);
   const [reviewing, setReviewing] = useState(false);
   const [disableConfirm, setDisableConfirm] = useState(false);
-  const [configured, setConfigured] = useState(false);
+  const [configSubmission, setConfigSubmission] = useState<SubmissionResult | null>(null);
   const [configOutcome, setConfigOutcome] = useState<MultisigConfigOutcome | null>(null);
 
   // Approvals state
@@ -106,6 +114,21 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   const [reviewBinding, setReviewBinding] = useState<ApprovalReviewBinding | null>(null);
   const [reviewClockMs, setReviewClockMs] = useState(() => Date.now());
   const [outcome, setOutcome] = useState<CosignOutcome | null>(null);
+  const trackedConfigStatus = configSubmission ? submissionStatus(configSubmission) : null;
+  const trackedCosignStatus = outcome?.submission
+    ? submissionStatus(outcome.submission)
+    : null;
+  const trackedEnvelopeStatus = envelopeSubmissionStatus(xdrInput, network);
+  const approvalGuardMessage = approvalSubmissionGuard(trackedEnvelopeStatus);
+  // Pending recovery handles intentionally carry no account authority. Until
+  // Horizon resolves a config transaction, conservatively lock signer changes
+  // for this network rather than guess which account a restored handle owns.
+  const pendingMultisigConfig = pendingTxs.some(
+    (transaction) =>
+      transaction.network === network &&
+      (transaction.label === "Multi-sig update" || transaction.label === "Multi-sig disabled"),
+  );
+  const configLocked = Boolean(configSubmission) || pendingMultisigConfig;
   const [networkConfirmed, setNetworkConfirmed] = useState(false);
   const reviewRequestGeneration = useRef(0);
   const review = reviewedEnvelopeForSigning(reviewBinding, xdrInput, network)
@@ -172,6 +195,45 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     };
   }, [loadInfo]);
 
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedConfigStatus === "confirmed") {
+        setConfigSubmission((current) =>
+          configSubmissionAfterResolution(current, trackedConfigStatus));
+        setConfigOutcome(null);
+        setTab("overview");
+        void loadInfoRef.current();
+        return;
+      }
+      if (trackedConfigStatus === "failed") {
+        setConfigSubmission((current) =>
+          configSubmissionAfterResolution(current, trackedConfigStatus));
+        setError("Multi-sig configuration failed on-chain. Review it and retry when ready.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackedConfigStatus]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive || trackedEnvelopeStatus !== "failed") return;
+      setOutcome(null);
+      setError("Co-signed transaction failed on-chain. Review the envelope before retrying.");
+      triggerHaptic("error");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackedEnvelopeStatus]);
+
   const infoBindingIsCurrent = Boolean(
     activeAccount &&
       infoBinding &&
@@ -192,6 +254,10 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
   /** Seed the Configure form from the on-chain state. */
   function openConfigure() {
+    if (configLocked) {
+      setError("A multi-sig configuration is still being tracked. Wait for its final status before changing signers again.");
+      return;
+    }
     if (!info) {
       setError("Signer configuration must be verified before it can be changed.");
       return;
@@ -249,6 +315,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     thresholds.high <= draftTotal;
 
   async function handleApply() {
+    if (configLocked) return;
     setBusy(true);
     setError(null);
     try {
@@ -258,11 +325,16 @@ function StudioInner({ onClose }: { onClose: () => void }) {
         medium: thresholds.medium,
         high: thresholds.high,
       });
-      triggerHaptic("success");
-      setConfigOutcome(result.submitted ? null : result);
-      setConfigured(result.submitted);
+      triggerHaptic(
+        result.submission?.status === "status_unknown"
+          ? "warning"
+          : result.submission?.status === "confirmed"
+            ? "success"
+            : "medium",
+      );
+      setConfigOutcome(result.submission ? null : result);
+      setConfigSubmission(result.submission);
       setReviewing(false);
-      if (result.submitted) await loadInfo();
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Configuration failed.");
@@ -273,15 +345,21 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   }
 
   async function handleDisable() {
+    if (configLocked) return;
     setBusy(true);
     setError(null);
     try {
       const result = await disableMultisig();
-      triggerHaptic("success");
+      triggerHaptic(
+        result.submission?.status === "status_unknown"
+          ? "warning"
+          : result.submission?.status === "confirmed"
+            ? "success"
+            : "medium",
+      );
       setDisableConfirm(false);
-      setConfigOutcome(result.submitted ? null : result);
-      setConfigured(result.submitted);
-      if (result.submitted) await loadInfo();
+      setConfigOutcome(result.submission ? null : result);
+      setConfigSubmission(result.submission);
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Failed to disable multi-sig.");
@@ -293,6 +371,14 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   async function handleReview() {
     const reviewedXdr = xdrInput.trim();
     const reviewedNetwork = network;
+    const guard = approvalSubmissionGuard(
+      envelopeSubmissionStatus(reviewedXdr, reviewedNetwork),
+    );
+    if (guard) {
+      setError(guard);
+      triggerHaptic("warning");
+      return;
+    }
     const requestGeneration = ++reviewRequestGeneration.current;
     setBusy(true);
     setError(null);
@@ -321,6 +407,14 @@ function StudioInner({ onClose }: { onClose: () => void }) {
       setError("The envelope or selected network changed. Review it again before signing.");
       return;
     }
+    const guard = approvalSubmissionGuard(
+      envelopeSubmissionStatus(reviewedXdr, reviewBinding.network),
+    );
+    if (guard) {
+      setError(guard);
+      triggerHaptic("warning");
+      return;
+    }
     setBusy(true);
     setError(null);
     setOutcome(null);
@@ -331,8 +425,14 @@ function StudioInner({ onClose }: { onClose: () => void }) {
       );
       setOutcome(result);
       setReviewBinding(null);
-      triggerHaptic(result.submitted ? "success" : "selection");
-      if (!result.submitted) {
+      triggerHaptic(
+        result.submission?.status === "status_unknown"
+          ? "warning"
+          : result.submission
+            ? "success"
+            : "selection",
+      );
+      if (!result.submission) {
         toast("Signature added — share the updated envelope", "info");
       }
     } catch (e) {
@@ -473,7 +573,14 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                   </Notice>
                 )}
 
-                <Button className="w-full" onClick={openConfigure}>
+                {pendingMultisigConfig && !configSubmission && (
+                  <Notice>
+                    A multi-sig configuration is still being tracked on this network. Signer
+                    changes stay locked until its final status is known.
+                  </Notice>
+                )}
+
+                <Button className="w-full" disabled={configLocked} onClick={openConfigure}>
                   {isMultisig ? "Edit Configuration" : "Set Up Multi-Sig"}
                 </Button>
                 {isMultisig &&
@@ -495,7 +602,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         <Button
                           variant="danger"
                           loading={busy}
-                          disabled={busy}
+                          disabled={busy || configLocked}
                           onClick={() => void handleDisable()}
                         >
                           Disable Multi-Sig
@@ -505,11 +612,12 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                   ) : (
                     <button
                       type="button"
+                      disabled={configLocked}
                       onClick={() => {
                         triggerHaptic("warning");
                         setDisableConfirm(true);
                       }}
-                      className="w-full text-center text-[12px] font-medium text-neutral-500 transition-colors hover:text-[#FF453A]"
+                      className="w-full text-center text-[12px] font-medium text-neutral-500 transition-colors hover:text-[#FF453A] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Disable multi-sig for this account
                     </button>
@@ -763,7 +871,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
                 <Button
                   className="w-full"
-                  disabled={!configValid || busy}
+                  disabled={!configValid || busy || configLocked}
                   onClick={() => {
                     triggerHaptic("selection");
                     setReviewing(true);
@@ -822,10 +930,14 @@ function StudioInner({ onClose }: { onClose: () => void }) {
 
                 {error && <ErrorText message={error} />}
 
+                {approvalGuardMessage && !error && (
+                  <Notice tone="warn">{approvalGuardMessage}</Notice>
+                )}
+
                 <Button
                   className="w-full"
                   loading={busy}
-                  disabled={!xdrInput.trim() || busy}
+                  disabled={!xdrInput.trim() || busy || Boolean(approvalGuardMessage)}
                   onClick={() => void handleReview()}
                 >
                   Review Transaction
@@ -1023,7 +1135,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
               </>
             )}
 
-            {outcome && !outcome.submitted && (
+            {outcome && !outcome.submission && (
               <div className="panel-inset space-y-3 p-4">
                 <div className="flex items-center justify-between text-[12.5px]">
                   <span className="text-neutral-400">
@@ -1053,17 +1165,36 @@ function StudioInner({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            {outcome?.submitted && (
+            {outcome?.submission && (
               <div className="flex flex-col items-center py-3 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
-                  <IconCheck size={22} />
+                <span className={`flex h-12 w-12 items-center justify-center rounded-full border ${
+                  trackedCosignStatus === "status_unknown"
+                    ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
+                    : "border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]"
+                }`}>
+                  {trackedCosignStatus === "status_unknown"
+                    ? <IconAlert size={22} />
+                    : <IconCheck size={22} />}
                 </span>
                 <p className="display-h mt-3 text-lg font-light text-white">
-                  Threshold Met — Submitted
+                  {trackedCosignStatus === "status_unknown"
+                    ? "Submission Status Unknown"
+                    : trackedCosignStatus === "confirmed"
+                      ? "Threshold Met — Confirmed"
+                      : "Threshold Met — Accepted"}
                 </p>
                 <p className="mt-1 text-[12.5px] text-neutral-400">
                   {outcome.operationCount} operation{outcome.operationCount === 1 ? "" : "s"} ·
                   weight {outcome.collectedWeight} of {outcome.requiredWeight}
+                </p>
+                {trackedCosignStatus === "status_unknown" && (
+                  <p className="mt-2 max-w-md text-[12px] leading-relaxed text-[#FF9F0A]">
+                    Horizon did not confirm acceptance. Do not resubmit blindly or share this
+                    envelope for another submission; canonical hash tracking is active.
+                  </p>
+                )}
+                <p className="mt-2 break-all font-mono text-[10px] text-neutral-500">
+                  {outcome.submission.network} · {outcome.submission.hash}
                 </p>
               </div>
             )}
@@ -1089,11 +1220,30 @@ function StudioInner({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Success overlay after configure/disable */}
-        {configured && (
-          <div className="mt-5 flex items-center gap-2.5 rounded-2xl border border-[#30D158]/25 bg-[#30D158]/10 p-3.5 text-[12.5px] text-[#30D158]">
-            <IconCheck size={15} className="shrink-0" />
-            Configuration applied. Balances and signers refresh automatically.
+        {configSubmission && (
+          <div className={`mt-5 rounded-2xl border p-3.5 text-[12.5px] ${
+            trackedConfigStatus === "status_unknown"
+              ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
+              : "border-[#30D158]/25 bg-[#30D158]/10 text-[#30D158]"
+          }`}>
+            <p className="flex items-center gap-2.5 font-semibold">
+              {trackedConfigStatus === "status_unknown"
+                ? <IconAlert size={15} className="shrink-0" />
+                : <IconCheck size={15} className="shrink-0" />}
+              {trackedConfigStatus === "status_unknown"
+                ? "Configuration status unknown"
+                : trackedConfigStatus === "confirmed"
+                  ? "Configuration confirmed"
+                  : "Configuration accepted — confirming"}
+            </p>
+            {trackedConfigStatus === "status_unknown" && (
+              <p className="mt-1.5 leading-relaxed text-neutral-300">
+                Do not resubmit blindly. The wallet is tracking this canonical transaction hash.
+              </p>
+            )}
+            <p className="mt-2 break-all font-mono text-[10px] text-neutral-500">
+              {configSubmission.network} · {configSubmission.hash}
+            </p>
           </div>
         )}
       </div>

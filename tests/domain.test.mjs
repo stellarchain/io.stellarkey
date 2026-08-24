@@ -15,12 +15,19 @@ import {
 } from "@stellar/stellar-sdk";
 
 import {
+  changeTrust,
+  changeTrustBatch,
+  claimClaimableBalance,
   fetchAccountSignerInfo,
   fetchActivity,
   fetchBalances,
+  mergeAccount,
+  networkFeeXlm,
+  selectRecommendedBaseFee,
   sendBatchPayments,
   sendPayment,
 } from "../src/lib/api.ts";
+import { swapStrictSend } from "../src/lib/swap.ts";
 import { lookupKnownAsset, POPULAR_ASSETS } from "../src/lib/assets.ts";
 import {
   fmtAmount,
@@ -44,11 +51,13 @@ import {
   selectCurrentAssetMetadata,
 } from "../src/lib/toml.ts";
 import {
+  addTrustlineSelection,
   activityAssetPresentation,
   activityAssetKey,
   assetDetailBalanceSummary,
   deriveSacContractId,
   spendableAssetBalance,
+  toggleTrustlineSelection,
 } from "../src/lib/transaction-intent.ts";
 import {
   assertReviewCanBeSigned,
@@ -66,6 +75,13 @@ function submittedTransaction(fetchCalls) {
   return TransactionBuilder.fromXdr(xdr, Networks.TESTNET);
 }
 
+function canonicalSubmissionHash(init) {
+  const xdr = new URLSearchParams(init.body).get("tx");
+  assert.ok(xdr, "expected submitted transaction XDR");
+  const transaction = TransactionBuilder.fromXdr(xdr, Networks.TESTNET);
+  return Buffer.from(transaction.hash()).toString("hex");
+}
+
 function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, init = {}) => {
@@ -78,7 +94,7 @@ function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
       return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
     }
     if (stringUrl.endsWith("/transactions")) {
-      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -182,6 +198,202 @@ test("batch transaction fee is linear in its operation count", async (t) => {
   assert.equal(submittedTransaction(calls).fee, "200");
 });
 
+test("shared dynamic fee policy selects a bounded surge fee with a safe fallback", () => {
+  assert.equal(typeof selectRecommendedBaseFee, "function");
+  assert.equal(selectRecommendedBaseFee(null), 100);
+  assert.equal(selectRecommendedBaseFee({ p90AcceptedFee: 777 }), 777);
+  assert.equal(selectRecommendedBaseFee({ p90AcceptedFee: 1 }), 100);
+  assert.equal(selectRecommendedBaseFee({ p90AcceptedFee: 9_999_999 }), 100_000);
+  assert.equal(selectRecommendedBaseFee({ p90AcceptedFee: Number.NaN }), 100);
+  assert.equal(networkFeeXlm(777, 1), "0.0000777");
+  assert.equal(networkFeeXlm(777, 20), "0.001554");
+});
+
+test("every broadcast builder applies the shared surge fee per operation", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  const issuer = Keypair.random().publicKey();
+  const cosigner = Keypair.random().publicKey();
+  const posted = [];
+  const events = [];
+  const prepared = (identity) => events.push(`prepared:${identity.hash}`);
+
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith("/fee_stats")) {
+      return new Response(JSON.stringify({
+        last_ledger_base_fee: "100",
+        fee_charged: { min: "100", mode: "300", p90: "777", p99: "900" },
+      }), { status: 200 });
+    }
+    if (stringUrl.includes("/accounts/")) {
+      const accountPublicKey = decodeURIComponent(stringUrl.split("/accounts/")[1]);
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [{
+          key: accountPublicKey,
+          weight: 1,
+          type: "ed25519_public_key",
+        }],
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      const transaction = TransactionBuilder.fromXdr(
+        new URLSearchParams(init.body).get("tx"),
+        Networks.TESTNET,
+      );
+      const hash = Buffer.from(transaction.hash()).toString("hex");
+      posted.push(transaction);
+      events.push(`post:${hash}`);
+      return new Response(JSON.stringify({ hash }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await claimClaimableBalance({
+    network: "testnet",
+    secretKey: source.secret(),
+    balanceId: `00000000${"00".repeat(32)}`,
+    onPrepared: prepared,
+  });
+  await mergeAccount({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination,
+    onPrepared: prepared,
+  });
+  await sendPayment({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination,
+    amount: "1",
+    assetCode: "XLM",
+    onPrepared: prepared,
+  });
+  await sendBatchPayments({
+    network: "testnet",
+    secretKey: source.secret(),
+    payments: [
+      { destination, amount: "1", assetCode: "XLM" },
+      { destination, amount: "2", assetCode: "XLM" },
+    ],
+    onPrepared: prepared,
+  });
+  await changeTrust({
+    network: "testnet",
+    secretKey: source.secret(),
+    code: "USD",
+    issuer,
+    add: true,
+    onPrepared: prepared,
+  });
+  await changeTrustBatch({
+    network: "testnet",
+    secretKey: source.secret(),
+    assets: [{ code: "USD", issuer }, { code: "EUR", issuer }],
+    onPrepared: prepared,
+  });
+  await swapStrictSend({
+    network: "testnet",
+    secretKey: source.secret(),
+    sendCode: "XLM",
+    sendAmount: "1",
+    destCode: "USD",
+    destIssuer: issuer,
+    destMin: "0.5",
+    intermediates: [],
+    onPrepared: prepared,
+  });
+  const multisigOutcome = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: source.publicKey(),
+    secretKey: source.secret(),
+    config: {
+      signers: [
+        { key: source.publicKey(), weight: 1 },
+        { key: cosigner, weight: 1 },
+      ],
+      low: 1,
+      medium: 1,
+      high: 1,
+    },
+    onPrepared: prepared,
+  });
+
+  assert.equal(multisigOutcome.submission?.status, "accepted");
+  assert.equal(posted.length, 8);
+  for (const transaction of posted) {
+    assert.equal(
+      transaction.fee,
+      String(777 * transaction.operations.length),
+      `${transaction.operations[0]?.type} did not multiply the shared base fee by operation count`,
+    );
+    const hash = Buffer.from(transaction.hash()).toString("hex");
+    assert.ok(
+      events.indexOf(`prepared:${hash}`) < events.indexOf(`post:${hash}`),
+      "the persisted recovery callback must run before each builder reaches Horizon",
+    );
+    assert.equal(
+      transactionReview.reviewTransactionEnvelope(transaction.toXdr(), "testnet").feeXlm,
+      networkFeeXlm(777, transaction.operations.length),
+      "display/review helper diverged from the signed transaction fee",
+    );
+  }
+});
+
+test("active transaction UIs use the selected fee for display and native reserve", () => {
+  const wallet = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
+  const batch = readFileSync(new URL("../src/components/BatchSendModal.tsx", import.meta.url), "utf8");
+  const swap = readFileSync(new URL("../src/components/SwapPage.tsx", import.meta.url), "utf8");
+  const assets = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
+  const settings = readFileSync(new URL("../src/components/SettingsPage.tsx", import.meta.url), "utf8");
+
+  assert.match(wallet, /recommendedBaseFeeStroops/);
+  assert.ok(
+    (wallet.match(/feeStroops: recommendedBaseFeeStroops/g) ?? []).length >= 8,
+    "all provider-owned transaction builders must receive the selected base fee",
+  );
+  assert.doesNotMatch(send, /normalStroops\s*=\s*liveFeeStats\?\.modeAcceptedFee/);
+  assert.match(send, /normalStroops\s*=\s*recommendedBaseFeeStroops/);
+  assert.match(batch, /networkFeeXlm\(recommendedBaseFeeStroops, validRows\.length\)/);
+  assert.match(swap, /networkFeeXlm\(recommendedBaseFeeStroops, 1\)/);
+  assert.match(
+    assets,
+    /networkFeeXlm\([\s\S]*Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/,
+  );
+  assert.match(settings, /networkFeeXlm\(recommendedBaseFeeStroops, 1\)/);
+});
+
+test("trustline selection rejects the 101st unique operation without breaking fee display", () => {
+  assert.equal(typeof addTrustlineSelection, "function");
+  assert.equal(typeof toggleTrustlineSelection, "function");
+  const issuer = Keypair.random().publicKey();
+  const full = Array.from({ length: 100 }, (_, index) => ({
+    code: `A${index}`,
+    issuer,
+  }));
+  const overflow = addTrustlineSelection(full, { code: "OVER", issuer });
+  assert.equal(overflow.error, "A Stellar transaction can contain at most 100 trustlines.");
+  assert.equal(overflow.selected.length, 100);
+  assert.deepEqual(overflow.selected, full);
+
+  const duplicate = addTrustlineSelection(full, full[0]);
+  assert.match(duplicate.error, /already queued/i);
+  assert.equal(duplicate.selected.length, 100);
+
+  const removed = toggleTrustlineSelection(full, full[0]);
+  assert.equal(removed.error, null);
+  assert.equal(removed.selected.length, 99);
+
+  const source = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
+  assert.match(source, /addTrustlineSelection/);
+  assert.match(source, /toggleTrustlineSelection/);
+  assert.match(source, /Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/);
+  assert.match(source, /setError\(update\.error\)/);
+});
+
 test("batch payments activate an unfunded native destination", async (t) => {
   const source = Keypair.random();
   const destination = Keypair.random().publicKey();
@@ -196,7 +408,7 @@ test("batch payments activate an unfunded native destination", async (t) => {
       return new Response(JSON.stringify({ title: "Resource Missing" }), { status: 404 });
     }
     if (stringUrl.endsWith("/transactions")) {
-      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -416,7 +628,7 @@ test("approval review renders every security-sensitive address in full", () => {
   );
   const approvalReview = source
     .split("Transaction explanation review (before signing)")[1]
-    ?.split("{outcome && !outcome.submitted")[0];
+    ?.split("{outcome && !outcome.submission")[0];
 
   assert.ok(approvalReview, "expected the Approvals review section");
   assert.doesNotMatch(approvalReview, /<HashValue\b/);
@@ -701,7 +913,8 @@ test("multisig configuration returns a partial envelope when current high thresh
     },
   });
 
-  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.submission, null);
+  assert.equal("submitted" in outcome, false);
   assert.ok(outcome.xdr);
   assert.equal(calls.some((call) => call.url.endsWith("/transactions")), false);
 });
@@ -730,7 +943,7 @@ test("multisig replaces a signer at full capacity without exceeding 20 additiona
     }
     if (stringUrl.endsWith("/transactions")) {
       submittedXdr = new URLSearchParams(init.body).get("tx");
-      return new Response(JSON.stringify({ hash: "capacity-safe" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -750,7 +963,7 @@ test("multisig replaces a signer at full capacity without exceeding 20 additiona
       high: 2,
     },
   });
-  assert.equal(partial.submitted, false);
+  assert.equal(partial.submission, null);
 
   const tx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);
   const lowerIndex = tx.operations.findIndex(
@@ -798,7 +1011,8 @@ test("multisig replaces a signer at full capacity without exceeding 20 additiona
     signerPublicKey: removed.publicKey(),
     secretKey: removed.secret(),
   });
-  assert.equal(submitted.submitted, true);
+  assert.equal(submitted.submission?.status, "accepted");
+  assert.equal("submitted" in submitted, false);
   assert.ok(submittedXdr);
 });
 
@@ -839,7 +1053,7 @@ test("multisig recovery transitions lower the high threshold before removing sig
   assert.equal(tx.operations[1].signer.ed25519PublicKey, cosigner.publicKey());
   assert.equal(tx.operations[1].signer.weight, 0);
   assert.equal(tx.operations.at(-1).highThreshold, 0);
-  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.submission, null);
 });
 
 test("recovery restores a zero-weight master before removing recovery signers", async (t) => {
@@ -860,7 +1074,7 @@ test("recovery restores a zero-weight master before removing recovery signers", 
     }
     if (stringUrl.endsWith("/transactions")) {
       submittedXdr = new URLSearchParams(init.body).get("tx");
-      return new Response(JSON.stringify({ hash: "recovered" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -878,7 +1092,7 @@ test("recovery restores a zero-weight master before removing recovery signers", 
   });
   const partialTx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);
 
-  assert.equal(partial.submitted, false);
+  assert.equal(partial.submission, null);
   assert.equal(partialTx.operations[0].type, "setOptions");
   assert.equal(partialTx.operations[0].masterWeight, 1);
 
@@ -890,10 +1104,10 @@ test("recovery restores a zero-weight master before removing recovery signers", 
     secretKey: recovery.secret(),
   });
 
-  assert.equal(recovered.submitted, true);
-  assert.equal(recovered.hash, "recovered");
+  assert.equal(recovered.submission?.status, "accepted");
   assert.ok(submittedXdr);
   const submitted = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET);
+  assert.equal(recovered.submission?.hash, Buffer.from(submitted.hash()).toString("hex"));
   const final = submitted.operations.at(-1);
   assert.equal(final.type, "setOptions");
   assert.equal(final.masterWeight, 1);
@@ -968,7 +1182,7 @@ test("cosigning requires every effective source account to meet its own threshol
     secretKey: operationSource.secret(),
   });
 
-  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.submission, null);
   assert.equal(outcome.authorizations.length, 2);
   assert.equal(
     outcome.authorizations.find((entry) => entry.source === transactionSource.publicKey()).satisfied,
@@ -1016,7 +1230,7 @@ test("cosigning evaluates signer and threshold mutations in operation order", as
     secretKey: source.secret(),
   });
 
-  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.submission, null);
   assert.equal(outcome.authorizations[0].satisfied, false);
   assert.equal(submitted, false);
 });
@@ -1051,7 +1265,7 @@ test("cosigning applies earlier signer-weight changes before later authorization
     secretKey: source.secret(),
   });
 
-  assert.equal(outcome.submitted, false);
+  assert.equal(outcome.submission, null);
   assert.equal(outcome.authorizations[0].satisfied, false);
 });
 
@@ -1081,7 +1295,7 @@ test("cosigning never adds a redundant signature after every source is authorize
     if (stringUrl.endsWith("/transactions")) {
       const submittedXdr = new URLSearchParams(init.body).get("tx");
       submittedSignatureCount = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET).signatures.length;
-      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -1094,7 +1308,8 @@ test("cosigning never adds a redundant signature after every source is authorize
     secretKey: redundantSigner.secret(),
   });
 
-  assert.equal(outcome.submitted, true);
+  assert.equal(outcome.submission?.status, "accepted");
+  assert.equal("submitted" in outcome, false);
   assert.equal(outcome.addedSignature, false);
   assert.equal(submittedSignatureCount, 1);
 });
@@ -1170,7 +1385,7 @@ test("zero thresholds still require a recognized transaction signature", async (
     if (stringUrl.endsWith("/transactions")) {
       const submittedXdr = new URLSearchParams(init.body).get("tx");
       submittedSignatureCount = TransactionBuilder.fromXdr(submittedXdr, Networks.TESTNET).signatures.length;
-      return new Response(JSON.stringify({ hash: "submitted" }), { status: 200 });
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
     }
     throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
   });
@@ -1183,7 +1398,7 @@ test("zero thresholds still require a recognized transaction signature", async (
     secretKey: source.secret(),
   });
 
-  assert.equal(outcome.submitted, true);
+  assert.equal(outcome.submission?.status, "accepted");
   assert.equal(outcome.addedSignature, true);
   assert.equal(submittedSignatureCount, 1);
 });

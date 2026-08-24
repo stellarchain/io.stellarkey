@@ -14,7 +14,13 @@ import {
   type StellarMemoInput,
 } from "@/lib/stellar-domain";
 import { lookupKnownAsset } from "@/lib/assets";
-import { fetchFeeStats, fetchAccountSignerInfo, type AccountSignerInfo, type FeeStats } from "@/lib/api";
+import {
+  fetchFeeStats,
+  fetchAccountSignerInfo,
+  selectRecommendedBaseFee,
+  type AccountSignerInfo,
+  type FeeStats,
+} from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import {
   clearFederationMemoForDestinationChange,
@@ -24,10 +30,12 @@ import {
   spendableAssetBalance,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
+import type { SubmissionResult } from "@/lib/submission";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader, QrScannerBox, SegmentedControl, Select, Spinner } from "./ui";
 import { FiatValue } from "./FiatValue";
 import {
   IconCheck,
+  IconAlert,
   IconExternal,
   IconQrScan,
   IconUsers,
@@ -36,7 +44,7 @@ import {
   IconLedger,
 } from "./icons";
 
-type Stage = "form" | "review" | "sending" | "cosign" | "done";
+type Stage = "form" | "review" | "sending" | "cosign" | "done" | "status_unknown";
 type MemoType = StellarMemoInput["type"];
 type FeeTier = "normal" | "priority" | "urgent";
 
@@ -60,7 +68,7 @@ function SendInner({
   onClose: () => void;
   prefill?: PayUriPayload | null;
 }) {
-  const { balances, minimumBalanceXlm, send, prepareCosignPayment, network, refresh, contacts, activeAccount, accounts, activity } = useWallet();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, send, prepareCosignPayment, network, refresh, contacts, activeAccount, accounts, activity, submissionStatus } = useWallet();
   const prefillError = prefill
     ? validateSep7PayRequest(prefill, NETWORKS[network].networkPassphrase)
     : null;
@@ -83,9 +91,14 @@ function SendInner({
   const [memoType, setMemoType] = useState<MemoType>(acceptedPrefill?.memoType ?? "text");
   const [memo, setMemo] = useState(acceptedPrefill?.memo ?? "");
   const [feeTier, setFeeTier] = useState<FeeTier>("normal");
-  const [liveFeeStats, setLiveFeeStats] = useState<FeeStats | null>(null);
+  const [liveFeeSelection, setLiveFeeSelection] = useState<{
+    network: typeof network;
+    stats: FeeStats;
+  } | null>(null);
+  const liveFeeStats = liveFeeSelection?.network === network ? liveFeeSelection.stats : null;
   const [error, setError] = useState<string | null>(prefillError);
   const [hash, setHash] = useState<string | null>(null);
+  const [submission, setSubmission] = useState<SubmissionResult | null>(null);
   const [cosignXdr, setCosignXdr] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [resolvingFed, setResolvingFed] = useState(false);
@@ -93,13 +106,40 @@ function SendInner({
   const federationMemoAppliedRef = useRef(false);
 
   const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
+  const trackedSubmissionStatus = submission ? submissionStatus(submission) : null;
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedSubmissionStatus === "confirmed") {
+        setStage("done");
+        return;
+      }
+      if (trackedSubmissionStatus === "failed") {
+        setSubmission(null);
+        setHash(null);
+        setStage("review");
+        setError("Transaction failed on-chain. Review the details and retry when ready.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [trackedSubmissionStatus]);
 
   // Fetch live fee surge stats on mount
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const stats = await fetchFeeStats(network);
-      if (alive && stats) setLiveFeeStats(stats);
+      try {
+        const stats = await fetchFeeStats(network);
+        if (alive && stats) setLiveFeeSelection({ network, stats });
+      } catch {
+        // The provider-selected bounded fallback remains authoritative.
+      }
     })();
     return () => {
       alive = false;
@@ -205,9 +245,15 @@ function SendInner({
           ? /^[0-9a-fA-F]{64}$/.test(memo.trim()) || memo.trim() === ""
           : true;
 
-  const normalStroops = liveFeeStats?.modeAcceptedFee ?? 100;
-  const priorityStroops = Math.max(200, (liveFeeStats?.p90AcceptedFee ?? 150) * 2);
-  const urgentStroops = Math.max(500, (liveFeeStats?.p99AcceptedFee ?? 300) * 3);
+  const normalStroops = recommendedBaseFeeStroops;
+  const priorityStroops = selectRecommendedBaseFee(
+    null,
+    Math.max(200, (liveFeeStats?.p90AcceptedFee ?? recommendedBaseFeeStroops) * 2),
+  );
+  const urgentStroops = selectRecommendedBaseFee(
+    null,
+    Math.max(500, (liveFeeStats?.p99AcceptedFee ?? recommendedBaseFeeStroops) * 3),
+  );
   const feeStroops = feeTier === "urgent" ? urgentStroops : feeTier === "priority" ? priorityStroops : normalStroops;
   const feeXlm = stroopsToAmount(BigInt(feeStroops));
   const maxSendable = selectedAsset?.isNative
@@ -276,6 +322,12 @@ function SendInner({
         feeStroops,
       });
       setHash(result.hash);
+      setSubmission(result);
+      if (result.status === "status_unknown") {
+        setStage("status_unknown");
+        triggerHaptic("warning");
+        return;
+      }
       setStage("done");
       triggerHaptic("success");
       window.setTimeout(() => void refresh(), 4000);
@@ -340,7 +392,9 @@ function SendInner({
       <ModalHeader
         title={
           stage === "done"
-            ? "Payment Sent"
+            ? trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"
+            : stage === "status_unknown"
+              ? "Payment Status Unknown"
             : stage === "cosign"
               ? "Awaiting Cosigners"
               : stage === "review" || stage === "sending"
@@ -349,7 +403,11 @@ function SendInner({
         }
         subtitle={
           stage === "done"
-            ? `Confirmed on Stellar ${NETWORKS[network].label}`
+            ? trackedSubmissionStatus === "confirmed"
+              ? `Confirmed on Stellar ${NETWORKS[network].label}`
+              : `Accepted on Stellar ${NETWORKS[network].label} — confirming on-chain`
+            : stage === "status_unknown"
+              ? `Tracking the canonical hash on Stellar ${NETWORKS[network].label}`
             : stage === "cosign"
               ? "Signed — share the envelope to collect signatures"
               : stage === "review" || stage === "sending"
@@ -364,9 +422,13 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Payment Confirmed</p>
+            <p className="display-h mt-4 text-xl font-light text-white">
+              {trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"}
+            </p>
             <p className="mt-1 text-[13px] text-neutral-400">
-              Successfully broadcasted on Stellar {NETWORKS[network].label}.
+              {trackedSubmissionStatus === "confirmed"
+                ? "The payment is confirmed on-chain."
+                : "Horizon accepted the transaction. Confirmation tracking continues in the dashboard."}
             </p>
             {hash && (
               <a
@@ -380,6 +442,25 @@ function SendInner({
             )}
             <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
               Done
+            </Button>
+          </div>
+        ) : stage === "status_unknown" ? (
+          <div className="flex flex-col items-center py-4 text-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
+              <IconAlert size={28} />
+            </span>
+            <p className="display-h mt-4 text-xl font-light text-white">Submission Status Unknown</p>
+            <p className="mt-2 max-w-md text-[13px] leading-relaxed text-neutral-300">
+              Horizon did not confirm whether it accepted this transaction. Do not resubmit blindly.
+              The wallet will keep checking the canonical hash.
+            </p>
+            {hash && (
+              <p className="mt-4 w-full break-all rounded-xl bg-white/[0.04] p-3 font-mono text-[10.5px] text-neutral-300">
+                {network} · {hash}
+              </p>
+            )}
+            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
+              Close and Keep Tracking
             </Button>
           </div>
         ) : stage === "cosign" ? (

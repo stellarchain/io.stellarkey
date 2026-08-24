@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
 import { findStrictSendRoute } from "@/lib/swap";
+import { networkFeeXlm } from "@/lib/api";
 import {
   applySlippage,
   compareStellarAmounts,
@@ -19,11 +20,12 @@ import {
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
+import type { SubmissionResult } from "@/lib/submission";
 import { Button, ErrorText, Select } from "./ui";
 import { IconAlert, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
 
 export function SwapPage() {
-  const { balances, minimumBalanceXlm, swap, network, refresh, activeAccount } = useWallet();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, swap, network, refresh, activeAccount, submissionStatus } = useWallet();
   const [sendKey, setSendKey] = useState("native");
   const [destKey, setDestKey] = useState("");
   const [amount, setAmount] = useState("");
@@ -36,6 +38,8 @@ export function SwapPage() {
   const [noRouteKey, setNoRouteKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
+  const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
   const options = useMemo(() => balances ?? [], [balances]);
   const effectiveDestKey = destKey || options.find((b) => b.key !== sendKey)?.key || "";
 
@@ -48,10 +52,11 @@ export function SwapPage() {
     [options, effectiveDestKey],
   );
 
+  const feeXlm = networkFeeXlm(recommendedBaseFeeStroops, 1);
   const sendAvailable = sendAsset?.isNative
     ? minimumBalanceXlm === null
       ? "0"
-      : spendableAssetBalance(sendAsset, [minimumBalanceXlm, "0.00001"])
+      : spendableAssetBalance(sendAsset, [minimumBalanceXlm, feeXlm])
     : sendAsset
       ? spendableAssetBalance(sendAsset)
       : "0";
@@ -75,6 +80,31 @@ export function SwapPage() {
   const currentQuote = guardCurrentSwapQuote(route, routeKey);
   const routing = routeKey !== null && routingKey === routeKey;
   const noRoute = routeKey !== null && noRouteKey === routeKey;
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!alive) return;
+      if (trackedSubmissionStatus === "confirmed") {
+        triggerHaptic("success");
+        playSwapSound();
+        setAmount("");
+        setRoute(null);
+        setStage("form");
+        void refresh();
+        return;
+      }
+      if (trackedSubmissionStatus === "failed") {
+        setPendingSubmission(null);
+        setError("Swap failed on-chain. Refresh the quote and retry when ready.");
+        triggerHaptic("error");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [refresh, trackedSubmissionStatus]);
 
   useEffect(() => {
     let alive = true;
@@ -157,12 +187,13 @@ export function SwapPage() {
   }
 
   async function handleSwap() {
+    if (pendingSubmission) return;
     const submissionQuote = guardCurrentSwapQuote(route, routeKey);
     if (!submissionQuote || !sendAsset || !destAsset) return;
     setBusy(true);
     setError(null);
     try {
-      await swap({
+      const result = await swap({
         sendCode: sendAsset.code,
         sendIssuer: sendAsset.issuer,
         sendAmount: submissionQuote.sendAmount,
@@ -171,12 +202,8 @@ export function SwapPage() {
         destMin: submissionQuote.destinationMinimum,
         intermediates: [...submissionQuote.intermediates],
       });
-      triggerHaptic("success");
-      playSwapSound();
-      setAmount("");
-      setRoute(null);
-      setStage("form");
-      window.setTimeout(() => void refresh(), 4000);
+      setPendingSubmission(result);
+      triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
       setError(e instanceof Error ? e.message : "Swap failed.");
@@ -383,6 +410,49 @@ export function SwapPage() {
           </div>
 
           {error && <ErrorText message={error} />}
+          {pendingSubmission && (
+            <div className={`rounded-2xl border p-4 ${
+              trackedSubmissionStatus === "status_unknown"
+                ? "border-[#FF9F0A]/35 bg-[#FF9F0A]/10"
+                : trackedSubmissionStatus === "confirmed"
+                  ? "border-[#30D158]/30 bg-[#30D158]/10"
+                  : "border-[#0A84FF]/30 bg-[#0A84FF]/10"
+            }`}>
+              <p className={`flex items-center gap-2 text-[13px] font-semibold ${
+                trackedSubmissionStatus === "status_unknown"
+                  ? "text-[#FF9F0A]"
+                  : trackedSubmissionStatus === "confirmed"
+                    ? "text-[#30D158]"
+                    : "text-[#0A84FF]"
+              }`}>
+                {trackedSubmissionStatus === "status_unknown" && <IconAlert size={15} />}
+                {trackedSubmissionStatus === "status_unknown"
+                  ? "Swap submission status unknown"
+                  : trackedSubmissionStatus === "confirmed"
+                    ? "Swap confirmed"
+                    : "Swap accepted — confirming"}
+              </p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
+                {trackedSubmissionStatus === "status_unknown"
+                  ? "Horizon did not confirm acceptance. Do not resubmit blindly; the wallet is polling the canonical hash."
+                  : trackedSubmissionStatus === "confirmed"
+                    ? "The swap is confirmed on-chain."
+                    : "Horizon accepted the swap and confirmation tracking continues."}
+              </p>
+              <p className="mt-2 break-all font-mono text-[10px] text-neutral-400">
+                {pendingSubmission.network} · {pendingSubmission.hash}
+              </p>
+              {trackedSubmissionStatus === "confirmed" && (
+                <Button
+                  variant="ghost"
+                  className="mt-3 w-full"
+                  onClick={() => setPendingSubmission(null)}
+                >
+                  Start Another Swap
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Route Analytics — inline once a route is found */}
           {currentQuote && (
@@ -417,7 +487,7 @@ export function SwapPage() {
               </div>
               <div className="flex justify-between text-neutral-400">
                 <span>Estimated Network Fee</span>
-                <span className="mono text-neutral-300">0.00001 XLM (100 stroops)</span>
+                <span className="mono text-neutral-300">{feeXlm} XLM</span>
               </div>
               <div className="flex justify-between items-center text-neutral-400 pt-1">
                 <span>Route Hops</span>
@@ -520,7 +590,7 @@ export function SwapPage() {
                 </div>
                 <div className="flex justify-between text-neutral-400 text-[12px]">
                   <span>Base Network Fee</span>
-                  <span className="mono">0.00001 XLM</span>
+                  <span className="mono">{feeXlm} XLM</span>
                 </div>
               </div>
 
@@ -537,7 +607,7 @@ export function SwapPage() {
                 </Button>
                 <Button
                   loading={busy}
-                  disabled={busy}
+                  disabled={busy || Boolean(pendingSubmission)}
                   onClick={() => void handleSwap()}
                 >
                   {busy ? "Executing…" : "Confirm Swap"}
@@ -547,7 +617,7 @@ export function SwapPage() {
           ) : (
             <Button
               className="!mt-6 w-full !h-12 text-[16px]"
-              disabled={!currentQuote || busy || routing}
+              disabled={!currentQuote || busy || routing || Boolean(pendingSubmission)}
               onClick={() => {
                 const reviewQuote = guardCurrentSwapQuote(route, routeKey);
                 if (!reviewQuote) return;

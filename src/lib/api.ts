@@ -7,6 +7,7 @@ import {
   Operation,
   StrKey,
   TransactionBuilder,
+  extractBaseAddress,
   BASE_FEE,
   type Transaction,
   type FeeBumpTransaction,
@@ -20,9 +21,16 @@ import { getHorizonJson, HorizonRequestError } from "./horizon";
 import {
   buildStellarMemo,
   calculateMinimumBalance,
+  stroopsToAmount,
   toStellarAsset,
   type StellarMemoInput,
 } from "./stellar-domain";
+import type {
+  CanonicalLookupStatus,
+  PreparedSubmissionIdentity,
+  SubmissionPreparedCallback,
+  SubmissionResult,
+} from "./submission";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 
@@ -169,7 +177,9 @@ export async function claimClaimableBalance(params: {
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
   balanceId: string;
-}): Promise<{ hash: string }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
   const { network, secretKey, balanceId } = params;
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -178,9 +188,10 @@ export async function claimClaimableBalance(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   })
     .addOperation(
@@ -192,7 +203,7 @@ export async function claimClaimableBalance(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -203,7 +214,9 @@ export async function mergeAccount(params: {
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
   destination: string;
-}): Promise<{ hash: string }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
   const { network, secretKey, destination } = params;
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
@@ -215,9 +228,10 @@ export async function mergeAccount(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   })
     .addOperation(
@@ -229,7 +243,7 @@ export async function mergeAccount(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -567,9 +581,9 @@ interface SubmitFailureBody {
 
 export function explainSubmitError(err: unknown): string {
   if (err && typeof err === "object" && "body" in err) {
-    const b = err.body as SubmitFailureBody;
-    const txCode = b.extras?.result_codes?.transaction;
-    const opCodes = b.extras?.result_codes?.operations ?? [];
+    const b = err.body as SubmitFailureBody | null | undefined;
+    const txCode = b?.extras?.result_codes?.transaction;
+    const opCodes = b?.extras?.result_codes?.operations ?? [];
     if (txCode === "tx_bad_seq") return "Sequence number mismatch. Please retry.";
     if (txCode === "tx_insufficient_fee") return "Fee was too low for network conditions.";
     if (txCode === "tx_insufficient_balance") return "Insufficient balance to cover payment and reserve.";
@@ -578,7 +592,7 @@ export function explainSubmitError(err: unknown): string {
     if (opCodes.includes("op_no_destination")) return "Destination account does not exist. Activate it with XLM first.";
     if (opCodes.includes("op_no_trust")) return "Destination account does not trust this asset.";
     if (opCodes.includes("op_line_full")) return "Destination trustline limit exceeded.";
-    if (b.detail) return b.detail;
+    if (b?.detail) return b.detail;
   }
   if (err instanceof Error) return err.message;
   return "Transaction failed on the Stellar network.";
@@ -599,7 +613,8 @@ export async function signAndSubmit(
   network: NetworkKey,
   kp: Keypair | null,
   hardwareSigner?: HardwareSigner,
-): Promise<{ hash: string }> {
+  onPrepared?: SubmissionPreparedCallback,
+): Promise<SubmissionResult> {
   if (hardwareSigner) {
     await signHardwareTx(tx, hardwareSigner);
   } else if (kp) {
@@ -607,30 +622,178 @@ export async function signAndSubmit(
   } else {
     throw new SendError("No signing credential available.");
   }
-  return submitSignedTx(tx, network);
+  return submitSignedTx(tx, network, 15_000, onPrepared);
+}
+
+function preparedSubmissionIdentity(
+  tx: Transaction | FeeBumpTransaction,
+  network: NetworkKey,
+  hash: string,
+): PreparedSubmissionIdentity {
+  const transaction = "innerTransaction" in tx ? tx.innerTransaction : tx;
+  const maxTime = transaction.timeBounds?.maxTime;
+  if (maxTime && maxTime !== "0") {
+    try {
+      const value = BigInt(maxTime);
+      if (value >= BigInt(0) && value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+        return { hash, network, expiresAt: Number(value) };
+      }
+    } catch {
+      // Fail closed review already rejects inexact bounds; omit only for old callers.
+    }
+  }
+  return { hash, network };
+}
+
+export async function lookupCanonicalTransaction(
+  network: NetworkKey,
+  hash: string,
+  requestTimeoutMs = 15_000,
+): Promise<CanonicalLookupStatus> {
+  if (!/^[0-9a-f]{64}$/i.test(hash)) return "unavailable";
+  try {
+    const record = await getHorizonJson<{ successful?: unknown }>(
+      `${getHorizonUrl(network)}/transactions/${hash.toLowerCase()}`,
+      undefined,
+      requestTimeoutMs,
+    );
+    if (record.successful === true) return "confirmed";
+    if (record.successful === false) return "failed";
+    return "unavailable";
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") return "not_found";
+    return "unavailable";
+  }
 }
 
 export async function submitSignedTx(
   tx: Transaction | FeeBumpTransaction,
   network: NetworkKey,
-): Promise<{ hash: string }> {
+  requestTimeoutMs = 15_000,
+  onPrepared?: SubmissionPreparedCallback,
+): Promise<SubmissionResult> {
   const horizonUrl = getHorizonUrl(network);
+  const hash = Array.from(tx.hash(), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const form = new URLSearchParams();
   form.set("tx", tx.toXdr());
+  onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
 
-  const res = await fetch(`${horizonUrl}/transactions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form.toString(),
-  });
 
-  const body = (await res.json()) as SubmitFailureBody & { hash?: string };
-  if (!res.ok || !body.hash) {
-    const error = new Error(body.title ?? body.detail ?? "Submission failed");
-    Object.assign(error, { status: res.status, body });
+  let submissionError: unknown = null;
+  try {
+    const body = await getHorizonJson<SubmitFailureBody & { hash?: unknown }>(
+      `${horizonUrl}/transactions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      },
+      requestTimeoutMs,
+    );
+    if (typeof body.hash === "string" && body.hash.toLowerCase() === hash) {
+      return { hash, network, status: "accepted" };
+    }
+    submissionError = new HorizonRequestError(
+      "Horizon returned a malformed transaction submission response.",
+      { kind: "unknown", status: 200, body },
+    );
+  } catch (error) {
+    submissionError = error;
+  }
+
+  const transactionCode = submissionError instanceof HorizonRequestError &&
+      submissionError.body &&
+      typeof submissionError.body === "object"
+    ? (submissionError.body as SubmitFailureBody).extras?.result_codes?.transaction
+    : undefined;
+  const definiteRejection = submissionError instanceof HorizonRequestError &&
+    submissionError.status !== null &&
+    submissionError.status >= 400 &&
+    submissionError.status < 500;
+  if (definiteRejection && transactionCode !== "tx_bad_seq") throw submissionError;
+
+  const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
+  if (lookup === "confirmed") return { hash, network, status: "confirmed" };
+  if (lookup === "failed") {
+    throw new HorizonRequestError("Transaction was found on-chain but failed.", {
+      kind: "validation",
+    });
+  }
+  if (definiteRejection && lookup === "not_found") throw submissionError;
+
+  return { hash, network, status: "status_unknown" };
+}
+
+export interface ConfirmedAccountMergeInspection {
+  sourcePublicKey: string;
+  sourceAccountExists: boolean;
+}
+
+/**
+ * Treats persisted reconciliation data only as a lookup hint. The account
+ * identity is derived from the successful, hash-matched on-chain envelope and
+ * its current existence is checked before any caller mutates local state.
+ */
+export async function inspectConfirmedAccountMerge(
+  network: NetworkKey,
+  hash: string,
+  requestTimeoutMs = 15_000,
+): Promise<ConfirmedAccountMergeInspection | null> {
+  if (!/^[0-9a-f]{64}$/i.test(hash)) return null;
+  const normalizedHash = hash.toLowerCase();
+  const horizonUrl = getHorizonUrl(network);
+  const record = await getHorizonJson<{
+    hash?: unknown;
+    successful?: unknown;
+    envelope_xdr?: unknown;
+  }>(`${horizonUrl}/transactions/${normalizedHash}`, undefined, requestTimeoutMs);
+  if (
+    record.successful !== true ||
+    typeof record.hash !== "string" ||
+    record.hash.toLowerCase() !== normalizedHash ||
+    typeof record.envelope_xdr !== "string"
+  ) {
+    return null;
+  }
+
+  let parsed: Transaction | FeeBumpTransaction;
+  try {
+    parsed = TransactionBuilder.fromXdr(
+      record.envelope_xdr,
+      NETWORKS[network].networkPassphrase,
+    );
+  } catch {
+    return null;
+  }
+  const parsedHash = Array.from(parsed.hash(), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+  if (parsedHash !== normalizedHash) return null;
+
+  const transaction = "innerTransaction" in parsed ? parsed.innerTransaction : parsed;
+  if (transaction.operations.length !== 1 || transaction.operations[0].type !== "accountMerge") {
+    return null;
+  }
+
+  let sourcePublicKey: string;
+  try {
+    sourcePublicKey = extractBaseAddress(transaction.operations[0].source ?? transaction.source);
+  } catch {
+    return null;
+  }
+
+  try {
+    await getHorizonJson(
+      `${horizonUrl}/accounts/${sourcePublicKey}`,
+      undefined,
+      requestTimeoutMs,
+    );
+    return { sourcePublicKey, sourceAccountExists: true };
+  } catch (error) {
+    if (error instanceof HorizonRequestError && error.kind === "not_found") {
+      return { sourcePublicKey, sourceAccountExists: false };
+    }
     throw error;
   }
-  return { hash: body.hash };
 }
 
 export interface SendPaymentParams {
@@ -645,10 +808,11 @@ export interface SendPaymentParams {
   /** @deprecated Use `memo` so the memo type is preserved. */
   memoText?: string;
   feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
 }
 
-export async function sendPayment(params: SendPaymentParams): Promise<{ hash: string }> {
-  const { network, secretKey, destination, amount, assetCode, issuer, memoText, feeStroops = 100 } = params;
+export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
+  const { network, secretKey, destination, amount, assetCode, issuer, memoText, feeStroops } = params;
   const memo = buildStellarMemo(
     params.memo ?? (memoText ? { type: "text", value: memoText } : null),
   );
@@ -674,9 +838,10 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
       "Destination account doesn't exist yet. New accounts must be activated with XLM.",
     );
   }
+  const fee = await loadRecommendedBaseFee(network, feeStroops);
 
   const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: String(feeStroops),
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -702,7 +867,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<{ hash: st
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -721,7 +886,9 @@ export async function sendBatchPayments(params: {
   memo?: StellarMemoInput;
   /** @deprecated Use `memo` so the memo type is preserved. */
   memoText?: string;
-}): Promise<{ hash: string }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
   const { network, secretKey, payments, memoText } = params;
   const memo = buildStellarMemo(
     params.memo ?? (memoText ? { type: "text", value: memoText } : null),
@@ -751,6 +918,7 @@ export async function sendBatchPayments(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const uniqueDestinations = [...new Set(prepared.map((payment) => payment.destination))];
   const destinationEntries = await Promise.all(
@@ -763,7 +931,7 @@ export async function sendBatchPayments(params: {
   const activatedInTransaction = new Set<string>();
 
   const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -798,7 +966,7 @@ export async function sendBatchPayments(params: {
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -811,7 +979,9 @@ export async function changeTrust(params: {
   code: string;
   issuer: string;
   add: boolean;
-}): Promise<{ hash: string }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
   const { network, secretKey, code, issuer, add } = params;
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -827,9 +997,10 @@ export async function changeTrust(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   })
     .addOperation(
@@ -842,7 +1013,7 @@ export async function changeTrust(params: {
     .build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner);
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -858,7 +1029,9 @@ export async function changeTrustBatch(params: {
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
   assets: Array<{ code: string; issuer: string }>;
-}): Promise<{ hash: string; added: number }> {
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult & { added: number }> {
   const { network, secretKey, assets } = params;
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -885,9 +1058,10 @@ export async function changeTrustBatch(params: {
     `${horizonUrl}/accounts/${publicKey}`,
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
   const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
-    fee: BASE_FEE,
+    fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
   });
 
@@ -903,8 +1077,14 @@ export async function changeTrustBatch(params: {
   const tx = builder.setTimeout(180).build();
 
   try {
-    const result = await signAndSubmit(tx, network, kp, params.hardwareSigner);
-    return { hash: result.hash, added: assets.length };
+    const result = await signAndSubmit(
+      tx,
+      network,
+      kp,
+      params.hardwareSigner,
+      params.onPrepared,
+    );
+    return { ...result, added: assets.length };
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }
@@ -916,6 +1096,37 @@ export interface FeeStats {
   modeAcceptedFee: number;
   p90AcceptedFee: number;
   p99AcceptedFee: number;
+}
+
+export const MAX_BASE_FEE_STROOPS = 100_000;
+
+export function selectRecommendedBaseFee(
+  stats: Pick<FeeStats, "p90AcceptedFee"> | null,
+  requestedFee?: number,
+): number {
+  const candidate = requestedFee ?? stats?.p90AcceptedFee ?? Number(BASE_FEE);
+  if (!Number.isFinite(candidate) || !Number.isInteger(candidate)) return Number(BASE_FEE);
+  return Math.max(Number(BASE_FEE), Math.min(MAX_BASE_FEE_STROOPS, candidate));
+}
+
+export function networkFeeXlm(baseFeeStroops: number, operationCount: number): string {
+  if (!Number.isSafeInteger(operationCount) || operationCount < 0 || operationCount > 100) {
+    throw new Error("Stellar operation count must be a whole number between 0 and 100.");
+  }
+  const boundedBaseFee = selectRecommendedBaseFee(null, baseFeeStroops);
+  return stroopsToAmount(BigInt(boundedBaseFee) * BigInt(operationCount));
+}
+
+export async function loadRecommendedBaseFee(
+  network: NetworkKey,
+  requestedFee?: number,
+): Promise<number> {
+  if (requestedFee !== undefined) return selectRecommendedBaseFee(null, requestedFee);
+  try {
+    return selectRecommendedBaseFee(await fetchFeeStats(network));
+  } catch {
+    return Number(BASE_FEE);
+  }
 }
 
 export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | null> {

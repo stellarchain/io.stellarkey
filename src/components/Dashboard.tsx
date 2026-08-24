@@ -22,6 +22,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { fetchAssetPrices, estimatePortfolioUsd, getUnitPrice, type AssetPrices } from "@/lib/prices";
 import { playTapSound } from "@/lib/sounds";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
+import { pendingTransactionPresentation } from "@/lib/submission";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
@@ -94,6 +95,7 @@ export function Dashboard() {
     contacts,
     balances,
     pendingTxs,
+    retryPendingTransaction,
     accountBalances,
     claimableBalances,
     claimAirdrop,
@@ -178,6 +180,9 @@ export function Dashboard() {
   const [multisigOpen, setMultisigOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const pendingAirdropClaim = pendingTxs.some(
+    (transaction) => transaction.label === "Airdrop claim",
+  );
 
   useEffect(() => {
     void (async () => {
@@ -583,12 +588,16 @@ export function Dashboard() {
   }
 
   async function handleClaimAllAirdrops() {
-    if (claimableBalances.length === 0) return;
+    if (claimableBalances.length === 0 || pendingAirdropClaim) return;
     setClaimingAll(true);
     triggerHaptic("selection");
     try {
       for (const item of claimableBalances) {
-        await claimAirdrop(item.id);
+        const result = await claimAirdrop(item.id);
+        if (result.status !== "confirmed") {
+          triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
+          return;
+        }
       }
       triggerHaptic("success");
     } catch {
@@ -1336,13 +1345,48 @@ export function Dashboard() {
               <div className="lg:col-span-7 space-y-6">
                 {/* Live confirmation banner for broadcast-but-unconfirmed txs */}
                 {pendingTxs.length > 0 && (
-                  <div className="fade-up mb-3 flex items-center gap-2.5 rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 px-4 py-3">
-                    <Spinner />
-                    <p className="text-[12.5px] font-medium text-white">
-                      {pendingTxs.length === 1
-                        ? "1 transaction confirming on-chain…"
-                        : `${pendingTxs.length} transactions confirming on-chain…`}
-                    </p>
+                  <div className="fade-up mb-3 space-y-2">
+                    {pendingTxs.map((transaction) => {
+                      const presentation = pendingTransactionPresentation(transaction);
+                      return (
+                        <div
+                          key={`${transaction.network}:${transaction.hash}`}
+                          className={`rounded-2xl border px-4 py-3 ${
+                            presentation.caution
+                              ? "border-[#FF9F0A]/35 bg-[#FF9F0A]/10"
+                              : "border-[#0A84FF]/30 bg-[#0A84FF]/10"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            {presentation.caution ? (
+                              <IconAlert size={16} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
+                            ) : (
+                              <Spinner />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-[12.5px] font-semibold text-white">
+                                {presentation.title}
+                              </p>
+                              <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-300">
+                                {presentation.detail}
+                              </p>
+                              <p className="mt-1 break-all font-mono text-[10px] text-neutral-500">
+                                {transaction.network} · {transaction.hash}
+                              </p>
+                              {presentation.manualCheck && (
+                                <Button
+                                  variant="secondary"
+                                  className="mt-2 !min-h-8 !px-3 !py-1 text-[11px]"
+                                  onClick={() => retryPendingTransaction(transaction)}
+                                >
+                                  Check Status
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -1364,7 +1408,7 @@ export function Dashboard() {
                       variant="secondary"
                       className="!h-8 !px-3 !text-[12px] shrink-0"
                       loading={claimingAll}
-                      disabled={claimingAll}
+                      disabled={claimingAll || pendingAirdropClaim}
                       onClick={() => void handleClaimAllAirdrops()}
                     >
                       Claim All

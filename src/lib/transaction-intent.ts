@@ -226,3 +226,50 @@ export function deriveSacContractId(asset: AssetBalance, networkPassphrase: stri
   }
   return contractId;
 }
+
+export const MAX_TRUSTLINE_SELECTIONS = 100;
+
+export interface TrustlineSelection {
+  code: string;
+  issuer: string;
+}
+
+export interface TrustlineSelectionUpdate {
+  selected: TrustlineSelection[];
+  error: string | null;
+}
+
+function trustlineSelectionKey(selection: TrustlineSelection): string {
+  return `${selection.code.toUpperCase()}:${selection.issuer}`;
+}
+
+export function addTrustlineSelection(
+  current: TrustlineSelection[],
+  candidate: TrustlineSelection,
+): TrustlineSelectionUpdate {
+  const candidateKey = trustlineSelectionKey(candidate);
+  if (current.some((selection) => trustlineSelectionKey(selection) === candidateKey)) {
+    return { selected: current, error: `${candidate.code} is already queued.` };
+  }
+  if (current.length >= MAX_TRUSTLINE_SELECTIONS) {
+    return {
+      selected: current,
+      error: "A Stellar transaction can contain at most 100 trustlines.",
+    };
+  }
+  return { selected: [...current, candidate], error: null };
+}
+
+export function toggleTrustlineSelection(
+  current: TrustlineSelection[],
+  candidate: TrustlineSelection,
+): TrustlineSelectionUpdate {
+  const candidateKey = trustlineSelectionKey(candidate);
+  if (current.some((selection) => trustlineSelectionKey(selection) === candidateKey)) {
+    return {
+      selected: current.filter((selection) => trustlineSelectionKey(selection) !== candidateKey),
+      error: null,
+    };
+  }
+  return addTrustlineSelection(current, candidate);
+}
