@@ -201,7 +201,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
         }
         onClose={busy ? undefined : onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {submission ? (
           <div className="flex flex-col items-center py-4 text-center">
             <span className={`flex h-16 w-16 items-center justify-center rounded-full border ${
@@ -283,7 +283,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                     placeholder={"GDESTINATION..., 10.5\nGDESTINATION2..., 5.0"}
                     value={csvInput}
                     onChange={(e) => setCsvInput(e.target.value)}
-                    className="input mono text-[12px] resize-none"
+                    className="input mono text-base resize-none sm:text-[12px]"
                   />
                   <Button variant="secondary" className="w-full !h-9 text-[13px]" onClick={handleParseCsv}>
                     Parse & Populate Rows
@@ -337,7 +337,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                             placeholder="Recipient address (G...)"
                             value={row.destination}
                             onChange={(e) => handleRowChange(row.id, "destination", e.target.value)}
-                            className="input mono !h-9 text-[12px]"
+                            className="input mono !h-11 text-base md:!h-9 sm:text-[12px]"
                           />
                         </div>
                         <div className="sm:col-span-4">
@@ -347,7 +347,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                             placeholder="Amount"
                             value={row.amount}
                             onChange={(e) => handleRowChange(row.id, "amount", e.target.value)}
-                            className="input mono !h-9 text-[12px]"
+                            className="input mono !h-11 text-base md:!h-9 sm:text-[12px]"
                           />
                         </div>
                       </div>
@@ -373,7 +373,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                   placeholder="Max 28 bytes"
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
-                  className="input text-[13px]"
+                  className="input text-base sm:text-[13px]"
                 />
               </div>
 

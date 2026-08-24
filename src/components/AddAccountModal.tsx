@@ -133,7 +133,7 @@ function AddAccountInner({
   return (
     <Modal open onClose={onClose} dismissable={!busy}>
       <ModalHeader title="Add Account" subtitle={subtitle} onClose={onClose} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <SegmentedControl<Mode>
           value={mode}
           onChange={setMode}
@@ -177,7 +177,7 @@ function AddAccountInner({
 
           <Field label="Account Label">
             <input
-              className="input text-[13.5px]"
+              className="input text-base sm:text-[13.5px]"
               placeholder={
                 mode === "watch"
                   ? "e.g. 👁 Cold Storage"
@@ -200,7 +200,7 @@ function AddAccountInner({
               }
             >
               <input
-                className="input mono text-[13.5px]"
+                className="input mono text-base sm:text-[13.5px]"
                 placeholder="S..."
                 value={secretInput}
                 onChange={(e) => setSecretInput(e.target.value)}
@@ -261,7 +261,7 @@ function AddAccountInner({
                 }
               >
                 <input
-                  className="input mono text-[13.5px]"
+                  className="input mono text-base sm:text-[13.5px]"
                   placeholder="G..."
                   value={watchKey}
                   onChange={(e) => setWatchKey(e.target.value)}

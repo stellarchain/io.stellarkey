@@ -416,7 +416,7 @@ function SendInner({
         }
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {stage === "done" ? (
           <div className="flex flex-col items-center py-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
@@ -721,7 +721,7 @@ function SendInner({
                     placeholder="0.00"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value.replace(/,/g, "."))}
-                    className="input mono text-[15px]"
+                    className="input mono text-base sm:text-[15px]"
                   />
                   <FiatValue
                     amount={amount}
@@ -784,7 +784,7 @@ function SendInner({
                   placeholder="G... or user*domain.com"
                   value={destination}
                   onChange={(e) => handleDestinationChange(e.target.value)}
-                  className="input mono text-[13px]"
+                  className="input mono text-base sm:text-[13px]"
                   spellCheck={false}
                   autoComplete="off"
                 />
@@ -953,7 +953,7 @@ function SendInner({
                   }
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
-                  className={`input text-[13px] ${memoBytes > 28 && memoType === "text" ? "!ring-2 !ring-[#FF453A]" : ""}`}
+                  className={`input text-base sm:text-[13px] ${memoBytes > 28 && memoType === "text" ? "!ring-2 !ring-[#FF453A]" : ""}`}
                 />
                 {memoType === "text" && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">

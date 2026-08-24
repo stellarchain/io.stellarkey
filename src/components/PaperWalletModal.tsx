@@ -129,7 +129,7 @@ export function PaperWalletModal({
         subtitle="Printable physical backup certificate"
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Certificate Container formatted for print and screen */}
         <div className="rounded-3xl border-2 border-dashed border-white/20 bg-white p-6 text-black shadow-2xl print:border-black print:p-8">
           {/* Header */}

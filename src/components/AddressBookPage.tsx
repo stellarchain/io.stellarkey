@@ -102,7 +102,7 @@ export function AddressBookPage({
               placeholder="Search name or address…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
+              className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13.5px]"
             />
           </div>
         )}

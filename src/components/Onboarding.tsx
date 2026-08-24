@@ -474,7 +474,7 @@ export function Onboarding() {
         {mode === "import" && (
           <Field label="Secret Key or Recovery Phrase" hint="Starts with 'S' or 12/24 words">
             <textarea
-              className="input mono min-h-[85px] resize-none text-[13px]"
+              className="input mono min-h-[85px] resize-none text-base sm:text-[13px]"
               placeholder="S... or apple banana cherry..."
               value={secretInput}
               onChange={(e) => setSecretInput(e.target.value)}
@@ -488,7 +488,7 @@ export function Onboarding() {
           hint={mode === "restore" ? undefined : "Minimum 8 characters"}
         >
           <input
-            className="input text-[14px]"
+            className="input text-base sm:text-[14px]"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -503,7 +503,7 @@ export function Onboarding() {
         {mode !== "restore" && (
           <Field label="Confirm Password">
             <input
-              className="input text-[14px]"
+              className="input text-base sm:text-[14px]"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

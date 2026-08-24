@@ -53,7 +53,7 @@ export function LockScreen() {
           >
             <Field label="Password">
               <input
-                className="input text-[14px]"
+                className="input text-base sm:text-[14px]"
                 type="password"
                 placeholder="Enter password"
                 value={password}

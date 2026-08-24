@@ -101,7 +101,7 @@ Explorer: ${explorerUrl}`;
         })}
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Status Badge & Amount */}
         <div className="flex flex-col items-center pb-3 pt-1">
           <span
@@ -194,7 +194,7 @@ Explorer: ${explorerUrl}`;
             value={note}
             onChange={(e) => setNote(e.target.value)}
             onBlur={() => void handleSaveNote()}
-            className="input text-[13px] !h-8"
+            className="input !h-11 text-base md:!h-8 sm:text-[13px]"
             maxLength={60}
           />
           {noteError && <p role="alert" className="text-[11px] text-[#FF453A]">{noteError}</p>}

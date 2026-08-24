@@ -335,7 +335,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* ---------- STEP: choose path ---------- */}
           {step === "choose" && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -419,7 +419,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               </Notice>
               <div className="mt-4">
                 <input
-                  className="input text-[14px]"
+                  className="input text-base sm:text-[14px]"
                   type="password"
                   placeholder="Wallet Password"
                   value={password}
@@ -661,7 +661,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               </Notice>
               <div className="mt-4">
                 <input
-                  className="input text-[14px]"
+                  className="input text-base sm:text-[14px]"
                   type="password"
                   placeholder="Backup password"
                   value={restorePw}

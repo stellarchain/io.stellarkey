@@ -49,7 +49,7 @@ export function NetworkStatsModal({
         subtitle={`Observed data from Stellar ${NETWORKS[network].label}`}
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         {/* Top Eco Banner */}
         <div className="rounded-3xl bg-gradient-to-br from-emerald-950/40 via-zinc-900 to-black border border-emerald-500/20 p-5 flex items-center justify-between shadow-lg">
           <div>

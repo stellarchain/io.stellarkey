@@ -46,7 +46,7 @@ function RenameAccountInner({
         subtitle={`Custom label for ${shortenAddr(account.publicKey, 6, 6)}`}
         onClose={onClose}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-4 sm:p-6">
         {/* Preset & Emoji Chips */}
         <div>
           <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
@@ -79,7 +79,7 @@ function RenameAccountInner({
 
         <Field label="Account Label">
           <input
-            className="input text-[14px]"
+            className="input text-base sm:text-[14px]"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. 💼 Treasury, ⚡ Trading"

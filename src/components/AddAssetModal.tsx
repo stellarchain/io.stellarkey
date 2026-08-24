@@ -140,7 +140,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         subtitle="Select one or more — all added in a single atomic transaction"
         onClose={onClose}
       />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Search */}
         <div className="search-field mb-4 flex items-center gap-2">
           <IconSearch size={15} className="text-neutral-400 shrink-0" />
@@ -148,7 +148,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
             placeholder="Search popular tokens (USDC, EURC, AQUA, BTC...)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-transparent text-[13.5px] text-white outline-none placeholder:text-neutral-500"
+            className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13.5px]"
           />
         </div>
 
@@ -209,21 +209,21 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
         {/* Custom asset row */}
         <div className="mt-4 flex gap-2 border-t border-white/[0.08] pt-4">
           <input
-            className="input !h-9 w-[110px] shrink-0 uppercase text-[13px]"
+            className="input !h-11 w-[110px] shrink-0 uppercase text-base md:!h-9 sm:text-[13px]"
             placeholder="CODE"
             maxLength={12}
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
           />
           <input
-            className="input mono !h-9 min-w-0 flex-1 text-[12.5px]"
+            className="input mono !h-11 min-w-0 flex-1 text-base md:!h-9 sm:text-[12.5px]"
             placeholder="Issuer G..."
             value={issuer}
             onChange={(e) => setIssuer(e.target.value)}
           />
           <Button
             variant="secondary"
-            className="!h-9 shrink-0 !px-3 !text-[12px]"
+            className="!h-11 shrink-0 !px-3 !text-[12px] md:!h-9"
             disabled={!/^[A-Z0-9]{1,12}$/.test(code.trim().toUpperCase()) || !isValidPublicAddress(issuer)}
             onClick={queueCustom}
           >
@@ -414,7 +414,7 @@ function ConfirmInner({
   return (
     <Modal open onClose={onClose}>
       <ModalHeader title={title} subtitle="Please confirm this action" onClose={onClose} />
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <Button variant="ghost" onClick={onClose}>
