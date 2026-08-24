@@ -648,6 +648,8 @@ function AssetSelect({
       value={value}
       onChange={onChange}
       ariaLabel="Asset"
+      preserveOptionLabels
+      panelMinWidth={280}
       className="mono !rounded-2xl !py-2 !pl-3 !pr-2 text-[14px]"
       options={options.map((b) => ({
         value: b.key,

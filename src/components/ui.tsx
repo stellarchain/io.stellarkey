@@ -356,6 +356,7 @@ export function Select({
   className = "",
   ariaLabel,
   panelMinWidth,
+  preserveOptionLabels = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -366,6 +367,8 @@ export function Select({
   className?: string;
   ariaLabel?: string;
   panelMinWidth?: number;
+  /** Keep compact identifiers (such as asset codes) complete and truncate metadata first. */
+  preserveOptionLabels?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -544,10 +547,24 @@ export function Select({
                       : "text-neutral-300"
                   } ${opt.disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}
                 >
-                  <span className="min-w-0 flex-1 truncate font-medium">{opt.label}</span>
-                  <span className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`font-medium ${
+                      preserveOptionLabels ? "shrink-0 whitespace-nowrap" : "min-w-0 flex-1 truncate"
+                    }`}
+                  >
+                    {opt.label}
+                  </span>
+                  <span
+                    className={`flex items-center gap-2 ${
+                      preserveOptionLabels ? "min-w-0 flex-1 justify-end" : "shrink-0"
+                    }`}
+                  >
                     {opt.sublabel && (
-                      <span className="mono whitespace-nowrap text-[11.5px] text-neutral-500">
+                      <span
+                        className={`mono min-w-0 text-[11.5px] text-neutral-500 ${
+                          preserveOptionLabels ? "truncate" : "whitespace-nowrap"
+                        }`}
+                      >
                         {opt.sublabel}
                       </span>
                     )}
