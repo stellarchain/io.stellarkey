@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { connectTrezorDevice, getStellarDerivationPath, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconExternal, IconTrezor } from "./icons";
 
 export function TrezorModal({
@@ -138,9 +138,13 @@ export function TrezorModal({
               </div>
               <span className="text-[11px] font-mono">{connectedInfo.path}</span>
             </div>
-            <p className="mono select-all break-all text-[12px] text-white bg-black/40 p-2.5 rounded-xl border border-white/10">
-              {connectedInfo.publicKey}
-            </p>
+            <div className="rounded-xl border border-white/10 bg-black/40 p-2.5">
+              <HashValue
+                full
+                value={connectedInfo.publicKey}
+                className="w-full justify-center text-center text-[12px] leading-loose text-white"
+              />
+            </div>
             <Button
               className="w-full !py-3 text-[14px] font-semibold !bg-[#30D158] !text-black hover:!bg-emerald-400"
               loading={busy}

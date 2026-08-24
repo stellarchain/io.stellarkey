@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { fmtAmount, isValidAmount, shortenAddr } from "@/lib/format";
+import { fmtAmount, isValidAmount } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import { findStrictSendRoute } from "@/lib/swap";
 import { networkFeeXlm } from "@/lib/api";
 import {
@@ -21,7 +22,7 @@ import {
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
 import type { SubmissionResult } from "@/lib/submission";
-import { Button, ErrorText, Select } from "./ui";
+import { Button, ErrorText, HashValue, Select } from "./ui";
 import { IconAlert, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
 
 export function SwapPage() {
@@ -571,17 +572,21 @@ export function SwapPage() {
                 {!sendAsset.isNative && sendAsset.issuer && (
                   <div className="flex items-start justify-between gap-4 text-neutral-400 text-[12px]">
                     <span className="shrink-0">Pay Asset Issuer</span>
-                    <span className="mono break-all text-right text-neutral-300">
-                      {sendAsset.issuer}
-                    </span>
+                    <HashValue
+                      full
+                      value={sendAsset.issuer}
+                      className="justify-end text-right text-[11.5px] text-neutral-300"
+                    />
                   </div>
                 )}
                 {!destAsset.isNative && destAsset.issuer && (
                   <div className="flex items-start justify-between gap-4 text-neutral-400 text-[12px]">
                     <span className="shrink-0">Receive Asset Issuer</span>
-                    <span className="mono break-all text-right text-neutral-300">
-                      {destAsset.issuer}
-                    </span>
+                    <HashValue
+                      full
+                      value={destAsset.issuer}
+                      className="justify-end text-right text-[11.5px] text-neutral-300"
+                    />
                   </div>
                 )}
                 <div className="flex justify-between text-neutral-400 text-[12px]">
@@ -656,7 +661,7 @@ function AssetSelect({
         label: b.code,
         sublabel: b.isNative
           ? `${fmtAmount(b.balance)} · Native`
-          : `${fmtAmount(b.balance)} · ${shortenAddr(b.issuer ?? "Unknown issuer", 5, 5)}`,
+          : `${fmtAmount(b.balance)} · ${formatTrezorAddress(b.issuer ?? "Unknown issuer")}`,
       }))}
     />
   );

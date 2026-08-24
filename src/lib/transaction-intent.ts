@@ -2,6 +2,7 @@ import { Asset, StrKey, type Asset as StellarAsset } from "@stellar/stellar-sdk"
 import type { PayUriPayload } from "./payuri";
 import { subtractStellarAmounts, type StellarMemoInput } from "./stellar-domain";
 import type { AssetBalance, NetworkKey } from "./types";
+import { formatTrezorAddress } from "./address-display";
 
 export interface SwapRequestIdentity {
   network: NetworkKey;
@@ -179,9 +180,7 @@ export function activityAssetPresentation(activity: {
   const issuer = activity.assetIssuer;
   const identity = activityAssetKey(activity);
   const isNative = code === "XLM" && issuer === null;
-  const issuerDisplay = issuer
-    ? `${issuer.slice(0, 5)}…${issuer.slice(-5)}`
-    : null;
+  const issuerDisplay = issuer ? formatTrezorAddress(issuer) : null;
   return {
     code,
     issuer,

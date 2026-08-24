@@ -2031,10 +2031,10 @@ test("issuer-aware activity presentation and CSV retain the full asset identity"
   assert.deepEqual(presentation, {
     code: "USDC",
     issuer: USDC_ISSUER,
-    issuerDisplay: "GA5ZS…4KZVN",
+    issuerDisplay: "GA5Z SEJY … 34K4 KZVN",
     identity: `USDC:${USDC_ISSUER}`,
     detailLabel: `USDC:${USDC_ISSUER}`,
-    compactLabel: "USDC · GA5ZS…4KZVN",
+    compactLabel: "USDC · GA5Z SEJY … 34K4 KZVN",
     isNative: false,
   });
   assert.deepEqual(

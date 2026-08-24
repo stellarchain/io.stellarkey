@@ -10,7 +10,7 @@ import {
   type HardwareDeviceType,
 } from "@/lib/hardware";
 import { IconTrezor } from "./icons";
-import { Button, ErrorText, Field, Modal, ModalHeader, SegmentedControl } from "./ui";
+import { Button, ErrorText, Field, HashValue, Modal, ModalHeader, SegmentedControl } from "./ui";
 
 type Mode = "generate" | "import" | "hardware" | "watch";
 
@@ -231,9 +231,11 @@ function AddAccountInner({
               {hardwareKey ? (
                 <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3 text-[12px] space-y-1">
                   <p className="font-semibold text-[#30D158]">✓ Device Connected</p>
-                  <p className="mono select-all break-all text-neutral-300 text-[11px]">
-                    {hardwareKey}
-                  </p>
+                  <HashValue
+                    full
+                    value={hardwareKey}
+                    className="text-[11px] leading-loose text-neutral-300"
+                  />
                 </div>
               ) : (
                 <Button

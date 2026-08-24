@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
-import { fmtAmount, isValidAmount, memoByteLength, shortenAddr } from "@/lib/format";
+import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import {
   compareStellarAmounts,
   splitStellarAmount,
@@ -316,7 +317,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                               .map((c) => ({
                                 value: c.address,
                                 label: `${c.favorite ? "★ " : ""}${c.name}`,
-                                sublabel: shortenAddr(c.address, 4, 4),
+                                sublabel: formatTrezorAddress(c.address),
                               }))}
                           />
                         )}

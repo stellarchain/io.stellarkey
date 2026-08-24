@@ -266,8 +266,6 @@ function ContactRow({
         </p>
         <HashValue
           value={contact.address}
-          head={6}
-          tail={6}
           className="mt-0.5 text-[12px] text-neutral-500 transition-colors group-hover:text-neutral-300"
         />
       </div>

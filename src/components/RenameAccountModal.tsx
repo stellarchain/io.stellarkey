@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
-import { shortenAddr } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Field, Modal, ModalHeader } from "./ui";
@@ -43,7 +43,7 @@ function RenameAccountInner({
     <Modal open onClose={onClose}>
       <ModalHeader
         title="Rename Account"
-        subtitle={`Custom label for ${shortenAddr(account.publicKey, 6, 6)}`}
+        subtitle={`Custom label for ${formatTrezorAddress(account.publicKey)}`}
         onClose={onClose}
       />
       <div className="space-y-4 p-4 sm:p-6">
