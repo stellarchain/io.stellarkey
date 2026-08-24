@@ -12,6 +12,16 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Wallet",
   },
+  icons: {
+    icon: "/icon.svg",
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
