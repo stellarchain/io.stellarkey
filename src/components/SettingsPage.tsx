@@ -37,6 +37,7 @@ import {
   CopyButton,
   ErrorText,
   Field,
+  IOSBackButton,
   NetworkBadge,
   SegmentedControl,
   Spinner,
@@ -439,32 +440,16 @@ export function SettingsPage({
       {sub !== "root" && (
         <>
           <div className="flex items-center justify-between pb-1 pt-2">
-            <button
-              type="button"
-              className="flex items-center gap-0.5 text-[17px] font-semibold text-[#0A84FF] transition-opacity hover:opacity-80"
+            <IOSBackButton
+              label="Back to Settings"
               onClick={() => {
-                triggerHaptic("selection");
                 setSub(backTarget ?? "root");
               }}
-            >
-              <svg
-                width="12"
-                height="20"
-                viewBox="0 0 12 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M10 2 3 10l7 8" />
-              </svg>
-              Back
-            </button>
+            />
             <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Settings
             </span>
-            <span className="w-14" />
+            <span className="w-11" aria-hidden />
           </div>
 
           <h1 className="display-h mb-5 text-[28px] font-bold text-white">
