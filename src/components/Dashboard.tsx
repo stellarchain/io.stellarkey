@@ -11,9 +11,10 @@ import {
   fmtAmount,
   fmtFiat,
   fmtUsd,
-  formatActivityAmount,
+  activityAmountLines,
   generateActivityCsv,
   timeAgo,
+  type FiatCurrency,
 } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
@@ -490,12 +491,20 @@ export function Dashboard() {
       if (counterpartyFilter && a.counterparty !== counterpartyFilter) return false;
       if (activityFilter === "in" && a.direction !== "in") return false;
       if (activityFilter === "out" && a.direction !== "out") return false;
-      if (activityFilter === "swap" && a.direction !== "neutral") return false;
+      if (activityFilter === "swap" && !a.swap) return false;
       if (activityFilter === "trust" && a.type !== "change_trust") return false;
-      if (
-        activityAssetFilter !== "all" &&
-        activityAssetPresentation(a).identity !== activityAssetFilter
-      ) return false;
+      if (activityAssetFilter !== "all") {
+        const assetIdentities = [
+          activityAssetPresentation(a).identity,
+          ...(a.swap
+            ? [
+                activityAssetPresentation(a.swap.debit).identity,
+                activityAssetPresentation(a.swap.credit).identity,
+              ]
+            : []),
+        ];
+        if (!assetIdentities.includes(activityAssetFilter)) return false;
+      }
       if (hideActivityDust && a.amount !== null && parseFloat(a.amount) < 0.1) return false;
 
       if (!q) return true;
@@ -503,6 +512,10 @@ export function Dashboard() {
         a.title.toLowerCase().includes(q) ||
         (a.assetCode ?? "").toLowerCase().includes(q) ||
         (a.assetIssuer ?? "").toLowerCase().includes(q) ||
+        (a.swap?.debit.assetCode ?? "").toLowerCase().includes(q) ||
+        (a.swap?.debit.assetIssuer ?? "").toLowerCase().includes(q) ||
+        (a.swap?.credit.assetCode ?? "").toLowerCase().includes(q) ||
+        (a.swap?.credit.assetIssuer ?? "").toLowerCase().includes(q) ||
         (a.counterparty ?? "").toLowerCase().includes(q) ||
         a.hash.toLowerCase().includes(q)
       );
@@ -512,14 +525,24 @@ export function Dashboard() {
   const activityAssetOptions = useMemo(() => {
     const assets = new Map<string, { value: string; label: string; sublabel?: string }>();
     for (const item of activity) {
-      const presentedAsset = activityAssetPresentation(item);
-      if (!presentedAsset.identity || !presentedAsset.code) continue;
-      if (assets.has(presentedAsset.identity)) continue;
-      assets.set(presentedAsset.identity, {
-        value: presentedAsset.identity,
-        label: presentedAsset.code,
-        sublabel: presentedAsset.issuerDisplay ?? "Native",
-      });
+      const presentations = [
+        activityAssetPresentation(item),
+        ...(item.swap
+          ? [
+              activityAssetPresentation(item.swap.debit),
+              activityAssetPresentation(item.swap.credit),
+            ]
+          : []),
+      ];
+      for (const presentedAsset of presentations) {
+        if (!presentedAsset.identity || !presentedAsset.code) continue;
+        if (assets.has(presentedAsset.identity)) continue;
+        assets.set(presentedAsset.identity, {
+          value: presentedAsset.identity,
+          label: presentedAsset.code,
+          sublabel: presentedAsset.issuerDisplay ?? "Native",
+        });
+      }
     }
     return [...assets.values()];
   }, [activity]);
@@ -1767,7 +1790,6 @@ export function Dashboard() {
                         const incoming = item.direction === "in";
                         const neutral = item.direction === "neutral";
                         const presentedAsset = activityAssetPresentation(item);
-                        const presentedAmount = formatActivityAmount(item);
                         const matchedContact = contacts.find((c) => c.address === item.counterparty);
                         const fiatValue = privacyMode ? null : activityFiat(item);
                         return (
@@ -1792,7 +1814,13 @@ export function Dashboard() {
                                       : "rgba(255,69,58,0.14)",
                                 }}
                               >
-                                {incoming ? "↓" : "↑"}
+                                {neutral ? (
+                                  <IconSwap size={12} />
+                                ) : incoming ? (
+                                  "↓"
+                                ) : (
+                                  "↑"
+                                )}
                               </span>
                               <div className="min-w-0">
                                 <p className="truncate text-[13px] font-semibold text-white leading-tight">
@@ -1806,31 +1834,14 @@ export function Dashboard() {
                                 </p>
                               </div>
                             </div>
-                            {item.amount !== null && (
-                              <span className="shrink-0 text-right">
-                                <span
-                                  className="mono block text-[13px] font-medium leading-tight"
-                                  style={{
-                                    color: privacyMode
-                                      ? "var(--color-faint)"
-                                      : neutral
-                                        ? "#FFFFFF"
-                                        : incoming
-                                          ? "#30D158"
-                                          : "#FF453A",
-                                  }}
-                                >
-                                  {privacyMode
-                                    ? "••••••"
-                                    : `${presentedAmount}${presentedAsset.code ? ` ${presentedAsset.code}` : ""}`}
-                                </span>
-                                {fiatValue !== null && (
-                                  <span className="block text-[10.5px] leading-tight text-neutral-500">
-                                    ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
-                                  </span>
-                                )}
-                              </span>
-                            )}
+                            <ActivityAmountDisplay
+                              item={item}
+                              privacyMode={privacyMode}
+                              fiatValue={fiatValue}
+                              fiatCurrency={fiatCurrency}
+                              fiatRates={fiatRates}
+                              compact
+                            />
                           </button>
                         );
                       })}
@@ -1957,7 +1968,6 @@ export function Dashboard() {
                           const incoming = item.direction === "in";
                           const neutral = item.direction === "neutral";
                           const presentedAsset = activityAssetPresentation(item);
-                          const presentedAmount = formatActivityAmount(item);
                           const matchedContact = contacts.find((c) => c.address === item.counterparty);
                           const fiatValue = privacyMode ? null : activityFiat(item);
                           return (
@@ -2009,31 +2019,13 @@ export function Dashboard() {
                                     : ""}
                                 </span>
                               </span>
-                              {item.amount !== null && (
-                                <span className="shrink-0 text-right">
-                                  <span
-                                    className="mono block text-[15px] font-medium leading-tight"
-                                    style={{
-                                      color: privacyMode
-                                        ? "var(--color-faint)"
-                                        : neutral
-                                          ? "#FFFFFF"
-                                          : incoming
-                                            ? "#30D158"
-                                            : "#FF453A",
-                                    }}
-                                  >
-                                    {privacyMode
-                                      ? "••••••"
-                                      : `${presentedAmount}${presentedAsset.code ? ` ${presentedAsset.code}` : ""}`}
-                                  </span>
-                                  {fiatValue !== null && (
-                                    <span className="block text-[11.5px] leading-tight text-neutral-500">
-                                      ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
-                                    </span>
-                                  )}
-                                </span>
-                              )}
+                              <ActivityAmountDisplay
+                                item={item}
+                                privacyMode={privacyMode}
+                                fiatValue={fiatValue}
+                                fiatCurrency={fiatCurrency}
+                                fiatRates={fiatRates}
+                              />
                             </button>
                           );
                         })}
@@ -2140,6 +2132,75 @@ export function Dashboard() {
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
     </div>
+  );
+}
+
+function ActivityAmountDisplay({
+  item,
+  privacyMode,
+  fiatValue,
+  fiatCurrency,
+  fiatRates,
+  compact = false,
+}: {
+  item: ActivityItem;
+  privacyMode: boolean;
+  fiatValue: number | null;
+  fiatCurrency: FiatCurrency;
+  fiatRates: Partial<Record<FiatCurrency, number>>;
+  compact?: boolean;
+}) {
+  const lines = activityAmountLines(item);
+  if (lines.length === 0) return null;
+
+  if (item.swap) {
+    return (
+      <span
+        className="shrink-0 text-right"
+        aria-label={privacyMode ? "Swap amounts hidden" : lines.map((line) => line.display).join(", ")}
+      >
+        {lines.map((line) => (
+          <span
+            key={line.direction}
+            className={`mono block whitespace-nowrap font-semibold leading-tight ${
+              compact ? "text-[12px]" : "text-[14px]"
+            } ${
+              privacyMode
+                ? "text-neutral-500"
+                : line.direction === "out"
+                  ? "text-[#FF453A]"
+                  : "text-[#30D158]"
+            }`}
+          >
+            {privacyMode ? "••••••" : line.display}
+          </span>
+        ))}
+      </span>
+    );
+  }
+
+  const [line] = lines;
+  return (
+    <span className="shrink-0 text-right">
+      <span
+        className={`mono block whitespace-nowrap font-medium leading-tight ${compact ? "text-[13px]" : "text-[15px]"} ${
+          privacyMode
+            ? "text-neutral-500"
+            : line.direction === "in"
+              ? "text-[#30D158]"
+              : line.direction === "out"
+                ? "text-[#FF453A]"
+                : "text-white"
+        }`}
+      >
+        {privacyMode ? "••••••" : line.display}
+      </span>
+      {fiatValue !== null && (
+        <span className={`block leading-tight text-neutral-500 ${compact ? "text-[10.5px]" : "text-[11.5px]"}`}>
+          ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
+        </span>
+      )}
+    </span>
   );
 }
 

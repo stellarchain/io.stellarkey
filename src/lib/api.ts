@@ -439,14 +439,56 @@ function mapOperation(op: RawOperation, publicKey: string): ActivityItem {
     case "path_payment_strict_receive":
     case "path_payment_strict_send": {
       const isIncoming = op.to === publicKey;
+      const destinationAsset = activityAssetFields(
+        op.asset_type,
+        op.asset_code,
+        op.asset_issuer,
+      );
+      const sourceAsset = activityAssetFields(
+        op.source_asset_type,
+        op.source_asset_code,
+        op.source_asset_issuer,
+      );
+      const isSelfSwap = op.from === publicKey && op.to === publicKey;
+      const swap =
+        isSelfSwap &&
+        op.source_amount &&
+        sourceAsset.assetCode &&
+        op.amount &&
+        destinationAsset.assetCode
+          ? {
+              debit: {
+                amount: op.source_amount,
+                assetCode: sourceAsset.assetCode,
+                assetIssuer: sourceAsset.assetIssuer,
+              },
+              credit: {
+                amount: op.amount,
+                assetCode: destinationAsset.assetCode,
+                assetIssuer: destinationAsset.assetIssuer,
+              },
+            }
+          : undefined;
+      if (!isSelfSwap) {
+        return {
+          ...base,
+          title: isIncoming ? "Received Path Payment" : "Sent Path Payment",
+          direction: isIncoming ? "in" : "out",
+          amount: isIncoming ? op.amount ?? null : op.source_amount ?? null,
+          ...(isIncoming ? destinationAsset : sourceAsset),
+          counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+        };
+      }
       return {
         ...base,
-        title: "DEX Swap",
+        title: swap
+          ? `Swapped ${swap.debit.assetCode} to ${swap.credit.assetCode}`
+          : "DEX Swap",
         direction: "neutral",
         amount: op.amount ?? null,
-        assetCode: assetCodeOf(op),
-        assetIssuer: op.asset_type === "native" ? null : op.asset_issuer ?? null,
-        counterparty: isIncoming ? op.from ?? null : op.to ?? null,
+        ...destinationAsset,
+        counterparty: isSelfSwap ? null : isIncoming ? op.from ?? null : op.to ?? null,
+        ...(swap ? { swap } : {}),
       };
     }
     case "claim_claimable_balance":

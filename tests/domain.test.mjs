@@ -31,6 +31,7 @@ import { swapStrictSend } from "../src/lib/swap.ts";
 import { lookupKnownAsset, POPULAR_ASSETS } from "../src/lib/assets.ts";
 import {
   fmtAmount,
+  activityAmountLines,
   formatActivityAmount,
   generateActivityCsv,
   normalizeAmount,
@@ -2156,6 +2157,19 @@ test("maps path payments to the destination asset code and issuer", async (t) =>
   assert.equal(result.items[0].amount, "9.5");
   assert.equal(result.items[0].assetCode, "USDC");
   assert.equal(result.items[0].assetIssuer, USDC_ISSUER);
+  assert.equal(result.items[0].title, "Swapped XLM to USDC");
+  assert.equal(result.items[0].counterparty, null);
+  assert.deepEqual(result.items[0].swap, {
+    debit: { amount: "10", assetCode: "XLM", assetIssuer: null },
+    credit: { amount: "9.5", assetCode: "USDC", assetIssuer: USDC_ISSUER },
+  });
+  assert.deepEqual(activityAmountLines(result.items[0]).map((line) => line.display), [
+    "−10 XLM",
+    "+9.5 USDC",
+  ]);
+  const csv = generateActivityCsv(result.items);
+  assert.match(csv, /"swap","−10 XLM \/ \+9\.5 USDC"/);
+  assert.match(csv, new RegExp(`"XLM → USDC:${USDC_ISSUER}"`));
 });
 
 test("maps strict-receive path payments to destination amount, code, and issuer", async (t) => {
@@ -2191,6 +2205,83 @@ test("maps strict-receive path payments to destination amount, code, and issuer"
   assert.equal(result.items[0].amount, "7.25");
   assert.equal(result.items[0].assetCode, "USDC");
   assert.equal(result.items[0].assetIssuer, destinationIssuer);
+  assert.deepEqual(result.items[0].swap, {
+    debit: { amount: "8", assetCode: "USDC", assetIssuer: USDC_ISSUER },
+    credit: { amount: "7.25", assetCode: "USDC", assetIssuer: destinationIssuer },
+  });
+});
+
+test("non-self path payments show only the active account's signed bank leg", async (t) => {
+  const publicKey = Keypair.random().publicKey();
+  const other = Keypair.random().publicKey();
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({
+      _embedded: {
+        records: [
+          {
+            id: "outgoing-path",
+            type: "path_payment_strict_send",
+            created_at: "2026-01-03T00:00:00Z",
+            transaction_successful: true,
+            transaction_hash: "outgoing",
+            from: publicKey,
+            to: other,
+            amount: "9.5",
+            asset_type: "credit_alphanum4",
+            asset_code: "USDC",
+            asset_issuer: USDC_ISSUER,
+            source_amount: "10",
+            source_asset_type: "native",
+          },
+          {
+            id: "incoming-path",
+            type: "path_payment_strict_receive",
+            created_at: "2026-01-02T00:00:00Z",
+            transaction_successful: true,
+            transaction_hash: "incoming",
+            from: other,
+            to: publicKey,
+            amount: "7.25",
+            asset_type: "credit_alphanum4",
+            asset_code: "USDC",
+            asset_issuer: USDC_ISSUER,
+            source_amount: "8",
+            source_asset_type: "native",
+          },
+        ],
+      },
+    }), { status: 200 }),
+  );
+
+  const result = await fetchActivity(publicKey, "mainnet", 30);
+  assert.deepEqual(
+    result.items.map(({ title, direction, amount, assetCode, assetIssuer, swap }) => ({
+      title,
+      direction,
+      amount,
+      assetCode,
+      assetIssuer,
+      swap,
+    })),
+    [
+      {
+        title: "Sent Path Payment",
+        direction: "out",
+        amount: "10",
+        assetCode: "XLM",
+        assetIssuer: null,
+        swap: undefined,
+      },
+      {
+        title: "Received Path Payment",
+        direction: "in",
+        amount: "7.25",
+        assetCode: "USDC",
+        assetIssuer: USDC_ISSUER,
+        swap: undefined,
+      },
+    ],
+  );
 });
 
 test("maps offer assets from their Horizon fields and leaves claims without asset data assetless", async (t) => {

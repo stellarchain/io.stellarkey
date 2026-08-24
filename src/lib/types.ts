@@ -55,6 +55,17 @@ export interface AssetBalance {
   isNative: boolean;
 }
 
+export interface ActivitySwapLeg {
+  amount: string;
+  assetCode: string;
+  assetIssuer: string | null;
+}
+
+export interface ActivitySwap {
+  debit: ActivitySwapLeg;
+  credit: ActivitySwapLeg;
+}
+
 export interface ActivityItem {
   id: string;
   type: string;
@@ -67,4 +78,6 @@ export interface ActivityItem {
   hash: string;
   createdAt: string;
   successful: boolean;
+  /** Present only when the active account both paid and received in one path payment. */
+  swap?: ActivitySwap;
 }

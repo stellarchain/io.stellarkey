@@ -57,6 +57,42 @@ export function formatActivityAmount(
   return `${sign}${fmtAmount(activity.amount)}`;
 }
 
+export interface ActivityAmountLine {
+  direction: "in" | "out" | "neutral";
+  amount: string;
+  assetCode: string | null;
+  assetIssuer: string | null;
+  display: string;
+}
+
+/** Return bank-style signed amount lines, including both legs of a self-swap. */
+export function activityAmountLines(item: ActivityItem): ActivityAmountLine[] {
+  if (item.swap) {
+    return [
+      {
+        ...item.swap.debit,
+        direction: "out",
+        display: `−${fmtAmount(item.swap.debit.amount)} ${item.swap.debit.assetCode}`,
+      },
+      {
+        ...item.swap.credit,
+        direction: "in",
+        display: `+${fmtAmount(item.swap.credit.amount)} ${item.swap.credit.assetCode}`,
+      },
+    ];
+  }
+
+  const display = formatActivityAmount(item);
+  if (display === null) return [];
+  return [{
+    direction: item.direction,
+    amount: item.amount ?? "0",
+    assetCode: item.assetCode,
+    assetIssuer: item.assetIssuer,
+    display: `${display}${item.assetCode ? ` ${item.assetCode}` : ""}`,
+  }];
+}
+
 export function fmtFiat(
   usdAmount: number,
   currency: FiatCurrency = "USD",
@@ -139,9 +175,16 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
   const rows = items.map((item) => {
     const d = new Date(item.createdAt).toISOString();
     const type = opTypeLabel(item.type);
-    const dir = item.direction;
-    const amt = item.amount ?? "";
-    const asset = activityAssetPresentation(item).detailLabel ?? "";
+    const amountLines = activityAmountLines(item);
+    const dir = item.swap ? "swap" : item.direction;
+    const amt = item.swap
+      ? amountLines.map((line) => line.display).join(" / ")
+      : item.amount ?? "";
+    const asset = item.swap
+      ? amountLines
+          .map((line) => activityAssetPresentation(line).detailLabel ?? "Unknown")
+          .join(" → ")
+      : activityAssetPresentation(item).detailLabel ?? "";
     const cp = item.counterparty ?? "";
     const status = item.successful ? "SUCCESS" : "FAILED";
     const hash = item.hash;
