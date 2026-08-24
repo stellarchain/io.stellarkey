@@ -13,7 +13,7 @@ import { networkFeeXlm, testHorizonPing } from "@/lib/api";
 import type { NetworkKey } from "@/lib/stellar";
 import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { stellarAccountPath } from "@/lib/hd";
-import { shortenAddr } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   assertReviewCanBeSigned,
@@ -37,6 +37,7 @@ import {
   CopyButton,
   ErrorText,
   Field,
+  HashValue,
   IOSBackButton,
   NetworkBadge,
   SegmentedControl,
@@ -619,7 +620,7 @@ export function SettingsPage({
                     <RowButton
                       icon={<Avatar seed={activeAccount.publicKey} size={29} />}
                       label={activeAccount.label}
-                      sub={shortenAddr(activeAccount.publicKey, 6, 6)}
+                      sub={formatTrezorAddress(activeAccount.publicKey)}
                       chevron
                       onClick={() => {
                         triggerHaptic("selection");
@@ -791,7 +792,7 @@ export function SettingsPage({
                       )}
                     </div>
                     <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-                      {acct.path ? `Path: ${acct.path}` : shortenAddr(acct.publicKey, 6, 6)}
+                      {acct.path ? `Path: ${acct.path}` : formatTrezorAddress(acct.publicKey)}
                     </span>
                   </div>
                   {acct.id === activeAccount?.id && (
@@ -858,7 +859,7 @@ export function SettingsPage({
                           {acct.label}
                         </p>
                         <p className="mono truncate text-[11px] text-neutral-400">
-                          {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                          {acct.path ?? formatTrezorAddress(acct.publicKey)}
                         </p>
                       </div>
                     </div>
@@ -1019,7 +1020,7 @@ export function SettingsPage({
                           <span className="truncate text-[13px] font-medium">{a.label}</span>
                         </div>
                         <span className="mono text-[11px] text-neutral-400">
-                          {shortenAddr(a.publicKey, 4, 4)}
+                          {formatTrezorAddress(a.publicKey)}
                         </span>
                       </button>
                     ))}
@@ -1103,7 +1104,11 @@ export function SettingsPage({
                 </div>
                 <div className="space-y-1 py-2.5">
                   <span className="text-neutral-400">Transaction source</span>
-                  <p className="mono break-all text-[11px] text-neutral-200">{airReview.source}</p>
+                  <HashValue
+                    full
+                    value={airReview.source}
+                    className="text-[11px] leading-loose text-neutral-200"
+                  />
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="text-neutral-400">Fee</span>
@@ -1141,7 +1146,15 @@ export function SettingsPage({
                     {operation.lines.map((line, lineIndex) => (
                       <div key={`${line.label}-${lineIndex}`} className="text-[11.5px]">
                         <p className="text-neutral-500">{line.label}</p>
-                        <p className="mono break-all text-neutral-200">{line.value}</p>
+                        {line.kind === "address" ? (
+                          <HashValue
+                            full
+                            value={line.value}
+                            className="text-[11px] leading-loose text-neutral-200"
+                          />
+                        ) : (
+                          <p className="mono break-all text-neutral-200">{line.value}</p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1349,7 +1362,7 @@ export function SettingsPage({
                             {acct.label}
                           </p>
                           <p className="mono truncate text-[11.5px] text-neutral-400">
-                            {acct.path ?? shortenAddr(acct.publicKey, 6, 6)}
+                            {acct.path ?? formatTrezorAddress(acct.publicKey)}
                           </p>
                         </div>
                       </div>

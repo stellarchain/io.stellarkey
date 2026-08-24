@@ -7,6 +7,7 @@ import { isValidPublicAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, validateSep7PayRequest, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import {
   compareStellarAmounts,
   subtractStellarAmounts,
@@ -854,7 +855,7 @@ function SendInner({
                         }}
                         className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
                       >
-                        {addr.slice(0, 6)}…{addr.slice(-4)}
+                        {formatTrezorAddress(addr)}
                       </button>
                     ))}
                   </div>

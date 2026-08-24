@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
-import { shortenAddr } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
 import { networkFeeXlm } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
@@ -275,7 +275,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
                         {s.code}
                       </span>
                       <span className="mono hidden truncate text-[10.5px] text-neutral-500 sm:inline">
-                        {shortenAddr(s.issuer, 4, 4)}
+                        {formatTrezorAddress(s.issuer)}
                       </span>
                     </div>
                     <button

@@ -13,9 +13,9 @@ import {
   fmtUsd,
   formatActivityAmount,
   generateActivityCsv,
-  shortenAddr,
   timeAgo,
 } from "@/lib/format";
+import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
@@ -667,7 +667,7 @@ export function Dashboard() {
       {
         id: "copy",
         label: "Copy your address",
-        hint: shortenAddr(activeAccount?.publicKey ?? "", 6, 6),
+        hint: formatTrezorAddress(activeAccount?.publicKey ?? ""),
         run: () => {
           if (activeAccount) void navigator.clipboard.writeText(activeAccount.publicKey);
         },
@@ -675,13 +675,13 @@ export function Dashboard() {
       ...accounts.map((acc) => ({
         id: `acc-${acc.id}`,
         label: `Switch account: ${acc.label}`,
-        hint: shortenAddr(acc.publicKey, 4, 4),
+        hint: formatTrezorAddress(acc.publicKey),
         run: () => selectAccount(acc.id),
       })),
       ...contacts.map((c) => ({
         id: `contact-${c.address}`,
         label: `Send to contact: ${c.name}`,
-        hint: shortenAddr(c.address, 4, 4),
+        hint: formatTrezorAddress(c.address),
         run: () => {
           setSendPrefill({ destination: c.address });
           setSendOpen(true);
@@ -1032,7 +1032,7 @@ export function Dashboard() {
                           ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                           : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
                       }`}
-                      title={`${acct.label} - ${shortenAddr(acct.publicKey, 4, 4)}`}
+                      title={`${acct.label} - ${formatTrezorAddress(acct.publicKey)}`}
                     >
                       <Avatar seed={acct.publicKey} size={28} />
                     </button>
@@ -1539,7 +1539,7 @@ export function Dashboard() {
                     <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                       <CopyButton
                         value={activeAccount.publicKey}
-                        label={shortenAddr(activeAccount.publicKey, 8, 8)}
+                        label={formatTrezorAddress(activeAccount.publicKey)}
                       />
                       <a
                         className="chip"
@@ -1695,7 +1695,7 @@ export function Dashboard() {
                                   ? "Stellar Lumens"
                                   : known
                                     ? known.name
-                                    : shortenAddr(asset.issuer ?? "", 6, 6)}
+                                    : formatTrezorAddress(asset.issuer ?? "")}
                               </span>
                             </span>
 
@@ -1919,7 +1919,7 @@ export function Dashboard() {
               {counterpartyFilter && (
                 <div className="mb-3 flex items-center justify-between rounded-xl bg-white/[0.06] border border-white/10 px-3 py-1.5 text-[12px]">
                   <span className="mono truncate text-neutral-300">
-                    Filtered by: {shortenAddr(counterpartyFilter, 6, 6)}
+                    Filtered by: {formatTrezorAddress(counterpartyFilter)}
                   </span>
                   <button
                     type="button"
@@ -2002,7 +2002,7 @@ export function Dashboard() {
                                   {matchedContact
                                     ? ` · ${matchedContact.name}`
                                     : item.counterparty
-                                      ? ` · ${shortenAddr(item.counterparty, 4, 4)}`
+                                      ? ` · ${formatTrezorAddress(item.counterparty)}`
                                       : ""}
                                   {presentedAsset.issuerDisplay
                                     ? ` · ${presentedAsset.issuerDisplay}`
@@ -2308,7 +2308,7 @@ function AccountMenu({
           <button
             type="button"
             className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
-            title={`${activeAccount.label} (${shortenAddr(activeAccount.publicKey, 4, 4)})`}
+            title={`${activeAccount.label} (${formatTrezorAddress(activeAccount.publicKey)})`}
           >
             <Avatar seed={activeAccount.publicKey} size={28} />
             <span
@@ -2327,7 +2327,7 @@ function AccountMenu({
                 {activeAccount.label}
               </span>
               <span className="mono block truncate text-[10.5px] text-neutral-400">
-                {shortenAddr(activeAccount.publicKey, 4, 4)}
+                {formatTrezorAddress(activeAccount.publicKey)}
               </span>
             </span>
             <IconChevronDown size={11} className="text-neutral-400 shrink-0 ml-0.5" />
@@ -2367,7 +2367,7 @@ function AccountMenu({
                     )}
                   </p>
                   <p className="mono truncate text-[10.5px] text-neutral-400">
-                    {shortenAddr(acct.publicKey, 4, 4)}
+                    {formatTrezorAddress(acct.publicKey)}
                   </p>
                 </div>
                 {isActive && (

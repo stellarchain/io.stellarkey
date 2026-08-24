@@ -548,8 +548,6 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         <div className="min-w-0 flex-1">
                           <HashValue
                             value={s.key}
-                            head={6}
-                            tail={6}
                             className="text-[12.5px] text-neutral-200"
                           />
                           {s.key === ownKey && (
@@ -696,8 +694,6 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                       <div className="min-w-0 flex-1">
                         <HashValue
                           value={ownKey}
-                          head={6}
-                          tail={6}
                           className="text-[12px] text-neutral-200"
                         />
                         <span className="mt-0.5 inline-block rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
@@ -715,8 +711,6 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         <div className="min-w-0 flex-1">
                           <HashValue
                             value={c.key}
-                            head={6}
-                            tail={6}
                             className="text-[12px] text-neutral-200"
                           />
                         </div>
