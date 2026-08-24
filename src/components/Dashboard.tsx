@@ -1175,7 +1175,7 @@ export function Dashboard() {
       </aside>
 
       {/* Main Content Area */}
-      <main data-app-scroll-owner className="flex-1 min-w-0 md:h-screen md:overflow-y-auto md:[scrollbar-gutter:stable]">
+      <main data-app-scroll-owner className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
         {/* Desktop macOS Top Window Header Bar */}
         <header className="hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky top-0 z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">

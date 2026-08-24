@@ -92,25 +92,15 @@ body::after {
   background: rgba(10, 132, 255, 0.4);
 }
 
-/* Custom rails are useful with a mouse, but look broken over touch scrolling. */
-@media (hover: hover) and (pointer: fine) and (min-width: 768px) {
-  html {
-    scrollbar-gutter: stable;
-  }
-  *::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
-  }
-  *::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.18);
-    border-radius: 999px;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
-  }
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
+/* Keep every scroll surface usable while removing browser scrollbar chrome. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* iOS zooms focused controls below 16px even when the surrounding UI is compact. */
@@ -680,18 +670,4 @@ body::after {
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }
-}
-
-.scrollbar-none,
-[role="dialog"],
-[role="dialog"] * {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-.scrollbar-none::-webkit-scrollbar,
-[role="dialog"]::-webkit-scrollbar,
-[role="dialog"] *::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
 }

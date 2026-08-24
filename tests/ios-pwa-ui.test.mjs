@@ -21,3 +21,15 @@ test("hierarchical screens share one accessible iOS back control", () => {
   assert.doesNotMatch(settings, />\s*Back\s*<\/button>/);
   assert.doesNotMatch(onboarding, /← \{backLabel\}/);
 });
+
+test("all scrollbar chrome is hidden without disabling scrolling", () => {
+  const css = read("src/app/globals.css");
+  const dashboard = read("src/components/Dashboard.tsx");
+
+  assert.match(css, /\*\s*\{[\s\S]*?scrollbar-width:\s*none;/);
+  assert.match(css, /\*::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none !important;/);
+  assert.doesNotMatch(css, /scrollbar-gutter/);
+  assert.doesNotMatch(css, /::-webkit-scrollbar-thumb/);
+  assert.match(dashboard, /md:overflow-y-auto/);
+  assert.doesNotMatch(dashboard, /scrollbar-gutter/);
+});
