@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
-import { formatActivityAmount, opTypeLabel } from "@/lib/format";
+import { activityAmountLines, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
 import { loadPrivateTxNote, savePrivateTxNote } from "@/lib/vault";
@@ -52,7 +52,7 @@ export function TxDetailModal({
 
   const incoming = item.direction === "in";
   const presentedAsset = activityAssetPresentation(item);
-  const presentedAmount = formatActivityAmount(item);
+  const amountLines = activityAmountLines(item);
 
   const explorerUrl = NETWORKS[network].explorerTxUrl(item.hash);
   const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
@@ -63,8 +63,8 @@ export function TxDetailModal({
 Title: ${item.title}
 Status: ${item.successful ? "Confirmed" : "Failed"}
 Network: Stellar ${NETWORKS[network].label}
-Amount: ${presentedAmount ? `${presentedAmount}${presentedAsset.detailLabel ? ` ${presentedAsset.detailLabel}` : ""}` : "N/A"}
-Asset Issuer: ${presentedAsset.issuer ?? (presentedAsset.isNative ? "Native" : "N/A")}
+Amount: ${amountLines.length > 0 ? amountLines.map((line) => line.display).join(" / ") : "N/A"}
+Asset Issuer: ${item.swap ? `Debited: ${item.swap.debit.assetIssuer ?? "Native"}; Credited: ${item.swap.credit.assetIssuer ?? "Native"}` : presentedAsset.issuer ?? (presentedAsset.isNative ? "Native" : "N/A")}
 Date: ${new Date(item.createdAt).toLocaleString("en-US")}
 Counterparty: ${item.counterparty ?? "N/A"}
 Hash: ${item.hash}
@@ -116,9 +116,29 @@ Explorer: ${explorerUrl}`;
           <p className="mt-3 text-[13px] font-semibold text-neutral-400">
             {item.successful ? "Transaction Confirmed" : "Transaction Failed"}
           </p>
-          {item.amount !== null && (
+          {item.swap ? (
+            <div className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+              {amountLines.map((line) => (
+                <div
+                  key={line.direction}
+                  className="flex items-center justify-between gap-3 py-1 first:pt-0 last:pb-0"
+                >
+                  <span className="text-[12px] font-medium text-neutral-400">
+                    {line.direction === "out" ? "You paid" : "You received"}
+                  </span>
+                  <span
+                    className={`mono whitespace-nowrap text-[16px] font-semibold ${
+                      line.direction === "out" ? "text-[#FF453A]" : "text-[#30D158]"
+                    }`}
+                  >
+                    {privacyMode ? "••••••" : line.display}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : item.amount !== null ? (
             <p className="display-h mt-1 text-[32px] font-light text-white">
-              {privacyMode ? "••••••" : presentedAmount}{" "}
+              {privacyMode ? "••••••" : amountLines[0]?.display.replace(/\s+\S+$/, "")}{" "}
               {presentedAsset.code && (
                 <span
                   className="mono text-[18px] text-neutral-400 font-normal"
@@ -128,8 +148,8 @@ Explorer: ${explorerUrl}`;
                 </span>
               )}
             </p>
-          )}
-          {item.amount !== null && presentedAsset.code && (
+          ) : null}
+          {!item.swap && item.amount !== null && presentedAsset.code && (
             <FiatValue
               amount={item.amount}
               code={presentedAsset.code}
@@ -155,14 +175,33 @@ Explorer: ${explorerUrl}`;
               />
             </Row>
           )}
-          {presentedAsset.issuer && (
+          {item.swap ? (
+            <>
+              {item.swap.debit.assetIssuer && (
+                <Row label="Debited Issuer">
+                  <HashValue
+                    value={item.swap.debit.assetIssuer}
+                    className="justify-end text-[12px] text-neutral-300"
+                  />
+                </Row>
+              )}
+              {item.swap.credit.assetIssuer && (
+                <Row label="Credited Issuer">
+                  <HashValue
+                    value={item.swap.credit.assetIssuer}
+                    className="justify-end text-[12px] text-neutral-300"
+                  />
+                </Row>
+              )}
+            </>
+          ) : presentedAsset.issuer ? (
             <Row label="Asset Issuer">
               <HashValue
                 value={presentedAsset.issuer}
                 className="justify-end text-[12px] text-neutral-300"
               />
             </Row>
-          )}
+          ) : null}
           {item.type === "create_account" && (
             <Row label="Account Creation">
               <span className="text-[12px] font-semibold text-[#30D158]">
