@@ -46,6 +46,7 @@ import {
 } from "./ui";
 import {
   IconCheck,
+  IconDownload,
   IconFingerprint,
   IconLock,
   IconPlus,
@@ -73,10 +74,14 @@ type Sub = SettingsSub;
 
 export function SettingsPage({
   initialSub = "root",
+  installAvailable = false,
+  onInstallApp,
   onOpenBackupWizard,
   onOpenMultisigStudio,
 }: {
   initialSub?: Sub;
+  installAvailable?: boolean;
+  onInstallApp?: () => void;
   onOpenBackupWizard?: () => void;
   onOpenMultisigStudio?: () => void;
 }) {
@@ -686,6 +691,23 @@ export function SettingsPage({
                   />
                 </div>
               </div>
+
+              {installAvailable && (
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                    App
+                  </p>
+                  <div className="list-group">
+                    <RowButton
+                      icon={<IconDownload size={16} />}
+                      tint="#0A84FF"
+                      label="Install App"
+                      sub="Add Wallet to this device"
+                      onClick={onInstallApp}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
