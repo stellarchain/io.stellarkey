@@ -208,7 +208,6 @@ export function Onboarding() {
   }
 
   function backToChoose() {
-    triggerHaptic("selection");
     setStep("choose");
     setError(null);
     setPassword("");
@@ -652,7 +651,6 @@ export function Onboarding() {
       title="Verify your backup"
       subtitle="Tap the requested words in order to confirm your written copy."
       onBack={() => {
-        triggerHaptic("selection");
         setStep("reveal");
       }}
     >
