@@ -20,6 +20,36 @@
   --color-warn: #ff9f0a;
 }
 
+:root {
+  --app-safe-area-top: 0px;
+}
+
+.app-safe-top {
+  padding-top: var(--app-safe-area-top);
+}
+
+.app-safe-top-pad-14 {
+  padding-top: calc(3.5rem + var(--app-safe-area-top));
+}
+
+.app-safe-top-pad-12 {
+  padding-top: calc(3rem + var(--app-safe-area-top));
+}
+
+@media (display-mode: standalone) {
+  :root {
+    --app-safe-area-top: env(safe-area-inset-top, 0px);
+  }
+
+  .app-safe-overlay {
+    padding-top: calc(1rem + var(--app-safe-area-top));
+  }
+
+  .app-safe-toast {
+    top: calc(1.25rem + var(--app-safe-area-top));
+  }
+}
+
 html {
   background: #000000;
   -webkit-text-size-adjust: 100%;

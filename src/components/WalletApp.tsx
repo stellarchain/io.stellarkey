@@ -22,7 +22,7 @@ export function WalletApp() {
 
   if (phase === "loading") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4">
+      <div className="app-safe-top flex min-h-screen flex-col items-center justify-center gap-4">
         <LogoMark size={44} />
         <span className="spinner text-accent" />
       </div>

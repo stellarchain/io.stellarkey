@@ -729,7 +729,7 @@ export function Dashboard() {
   );
 
   return (
-    <div className="relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
+    <div className="app-safe-top relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
       {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">

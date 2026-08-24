@@ -248,7 +248,7 @@ export function Onboarding() {
     return (
       <div className="relative z-10 min-h-screen w-full overflow-hidden">
         <Ambient />
-        <div className="fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-14 lg:grid-cols-2 lg:gap-16">
+        <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-14 lg:grid-cols-2 lg:gap-16">
           {/* Brand / pitch column */}
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <LogoMark size={56} />
@@ -862,7 +862,7 @@ function StepShell({
   return (
     <div className="relative z-10 min-h-screen w-full overflow-hidden">
       <Ambient />
-      <div className="fade-up relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-6 py-14">
+      <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-6 py-14">
         <div className="mb-6 flex items-center justify-between">
           {onBack ? (
             <IOSBackButton

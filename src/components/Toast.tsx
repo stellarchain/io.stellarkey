@@ -50,7 +50,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {/* iOS Dynamic Island & macOS Notification Center floating toast */}
-      <div className="pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-6 md:right-6 md:left-auto md:translate-x-0 md:items-end">
+      <div className="app-safe-toast pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-6 md:right-6 md:left-auto md:translate-x-0 md:items-end">
         {toasts.map((t) => (
           <div
             key={t.id}

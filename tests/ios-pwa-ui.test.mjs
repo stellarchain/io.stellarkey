@@ -45,3 +45,32 @@ test("new vault passwords receive accessible strength feedback", () => {
   assert.match(onboarding, /Array\.from\(\{ length: 4 \}/);
   assert.match(onboarding, /strength\.feedback/);
 });
+
+test("standalone screens and overlays consume the iOS top safe area", () => {
+  const css = read("src/app/globals.css");
+  const dashboard = read("src/components/Dashboard.tsx");
+  const onboarding = read("src/components/Onboarding.tsx");
+  const lockScreen = read("src/components/LockScreen.tsx");
+  const walletApp = read("src/components/WalletApp.tsx");
+  const ui = read("src/components/ui.tsx");
+  const toast = read("src/components/Toast.tsx");
+
+  assert.match(css, /--app-safe-area-top:\s*0px;/);
+  assert.match(
+    css,
+    /@media\s*\(display-mode:\s*standalone\)[\s\S]*?--app-safe-area-top:\s*env\(safe-area-inset-top,\s*0px\);/,
+  );
+  assert.match(css, /\.app-safe-top\s*\{[\s\S]*?padding-top:\s*var\(--app-safe-area-top\);/);
+  assert.match(css, /\.app-safe-top-pad-14\s*\{[\s\S]*?calc\(3\.5rem \+ var\(--app-safe-area-top\)\)/);
+  assert.match(css, /\.app-safe-top-pad-12\s*\{[\s\S]*?calc\(3rem \+ var\(--app-safe-area-top\)\)/);
+  assert.match(css, /\.app-safe-overlay\s*\{[\s\S]*?calc\(1rem \+ var\(--app-safe-area-top\)\)/);
+  assert.match(css, /\.app-safe-toast\s*\{[\s\S]*?calc\(1\.25rem \+ var\(--app-safe-area-top\)\)/);
+  assert.match(dashboard, /app-safe-top/);
+  assert.ok((onboarding.match(/app-safe-top/g) ?? []).length >= 2);
+  assert.ok((onboarding.match(/app-safe-top-pad-14/g) ?? []).length >= 2);
+  assert.match(lockScreen, /app-safe-top/);
+  assert.match(lockScreen, /app-safe-top-pad-12/);
+  assert.match(walletApp, /app-safe-top/);
+  assert.match(ui, /modal-overlay app-safe-overlay/);
+  assert.match(toast, /app-safe-toast/);
+});

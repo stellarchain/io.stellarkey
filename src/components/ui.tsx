@@ -185,7 +185,7 @@ export function Modal({
           onClose();
         }
       }}
-      className={`modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md${closing ? " closing" : ""}`}
+      className={`modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md${closing ? " closing" : ""}`}
     >
       <ModalLabelContext.Provider value={{ titleId, descriptionId }}>
         <div
