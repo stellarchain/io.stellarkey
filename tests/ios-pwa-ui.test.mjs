@@ -33,3 +33,15 @@ test("all scrollbar chrome is hidden without disabling scrolling", () => {
   assert.match(dashboard, /md:overflow-y-auto/);
   assert.doesNotMatch(dashboard, /scrollbar-gutter/);
 });
+
+test("new vault passwords receive accessible strength feedback", () => {
+  const onboarding = read("src/components/Onboarding.tsx");
+
+  assert.match(onboarding, /estimatePasswordStrength\(password\)/);
+  assert.match(onboarding, /mode !== "restore" && \(\s*<PasswordStrengthMeter/);
+  assert.match(onboarding, /role="meter"/);
+  assert.match(onboarding, /aria-valuemin=\{0\}/);
+  assert.match(onboarding, /aria-valuemax=\{4\}/);
+  assert.match(onboarding, /Array\.from\(\{ length: 4 \}/);
+  assert.match(onboarding, /strength\.feedback/);
+});

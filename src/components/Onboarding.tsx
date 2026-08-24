@@ -5,6 +5,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
+import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
 import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
 import {
   IconAlert,
@@ -65,6 +66,7 @@ export function Onboarding() {
 
   const passwordValid = password.length >= 8;
   const passwordsMatch = password === confirmPassword;
+  const passwordStrength = estimatePasswordStrength(password);
 
   async function handleRestoreBackupFile(file: File) {
     const json = await file.text();
@@ -501,6 +503,9 @@ export function Onboarding() {
           />
         </Field>
         {mode !== "restore" && (
+          <PasswordStrengthMeter strength={passwordStrength} />
+        )}
+        {mode !== "restore" && (
           <Field label="Confirm Password">
             <input
               className="input text-base sm:text-[14px]"
@@ -796,6 +801,40 @@ function OnboardPath({
         <path d="m1.5 1.5 5 5.5-5 5.5" />
       </svg>
     </button>
+  );
+}
+
+function PasswordStrengthMeter({ strength }: { strength: PasswordStrength }) {
+  return (
+    <div
+      role="meter"
+      aria-label="Password strength"
+      aria-valuemin={0}
+      aria-valuemax={4}
+      aria-valuenow={strength.score}
+      aria-valuetext={strength.label}
+      className="space-y-2"
+    >
+      <div className="flex items-center justify-between gap-3 text-[12px]">
+        <span className="font-medium text-neutral-400">Password strength</span>
+        <span className="font-semibold" style={{ color: strength.color }}>
+          {strength.label}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5" aria-hidden>
+        {Array.from({ length: 4 }, (_, index) => (
+          <span
+            key={index}
+            className="h-1.5 rounded-full transition-colors"
+            style={{
+              backgroundColor:
+                index < strength.score ? strength.color : "rgba(255,255,255,0.1)",
+            }}
+          />
+        ))}
+      </div>
+      <p className="text-[11.5px] leading-relaxed text-neutral-400">{strength.feedback}</p>
+    </div>
   );
 }
 
