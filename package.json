@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
-    "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs"
+    "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs",
+    "test:e2e:merchant": "npm run build && node --no-warnings --experimental-strip-types --test e2e/merchant.spec.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.0.0",
