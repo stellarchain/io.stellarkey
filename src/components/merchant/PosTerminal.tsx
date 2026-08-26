@@ -6,7 +6,6 @@ import { useMerchant } from "@/hooks/useMerchant";
 import { orderReference } from "@/lib/merchant/charge";
 import { fmtMinor, lineGrossMinor } from "@/lib/merchant/money";
 import type {
-  Adjustment,
   CatalogueItem,
   Minor,
   ModifierGroup,
@@ -18,7 +17,6 @@ import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
 import { Dropdown, Modal, ModalHeader, SegmentedControl } from "../ui";
 import {
-  IconAlert,
   IconCheck,
   IconChevronDown,
   IconClose,
@@ -29,15 +27,10 @@ import {
   IconWallet,
 } from "../icons";
 import { IconPercent, IconReceipt } from "./icons";
-/* The five sheets below are DESIGN MOCKS. They read fixtures from
-   `lib/merchant/mock.ts`, compute their figures for real, and then say what they
-   would do rather than doing it — nothing under them writes to the merchant
-   store. The till's own behaviour above is unchanged: these are entry points. */
 import { AdjustmentSheet } from "./AdjustmentSheet";
 import { CashTenderSheet } from "./CashTenderSheet";
 import { CustomerDisplay } from "./CustomerDisplay";
-import { DuplicateChargeSheet, duplicateFixture } from "./DuplicateChargeSheet";
-import { PREVIEW_ORDER, PREVIEW_ORDER_NUMBER, previewOrder, ReceiptSheet } from "./ReceiptSheet";
+import { ReceiptSheet } from "./ReceiptSheet";
 
 /** 999,999.99 — a till figure that no longer fits a shop is a mis-key. */
 const MAX_KEYPAD_MINOR = 99_999_999;
@@ -171,67 +164,6 @@ function Keypad({
         ))}
       </div>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Amount sheet — the discount entry                                   */
-/* ------------------------------------------------------------------ */
-
-function AmountSheet({
-  title,
-  subtitle,
-  initialMinor,
-  currency,
-  confirmLabel,
-  clearLabel,
-  onConfirm,
-  onClear,
-  onClose,
-}: {
-  title: string;
-  subtitle: string;
-  initialMinor: Minor;
-  currency: FiatCurrency;
-  confirmLabel: string;
-  clearLabel?: string;
-  onConfirm: (minor: Minor) => void;
-  onClear?: () => void;
-  onClose: () => void;
-}) {
-  const [minor, setMinor] = useState<Minor>(initialMinor);
-
-  return (
-    <Modal open onClose={onClose}>
-      <ModalHeader title={title} subtitle={subtitle} onClose={onClose} />
-      <div className="space-y-4 p-4 sm:p-6">
-        <Keypad minor={minor} currency={currency} label={title} onChange={setMinor} />
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            className="btn btn-primary w-full"
-            onClick={() => {
-              triggerHaptic("light");
-              onConfirm(minor);
-            }}
-          >
-            {confirmLabel}
-          </button>
-          {onClear && clearLabel && (
-            <button
-              type="button"
-              className="btn btn-danger w-full"
-              onClick={() => {
-                triggerHaptic("light");
-                onClear();
-              }}
-            >
-              {clearLabel}
-            </button>
-          )}
-        </div>
-      </div>
-    </Modal>
   );
 }
 
@@ -443,12 +375,10 @@ function TicketMenu({
   onTender,
   onCustomerView,
   onAdjust,
-  onReceipt,
 }: {
   onTender: () => void;
   onCustomerView: () => void;
   onAdjust: () => void;
-  onReceipt: () => void;
 }) {
   return (
     <Dropdown
@@ -494,16 +424,6 @@ function TicketMenu({
             }}
           >
             <IconPercent size={15} /> <span>Discount, comp or void</span>
-          </button>
-          <button
-            type="button"
-            className="menu-item !rounded-xl"
-            onClick={() => {
-              onReceipt();
-              close();
-            }}
-          >
-            <IconReceipt size={15} /> <span>Receipt</span>
           </button>
         </div>
       )}
@@ -617,10 +537,12 @@ export function PosTerminal() {
     addCustomAmount,
     setLineQuantity,
     removeLine,
-    setDiscount,
     clearTicket,
     chargeBlockedReason,
     createChargeFromTicket,
+    orders,
+    charges,
+    nextOrderNumber,
   } = useMerchant();
   const { toast } = useToast();
 
@@ -629,17 +551,12 @@ export function PosTerminal() {
   const [tipPromptOpen, setTipPromptOpen] = useState(false);
   const [category, setCategory] = useState<string>("");
   const [optionsFor, setOptionsFor] = useState<CatalogueItem | null>(null);
-  const [discountOpen, setDiscountOpen] = useState(false);
-
-  /* The mock surfaces. Each holds nothing but its own open state — none of them
-     reaches back into the store, and closing one leaves the till as it was. */
   const [tenderOpen, setTenderOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjustLineId, setAdjustLineId] = useState<string | null>(null);
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [customerViewOpen, setCustomerViewOpen] = useState(false);
-  const [duplicateOpen, setDuplicateOpen] = useState(false);
-  const [settled, setSettled] = useState<{ label: string; order: Order } | null>(null);
+  const [lastSettledOrderId, setLastSettledOrderId] = useState<string | null>(null);
 
   const currency = settings.currency;
 
@@ -688,33 +605,17 @@ export function PosTerminal() {
   const empty = ticket.lines.length === 0;
   const chargeDisabled = empty || chargeBlockedReason !== null;
 
-  /* The memo the next order on this device would carry. There is one till, so
-     numbers simply run on from the last one this device issued. */
-  const reference = orderReference(settings.profile.name || "Till", PREVIEW_ORDER_NUMBER);
-
-  /* The ticket in the Order shape a receipt renders from. Built here rather than
-     inside the sheet so the same component serves a live ticket and a fixture. */
-  const ticketAsOrder = useMemo(
+  const reference = orderReference(settings.profile.name || "Till", nextOrderNumber);
+  const settled = useMemo(
     () =>
-      previewOrder({
-        lines: ticket.lines,
-        totals: ticketTotals,
-        currency,
-        shopName: settings.profile.name,
-        terminalName: settings.terminalName,
-        orderNumber: PREVIEW_ORDER_NUMBER,
-      }),
-    [currency, settings.profile.name, settings.terminalName, ticket.lines, ticketTotals],
+      lastSettledOrderId
+        ? orders.find((order) => order.id === lastSettledOrderId && order.status === "paid") ?? null
+        : null,
+    [lastSettledOrderId, orders],
   );
-
-  const duplicate = useMemo(
-    () =>
-      duplicateFixture(
-        reference,
-        settled ? settled.order.totals.totalMinor : ticketTotals.totalMinor,
-      ),
-    [reference, settled, ticketTotals.totalMinor],
-  );
+  const receiptHash = receiptOrder
+    ? charges.find((charge) => charge.orderId === receiptOrder.id)?.payment?.transactionHash ?? null
+    : null;
 
   function pickItem(item: CatalogueItem) {
     const groups = groupsFor(item);
@@ -736,26 +637,6 @@ export function PosTerminal() {
     triggerHaptic("selection");
     setAdjustLineId(lineId);
     setAdjustOpen(true);
-  }
-
-  /**
-   * A mock adjustment carries who, why and how much. Only a ticket-wide discount
-   * maps onto a figure this till already holds, so that one is applied for real
-   * and everything else says what it would write.
-   */
-  function applyAdjustment(record: Adjustment, ticketDiscountMinor: Minor | null) {
-    if (ticketDiscountMinor !== null) {
-      setDiscount(ticketDiscountMinor);
-      toast(
-        `${fmtMinor(record.amountMinor, currency)} off — ${record.reasonCode}, ${record.staffName}.`,
-        "success",
-      );
-      return;
-    }
-    const verb = record.kind === "comp" ? "Comp" : record.kind === "void" ? "Void" : "Discount";
-    toast(
-      `${verb} of ${fmtMinor(record.amountMinor, currency)} on ${record.lineName ?? "the ticket"} would be recorded against ${record.staffName} — ${record.reasonCode}.`,
-    );
   }
 
   /**
@@ -888,10 +769,6 @@ export function PosTerminal() {
 
         {/* ---------- the ticket ---------- */}
         <div className="min-w-0 md:sticky md:top-4">
-          {/* MOCK — the post-sale strip. It is where the customer's copy is
-              offered once the money is in, and where a second payment against a
-              reference that is already settled surfaces. A live till raises that
-              notice from Horizon; here it stands in for one. */}
           {settled && (
             <div className="panel mb-3">
               <div className="flex items-center gap-3 px-4 py-3">
@@ -900,16 +777,22 @@ export function PosTerminal() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-semibold text-white">
-                    Order {PREVIEW_ORDER_NUMBER} settled
+                    Order {settled.number} settled
                   </p>
-                  <p className="truncate text-[12px] text-neutral-500">{settled.label}</p>
+                  <p className="truncate text-[12px] text-neutral-500">
+                    {settled.tender
+                      .map((part) =>
+                        part.kind === "cash" ? "Cash" : part.kind === "card" ? "Card" : "Stellar",
+                      )
+                      .join(" + ")} · {fmtMinor(settled.totals.totalMinor, settled.currency)}
+                  </p>
                 </div>
                 <button
                   type="button"
                   aria-label="Dismiss the settled order"
                   onClick={() => {
                     triggerHaptic("selection");
-                    setSettled(null);
+                    setLastSettledOrderId(null);
                   }}
                   className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-white"
                 >
@@ -920,35 +803,13 @@ export function PosTerminal() {
               <div className="px-4 pb-3">
                 <button
                   type="button"
-                  onClick={() => openReceipt(settled.order)}
+                  onClick={() => openReceipt(settled)}
                   className="btn btn-secondary"
                 >
                   <IconReceipt size={15} /> Receipt
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("warning");
-                  setDuplicateOpen(true);
-                }}
-                className="row-hover flex w-full items-center gap-3 border-t border-white/[0.08] px-4 py-3 text-left"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A]">
-                  <IconAlert size={15} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold text-[#FF9F0A]">
-                    A second payment landed on {reference}
-                  </span>
-                  <span className="block text-[11.5px] leading-relaxed text-neutral-500">
-                    Mock notice — a live till raises this only when Horizon reports a payment
-                    against a reference that is already settled.
-                  </span>
-                </span>
-                <IconChevronDown size={16} className="chevron -rotate-90" />
-              </button>
             </div>
           )}
 
@@ -1014,7 +875,7 @@ export function PosTerminal() {
                     type="button"
                     onClick={() => {
                       triggerHaptic("selection");
-                      setDiscountOpen(true);
+                      openAdjust(null);
                     }}
                     className="row-hover mt-1 flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-[13.5px]"
                   >
@@ -1088,7 +949,6 @@ export function PosTerminal() {
                       setCustomerViewOpen(true);
                     }}
                     onAdjust={() => openAdjust(null)}
-                    onReceipt={() => openReceipt(ticketAsOrder)}
                   />
                 )}
               </div>
@@ -1138,7 +998,6 @@ export function PosTerminal() {
                     setCustomerViewOpen(true);
                   }}
                   onAdjust={() => openAdjust(null)}
-                  onReceipt={() => openReceipt(ticketAsOrder)}
                 />
               </div>
             </div>
@@ -1156,30 +1015,6 @@ export function PosTerminal() {
             addItemToTicket(optionsFor, modifiers);
             setOptionsFor(null);
           }}
-        />
-      )}
-
-      {discountOpen && (
-        <AmountSheet
-          title="Discount"
-          subtitle={`Taken off ${fmtMinor(ticketTotals.grossMinor, currency)}`}
-          initialMinor={ticket.discountMinor}
-          currency={currency}
-          confirmLabel="Apply discount"
-          clearLabel={ticket.discountMinor > 0 ? "Remove discount" : undefined}
-          onClear={
-            ticket.discountMinor > 0
-              ? () => {
-                  setDiscount(0);
-                  setDiscountOpen(false);
-                }
-              : undefined
-          }
-          onConfirm={(minor) => {
-            setDiscount(minor);
-            setDiscountOpen(false);
-          }}
-          onClose={() => setDiscountOpen(false)}
         />
       )}
 
@@ -1227,19 +1062,13 @@ export function PosTerminal() {
         </div>
       </Modal>
 
-      {/* ---------- the mock surfaces ---------- */}
-
       <CashTenderSheet
         open={tenderOpen}
         onClose={() => setTenderOpen(false)}
         totalMinor={ticketTotals.totalMinor}
         currency={currency}
-        onSettled={(label, tender) => {
-          // The order is captured before the ticket goes, so the strip below can
-          // still offer its receipt — and it carries how the money actually
-          // arrived, so the receipt does not claim a rail it never used.
-          setSettled({ label, order: { ...ticketAsOrder, tender } });
-          clearTicket();
+        onSettled={({ order }) => {
+          setLastSettledOrderId(order.id);
         }}
       />
 
@@ -1247,21 +1076,17 @@ export function PosTerminal() {
         open={adjustOpen}
         onClose={() => setAdjustOpen(false)}
         lineId={adjustLineId}
-        lines={ticket.lines}
-        taxRates={settings.taxRates}
-        taxMode={settings.taxMode}
-        discountMinor={ticket.discountMinor}
-        tipMinor={ticket.tipMinor}
-        currency={currency}
-        orderNumber={PREVIEW_ORDER_NUMBER}
-        onApply={applyAdjustment}
+        onOrderFinalized={(order) => setLastSettledOrderId(order.id)}
       />
 
-      <ReceiptSheet
-        open={receiptOrder !== null}
-        onClose={() => setReceiptOrder(null)}
-        order={receiptOrder ?? PREVIEW_ORDER}
-      />
+      {receiptOrder && (
+        <ReceiptSheet
+          open
+          onClose={() => setReceiptOrder(null)}
+          order={receiptOrder}
+          transactionHash={receiptHash}
+        />
+      )}
 
       <CustomerDisplay
         open={customerViewOpen}
@@ -1271,15 +1096,6 @@ export function PosTerminal() {
         reference={reference}
       />
 
-      <DuplicateChargeSheet
-        open={duplicateOpen}
-        onClose={() => setDuplicateOpen(false)}
-        reference={reference}
-        orderNumber={PREVIEW_ORDER_NUMBER}
-        currency={currency}
-        settled={duplicate.settled}
-        duplicate={duplicate.duplicate}
-      />
     </section>
   );
 }

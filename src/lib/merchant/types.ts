@@ -135,6 +135,8 @@ export interface OrderLine {
   modifiers: OrderLineModifier[];
   taxRateId: string;
   note: string | null;
+  /** Discount or comp attached to this line, capped at its original gross. */
+  adjustmentMinor?: Minor;
 }
 
 /** Every money figure a ticket needs, derived once and stored. */
@@ -152,7 +154,7 @@ export interface OrderTotals {
   totalMinor: Minor;
 }
 
-export type TenderKind = "crypto" | "cash";
+export type TenderKind = "crypto" | "cash" | "card";
 
 export interface TenderPart {
   kind: TenderKind;
@@ -162,6 +164,8 @@ export interface TenderPart {
   /** Cash only: what the customer handed over and what they got back. */
   receivedMinor?: Minor;
   changeMinor?: Minor;
+  /** External card-terminal receipt/reference. The app never stores card data. */
+  externalReference?: string;
 }
 
 export type OrderStatus =
@@ -184,10 +188,14 @@ export interface Order {
   totals: OrderTotals;
   currency: FiatCurrency;
   tender: TenderPart[];
+  /** Stable actor identity; the name is retained as an immutable receipt snapshot. */
+  staffId: string | null;
   staffName: string;
   terminalName: string;
   createdAt: number;
   paidAt: number | null;
+  /** Set in the same commit as the first stock decrement. */
+  stockAppliedAt: number | null;
   /** Set only once a payment has been matched to this order. */
   payerAddress: string | null;
   note: string | null;
@@ -513,15 +521,23 @@ export interface ExportRecord {
 
 export type AdjustmentKind = "discount" | "comp" | "void";
 
-export interface Adjustment {
+/** Adjustment authorised on the live ticket, before its order number is committed. */
+export interface PendingAdjustment {
   id: string;
   kind: AdjustmentKind;
-  orderNumber: number;
+  lineId: string | null;
   lineName: string | null;
   amountMinor: Minor;
   reasonCode: string;
+  staffId: string;
   staffName: string;
   at: number;
+}
+
+/** Immutable audit record after the ticket becomes an order. */
+export interface Adjustment extends PendingAdjustment {
+  orderId: string;
+  orderNumber: number;
 }
 
 export interface RefundRequest {

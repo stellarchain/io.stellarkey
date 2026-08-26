@@ -1,38 +1,24 @@
 "use client";
 
-/**
- * DESIGN MOCK — discount, comp and void.
- *
- * What is mocked: the ledger entry. Every figure on this sheet is real —
- * `orderTotals` recomputes the whole ticket from the adjusted lines, so the VAT
- * shown after a comp is the VAT that would actually be charged — but applying
- * only hands the `Adjustment` record back to the till, which says what it would
- * write. The acting staff member, their permissions and the day's adjustments
- * are read from MOCK_STAFF and MOCK_ADJUSTMENTS.
- *
- * What a real implementation replaces: `onApply` would append the Adjustment to
- * the order, require the authorising member's PIN when the acting one is gated,
- * and — for a void — remove the line and release any stock it held. Note that
- * `OrderLine` carries no per-line adjustment field today: a line discount is
- * modelled here as its share of the ticket discount, which is why the sheet says
- * so on screen rather than pretending otherwise.
- */
-
 import { useMemo, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
-import { fmtMinor, lineGrossMinor, orderTotals, roundMinor, toMinor } from "@/lib/merchant/money";
-import { MOCK_ADJUSTMENTS, MOCK_NOW, MOCK_STAFF } from "@/lib/merchant/mock";
+import { useMerchant } from "@/hooks/useMerchant";
+import {
+  fmtMinor,
+  lineAdjustmentMinor,
+  lineGrossMinor,
+  orderTotals,
+  roundMinor,
+  toMinor,
+} from "@/lib/merchant/money";
 import type {
-  Adjustment,
   AdjustmentKind,
   Minor,
-  OrderLine,
+  Order,
   StaffMember,
-  TaxMode,
-  TaxRate,
 } from "@/lib/merchant/types";
-import type { FiatCurrency } from "@/lib/format";
-import { Modal, ModalHeader, Notice, SegmentedControl, Select } from "../ui";
+import { useToast } from "../Toast";
+import { Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconCheck, IconLock } from "../icons";
 import { IconPercent, IconTag, IconXCircle } from "./icons";
 
@@ -44,7 +30,6 @@ const KIND_OPTIONS: { label: string; value: AdjustmentKind }[] = [
   { label: "Void", value: "void" },
 ];
 
-/** Seeded from the reason codes already in MOCK_ADJUSTMENTS. */
 const REASONS: Record<AdjustmentKind, string[]> = {
   discount: ["Loyalty reward", "Staff friend", "Manager approval", "Price match"],
   comp: ["Remake — spilled", "Long wait", "Quality complaint", "Goodwill"],
@@ -56,7 +41,7 @@ const PERCENT_PRESETS = [5, 10, 15, 20];
 const KIND_BLURB: Record<AdjustmentKind, string> = {
   discount: "Takes money off what is owed. The line stays on the ticket and stays taxable.",
   comp: "Gives it away. The goods left the shop, so the cost stays and the takings do not.",
-  void: "Un-rings it. Nothing was sold, nothing is owed, and any stock goes back.",
+  void: "Un-rings it. Nothing was sold, nothing is owed, and its stock is not consumed.",
 };
 
 const ROLE_LABEL: Record<StaffMember["role"], string> = {
@@ -103,46 +88,20 @@ export function AdjustmentSheet({
   open,
   onClose,
   lineId,
-  lines,
-  taxRates,
-  taxMode,
-  discountMinor,
-  tipMinor,
-  currency,
-  orderNumber,
-  onApply,
+  onOrderFinalized,
 }: {
   open: boolean;
   onClose: () => void;
   /** null adjusts the whole ticket. */
   lineId: string | null;
-  lines: OrderLine[];
-  taxRates: TaxRate[];
-  taxMode: TaxMode;
-  discountMinor: Minor;
-  tipMinor: Minor;
-  currency: FiatCurrency;
-  orderNumber: number;
-  /**
-   * The record the till would write. `ticketDiscountMinor` is the one figure the
-   * till can act on today — the ticket's own discount — and is null for anything
-   * a mock cannot honestly apply.
-   */
-  onApply: (adjustment: Adjustment, ticketDiscountMinor: Minor | null) => void;
+  onOrderFinalized?: (order: Order) => void;
 }) {
   if (!open) return null;
   return (
     <AdjustmentSheetInner
       onClose={onClose}
       lineId={lineId}
-      lines={lines}
-      taxRates={taxRates}
-      taxMode={taxMode}
-      discountMinor={discountMinor}
-      tipMinor={tipMinor}
-      currency={currency}
-      orderNumber={orderNumber}
-      onApply={onApply}
+      onOrderFinalized={onOrderFinalized}
     />
   );
 }
@@ -150,34 +109,35 @@ export function AdjustmentSheet({
 function AdjustmentSheetInner({
   onClose,
   lineId,
-  lines,
-  taxRates,
-  taxMode,
-  discountMinor,
-  tipMinor,
-  currency,
-  orderNumber,
-  onApply,
+  onOrderFinalized,
 }: {
   onClose: () => void;
   lineId: string | null;
-  lines: OrderLine[];
-  taxRates: TaxRate[];
-  taxMode: TaxMode;
-  discountMinor: Minor;
-  tipMinor: Minor;
-  currency: FiatCurrency;
-  orderNumber: number;
-  onApply: (adjustment: Adjustment, ticketDiscountMinor: Minor | null) => void;
+  onOrderFinalized?: (order: Order) => void;
 }) {
+  const {
+    settings,
+    ticket,
+    activeStaff,
+    staff,
+    adjustments,
+    nextOrderNumber,
+    applyAdjustment,
+    compLine,
+    voidLine,
+  } = useMerchant();
+  const { toast } = useToast();
+  const { lines, discountMinor, tipMinor } = ticket;
+  const { currency, taxRates, taxMode } = settings;
+  const orderNumber = nextOrderNumber;
   const [kind, setKind] = useState<AdjustmentKind>("discount");
   const [basis, setBasis] = useState<DiscountBasis>("percent");
   const [percentRaw, setPercentRaw] = useState("10");
   const [amountRaw, setAmountRaw] = useState("");
   const [reason, setReason] = useState("");
-  const [actorId, setActorId] = useState(MOCK_STAFF[0].id);
+  const [openedAt] = useState(Date.now);
 
-  const actor = MOCK_STAFF.find((m) => m.id === actorId) ?? MOCK_STAFF[0];
+  const actor = activeStaff;
   const line = lineId ? (lines.find((l) => l.id === lineId) ?? null) : null;
   const scopeLabel = line ? line.name : "the whole ticket";
 
@@ -187,7 +147,9 @@ function AdjustmentSheetInner({
   );
 
   /** What this adjustment is measured against. */
-  const baseMinor = line ? lineGrossMinor(line) : before.grossMinor;
+  const baseMinor = line
+    ? Math.max(0, lineGrossMinor(line) - lineAdjustmentMinor(line))
+    : Math.max(0, before.grossMinor - before.discountMinor);
 
   const percent = Number(percentRaw.replace(",", "."));
   const percentValid = Number.isFinite(percent) && percent > 0 && percent <= 100;
@@ -212,11 +174,6 @@ function AdjustmentSheetInner({
     return typedAmount === null ? 0 : Math.min(typedAmount, baseMinor);
   }, [basis, baseMinor, kind, percent, percentValid, typedAmount]);
 
-  /**
-   * The ticket the customer would be handed. A void un-rings the line, so it is
-   * taken out of the arithmetic entirely; a discount or a comp leaves it in and
-   * takes money off, which is what keeps the VAT on the right side of the books.
-   */
   const after = useMemo(() => {
     if (kind === "void") {
       return orderTotals({
@@ -227,18 +184,33 @@ function AdjustmentSheetInner({
         tipMinor: line ? tipMinor : 0,
       });
     }
+    const adjustedLines = line
+      ? lines.map((entry) =>
+          entry.id === line.id
+            ? {
+                ...entry,
+                adjustmentMinor:
+                  kind === "comp"
+                    ? lineGrossMinor(entry)
+                    : lineAdjustmentMinor(entry) + amountMinor,
+              }
+            : entry,
+        )
+      : kind === "comp"
+        ? lines.map((entry) => ({ ...entry, adjustmentMinor: lineGrossMinor(entry) }))
+        : lines;
     return orderTotals({
-      lines,
+      lines: adjustedLines,
       taxRates,
       taxMode,
-      discountMinor: line ? discountMinor + amountMinor : amountMinor,
-      tipMinor,
+      discountMinor: line || kind === "comp" ? discountMinor : discountMinor + amountMinor,
+      tipMinor: !line && kind === "comp" ? 0 : tipMinor,
     });
   }, [amountMinor, discountMinor, kind, line, lines, taxRates, taxMode, tipMinor]);
 
   const takenMinor = before.totalMinor - after.totalMinor;
-  const allowed = permitted(actor, kind);
-  const authorisers = MOCK_STAFF.filter((m) => m.active && permitted(m, kind)).map((m) => m.name);
+  const allowed = actor !== null && permitted(actor, kind);
+  const authorisers = staff.filter((member) => member.active && permitted(member, kind)).map((member) => member.name);
   const figureReady = kind !== "discount" || amountMinor > 0;
   const ready = allowed && figureReady && reason !== "" && lines.length > 0;
 
@@ -251,22 +223,30 @@ function AdjustmentSheetInner({
     }));
 
   function apply() {
-    const record: Adjustment = {
-      // A real till mints this from the order it is written against.
-      id: `aj_${orderNumber}_${kind}`,
-      kind,
-      orderNumber,
-      lineName: line ? line.name : null,
-      amountMinor,
-      reasonCode: reason,
-      staffName: actor.name,
-      at: MOCK_NOW,
-    };
-    triggerHaptic(kind === "void" ? "warning" : "success");
-    // Only a ticket-wide discount maps onto something the till already holds.
-    onApply(record, kind === "discount" && !line ? amountMinor : null);
-    onClose();
+    try {
+      const finalized = kind === "discount"
+        ? applyAdjustment({ lineId, amountMinor, reasonCode: reason })
+        : kind === "comp"
+          ? compLine(lineId, reason)
+          : voidLine(lineId, reason);
+      triggerHaptic(kind === "void" ? "warning" : "success");
+      toast(
+        `${kind === "discount" ? "Discount" : kind === "comp" ? "Comp" : "Void"} saved · ${reason}.`,
+        "success",
+      );
+      if (finalized) onOrderFinalized?.(finalized);
+      onClose();
+    } catch (error) {
+      triggerHaptic("warning");
+      toast(error instanceof Error ? error.message : "The adjustment could not be saved.", "error");
+    }
   }
+
+  const todayStart = new Date(openedAt);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayAdjustments = adjustments
+    .filter((entry) => entry.at >= todayStart.getTime())
+    .sort((a, b) => b.at - a.at);
 
   return (
     <Modal open onClose={onClose} wide>
@@ -297,18 +277,11 @@ function AdjustmentSheetInner({
         </div>
 
         {/* ---------------- who is doing it ---------------- */}
-        <div className="space-y-1.5">
-          <p className="field-label !pb-0">Acting as</p>
-          <Select
-            value={actorId}
-            onChange={setActorId}
-            ariaLabel="Acting staff member"
-            options={MOCK_STAFF.filter((m) => m.active).map((m) => ({
-              value: m.id,
-              label: m.name,
-              sublabel: ROLE_LABEL[m.role],
-            }))}
-          />
+        <div className="panel-inset flex items-center justify-between px-4 py-3">
+          <span className="text-[13px] text-neutral-400">Acting as</span>
+          <span className="text-right text-[13.5px] font-semibold text-white">
+            {actor ? `${actor.name} · ${ROLE_LABEL[actor.role]}` : "No staff session"}
+          </span>
         </div>
 
         {/* ---------------- the permission gate ---------------- */}
@@ -320,10 +293,12 @@ function AdjustmentSheetInner({
               </span>
               <div className="min-w-0">
                 <p className="font-semibold text-white">
-                  {actor.name} cannot {kind === "discount" ? "discount" : kind} this
+                  {actor?.name ?? "No active staff member"} lacks permission to {kind}
                 </p>
                 <p className="mt-1 text-neutral-300">
-                  {ROLE_LABEL[actor.role] === "server" ? "A server" : `An ${ROLE_LABEL[actor.role]}`}{" "}
+                  {ROLE_LABEL[actor?.role ?? "server"] === "server"
+                    ? "A server"
+                    : `An ${ROLE_LABEL[actor?.role ?? "server"]}`}{" "}
                   on this shop&rsquo;s rules has no{" "}
                   <span className="mono text-neutral-200">
                     {kind === "discount" ? "applyDiscount" : kind}
@@ -516,8 +491,8 @@ function AdjustmentSheetInner({
 
         {line && kind !== "void" && (
           <p className="px-1 text-[12px] leading-relaxed text-neutral-500">
-            Spread pro-rata across the ticket, so each VAT rate is charged on what was actually
-            paid for it. A real record keeps the adjustment on {line.name} itself.
+            Kept on {line.name} itself, then the remaining ticket discount is spread pro-rata so
+            each VAT rate reconciles to what was actually paid.
           </p>
         )}
 
@@ -535,14 +510,16 @@ function AdjustmentSheetInner({
         </button>
 
         <p className="text-center text-[11.5px] leading-relaxed text-neutral-500">
-          Recorded as {actor.name} ({ROLE_LABEL[actor.role]}) · {stamp(MOCK_NOW)}
+          {actor
+            ? `Recorded as ${actor.name} (${ROLE_LABEL[actor.role]}) · ${stamp(openedAt)}`
+            : "A verified staff session is required."}
         </p>
 
         {/* ---------------- what the day already carries ---------------- */}
         <section className="border-t border-white/[0.08] pt-4">
           <h3 className="px-1 pb-2 text-[13.5px] font-semibold text-white">Earlier today</h3>
           <div className="list-group">
-            {MOCK_ADJUSTMENTS.map((entry, index) => (
+            {todayAdjustments.map((entry, index) => (
               <div
                 key={entry.id}
                 className={`flex items-center gap-3 px-4 py-3 ${index > 0 ? "ios-sep" : ""}`}
@@ -570,6 +547,11 @@ function AdjustmentSheetInner({
                 </span>
               </div>
             ))}
+            {todayAdjustments.length === 0 && (
+              <p className="px-4 py-5 text-center text-[12.5px] text-neutral-500">
+                No adjustments have been recorded today.
+              </p>
+            )}
           </div>
         </section>
 

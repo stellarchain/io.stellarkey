@@ -1,28 +1,10 @@
 "use client";
 
-/**
- * DESIGN MOCK — "Other tender": the money that does not arrive over Stellar.
- *
- * What is mocked: nothing here settles anything. The arithmetic is real —
- * change due is integer minor units, never a float — but committing only says
- * what it would record and clears the ticket. A card taken on somebody else's
- * terminal is *rung up*, never processed: this app touches no card rail, and the
- * screen says so. The staff member and device a tender is attributed to are read
- * from MOCK_STAFF and MOCK_TERMINAL.
- *
- * What a real implementation replaces: `commit()` would write an Order carrying
- * its `TenderPart[]`, kick the drawer through the printer port for a cash leg,
- * and hand a Stellar leg to `createChargeFromTicket()`. Note that `TenderKind`
- * in types.ts is `"crypto" | "cash"` today — a card taken elsewhere needs a third
- * member before that leg can be persisted, which is why this screen only
- * describes it.
- */
-
 import { useMemo, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
+import { useMerchant, type MerchantTenderOutcome } from "@/hooks/useMerchant";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
-import { MOCK_STAFF, MOCK_TERMINAL } from "@/lib/merchant/mock";
-import type { Minor, TenderPart } from "@/lib/merchant/types";
+import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
 import { Field, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
@@ -36,7 +18,6 @@ const KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "ba
 
 type TenderChoice = "cash" | "card" | "split";
 
-/** A split leg. `card` has no home in TenderKind yet — see the header note. */
 type LegKind = "cash" | "card" | "crypto";
 
 const LEG_LABEL: Record<LegKind, string> = {
@@ -44,10 +25,6 @@ const LEG_LABEL: Record<LegKind, string> = {
   card: "Card elsewhere",
   crypto: "Stellar charge",
 };
-
-/** The staff member and device every tender on this mock is attributed to. */
-const ACTOR = MOCK_STAFF[0];
-const DEVICE = MOCK_TERMINAL;
 
 /**
  * The notes a customer actually hands over: the next round figure above the
@@ -144,12 +121,7 @@ export function CashTenderSheet({
   onClose: () => void;
   totalMinor: Minor;
   currency: FiatCurrency;
-  /**
-   * Fired once a tender is taken: the line the till should show, and the parts
-   * `TenderKind` can actually carry — a card leg has no member yet, so it comes
-   * through as no part at all rather than as a false one.
-   */
-  onSettled: (label: string, tender: TenderPart[]) => void;
+  onSettled: (outcome: MerchantTenderOutcome) => void;
 }) {
   if (!open) return null;
   return (
@@ -171,9 +143,10 @@ function CashTenderSheetInner({
   onClose: () => void;
   totalMinor: Minor;
   currency: FiatCurrency;
-  onSettled: (label: string, tender: TenderPart[]) => void;
+  onSettled: (outcome: MerchantTenderOutcome) => void;
 }) {
   const { toast } = useToast();
+  const { activeStaff, terminal, settleCash, settleCard, startSplitCharge } = useMerchant();
 
   const [choice, setChoice] = useState<TenderChoice>("cash");
   const [receivedMinor, setReceivedMinor] = useState<Minor>(0);
@@ -195,56 +168,65 @@ function CashTenderSheetInner({
   const remainingMinor = firstValid ? totalMinor - firstMinor : totalMinor;
   const splitReady = firstValid && firstLeg !== secondLeg;
 
-  function settle(
-    label: string,
-    detail: string,
-    kind: "success" | "info",
-    tender: TenderPart[],
-  ) {
+  function finish(outcome: MerchantTenderOutcome, detail: string, kind: "success" | "info") {
     triggerHaptic(kind === "success" ? "success" : "light");
     toast(detail, kind === "success" ? "success" : "info");
-    onSettled(label, tender);
+    onSettled(outcome);
     onClose();
   }
 
+  function fail(error: unknown) {
+    triggerHaptic("warning");
+    toast(error instanceof Error ? error.message : "This tender could not be saved.", "error");
+  }
+
   function takeCash() {
-    // The record a real till would keep. Built here so the shape is exercised,
-    // then described rather than written.
-    const part: TenderPart = {
-      kind: "cash",
-      amountMinor: totalMinor,
-      receivedMinor,
-      changeMinor: Math.max(changeMinor, 0),
-    };
-    settle(
-      `Cash · ${fmtMinor(part.amountMinor, currency)}`,
-      changeMinor > 0
-        ? `Cash taken. ${fmtMinor(receivedMinor, currency)} in, ${fmtMinor(changeMinor, currency)} change out — nothing was sent over Stellar.`
-        : `Cash taken, exact money. Nothing was sent over Stellar.`,
-      "success",
-      [part],
-    );
+    try {
+      const order = settleCash(receivedMinor);
+      finish(
+        { order, charge: null },
+        changeMinor > 0
+          ? `Cash saved. Return ${fmtMinor(changeMinor, currency)} change.`
+          : "Cash saved as exact money.",
+        "success",
+      );
+    } catch (error) {
+      fail(error);
+    }
   }
 
   function takeCard() {
-    settle(
-      `Card elsewhere · ${fmtMinor(totalMinor, currency)}`,
-      `Rung up as a card sale${cardReference.trim() ? ` (${cardReference.trim()})` : ""}. This app processed no card — the other terminal did.`,
-      "info",
-      [],
-    );
+    try {
+      const order = settleCard(cardReference);
+      finish(
+        { order, charge: null },
+        `Card sale saved${cardReference.trim() ? ` · ${cardReference.trim()}` : ""}.`,
+        "success",
+      );
+    } catch (error) {
+      fail(error);
+    }
   }
 
   function takeSplit() {
     if (firstMinor === null) return;
-    const leg = (kind: LegKind, amountMinor: Minor): TenderPart[] =>
-      kind === "card" ? [] : [{ kind: kind === "cash" ? "cash" : "crypto", amountMinor }];
-    settle(
-      `Split · ${LEG_LABEL[firstLeg]} + ${LEG_LABEL[secondLeg]}`,
-      `Split recorded: ${fmtMinor(firstMinor, currency)} ${LEG_LABEL[firstLeg].toLowerCase()}, ${fmtMinor(remainingMinor, currency)} ${LEG_LABEL[secondLeg].toLowerCase()}.`,
-      "success",
-      [...leg(firstLeg, firstMinor), ...leg(secondLeg, remainingMinor)],
-    );
+    try {
+      const outcome = startSplitCharge({
+        firstKind: firstLeg,
+        secondKind: secondLeg,
+        firstMinor,
+        cardReference,
+      });
+      finish(
+        outcome,
+        outcome.charge
+          ? `${LEG_LABEL[firstLeg]} saved. Stellar charge ready for ${fmtMinor(outcome.charge.amountMinor, currency)}.`
+          : `Split sale saved: ${LEG_LABEL[firstLeg]} + ${LEG_LABEL[secondLeg]}.`,
+        "success",
+      );
+    } catch (error) {
+      fail(error);
+    }
   }
 
   return (
@@ -486,12 +468,24 @@ function CashTenderSheetInner({
                 {secondLeg === "crypto" && (
                   <p className="flex items-start gap-2 text-[12px] leading-relaxed text-neutral-400">
                     <IconQr size={13} className="mt-0.5 shrink-0 text-[#0A84FF]" />
-                    A charge for {fmtMinor(remainingMinor, currency)} would be raised against this
-                    order&rsquo;s reference, and the QR handed to the customer.
+                    A charge for {fmtMinor(remainingMinor, currency)} will be raised against this
+                    order&rsquo;s reference, ready for the customer to scan.
                   </p>
                 )}
               </div>
             </section>
+
+            {(firstLeg === "card" || secondLeg === "card") && (
+              <Field label="Terminal receipt number" hint="Optional — ties the two records together">
+                <input
+                  type="text"
+                  value={cardReference}
+                  onChange={(event) => setCardReference(event.target.value)}
+                  placeholder="e.g. 004913"
+                  className="input input-mono text-base sm:text-[13.5px]"
+                />
+              </Field>
+            )}
 
             <button
               type="button"
@@ -505,8 +499,10 @@ function CashTenderSheetInner({
         )}
 
         <p className="border-t border-white/[0.08] pt-3 text-center text-[11.5px] leading-relaxed text-neutral-500">
-          Attributed to {ACTOR.name} on {DEVICE.name}. Nothing on this sheet moves money —
-          it records how the money already arrived.
+          {activeStaff
+            ? `Attributed to ${activeStaff.name} on ${terminal.name}.`
+            : "Choose a staff member before settling this sale."} The app records card payments
+          but never handles card data.
         </p>
       </div>
     </Modal>

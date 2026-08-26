@@ -59,6 +59,54 @@ function idRecords<T>(value: unknown): T[] | null {
   return recordArray<T>(value, (entry) => typeof entry.id === "string");
 }
 
+function orderRecords(value: unknown): MerchantStore["orders"] {
+  const orders = idRecords<MerchantStore["orders"][number]>(value) ?? [];
+  return orders.map((order) => {
+    const lines = Array.isArray(order.lines)
+      ? order.lines.map((line) => ({
+          ...line,
+          adjustmentMinor: isFiniteNumber(line.adjustmentMinor)
+            ? Math.max(0, Math.trunc(line.adjustmentMinor))
+            : 0,
+        }))
+      : [];
+    const historicallySettled =
+      order.status === "paid" ||
+      order.status === "partially_refunded" ||
+      order.status === "refunded";
+    return {
+      ...order,
+      lines,
+      staffId: nullableString(order.staffId, null),
+      stockAppliedAt:
+        order.stockAppliedAt === null || isFiniteNumber(order.stockAppliedAt)
+          ? order.stockAppliedAt
+          : historicallySettled
+            ? (isFiniteNumber(order.paidAt) ? order.paidAt : order.createdAt)
+            : null,
+    };
+  });
+}
+
+function adjustmentRecords(value: unknown): MerchantStore["adjustments"] {
+  const adjustments = idRecords<MerchantStore["adjustments"][number]>(value) ?? [];
+  return adjustments.map((adjustment) => {
+    const orderNumber = positiveInteger(adjustment.orderNumber, 0);
+    return {
+      ...adjustment,
+      orderId:
+        typeof adjustment.orderId === "string" && adjustment.orderId
+          ? adjustment.orderId
+          : `legacy-order-${orderNumber}`,
+      lineId: nullableString(adjustment.lineId, null),
+      staffId:
+        typeof adjustment.staffId === "string" && adjustment.staffId
+          ? adjustment.staffId
+          : "legacy-staff",
+    };
+  });
+}
+
 function refundRecords(value: unknown): MerchantStore["refunds"] {
   const refunds = idRecords<MerchantStore["refunds"][number]>(value) ?? [];
   return refunds.map((refund) => ({
@@ -204,7 +252,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     modifierGroups:
       idRecords<MerchantStore["modifierGroups"][number]>(value.modifierGroups) ??
       base.modifierGroups,
-    orders: idRecords<MerchantStore["orders"][number]>(value.orders) ?? [],
+    orders: orderRecords(value.orders),
     charges: idRecords<MerchantStore["charges"][number]>(value.charges) ?? [],
     refunds: refundRecords(value.refunds),
     unmatched: idRecords<MerchantStore["unmatched"][number]>(value.unmatched) ?? [],
@@ -247,7 +295,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
           ? settlementValue.sweepPromptHour
           : base.settlementRule.sweepPromptHour,
     },
-    adjustments: idRecords<MerchantStore["adjustments"][number]>(value.adjustments) ?? [],
+    adjustments: adjustmentRecords(value.adjustments),
     refundRequests:
       idRecords<MerchantStore["refundRequests"][number]>(value.refundRequests) ?? [],
     peripherals: idRecords<MerchantStore["peripherals"][number]>(value.peripherals) ?? [],

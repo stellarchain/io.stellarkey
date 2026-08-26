@@ -1,42 +1,25 @@
 "use client";
 
-/**
- * DESIGN MOCK — how the customer gets their receipt.
- *
- * What is mocked: the delivery. On screen and Print are fully rendered from the
- * order — the VAT block is recomputed with the same `distribute`/`taxOn` path
- * `orderTotals` uses, so the per-rate figures reconcile to the cent — and the
- * thermal specimen is measured to 48 columns on every line. Text and Email are
- * NOT mocked: they compose a real `sms:` / `mailto:` draft carrying the figures
- * and hand it to the OS. There is no printer driver in a browser, so Print draws
- * the specimen and calls `window.print()` behind a `@media print` stylesheet.
- *
- * What a real implementation replaces: the fixture order and hash, the printer
- * transport (MOCK_PERIPHERALS says the Star TSP143 is `unavailable` in this
- * build), and storing the customer's number or address against the order so the
- * next receipt is one tap. `previewOrder` exists only so an unsettled ticket can
- * be shown as a receipt; a settled order arrives already in this shape.
- */
-
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { useMerchant } from "@/hooks/useMerchant";
-import { orderReference } from "@/lib/merchant/charge";
-import { DEFAULT_TAX_RATES } from "@/lib/merchant/defaults";
-import { distribute, fmtMinor, lineGrossMinor, minorToDecimal, orderTotals } from "@/lib/merchant/money";
-import { MOCK_CUSTOMERS, MOCK_NOW, MOCK_PERIPHERALS, MOCK_STAFF } from "@/lib/merchant/mock";
+import {
+  distribute,
+  fmtMinor,
+  lineAdjustmentMinor,
+  lineGrossMinor,
+  linePayableMinor,
+  minorToDecimal,
+} from "@/lib/merchant/money";
 import { NETWORKS } from "@/lib/stellar";
 import type {
   MerchantProfile,
   Minor,
   Order,
-  OrderLine,
-  OrderTotals,
   TaxMode,
   TaxRate,
 } from "@/lib/merchant/types";
-import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
 import { CopyButton, HashValue, Modal, ModalHeader, Notice, Spinner } from "../ui";
 import { IconAlert, IconEye, IconFileText, IconSend } from "../icons";
@@ -61,88 +44,6 @@ const CHANNELS: {
 ];
 
 /* ------------------------------------------------------------------ */
-/* Fixtures                                                            */
-/* ------------------------------------------------------------------ */
-
-/** Order numbers 2000–2999 belong to the counter terminal in MOCK_TERMINALS. */
-export const PREVIEW_ORDER_NUMBER = 2094;
-
-/** The settling payment. A real receipt carries the hash Horizon reported. */
-export const PREVIEW_TX_HASH =
-  "4f1a9c2e7b3d5081a6c4e2f09d7b1a3c5e8f0d2b4a6c8e1f3d5b7a9c0e2f4d68";
-
-const FIXTURE_LINES: OrderLine[] = [
-  {
-    id: "fl_1",
-    itemId: "flw",
-    name: "Flat White",
-    quantity: 2,
-    unitPriceMinor: 320,
-    modifiers: [{ modifierId: "oat", name: "Oat", priceMinor: 40 }],
-    taxRateId: "standard",
-    note: null,
-  },
-  {
-    id: "fl_2",
-    itemId: "nat",
-    name: "Pastel de Nata",
-    quantity: 3,
-    unitPriceMinor: 160,
-    modifiers: [],
-    taxRateId: "intermediate",
-    note: null,
-  },
-];
-
-/**
- * Wraps whatever is on the till in the Order shape a receipt renders from, so
- * the same component serves a live ticket and a settled order.
- */
-export function previewOrder(input: {
-  lines: OrderLine[];
-  totals: OrderTotals;
-  currency: FiatCurrency;
-  shopName: string;
-  terminalName: string;
-  orderNumber: number;
-}): Order {
-  return {
-    id: `ord_preview_${input.orderNumber}`,
-    number: input.orderNumber,
-    reference: orderReference(input.shopName || "Till", input.orderNumber),
-    // A settled order carries the network of the charge that closed it; a ticket
-    // that has not been charged yet has none, so the receipt assumes the shop's.
-    network: "mainnet",
-    status: "paid",
-    lines: input.lines,
-    totals: input.totals,
-    currency: input.currency,
-    tender: [{ kind: "crypto", amountMinor: input.totals.totalMinor }],
-    staffName: MOCK_STAFF[0].name,
-    terminalName: input.terminalName,
-    createdAt: MOCK_NOW,
-    paidAt: MOCK_NOW,
-    payerAddress: MOCK_CUSTOMERS[0].address,
-    note: null,
-  };
-}
-
-/** A settled order, so the receipt is previewable with nothing rung up. */
-export const PREVIEW_ORDER: Order = previewOrder({
-  lines: FIXTURE_LINES,
-  totals: orderTotals({
-    lines: FIXTURE_LINES,
-    taxRates: DEFAULT_TAX_RATES,
-    taxMode: "inclusive",
-    tipMinor: 50,
-  }),
-  currency: "EUR",
-  shopName: "Merchant Coffee",
-  terminalName: "Counter iPad",
-  orderNumber: PREVIEW_ORDER_NUMBER,
-});
-
-/* ------------------------------------------------------------------ */
 /* VAT, per rate                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -161,11 +62,19 @@ interface VatRow {
  * figures rather than to a second, slightly different, opinion of them.
  */
 function vatRows(order: Order, taxRates: TaxRate[], taxMode: TaxMode): VatRow[] {
-  const lineGross = order.lines.map(lineGrossMinor);
-  const perLine = distribute(order.totals.discountMinor, lineGross);
+  const linePayable = order.lines.map(linePayableMinor);
+  const lineAdjustments = order.lines.reduce(
+    (sum, line) => sum + lineAdjustmentMinor(line),
+    0,
+  );
+  const ticketDiscount = Math.max(0, order.totals.discountMinor - lineAdjustments);
+  const perLine = distribute(ticketDiscount, linePayable);
   const payable = new Map<string, Minor>();
   order.lines.forEach((line, index) => {
-    payable.set(line.taxRateId, (payable.get(line.taxRateId) ?? 0) + lineGross[index] - perLine[index]);
+    payable.set(
+      line.taxRateId,
+      (payable.get(line.taxRateId) ?? 0) + linePayable[index] - perLine[index],
+    );
   });
   return [...payable.entries()].map(([id, payableMinor]) => {
     const taxMinor = order.totals.taxByRate[id] ?? 0;
@@ -181,14 +90,15 @@ function vatRows(order: Order, taxRates: TaxRate[], taxMode: TaxMode): VatRow[] 
   });
 }
 
-/**
- * `TenderKind` is `"crypto" | "cash"`, so an order settled on somebody else's
- * card terminal arrives with no parts at all. The receipt says that rather than
- * claiming a rail the money did not travel on.
- */
 function tenderLabel(order: Order): string {
-  if (order.tender.length === 0) return "another tender";
-  return order.tender.map((part) => (part.kind === "cash" ? "Cash" : "Stellar")).join(" + ");
+  if (order.tender.length === 0) {
+    return order.totals.totalMinor === 0 ? "No payment due" : "Tender not recorded";
+  }
+  return order.tender
+    .map((part) =>
+      part.kind === "cash" ? "Cash" : part.kind === "card" ? "Card" : "Stellar",
+    )
+    .join(" + ");
 }
 
 function receiptDate(order: Order): string {
@@ -313,6 +223,16 @@ function thermalLines(
   out.push(rule());
 
   out.push(columns("PAID", tenderLabel(order).toUpperCase()));
+  for (const part of order.tender) {
+    if (part.kind === "cash") {
+      out.push(columns("CASH RECEIVED", money(part.receivedMinor ?? part.amountMinor)));
+      if ((part.changeMinor ?? 0) > 0) {
+        out.push(columns("CHANGE", money(part.changeMinor ?? 0)));
+      }
+    } else if (part.kind === "card" && part.externalReference) {
+      out.push(columns("CARD REFERENCE", part.externalReference));
+    }
+  }
   if (hash) {
     // 64 hex characters do not fit a 48-column roll, so the hash is split at the
     // halfway mark and printed on two lines the customer can read back.
@@ -320,7 +240,11 @@ function thermalLines(
     out.push(hash.slice(0, 32));
     out.push(hash.slice(32));
   } else {
-    out.push("NOT SETTLED ON CHAIN");
+    out.push(
+      order.tender.some((part) => part.kind === "crypto")
+        ? "TRANSACTION HASH UNAVAILABLE"
+        : "SETTLED OFF CHAIN",
+    );
   }
   if (order.payerAddress) {
     out.push(columns("PAYER", `${order.payerAddress.slice(0, 4)}...${order.payerAddress.slice(-4)}`));
@@ -414,7 +338,7 @@ export function ReceiptSheet({
   open,
   onClose,
   order,
-  transactionHash = PREVIEW_TX_HASH,
+  transactionHash = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -435,7 +359,7 @@ function ReceiptSheetInner({
   order: Order;
   transactionHash: string | null;
 }) {
-  const { settings } = useMerchant();
+  const { settings, peripherals } = useMerchant();
   const { toast } = useToast();
 
   const [channel, setChannel] = useState<ReceiptChannel>("screen");
@@ -460,7 +384,7 @@ function ReceiptSheetInner({
     [order, profile, rows, settings.taxMode, transactionHash],
   );
   const widest = paper.reduce((max, entry) => Math.max(max, entry.length), 0);
-  const printer = MOCK_PERIPHERALS.find((p) => p.kind === "printer");
+  const printer = peripherals.find((peripheral) => peripheral.kind === "printer");
 
   /* The verification QR is a real encoding of the explorer link, so the customer
      photographs something that resolves rather than a decorative square. The
@@ -662,8 +586,10 @@ function ReceiptSheetInner({
                     </div>
                   </>
                 ) : (
-                  <p className="mt-1.5 text-[12.5px] text-[#FF9F0A]">
-                    Not settled on chain yet, so there is no hash to verify against.
+                  <p className="mt-1.5 text-[12.5px] text-neutral-400">
+                    {order.tender.some((part) => part.kind === "crypto")
+                      ? "The payment is recorded, but its transaction hash is unavailable."
+                      : "Settled off-chain, so there is no Stellar transaction hash."}
                   </p>
                 )}
               </div>

@@ -17,7 +17,6 @@ import {
   createCharge,
   isNative,
   liveCharges,
-  orderReference,
   quoteFor,
   sameAsset,
   secondsRemaining,
@@ -54,10 +53,22 @@ import {
   updateStaffMember,
   type PinAttemptState,
 } from "@/lib/merchant/permissions";
+import {
+  applyTicketAdjustment,
+  awaitNewOrder,
+  buildOrder,
+  cardTender,
+  cashTender,
+  completeCryptoTender,
+  settleNewOrder,
+  voidNewOrder,
+} from "@/lib/merchant/orders";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
   AcceptedAsset,
+  Adjustment,
+  AdjustmentKind,
   CatalogueItem,
   Charge,
   MerchantSettings,
@@ -68,12 +79,16 @@ import type {
   OrderLine,
   OrderLineModifier,
   OrderTotals,
+  PendingAdjustment,
+  Peripheral,
   Refund,
   RefundReason,
   RefundRequest,
   StaffMember,
   StaffRole,
   TerminalDevice,
+  TenderKind,
+  TenderPart,
   UnmatchedPayment,
 } from "@/lib/merchant/types";
 
@@ -82,6 +97,22 @@ export interface Ticket {
   lines: OrderLine[];
   discountMinor: Minor;
   tipMinor: Minor;
+  /** Authorised drafts become immutable Adjustment records with the order. */
+  adjustments: PendingAdjustment[];
+}
+
+export interface MerchantSplitTenderInput {
+  firstKind: TenderKind;
+  secondKind: TenderKind;
+  firstMinor: Minor;
+  /** Optional reference printed by an external card terminal. */
+  cardReference?: string;
+}
+
+export interface MerchantTenderOutcome {
+  order: Order;
+  /** Present only while a Stellar leg still needs to settle. */
+  charge: Charge | null;
 }
 
 export interface TodaySummary {
@@ -163,14 +194,26 @@ interface MerchantContextValue {
   addCustomAmount: (amountMinor: Minor, label?: string) => void;
   setLineQuantity: (lineId: string, quantity: number) => void;
   removeLine: (lineId: string) => void;
-  setDiscount: (minor: Minor) => void;
-  setTip: (minor: Minor) => void;
   clearTicket: () => void;
+
+  settleCash: (receivedMinor: Minor) => Order;
+  settleCard: (externalReference?: string) => Order;
+  startSplitCharge: (input: MerchantSplitTenderInput) => MerchantTenderOutcome;
+  applyAdjustment: (input: {
+    lineId: string | null;
+    amountMinor: Minor;
+    reasonCode: string;
+  }) => Order | null;
+  voidLine: (lineId: string | null, reasonCode: string) => Order | null;
+  compLine: (lineId: string | null, reasonCode: string) => Order | null;
 
   orders: Order[];
   charges: Charge[];
   refunds: Refund[];
   unmatched: UnmatchedPayment[];
+  adjustments: Adjustment[];
+  peripherals: Peripheral[];
+  nextOrderNumber: number;
 
   /** Assets that both the shop accepts and the app can price right now. */
   quotableAssets: AcceptedAsset[];
@@ -274,7 +317,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const [store, setStore] = useState<MerchantStore>(() => emptyStore());
   const [ready, setReady] = useState(false);
-  const [ticket, setTicket] = useState<Ticket>({ lines: [], discountMinor: 0, tipMinor: 0 });
+  const [ticket, setTicket] = useState<Ticket>({
+    lines: [],
+    discountMinor: 0,
+    tipMinor: 0,
+    adjustments: [],
+  });
   const [activeChargeId, setActiveChargeId] = useState<string | null>(null);
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
@@ -570,6 +618,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           modifiers,
           taxRateId: item.taxRateId,
           note: null,
+          adjustmentMinor: 0,
         };
         return { ...prev, lines: [...prev.lines, line] };
       });
@@ -593,6 +642,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
             modifiers: [],
             taxRateId: settings.defaultTaxRateId,
             note: null,
+            adjustmentMinor: 0,
           },
         ],
       }));
@@ -606,17 +656,247 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       lines:
         quantity <= 0
           ? prev.lines.filter((l) => l.id !== lineId)
-          : prev.lines.map((l) => (l.id === lineId ? { ...l, quantity } : l)),
+          : prev.lines.map((l) =>
+              l.id === lineId ? { ...l, quantity, adjustmentMinor: 0 } : l,
+            ),
+      adjustments: prev.adjustments.filter((entry) => entry.lineId !== lineId),
     }));
   }, []);
 
   const removeLine = useCallback((lineId: string) => {
-    setTicket((prev) => ({ ...prev, lines: prev.lines.filter((l) => l.id !== lineId) }));
+    setTicket((prev) => ({
+      ...prev,
+      lines: prev.lines.filter((l) => l.id !== lineId),
+      adjustments: prev.adjustments.filter((entry) => entry.lineId !== lineId),
+    }));
   }, []);
 
   const clearTicket = useCallback(() => {
-    setTicket({ lines: [], discountMinor: 0, tipMinor: 0 });
+    setTicket({ lines: [], discountMinor: 0, tipMinor: 0, adjustments: [] });
   }, []);
+
+  const requirePaymentActor = useCallback((current: MerchantStore): StaffMember => {
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before taking a payment.");
+    if (!actor.permissions.takePayment) {
+      throw new Error(`${actor.name} is not allowed to take payments.`);
+    }
+    return actor;
+  }, [staffSessionId]);
+
+  const buildTicketOrder = useCallback((
+    current: MerchantStore,
+    source: Ticket,
+    actor: StaffMember,
+    now: number,
+    tipMinorOverride?: Minor,
+  ): Order => buildOrder(current, {
+    id: uid("ord"),
+    network,
+    lines: source.lines,
+    discountMinor: source.discountMinor,
+    tipMinor: tipMinorOverride ?? source.tipMinor,
+    staffId: actor.id,
+    staffName: actor.name,
+    now,
+  }), [network]);
+
+  const quoteInputs = useCallback((): QuoteInput[] =>
+    quotableAssets
+      .map((asset) => ({ asset, currencyPerUnit: rateFor(asset) as number }))
+      .filter((quote) => quote.currencyPerUnit > 0), [quotableAssets, rateFor]);
+
+  const cryptoChargeFor = useCallback((
+    order: Order,
+    amountMinor: Minor,
+    current: MerchantStore,
+    now: number,
+  ): Charge => {
+    const destination = current.settings.receivingPublicKey;
+    if (!destination) {
+      throw new Error("Choose the account that receives payments in Merchant settings.");
+    }
+    if (current.settings.acceptedAssets.length === 0) {
+      throw new Error("Add at least one accepted asset in Merchant settings.");
+    }
+    const quotes = quoteInputs();
+    if (quotes.length === 0) {
+      throw new Error(
+        network === "mainnet"
+          ? "No live price is available for the assets you accept, so an amount cannot be quoted."
+          : "No price is available for the assets you accept.",
+      );
+    }
+    return createCharge({
+      order,
+      settings: current.settings,
+      network,
+      destination,
+      quotes,
+      amountMinor,
+      now,
+    });
+  }, [network, quoteInputs]);
+
+  const settleCash = useCallback((receivedMinor: Minor): Order => {
+    const current = storeRef.current;
+    const actor = requirePaymentActor(current);
+    if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
+    const now = Date.now();
+    const order = buildTicketOrder(current, ticket, actor, now);
+    const committed = settleNewOrder(
+      current,
+      order,
+      [cashTender(order.totals.totalMinor, receivedMinor)],
+      ticket.adjustments,
+      now,
+    );
+    commitStore(committed.store);
+    clearTicket();
+    return committed.order;
+  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
+
+  const settleCard = useCallback((externalReference?: string): Order => {
+    const current = storeRef.current;
+    const actor = requirePaymentActor(current);
+    if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
+    const now = Date.now();
+    const order = buildTicketOrder(current, ticket, actor, now);
+    const committed = settleNewOrder(
+      current,
+      order,
+      [cardTender(order.totals.totalMinor, externalReference)],
+      ticket.adjustments,
+      now,
+    );
+    commitStore(committed.store);
+    clearTicket();
+    return committed.order;
+  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
+
+  const startSplitCharge = useCallback((input: MerchantSplitTenderInput): MerchantTenderOutcome => {
+    const current = storeRef.current;
+    const actor = requirePaymentActor(current);
+    if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
+    if (input.firstKind === input.secondKind) {
+      throw new Error("A split needs two different tender types.");
+    }
+    const now = Date.now();
+    const order = buildTicketOrder(current, ticket, actor, now);
+    if (
+      !Number.isSafeInteger(input.firstMinor) ||
+      input.firstMinor <= 0 ||
+      input.firstMinor >= order.totals.totalMinor
+    ) {
+      throw new Error("The first split amount must be within the order total.");
+    }
+    const amounts = [input.firstMinor, order.totals.totalMinor - input.firstMinor];
+    const kinds = [input.firstKind, input.secondKind] as const;
+    const parts: TenderPart[] = kinds.flatMap((kind, index) => {
+      const amount = amounts[index];
+      if (kind === "crypto") return [];
+      return kind === "cash"
+        ? [cashTender(amount, amount)]
+        : [cardTender(amount, input.cardReference)];
+    });
+    const cryptoIndex = kinds.findIndex((kind) => kind === "crypto");
+
+    if (cryptoIndex < 0) {
+      const committed = settleNewOrder(current, order, parts, ticket.adjustments, now);
+      commitStore(committed.store);
+      clearTicket();
+      return { order: committed.order, charge: null };
+    }
+
+    const awaiting = awaitNewOrder(current, order, parts, ticket.adjustments);
+    const charge = cryptoChargeFor(awaiting.order, amounts[cryptoIndex], current, now);
+    commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
+    setActiveChargeId(charge.id);
+    clearTicket();
+    return { order: awaiting.order, charge };
+  }, [
+    buildTicketOrder,
+    clearTicket,
+    commitStore,
+    cryptoChargeFor,
+    requirePaymentActor,
+    ticket,
+  ]);
+
+  const adjustTicket = useCallback((
+    kind: AdjustmentKind,
+    lineId: string | null,
+    amountMinor: Minor,
+    reasonCode: string,
+  ): Order | null => {
+    const current = storeRef.current;
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before adjusting a ticket.");
+    const now = Date.now();
+    const result = applyTicketAdjustment(current, ticket, {
+      id: uid("aj"),
+      kind,
+      lineId,
+      amountMinor,
+      reasonCode,
+      actor,
+      now,
+    });
+    const adjustments = [...ticket.adjustments, result.adjustment];
+
+    if (kind === "void" && result.ticket.lines.length === 0) {
+      const order = buildTicketOrder(current, ticket, actor, now);
+      const committed = voidNewOrder(current, order, adjustments);
+      commitStore(committed.store);
+      clearTicket();
+      return committed.order;
+    }
+
+    if (result.totals.totalMinor === 0) {
+      const adjustedTicket: Ticket = { ...result.ticket, adjustments };
+      const order = buildTicketOrder(current, adjustedTicket, actor, now);
+      const committed = settleNewOrder(current, order, [], adjustments, now);
+      commitStore(committed.store);
+      clearTicket();
+      return committed.order;
+    }
+
+    setTicket({ ...result.ticket, adjustments });
+    return null;
+  }, [buildTicketOrder, clearTicket, commitStore, staffSessionId, ticket]);
+
+  const applyAdjustment = useCallback((input: {
+    lineId: string | null;
+    amountMinor: Minor;
+    reasonCode: string;
+  }): Order | null => adjustTicket(
+    "discount",
+    input.lineId,
+    input.amountMinor,
+    input.reasonCode,
+  ), [adjustTicket]);
+
+  const voidLine = useCallback(
+    (lineId: string | null, reasonCode: string): Order | null =>
+      adjustTicket("void", lineId, 0, reasonCode),
+    [adjustTicket],
+  );
+
+  const compLine = useCallback(
+    (lineId: string | null, reasonCode: string): Order | null =>
+      adjustTicket("comp", lineId, 0, reasonCode),
+    [adjustTicket],
+  );
 
   /* ---------------- charges ---------------- */
 
@@ -627,85 +907,49 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
    * scans — would encode the untipped total.
    */
   const createChargeFromTicket = useCallback((tipMinorOverride?: Minor): Charge => {
-    if (chargeBlockedReason) throw new Error(chargeBlockedReason);
+    const current = storeRef.current;
+    const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
-    const totals =
-      tipMinorOverride === undefined
-        ? ticketTotals
-        : orderTotals({
-            lines: ticket.lines,
-            taxRates: settings.taxRates,
-            taxMode: settings.taxMode,
-            discountMinor: ticket.discountMinor,
-            tipMinor: tipMinorOverride,
-          });
-    const destination = settings.receivingPublicKey as string;
     const now = Date.now();
-    const number = store.nextOrderNumber;
-    const reference = orderReference(settings.profile.name || "Till", number);
-
-    const order: Order = {
-      id: uid("ord"),
-      number,
-      reference,
-      network,
-      status: "awaiting",
-      lines: ticket.lines,
-      totals,
-      currency: settings.currency,
-      tender: [],
-      staffName: activeStaff?.name ?? "Till",
-      terminalName: settings.terminalName,
-      createdAt: now,
-      paidAt: null,
-      payerAddress: null,
-      note: null,
-    };
-
-    const quotes: QuoteInput[] = quotableAssets
-      .map((asset) => ({ asset, currencyPerUnit: rateFor(asset) as number }))
-      .filter((q) => q.currencyPerUnit > 0);
-
-    const charge = createCharge({ order, settings, network, destination, quotes, now });
-
-    persist((prev) => ({
-      ...prev,
-      orders: [order, ...prev.orders],
-      charges: [charge, ...prev.charges],
-      nextOrderNumber: prev.nextOrderNumber + 1,
-    }));
+    const order = buildTicketOrder(current, ticket, actor, now, tipMinorOverride);
+    const awaiting = awaitNewOrder(current, order, [], ticket.adjustments);
+    const charge = cryptoChargeFor(
+      awaiting.order,
+      awaiting.order.totals.totalMinor,
+      current,
+      now,
+    );
+    commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
     setActiveChargeId(charge.id);
     clearTicket();
     return charge;
   }, [
-    activeStaff?.name,
-    chargeBlockedReason,
+    buildTicketOrder,
     clearTicket,
-    network,
-    persist,
-    quotableAssets,
-    rateFor,
-    settings,
-    store.nextOrderNumber,
-    ticket.discountMinor,
-    ticket.lines,
-    ticketTotals,
+    commitStore,
+    cryptoChargeFor,
+    requirePaymentActor,
+    ticket,
   ]);
 
   const voidCharge = useCallback(
     (id: string) => {
-      persist((prev) => ({
-        ...prev,
-        charges: prev.charges.map((c) => (c.id === id ? { ...c, status: "voided" } : c)),
-        orders: prev.orders.map((o) =>
-          prev.charges.some((c) => c.id === id && c.orderId === o.id) && o.status === "awaiting"
-            ? { ...o, status: "voided" }
-            : o,
+      const current = storeRef.current;
+      commitStore({
+        ...current,
+        charges: current.charges.map((charge) =>
+          charge.id === id ? { ...charge, status: "voided" } : charge,
         ),
-      }));
+        orders: current.orders.map((order) =>
+          current.charges.some((charge) => charge.id === id && charge.orderId === order.id) &&
+          order.status === "awaiting"
+            ? { ...order, status: "voided" }
+            : order,
+        ),
+      });
       setActiveChargeId((current) => (current === id ? null : current));
     },
-    [persist],
+    [commitStore],
   );
 
   /** Expire anything past its window so the UI never shows a dead countdown. */
@@ -735,55 +979,48 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const applyPayments = useCallback(
     (payments: ObservedPayment[]) => {
       if (payments.length === 0) return;
-      persist((prev) => {
-        let charges = prev.charges;
-        let orders = prev.orders;
-        const unmatched = [...prev.unmatched];
-        const seen = new Set(
-          [...prev.unmatched.map((p) => p.id), ...prev.charges.map((c) => c.payment?.id)].filter(
-            Boolean,
-          ) as string[],
-        );
+      let next = storeRef.current;
+      const unmatched = [...next.unmatched];
+      const seen = new Set(
+        [...next.unmatched.map((payment) => payment.id), ...next.charges.map((charge) => charge.payment?.id)]
+          .filter(Boolean) as string[],
+      );
 
-        for (const payment of payments) {
-          if (seen.has(payment.id)) continue;
-          seen.add(payment.id);
-          const scoped = charges.filter((c) => c.network === network);
-          const outcome = matchPayment(payment, scoped, prev.settings);
+      for (const payment of payments) {
+        if (seen.has(payment.id)) continue;
+        seen.add(payment.id);
+        const scoped = next.charges.filter((charge) => charge.network === network);
+        const outcome = matchPayment(payment, scoped, next.settings);
 
-          if (outcome.lane === "memo") {
-            const status = chargeStatusFor(outcome.verdict);
-            charges = charges.map((c) =>
-              c.id === outcome.charge.id
-                ? { ...c, status, payment: { ...payment, lane: "memo" as const } }
-                : c,
-            );
-            if (status === "paid") {
-              orders = orders.map((o) =>
-                o.id === outcome.charge.orderId
-                  ? {
-                      ...o,
-                      status: "paid" as const,
-                      paidAt: Date.now(),
-                      payerAddress: payment.from,
-                      tender: [
-                        { kind: "crypto" as const, amountMinor: o.totals.totalMinor, chargeId: outcome.charge.id },
-                      ],
-                    }
-                  : o,
-              );
-            }
-            continue;
+        if (outcome.lane === "memo") {
+          const status = chargeStatusFor(outcome.verdict);
+          next = {
+            ...next,
+            charges: next.charges.map((charge) =>
+              charge.id === outcome.charge.id
+                ? { ...charge, status, payment: { ...payment, lane: "memo" as const } }
+                : charge,
+            ),
+          };
+          if (status === "paid") {
+            next = completeCryptoTender(next, {
+              orderId: outcome.charge.orderId,
+              chargeId: outcome.charge.id,
+              amountMinor: outcome.charge.amountMinor,
+              payerAddress: payment.from,
+              now: Date.now(),
+            }).store;
           }
-
-          // Everything else needs a person: the tray holds it until they decide.
-          unmatched.unshift({ ...payment, seenAt: Date.now() });
+          continue;
         }
 
-        return { ...prev, charges, orders, unmatched: unmatched.slice(0, 200) };
-      });
+        // Everything else needs a person: the tray holds it until they decide.
+        unmatched.unshift({ ...payment, seenAt: Date.now() });
+      }
+
+      commitStore({ ...next, unmatched: unmatched.slice(0, 200) });
     },
-    [network, persist],
+    [commitStore, network],
   );
 
   /**
@@ -862,35 +1099,35 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const attachPayment = useCallback(
     (paymentId: string, chargeId: string) => {
-      persist((prev) => {
-        const payment = prev.unmatched.find((p) => p.id === paymentId);
-        const charge = prev.charges.find((c) => c.id === chargeId);
-        if (!payment || !charge) return prev;
-        // Attaching is a staff decision, so it files the order regardless of the
-        // amount lane — the audit trail records that a person made the call.
-        return {
-          ...prev,
-          unmatched: prev.unmatched.filter((p) => p.id !== paymentId),
-          charges: prev.charges.map((c) =>
-            c.id === chargeId
-              ? { ...c, status: "paid" as const, payment: { ...payment, lane: "manual" as const } }
-              : c,
-          ),
-          orders: prev.orders.map((o) =>
-            o.id === charge.orderId
-              ? {
-                  ...o,
-                  status: "paid" as const,
-                  paidAt: Date.now(),
-                  payerAddress: payment.from,
-                  tender: [{ kind: "crypto" as const, amountMinor: o.totals.totalMinor, chargeId }],
-                }
-              : o,
-          ),
-        };
+      const current = storeRef.current;
+      const payment = current.unmatched.find((entry) => entry.id === paymentId);
+      const charge = current.charges.find((entry) => entry.id === chargeId);
+      if (!payment || !charge) return;
+      // A manual match deliberately overrides the automatic lane, but still
+      // settles only the charge's exact outstanding amount.
+      const withPayment: MerchantStore = {
+        ...current,
+        unmatched: current.unmatched.filter((entry) => entry.id !== paymentId),
+        charges: current.charges.map((entry) =>
+          entry.id === chargeId
+            ? {
+                ...entry,
+                status: "paid" as const,
+                payment: { ...payment, lane: "manual" as const },
+              }
+            : entry,
+        ),
+      };
+      const committed = completeCryptoTender(withPayment, {
+        orderId: charge.orderId,
+        chargeId,
+        amountMinor: charge.amountMinor,
+        payerAddress: payment.from,
+        now: Date.now(),
       });
+      commitStore(committed.store);
     },
-    [persist],
+    [commitStore],
   );
 
   const dismissUnmatched = useCallback(
@@ -1259,14 +1496,22 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     addCustomAmount,
     setLineQuantity,
     removeLine,
-    setDiscount: (minor) => setTicket((prev) => ({ ...prev, discountMinor: Math.max(0, minor) })),
-    setTip: (minor) => setTicket((prev) => ({ ...prev, tipMinor: Math.max(0, minor) })),
     clearTicket,
+
+    settleCash,
+    settleCard,
+    startSplitCharge,
+    applyAdjustment,
+    voidLine,
+    compLine,
 
     orders: store.orders,
     charges: store.charges,
     refunds: store.refunds,
     unmatched: store.unmatched,
+    adjustments: store.adjustments,
+    peripherals: store.peripherals,
+    nextOrderNumber: store.nextOrderNumber,
 
     quotableAssets,
     chargeBlockedReason,

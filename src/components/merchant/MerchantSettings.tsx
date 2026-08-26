@@ -41,7 +41,7 @@ import {
   IconXCircle,
 } from "./icons";
 import { MerchantDisclosure } from "./Disclosure";
-import { PREVIEW_ORDER, ReceiptSheet } from "./ReceiptSheet";
+import { ReceiptSheet } from "./ReceiptSheet";
 
 const CURRENCIES: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
 
@@ -405,13 +405,15 @@ export function MerchantSettings({
   /** The wallet's Send — where a sweep is actually made and signed. */
   onOpenSend?: (destination?: string) => void;
 }) {
-  const { settings, updateSettings, setEnabled } = useMerchant();
+  const { settings, updateSettings, setEnabled, orders, charges } = useMerchant();
   const { accounts, balances } = useWallet();
   const { toast } = useToast();
 
-  /* MOCK — a fixture receipt, shown from beside the footer that prints on it so
-     the wording can be checked without ringing a sale up. Nothing is stored. */
   const [specimenOpen, setSpecimenOpen] = useState(false);
+  const specimenOrder = orders.find((order) => order.status === "paid") ?? null;
+  const specimenHash = specimenOrder
+    ? charges.find((charge) => charge.orderId === specimenOrder.id)?.payment?.transactionHash ?? null
+    : null;
 
   /* MOCK — the settlement rule has no home on the merchant store yet, so it is
      seeded from `MOCK_SETTLEMENT` and lives for as long as this screen does.
@@ -576,10 +578,10 @@ export function MerchantSettings({
             <Row
               icon={<IconReceipt size={16} />}
               tint="#5E5CE6"
-              label="Specimen receipt"
-              sub="See how the footer prints"
-              chevron
-              onClick={() => setSpecimenOpen(true)}
+              label="Latest receipt"
+              sub={specimenOrder ? `Preview order ${specimenOrder.number}` : "Complete a sale to preview it"}
+              chevron={specimenOrder !== null}
+              onClick={specimenOrder ? () => setSpecimenOpen(true) : undefined}
             />
           </Advanced>
         </div>
@@ -1218,11 +1220,14 @@ export function MerchantSettings({
         </span>
       </p>
 
-      <ReceiptSheet
-        open={specimenOpen}
-        onClose={() => setSpecimenOpen(false)}
-        order={PREVIEW_ORDER}
-      />
+      {specimenOpen && specimenOrder && (
+        <ReceiptSheet
+          open
+          onClose={() => setSpecimenOpen(false)}
+          order={specimenOrder}
+          transactionHash={specimenHash}
+        />
+      )}
     </div>
   );
 }

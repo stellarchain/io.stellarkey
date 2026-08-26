@@ -594,10 +594,10 @@ export const MOCK_EXPORTS: ExportRecord[] = [
 ];
 
 export const MOCK_ADJUSTMENTS: Adjustment[] = [
-  { id: "aj_1", kind: "discount", orderNumber: 2093, lineName: null, amountMinor: 430, reasonCode: "Staff friend", staffName: "Tomás Silva", at: at(17, 40) },
-  { id: "aj_2", kind: "comp", orderNumber: 2088, lineName: "Flat White", amountMinor: 320, reasonCode: "Remake — spilled", staffName: "Ana Reis", at: at(15, 12) },
-  { id: "aj_3", kind: "discount", orderNumber: 2071, lineName: null, amountMinor: 510, reasonCode: "Loyalty reward", staffName: "Céu Marques", at: at(11, 24) },
-  { id: "aj_4", kind: "void", orderNumber: 2064, lineName: "Cold Brew", amountMinor: 360, reasonCode: "Rung twice", staffName: "Tomás Silva", at: at(9, 58) },
+  { id: "aj_1", kind: "discount", orderId: "ord_2093", orderNumber: 2093, lineId: null, lineName: null, amountMinor: 430, reasonCode: "Staff friend", staffId: "st_tomas", staffName: "Tomás Silva", at: at(17, 40) },
+  { id: "aj_2", kind: "comp", orderId: "ord_2088", orderNumber: 2088, lineId: "line_2088_1", lineName: "Flat White", amountMinor: 320, reasonCode: "Remake — spilled", staffId: "st_ana", staffName: "Ana Reis", at: at(15, 12) },
+  { id: "aj_3", kind: "discount", orderId: "ord_2071", orderNumber: 2071, lineId: null, lineName: null, amountMinor: 510, reasonCode: "Loyalty reward", staffId: "st_ceu", staffName: "Céu Marques", at: at(11, 24) },
+  { id: "aj_4", kind: "void", orderId: "ord_2064", orderNumber: 2064, lineId: "line_2064_1", lineName: "Cold Brew", amountMinor: 360, reasonCode: "Rung twice", staffId: "st_tomas", staffName: "Tomás Silva", at: at(9, 58) },
 ];
 
 export const MOCK_REFUND_REQUESTS: RefundRequest[] = [
