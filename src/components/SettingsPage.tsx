@@ -158,6 +158,7 @@ export function SettingsPage({
   } = useWallet();
   const {
     enabled: merchantEnabled,
+    configured: merchantConfigured,
     setEnabled: setMerchantEnabled,
     settings: merchantSettings,
   } = useMerchant();
@@ -751,14 +752,15 @@ export function SettingsPage({
                       on={merchantEnabled}
                       label="Merchant Mode"
                       onChange={() => {
-                        const next = !merchantEnabled;
-                        setMerchantEnabled(next);
-                        // Only a shop with nothing to go on gets walked through
-                        // setup; one that is already configured is left alone.
-                        const unconfigured =
-                          !merchantSettings.profile.name.trim() &&
-                          !merchantSettings.receivingPublicKey;
-                        if (next && unconfigured) onOpenSetupWizard?.();
+                        if (merchantEnabled) {
+                          setMerchantEnabled(false);
+                        } else if (!merchantConfigured) {
+                          // Setup owns the enable commit. Cancelling the sheet
+                          // leaves Merchant Mode off and writes nothing.
+                          onOpenSetupWizard?.();
+                        } else {
+                          setMerchantEnabled(true);
+                        }
                       }}
                     />
                   </RowButton>

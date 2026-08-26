@@ -1,39 +1,21 @@
 "use client";
 
-/**
- * MOCK — the four-step sheet a shop sees the moment Merchant Mode is switched on.
- *
- * What is mocked: everything typed here lives in this component's own state and
- * is dropped when the sheet closes. Finishing toasts and closes; no setting is
- * written, no trustline is created, no PIN is stored. The candidate assets come
- * from `mock.ts`; the accounts and the held trustlines are read (never written)
- * from the real wallet, because a preflight that lies about what you hold is
- * worse than no preflight.
- *
- * What a real implementation replaces: `finish()` becomes a single
- * `updateSettings({ profile, currency, receivingPublicKey, settlementAsset,
- * acceptedAssets, taxMode, taxRates, tips, chargeExpirySeconds, terminalName })`
- * — the draft below is deliberately shaped like `MerchantSettings` so that call
- * is a spread, not a translation. "Add trustline" becomes a ChangeTrust
- * operation signed by the vault, and the staff PIN becomes the salted digest
- * described on `StaffMember.pinDigest`.
- */
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchBalances } from "@/lib/api";
+import { POPULAR_ASSETS } from "@/lib/assets";
+import { useMerchant } from "@/hooks/useMerchant";
 import { useWallet } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey, isNative, referencePrefix } from "@/lib/merchant/charge";
-import { DEFAULT_TAX_RATES } from "@/lib/merchant/defaults";
-import { MOCK_USDC, MOCK_XLM,
-  MOCK_PREVIEW_LINES,
-  MOCK_PREVIEW_TOTAL_MINOR,
-} from "@/lib/merchant/mock";
+import { DEFAULT_CATALOGUE, DEFAULT_TAX_RATES } from "@/lib/merchant/defaults";
 import { fmtMinor } from "@/lib/merchant/money";
+import type { NetworkKey } from "@/lib/stellar";
 import type {
   AcceptedAsset,
   MerchantProfile,
+  MerchantSettings,
   TaxMode,
   TillTextSize,
   TipMode,
@@ -72,8 +54,17 @@ const EXPIRY_OPTIONS = [
   { seconds: 1800, label: "30 minutes" },
 ];
 
-/** Protocol figure, not a preference: one reserve unit is 0.5 XLM. */
-const BASE_RESERVE_XLM = 0.5;
+const NATIVE_XLM: AcceptedAsset = { code: "XLM", issuer: null };
+const EMPTY_ACCOUNT_BALANCES: Awaited<ReturnType<typeof fetchBalances>> = [];
+const PREVIEW_LINES = DEFAULT_CATALOGUE.slice(1, 3).map((item) => ({
+  quantity: 1,
+  name: item.name,
+  unitPriceMinor: item.priceMinor,
+}));
+const PREVIEW_TOTAL_MINOR = PREVIEW_LINES.reduce(
+  (total, line) => total + line.quantity * line.unitPriceMinor,
+  0,
+);
 
 const STEPS = [
   { n: 1, title: "The shop", blurb: "What goes on the receipt" },
@@ -123,26 +114,44 @@ interface Draft {
   textSize: TillTextSize;
 }
 
-function initialDraft(): Draft {
+function recommendedAssets(network: NetworkKey): AcceptedAsset[] {
+  const usdc = POPULAR_ASSETS.find((asset) => asset.code === "USDC");
+  const issuer = network === "mainnet" ? usdc?.mainnetIssuer : usdc?.testnetIssuer;
+  return issuer ? [NATIVE_XLM, { code: "USDC", issuer }] : [NATIVE_XLM];
+}
+
+function initialDraft(
+  settings: MerchantSettings,
+  network: NetworkKey,
+  receivingPublicKey: string,
+  textSize: TillTextSize,
+): Draft {
+  const configured = Boolean(settings.profile.name.trim() || settings.receivingPublicKey);
+  const acceptedAssets = configured ? settings.acceptedAssets : recommendedAssets(network);
+  const settlementAsset = configured
+    ? settings.settlementAsset
+    : (acceptedAssets.find((asset) => asset.code === "USDC") ?? acceptedAssets[0]);
   return {
-    profile: { name: "", addressLines: [], taxId: "", receiptFooter: "" },
-    currency: "EUR",
-    receivingPublicKey: "",
-    settlementKey: assetKey(MOCK_USDC),
-    acceptedKeys: [assetKey(MOCK_XLM), assetKey(MOCK_USDC)],
-    taxMode: "inclusive",
-    rates: DEFAULT_TAX_RATES.map((rate) => ({
+    profile: configured
+      ? settings.profile
+      : { name: "", addressLines: [], taxId: "", receiptFooter: "" },
+    currency: configured ? settings.currency : "EUR",
+    receivingPublicKey: settings.receivingPublicKey ?? receivingPublicKey,
+    settlementKey: assetKey(settlementAsset),
+    acceptedKeys: acceptedAssets.map(assetKey),
+    taxMode: settings.taxMode,
+    rates: (settings.taxRates.length > 0 ? settings.taxRates : DEFAULT_TAX_RATES).map((rate) => ({
       id: rate.id,
       label: rate.label,
       percentText: String(rate.percent),
     })),
-    tipMode: "percent",
-    tipPercentsText: "10, 15, 20",
-    chargeExpirySeconds: 600,
-    terminalName: "Front counter",
+    tipMode: settings.tips.mode,
+    tipPercentsText: settings.tips.percents.join(", ") || "10, 15, 20",
+    chargeExpirySeconds: settings.chargeExpirySeconds,
+    terminalName: configured ? settings.terminalName : "Front counter",
     pin: "",
     pinConfirm: "",
-    textSize: "standard",
+    textSize,
   };
 }
 
@@ -215,18 +224,51 @@ function Block({
 /* The wizard                                                          */
 /* ------------------------------------------------------------------ */
 
-export function SetupWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SetupWizard({
+  open,
+  onClose,
+  onComplete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onComplete?: () => void;
+}) {
   if (!open) return null;
-  return <SetupWizardInner onClose={onClose} />;
+  return <SetupWizardInner onClose={onClose} onComplete={onComplete} />;
 }
 
-function SetupWizardInner({ onClose }: { onClose: () => void }) {
-  const { accounts, balances } = useWallet();
+function SetupWizardInner({
+  onClose,
+  onComplete,
+}: {
+  onClose: () => void;
+  onComplete?: () => void;
+}) {
+  const {
+    accounts,
+    activeAccount,
+    network,
+    trustAsset,
+    refresh,
+  } = useWallet();
+  const { settings, tillTextSize, completeSetup } = useMerchant();
   const { toast } = useToast();
 
   const [step, setStep] = useState(1);
   const [showProblems, setShowProblems] = useState(false);
-  const [draft, setDraft] = useState<Draft>(initialDraft);
+  const [draft, setDraft] = useState<Draft>(() =>
+    initialDraft(settings, network, activeAccount?.publicKey ?? accounts[0]?.publicKey ?? "", tillTextSize),
+  );
+  const [balanceState, setBalanceState] = useState<{
+    publicKey: string;
+    network: NetworkKey;
+    balances: Awaited<ReturnType<typeof fetchBalances>>;
+    error: string | null;
+  } | null>(null);
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const [trustingKey, setTrustingKey] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   function patch(next: Partial<Draft>) {
     setDraft((prev) => ({ ...prev, ...next }));
@@ -234,34 +276,73 @@ function SetupWizardInner({ onClose }: { onClose: () => void }) {
 
   /* ---------------- assets ---------------- */
 
-  /** XLM and USDC always offered; anything else the wallet actually holds joins them. */
+  const receivingBalances = !draft.receivingPublicKey
+    ? EMPTY_ACCOUNT_BALANCES
+    : balanceState?.publicKey === draft.receivingPublicKey && balanceState.network === network
+      ? balanceState.balances
+      : null;
+  const balanceError =
+    balanceState?.publicKey === draft.receivingPublicKey && balanceState.network === network
+      ? balanceState.error
+      : null;
+
+  useEffect(() => {
+    if (!draft.receivingPublicKey) return;
+    let alive = true;
+    void fetchBalances(draft.receivingPublicKey, network)
+      .then((next) => {
+        if (alive) {
+          setBalanceState({
+            publicKey: draft.receivingPublicKey,
+            network,
+            balances: next,
+            error: null,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!alive) return;
+        setBalanceState({
+          publicKey: draft.receivingPublicKey,
+          network,
+          balances: [],
+          error:
+            error instanceof Error ? error.message : "The receiving account could not be checked.",
+        });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [balanceRefresh, draft.receivingPublicKey, network]);
+
+  /** Network-correct XLM/USDC, configured assets, and held assets are offered. */
   const assetChoices = useMemo(() => {
-    const list: AcceptedAsset[] = [MOCK_XLM, MOCK_USDC];
-    for (const balance of balances ?? []) {
+    const list: AcceptedAsset[] = [...recommendedAssets(network), ...settings.acceptedAssets];
+    for (const balance of receivingBalances ?? []) {
       if (balance.isNative || balance.issuer === null) continue;
       const asset: AcceptedAsset = { code: balance.code, issuer: balance.issuer };
       if (!list.some((existing) => assetKey(existing) === assetKey(asset))) list.push(asset);
     }
     return list;
-  }, [balances]);
+  }, [network, receivingBalances, settings.acceptedAssets]);
 
   /** Trustlines this wallet already holds, by asset key. */
   const heldKeys = useMemo(() => {
     const held = new Set<string>();
-    for (const balance of balances ?? []) {
+    for (const balance of receivingBalances ?? []) {
       if (balance.isNative || balance.issuer === null) continue;
       held.add(assetKey({ code: balance.code, issuer: balance.issuer }));
     }
     return held;
-  }, [balances]);
+  }, [receivingBalances]);
 
-  const subentries = heldKeys.size;
   const accepted = assetChoices.filter((asset) => draft.acceptedKeys.includes(assetKey(asset)));
   const missingTrustlines = accepted.filter(
     (asset) => !isNative(asset) && !heldKeys.has(assetKey(asset)),
   );
-  const reserveNowXlm = BASE_RESERVE_XLM * (2 + subentries);
-  const reserveAfterXlm = BASE_RESERVE_XLM * (2 + subentries + missingTrustlines.length);
+  const receivingAccountActive = Boolean(
+    receivingBalances?.some((balance) => balance.isNative),
+  );
 
   const accountOptions: SelectOption[] = useMemo(
     () =>
@@ -298,7 +379,15 @@ function SetupWizardInner({ onClose }: { onClose: () => void }) {
         ? "A charge needs at least one accepted asset."
         : !draft.acceptedKeys.includes(draft.settlementKey)
           ? "The settlement asset has to be one you accept."
-          : null,
+          : receivingBalances === null
+            ? "Wait while the receiving account is checked on Stellar."
+            : balanceError
+              ? "The receiving account could not be checked. Retry before opening the till."
+              : !receivingAccountActive
+                ? "The receiving account is not active on this Stellar network yet."
+                : missingTrustlines.length > 0
+                  ? `Add ${missingTrustlines.length === 1 ? "the missing trustline" : "all missing trustlines"} before opening the till.`
+                  : null,
     3: rateProblem ?? tipProblem,
     4: !draft.terminalName.trim()
       ? "Name this device so its orders can be told from the other tills."
@@ -328,26 +417,67 @@ function SetupWizardInner({ onClose }: { onClose: () => void }) {
     setStep((current) => Math.max(1, current - 1));
   }
 
-  function finish() {
+  async function finish() {
     if (problem) {
       setShowProblems(true);
       triggerHaptic("warning");
       return;
     }
-    triggerHaptic("success");
-    toast("Nothing saved — a real setup would open the till", "success");
-    onClose();
+    const settlementAsset = assetChoices.find(
+      (asset) => assetKey(asset) === draft.settlementKey,
+    );
+    const taxRates = draft.rates.map((rate) => ({
+      id: rate.id,
+      label: rate.label,
+      percent: parsePercent(rate.percentText) as number,
+    }));
+    if (!settlementAsset) {
+      setWorkflowError("Choose a valid settlement asset.");
+      return;
+    }
+    setSaving(true);
+    setWorkflowError(null);
+    try {
+      await completeSetup({
+        profile: draft.profile,
+        receivingPublicKey: draft.receivingPublicKey,
+        settlementAsset,
+        acceptedAssets: accepted,
+        currency: draft.currency,
+        taxMode: draft.taxMode,
+        taxRates,
+        tips: {
+          ...settings.tips,
+          mode: draft.tipMode,
+          percents: parsePercentList(draft.tipPercentsText) ?? settings.tips.percents,
+        },
+        chargeExpirySeconds: draft.chargeExpirySeconds,
+        terminalName: draft.terminalName,
+        textSize: draft.textSize,
+        ownerName: activeAccount?.label ?? receivingAccount?.label ?? "Owner",
+        pin: draft.pin,
+      });
+      triggerHaptic("success");
+      toast("Merchant Mode is ready", "success");
+      onComplete?.();
+      onClose();
+    } catch (error) {
+      triggerHaptic("error");
+      setWorkflowError(error instanceof Error ? error.message : "Merchant setup could not be saved.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const current = STEPS[step - 1];
   const memoPrefix = referencePrefix(draft.profile.name.trim() || "Till");
 
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal open onClose={saving ? () => undefined : onClose} wide dismissable={!saving}>
       <ModalHeader
         title="Set up Merchant Mode"
         subtitle={`Step ${step} of 4 · ${current.title}`}
-        onClose={onClose}
+        onClose={saving ? () => undefined : onClose}
       />
 
       {/* ---------------- step indicator ---------------- */}
@@ -395,17 +525,47 @@ function SetupWizardInner({ onClose }: { onClose: () => void }) {
             receivingWatchOnly={Boolean(receivingAccount?.watchOnly)}
             assetChoices={assetChoices}
             heldKeys={heldKeys}
-            subentries={subentries}
-            reserveNowXlm={reserveNowXlm}
-            reserveAfterXlm={reserveAfterXlm}
             missingCount={missingTrustlines.length}
-            onAddTrustline={(asset) => {
-              triggerHaptic("light");
-              toast(`Would sign a ChangeTrust for ${asset.code} · +${BASE_RESERVE_XLM} XLM reserve`);
+            checking={receivingBalances === null}
+            checkError={balanceError}
+            trustingKey={trustingKey}
+            onRetryCheck={() => setBalanceRefresh((value) => value + 1)}
+            onAddTrustline={async (asset) => {
+              const key = assetKey(asset);
+              if (!asset.issuer) return;
+              if (activeAccount?.publicKey !== draft.receivingPublicKey) {
+                setWorkflowError("Select the receiving account in the wallet header before signing its trustline.");
+                triggerHaptic("warning");
+                return;
+              }
+              if (activeAccount.watchOnly) {
+                setWorkflowError("A watch-only receiving account cannot sign a trustline. Add it from a signing wallet first.");
+                triggerHaptic("warning");
+                return;
+              }
+              setTrustingKey(key);
+              setWorkflowError(null);
+              try {
+                const result = await trustAsset({ code: asset.code, issuer: asset.issuer, add: true });
+                if (result.status === "status_unknown") {
+                  setWorkflowError(`The ${asset.code} trustline was submitted but its status is unknown. Do not retry until transaction tracking resolves it.`);
+                  toast("Trustline status is still being confirmed", "info");
+                } else {
+                  toast(`${asset.code} trustline submitted`, "success");
+                }
+                await refresh();
+                setBalanceRefresh((value) => value + 1);
+              } catch (error) {
+                const message = error instanceof Error ? error.message : "The trustline could not be added.";
+                setWorkflowError(message);
+                toast(message, "error");
+              } finally {
+                setTrustingKey(null);
+              }
             }}
             onWatchOnly={() => {
               triggerHaptic("light");
-              toast("Would open Add account → Watch-only");
+              toast("Use Add Account in the wallet header, then choose Watch-only", "info");
             }}
           />
         )}
@@ -423,20 +583,21 @@ function SetupWizardInner({ onClose }: { onClose: () => void }) {
         )}
 
         {showProblems && problem && <Problem message={problem} />}
+        {workflowError && <Problem message={workflowError} />}
 
         {/* Stacked on a phone: "Take the first charge" does not fit half a 393px
             row, and a primary action at the foot is where the thumb already is. */}
         <div className="flex flex-col gap-3 pt-1 sm:grid sm:grid-cols-2">
-          <Button variant="ghost" className="w-full" onClick={step === 1 ? onClose : goBack}>
+          <Button variant="ghost" className="w-full" disabled={saving} onClick={step === 1 ? onClose : goBack}>
             {step === 1 ? "Not now" : "Back"}
           </Button>
           {step < 4 ? (
-            <Button className="w-full" onClick={goNext}>
+            <Button className="w-full" disabled={saving} onClick={goNext}>
               Continue
             </Button>
           ) : (
-            <Button className="w-full" onClick={finish}>
-              Take the first charge
+            <Button className="w-full" loading={saving} onClick={() => void finish()}>
+              Open the till
             </Button>
           )}
         </div>
@@ -565,21 +726,21 @@ function StepShop({
             <div className="mono space-y-1 text-left text-[11.5px] text-neutral-300">
               <div className="flex justify-between gap-3">
                 <span className="truncate">
-                  {MOCK_PREVIEW_LINES[0].quantity} × {MOCK_PREVIEW_LINES[0].name}
+                  {PREVIEW_LINES[0].quantity} × {PREVIEW_LINES[0].name}
                 </span>
-                <span>{fmtMinor(MOCK_PREVIEW_LINES[0].unitPriceMinor, draft.currency)}</span>
+                <span>{fmtMinor(PREVIEW_LINES[0].unitPriceMinor, draft.currency)}</span>
               </div>
               <div className="flex justify-between gap-3">
                 <span className="truncate">
-                  {MOCK_PREVIEW_LINES[1].quantity} × {MOCK_PREVIEW_LINES[1].name}
+                  {PREVIEW_LINES[1].quantity} × {PREVIEW_LINES[1].name}
                 </span>
-                <span>{fmtMinor(MOCK_PREVIEW_LINES[1].unitPriceMinor, draft.currency)}</span>
+                <span>{fmtMinor(PREVIEW_LINES[1].unitPriceMinor, draft.currency)}</span>
               </div>
             </div>
             <div className="my-3 border-t border-dashed border-white/20" />
             <div className="mono flex justify-between gap-3 text-[13px] font-semibold text-white">
               <span>Total</span>
-              <span>{fmtMinor(MOCK_PREVIEW_TOTAL_MINOR, draft.currency)}</span>
+              <span>{fmtMinor(PREVIEW_TOTAL_MINOR, draft.currency)}</span>
             </div>
           </div>
         </div>
@@ -603,10 +764,11 @@ function StepMoney({
   receivingWatchOnly,
   assetChoices,
   heldKeys,
-  subentries,
-  reserveNowXlm,
-  reserveAfterXlm,
   missingCount,
+  checking,
+  checkError,
+  trustingKey,
+  onRetryCheck,
   onAddTrustline,
   onWatchOnly,
 }: {
@@ -616,11 +778,12 @@ function StepMoney({
   receivingWatchOnly: boolean;
   assetChoices: AcceptedAsset[];
   heldKeys: Set<string>;
-  subentries: number;
-  reserveNowXlm: number;
-  reserveAfterXlm: number;
   missingCount: number;
-  onAddTrustline: (asset: AcceptedAsset) => void;
+  checking: boolean;
+  checkError: string | null;
+  trustingKey: string | null;
+  onRetryCheck: () => void;
+  onAddTrustline: (asset: AcceptedAsset) => Promise<void>;
   onWatchOnly: () => void;
 }) {
   const acceptedAssets = assetChoices.filter((asset) =>
@@ -743,7 +906,20 @@ function StepMoney({
       </Block>
 
       <Block icon={<IconAlert size={15} />} tint="#FF9F0A" title="Trustline preflight">
-        {acceptedAssets.length === 0 ? (
+        {checking ? (
+          <p role="status" className="text-[13px] leading-relaxed text-neutral-400">
+            Checking the receiving account on Stellar…
+          </p>
+        ) : checkError ? (
+          <Notice tone="warn">
+            <div className="flex items-center justify-between gap-3">
+              <span>The receiving account could not be checked.</span>
+              <button type="button" className="btn btn-secondary btn-sm shrink-0" onClick={onRetryCheck}>
+                Retry
+              </button>
+            </div>
+          </Notice>
+        ) : acceptedAssets.length === 0 ? (
           <p className="text-[13px] leading-relaxed text-neutral-400">
             Turn on an asset above and its trustline is checked here.
           </p>
@@ -786,10 +962,11 @@ function StepMoney({
                   {!native && !held && (
                     <button
                       type="button"
-                      onClick={() => onAddTrustline(asset)}
+                      disabled={trustingKey !== null}
+                      onClick={() => void onAddTrustline(asset)}
                       className="btn btn-secondary btn-sm shrink-0"
                     >
-                      Add trustline
+                      {trustingKey === assetKey(asset) ? "Adding…" : "Add trustline"}
                     </button>
                   )}
                 </div>
@@ -800,26 +977,18 @@ function StepMoney({
 
         <div className="panel-inset mt-3 px-3.5 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-            The reserve, spelled out
+            Reserve impact
           </p>
-          <p className="mono mt-1.5 text-[12.5px] leading-relaxed text-neutral-300">
-            minimum balance = base_reserve × (2 + subentries)
-          </p>
-          <p className="mono mt-1 text-[12.5px] leading-relaxed text-white">
-            {BASE_RESERVE_XLM} XLM × (2 + {subentries}) = {reserveNowXlm.toFixed(1)} XLM held back
-            today
+          <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
+            Each trustline adds one subentry to this account. Stellar&rsquo;s current base reserve,
+            every other subentry, liabilities, and the transaction fee are checked again in the
+            wallet&rsquo;s signing review—this screen does not guess a fixed reserve value.
           </p>
           {missingCount > 0 && (
-            <p className="mono mt-1 text-[12.5px] leading-relaxed text-[#FF9F0A]">
-              +{(BASE_RESERVE_XLM * missingCount).toFixed(1)} XLM for{" "}
-              {missingCount === 1 ? "the missing trustline" : `${missingCount} missing trustlines`} ={" "}
-              {reserveAfterXlm.toFixed(1)} XLM
+            <p className="mt-2 text-[12px] leading-relaxed text-[#FF9F0A]">
+              {missingCount} {missingCount === 1 ? "trustline is" : "trustlines are"} still required.
             </p>
           )}
-          <p className="mt-2 text-[12px] leading-relaxed text-neutral-400">
-            Each trustline is one subentry, so it costs {BASE_RESERVE_XLM} XLM of headroom. That XLM
-            is not spent — it is locked, and it comes back if you drop the line.
-          </p>
         </div>
       </Block>
     </>
@@ -950,7 +1119,7 @@ function StepSelling({
                 </span>
               ))}
             </div>
-            <Hint>What the customer would be offered on a {fmtMinor(MOCK_PREVIEW_TOTAL_MINOR, draft.currency)} ticket.</Hint>
+            <Hint>What the customer would be offered on a {fmtMinor(PREVIEW_TOTAL_MINOR, draft.currency)} ticket.</Hint>
           </div>
         )}
         {draft.tipMode === "fixed" && (
@@ -1098,7 +1267,7 @@ function StepTill({
           <p
             className={`mono mt-1 font-semibold leading-none text-white ${TEXT_SIZE_TOTAL[draft.textSize]}`}
           >
-            {fmtMinor(MOCK_PREVIEW_TOTAL_MINOR, draft.currency)}
+            {fmtMinor(PREVIEW_TOTAL_MINOR, draft.currency)}
           </p>
         </div>
         <Hint>
