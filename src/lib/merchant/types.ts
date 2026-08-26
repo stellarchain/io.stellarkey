@@ -277,27 +277,8 @@ export interface Refund {
   createdAt: number;
 }
 
-/** Everything Merchant Mode keeps on the device, versioned for migration. */
-export interface MerchantStore {
-  version: 1;
-  settings: MerchantSettings;
-  catalogue: CatalogueItem[];
-  modifierGroups: ModifierGroup[];
-  orders: Order[];
-  charges: Charge[];
-  refunds: Refund[];
-  unmatched: UnmatchedPayment[];
-  /** Next order number to mint on this device. */
-  nextOrderNumber: number;
-  /** Horizon paging token the payment watcher resumes from, per network. */
-  cursors: Partial<Record<NetworkKey, string>>;
-}
-
-/* ============================================================================
- * Surfaces below are DESIGN MOCKS. The types are real and are the contract an
- * implementation should satisfy, but nothing here is wired to Horizon, to the
- * vault, or to persistence yet — the screens read fixtures from `mock.ts`.
- * ========================================================================== */
+/* Operational records are persisted in MerchantStore. Components must not use
+ * fixture data as a runtime substitute for these records. */
 
 export type StaffRole = "owner" | "manager" | "server" | "accountant";
 
@@ -446,6 +427,19 @@ export interface CounterCode {
   createdAt: number;
 }
 
+/** One immutable Horizon payment attributed to a reusable counter code. */
+export interface CounterPayment {
+  /** Horizon payment operation id; also the deduplication key. */
+  id: string;
+  codeId: string;
+  payment: MatchedPayment;
+  /** Null when the payment could not be priced and still needs review. */
+  amountMinor: Minor | null;
+  /** Fixed-price codes retain the quote printed into their QR. */
+  quote: ChargeQuote | null;
+  seenAt: number;
+}
+
 export interface LoyaltyCard {
   /** Stamps collected toward the reward. */
   stamps: number;
@@ -544,3 +538,37 @@ export interface Peripheral {
 }
 
 export type TillTextSize = "standard" | "large" | "xlarge";
+
+/** Everything Merchant Mode keeps on this device, versioned for migration. */
+export interface MerchantStore {
+  version: 2;
+  settings: MerchantSettings;
+  catalogue: CatalogueItem[];
+  modifierGroups: ModifierGroup[];
+  orders: Order[];
+  charges: Charge[];
+  refunds: Refund[];
+  unmatched: UnmatchedPayment[];
+  staff: StaffMember[];
+  activeStaffId: string | null;
+  shifts: Shift[];
+  invoices: Invoice[];
+  counterCodes: CounterCode[];
+  counterPayments: CounterPayment[];
+  customers: CustomerRecord[];
+  settlementRule: SettlementRule;
+  adjustments: Adjustment[];
+  refundRequests: RefundRequest[];
+  peripherals: Peripheral[];
+  exportRecords: ExportRecord[];
+  terminal: TerminalDevice;
+  tillTextSize: TillTextSize;
+  /** Next order number to mint on this device. */
+  nextOrderNumber: number;
+  /** Next immutable Z-report sequence. */
+  nextShiftNumber: number;
+  /** Next human invoice sequence. */
+  nextInvoiceNumber: number;
+  /** Horizon paging token the payment watcher resumes from, per network. */
+  cursors: Partial<Record<NetworkKey, string>>;
+}
