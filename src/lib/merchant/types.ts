@@ -734,6 +734,12 @@ export type TillTextSize = "standard" | "large" | "xlarge";
 /** Everything Merchant Mode keeps on this device, versioned for migration. */
 export interface MerchantStore {
   version: 2;
+  /** Monotonic local revision used to reject stale writes from another tab. */
+  revision: number;
+  /** Per-tab identifier of the last successful writer. */
+  writerId: string | null;
+  /** Wall-clock time of the last coordinated write. */
+  updatedAt: number;
   settings: MerchantSettings;
   catalogue: CatalogueItem[];
   modifierGroups: ModifierGroup[];

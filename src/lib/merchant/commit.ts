@@ -1,14 +1,14 @@
-export type MerchantStorageErrorCode = "recovery_required" | "write_failed";
+export type MerchantStorageErrorCode = "recovery_required" | "write_failed" | "conflict";
 
 export class MerchantStorageError extends Error {
   readonly code: MerchantStorageErrorCode;
 
   constructor(code: MerchantStorageErrorCode) {
-    super(
-      code === "recovery_required"
-        ? "Merchant data needs recovery before it can be changed."
-        : "Merchant data could not be saved on this device. Free storage and try again.",
-    );
+    super(code === "recovery_required"
+      ? "Merchant data needs recovery before it can be changed."
+      : code === "conflict"
+        ? "Merchant data changed in another tab. The newer version has been loaded; try again."
+        : "Merchant data could not be saved on this device. Free storage and try again.");
     this.name = "MerchantStorageError";
     this.code = code;
   }
