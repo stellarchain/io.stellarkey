@@ -14,7 +14,7 @@ Vault and merchant boot loaders return discriminated outcomes: `absent`, `ready`
 
 ## Merchant persistence, time, and privacy
 
-Merchant persistence keeps the current schema readable while adding an encrypted versioned envelope. Encryption uses the unlocked vault session through an intentionally narrow vault helper; the merchant provider cannot access wallet secrets directly. Existing plaintext v2 data migrates only after successful decryption-key availability and a verified encrypted write. Full encrypted wallet backups include the encrypted merchant envelope and restore it atomically with other satellite stores. A standalone encrypted merchant export remains available for operational archives.
+Merchant persistence keeps the current schema readable while adding an encrypted versioned envelope. Encryption uses a session key bound to the vault's existing random salt through an intentionally narrow vault helper; the merchant provider cannot access wallet secrets directly. Existing plaintext v2 data migrates only after successful decryption-key availability and a verified encrypted write. Full encrypted wallet backups include the encrypted merchant envelope and restore it atomically with other satellite stores. A standalone encrypted merchant export remains available for operational archives.
 
 The persisted envelope carries a monotonic revision and writer identifier. Web Locks serialize writes when available; a storage/BroadcastChannel notification invalidates other tabs, which reload the committed revision. If locking is unavailable, revision comparison rejects stale writes instead of applying last-write-wins. Only one tab polls Horizon at a time through a renewable watcher lease.
 
@@ -26,7 +26,7 @@ Polling is split by resource: Horizon account state refreshes after relevant SSE
 
 React boundaries are narrowed without a rewrite. Wallet and merchant providers expose stable memoized value groups, while frequently changing runtime data is separated from commands and configuration. Large orchestrators begin moving into focused hooks/modules, and render-count tests protect the stable boundaries. Existing dynamic imports remain in place.
 
-Production CSP uses the installed Next 16 nonce-based Proxy pattern because this wallet handles sensitive data. Development retains the directives required by React debugging. `connect-src` is reduced to the configured Stellar, Trezor, and pricing origins. The service worker receives strict, non-cacheable headers and caches only immutable application-shell assets; it never caches Horizon responses, secrets, wallet HTML containing user data, or transaction submissions. Updates activate through an explicit, reload-safe flow.
+Production CSP uses the installed Next 16 nonce-based Proxy pattern because this wallet handles sensitive data. Development retains the directives required by React debugging. Core Stellar, Trezor, and pricing origins are named explicitly; HTTPS issuer home domains remain allowed because custom Stellar asset metadata is decentralized and cannot be enumerated at build time. The service worker receives strict, non-cacheable headers and caches only the user-free application shell and its immutable assets; it never caches Horizon responses, secrets, ledger data, or transaction submissions. LAN HTTP remains usable for visual testing without forcing broken HTTPS asset URLs, while wallet cryptography clearly requires HTTPS or localhost because Web Crypto is a secure-context API.
 
 ## Verification
 

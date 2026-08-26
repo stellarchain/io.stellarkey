@@ -158,7 +158,7 @@
 - Test: `tests/app-icon.test.mjs`
 - Test: `e2e/pwa.spec.ts`
 
-1. Write failing tests for a per-request nonce, explicit connection origins, development allowances, strict service-worker headers, shell-only caching, and offline cold launch.
+1. Write failing tests for a per-request nonce, named core services plus decentralized HTTPS issuer metadata, development allowances, strict service-worker headers, shell-only caching, and offline cold launch.
 2. Implement the installed Next 16 Proxy nonce pattern and force dynamic rendering only where required.
 3. Register a same-origin service worker that caches immutable shell assets and never caches ledger/API responses or user data.
 4. Preserve `maximumScale: 1` and `userScalable: false` exactly.
