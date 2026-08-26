@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local tooling and isolated branches are separate projects. Their build
+    // output must not become part of this checkout's lint surface.
+    ".worktrees/**",
+    ".playwright-mcp/**",
   ]),
 ]);
 
