@@ -416,10 +416,10 @@ export function MerchantSettings({
   const { accounts, balances } = useWallet();
   const { toast } = useToast();
 
-  const [specimenOpen, setSpecimenOpen] = useState(false);
-  const specimenOrder = orders.find((order) => order.status === "paid") ?? null;
-  const specimenHash = specimenOrder
-    ? charges.find((charge) => charge.orderId === specimenOrder.id)?.payment?.transactionHash ?? null
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const receiptPreviewOrder = orders.find((order) => order.status === "paid") ?? null;
+  const receiptPreviewHash = receiptPreviewOrder
+    ? charges.find((charge) => charge.orderId === receiptPreviewOrder.id)?.payment?.transactionHash ?? null
     : null;
 
   const symbol = FIAT_SYMBOLS[settings.currency] ?? "";
@@ -579,9 +579,9 @@ export function MerchantSettings({
               icon={<IconReceipt size={16} />}
               tint="#5E5CE6"
               label="Latest receipt"
-              sub={specimenOrder ? `Preview order ${specimenOrder.number}` : "Complete a sale to preview it"}
-              chevron={specimenOrder !== null}
-              onClick={specimenOrder ? () => setSpecimenOpen(true) : undefined}
+              sub={receiptPreviewOrder ? `Preview order ${receiptPreviewOrder.number}` : "Complete a sale to preview it"}
+              chevron={receiptPreviewOrder !== null}
+              onClick={receiptPreviewOrder ? () => setReceiptPreviewOpen(true) : undefined}
             />
           </Advanced>
         </div>
@@ -1239,12 +1239,12 @@ export function MerchantSettings({
         </span>
       </p>
 
-      {specimenOpen && specimenOrder && (
+      {receiptPreviewOpen && receiptPreviewOrder && (
         <ReceiptSheet
           open
-          onClose={() => setSpecimenOpen(false)}
-          order={specimenOrder}
-          transactionHash={specimenHash}
+          onClose={() => setReceiptPreviewOpen(false)}
+          order={receiptPreviewOrder}
+          transactionHash={receiptPreviewHash}
         />
       )}
     </div>
