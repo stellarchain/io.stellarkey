@@ -52,6 +52,19 @@ export function sameAsset(a: AcceptedAsset, b: AcceptedAsset): boolean {
   return assetKey(a) === assetKey(b);
 }
 
+/** First occurrence wins; identity always includes the issuer for credit assets. */
+export function uniqueAssets(assets: Iterable<AcceptedAsset>): AcceptedAsset[] {
+  const seen = new Set<string>();
+  const unique: AcceptedAsset[] = [];
+  for (const asset of assets) {
+    const key = assetKey(asset);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(asset);
+  }
+  return unique;
+}
+
 export interface QuoteInput {
   asset: AcceptedAsset;
   /** Shop currency per one whole unit of the asset, e.g. 0.2532 for XLM in EUR. */

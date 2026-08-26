@@ -8,7 +8,7 @@ import { useWallet } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { assetKey, isNative, referencePrefix } from "@/lib/merchant/charge";
+import { assetKey, isNative, referencePrefix, uniqueAssets } from "@/lib/merchant/charge";
 import { DEFAULT_CATALOGUE, DEFAULT_TAX_RATES } from "@/lib/merchant/defaults";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { NetworkKey } from "@/lib/stellar";
@@ -321,9 +321,9 @@ function SetupWizardInner({
     for (const balance of receivingBalances ?? []) {
       if (balance.isNative || balance.issuer === null) continue;
       const asset: AcceptedAsset = { code: balance.code, issuer: balance.issuer };
-      if (!list.some((existing) => assetKey(existing) === assetKey(asset))) list.push(asset);
+      list.push(asset);
     }
-    return list;
+    return uniqueAssets(list);
   }, [network, receivingBalances, settings.acceptedAssets]);
 
   /** Trustlines this wallet already holds, by asset key. */

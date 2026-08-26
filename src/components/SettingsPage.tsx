@@ -67,8 +67,7 @@ import type {
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
 
-/* The merchant sub-pages are design mocks and none of them is small; they load
-   only when the shop actually walks into one. */
+/* Merchant operational sub-pages load only when the shop opens one. */
 const StaffTerminalsPage = dynamic(
   () => import("./merchant/StaffTerminalsPage").then((m) => m.StaffTerminalsPage),
   { ssr: false },
@@ -79,10 +78,6 @@ const TaxRecordsPage = dynamic(
 );
 const PeripheralsPage = dynamic(
   () => import("./merchant/PeripheralsPage").then((m) => m.PeripheralsPage),
-  { ssr: false },
-);
-const OfflineStatesGallery = dynamic(
-  () => import("./merchant/OfflineStates").then((m) => m.OfflineStatesGallery),
   { ssr: false },
 );
 
@@ -100,8 +95,7 @@ export type SettingsSub =
   | "merchant"
   | "staff"
   | "tax"
-  | "peripherals"
-  | "states";
+  | "peripherals";
 type Sub = SettingsSub;
 
 /**
@@ -109,7 +103,7 @@ type Sub = SettingsSub;
  * would only stack a second one on top of theirs.
  */
 function ownsItsHeader(sub: Sub): boolean {
-  return sub === "staff" || sub === "tax" || sub === "peripherals" || sub === "states";
+  return sub === "staff" || sub === "tax" || sub === "peripherals";
 }
 
 export function SettingsPage({
@@ -1588,17 +1582,10 @@ export function SettingsPage({
         />
       )}
 
-      {/* Merchant sub-pages. Each is a design mock reading src/lib/merchant/mock.ts
-          and each draws its own back button, so it is rendered bare. */}
+      {/* Merchant sub-pages draw their own back button, so they render bare. */}
       {sub === "staff" && <StaffTerminalsPage onBack={() => setSub("merchant")} />}
       {sub === "tax" && <TaxRecordsPage onBack={() => setSub("merchant")} />}
       {sub === "peripherals" && <PeripheralsPage onBack={() => setSub("merchant")} />}
-      {sub === "states" && (
-        <OfflineStatesGallery
-          onBack={() => setSub("merchant")}
-          currency={merchantSettings.currency}
-        />
-      )}
 
       {/* ---------- NETWORK SWITCHER & HEALTH ---------- */}
       {sub === "network" && (

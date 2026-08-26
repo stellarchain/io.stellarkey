@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useWallet } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
 import { Notice, SegmentedControl } from "../ui";
@@ -17,6 +18,12 @@ import { PaymentLinksPage } from "./PaymentLinksPage";
 import { CustomersPage } from "./CustomersPage";
 import { InsightsPage } from "./InsightsPage";
 import { ShiftSheet } from "./ShiftSheet";
+import {
+  ConnectionRestoredNotice,
+  HorizonOutageNotice,
+  OfflineBanner,
+  VaultLockedNotice,
+} from "./OfflineStates";
 
 /**
  * The Merchant Mode shell: alerts, the mobile sub-navigation, and the surface
@@ -127,21 +134,43 @@ export function MerchantPage({
 }) {
   const {
     ready,
+    online,
     enabled,
     settings,
     today,
     activeShift,
     chargeBlockedReason,
     unmatched,
+    watchError,
+    queuedChargeCount,
+    expiredChargeCount,
+    pollNow,
     activeCharge,
     closeCharge,
   } = useMerchant();
+  const { phase } = useWallet();
 
   // Uncontrolled by default so the page works on its own; the shell passes both
   // props so the sidebar's shift row opens this very sheet.
   const [localShiftOpen, setLocalShiftOpen] = useState(false);
+  const [connectionRestored, setConnectionRestored] = useState(false);
+  const previousOnline = useRef(online);
   const shiftShowing = shiftOpen ?? localShiftOpen;
   const setShiftShowing = onShiftOpenChange ?? setLocalShiftOpen;
+
+  useEffect(() => {
+    let showTimer: ReturnType<typeof setTimeout> | undefined;
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    if (!previousOnline.current && online) {
+      showTimer = setTimeout(() => setConnectionRestored(true), 0);
+      hideTimer = setTimeout(() => setConnectionRestored(false), 5_000);
+    }
+    previousOnline.current = online;
+    return () => {
+      if (showTimer) clearTimeout(showTimer);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, [online]);
 
   if (!ready) {
     return (
@@ -185,7 +214,9 @@ export function MerchantPage({
   // Orders draws its own unmatched tray, which says the same thing and can act on
   // it. Two banners for one fact is exactly the noise this pass removed.
   const showTray = needsAttention > 0 && sub !== "orders";
-  const showAlerts = Boolean(chargeBlockedReason) || showTray;
+  const showChargeBlock = Boolean(chargeBlockedReason) && online;
+  const showRuntime = !online || Boolean(watchError) || phase === "locked" || connectionRestored;
+  const showAlerts = showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
   const onBilling = sub === "invoices" || sub === "links";
 
@@ -213,7 +244,24 @@ export function MerchantPage({
     <section className="fade-up mx-auto w-full min-w-0 max-w-[1000px]">
       {showAlerts && (
         <div className="mb-4 space-y-2.5">
-          {chargeBlockedReason && (
+          {!online && (
+            <OfflineBanner
+              queuedCount={queuedChargeCount}
+              expiredCount={expiredChargeCount}
+            />
+          )}
+
+          {online && watchError && (
+            <HorizonOutageNotice detail={watchError} onRetry={pollNow} />
+          )}
+
+          {online && !watchError && connectionRestored && (
+            <ConnectionRestoredNotice queuedCount={queuedChargeCount} />
+          )}
+
+          {phase === "locked" && <VaultLockedNotice />}
+
+          {showChargeBlock && chargeBlockedReason && (
             <div role="status">
               <Notice tone="warn">
                 <span className="flex items-start gap-2.5">
