@@ -15,6 +15,7 @@ import {
 } from "./hd";
 import type { AccountMeta, StoredAccount, VaultFile } from "./types";
 import type { StorageLoadResult } from "./storage-load";
+import { requireWebCrypto } from "./web-crypto";
 
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
@@ -394,6 +395,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   if (!vault || vault.accounts.length === 0) {
     throw new Error("No wallet found. Please create or import one.");
   }
+  requireWebCrypto();
 
   sessionSecrets.clear();
   sessionMnemonic = null;
@@ -965,6 +967,7 @@ async function decodeBackup(
   if (!password) {
     throw new Error("This backup is encrypted — enter its password first.");
   }
+  requireWebCrypto();
   let plaintext: string;
   try {
     plaintext = await decryptString(parsed.crypto, password);

@@ -2,23 +2,28 @@
 
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
 import { BIP39_WORDLIST } from "./bip39-wordlist";
+import { requireWebCrypto } from "./web-crypto";
 
 const te = new TextEncoder();
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  const d = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+  const d = await requireWebCrypto().subtle.digest(
+    "SHA-256",
+    bytes as unknown as ArrayBuffer,
+  );
   return new Uint8Array(d);
 }
 
 async function hmacSha512(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
-  const k = await crypto.subtle.importKey(
+  const provider = requireWebCrypto();
+  const k = await provider.subtle.importKey(
     "raw",
     key as unknown as ArrayBuffer,
     { name: "HMAC", hash: "SHA-512" },
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", k, data as unknown as ArrayBuffer);
+  const sig = await provider.subtle.sign("HMAC", k, data as unknown as ArrayBuffer);
   return new Uint8Array(sig);
 }
 
@@ -30,7 +35,7 @@ function bytesToBits(bytes: Uint8Array): string {
 
 export async function generateMnemonic(words = 12): Promise<string> {
   const entropyBytes = words === 24 ? 32 : 16;
-  const entropy = crypto.getRandomValues(new Uint8Array(entropyBytes));
+  const entropy = requireWebCrypto().getRandomValues(new Uint8Array(entropyBytes));
   return entropyToMnemonic(entropy);
 }
 
@@ -70,14 +75,15 @@ export async function mnemonicToSeed(
   mnemonic: string,
   passphrase = "",
 ): Promise<Uint8Array> {
-  const baseKey = await crypto.subtle.importKey(
+  const provider = requireWebCrypto();
+  const baseKey = await provider.subtle.importKey(
     "raw",
     te.encode(normalizeMnemonic(mnemonic)) as unknown as ArrayBuffer,
     "PBKDF2",
     false,
     ["deriveBits"],
   );
-  const bits = await crypto.subtle.deriveBits(
+  const bits = await provider.subtle.deriveBits(
     {
       name: "PBKDF2",
       salt: te.encode(`mnemonic${passphrase}`) as unknown as ArrayBuffer,

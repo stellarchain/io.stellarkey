@@ -1,3 +1,5 @@
+import { requireWebCrypto } from "./web-crypto";
+
 const KDF_ITERATIONS = 600_000;
 
 const te = new TextEncoder();
@@ -23,18 +25,19 @@ function fromB64(s: string): Uint8Array {
 }
 
 function randomBytes(n: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(n));
+  return requireWebCrypto().getRandomValues(new Uint8Array(n));
 }
 
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const material = await crypto.subtle.importKey(
+  const provider = requireWebCrypto();
+  const material = await provider.subtle.importKey(
     "raw",
     te.encode(password) as unknown as ArrayBuffer,
     "PBKDF2",
     false,
     ["deriveKey"],
   );
-  return crypto.subtle.deriveKey(
+  return provider.subtle.deriveKey(
     {
       name: "PBKDF2",
       salt: salt as unknown as ArrayBuffer,
@@ -52,14 +55,15 @@ export async function deriveEncryptionKeyBytes(
   password: string,
   context: string,
 ): Promise<Uint8Array> {
-  const material = await crypto.subtle.importKey(
+  const provider = requireWebCrypto();
+  const material = await provider.subtle.importKey(
     "raw",
     te.encode(password) as unknown as ArrayBuffer,
     "PBKDF2",
     false,
     ["deriveBits"],
   );
-  const bits = await crypto.subtle.deriveBits(
+  const bits = await provider.subtle.deriveBits(
     {
       name: "PBKDF2",
       salt: te.encode(`polaris:${context}:v1`) as unknown as ArrayBuffer,
@@ -79,7 +83,7 @@ export async function encryptString(
   const salt = randomBytes(16);
   const iv = randomBytes(12);
   const key = await deriveKey(password, salt);
-  const ct = await crypto.subtle.encrypt(
+  const ct = await requireWebCrypto().subtle.encrypt(
     { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
     key,
     te.encode(plaintext) as unknown as ArrayBuffer,
@@ -92,7 +96,7 @@ export async function decryptString(
   password: string,
 ): Promise<string> {
   const key = await deriveKey(password, fromB64(payload.salt));
-  const pt = await crypto.subtle.decrypt(
+  const pt = await requireWebCrypto().subtle.decrypt(
     { name: "AES-GCM", iv: fromB64(payload.iv) as unknown as ArrayBuffer },
     key,
     fromB64(payload.ciphertext) as unknown as ArrayBuffer,
