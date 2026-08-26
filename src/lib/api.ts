@@ -36,9 +36,9 @@ import { withAbortDeadline } from "./wallet-refresh";
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 const MARKET_REQUEST_TIMEOUT_MS = 8_000;
 
-export async function getJson<T>(url: string): Promise<T | null> {
+export async function getJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
-    return await getHorizonJson<T>(url);
+    return await getHorizonJson<T>(url, init);
   } catch (error) {
     if (error instanceof HorizonRequestError && error.kind === "not_found") return null;
     throw error;
@@ -54,20 +54,28 @@ interface RawBalance {
   limit?: string;
 }
 
-export async function fetchBalances(
-  publicKey: string,
-  network: NetworkKey,
-): Promise<AssetBalance[]> {
-  const horizonUrl = getHorizonUrl(network);
-  const data = await getJson<{ balances?: RawBalance[] }>(
-    `${horizonUrl}/accounts/${publicKey}`,
-  );
-  if (!data?.balances) return [];
+interface RawAccountSnapshot {
+  balances?: RawBalance[];
+  subentry_count?: number;
+  num_sponsoring?: number;
+  num_sponsored?: number;
+}
 
+export interface AccountSnapshot {
+  balances: AssetBalance[];
+  reserveInputs: {
+    subentryCount: number;
+    numSponsoring: number;
+    numSponsored: number;
+  };
+}
+
+function parseBalances(balances: RawBalance[] | undefined): AssetBalance[] {
+  if (!balances) return [];
   const list: AssetBalance[] = [];
   let nativeBal: AssetBalance | null = null;
 
-  for (const b of data.balances) {
+  for (const b of balances) {
     const isNative = b.asset_type === "native";
     const item: AssetBalance = {
       key: isNative ? "native" : `${b.asset_code}:${b.asset_issuer}`,
@@ -85,31 +93,79 @@ export async function fetchBalances(
   return nativeBal ? [nativeBal, ...list] : list;
 }
 
+export async function fetchAccountSnapshot(
+  publicKey: string,
+  network: NetworkKey,
+  signal?: AbortSignal,
+): Promise<AccountSnapshot> {
+  const account = await getJson<RawAccountSnapshot>(
+    `${getHorizonUrl(network)}/accounts/${publicKey}`,
+    { signal },
+  );
+  return {
+    balances: parseBalances(account?.balances),
+    reserveInputs: {
+      subentryCount: account?.subentry_count ?? 0,
+      numSponsoring: account?.num_sponsoring ?? 0,
+      numSponsored: account?.num_sponsored ?? 0,
+    },
+  };
+}
+
+export async function fetchBalances(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AssetBalance[]> {
+  return (await fetchAccountSnapshot(publicKey, network)).balances;
+}
+
+const BASE_RESERVE_CACHE_MS = 5 * 60_000;
+const baseReserveCache = new Map<NetworkKey, { value: string; at: number }>();
+const baseReserveRequests = new Map<NetworkKey, Promise<string>>();
+
+export async function fetchCurrentBaseReserve(network: NetworkKey): Promise<string> {
+  const cached = baseReserveCache.get(network);
+  if (cached && Date.now() - cached.at < BASE_RESERVE_CACHE_MS) return cached.value;
+  const pending = baseReserveRequests.get(network);
+  if (pending) return pending;
+
+  const request = getHorizonJson<{
+    _embedded?: { records?: Array<{ base_reserve_in_stroops?: unknown }> };
+  }>(`${getHorizonUrl(network)}/ledgers?order=desc&limit=1`).then((ledgers) => {
+    const raw = ledgers._embedded?.records?.[0]?.base_reserve_in_stroops;
+    const value = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0
+      ? String(raw)
+      : typeof raw === "string" && /^[1-9]\d*$/.test(raw)
+        ? raw
+        : null;
+    if (value === null) {
+      throw new Error("Horizon did not return the current base reserve.");
+    }
+    baseReserveCache.set(network, { value, at: Date.now() });
+    return value;
+  }).finally(() => {
+    baseReserveRequests.delete(network);
+  });
+  baseReserveRequests.set(network, request);
+  return request;
+}
+
+export function minimumNativeBalanceForSnapshot(
+  snapshot: AccountSnapshot,
+  baseReserveStroops: string,
+): string {
+  return calculateMinimumBalance({ baseReserveStroops, ...snapshot.reserveInputs });
+}
+
 export async function fetchMinimumNativeBalance(
   publicKey: string,
   network: NetworkKey,
 ): Promise<string> {
-  const horizonUrl = getHorizonUrl(network);
-  const [account, ledgers] = await Promise.all([
-    getJson<{
-      subentry_count?: number;
-      num_sponsoring?: number;
-      num_sponsored?: number;
-    }>(`${horizonUrl}/accounts/${publicKey}`),
-    getHorizonJson<{
-      _embedded?: { records?: Array<{ base_reserve_in_stroops?: string }> };
-    }>(`${horizonUrl}/ledgers?order=desc&limit=1`),
+  const [snapshot, baseReserveStroops] = await Promise.all([
+    fetchAccountSnapshot(publicKey, network),
+    fetchCurrentBaseReserve(network),
   ]);
-  const baseReserveStroops = ledgers._embedded?.records?.[0]?.base_reserve_in_stroops;
-  if (!baseReserveStroops || !/^\d+$/.test(baseReserveStroops)) {
-    throw new Error("Horizon did not return the current base reserve.");
-  }
-  return calculateMinimumBalance({
-    baseReserveStroops,
-    subentryCount: account?.subentry_count ?? 0,
-    numSponsoring: account?.num_sponsoring ?? 0,
-    numSponsored: account?.num_sponsored ?? 0,
-  });
+  return minimumNativeBalanceForSnapshot(snapshot, baseReserveStroops);
 }
 
 
@@ -145,6 +201,7 @@ export interface ClaimableBalanceItem {
 export async function fetchClaimableBalances(
   publicKey: string,
   network: NetworkKey,
+  signal?: AbortSignal,
 ): Promise<ClaimableBalanceItem[]> {
   const horizonUrl = getHorizonUrl(network);
   const data = await getJson<{
@@ -156,7 +213,7 @@ export async function fetchClaimableBalances(
         sponsor?: string;
       }>;
     };
-  }>(`${horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`);
+  }>(`${horizonUrl}/claimable_balances?claimant=${publicKey}&limit=20`, { signal });
 
   const records = data?._embedded?.records ?? [];
   return records.map((r) => {
@@ -577,6 +634,7 @@ export async function fetchActivity(
   network: NetworkKey,
   limit = 30,
   cursor?: string,
+  signal?: AbortSignal,
 ): Promise<{ items: ActivityItem[]; nextCursor: string | null }> {
   const horizonUrl = getHorizonUrl(network);
   const url = new URL(`${horizonUrl}/accounts/${publicKey}/operations`);
@@ -584,7 +642,9 @@ export async function fetchActivity(
   url.searchParams.set("limit", String(limit));
   if (cursor) url.searchParams.set("cursor", cursor);
 
-  const data = await getJson<{ _embedded?: { records?: RawOperation[] } }>(url.toString());
+  const data = await getJson<{ _embedded?: { records?: RawOperation[] } }>(url.toString(), {
+    signal,
+  });
   const records = data?._embedded?.records ?? [];
   const items = records.map((op) => mapOperation(op, publicKey));
   const nextCursor = records.length === limit ? records[records.length - 1].id : null;
@@ -1194,7 +1254,7 @@ interface CoinGeckoPriceResp {
   stellar?: { usd?: number };
 }
 
-export async function fetchXlmPrice(): Promise<number | null> {
+export async function fetchXlmPrice(signal?: AbortSignal): Promise<number | null> {
   try {
     return await withAbortDeadline(async (signal) => {
       const res = await fetch(
@@ -1207,6 +1267,7 @@ export async function fetchXlmPrice(): Promise<number | null> {
     }, {
       timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
       label: "XLM market price",
+      signal,
     });
   } catch {
     return null;
@@ -1228,7 +1289,10 @@ interface CoinGeckoChartResp {
   prices?: Array<[number, number]>;
 }
 
-export async function fetchXlmSeries(range: PriceRange): Promise<PriceSeries | null> {
+export async function fetchXlmSeries(
+  range: PriceRange,
+  signal?: AbortSignal,
+): Promise<PriceSeries | null> {
   try {
     return await withAbortDeadline(async (signal) => {
       const res = await fetch(
@@ -1250,6 +1314,7 @@ export async function fetchXlmSeries(range: PriceRange): Promise<PriceSeries | n
     }, {
       timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
       label: "XLM market chart",
+      signal,
     });
   } catch {
     return null;

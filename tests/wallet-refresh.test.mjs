@@ -6,6 +6,11 @@ import {
   settleResourceMap,
   withAbortDeadline,
 } from "../src/lib/wallet-refresh.ts";
+import {
+  createLatestRequestLane,
+  WALLET_ACCOUNT_POLL_MS,
+  WALLET_MARKET_POLL_MS,
+} from "../src/hooks/useWalletResources.ts";
 
 test("wallet resources settle independently when one request fails", async () => {
   const resources = await settleResourceMap({
@@ -47,4 +52,25 @@ test("wallet resource deadlines forward caller cancellation", async () => {
 
   caller.abort(new Error("refresh superseded"));
   await assert.rejects(() => task, /refresh superseded/);
+});
+
+test("wallet refresh lanes keep live account data faster than market data", () => {
+  assert.equal(WALLET_ACCOUNT_POLL_MS, 15_000);
+  assert.equal(WALLET_MARKET_POLL_MS, 60_000);
+  assert.ok(WALLET_MARKET_POLL_MS > WALLET_ACCOUNT_POLL_MS);
+});
+
+test("starting a refresh aborts obsolete work in the same lane", () => {
+  const lane = createLatestRequestLane();
+  const first = lane.begin();
+  const second = lane.begin();
+
+  assert.equal(first.signal.aborted, true);
+  assert.equal(first.isCurrent(), false);
+  assert.equal(second.signal.aborted, false);
+  assert.equal(second.isCurrent(), true);
+
+  lane.cancel();
+  assert.equal(second.signal.aborted, true);
+  assert.equal(second.isCurrent(), false);
 });
