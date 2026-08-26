@@ -1,28 +1,8 @@
 "use client";
 
-/**
- * DESIGN MOCK — customers.
- *
- * What is mocked: every customer, and every figure beside them, is read from
- * `MOCK_CUSTOMERS` in `src/lib/merchant/mock.ts`; "now" is the fixture's
- * `MOCK_NOW`. Search, sort and Forget work on this component's own copy of that
- * array and are gone on reload. Nothing is written, fetched or signed here.
- *
- * What a real implementation replaces: the fixture with records the till builds
- * as payments settle — keyed on the paying address, named only when that address
- * matches a wallet contact — and Forget with a delete of the local record.
- *
- * The privacy stance the screen states is the one the implementation has to
- * keep: the address is public ledger data and cannot be unpublished; the name,
- * note, counters and loyalty card are this device's, optional, and erasable.
- * It is stated in one line here, with the whole of it a tap away — folded up,
- * never dropped.
- */
-
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_CUSTOMERS } from "@/lib/merchant/mock";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { FiatCurrency } from "@/lib/format";
 import type { CustomerRecord } from "@/lib/merchant/types";
@@ -62,13 +42,12 @@ function sortBy(key: SortKey) {
 }
 
 export function CustomersPage() {
-  const { settings } = useMerchant();
+  const { customers, settings } = useMerchant();
 
-  /* The fixture, copied into state so Forget can be used without writing. */
-  const [customers, setCustomers] = useState<CustomerRecord[]>(MOCK_CUSTOMERS);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [openAddress, setOpenAddress] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
 
   const needle = query.trim().toLowerCase();
 
@@ -84,11 +63,6 @@ export function CustomersPage() {
 
   const lifetime = customers.reduce((sum, customer) => sum + customer.lifetimeMinor, 0);
   const returning = customers.filter((customer) => customer.orderCount > 1).length;
-
-  function forget(address: string) {
-    setCustomers((prev) => prev.filter((customer) => customer.address !== address));
-    setOpenAddress(null);
-  }
 
   /*
     A list, and it reads like one: three figures, one search field, one sort,
@@ -171,6 +145,7 @@ export function CustomersPage() {
               key={customer.address}
               customer={customer}
               currency={settings.currency}
+              now={now}
               sep={index > 0}
               onOpen={() => {
                 triggerHaptic("selection");
@@ -183,7 +158,6 @@ export function CustomersPage() {
 
       <CustomerDetailModal
         customer={open}
-        onForget={forget}
         onClose={() => setOpenAddress(null)}
       />
     </section>
@@ -206,11 +180,13 @@ export function CustomersPage() {
 function CustomerRow({
   customer,
   currency,
+  now,
   sep,
   onOpen,
 }: {
   customer: CustomerRecord;
   currency: FiatCurrency;
+  now: number;
   sep: boolean;
   onOpen: () => void;
 }) {
@@ -253,7 +229,7 @@ function CustomerRow({
           )}
         </span>
         <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-          {relativeTime(customer.lastSeenAt)} · {customer.orderCount}{" "}
+          {relativeTime(customer.lastSeenAt, now)} · {customer.orderCount}{" "}
           {customer.orderCount === 1 ? "visit" : "visits"}
         </span>
       </span>

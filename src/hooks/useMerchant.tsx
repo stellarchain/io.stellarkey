@@ -97,6 +97,16 @@ import {
   setCounterCodeActive as setPersistedCounterCodeActive,
   updateCounterCode as updatePersistedCounterCode,
 } from "@/lib/merchant/counter-codes";
+import {
+  customerHistory as buildCustomerHistory,
+  forgetCustomer as forgetPersistedCustomer,
+  reconcileCustomerSettlements,
+  redeemLoyaltyReward as redeemPersistedLoyaltyReward,
+  startLoyaltyCard as startPersistedLoyaltyCard,
+  syncCustomerContacts,
+  updateCustomerNote as updatePersistedCustomerNote,
+  type CustomerHistoryEntry,
+} from "@/lib/merchant/customers";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -108,6 +118,7 @@ import type {
   CounterCode,
   CounterCodeKind,
   CounterPayment,
+  CustomerRecord,
   Invoice,
   InvoiceLine,
   MerchantSettings,
@@ -320,6 +331,13 @@ interface MerchantContextValue {
     title: string;
   }) => string | null;
 
+  customers: CustomerRecord[];
+  customerHistory: (address: string) => CustomerHistoryEntry[];
+  updateCustomerNote: (address: string, note: string) => CustomerRecord;
+  startLoyaltyCard: (address: string, target?: number) => CustomerRecord;
+  redeemLoyaltyReward: (address: string) => CustomerRecord;
+  forgetCustomer: (address: string) => void;
+
   shifts: Shift[];
   activeShift: Shift | null;
   shiftReport: ShiftReport | null;
@@ -425,6 +443,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     activeAccount,
     xlmPriceUsd,
     fiatRates,
+    contacts,
     send,
     submissionStatus,
   } = useWallet();
@@ -543,6 +562,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         : null,
     [staffSessionId, store.activeStaffId, store.staff],
   );
+
+  useEffect(() => {
+    if (!ready) return;
+    const current = storeRef.current;
+    const next = syncCustomerContacts(current, contacts);
+    if (next !== current) commitStore(next);
+  }, [commitStore, contacts, ready]);
 
   const activeShift = useMemo(
     () => activeShiftForTerminal(store),
@@ -1181,6 +1207,59 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     });
   }, [network, rateFor]);
 
+  const requireCustomerActor = useCallback((current: MerchantStore): StaffMember => {
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before managing loyalty.");
+    return actor;
+  }, [staffSessionId]);
+
+  const updateCustomerNote = useCallback((address: string, note: string): CustomerRecord => {
+    const next = updatePersistedCustomerNote(storeRef.current, address, note);
+    commitStore(next);
+    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
+  }, [commitStore]);
+
+  const startLoyaltyCard = useCallback((address: string, target = 10): CustomerRecord => {
+    const current = storeRef.current;
+    const next = startPersistedLoyaltyCard(current, {
+      address,
+      target,
+      actor: requireCustomerActor(current),
+      eventId: uid("loyalty"),
+      now: Date.now(),
+    });
+    commitStore(next);
+    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
+  }, [commitStore, requireCustomerActor]);
+
+  const redeemLoyaltyReward = useCallback((address: string): CustomerRecord => {
+    const current = storeRef.current;
+    const next = redeemPersistedLoyaltyReward(current, {
+      address,
+      actor: requireCustomerActor(current),
+      eventId: uid("loyalty"),
+      now: Date.now(),
+    });
+    commitStore(next);
+    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
+  }, [commitStore, requireCustomerActor]);
+
+  const forgetCustomer = useCallback((address: string): void => {
+    const current = storeRef.current;
+    const next = forgetPersistedCustomer(current, address);
+    if (next !== current) commitStore(next);
+  }, [commitStore]);
+
+  const customerHistory = useCallback(
+    (address: string): CustomerHistoryEntry[] => buildCustomerHistory(storeRef.current, address),
+    [],
+  );
+
   const cryptoChargeFor = useCallback((
     order: Order,
     amountMinor: Minor,
@@ -1466,9 +1545,10 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         payments: counterResult.unclaimed,
         now: Date.now(),
       });
-      if (next !== current) commitStore(next);
+      const withCustomers = reconcileCustomerSettlements(current, next, { contacts });
+      if (withCustomers !== current) commitStore(withCustomers);
     },
-    [commitStore, network, quoteInputs],
+    [commitStore, contacts, network, quoteInputs],
   );
 
   /**
@@ -1561,14 +1641,15 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     (paymentId: string, chargeId: string) => {
       const current = storeRef.current;
       const actor = requirePaymentActor(current);
-      commitStore(attachReconciledPayment(current, {
+      const attached = attachReconciledPayment(current, {
         paymentId,
         chargeId,
         actor,
         now: Date.now(),
-      }));
+      });
+      commitStore(reconcileCustomerSettlements(current, attached, { contacts }));
     },
-    [commitStore, requirePaymentActor],
+    [commitStore, contacts, requirePaymentActor],
   );
 
   const dismissUnmatched = useCallback(
@@ -2101,6 +2182,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       }
     },
     counterCodePreviewUri,
+
+    customers: store.customers,
+    customerHistory,
+    updateCustomerNote,
+    startLoyaltyCard,
+    redeemLoyaltyReward,
+    forgetCustomer,
 
     shifts: store.shifts,
     activeShift,

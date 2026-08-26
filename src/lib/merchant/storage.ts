@@ -1,6 +1,7 @@
 import { emptyStore } from "./defaults";
 import type {
   AcceptedAsset,
+  LoyaltyEvent,
   MerchantSettings,
   MerchantStore,
   TipSettings,
@@ -242,6 +243,57 @@ function counterPaymentRecords(value: unknown): MerchantStore["counterPayments"]
     quote: isRecord(entry.quote) ? quoteRecords([entry.quote])[0] ?? null : null,
     seenAt: isFiniteNumber(entry.seenAt) ? entry.seenAt : 1,
   })) ?? [];
+}
+
+function customerRecords(
+  value: unknown,
+  settings: MerchantSettings,
+): MerchantStore["customers"] {
+  const customers = recordArray<MerchantStore["customers"][number]>(
+    value,
+    (customer) => typeof customer.address === "string",
+  ) ?? [];
+  return customers.map((customer) => {
+    const sourceIds = Array.isArray(customer.sourceIds)
+      ? [...new Set(customer.sourceIds.filter((entry): entry is string => typeof entry === "string" && Boolean(entry)))]
+      : [];
+    const rawLoyalty = isRecord(customer.loyalty) ? customer.loyalty : null;
+    const events = (rawLoyalty
+      ? recordArray<LoyaltyEvent>(
+          rawLoyalty.events,
+          (event) =>
+            typeof event.id === "string" &&
+            (event.kind === "opened" || event.kind === "earned" || event.kind === "redeemed") &&
+            isFiniteNumber(event.at),
+        ) ?? []
+      : []).map((event) => ({
+        ...event,
+        sourceId: nullableString(event.sourceId, null),
+        actorId: nullableString(event.actorId, null),
+        actorName: nullableString(event.actorName, null),
+      }));
+    const loyalty = rawLoyalty &&
+      isFiniteNumber(rawLoyalty.stamps) &&
+      isFiniteNumber(rawLoyalty.target) &&
+      isFiniteNumber(rawLoyalty.redeemedCount)
+      ? {
+          stamps: Math.max(0, Math.trunc(rawLoyalty.stamps)),
+          target: Math.max(2, Math.min(20, Math.trunc(rawLoyalty.target))),
+          redeemedCount: Math.max(0, Math.trunc(rawLoyalty.redeemedCount)),
+          events,
+        }
+      : null;
+    return {
+      ...customer,
+      name: nullableString(customer.name, null),
+      preferredAsset: acceptedAsset(customer.preferredAsset)
+        ? customer.preferredAsset
+        : settings.settlementAsset,
+      sourceIds,
+      loyalty,
+      note: nullableString(customer.note, null),
+    };
+  });
 }
 
 function orderRecords(value: unknown): MerchantStore["orders"] {
@@ -501,11 +553,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     invoices,
     counterCodes: counterCodeRecords(value.counterCodes, staff),
     counterPayments: counterPaymentRecords(value.counterPayments),
-    customers:
-      recordArray<MerchantStore["customers"][number]>(
-        value.customers,
-        (customer) => typeof customer.address === "string",
-      ) ?? [],
+    customers: customerRecords(value.customers, settings),
     settlementRule: {
       autoConvert:
         typeof settlementValue.autoConvert === "boolean"

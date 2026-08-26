@@ -1,31 +1,11 @@
 "use client";
 
-/**
- * DESIGN MOCK — one customer's card.
- *
- * What is mocked: the whole record — name, first and last seen, counts, spend,
- * preferred asset, loyalty card and note — comes from `MOCK_CUSTOMERS` in
- * `src/lib/merchant/mock.ts`, and "now" is the fixture's `MOCK_NOW`. Redeeming
- * a card, editing the note and forgetting the record change this screen and
- * nothing else. Save to Contacts opens no book and writes no contact.
- *
- * What is real: the history below is drawn from whatever this device actually
- * holds — orders whose payer matches the address, plus fixture invoices raised
- * against it — which is why it can be shorter than the visit count above it.
- *
- * What a real implementation replaces: the fixture with the local customer
- * record, the note and the card with writes to it, Save to Contacts with
- * `saveContact()` from `@/lib/contacts`, and Forget with a delete. The address
- * is the only part that is not ours to erase: it is public ledger data.
- */
-
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
-import type { FiatCurrency } from "@/lib/format";
+import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_INVOICES, MOCK_NOW } from "@/lib/merchant/mock";
 import { fmtMinor } from "@/lib/merchant/money";
-import type { CustomerRecord, LoyaltyCard, Minor } from "@/lib/merchant/types";
+import type { CustomerRecord, LoyaltyCard } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Avatar, Button, HashValue, Modal, ModalHeader } from "../ui";
 import { IconCheck, IconChevronDown, IconGift, IconUserPlus } from "../icons";
@@ -86,8 +66,7 @@ export function Disclosure({
   );
 }
 
-/** Time is measured from the fixture's clock, so every screen agrees. */
-export function relativeTime(ts: number, now: number = MOCK_NOW): string {
+export function relativeTime(ts: number, now: number): string {
   const minutes = Math.round((now - ts) / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;
@@ -97,11 +76,6 @@ export function relativeTime(ts: number, now: number = MOCK_NOW): string {
   if (days < 31) return `${days} ${days === 1 ? "day" : "days"} ago`;
   const months = Math.round(days / 30);
   return `${months} ${months === 1 ? "month" : "months"} ago`;
-}
-
-/** "partially_paid" → "Partially paid", without shouting every word. */
-function sentenceCase(text: string): string {
-  return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
 
 export function fmtDay(ts: number): string {
@@ -135,25 +109,12 @@ export function LoyaltyBadge({ loyalty }: { loyalty: LoyaltyCard | null }) {
   );
 }
 
-interface HistoryEntry {
-  id: string;
-  kind: "order" | "invoice";
-  label: string;
-  sub: string;
-  at: number;
-  minor: Minor;
-  currency: FiatCurrency;
-}
-
 export function CustomerDetailModal({
   customer,
   onClose,
-  onForget,
 }: {
   customer: CustomerRecord | null;
   onClose: () => void;
-  /** The page drops the record from its own state. Nothing is persisted. */
-  onForget: (address: string) => void;
 }) {
   if (!customer) return null;
   return (
@@ -161,7 +122,6 @@ export function CustomerDetailModal({
       key={customer.address}
       customer={customer}
       onClose={onClose}
-      onForget={onForget}
     />
   );
 }
@@ -169,84 +129,86 @@ export function CustomerDetailModal({
 function CustomerDetail({
   customer,
   onClose,
-  onForget,
 }: {
   customer: CustomerRecord;
   onClose: () => void;
-  onForget: (address: string) => void;
 }) {
-  const { orders, settings } = useMerchant();
+  const {
+    customerHistory,
+    forgetCustomer,
+    redeemLoyaltyReward,
+    settings,
+    startLoyaltyCard,
+    updateCustomerNote,
+  } = useMerchant();
+  const { addContact } = useWallet();
   const { toast } = useToast();
 
-  const [loyalty, setLoyalty] = useState<LoyaltyCard | null>(customer.loyalty);
   const [note, setNote] = useState(customer.note ?? "");
-  const [savedNote, setSavedNote] = useState(customer.note ?? "");
+  const [contactName, setContactName] = useState(customer.name ?? "");
   const [confirmingForget, setConfirmingForget] = useState(false);
+  const [now] = useState(() => Date.now());
 
-  const history = useMemo<HistoryEntry[]>(() => {
-    const fromOrders: HistoryEntry[] = orders
-      .filter((order) => order.payerAddress === customer.address)
-      .map((order) => ({
-        id: order.id,
-        kind: "order",
-        label: `Order #${order.number}`,
-        sub: `${order.lines.length} ${order.lines.length === 1 ? "line" : "lines"} · ${order.staffName}`,
-        at: order.paidAt ?? order.createdAt,
-        minor: order.totals.totalMinor,
-        currency: order.currency,
-      }));
-    const fromInvoices: HistoryEntry[] = MOCK_INVOICES.filter(
-      (invoice) => invoice.customerAddress === customer.address,
-    ).map((invoice) => ({
-      id: invoice.id,
-      kind: "invoice",
-      label: invoice.number,
-      sub: `${sentenceCase(invoice.status.replace("_", " "))} · ${invoice.customerName}`,
-      at: invoice.paidAt ?? invoice.issuedAt ?? MOCK_NOW,
-      minor: invoice.totals.totalMinor,
-      currency: invoice.currency,
-    }));
-    return [...fromOrders, ...fromInvoices].sort((a, b) => b.at - a.at);
-  }, [customer.address, orders]);
+  const history = customerHistory(customer.address);
 
+  const loyalty = customer.loyalty;
   const full = loyalty !== null && loyalty.stamps >= loyalty.target;
-  const noteDirty = note.trim() !== savedNote.trim();
+  const noteDirty = note.trim() !== (customer.note ?? "").trim();
 
   function redeem() {
-    if (!loyalty) return;
-    triggerHaptic("success");
-    setLoyalty({ ...loyalty, stamps: 0, redeemedCount: loyalty.redeemedCount + 1 });
-    toast(
-      "Reward marked as redeemed on this screen — a real build would clear the card and print it on the next receipt",
-      "success",
-    );
+    try {
+      redeemLoyaltyReward(customer.address);
+      triggerHaptic("success");
+      toast("Reward redeemed and added to the loyalty audit.", "success");
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The reward could not be redeemed.", "error");
+    }
   }
 
   function startCard() {
-    triggerHaptic("light");
-    setLoyalty({ stamps: 0, target: 10, redeemedCount: 0 });
-    toast("A card would be opened on this device the next time they pay");
+    try {
+      startLoyaltyCard(customer.address, 10);
+      triggerHaptic("success");
+      toast("Loyalty card opened. New eligible payments earn one stamp.", "success");
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The loyalty card could not be opened.", "error");
+    }
   }
 
   function saveNote() {
-    triggerHaptic("success");
-    setSavedNote(note);
-    toast("Note kept on this screen only — a real build would write it to the local record", "success");
+    try {
+      updateCustomerNote(customer.address, note);
+      triggerHaptic("success");
+      toast("Customer note saved on this device.", "success");
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The note could not be saved.", "error");
+    }
   }
 
   function saveToContacts() {
-    triggerHaptic("light");
-    toast(
-      customer.name
-        ? `Contacts would open on ${customer.name} with this address filled in`
-        : "Contacts would open with this address filled in, ready for a name",
-    );
+    const name = contactName.trim();
+    if (!name) {
+      triggerHaptic("error");
+      toast("Enter a name before saving this address to Contacts.", "error");
+      return;
+    }
+    try {
+      addContact({ name, address: customer.address });
+      triggerHaptic("success");
+      toast(`${name} saved to Contacts.`, "success");
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The contact could not be saved.", "error");
+    }
   }
 
   function forget() {
     triggerHaptic("warning");
-    onForget(customer.address);
-    toast("Local record forgotten on this screen — the payments stay on the ledger", "info");
+    forgetCustomer(customer.address);
+    toast("Local customer record forgotten. Ledger payments are unchanged.", "info");
     onClose();
   }
 
@@ -278,15 +240,20 @@ function CustomerDetail({
               Public ledger data. Everything else here is local and optional.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={saveToContacts}
-            className="chip shrink-0 !py-2 text-[11.5px]"
-            aria-label="Save this address to Contacts"
-          >
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            className="input min-w-0 flex-1"
+            value={contactName}
+            onChange={(event) => setContactName(event.target.value.slice(0, 24))}
+            placeholder="Name this address"
+            aria-label="Contact name"
+          />
+          <Button variant="secondary" className="shrink-0" onClick={saveToContacts}>
             <IconUserPlus size={13} />
-            Contacts
-          </button>
+            {customer.name ? "Update" : "Save contact"}
+          </Button>
         </div>
 
         {/* The money first; the rest of the record is one quiet line under it. */}
@@ -298,7 +265,7 @@ function CustomerDetail({
           </div>
           <p className="mt-2.5 px-1 text-[11.5px] text-neutral-500">
             Pays in <span className="mono text-neutral-300">{customer.preferredAsset.code}</span> ·
-            last seen {relativeTime(customer.lastSeenAt)}
+            last seen {relativeTime(customer.lastSeenAt, now)}
           </p>
         </div>
 
@@ -377,6 +344,14 @@ function CustomerDetail({
                 Redeem
               </Button>
             </div>
+            {loyalty.events.length > 0 && (
+              <p className="mono mt-3 border-t border-[#BF5AF2]/15 pt-3 text-[10.5px] text-neutral-500">
+                {loyalty.events.length} audited {loyalty.events.length === 1 ? "event" : "events"}
+                {loyalty.events.at(-1)?.actorName
+                  ? ` · last action by ${loyalty.events.at(-1)?.actorName}`
+                  : " · latest stamp earned automatically"}
+              </p>
+            )}
           </section>
         )}
 
@@ -386,9 +361,7 @@ function CustomerDetail({
             <h3 id="history-heading" className="text-[13.5px] font-semibold text-white">
               On this device
             </h3>
-            <span className="mono text-[11px] text-neutral-500">
-              {history.length} of {customer.orderCount}
-            </span>
+            <span className="mono text-[11px] text-neutral-500">{history.length} records</span>
           </div>
 
           {history.length === 0 ? (
@@ -423,11 +396,11 @@ function CustomerDetail({
                       {entry.label}
                     </span>
                     <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-                      {entry.sub} · {relativeTime(entry.at)}
+                      {entry.sub} · {relativeTime(entry.at, now)}
                     </span>
                   </span>
                   <span className="mono shrink-0 text-[14.5px] font-medium text-white">
-                    {fmtMinor(entry.minor, entry.currency)}
+                    {fmtMinor(entry.amountMinor, entry.currency)}
                   </span>
                 </div>
               ))}
