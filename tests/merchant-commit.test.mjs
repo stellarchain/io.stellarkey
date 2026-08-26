@@ -72,3 +72,11 @@ test("recovery locks are a distinct merchant storage failure", async () => {
     (error) => error?.name === "MerchantStorageError" && error?.code === "recovery_required",
   );
 });
+
+test("a second writer tab receives a dedicated retryable storage failure", async () => {
+  const { MerchantStorageError } = await commitDomain();
+  const error = new MerchantStorageError("writer_unavailable");
+
+  assert.equal(error.code, "writer_unavailable");
+  assert.match(error.message, /another tab|wait/i);
+});

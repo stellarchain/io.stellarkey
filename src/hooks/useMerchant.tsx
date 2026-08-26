@@ -539,6 +539,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const storeRef = useRef(store);
   const [writerId] = useState(createMerchantWriterId);
+  const merchantWriterLockRef = useRef<"pending" | "held" | "fallback">("pending");
   const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
@@ -641,6 +642,41 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, [installLoadedStore, phase, readMerchantKey]);
 
   useEffect(() => {
+    if (!ready || phase !== "unlocked") {
+      merchantWriterLockRef.current = "pending";
+      return;
+    }
+    if (!("locks" in navigator) || !navigator.locks) {
+      merchantWriterLockRef.current = "fallback";
+      return;
+    }
+
+    const controller = new AbortController();
+    let releaseLock: (() => void) | null = null;
+    merchantWriterLockRef.current = "pending";
+    void navigator.locks.request(
+      "polaris.merchant.writer.v1",
+      { mode: "exclusive", signal: controller.signal },
+      async () => {
+        if (controller.signal.aborted) return;
+        merchantWriterLockRef.current = "held";
+        setStorageError(null);
+        await new Promise<void>((resolve) => {
+          releaseLock = resolve;
+        });
+      },
+    ).catch(() => {
+      if (!controller.signal.aborted) merchantWriterLockRef.current = "fallback";
+    });
+
+    return () => {
+      controller.abort();
+      releaseLock?.();
+      merchantWriterLockRef.current = "pending";
+    };
+  }, [phase, ready]);
+
+  useEffect(() => {
     if (!ready) return;
     const onRevision = () => reloadExternalStore(false);
     const onStorage = (event: StorageEvent) => {
@@ -659,6 +695,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const commitStore = useCallback(
     (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): void => {
       try {
+        if (
+          merchantWriterLockRef.current === "pending" &&
+          "locks" in navigator &&
+          navigator.locks
+        ) {
+          throw new MerchantStorageError("writer_unavailable");
+        }
+        if (merchantWriterLockRef.current === "pending") {
+          merchantWriterLockRef.current = "fallback";
+        }
         const current = storeRef.current;
         if (storageIssueRef.current) {
           commitMerchantUpdate({
@@ -859,8 +905,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     const current = storeRef.current;
     const next = syncCustomerContacts(current, contacts);
-    if (next !== current) commitStore(next);
-  }, [commitStore, contacts, ready]);
+    if (next !== current) persist(next);
+  }, [contacts, persist, ready]);
 
   const activeShift = useMemo(
     () => activeShiftForTerminal(store),
