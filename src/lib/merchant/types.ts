@@ -1,0 +1,546 @@
+import type { NetworkKey } from "../stellar";
+import type { FiatCurrency } from "../format";
+
+/**
+ * Merchant Mode is a non-custodial point of sale. A charge is a *request*: the
+ * till publishes a SEP-7 `web+stellar:pay` URI against the shop's own account and
+ * watches Horizon until a matching payment closes in a ledger. Nothing is
+ * escrowed, nothing is pulled, and a refund is an ordinary outbound payment.
+ *
+ * Money is an integer count of minor units (cents) everywhere in this module.
+ * Stellar amounts stay seven-decimal strings and are compared as BigInt stroops.
+ */
+
+/** Cents. Never a float, never a formatted string. */
+export type Minor = number;
+
+/** A seven-decimal Stellar amount, e.g. "27.3300000". */
+export type StellarAmount = string;
+
+export type TaxMode = "inclusive" | "added";
+
+export interface TaxRate {
+  id: string;
+  label: string;
+  /** Percentage points, e.g. 23 for 23 %. */
+  percent: number;
+}
+
+export interface AcceptedAsset {
+  /** "XLM" for the native asset. */
+  code: string;
+  /** null for the native asset. */
+  issuer: string | null;
+}
+
+export type TipMode = "off" | "percent" | "fixed";
+
+export interface TipSettings {
+  mode: TipMode;
+  /** Percentage presets offered above `thresholdMinor`, e.g. [10, 15, 20]. */
+  percents: number[];
+  /** Fixed presets in minor units offered at or below `thresholdMinor`. */
+  fixedMinor: Minor[];
+  /** Below this ticket total the fixed presets are shown instead of percentages. */
+  thresholdMinor: Minor;
+  /** Tips are calculated on the net (ex-tax) figure when true. */
+  onNet: boolean;
+}
+
+export interface MerchantProfile {
+  name: string;
+  addressLines: string[];
+  /** VAT / tax registration number, printed on receipts. */
+  taxId: string;
+  /** Free text printed at the foot of every receipt. */
+  receiptFooter: string;
+}
+
+export interface MerchantSettings {
+  enabled: boolean;
+  profile: MerchantProfile;
+  /** Public key of the account every charge is addressed to. */
+  receivingPublicKey: string | null;
+  /** The asset the shop keeps its books in. */
+  settlementAsset: AcceptedAsset;
+  /** Assets a customer may pay in. */
+  acceptedAssets: AcceptedAsset[];
+  currency: FiatCurrency;
+  taxMode: TaxMode;
+  taxRates: TaxRate[];
+  /** Rate applied to a keypad amount that has no catalogue line behind it. */
+  defaultTaxRateId: string;
+  tips: TipSettings;
+  /** How long a charge stays payable, in seconds. */
+  chargeExpirySeconds: number;
+  /**
+   * Amount tolerance, in basis points, applied when a payment arrives with no
+   * memo. Exact-stroop comparison runs first; this band only decides a single
+   * remaining candidate. 150 = ±1.5 %.
+   */
+  toleranceBps: number;
+  /** Floor for the tolerance band in minor units, so tiny tickets stay matchable. */
+  toleranceFloorMinor: Minor;
+  /** Suspend the wallet's idle auto-lock while a charge is open. */
+  holdAutoLockDuringCharge: boolean;
+  /** Name of this device, attributed to every order it rings up. */
+  terminalName: string;
+}
+
+export interface Modifier {
+  id: string;
+  name: string;
+  priceMinor: Minor;
+}
+
+export interface ModifierGroup {
+  id: string;
+  name: string;
+  min: number;
+  max: number;
+  modifiers: Modifier[];
+}
+
+export interface CatalogueItem {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  priceMinor: Minor;
+  taxRateId: string;
+  /** Tile tint, an iOS system hex. */
+  colour: string;
+  modifierGroupIds: string[];
+  trackStock: boolean;
+  stockOnHand: number | null;
+  lowStockAt: number | null;
+  active: boolean;
+  sortIndex: number;
+}
+
+export interface OrderLineModifier {
+  modifierId: string;
+  name: string;
+  priceMinor: Minor;
+}
+
+export interface OrderLine {
+  id: string;
+  /** null for a keypad amount with no catalogue item behind it. */
+  itemId: string | null;
+  name: string;
+  quantity: number;
+  /** Unit price before modifiers. */
+  unitPriceMinor: Minor;
+  modifiers: OrderLineModifier[];
+  taxRateId: string;
+  note: string | null;
+}
+
+/** Every money figure a ticket needs, derived once and stored. */
+export interface OrderTotals {
+  /** Sum of lines including modifiers, before discount. */
+  grossMinor: Minor;
+  discountMinor: Minor;
+  tipMinor: Minor;
+  /** Tax-exclusive figure. */
+  netMinor: Minor;
+  /** Tax by rate id, so a mixed-rate ticket stays auditable. */
+  taxByRate: Record<string, Minor>;
+  taxMinor: Minor;
+  /** What the customer pays: gross − discount + tip. */
+  totalMinor: Minor;
+}
+
+export type TenderKind = "crypto" | "cash";
+
+export interface TenderPart {
+  kind: TenderKind;
+  amountMinor: Minor;
+  /** Present for a crypto leg. */
+  chargeId?: string;
+  /** Cash only: what the customer handed over and what they got back. */
+  receivedMinor?: Minor;
+  changeMinor?: Minor;
+}
+
+export type OrderStatus =
+  | "open"
+  | "awaiting"
+  | "paid"
+  | "refunded"
+  | "partially_refunded"
+  | "voided";
+
+export interface Order {
+  id: string;
+  /** Human sequence, e.g. 2092. Unique per device. */
+  number: number;
+  /** The memo carried by this order's charges, e.g. "MC2092". */
+  reference: string;
+  network: NetworkKey;
+  status: OrderStatus;
+  lines: OrderLine[];
+  totals: OrderTotals;
+  currency: FiatCurrency;
+  tender: TenderPart[];
+  staffName: string;
+  terminalName: string;
+  createdAt: number;
+  paidAt: number | null;
+  /** Set only once a payment has been matched to this order. */
+  payerAddress: string | null;
+  note: string | null;
+}
+
+export type ChargeStatus =
+  | "awaiting"
+  | "paid"
+  | "underpaid"
+  | "overpaid"
+  | "expired"
+  | "voided";
+
+/** The FX quote a charge is held at, so the shop's number cannot move mid-sale. */
+export interface ChargeQuote {
+  /**
+   * Minor units of `currency` per 1 whole unit of the asset, scaled by 1e6.
+   * XLM at EUR 0.2532 is 25.32 cents, which is not an integer — the scale is
+   * what keeps a cheap asset's price exact instead of rounding it to a cent.
+   */
+  unitPriceMinorE6: number;
+  asset: AcceptedAsset;
+  /** Seven-decimal asset amount the customer is asked for. */
+  amount: StellarAmount;
+  quotedAt: number;
+}
+
+export interface Charge {
+  id: string;
+  orderId: string;
+  reference: string;
+  network: NetworkKey;
+  destination: string;
+  /** What the shop is owed, in its own currency. */
+  amountMinor: Minor;
+  currency: FiatCurrency;
+  /** One quote per accepted asset, all payable until the charge closes. */
+  quotes: ChargeQuote[];
+  status: ChargeStatus;
+  createdAt: number;
+  expiresAt: number;
+  /** Set when a payment is matched. */
+  payment: MatchedPayment | null;
+}
+
+export type MatchLane = "memo" | "amount" | "manual";
+
+export interface MatchedPayment {
+  /** Horizon payment operation id. */
+  id: string;
+  transactionHash: string;
+  ledger: number;
+  from: string;
+  amount: StellarAmount;
+  asset: AcceptedAsset;
+  memo: string | null;
+  createdAt: string;
+  lane: MatchLane;
+}
+
+/** A payment that reached the till but belongs to no charge yet. */
+export interface UnmatchedPayment extends Omit<MatchedPayment, "lane"> {
+  seenAt: number;
+  /** Set when staff attach it by hand. */
+  attachedOrderId?: string;
+}
+
+export type RefundReason =
+  | "wrong_item"
+  | "customer_request"
+  | "item_returned"
+  | "duplicate"
+  | "overpayment"
+  | "other";
+
+export interface Refund {
+  id: string;
+  orderId: string;
+  network: NetworkKey;
+  amountMinor: Minor;
+  asset: AcceptedAsset;
+  amount: StellarAmount;
+  destination: string;
+  reason: RefundReason;
+  note: string | null;
+  transactionHash: string | null;
+  createdAt: number;
+}
+
+/** Everything Merchant Mode keeps on the device, versioned for migration. */
+export interface MerchantStore {
+  version: 1;
+  settings: MerchantSettings;
+  catalogue: CatalogueItem[];
+  modifierGroups: ModifierGroup[];
+  orders: Order[];
+  charges: Charge[];
+  refunds: Refund[];
+  unmatched: UnmatchedPayment[];
+  /** Next order number to mint on this device. */
+  nextOrderNumber: number;
+  /** Horizon paging token the payment watcher resumes from, per network. */
+  cursors: Partial<Record<NetworkKey, string>>;
+}
+
+/* ============================================================================
+ * Surfaces below are DESIGN MOCKS. The types are real and are the contract an
+ * implementation should satisfy, but nothing here is wired to Horizon, to the
+ * vault, or to persistence yet — the screens read fixtures from `mock.ts`.
+ * ========================================================================== */
+
+export type StaffRole = "owner" | "manager" | "server" | "accountant";
+
+export interface StaffPermissions {
+  takePayment: boolean;
+  applyDiscount: boolean;
+  comp: boolean;
+  void: boolean;
+  /** Maximum refund a member can release unaided; above it a request is raised. */
+  refundCeilingMinor: Minor | null;
+  openDrawer: boolean;
+  seeReports: boolean;
+  exportRecords: boolean;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: StaffRole;
+  permissions: StaffPermissions;
+  /**
+   * A salted digest, never a reversible payload, and stored outside the vault:
+   * a PIN has to be checkable while the vault is locked. It authorises the till,
+   * never a signature.
+   */
+  pinDigest: string | null;
+  pinSetAt: number | null;
+  active: boolean;
+}
+
+/**
+ * This device, and the only one. Pairing, a roster and reserved order-number
+ * blocks all exist to stop two synced tills colliding, and syncing needs a
+ * server — so one install is one terminal. There is no `state` and no
+ * `lastSeenAt`: the connectivity of the device in your hand is observed live,
+ * never stored, and "last seen" is only a question you ask about a device
+ * somewhere else. The live name is `MerchantSettings.terminalName`; this record
+ * carries what settings does not.
+ */
+export interface TerminalDevice {
+  /** Mirrors `MerchantSettings.terminalName`, which is where a shop edits it. */
+  name: string;
+  appVersion: string;
+  /** Charges rung up while Horizon was unreachable, still to be confirmed. */
+  queuedCharges: number;
+}
+
+export interface CashCount {
+  /** Counted before the figure is revealed, so the count is not anchored. */
+  countedMinor: Minor;
+  expectedMinor: Minor;
+  varianceMinor: Minor;
+}
+
+export interface Shift {
+  id: string;
+  /** Z-reports are sequential and never re-issued. */
+  number: number;
+  openedAt: number;
+  closedAt: number | null;
+  openedBy: string;
+  closedBy: string | null;
+  floatMinor: Minor;
+  grossMinor: Minor;
+  refundsMinor: Minor;
+  tipsMinor: Minor;
+  discountsMinor: Minor;
+  compsMinor: Minor;
+  voidsMinor: Minor;
+  taxByRate: Record<string, Minor>;
+  orderCount: number;
+  cash: CashCount | null;
+  /** Tabs still unsettled block a close. */
+  openTabs: number;
+}
+
+export type InvoiceStatus =
+  | "draft"
+  | "sent"
+  | "partially_paid"
+  | "paid"
+  | "overdue"
+  | "void";
+
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPriceMinor: Minor;
+  taxRateId: string;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  status: InvoiceStatus;
+  customerName: string;
+  /** Addresses a `mailto:` draft the OS composes. Nothing is sent from here. */
+  customerEmail: string | null;
+  /** The payer's address once one has paid, otherwise null. */
+  customerAddress: string | null;
+  reference: string;
+  lines: InvoiceLine[];
+  totals: OrderTotals;
+  currency: FiatCurrency;
+  issuedAt: number | null;
+  dueAt: number | null;
+  paidAt: number | null;
+  paidMinor: Minor;
+  note: string | null;
+}
+
+export type CounterCodeKind = "fixed" | "open" | "tip";
+
+/**
+ * A reusable SEP-7 payment request the shop saves once and prints as a QR for
+ * the counter — a tip jar, a fixed-price item, a donation. There is no URL and
+ * no slug because nothing is served: the QR carries the request itself, so it
+ * resolves in any wallet with no page behind it.
+ *
+ * `payments` and `takingsMinor` are totals Horizon gives back by filtering the
+ * receiving account on `memoPrefix`. Scans are not here and cannot be: counting
+ * a scan means serving the page that was scanned.
+ */
+export interface CounterCode {
+  id: string;
+  title: string;
+  kind: CounterCodeKind;
+  amountMinor: Minor | null;
+  suggestedMinor: Minor[];
+  currency: FiatCurrency;
+  acceptedAssets: AcceptedAsset[];
+  /** Prefix for the memo every payment against this code carries. */
+  memoPrefix: string;
+  /** Attributes a tip code to one staff member. */
+  staffId: string | null;
+  /**
+   * Whether the shop still counts this code as current. It is a filing flag,
+   * not a switch: a QR already printed and stuck to a table keeps resolving,
+   * because there is no server in the path to revoke it. Retiring a code means
+   * taking the paper down and no longer reconciling its memo.
+   */
+  active: boolean;
+  payments: number;
+  takingsMinor: Minor;
+  createdAt: number;
+}
+
+export interface LoyaltyCard {
+  /** Stamps collected toward the reward. */
+  stamps: number;
+  target: number;
+  redeemedCount: number;
+}
+
+export interface CustomerRecord {
+  /** Customers are keyed on the paying address — the only durable identifier. */
+  address: string;
+  /** Set when the address matches a wallet contact. */
+  name: string | null;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  orderCount: number;
+  lifetimeMinor: Minor;
+  averageMinor: Minor;
+  preferredAsset: AcceptedAsset;
+  loyalty: LoyaltyCard | null;
+  note: string | null;
+}
+
+export interface SettlementRule {
+  /** Convert held assets to the settlement asset in batches, never on receipt. */
+  autoConvert: boolean;
+  maxSlippageBps: number;
+  /** Move anything above this to the treasury account. */
+  sweepAboveMinor: Minor | null;
+  sweepDestination: string | null;
+  /** Never sweep to zero: an account needs its reserve plus refund headroom. */
+  retainedFloatMinor: Minor;
+  /**
+   * Hour of day the till offers the sweep, not one it performs. A sweep is an
+   * outbound payment and needs the vault, so nothing can fire while the device
+   * is locked or shut — this is a prompt at close of day, never a transfer.
+   */
+  sweepPromptHour: number | null;
+}
+
+/** On-ledger moves only: a path payment, or a send to the treasury account. */
+
+export interface TaxPeriod {
+  id: string;
+  label: string;
+  from: number;
+  to: number;
+  grossMinor: Minor;
+  netMinor: Minor;
+  taxByRate: Record<string, Minor>;
+  refundsMinor: Minor;
+  orderCount: number;
+}
+
+export interface ExportRecord {
+  id: string;
+  format: "csv" | "json" | "xero" | "saft";
+  rangeLabel: string;
+  rowCount: number;
+  runBy: string;
+  runAt: number;
+}
+
+export type AdjustmentKind = "discount" | "comp" | "void";
+
+export interface Adjustment {
+  id: string;
+  kind: AdjustmentKind;
+  orderNumber: number;
+  lineName: string | null;
+  amountMinor: Minor;
+  reasonCode: string;
+  staffName: string;
+  at: number;
+}
+
+export interface RefundRequest {
+  id: string;
+  orderNumber: number;
+  amountMinor: Minor;
+  reason: RefundReason;
+  requestedBy: string;
+  requestedAt: number;
+  status: "pending" | "approved" | "declined";
+}
+
+export type PeripheralKind = "printer" | "drawer" | "scanner" | "display";
+
+export interface Peripheral {
+  id: string;
+  kind: PeripheralKind;
+  name: string;
+  connected: boolean;
+  detail: string;
+  /** True when the design shows it but the platform cannot deliver it yet. */
+  unavailable?: boolean;
+}
+
+export type TillTextSize = "standard" | "large" | "xlarge";

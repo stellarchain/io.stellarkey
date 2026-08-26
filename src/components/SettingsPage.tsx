@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
+import { useMerchant } from "@/hooks/useMerchant";
 import {
     importKeystore,
   revealSecret,
@@ -58,6 +60,27 @@ import {
   IconTrezor,
   IconLedger,
 } from "./icons";
+import { IconStorefront } from "./merchant/icons";
+import { MerchantSettings } from "./merchant/MerchantSettings";
+
+/* The merchant sub-pages are design mocks and none of them is small; they load
+   only when the shop actually walks into one. */
+const StaffTerminalsPage = dynamic(
+  () => import("./merchant/StaffTerminalsPage").then((m) => m.StaffTerminalsPage),
+  { ssr: false },
+);
+const TaxRecordsPage = dynamic(
+  () => import("./merchant/TaxRecordsPage").then((m) => m.TaxRecordsPage),
+  { ssr: false },
+);
+const PeripheralsPage = dynamic(
+  () => import("./merchant/PeripheralsPage").then((m) => m.PeripheralsPage),
+  { ssr: false },
+);
+const OfflineStatesGallery = dynamic(
+  () => import("./merchant/OfflineStates").then((m) => m.OfflineStatesGallery),
+  { ssr: false },
+);
 
 export type SettingsSub =
   | "root"
@@ -69,21 +92,46 @@ export type SettingsSub =
   | "dapps"
   | "soroban"
   | "hardware"
-  | "currency";
+  | "currency"
+  | "merchant"
+  | "staff"
+  | "tax"
+  | "peripherals"
+  | "states";
 type Sub = SettingsSub;
+
+/**
+ * Sub-pages that draw their own back button and title. The generic header above
+ * would only stack a second one on top of theirs.
+ */
+function ownsItsHeader(sub: Sub): boolean {
+  return sub === "staff" || sub === "tax" || sub === "peripherals" || sub === "states";
+}
 
 export function SettingsPage({
   initialSub = "root",
+  merchantOnly = false,
   installAvailable = false,
   onInstallApp,
   onOpenBackupWizard,
   onOpenMultisigStudio,
+  onOpenSetupWizard,
+  onOpenSwap,
+  onOpenSend,
 }: {
   initialSub?: Sub;
+  /** Opened from Merchant Mode: Merchant settings is the root, so no back header. */
+  merchantOnly?: boolean;
   installAvailable?: boolean;
   onInstallApp?: () => void;
   onOpenBackupWizard?: () => void;
   onOpenMultisigStudio?: () => void;
+  /** Offered when Merchant Mode is switched on for a shop with nothing set up. */
+  onOpenSetupWizard?: () => void;
+  /** The wallet's own DEX Swap, where a merchant conversion is made and signed. */
+  onOpenSwap?: () => void;
+  /** The wallet's own Send, where a merchant sweep is made and signed. */
+  onOpenSend?: (destination?: string) => void;
 }) {
   const {
     network,
@@ -108,6 +156,11 @@ export function SettingsPage({
     retryMergeReconciliation,
     submissionStatus,
   } = useWallet();
+  const {
+    enabled: merchantEnabled,
+    setEnabled: setMerchantEnabled,
+    settings: merchantSettings,
+  } = useMerchant();
   const { toast } = useToast();
 
   const [sub, setSub] = useState<Sub>(initialSub);
@@ -438,12 +491,18 @@ export function SettingsPage({
     accounts.length;
 
   const backTarget: Sub | null =
-    sub === "root" ? null : sub === "merge" ? "accounts" : "root";
+    sub === "root"
+      ? null
+      : sub === "merge"
+        ? "accounts"
+        : ownsItsHeader(sub)
+          ? "merchant"
+          : "root";
 
   return (
     <div className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
-      {/* Subpage Navigation */}
-      {sub !== "root" && (
+      {/* Subpage Navigation — suppressed for sub-pages that draw their own. */}
+      {sub !== "root" && !ownsItsHeader(sub) && !(merchantOnly && sub === "merchant") && (
         <>
           <div className="flex items-center justify-between pb-1 pt-2">
             <IOSBackButton
@@ -475,7 +534,9 @@ export function SettingsPage({
                                   ? "Hardware Wallets"
                                   : sub === "currency"
                                     ? "Display Currency"
-                                    : "Network"}
+                                    : sub === "merchant"
+                                      ? "Merchant"
+                                      : "Network"}
           </h1>
         </>
       )}
@@ -670,6 +731,51 @@ export function SettingsPage({
                     }}
                     sep
                   />
+                </div>
+              </div>
+
+              {/* Merchant — a counter runs from the same account, so it sits with them */}
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  Merchant
+                </p>
+                <div className="list-group">
+                  <RowButton
+                    as="div"
+                    icon={<IconStorefront size={16} />}
+                    tint="#30D158"
+                    label="Merchant Mode"
+                    sub="Take payments at a counter"
+                  >
+                    <Toggle
+                      on={merchantEnabled}
+                      label="Merchant Mode"
+                      onChange={() => {
+                        const next = !merchantEnabled;
+                        setMerchantEnabled(next);
+                        // Only a shop with nothing to go on gets walked through
+                        // setup; one that is already configured is left alone.
+                        const unconfigured =
+                          !merchantSettings.profile.name.trim() &&
+                          !merchantSettings.receivingPublicKey;
+                        if (next && unconfigured) onOpenSetupWizard?.();
+                      }}
+                    />
+                  </RowButton>
+                  {merchantEnabled && (
+                    <RowButton
+                      icon={<IconStorefront size={16} />}
+                      tint="#30D158"
+                      label="Merchant"
+                      value={merchantSettings.profile.name || "Unnamed shop"}
+                      chevron
+                      sep
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setSub("merchant");
+                      }}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1464,6 +1570,28 @@ export function SettingsPage({
             ))}
           </div>
         </div>
+      )}
+
+      {/* ---------- MERCHANT ---------- */}
+      {sub === "merchant" && (
+        <MerchantSettings
+          onDisabled={() => setSub("root")}
+          onNavigate={setSub}
+          onOpenSwap={onOpenSwap}
+          onOpenSend={onOpenSend}
+        />
+      )}
+
+      {/* Merchant sub-pages. Each is a design mock reading src/lib/merchant/mock.ts
+          and each draws its own back button, so it is rendered bare. */}
+      {sub === "staff" && <StaffTerminalsPage onBack={() => setSub("merchant")} />}
+      {sub === "tax" && <TaxRecordsPage onBack={() => setSub("merchant")} />}
+      {sub === "peripherals" && <PeripheralsPage onBack={() => setSub("merchant")} />}
+      {sub === "states" && (
+        <OfflineStatesGallery
+          onBack={() => setSub("merchant")}
+          currency={merchantSettings.currency}
+        />
       )}
 
       {/* ---------- NETWORK SWITCHER & HEALTH ---------- */}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
+import { useMerchant } from "@/hooks/useMerchant";
 import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { assetMetadataCacheKey, fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
@@ -45,6 +46,7 @@ import {
   IconDownload,
   IconEye,
   IconEyeOff,
+  IconFileText,
   IconGear,
   IconHome,
   IconKey,
@@ -56,9 +58,14 @@ import {
   IconSend,
   IconShield,
   IconSwap,
+  IconUsers,
   IconWallet,
   LogoMark,
 } from "./icons";
+import { IconBars, IconReceipt, IconStorefront, IconTag } from "./merchant/icons";
+import { MOCK_SHIFT } from "@/lib/merchant/mock";
+import { ModeSwitcher, type ShellMode } from "./merchant/ModeSwitcher";
+import type { MerchantSub } from "./merchant/MerchantPage";
 
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
 const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
@@ -78,8 +85,98 @@ const CurrencyConverterModal = dynamic(() => import("./CurrencyConverterModal").
 const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) => m.NetworkStatsModal), { ssr: false });
 const TrezorModal = dynamic(() => import("./TrezorModal").then((m) => m.TrezorModal), { ssr: false });
 const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
+const MerchantPage = dynamic(() => import("./merchant/MerchantPage").then((m) => m.MerchantPage), { ssr: false });
+const SetupWizard = dynamic(() => import("./merchant/SetupWizard").then((m) => m.SetupWizard), { ssr: false });
 
-type View = "home" | "activity" | "swap" | "contacts" | "settings";
+type View =
+  | "home"
+  | "activity"
+  | "swap"
+  | "contacts"
+  | "settings"
+  | "merchant"
+  | "orders"
+  | "catalogue"
+  | "invoices"
+  | "links"
+  | "customers"
+  | "insights";
+
+/** The views Merchant Mode owns; everything else is the wallet's. */
+const MERCHANT_VIEWS = [
+  "merchant",
+  "orders",
+  "catalogue",
+  "invoices",
+  "links",
+  "customers",
+  "insights",
+] as const satisfies readonly View[];
+
+function isMerchantView(view: View): boolean {
+  return (MERCHANT_VIEWS as readonly View[]).includes(view);
+}
+
+/** The till is the shell's "merchant" view; every other merchant view is its own sub. */
+function merchantSubForView(view: View): MerchantSub {
+  return view === "merchant" || !isMerchantView(view) ? "pos" : (view as MerchantSub);
+}
+
+function viewForMerchantSub(sub: MerchantSub): View {
+  return sub === "pos" ? "merchant" : sub;
+}
+
+/** Window-header title. Merchant views name themselves rather than slugging. */
+function desktopViewTitle(view: View): string {
+  switch (view) {
+    case "home":
+      return "Wallet Overview";
+    case "swap":
+      return "In-App DEX Swap";
+    case "contacts":
+      return "Contacts";
+    case "merchant":
+      return "Point of Sale";
+    case "orders":
+      return "Orders";
+    case "catalogue":
+      return "Catalogue";
+    case "invoices":
+      return "Invoices";
+    case "links":
+      return "Counter codes";
+    case "customers":
+      return "Customers";
+    case "insights":
+      return "Insights";
+    default:
+      return view.charAt(0).toUpperCase() + view.slice(1);
+  }
+}
+
+function mobileViewTitle(view: View): string {
+  switch (view) {
+    case "home":
+      return "Wallet";
+    case "merchant":
+      return "Point of Sale";
+    case "orders":
+      return "Orders";
+    case "catalogue":
+      return "Catalogue";
+    case "invoices":
+      return "Invoices";
+    case "links":
+      return "Counter codes";
+    case "customers":
+      return "Customers";
+    case "insights":
+      return "Insights";
+    default:
+      return view.charAt(0).toUpperCase() + view.slice(1);
+  }
+}
+
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -119,7 +216,22 @@ export function Dashboard() {
     fundFromFriendbot,
   } = useWallet();
 
-  const [view, setView] = useState<View>("home");
+  const {
+    enabled: merchantEnabled,
+    unmatched: merchantUnmatched,
+    charges: merchantCharges,
+  } = useMerchant();
+
+  const [storedView, setView] = useState<View>("home");
+  // The sidebar shows one mode's navigation at a time. Settings is global, so
+  // opening it must not knock the sidebar back to the wallet's rows — which is
+  // why the mode is held rather than derived from the view.
+  const [storedMode, setMode] = useState<ShellMode>("wallet");
+  // Turning Merchant Mode off leaves the shell exactly as it was before it was
+  // ever turned on, without a render pass that writes state back.
+  const mode: ShellMode = merchantEnabled ? storedMode : "wallet";
+  const view: View =
+    merchantEnabled || !isMerchantView(storedView) ? storedView : "home";
   const [query, setQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [counterpartyFilter, setCounterpartyFilter] = useState<string | null>(null);
@@ -181,6 +293,13 @@ export function Dashboard() {
   const [multisigOpen, setMultisigOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Mounted on the shell, not inside Settings: turning Merchant Mode on
+  // re-renders the toggle's own row, and a wizard owned by that row would be
+  // torn down in the same pass that asked for it.
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  // The shift sheet lives in MerchantPage; the shell holds the flag so the
+  // desktop sidebar and the command palette can open that same sheet.
+  const [shiftOpen, setShiftOpen] = useState(false);
   const pendingAirdropClaim = pendingTxs.some(
     (transaction) => transaction.label === "Airdrop claim",
   );
@@ -385,6 +504,10 @@ export function Dashboard() {
       } else if ((e.metaKey || e.ctrlKey) && e.key === "5") {
         e.preventDefault();
         openSettings("root");
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "6") {
+        if (!merchantEnabled) return;
+        e.preventDefault();
+        switchTab("merchant");
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && !isInput) {
         e.preventDefault();
         setSendOpen(true);
@@ -410,7 +533,7 @@ export function Dashboard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [accounts, selectAccount, togglePrivacy, lock]);
+  }, [accounts, selectAccount, togglePrivacy, lock, merchantEnabled]);
 
   // Infinite scroll for Activity — iOS-style forever scroll: an IntersectionObserver
   // sentinel near the list end pulls the next page automatically.
@@ -659,10 +782,45 @@ export function Dashboard() {
     window.scrollTo({ top: 0 });
   }
 
+  /**
+   * The Settings row. Merchant Mode's own settings are the ones a shop wants
+   * from behind the counter, so in merchant mode the row opens Settings →
+   * Merchant directly rather than the wallet's root. Nothing is closed off: that
+   * sub-page's back button still lands on the settings root, ⌘5 opens it from
+   * anywhere, and the palette carries "Wallet settings" too.
+   */
+  function openSettingsForMode() {
+    openSettings(mode === "merchant" ? "merchant" : "root");
+  }
+
   function switchTab(v: View) {
     triggerHaptic("selection");
     setView(v);
+    if (isMerchantView(v)) {
+      setMode("merchant");
+    } else if (v !== "settings") {
+      setMode("wallet");
+    }
     window.scrollTo({ top: 0 });
+  }
+
+  /**
+   * The sheet is mounted by MerchantPage, so the counter has to be on screen
+   * before it can be shown — a shift opened from Settings would otherwise ask
+   * for a sheet nothing is rendering. The current view is read through the
+   * setter rather than the render, so a merchant view already open is kept.
+   */
+  function openShift() {
+    triggerHaptic("selection");
+    setView((current) => (isMerchantView(current) ? current : "merchant"));
+    setMode("merchant");
+    setShiftOpen(true);
+    window.scrollTo({ top: 0 });
+  }
+
+  /** Merchant selects the till, Wallet returns Home. */
+  function switchMode(next: ShellMode) {
+    switchTab(next === "merchant" ? "merchant" : "home");
   }
 
   function handleSendToContact(c: Contact) {
@@ -670,6 +828,14 @@ export function Dashboard() {
     setSendPrefill({ destination: c.address });
     setSendOpen(true);
   }
+
+  /** Anything on the counter a person still has to deal with. */
+  const merchantAttention = useMemo(
+    () =>
+      merchantUnmatched.length +
+      merchantCharges.filter((c) => c.status === "awaiting" && c.network === network).length,
+    [merchantCharges, merchantUnmatched.length, network],
+  );
 
   const paletteActions = useMemo(
     () => [
@@ -738,13 +904,42 @@ export function Dashboard() {
         run: () => setBackupWizardOpen(true),
       },
       { id: "phrase", label: "Reveal recovery phrase or secret key", run: () => setBackupWizardOpen(true) },
+      { id: "settings", label: "Wallet settings", run: () => openSettings("root") },
       { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
       { id: "multisig", label: "Multi-Sig Studio (signers & co-signing)", run: () => setMultisigOpen(true) },
       { id: "contacts", label: "Open Contacts", run: () => switchTab("contacts") },
+      ...(merchantEnabled
+        ? [
+            {
+              id: "merchant-charge",
+              label: "New charge",
+              hint: "Point of Sale",
+              run: () => switchTab("merchant"),
+            },
+            { id: "merchant-orders", label: "Merchant orders", run: () => switchTab("orders") },
+            { id: "merchant-catalogue", label: "Catalogue", run: () => switchTab("catalogue") },
+            {
+              id: "merchant-invoice",
+              label: "New invoice",
+              hint: "Invoices",
+              run: () => switchTab("invoices"),
+            },
+            { id: "merchant-links", label: "Counter codes", run: () => switchTab("links") },
+            { id: "merchant-customers", label: "Customers", run: () => switchTab("customers") },
+            {
+              id: "merchant-shift",
+              label: "Open shift",
+              hint: `Shift #${MOCK_SHIFT.number}`,
+              run: openShift,
+            },
+            { id: "merchant-insights", label: "Merchant insights", run: () => switchTab("insights") },
+          ]
+        : []),
       { id: "lock", label: "Lock wallet", run: lock },
     ],
     [
       accounts,
+      merchantEnabled,
       contacts,
       activeAccount,
       privacyMode,
@@ -859,6 +1054,33 @@ export function Dashboard() {
         {/* Navigation & Accounts Scroll Body */}
         <div className={`flex-1 overflow-y-auto scrollbar-none ${sidebarCollapsed ? "p-2.5 space-y-2" : "p-4 space-y-1"}`}>
           <nav className="space-y-1 w-full" aria-label="Desktop Navigation">
+            {/*
+              Mode is a higher-level choice than search, and search is scoped to
+              the mode you are in — so the switcher sits directly under the app
+              header and above the palette button, and the sidebar shows one
+              mode's navigation at a time instead of two stacked lists.
+            */}
+            {merchantEnabled &&
+              (sidebarCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
+                  className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-all hover:bg-white/[0.08] hover:text-white"
+                  title={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
+                  aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
+                >
+                  {mode === "merchant" ? (
+                    <IconStorefront size={18} className="text-[#30D158]" />
+                  ) : (
+                    <IconWallet size={18} />
+                  )}
+                </button>
+              ) : (
+                <div className="mb-2">
+                  <ModeSwitcher mode={mode} onChange={switchMode} />
+                </div>
+              ))}
+
             {!sidebarCollapsed && (
               <button
                 type="button"
@@ -878,6 +1100,133 @@ export function Dashboard() {
               </button>
             )}
 
+            {mode === "merchant" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => switchTab("merchant")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "merchant"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={sidebarCollapsed ? "Point of Sale (⌘6)" : undefined}
+                >
+                  <IconStorefront size={18} />
+                  {!sidebarCollapsed && <span>Point of Sale</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchTab("orders")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "orders"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={
+                    sidebarCollapsed
+                      ? merchantAttention > 0
+                        ? `Orders (${merchantAttention} need attention)`
+                        : "Orders"
+                      : undefined
+                  }
+                >
+                  <div className="flex items-center gap-2.5">
+                    <IconReceipt size={18} />
+                    {!sidebarCollapsed && <span>Orders</span>}
+                  </div>
+                  {merchantAttention > 0 &&
+                    (sidebarCollapsed ? (
+                      <span
+                        aria-hidden
+                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#FF9F0A]"
+                      />
+                    ) : (
+                      <span
+                        className={`mono rounded-full px-1.5 py-[1px] text-[10.5px] font-semibold ${
+                          view === "orders"
+                            ? "bg-white/25 text-white"
+                            : "bg-[#FF9F0A]/20 text-[#FF9F0A]"
+                        }`}
+                      >
+                        {merchantAttention}
+                      </span>
+                    ))}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchTab("catalogue")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "catalogue"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={sidebarCollapsed ? "Catalogue" : undefined}
+                >
+                  <IconTag size={18} />
+                  {!sidebarCollapsed && <span>Catalogue</span>}
+                </button>
+
+                {/* Counter codes is the other half of Invoices, so it lights this row. */}
+                <button
+                  type="button"
+                  onClick={() => switchTab("invoices")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "invoices" || view === "links"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={sidebarCollapsed ? "Invoices" : undefined}
+                >
+                  <IconFileText size={18} />
+                  {!sidebarCollapsed && <span>Invoices</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchTab("customers")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "customers"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={sidebarCollapsed ? "Customers" : undefined}
+                >
+                  <IconUsers size={18} />
+                  {!sidebarCollapsed && <span>Customers</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchTab("insights")}
+                  className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                  } text-[13.5px] font-semibold ${
+                    view === "insights"
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                  }`}
+                  title={sidebarCollapsed ? "Insights" : undefined}
+                >
+                  <IconBars size={18} />
+                  {!sidebarCollapsed && <span>Insights</span>}
+                </button>
+
+              </>
+            ) : (
+              <>
             <button
               type="button"
               onClick={() => switchTab("home")}
@@ -953,10 +1302,12 @@ export function Dashboard() {
                 <span className="mono text-[11px] font-normal opacity-80">{contacts.length}</span>
               )}
             </button>
+              </>
+            )}
 
             <button
               type="button"
-              onClick={() => openSettings("root")}
+              onClick={openSettingsForMode}
               className={`group relative flex w-full items-center rounded-xl transition-all ${
                 sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
               } text-[13.5px] font-semibold ${
@@ -964,7 +1315,13 @@ export function Dashboard() {
                   ? "bg-[#0A84FF] text-white shadow-sm"
                   : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
               }`}
-              title={sidebarCollapsed ? "Settings (⌘5)" : undefined}
+              title={
+                sidebarCollapsed
+                  ? mode === "merchant"
+                    ? "Merchant settings"
+                    : "Settings (⌘5)"
+                  : undefined
+              }
             >
               <IconGear size={18} />
               {!sidebarCollapsed && <span>Settings</span>}
@@ -1196,7 +1553,7 @@ export function Dashboard() {
         <header className="app-scroll-sticky-top hidden md:flex h-[64px] shrink-0 items-center justify-between px-8 border-b border-white/[0.08] bg-white/[0.01] sticky z-20 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <h2 className="text-[20px] font-bold text-white tracking-tight">
-              {view === "home" ? "Wallet Overview" : view === "swap" ? "In-App DEX Swap" : view === "contacts" ? "Contacts" : view.charAt(0).toUpperCase() + view.slice(1)}
+              {desktopViewTitle(view)}
             </h2>
           </div>
 
@@ -1273,8 +1630,8 @@ export function Dashboard() {
                 <button
                   type="button"
                   className="icon-btn !h-11 !w-11"
-                  onClick={() => openSettings("root")}
-                  aria-label="Settings"
+                  onClick={openSettingsForMode}
+                  aria-label={mode === "merchant" ? "Merchant settings" : "Settings"}
                 >
                   <IconGear size={18} />
                 </button>
@@ -1284,13 +1641,13 @@ export function Dashboard() {
             {scrolled ? (
               <div className="-mt-1 pb-2.5 text-center">
                 <span className="text-[17px] font-semibold tracking-tight text-white">
-                  {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
+                  {mobileViewTitle(view)}
                 </span>
               </div>
             ) : (
               <div className="flex items-end justify-between pb-2">
                 <h1 className="display-h text-[34px] leading-tight text-white font-bold">
-                  {view === "home" ? "Wallet" : view.charAt(0).toUpperCase() + view.slice(1)}
+                  {mobileViewTitle(view)}
                 </h1>
               </div>
             )}
@@ -1341,15 +1698,29 @@ export function Dashboard() {
             <SettingsPage
               key={settingsKey}
               initialSub={settingsSub}
+              merchantOnly={mode === "merchant"}
               installAvailable={Boolean(installEvt)}
               onInstallApp={handleInstallApp}
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
               onOpenMultisigStudio={() => setMultisigOpen(true)}
+              onOpenSetupWizard={() => setSetupWizardOpen(true)}
+              onOpenSwap={() => switchTab("swap")}
+              onOpenSend={(destination) => {
+                setSendPrefill(destination ? { destination } : null);
+                setSendOpen(true);
+              }}
             />
           ) : view === "swap" ? (
             <SwapPage />
           ) : view === "contacts" ? (
             <AddressBookPage onSendTo={handleSendToContact} />
+          ) : isMerchantView(view) ? (
+            <MerchantPage
+              sub={merchantSubForView(view)}
+              onSubChange={(next) => switchTab(viewForMerchantSub(next))}
+              shiftOpen={shiftOpen}
+              onShiftOpenChange={setShiftOpen}
+            />
           ) : view === "home" && unfunded ? (
             <>
               <UnfundedCard
@@ -2077,18 +2448,33 @@ export function Dashboard() {
           <IconSwap size={22} />
           <span>Swap</span>
         </button>
-        <button
-          type="button"
-          className={`tab-item ${view === "contacts" ? "active" : ""}`}
-          onClick={() => switchTab("contacts")}
-        >
-          <IconBook size={22} />
-          <span>Contacts</span>
-        </button>
+        {/*
+          Merchant takes the Contacts slot while the counter is open; Contacts
+          stays reachable from the command palette and from Settings.
+        */}
+        {merchantEnabled ? (
+          <button
+            type="button"
+            className={`tab-item ${isMerchantView(view) ? "active" : ""}`}
+            onClick={() => switchTab("merchant")}
+          >
+            <IconStorefront size={22} />
+            <span>Merchant</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`tab-item ${view === "contacts" ? "active" : ""}`}
+            onClick={() => switchTab("contacts")}
+          >
+            <IconBook size={22} />
+            <span>Contacts</span>
+          </button>
+        )}
         <button
           type="button"
           className={`tab-item ${view === "settings" ? "active" : ""}`}
-          onClick={() => openSettings("root")}
+          onClick={openSettingsForMode}
         >
           <IconGear size={22} />
           <span>Settings</span>
@@ -2105,7 +2491,11 @@ export function Dashboard() {
         onClose={() => setDetailAsset(null)}
       />
       <TxDetailModal key={txDetail?.hash ?? "closed"} item={txDetail} onClose={() => setTxDetail(null)} />
-      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <KeyboardShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+        merchantEnabled={merchantEnabled}
+      />
       <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
       <TrezorModal open={trezorModalOpen} onClose={() => setTrezorModalOpen(false)} />
       <RenameAccountModal
@@ -2131,6 +2521,9 @@ export function Dashboard() {
       <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
+      {/* Opened when Merchant Mode is switched on for a shop that has nothing set
+          up yet. It is a mock: it collects a draft and writes none of it. */}
+      <SetupWizard open={setupWizardOpen} onClose={() => setSetupWizardOpen(false)} />
     </div>
   );
 }

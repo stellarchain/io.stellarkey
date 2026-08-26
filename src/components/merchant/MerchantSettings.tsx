@@ -1,0 +1,1228 @@
+"use client";
+
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { useMerchant } from "@/hooks/useMerchant";
+import { useWallet } from "@/hooks/useWallet";
+import { triggerHaptic } from "@/lib/haptics";
+import { formatTrezorAddress } from "@/lib/address-display";
+import { fmtAmount, FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
+import { sameAsset } from "@/lib/merchant/charge";
+import { minorToDecimal, toMinor } from "@/lib/merchant/money";
+import {
+  MOCK_PERIPHERALS,
+  MOCK_SETTLEMENT,
+  MOCK_STAFF,
+  MOCK_TERMINAL,
+  MOCK_TREASURY_ADDRESS,
+} from "@/lib/merchant/mock";
+import type { AcceptedAsset, TaxMode, TipMode } from "@/lib/merchant/types";
+import { BASE_RESERVE_XLM } from "@/lib/stellar";
+import { isValidPublicAddress } from "@/lib/vault";
+import type { SettingsSub } from "../SettingsPage";
+import { Avatar, Notice, SegmentedControl, Select, Toggle } from "../ui";
+import { useToast } from "../Toast";
+import {
+  IconAlert,
+  IconArrowUpRight,
+  IconChevronDown,
+  IconFileText,
+  IconShield,
+  IconSwap,
+  IconUsers,
+  IconWallet,
+} from "../icons";
+import {
+  IconClock,
+  IconPercent,
+  IconPrinter,
+  IconReceipt,
+  IconStorefront,
+  IconTerminal,
+  IconXCircle,
+} from "./icons";
+import { MerchantDisclosure } from "./Disclosure";
+import { PREVIEW_ORDER, ReceiptSheet } from "./ReceiptSheet";
+
+const CURRENCIES: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
+
+/** The four bands a shop actually chooses between; anything wider is a bad fill. */
+const SLIPPAGE_OPTIONS = [
+  { value: "10", label: "0.10 %" },
+  { value: "25", label: "0.25 %" },
+  { value: "50", label: "0.50 %" },
+  { value: "100", label: "1.00 %" },
+];
+
+/** Local time on this device: the hour the till asks, never one it acts on. */
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: String(hour),
+  label: `${String(hour).padStart(2, "0")}:00`,
+}));
+
+const EXPIRY_OPTIONS = [
+  { seconds: 300, label: "5 minutes" },
+  { seconds: 600, label: "10 minutes" },
+  { seconds: 900, label: "15 minutes" },
+  { seconds: 1800, label: "30 minutes" },
+];
+
+/* ---------------- row primitives ----------------
+   Everything below is the wallet's own settings row, copied from
+   `SettingsPage`'s `RowButton`: one line, an optional mono sub-line, and the
+   control on the right. Nothing on this screen is taller than that unless it is
+   a field that genuinely stacks. */
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** The sentence the app prints under a group rather than inside a row. */
+function Caption({ children, tone }: { children: ReactNode; tone?: "warn" }) {
+  return (
+    <p
+      className={`px-1 text-[12px] leading-relaxed ${
+        tone === "warn" ? "text-[#FF9F0A]" : "text-neutral-400"
+      }`}
+    >
+      {children}
+    </p>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg
+      className="chevron"
+      width="8"
+      height="14"
+      viewBox="0 0 8 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m1.5 1.5 5 5.5-5 5.5" />
+    </svg>
+  );
+}
+
+/**
+ * The canonical row, copied from `SettingsPage`'s `RowButton`. `onClick` makes
+ * it a button; without one it is a plain row carrying its control. `ios-sep` is
+ * inset for the 28px leading icon every row here has.
+ */
+function Row({
+  icon,
+  tint,
+  label,
+  sub,
+  value,
+  chevron,
+  danger,
+  first = false,
+  onClick,
+  children,
+}: {
+  icon: ReactNode;
+  tint?: string;
+  /** A string title, or the control that stands in for one. */
+  label: ReactNode;
+  sub?: string;
+  value?: string;
+  chevron?: boolean;
+  danger?: boolean;
+  first?: boolean;
+  onClick?: () => void;
+  children?: ReactNode;
+}) {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag
+      onClick={
+        onClick
+          ? () => {
+              triggerHaptic("selection");
+              onClick();
+            }
+          : undefined
+      }
+      className={`${onClick ? "row-hover " : ""}flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
+        first ? "" : "ios-sep"
+      }`}
+    >
+      {tint ? (
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+          style={{ background: tint }}
+        >
+          {icon}
+        </span>
+      ) : (
+        icon
+      )}
+      <span className="min-w-0 flex-1">
+        {typeof label === "string" ? (
+          <span
+            className={`block truncate text-[15.5px] font-normal leading-tight ${
+              danger ? "text-[#FF453A]" : "text-white"
+            }`}
+          >
+            {label}
+          </span>
+        ) : (
+          label
+        )}
+        {sub && (
+          <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+            {sub}
+          </span>
+        )}
+      </span>
+      {value && <span className="text-[14.5px] font-medium text-neutral-400">{value}</span>}
+      {children}
+      {chevron && <Chevron />}
+    </Tag>
+  );
+}
+
+/** A row whose control is a field: label left, the value editable on the right. */
+function TextRow({
+  icon,
+  tint,
+  label,
+  sub,
+  suffix,
+  first = false,
+  ...input
+}: {
+  icon: ReactNode;
+  tint: string;
+  label: string;
+  sub?: string;
+  suffix?: string;
+  first?: boolean;
+} & Omit<React.ComponentProps<typeof DraftInput>, "ariaLabel" | "multiline" | "inline">) {
+  return (
+    <Row icon={icon} tint={tint} label={label} sub={sub} first={first}>
+      <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+        <DraftInput ariaLabel={label} inline {...input} />
+        {suffix && <span className="shrink-0 text-[15.5px] text-neutral-400">{suffix}</span>}
+      </span>
+    </Row>
+  );
+}
+
+/**
+ * A row whose control is too wide to sit beside its label on a phone. It stacks
+ * there and sits side by side from `sm` up, where the label reads as an ordinary
+ * row title. No leading icon, so the separator is full width.
+ */
+function ChoiceRow({
+  label,
+  sub,
+  icon,
+  tint,
+  first = false,
+  children,
+}: {
+  label: string;
+  sub?: string;
+  /** Every row in these groups is icon-led; a bare one reads as unfinished. */
+  icon?: ReactNode;
+  tint?: string;
+  first?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`px-4 py-3.5 sm:flex sm:items-center sm:gap-4 ${
+        first ? "" : "border-t border-white/[0.08]"
+      }`}
+    >
+      {icon && (
+        <span
+          className="mb-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm sm:mb-0"
+          style={{ background: tint }}
+        >
+          {icon}
+        </span>
+      )}
+      <span className="min-w-0 sm:flex-1">
+        <span className="field-label sm:pb-0 sm:text-[15.5px] sm:font-normal sm:leading-tight sm:text-white">
+          {label}
+        </span>
+        {sub && (
+          <span className="mono block truncate pb-1.5 text-[12px] leading-tight text-neutral-400 sm:pb-0">
+            {sub}
+          </span>
+        )}
+      </span>
+      <div className="min-w-0 sm:w-[320px] sm:shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/** A footnote that belongs to the rows above it and stays inside their group. */
+function NoteRow({ children }: { children: ReactNode }) {
+  return (
+    <p className="border-t border-white/[0.08] px-4 py-3 text-[12px] leading-relaxed text-neutral-400">
+      {children}
+    </p>
+  );
+}
+
+/**
+ * The quiet foot of a section: the knobs a shop touches once, if ever. It is a
+ * real disclosure — a button owning a region it names — so nothing is removed,
+ * it is simply not shouted on a screen someone is setting up for the first time.
+ * Collapsed content stays mounted behind `hidden`, so a half-typed value in it
+ * survives a collapse.
+ */
+function Advanced({ label = "Advanced", children }: { label?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const regionId = useId();
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={regionId}
+        onClick={() => {
+          triggerHaptic("selection");
+          setOpen((previous) => !previous);
+        }}
+        className="row-hover flex w-full items-center gap-2 border-t border-white/[0.08] px-4 py-3 text-left"
+      >
+        <span className="flex-1 text-[13.5px] font-medium text-neutral-400">{label}</span>
+        <IconChevronDown
+          size={14}
+          className={`chevron transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      <div id={regionId} hidden={!open}>
+        {children}
+      </div>
+    </>
+  );
+}
+
+/**
+ * A text control that keeps the half-typed value locally and writes through on
+ * blur. `onCommit` returns the canonical string to show, so a rejected entry
+ * snaps back to what is actually stored.
+ */
+function DraftInput({
+  value,
+  onCommit,
+  ariaLabel,
+  placeholder,
+  className = "",
+  inputMode,
+  multiline = false,
+  inline = false,
+  align = "right",
+  id,
+}: {
+  value: string;
+  onCommit: (next: string) => string;
+  ariaLabel: string;
+  placeholder?: string;
+  className?: string;
+  inputMode?: "text" | "decimal" | "numeric";
+  multiline?: boolean;
+  /** Sits on the right of a row rather than under a label. */
+  inline?: boolean;
+  align?: "left" | "right";
+  id?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  function commit() {
+    setDraft(onCommit(draft));
+  }
+
+  if (multiline) {
+    return (
+      <textarea
+        id={id}
+        rows={2}
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        className={`input resize-none text-base sm:text-[13.5px] ${className}`}
+      />
+    );
+  }
+
+  return (
+    <input
+      id={id}
+      type="text"
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+      inputMode={inputMode}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className={
+        inline
+          ? `w-full min-w-0 rounded-lg bg-transparent py-1.5 text-base leading-tight text-white outline-none placeholder:text-neutral-500 focus:bg-white/[0.06] sm:text-[15.5px] ${
+              align === "right" ? "text-right" : ""
+            } ${className}`
+          : `input text-base sm:text-[13.5px] ${className}`
+      }
+    />
+  );
+}
+
+/* ---------------- the page ---------------- */
+
+export function MerchantSettings({
+  onDisabled,
+  onNavigate,
+  onOpenSwap,
+  onOpenSend,
+}: {
+  onDisabled: () => void;
+  /** Absent when this screen is shown outside the Settings stack; rows go inert. */
+  onNavigate?: (sub: SettingsSub) => void;
+  /** The wallet's DEX Swap — where a conversion is actually made and signed. */
+  onOpenSwap?: () => void;
+  /** The wallet's Send — where a sweep is actually made and signed. */
+  onOpenSend?: (destination?: string) => void;
+}) {
+  const { settings, updateSettings, setEnabled } = useMerchant();
+  const { accounts, balances } = useWallet();
+  const { toast } = useToast();
+
+  /* MOCK — a fixture receipt, shown from beside the footer that prints on it so
+     the wording can be checked without ringing a sale up. Nothing is stored. */
+  const [specimenOpen, setSpecimenOpen] = useState(false);
+
+  /* MOCK — the settlement rule has no home on the merchant store yet, so it is
+     seeded from `MOCK_SETTLEMENT` and lives for as long as this screen does.
+     A real implementation keeps a `SettlementRule` beside the other settings and
+     writes through `updateSettings`; these rows do not change shape when it does.
+     Nothing here converts, sweeps, quotes or signs — the two rows at the foot of
+     the section hand that work to the wallet's own screens. */
+  const [autoConvert, setAutoConvert] = useState(MOCK_SETTLEMENT.autoConvert);
+  const [slippageBps, setSlippageBps] = useState(MOCK_SETTLEMENT.maxSlippageBps);
+  const [sweepAboveMinor, setSweepAboveMinor] = useState(MOCK_SETTLEMENT.sweepAboveMinor ?? 0);
+  const [retainedFloatMinor, setRetainedFloatMinor] = useState(MOCK_SETTLEMENT.retainedFloatMinor);
+  const [treasury, setTreasury] = useState(
+    MOCK_SETTLEMENT.sweepDestination ?? MOCK_TREASURY_ADDRESS,
+  );
+  const [sweepHour, setSweepHour] = useState(MOCK_SETTLEMENT.sweepPromptHour ?? 21);
+
+  const symbol = FIAT_SYMBOLS[settings.currency] ?? "";
+
+  const accountOptions = useMemo(
+    () =>
+      accounts.map((account) => ({
+        value: account.publicKey,
+        label: account.label,
+        sublabel: formatTrezorAddress(account.publicKey),
+      })),
+    [accounts],
+  );
+
+  /** XLM, plus every credit asset this wallet actually holds a trustline for. */
+  const assetChoices = useMemo(() => {
+    const list: AcceptedAsset[] = [{ code: "XLM", issuer: null }];
+    for (const balance of balances ?? []) {
+      if (balance.isNative || balance.issuer === null) continue;
+      const asset: AcceptedAsset = { code: balance.code, issuer: balance.issuer };
+      if (list.some((existing) => sameAsset(existing, asset))) continue;
+      list.push(asset);
+    }
+    for (const accepted of settings.acceptedAssets) {
+      if (!list.some((existing) => sameAsset(existing, accepted))) list.push(accepted);
+    }
+    return list;
+  }, [balances, settings.acceptedAssets]);
+
+  const receivingAccount = accounts.find(
+    (account) => account.publicKey === settings.receivingPublicKey,
+  );
+
+  /* Every credit trustline is one subentry, and each one raises the reserve this
+     account can never spend. Counted off the balances the wallet has already
+     loaded — nothing is fetched for it. */
+  const subentries = (balances ?? []).filter(
+    (balance) => !balance.isNative && balance.issuer !== null,
+  ).length;
+  const reserveXlm = BASE_RESERVE_XLM * (2 + subentries);
+  const askAt = `${String(sweepHour).padStart(2, "0")}:00`;
+
+  /* MOCK — the counts under the navigation rows below are read straight from the
+     fixtures those pages render, so a row never promises a figure the page it
+     opens then contradicts. A real implementation reads the shop's own staff,
+     the till and peripherals here and the rows do not change. */
+  const staffCount = MOCK_STAFF.filter((member) => member.active).length;
+  // One device, because nothing syncs between tills without a server.
+  const terminalName = MOCK_TERMINAL.name;
+  const peripheralsConnected = MOCK_PERIPHERALS.filter((item) => item.connected).length;
+
+  function toggleAsset(asset: AcceptedAsset, on: boolean) {
+    updateSettings({
+      acceptedAssets: on
+        ? [...settings.acceptedAssets, asset]
+        : settings.acceptedAssets.filter((existing) => !sameAsset(existing, asset)),
+    });
+  }
+
+  /** "1.50, 2.00" → minor units, or null when any part is not an amount. */
+  function parseMinorList(raw: string): number[] | null {
+    const parts = raw
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+    if (parts.length === 0) return null;
+    try {
+      const minors = parts.map((part) => toMinor(part));
+      return minors.some((minor) => minor <= 0) ? null : minors;
+    } catch {
+      return null;
+    }
+  }
+
+  function handleTurnOff() {
+    triggerHaptic("warning");
+    setEnabled(false);
+    toast("Merchant Mode turned off", "success");
+    onDisabled();
+  }
+
+  return (
+    <div className="space-y-6 pb-2">
+      {/* ---------- SHOP ---------- */}
+      <Section title="Shop">
+        <div className="list-group">
+          <TextRow
+            first
+            icon={<IconStorefront size={16} />}
+            tint="#30D158"
+            label="Shop name"
+            value={settings.profile.name}
+            placeholder="Rua Coffee"
+            onCommit={(next) => {
+              const name = next.trim();
+              updateSettings({ profile: { ...settings.profile, name } });
+              return name;
+            }}
+          />
+          <TextRow
+            icon={<IconReceipt size={16} />}
+            tint="#64D2FF"
+            label="Tax ID"
+            value={settings.profile.taxId}
+            placeholder="PT123456789"
+            className="mono"
+            onCommit={(next) => {
+              const taxId = next.trim();
+              updateSettings({ profile: { ...settings.profile, taxId } });
+              return taxId;
+            }}
+          />
+          <ChoiceRow
+            icon={<IconStorefront size={16} />}
+            tint="#30D158"
+            label="Address"
+            sub="One line each"
+          >
+            <DraftInput
+              ariaLabel="Address"
+              multiline
+              value={settings.profile.addressLines.join("\n")}
+              placeholder={"12 Rua da Prata\n1100-052 Lisboa"}
+              onCommit={(next) => {
+                const addressLines = next
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter((line) => line.length > 0);
+                updateSettings({ profile: { ...settings.profile, addressLines } });
+                return addressLines.join("\n");
+              }}
+            />
+          </ChoiceRow>
+
+          <Advanced>
+            <TextRow
+              icon={<IconReceipt size={16} />}
+              tint="#5E5CE6"
+              label="Receipt footer"
+              value={settings.profile.receiptFooter}
+              placeholder="Thank you — see you again"
+              onCommit={(next) => {
+                const receiptFooter = next.trim();
+                updateSettings({ profile: { ...settings.profile, receiptFooter } });
+                return receiptFooter;
+              }}
+            />
+            <Row
+              icon={<IconReceipt size={16} />}
+              tint="#5E5CE6"
+              label="Specimen receipt"
+              sub="See how the footer prints"
+              chevron
+              onClick={() => setSpecimenOpen(true)}
+            />
+          </Advanced>
+        </div>
+        <Caption>
+          The name, address and tax ID print on every receipt, and the name is carried in every
+          charge reference.
+        </Caption>
+      </Section>
+
+      {/* ---------- MONEY ---------- */}
+      <Section title="Money">
+        {!settings.receivingPublicKey && (
+          <Notice tone="warn">
+            Charges are paused until you choose the account that receives payments.
+          </Notice>
+        )}
+        <div className="list-group">
+          <Row
+            first
+            icon={<IconWallet size={16} />}
+            tint="#30D158"
+            label="Receiving account"
+            sub={
+              receivingAccount
+                ? formatTrezorAddress(receivingAccount.publicKey)
+                : "Paid straight to your own account"
+            }
+          >
+            <Select
+              size="sm"
+              className="shrink-0"
+              value={settings.receivingPublicKey ?? ""}
+              options={accountOptions}
+              placeholder="Choose"
+              ariaLabel="Receiving account"
+              onChange={(publicKey) => updateSettings({ receivingPublicKey: publicKey })}
+            />
+          </Row>
+
+          <Row
+            icon={<span className="mono text-[12px] font-bold">{symbol}</span>}
+            tint="#64D2FF"
+            label="Display currency"
+            sub="The books are kept in this currency"
+          >
+            <Select
+              size="sm"
+              className="shrink-0"
+              value={settings.currency}
+              options={CURRENCIES.map((code) => ({
+                value: code,
+                label: code,
+                sublabel: FIAT_SYMBOLS[code],
+              }))}
+              ariaLabel="Display currency"
+              onChange={(next) => {
+                const currency = CURRENCIES.find((code) => code === next);
+                if (currency) updateSettings({ currency });
+              }}
+            />
+          </Row>
+
+          {/* Three knobs a shop sets once, if ever. Nothing here is removed — the
+              wording that explains each one travels with it. */}
+          <Advanced>
+            <Row
+              icon={<IconClock size={16} />}
+              tint="#FF9F0A"
+              label="Charge expires after"
+              sub="The held quote cannot move mid-sale"
+            >
+              <Select
+                size="sm"
+                className="shrink-0"
+                value={String(settings.chargeExpirySeconds)}
+                options={EXPIRY_OPTIONS.map((option) => ({
+                  value: String(option.seconds),
+                  label: option.label,
+                }))}
+                ariaLabel="Charge expiry"
+                onChange={(next) => {
+                  const chargeExpirySeconds = Number.parseInt(next, 10);
+                  if (Number.isFinite(chargeExpirySeconds)) updateSettings({ chargeExpirySeconds });
+                }}
+              />
+            </Row>
+
+            <TextRow
+              icon={<IconPercent size={16} />}
+              tint="#BF5AF2"
+              label="Amount tolerance"
+              sub="Only on a payment that arrives with no memo"
+              suffix="%"
+              value={(settings.toleranceBps / 100).toFixed(2)}
+              inputMode="decimal"
+              className="mono"
+              onCommit={(next) => {
+                const percent = Number.parseFloat(next.replace(",", "."));
+                if (!Number.isFinite(percent) || percent < 0 || percent > 20) {
+                  toast("A tolerance between 0 and 20 percent is required.", "error");
+                  return (settings.toleranceBps / 100).toFixed(2);
+                }
+                const toleranceBps = Math.round(percent * 100);
+                updateSettings({ toleranceBps });
+                return (toleranceBps / 100).toFixed(2);
+              }}
+            />
+
+            <Row
+              icon={<IconClock size={16} />}
+              tint="#FF9F0A"
+              label="Hold auto-lock during a charge"
+              sub="The till stays awake until the charge closes"
+            >
+              <Toggle
+                on={settings.holdAutoLockDuringCharge}
+                label="Hold auto-lock while a charge is open"
+                onChange={() =>
+                  updateSettings({ holdAutoLockDuringCharge: !settings.holdAutoLockDuringCharge })
+                }
+              />
+            </Row>
+
+            <NoteRow>
+              Tolerance is used only to settle a single remaining candidate; an exact match is tried
+              first. The idle timer resets on pointer and key events alone, so without the hold a
+              customer-facing screen locks mid-charge and stops the payment watcher.
+            </NoteRow>
+          </Advanced>
+        </div>
+      </Section>
+
+      {/* ---------- ACCEPTED ASSETS ---------- */}
+      <Section title="Accepted assets">
+        <div className="list-group">
+          {assetChoices.map((asset, index) => {
+            const on = settings.acceptedAssets.some((accepted) => sameAsset(accepted, asset));
+            return (
+              <Row
+                key={`${asset.code}:${asset.issuer ?? "native"}`}
+                first={index === 0}
+                icon={
+                  <Avatar
+                    seed={`${asset.code}:${asset.issuer ?? "native"}`}
+                    size={28}
+                    label={asset.code.slice(0, 1)}
+                  />
+                }
+                label={asset.code}
+                sub={asset.issuer === null ? "Native" : formatTrezorAddress(asset.issuer)}
+              >
+                <Toggle
+                  on={on}
+                  label={`Accept ${asset.code}`}
+                  onChange={() => toggleAsset(asset, !on)}
+                />
+              </Row>
+            );
+          })}
+        </div>
+        {settings.acceptedAssets.length === 0 ? (
+          <Caption tone="warn">A charge needs at least one accepted asset.</Caption>
+        ) : (
+          <Caption>Assets are quoted into the display currency when a charge is raised.</Caption>
+        )}
+      </Section>
+
+      {/* ---------- SETTLEMENT ----------
+          What used to be a Payouts page. Held balances are Home's job, a
+          conversion is DEX Swap's, a sweep is Send's and the ledger is
+          Activity's — all four already exist in this wallet. The only part that
+          was ever merchant-specific is the rule, and a rule is a setting. */}
+      <Section title="Settlement">
+        <div className="list-group">
+          <Row
+            first
+            icon={<IconSwap size={16} />}
+            tint="#5E5CE6"
+            label="Convert takings"
+            sub={`Into ${settings.settlementAsset.code} at settlement`}
+          >
+            <Toggle
+              on={autoConvert}
+              label="Convert takings at settlement"
+              onChange={() => setAutoConvert((was) => !was)}
+            />
+          </Row>
+
+          <Row
+            icon={<IconPercent size={16} />}
+            tint="#BF5AF2"
+            label="Maximum slippage"
+            sub="Or the swap fails whole"
+          >
+            <Select
+              size="sm"
+              className="shrink-0"
+              value={String(slippageBps)}
+              options={SLIPPAGE_OPTIONS}
+              ariaLabel="Maximum slippage"
+              onChange={(next) => {
+                const bps = Number.parseInt(next, 10);
+                if (Number.isFinite(bps)) setSlippageBps(bps);
+              }}
+            />
+          </Row>
+
+          <TextRow
+            icon={<IconArrowUpRight size={16} />}
+            tint="#0A84FF"
+            label="Sweep above"
+            sub={`Asked above this, in ${symbol}`}
+            value={minorToDecimal(sweepAboveMinor)}
+            inputMode="decimal"
+            className="mono"
+            onCommit={(next) => {
+              const parsed = parseMinorList(next);
+              if (!parsed || parsed.length !== 1) {
+                toast("Give a single amount, such as 500.00.", "error");
+                return minorToDecimal(sweepAboveMinor);
+              }
+              setSweepAboveMinor(parsed[0]);
+              return minorToDecimal(parsed[0]);
+            }}
+          />
+
+          <TextRow
+            icon={<IconWallet size={16} />}
+            tint="#30D158"
+            label="Retained float"
+            sub={`Never swept, in ${symbol}`}
+            value={minorToDecimal(retainedFloatMinor)}
+            inputMode="decimal"
+            className="mono"
+            onCommit={(next) => {
+              const parsed = parseMinorList(next);
+              if (!parsed || parsed.length !== 1) {
+                toast("Give a single amount, such as 200.00.", "error");
+                return minorToDecimal(retainedFloatMinor);
+              }
+              setRetainedFloatMinor(parsed[0]);
+              return minorToDecimal(parsed[0]);
+            }}
+          />
+
+          <ChoiceRow
+            icon={<IconShield size={16} />}
+            tint="#5E5CE6"
+            label="Treasury"
+            sub={formatTrezorAddress(treasury)}
+          >
+            <DraftInput
+              ariaLabel="Treasury account"
+              className="mono"
+              placeholder="G…"
+              value={treasury}
+              onCommit={(next) => {
+                const address = next.trim().toUpperCase();
+                if (!isValidPublicAddress(address)) {
+                  toast("That is not a Stellar public address.", "error");
+                  return treasury;
+                }
+                setTreasury(address);
+                return address;
+              }}
+            />
+          </ChoiceRow>
+
+          <Row
+            icon={<IconClock size={16} />}
+            tint="#FF9F0A"
+            label="Ask at"
+            sub="Local time on this device"
+          >
+            <Select
+              size="sm"
+              className="shrink-0"
+              value={String(sweepHour)}
+              options={HOUR_OPTIONS}
+              ariaLabel="Hour the till offers the sweep"
+              onChange={(next) => {
+                const hour = Number.parseInt(next, 10);
+                if (Number.isFinite(hour)) setSweepHour(hour);
+              }}
+            />
+          </Row>
+        </div>
+        <Caption>
+          Nothing moves on its own. A conversion is a swap and a sweep is a payment, and both need
+          the vault — so at {askAt} the till asks, and someone signs.
+        </Caption>
+
+        {/* The two jobs, pointed at the screens that already do them rather than
+            rebuilt behind a second set of controls. */}
+        <div className="list-group">
+          <Row
+            first
+            icon={<IconSwap size={16} />}
+            tint="#5E5CE6"
+            label="Convert in DEX Swap"
+            sub="A strict-send swap on this account"
+            chevron={Boolean(onOpenSwap)}
+            onClick={onOpenSwap}
+          />
+          <Row
+            icon={<IconArrowUpRight size={16} />}
+            tint="#0A84FF"
+            label="Sweep in Send"
+            sub={`An ordinary payment to ${formatTrezorAddress(treasury)}`}
+            chevron={Boolean(onOpenSend)}
+            onClick={onOpenSend ? () => onOpenSend(treasury) : undefined}
+          />
+        </div>
+
+        {/* The arithmetic behind the float: at the foot, under a hairline, and
+            closed until someone wants it. */}
+        <div className="border-t border-white/[0.08] px-1 pt-1">
+          <MerchantDisclosure label="Why a sweep never goes to zero">
+            <p>Three things have to stay behind, and the float is what covers them.</p>
+            <ul className="space-y-1.5">
+              <li>
+                <span className="font-semibold text-neutral-200">Reserve</span> —{" "}
+                <span className="mono text-neutral-300">base_reserve × (2 + subentries)</span>, so{" "}
+                <span className="mono">
+                  {fmtAmount(BASE_RESERVE_XLM)} × (2 + {subentries}) = {fmtAmount(reserveXlm)} XLM
+                </span>{" "}
+                on this account. Held by the protocol and unspendable.
+              </li>
+              <li>
+                <span className="font-semibold text-neutral-200">Fee headroom</span> — every
+                conversion, sweep and refund is itself a transaction. An account swept flat cannot
+                pay the fee to move again.
+              </li>
+              <li>
+                <span className="font-semibold text-neutral-200">Refund headroom</span> — a refund is
+                an ordinary outbound payment, made at the counter in front of the customer. It cannot
+                wait for money to come back from the treasury.
+              </li>
+            </ul>
+            <p>
+              The hour is local to this device, so a till that was shut asks the next time it opens,
+              and it only asks once the account holds more than the threshold.
+            </p>
+          </MerchantDisclosure>
+        </div>
+      </Section>
+
+      {/* ---------- TAX ---------- */}
+      <Section title="Tax">
+        <div className="list-group">
+          <ChoiceRow first icon={<IconPercent size={16} />} tint="#FF9F0A" label="Tax mode">
+            <SegmentedControl<TaxMode>
+              value={settings.taxMode}
+              options={[
+                { label: "Included in price", value: "inclusive" },
+                { label: "Added at checkout", value: "added" },
+              ]}
+              onChange={(taxMode) => updateSettings({ taxMode })}
+            />
+          </ChoiceRow>
+
+          <Row
+            icon={<IconFileText size={16} />}
+            tint="#BF5AF2"
+            label="Tax records"
+            sub="Filing periods, exports and adjustments"
+            chevron={Boolean(onNavigate)}
+            onClick={onNavigate && (() => onNavigate("tax"))}
+          />
+
+          <Advanced>
+            <Row
+              icon={<IconPercent size={16} />}
+              tint="#BF5AF2"
+              label="Keypad amounts use"
+              sub="An amount with no catalogue line behind it"
+            >
+              <Select
+                size="sm"
+                className="shrink-0"
+                value={settings.defaultTaxRateId}
+                options={settings.taxRates.map((rate) => ({
+                  value: rate.id,
+                  label: rate.label,
+                  sublabel: `${rate.percent} %`,
+                }))}
+                ariaLabel="Rate applied to keypad amounts"
+                onChange={(defaultTaxRateId) => updateSettings({ defaultTaxRateId })}
+              />
+            </Row>
+          </Advanced>
+        </div>
+        <Caption>
+          {settings.taxMode === "inclusive"
+            ? "Catalogue prices already contain tax; the ticket shows what is inside them."
+            : "Catalogue prices are net; tax is added to the ticket at checkout."}
+        </Caption>
+      </Section>
+
+      {/* ---------- TAX RATES ---------- */}
+      <Section title="Rates">
+        <div className="list-group">
+          {settings.taxRates.map((rate, index) => (
+            <Row
+              key={rate.id}
+              first={index === 0}
+              icon={<IconPercent size={16} />}
+              tint="#BF5AF2"
+              label={
+                <DraftInput
+                  inline
+                  align="left"
+                  ariaLabel={`Name of the ${rate.label} rate`}
+                  value={rate.label}
+                  onCommit={(next) => {
+                    const label = next.trim();
+                    if (!label) return rate.label;
+                    updateSettings({
+                      taxRates: settings.taxRates.map((existing) =>
+                        existing.id === rate.id ? { ...existing, label } : existing,
+                      ),
+                    });
+                    return label;
+                  }}
+                />
+              }
+            >
+              <span className="flex w-[92px] shrink-0 items-center gap-1">
+                <DraftInput
+                  inline
+                  ariaLabel={`Percent of the ${rate.label} rate`}
+                  inputMode="decimal"
+                  value={String(rate.percent)}
+                  className="mono"
+                  onCommit={(next) => {
+                    const percent = Number.parseFloat(next.replace(",", "."));
+                    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+                      toast("A tax rate must be between 0 and 100 percent.", "error");
+                      return String(rate.percent);
+                    }
+                    updateSettings({
+                      taxRates: settings.taxRates.map((existing) =>
+                        existing.id === rate.id ? { ...existing, percent } : existing,
+                      ),
+                    });
+                    return String(percent);
+                  }}
+                />
+                <span className="shrink-0 text-[15.5px] text-neutral-400">%</span>
+              </span>
+            </Row>
+          ))}
+        </div>
+        <Caption>
+          A rate is named on each catalogue item; keypad amounts take the keypad default.
+        </Caption>
+      </Section>
+
+      {/* ---------- TIPS ---------- */}
+      <Section title="Tips">
+        <div className="list-group">
+          <ChoiceRow first icon={<IconReceipt size={16} />} tint="#BF5AF2" label="Tip prompt">
+            <SegmentedControl<TipMode>
+              value={settings.tips.mode}
+              options={[
+                { label: "Off", value: "off" },
+                { label: "Percentage", value: "percent" },
+                { label: "Fixed", value: "fixed" },
+              ]}
+              onChange={(mode) => updateSettings({ tips: { ...settings.tips, mode } })}
+            />
+          </ChoiceRow>
+
+          {settings.tips.mode === "percent" && (
+            <TextRow
+              icon={<IconPercent size={16} />}
+              tint="#BF5AF2"
+              label="Percentage presets"
+              sub="Comma separated"
+              value={settings.tips.percents.join(", ")}
+              inputMode="decimal"
+              className="mono"
+              onCommit={(next) => {
+                const percents = next
+                  .split(",")
+                  .map((part) => Number.parseFloat(part.trim().replace(",", ".")))
+                  .filter((value) => Number.isFinite(value) && value > 0 && value <= 100);
+                if (percents.length === 0) {
+                  toast("Give at least one percentage between 0 and 100.", "error");
+                  return settings.tips.percents.join(", ");
+                }
+                updateSettings({ tips: { ...settings.tips, percents } });
+                return percents.join(", ");
+              }}
+            />
+          )}
+
+          {settings.tips.mode !== "off" && (
+            <TextRow
+              icon={<IconWallet size={16} />}
+              tint="#30D158"
+              label="Fixed presets"
+              sub={`Offered on small tickets, in ${symbol}`}
+              value={settings.tips.fixedMinor.map(minorToDecimal).join(", ")}
+              inputMode="decimal"
+              className="mono"
+              onCommit={(next) => {
+                const fixedMinor = parseMinorList(next);
+                if (!fixedMinor) {
+                  toast("Give at least one amount, such as 0.50, 1.00.", "error");
+                  return settings.tips.fixedMinor.map(minorToDecimal).join(", ");
+                }
+                updateSettings({ tips: { ...settings.tips, fixedMinor } });
+                return fixedMinor.map(minorToDecimal).join(", ");
+              }}
+            />
+          )}
+
+          {settings.tips.mode !== "off" && (
+            <Advanced>
+              {settings.tips.mode === "percent" && (
+                <TextRow
+                  icon={<IconWallet size={16} />}
+                  tint="#30D158"
+                  label="Show fixed presets below"
+                  sub={`A ticket smaller than this, in ${symbol}`}
+                  value={minorToDecimal(settings.tips.thresholdMinor)}
+                  inputMode="decimal"
+                  className="mono"
+                  onCommit={(next) => {
+                    const parsed = parseMinorList(next);
+                    if (!parsed || parsed.length !== 1) {
+                      toast("Give a single amount, such as 10.00.", "error");
+                      return minorToDecimal(settings.tips.thresholdMinor);
+                    }
+                    updateSettings({ tips: { ...settings.tips, thresholdMinor: parsed[0] } });
+                    return minorToDecimal(parsed[0]);
+                  }}
+                />
+              )}
+
+              <Row
+                icon={<IconPercent size={16} />}
+                tint="#BF5AF2"
+                label="Calculate on the net"
+                sub="Taken on the tax-exclusive figure"
+              >
+                <Toggle
+                  on={settings.tips.onNet}
+                  label="Calculate tips on the net"
+                  onChange={() =>
+                    updateSettings({ tips: { ...settings.tips, onNet: !settings.tips.onNet } })
+                  }
+                />
+              </Row>
+            </Advanced>
+          )}
+        </div>
+      </Section>
+
+      {/* ---------- TERMINAL ---------- */}
+      <Section title="Terminal">
+        <div className="list-group">
+          <TextRow
+            first
+            icon={<IconTerminal size={16} />}
+            tint="#5E5CE6"
+            label="This device"
+            sub="Attributed to every order it rings up"
+            value={settings.terminalName}
+            placeholder="Front counter"
+            onCommit={(next) => {
+              const nextName = next.trim() || "This device";
+              updateSettings({ terminalName: nextName });
+              return nextName;
+            }}
+          />
+
+          <Row
+            icon={<IconUsers size={16} />}
+            tint="#5E5CE6"
+            label="Staff & terminals"
+            sub={`${staffCount} ${staffCount === 1 ? "person" : "people"} · ${terminalName}`}
+            chevron={Boolean(onNavigate)}
+            onClick={onNavigate && (() => onNavigate("staff"))}
+          />
+
+          <Row
+            icon={<IconPrinter size={16} />}
+            tint="#64D2FF"
+            label="Peripherals"
+            sub={`${peripheralsConnected} of ${MOCK_PERIPHERALS.length} connected · printer, drawer, scanner, display`}
+            chevron={Boolean(onNavigate)}
+            onClick={onNavigate && (() => onNavigate("peripherals"))}
+          />
+
+          {/* Not part of the shop's day-to-day settings: a gallery kept here so
+              the offline and outage designs can be reviewed without contriving
+              an outage to see them. */}
+          <Advanced>
+            <Row
+              icon={<IconAlert size={16} />}
+              tint="#FF9F0A"
+              label="States & offline"
+              sub="Every offline, unconfirmed and outage state"
+              chevron={Boolean(onNavigate)}
+              onClick={onNavigate && (() => onNavigate("states"))}
+            />
+          </Advanced>
+        </div>
+      </Section>
+
+      {/* ---------- TURN OFF ---------- */}
+      <section className="space-y-2 pt-2">
+        <div className="list-group">
+          <Row
+            first
+            danger
+            icon={<IconXCircle size={16} />}
+            tint="#FF453A"
+            label="Turn off Merchant Mode"
+            onClick={handleTurnOff}
+          />
+        </div>
+        <Caption>
+          Orders, catalogue and settings stay on this device and the receiving account is untouched
+          — the counter just stops appearing in the wallet.
+        </Caption>
+      </section>
+
+      <p className="flex items-start gap-2 px-1 text-[12px] leading-relaxed text-neutral-500">
+        <IconStorefront size={14} className="mt-[2px] shrink-0 text-[#30D158]" />
+        <span>
+          Merchant Mode is non-custodial. A charge is a request paid straight to your own account;
+          nothing is escrowed, nothing is pulled, and a refund is an ordinary outbound payment.
+        </span>
+      </p>
+
+      <ReceiptSheet
+        open={specimenOpen}
+        onClose={() => setSpecimenOpen(false)}
+        order={PREVIEW_ORDER}
+      />
+    </div>
+  );
+}

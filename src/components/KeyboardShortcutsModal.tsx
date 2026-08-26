@@ -7,6 +7,8 @@ interface ShortcutItem {
   keys: string[];
   description: string;
   category: "navigation" | "actions" | "security";
+  /** Listed only while Merchant Mode is on, because the key does nothing without it. */
+  merchantOnly?: boolean;
 }
 
 const SHORTCUTS: ShortcutItem[] = [
@@ -16,6 +18,12 @@ const SHORTCUTS: ShortcutItem[] = [
   { keys: ["⌘", "3"], description: "Navigate to DEX Swap", category: "navigation" },
   { keys: ["⌘", "4"], description: "Navigate to Contacts", category: "navigation" },
   { keys: ["⌘", "5"], description: "Navigate to Settings", category: "navigation" },
+  {
+    keys: ["⌘", "6"],
+    description: "Navigate to Point of Sale",
+    category: "navigation",
+    merchantOnly: true,
+  },
   { keys: ["⌘", "S"], description: "Quick Send Funds", category: "actions" },
   { keys: ["⌘", "R"], description: "Quick Receive / Payment Request", category: "actions" },
   { keys: ["⌘", "W"], description: "Quick DEX Asset Swap", category: "actions" },
@@ -28,11 +36,15 @@ const SHORTCUTS: ShortcutItem[] = [
 export function KeyboardShortcutsModal({
   open,
   onClose,
+  merchantEnabled = false,
 }: {
   open: boolean;
   onClose: () => void;
+  merchantEnabled?: boolean;
 }) {
   if (!open) return null;
+
+  const shortcuts = SHORTCUTS.filter((s) => !s.merchantOnly || merchantEnabled);
 
   return (
     <Modal open onClose={onClose}>
@@ -53,7 +65,7 @@ export function KeyboardShortcutsModal({
               Navigation
             </h4>
             <div className="space-y-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] p-2">
-              {SHORTCUTS.filter((s) => s.category === "navigation").map((s, i) => (
+              {shortcuts.filter((s) => s.category === "navigation").map((s, i) => (
                 <div
                   key={i}
                   className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-white/[0.04] transition-colors"
@@ -79,7 +91,7 @@ export function KeyboardShortcutsModal({
               Actions & Security
             </h4>
             <div className="space-y-1.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] p-2">
-              {SHORTCUTS.filter((s) => s.category !== "navigation").map((s, i) => (
+              {shortcuts.filter((s) => s.category !== "navigation").map((s, i) => (
                 <div
                   key={i}
                   className="flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-white/[0.04] transition-colors"
