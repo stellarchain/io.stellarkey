@@ -227,3 +227,7 @@
 3. Inspect the production bundle and live app for runtime mock imports, stale skeletons, console errors, unhandled promises, mobile overflow/zoom, duplicate safe areas, inaccessible dialogs, and misleading success copy.
 4. Test against intercepted Horizon outcomes plus one read-only live pubnet account; never require live secrets for CI.
 5. Close every discovered gap, repeat all gates, update user-facing documentation, and commit `docs(merchant): document verified merchant operations`.
+
+## Completion
+
+All fourteen tasks are implemented. Requirement-level evidence, final gate results, the read-only pubnet observation, and the accepted upstream dependency boundary are recorded in [Merchant SOTA verification](2026-08-26-merchant-sota-verification.md). Daily setup and operating guidance is in [Merchant Mode operations](../merchant-mode.md).
