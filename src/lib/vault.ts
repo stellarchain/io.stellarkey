@@ -27,9 +27,21 @@ let sessionMnemonic: string | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
 const sessionSecrets = new Map<string, string>();
 
-async function establishVaultSession(password: string): Promise<void> {
+function merchantKeyContext(vault: VaultFile): string {
+  const encryptionSalt = vault.mnemonic?.salt
+    ?? vault.passwordCheck?.salt
+    ?? vault.accounts.find((account) => account.secret)?.secret?.salt;
+  // Older hardware/watch-only vaults may predate the password canary. Their
+  // first public key is stable and still separates their KDF from other vaults.
+  return encryptionSalt ?? vault.accounts[0].publicKey;
+}
+
+async function establishVaultSession(password: string, vault: VaultFile): Promise<void> {
   sessionMerchantKey?.fill(0);
-  sessionMerchantKey = await deriveEncryptionKeyBytes(password, "merchant-store");
+  sessionMerchantKey = await deriveEncryptionKeyBytes(
+    password,
+    `merchant-store:${merchantKeyContext(vault)}`,
+  );
   sessionPassword = password;
 }
 
@@ -287,7 +299,7 @@ export async function initializeVault(
       activeAccountId: account.id,
     };
     persist(vault);
-    await establishVaultSession(password);
+    await establishVaultSession(password, vault);
     sessionMnemonic = null;
     sessionSecrets.set(account.id, trimmed);
     return { account: stripSecret(account), revealed: trimmed };
@@ -324,7 +336,7 @@ async function createDerivedVault(
   };
   persist(vault);
 
-  await establishVaultSession(password);
+  await establishVaultSession(password, vault);
   sessionMnemonic = mnemonic;
   sessionSecrets.set(account.id, kp0.secret());
 
@@ -372,7 +384,7 @@ export async function initializeHardwareVault(
     activeAccountId: stored.id,
   };
   persist(vault);
-  await establishVaultSession(password);
+  await establishVaultSession(password, vault);
   sessionMnemonic = null;
   return { account: stripSecret(stored) };
 }
@@ -397,7 +409,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
       throw new Error("Incorrect password.");
     }
     sessionMnemonic = mnemonic;
-    await establishVaultSession(password);
+    await establishVaultSession(password, vault);
 
     for (const acc of vault.accounts) {
       if (acc.index !== undefined) {
@@ -430,7 +442,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
         throw new Error("Incorrect password.");
       }
     }
-    await establishVaultSession(password);
+    await establishVaultSession(password, vault);
     return vault;
   }
   const firstSecret = firstWithSecret.secret;
@@ -456,7 +468,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
     }
   }
 
-  await establishVaultSession(password);
+  await establishVaultSession(password, vault);
   return vault;
 }
 
