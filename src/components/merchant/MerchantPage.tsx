@@ -22,11 +22,11 @@ import { ShiftSheet } from "./ShiftSheet";
  * The Merchant Mode shell: alerts, the mobile sub-navigation, and the surface
  * the chosen tab renders into.
  *
- * Mocked here: nothing of its own. The till, Orders, Catalogue and Insights are
- * wired to the real merchant store; Invoices, Counter codes, Customers and the
- * shift sheet are design mocks reading `src/lib/merchant/mock.ts`. This
- * file only routes to them, and which tab is open plus whether the shift sheet
- * is showing are the only state it holds — nothing is written or fetched.
+ * Mocked here: nothing of its own. The till, Orders, Catalogue, Insights, and
+ * shift lifecycle are wired to the real merchant store; Invoices, Counter codes,
+ * and Customers are still replaced by their respective persisted milestones.
+ * This file only routes to them, and which tab is open plus whether the shift
+ * sheet is showing are the only state it holds.
  *
  * A real implementation swaps each mocked page's fixture for stored records;
  * this navigation does not change when it does.
@@ -130,6 +130,7 @@ export function MerchantPage({
     enabled,
     settings,
     today,
+    activeShift,
     chargeBlockedReason,
     unmatched,
     activeCharge,
@@ -304,8 +305,8 @@ export function MerchantPage({
             }}
             className="chip min-h-[44px] shrink-0 gap-1.5 border border-white/10 font-sans text-[13px] font-semibold text-white"
           >
-            <IconClock size={14} className="text-[#30D158]" />
-            <span>Shift</span>
+            <IconClock size={14} className={activeShift ? "text-[#30D158]" : "text-[#FF9F0A]"} />
+            <span>{activeShift ? `Shift ${activeShift.number}` : "Open shift"}</span>
           </button>
         </div>
       </div>

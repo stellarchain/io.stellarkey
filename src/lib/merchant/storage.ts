@@ -59,6 +59,43 @@ function idRecords<T>(value: unknown): T[] | null {
   return recordArray<T>(value, (entry) => typeof entry.id === "string");
 }
 
+function shiftRecords(
+  value: unknown,
+  settings: MerchantSettings,
+  staff: MerchantStore["staff"],
+): MerchantStore["shifts"] {
+  const shifts = idRecords<MerchantStore["shifts"][number]>(value) ?? [];
+  return shifts.map((shift) => {
+    const openedById =
+      typeof shift.openedById === "string" && shift.openedById
+        ? shift.openedById
+        : staff.find(
+            (member) => member.id === shift.openedBy || member.name === shift.openedBy,
+          )?.id ?? `legacy:${shift.id}`;
+    const closedById =
+      shift.closedBy === null
+        ? null
+        : typeof shift.closedById === "string" && shift.closedById
+          ? shift.closedById
+          : staff.find(
+              (member) => member.id === shift.closedBy || member.name === shift.closedBy,
+            )?.id ?? `legacy:${shift.id}`;
+    return {
+      ...shift,
+      openedById,
+      closedById,
+      terminalName:
+        typeof shift.terminalName === "string" && shift.terminalName.trim()
+          ? shift.terminalName
+          : settings.terminalName,
+      network: shift.network === "testnet" ? "testnet" : "mainnet",
+      zReport: isRecord(shift.zReport)
+        ? (shift.zReport as MerchantStore["shifts"][number]["zReport"])
+        : null,
+    };
+  });
+}
+
 function orderRecords(value: unknown): MerchantStore["orders"] {
   const orders = idRecords<MerchantStore["orders"][number]>(value) ?? [];
   return orders.map((order) => {
@@ -311,7 +348,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
       requestedActiveStaffId && staff.some((member) => member.id === requestedActiveStaffId)
         ? requestedActiveStaffId
         : null,
-    shifts: idRecords<MerchantStore["shifts"][number]>(value.shifts) ?? [],
+    shifts: shiftRecords(value.shifts, settings, staff),
     invoices: idRecords<MerchantStore["invoices"][number]>(value.invoices) ?? [],
     counterCodes: idRecords<MerchantStore["counterCodes"][number]>(value.counterCodes) ?? [],
     counterPayments:

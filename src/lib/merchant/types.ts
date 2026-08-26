@@ -394,14 +394,57 @@ export interface CashCount {
   varianceMinor: Minor;
 }
 
+export interface ShiftStaffTotal {
+  staffId: string | null;
+  staffName: string;
+  orderCount: number;
+  takingsMinor: Minor;
+  tipsMinor: Minor;
+}
+
+export interface ShiftReport {
+  /** X is a live reading; Z is the immutable snapshot persisted at close. */
+  kind: "x" | "z";
+  shiftId: string;
+  sequence: number;
+  terminalName: string;
+  network: NetworkKey;
+  openedAt: number;
+  generatedAt: number;
+  openedById: string;
+  openedBy: string;
+  closedById: string | null;
+  closedBy: string | null;
+  floatMinor: Minor;
+  grossMinor: Minor;
+  refundsMinor: Minor;
+  tipsMinor: Minor;
+  discountsMinor: Minor;
+  compsMinor: Minor;
+  voidsMinor: Minor;
+  taxByRate: Record<string, Minor>;
+  tenderByKind: Record<TenderKind, Minor>;
+  expectedCashMinor: Minor;
+  orderCount: number;
+  staffTotals: ShiftStaffTotal[];
+  /** Full immutable snapshots, not IDs whose source records may later change. */
+  adjustments: Adjustment[];
+  openTabs: number;
+  cash: CashCount | null;
+}
+
 export interface Shift {
   id: string;
   /** Z-reports are sequential and never re-issued. */
   number: number;
   openedAt: number;
   closedAt: number | null;
+  openedById: string;
   openedBy: string;
+  closedById: string | null;
   closedBy: string | null;
+  terminalName: string;
+  network: NetworkKey;
   floatMinor: Minor;
   grossMinor: Minor;
   refundsMinor: Minor;
@@ -414,6 +457,8 @@ export interface Shift {
   cash: CashCount | null;
   /** Tabs still unsettled block a close. */
   openTabs: number;
+  /** Written exactly once with the close; live X reports are never persisted here. */
+  zReport: ShiftReport | null;
 }
 
 export type InvoiceStatus =

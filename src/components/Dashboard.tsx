@@ -63,7 +63,6 @@ import {
   LogoMark,
 } from "./icons";
 import { IconBars, IconReceipt, IconStorefront, IconTag } from "./merchant/icons";
-import { MOCK_SHIFT } from "@/lib/merchant/mock";
 import { ModeSwitcher, type ShellMode } from "./merchant/ModeSwitcher";
 import type { MerchantSub } from "./merchant/MerchantPage";
 
@@ -220,6 +219,7 @@ export function Dashboard() {
     enabled: merchantEnabled,
     unmatched: merchantUnmatched,
     charges: merchantCharges,
+    activeShift: merchantActiveShift,
   } = useMerchant();
 
   const [storedView, setView] = useState<View>("home");
@@ -928,8 +928,10 @@ export function Dashboard() {
             { id: "merchant-customers", label: "Customers", run: () => switchTab("customers") },
             {
               id: "merchant-shift",
-              label: "Open shift",
-              hint: `Shift #${MOCK_SHIFT.number}`,
+              label: merchantActiveShift ? `Shift ${merchantActiveShift.number}` : "Open shift",
+              hint: merchantActiveShift
+                ? `${merchantActiveShift.terminalName} · ${merchantActiveShift.network}`
+                : "Required before taking tender",
               run: openShift,
             },
             { id: "merchant-insights", label: "Merchant insights", run: () => switchTab("insights") },
@@ -940,6 +942,7 @@ export function Dashboard() {
     [
       accounts,
       merchantEnabled,
+      merchantActiveShift,
       contacts,
       activeAccount,
       privacyMode,

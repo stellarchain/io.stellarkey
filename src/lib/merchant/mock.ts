@@ -135,8 +135,12 @@ export const MOCK_SHIFT: Shift = {
   number: 168,
   openedAt: at(7, 30),
   closedAt: null,
+  openedById: "st_ana",
   openedBy: "Ana Reis",
+  closedById: null,
   closedBy: null,
+  terminalName: MOCK_TERMINAL.name,
+  network: "mainnet",
   floatMinor: 5000,
   // The shift is the same trading day MOCK_INSIGHTS reports, seen from the till
   // rather than from the charts, so every figure below matches it. The ledger:
@@ -152,6 +156,7 @@ export const MOCK_SHIFT: Shift = {
   orderCount: 122,
   cash: null,
   openTabs: 2,
+  zReport: null,
 };
 
 /* ---------------- a day on the counter ---------------- */
