@@ -2787,10 +2787,11 @@ function AccountMenu({
   return (
     <Dropdown
       align="left"
-      trigger={() =>
+      trigger={(_, triggerProps) =>
         compact ? (
           <button
-            type="button"
+            {...triggerProps}
+            aria-label={`Open account menu for ${activeAccount.label}`}
             className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
             title={`${activeAccount.label} (${formatTrezorAddress(activeAccount.publicKey)})`}
           >
@@ -2802,7 +2803,8 @@ function AccountMenu({
           </button>
         ) : (
           <button
-            type="button"
+            {...triggerProps}
+            aria-label={`Open account menu for ${activeAccount.label}`}
             className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
           >
             <Avatar seed={activeAccount.publicKey} size={28} />
@@ -2830,6 +2832,7 @@ function AccountMenu({
               <button
                 key={acct.id}
                 type="button"
+                role="menuitem"
                 className={`menu-item !rounded-xl !py-2 !px-3 ${
                   isActive ? "bg-white/[0.08] text-white font-semibold" : ""
                 }`}
@@ -2863,6 +2866,7 @@ function AccountMenu({
           <div className="my-1 h-px bg-white/10" />
           <button
             type="button"
+            role="menuitem"
             className="menu-item !rounded-xl !py-2 !px-3"
             onClick={() => {
               triggerHaptic("selection");
@@ -2874,6 +2878,7 @@ function AccountMenu({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="menu-item !rounded-xl !py-2 !px-3"
             onClick={() => {
               onManageAccounts();
@@ -2884,6 +2889,7 @@ function AccountMenu({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="menu-item danger !rounded-xl !py-2 !px-3"
             onClick={() => {
               triggerHaptic("warning");

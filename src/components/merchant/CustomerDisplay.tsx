@@ -59,6 +59,7 @@ function CustomerDisplayInner({
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const shopName = settings.profile.name || "This shop";
 
   const askForPin = useCallback(() => {
@@ -101,7 +102,8 @@ function CustomerDisplayInner({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    root.focus();
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    root.focus({ preventScroll: true });
     const { overflow } = document.body.style;
     document.body.style.overflow = "hidden";
 
@@ -138,6 +140,7 @@ function CustomerDisplayInner({
     return () => {
       window.removeEventListener("keydown", containFocus, true);
       document.body.style.overflow = overflow;
+      restoreFocusRef.current?.focus?.({ preventScroll: true });
     };
   }, [askForPin]);
 

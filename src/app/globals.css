@@ -170,6 +170,16 @@ body::after {
   }
 }
 
+/* A finger needs a real target even when the visual icon stays compact. This
+   only applies on touch-first devices, so dense mouse/trackpad layouts keep
+   their desktop rhythm. */
+@media (hover: none) and (pointer: coarse) {
+  :is(button, [role="button"], [role="menuitem"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 @layer components {
   /* ---------- Typography helpers ---------- */
 

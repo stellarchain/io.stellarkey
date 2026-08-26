@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { triggerHaptic } from "@/lib/haptics";
 import { calculatePopoverPosition, type PopoverPosition } from "@/lib/popover";
@@ -94,6 +94,10 @@ export function Modal({
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const [visualViewport, setVisualViewport] = useState<{
+    offsetTop: number;
+    height: number;
+  } | null>(null);
   const labelBaseId = React.useId();
   const titleId = `${labelBaseId}-title`;
   const descriptionId = `${labelBaseId}-description`;
@@ -133,6 +137,29 @@ export function Modal({
     return () => {
       unlockBodyScroll();
       restoreFocusRef.current?.focus?.({ preventScroll: true });
+    };
+  }, [mounted]);
+
+  // iOS keeps a separate visual viewport while the keyboard is open. Following
+  // it prevents a sheet from being centred behind the keyboard or clipped by
+  // the browser chrome.
+  useEffect(() => {
+    if (!mounted) return;
+    function update() {
+      const viewport = window.visualViewport;
+      setVisualViewport({
+        offsetTop: viewport?.offsetTop ?? 0,
+        height: viewport?.height ?? window.innerHeight,
+      });
+    }
+    update();
+    window.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
     };
   }, [mounted]);
 
@@ -185,12 +212,28 @@ export function Modal({
           onClose();
         }
       }}
+      style={
+        visualViewport
+          ? {
+              top: visualViewport.offsetTop,
+              bottom: "auto",
+              height: visualViewport.height,
+            }
+          : undefined
+      }
       className={`modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md${closing ? " closing" : ""}`}
     >
       <ModalLabelContext.Provider value={{ titleId, descriptionId }}>
         <div
           ref={panelRef}
           tabIndex={-1}
+          style={
+            visualViewport
+              ? {
+                  maxHeight: `calc(${visualViewport.height}px - 2rem - var(--app-safe-area-top))`,
+                }
+              : undefined
+          }
           className={`modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
             wide ? "max-w-xl" : "max-w-md"
           }${closing ? " closing" : ""}`}
@@ -230,7 +273,7 @@ export function ModalHeader({
             triggerHaptic("selection");
             onClose();
           }}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white sm:h-9 sm:w-9"
           aria-label="Close"
         >
           <IconClose size={14} />
@@ -582,18 +625,31 @@ export function Select({
   );
 }
 
+type DropdownTriggerProps = {
+  ref: React.RefObject<HTMLButtonElement | null>;
+  type: "button";
+  "aria-haspopup": "menu";
+  "aria-expanded": boolean;
+  onClick: () => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
+};
+
 export function Dropdown({
   trigger,
   children,
   align = "right",
 }: {
-  trigger: (open: boolean) => React.ReactNode;
+  trigger: (open: boolean, props: DropdownTriggerProps) => React.ReactNode;
   children: (close: () => void) => React.ReactNode;
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setOpen(false), []);
+  const [restoreFocus, setRestoreFocus] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    setRestoreFocus(true);
+  }, []);
   const { panelRef, pos } = usePopover({
     open,
     onClose: close,
@@ -603,33 +659,72 @@ export function Dropdown({
     minWidth: 220,
   });
 
+  // Run before newly opened dialogs capture their return target. A menu action
+  // can therefore close its portal and open a sheet without losing the trigger.
+  useLayoutEffect(() => {
+    if (!open && restoreFocus) {
+      anchorRef.current?.focus({ preventScroll: true });
+    }
+  }, [open, restoreFocus]);
+
+  useEffect(() => {
+    if (!open || !pos) return;
+    const frame = window.requestAnimationFrame(() => {
+      panelRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus({
+        preventScroll: true,
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, pos, panelRef]);
+
+  function onMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitem"]:not([disabled])',
+      ) ?? [],
+    ).filter((item) => item.offsetParent !== null);
+    if (items.length === 0) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : event.key === "ArrowUp"
+            ? (current - 1 + items.length) % items.length
+            : (current + 1) % items.length;
+    items[next]?.focus({ preventScroll: true });
+  }
+
+  const triggerProps: DropdownTriggerProps = {
+    ref: anchorRef,
+    type: "button",
+    "aria-haspopup": "menu",
+    "aria-expanded": open,
+    onClick: () => {
+      triggerHaptic("selection");
+      setOpen((previous) => !previous);
+    },
+    onKeyDown: (event) => {
+      if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        setOpen(true);
+      }
+    },
+  };
+
   return (
-    <div ref={anchorRef} className="inline-block text-left">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => {
-          triggerHaptic("selection");
-          setOpen((o) => !o);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            triggerHaptic("selection");
-            setOpen((o) => !o);
-          }
-        }}
-      >
-        {trigger(open)}
-      </div>
+    <div className="inline-block text-left">
+      {trigger(open, triggerProps)}
       {open &&
         pos &&
         createPortal(
           <div
             ref={panelRef}
             role="menu"
+            onKeyDown={onMenuKeyDown}
             className={POPOVER_PANEL_CLASS}
             style={popoverStyle(pos)}
           >
