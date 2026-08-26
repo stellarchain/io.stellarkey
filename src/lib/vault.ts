@@ -1,5 +1,11 @@
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
-import { decryptString, encryptString, randomHex, type EncryptedPayload } from "./crypto";
+import {
+  decryptString,
+  deriveEncryptionKeyBytes,
+  encryptString,
+  randomHex,
+  type EncryptedPayload,
+} from "./crypto";
 import {
   generateMnemonic,
   keypairFromMnemonicIndex,
@@ -18,7 +24,19 @@ const TRASH_KEY = "polaris.trash.v1";
 
 let sessionPassword: string | null = null;
 let sessionMnemonic: string | null = null;
+let sessionMerchantKey: Uint8Array | null = null;
 const sessionSecrets = new Map<string, string>();
+
+async function establishVaultSession(password: string): Promise<void> {
+  sessionMerchantKey?.fill(0);
+  sessionMerchantKey = await deriveEncryptionKeyBytes(password, "merchant-store");
+  sessionPassword = password;
+}
+
+export function getMerchantEncryptionKey(): Uint8Array {
+  if (!sessionMerchantKey || !sessionPassword) throw new VaultLockedError();
+  return sessionMerchantKey.slice();
+}
 
 export class VaultLockedError extends Error {
   constructor(message = "Vault is locked") {
@@ -192,6 +210,8 @@ export function permanentlyDeleteTrash(): void {
 }
 
 export function lockVault(): void {
+  sessionMerchantKey?.fill(0);
+  sessionMerchantKey = null;
   sessionPassword = null;
   sessionMnemonic = null;
   sessionSecrets.clear();
@@ -199,6 +219,8 @@ export function lockVault(): void {
 
 /** Wipe in-memory secrets after a full-vault restore (old ids no longer exist) */
 export function clearSessionSecrets(): void {
+  sessionMerchantKey?.fill(0);
+  sessionMerchantKey = null;
   sessionSecrets.clear();
   sessionMnemonic = null;
   sessionPassword = null;
@@ -265,7 +287,7 @@ export async function initializeVault(
       activeAccountId: account.id,
     };
     persist(vault);
-    sessionPassword = password;
+    await establishVaultSession(password);
     sessionMnemonic = null;
     sessionSecrets.set(account.id, trimmed);
     return { account: stripSecret(account), revealed: trimmed };
@@ -302,7 +324,7 @@ async function createDerivedVault(
   };
   persist(vault);
 
-  sessionPassword = password;
+  await establishVaultSession(password);
   sessionMnemonic = mnemonic;
   sessionSecrets.set(account.id, kp0.secret());
 
@@ -350,7 +372,7 @@ export async function initializeHardwareVault(
     activeAccountId: stored.id,
   };
   persist(vault);
-  sessionPassword = password;
+  await establishVaultSession(password);
   sessionMnemonic = null;
   return { account: stripSecret(stored) };
 }
@@ -363,6 +385,8 @@ export async function unlockVault(password: string): Promise<VaultFile> {
 
   sessionSecrets.clear();
   sessionMnemonic = null;
+  sessionMerchantKey?.fill(0);
+  sessionMerchantKey = null;
   sessionPassword = null;
 
   if (vault.version === 2 && vault.mnemonic) {
@@ -373,7 +397,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
       throw new Error("Incorrect password.");
     }
     sessionMnemonic = mnemonic;
-    sessionPassword = password;
+    await establishVaultSession(password);
 
     for (const acc of vault.accounts) {
       if (acc.index !== undefined) {
@@ -406,7 +430,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
         throw new Error("Incorrect password.");
       }
     }
-    sessionPassword = password;
+    await establishVaultSession(password);
     return vault;
   }
   const firstSecret = firstWithSecret.secret;
@@ -432,7 +456,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
     }
   }
 
-  sessionPassword = password;
+  await establishVaultSession(password);
   return vault;
 }
 
@@ -761,6 +785,7 @@ const PRIVACY_KEY = "polaris.privacy.v1";
 const SOUND_KEY = "wallet.sound.v1";
 const CURRENCY_KEY = "wallet.currency.v1";
 const TX_NOTES_KEY = "wallet.tx-notes.v1";
+const MERCHANT_STORE_KEY = "wallet.merchant.v2";
 
 function isEncryptedPayload(value: unknown): value is EncryptedPayload {
   if (!value || typeof value !== "object") return false;
@@ -866,6 +891,7 @@ interface FullBackupPayload {
   contacts: unknown[];
   settings?: BackupSettings;
   txNotes: Record<string, unknown>;
+  merchantStore?: string | null;
 }
 
 export interface VaultRestoreResult {
@@ -879,6 +905,7 @@ export interface VaultBackupInfo {
   contactCount: number;
   hasMnemonic: boolean;
   hasSettings: boolean;
+  hasMerchantArchive: boolean;
   exportedAt?: string;
 }
 
@@ -948,14 +975,16 @@ export async function inspectVaultBackup(
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
     hasMnemonic: Boolean(payload.vault.mnemonic),
     hasSettings: Boolean(payload.settings),
+    hasMerchantArchive: typeof payload.merchantStore === "string" && Boolean(payload.merchantStore),
     exportedAt: payload.exportedAt || undefined,
   };
 }
 
 /**
  * Export the ENTIRE wallet — vault (all accounts + mnemonic), contacts,
- * settings and private tx notes — as a single AES-256-GCM encrypted file,
- * locked by the wallet password. No plaintext metadata is ever written.
+ * settings, private tx notes, and the encrypted merchant archive — as a
+ * single AES-256-GCM encrypted file, locked by the wallet password. No
+ * plaintext metadata is ever written.
  */
 export async function exportVaultBackup(): Promise<string> {
   const vault = readVault();
@@ -981,6 +1010,7 @@ export async function exportVaultBackup(): Promise<string> {
       notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
         ? (notesRaw as Record<string, unknown>)
         : {},
+    merchantStore: window.localStorage.getItem(MERCHANT_STORE_KEY),
   };
   const crypto = await encryptString(JSON.stringify(payload), sessionPassword);
   return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
@@ -1007,12 +1037,16 @@ export async function restoreVaultBackup(
   }
   persist(vault);
   window.localStorage.removeItem(TRASH_KEY);
-  sessionSecrets.clear();
-  sessionMnemonic = null;
+  lockVault();
 
   // Full-wallet restore — overwrite the satellite stores too
   window.localStorage.setItem(CONTACTS_KEY, JSON.stringify(payload.contacts ?? []));
   window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(payload.txNotes ?? {}));
+  if (typeof payload.merchantStore === "string" && payload.merchantStore) {
+    window.localStorage.setItem(MERCHANT_STORE_KEY, payload.merchantStore);
+  } else {
+    window.localStorage.removeItem(MERCHANT_STORE_KEY);
+  }
   if (payload.settings) {
     const s = payload.settings;
     window.localStorage.setItem(NETWORK_KEY, s.network);

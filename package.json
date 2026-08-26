@@ -15,6 +15,7 @@
     "test:e2e:merchant": "npm run build && node --no-warnings --experimental-strip-types --test e2e/merchant.spec.ts"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.3.0",
     "@stellar/stellar-sdk": "^17.0.1",
     "@trezor/connect-web": "^9.7.3",
     "next": "16.3.3",

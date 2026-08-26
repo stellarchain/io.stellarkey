@@ -76,6 +76,7 @@ test("private transaction notes are encrypted at rest and require an unlocked va
   const { Keypair } = await import("@stellar/stellar-sdk");
   const {
     initializeVault,
+    getMerchantEncryptionKey,
     loadPrivateTxNote,
     lockVault,
     savePrivateTxNote,
@@ -90,6 +91,7 @@ test("private transaction notes are encrypted at rest and require an unlocked va
 
   lockVault();
   await assert.rejects(() => loadPrivateTxNote("deadbeef"), /locked/i);
+  assert.throws(() => getMerchantEncryptionKey(), /locked/i);
 });
 
 test("vault loading distinguishes absent, corrupt, and future data without overwriting it", async () => {
@@ -137,4 +139,36 @@ test("wallet creation refuses to overwrite recoverable invalid data", async () =
     /needs recovery/i,
   );
   assert.equal(localStorage.getItem("polaris.vault.v1"), raw);
+});
+
+test("full encrypted backups round-trip the encrypted merchant archive", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { emptyStore } = await import("../src/lib/merchant/defaults.ts");
+  const { saveMerchantStore, MERCHANT_STORAGE_KEY } = await import("../src/lib/merchant/storage.ts");
+  const {
+    exportVaultBackup,
+    getMerchantEncryptionKey,
+    initializeVault,
+    restoreVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const store = {
+    ...emptyStore(),
+    settings: {
+      ...emptyStore().settings,
+      profile: { ...emptyStore().settings.profile, name: "Backup Coffee" },
+    },
+  };
+  assert.equal(saveMerchantStore(store, getMerchantEncryptionKey()), true);
+  const originalMerchant = localStorage.getItem(MERCHANT_STORAGE_KEY);
+
+  const backup = await exportVaultBackup();
+  localStorage.removeItem(MERCHANT_STORAGE_KEY);
+  await restoreVaultBackup(backup, password);
+
+  assert.equal(localStorage.getItem(MERCHANT_STORAGE_KEY), originalMerchant);
+  assert.doesNotMatch(backup, /Backup Coffee/);
 });
