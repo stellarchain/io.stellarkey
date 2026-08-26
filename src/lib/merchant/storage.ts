@@ -578,6 +578,18 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
 
   return {
     version: 2,
+    revision:
+      Number.isSafeInteger(value.revision) && (value.revision as number) >= 0
+        ? (value.revision as number)
+        : base.revision,
+    writerId:
+      typeof value.writerId === "string" && value.writerId
+        ? value.writerId
+        : base.writerId,
+    updatedAt:
+      isFiniteNumber(value.updatedAt) && value.updatedAt >= 0
+        ? value.updatedAt
+        : base.updatedAt,
     settings,
     catalogue: idRecords<MerchantStore["catalogue"][number]>(value.catalogue) ?? base.catalogue,
     modifierGroups:

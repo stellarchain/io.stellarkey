@@ -127,6 +127,9 @@ export function emptyStore(): MerchantStore {
   const settings = defaultSettings();
   return {
     version: 2,
+    revision: 0,
+    writerId: null,
+    updatedAt: 0,
     settings,
     catalogue: DEFAULT_CATALOGUE,
     modifierGroups: DEFAULT_MODIFIER_GROUPS,

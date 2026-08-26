@@ -35,12 +35,25 @@ import {
 import {
   clearMerchantStore,
   loadMerchantStoreResult,
+  MERCHANT_STORAGE_KEY,
   saveMerchantStore,
 } from "@/lib/merchant/storage";
 import {
   commitMerchantUpdate,
   isMerchantStorageError,
+  MerchantStorageError,
 } from "@/lib/merchant/commit";
+import {
+  claimWatcherLease,
+  createMerchantWriterId,
+  MerchantRevisionConflictError,
+  newerMerchantStore,
+  openMerchantRevisionChannel,
+  prepareMerchantCommit,
+  releaseWatcherLease,
+  watcherLeaseKey,
+  type MerchantRevisionChannel,
+} from "@/lib/merchant/coordination";
 import type { StorageIssue } from "@/lib/storage-load";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
@@ -446,6 +459,7 @@ const MerchantContext = createContext<MerchantContextValue | null>(null);
 /** How often the till asks Horizon while a charge is open, and while it is not. */
 const POLL_ACTIVE_MS = 4_000;
 const POLL_IDLE_MS = 30_000;
+const WATCHER_LEASE_MS = 25_000;
 
 /** The span of the trend line on Insights, and the weeks a typical day averages. */
 const TREND_DAYS = 14;
@@ -522,6 +536,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const storeRef = useRef(store);
+  const [writerId] = useState(createMerchantWriterId);
+  const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
@@ -537,6 +553,32 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const installLoadedStore = useCallback((next: MerchantStore) => {
+    storageIssueRef.current = null;
+    setStorageIssue(null);
+    setStorageError(null);
+    storeRef.current = next;
+    setStore(next);
+  }, []);
+
+  const reloadExternalStore = useCallback(
+    (allowAbsent: boolean) => {
+      const result = loadMerchantStoreResult();
+      if (result.kind === "ready") {
+        const newer = newerMerchantStore(storeRef.current, result.value);
+        if (newer) installLoadedStore(newer);
+        return;
+      }
+      if (result.kind === "absent") {
+        if (allowAbsent) installLoadedStore(emptyStore());
+        return;
+      }
+      storageIssueRef.current = result;
+      setStorageIssue(result);
+    },
+    [installLoadedStore],
+  );
+
   // Deferred the way the wallet bootstraps its own vault: localStorage is not
   // available while the page is server-rendered, and the first client render has
   // to match the server's.
@@ -548,37 +590,92 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const result = loadMerchantStoreResult();
       const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
       const loaded = result.kind === "ready" ? result.value : emptyStore();
-      storageIssueRef.current = issue;
-      setStorageIssue(issue);
-      storeRef.current = loaded;
-      setStore(loaded);
+      if (issue) {
+        storageIssueRef.current = issue;
+        setStorageIssue(issue);
+      } else {
+        installLoadedStore(loaded);
+      }
       setReady(true);
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [installLoadedStore]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const onRevision = () => reloadExternalStore(false);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === MERCHANT_STORAGE_KEY) reloadExternalStore(event.newValue === null);
+    };
+    const channel = openMerchantRevisionChannel(onRevision);
+    revisionChannelRef.current = channel;
+    window.addEventListener("storage", onStorage);
+    return () => {
+      revisionChannelRef.current = null;
+      channel.close();
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [ready, reloadExternalStore]);
 
   const commitStore = useCallback(
     (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): void => {
       try {
-        commitMerchantUpdate({
-          current: storeRef.current,
-          update,
-          locked: Boolean(storageIssueRef.current),
+        const current = storeRef.current;
+        if (storageIssueRef.current) {
+          commitMerchantUpdate({
+            current,
+            update,
+            locked: true,
+            save: saveMerchantStore,
+            publish: () => {},
+          });
+          return;
+        }
+        const persistedResult = loadMerchantStoreResult();
+        if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
+          storageIssueRef.current = persistedResult;
+          setStorageIssue(persistedResult);
+          throw new MerchantStorageError("recovery_required");
+        }
+        const candidate = typeof update === "function" ? update(current) : update;
+        if (candidate === current) return;
+        let coordinated: MerchantStore;
+        try {
+          coordinated = prepareMerchantCommit({
+            current,
+            candidate,
+            persisted: persistedResult.kind === "ready" ? persistedResult.value : null,
+            writerId,
+          });
+        } catch (error) {
+          if (!(error instanceof MerchantRevisionConflictError)) throw error;
+          if (persistedResult.kind === "ready") {
+            const newer = newerMerchantStore(current, persistedResult.value);
+            if (newer) installLoadedStore(newer);
+          } else if (current.revision > 0) {
+            installLoadedStore(emptyStore());
+          }
+          throw new MerchantStorageError("conflict");
+        }
+        const committed = commitMerchantUpdate({
+          current,
+          update: coordinated,
           save: saveMerchantStore,
           publish: (next) => {
             storeRef.current = next;
             setStore(next);
           },
         });
+        revisionChannelRef.current?.postRevision(committed);
         setStorageError(null);
       } catch (error) {
         if (isMerchantStorageError(error)) setStorageError(error.message);
         throw error;
       }
     },
-    [],
+    [installLoadedStore, writerId],
   );
 
   const persist = useCallback(
@@ -1793,9 +1890,37 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return "The Stellar network is not answering right now.";
   }
 
+  const activeWatcherLeaseKey = useMemo(
+    () => settings.receivingPublicKey
+      ? watcherLeaseKey(network, settings.receivingPublicKey)
+      : null,
+    [network, settings.receivingPublicKey],
+  );
+
+  useEffect(
+    () => () => {
+      if (activeWatcherLeaseKey) {
+        releaseWatcherLease(window.localStorage, activeWatcherLeaseKey, writerId);
+      }
+    },
+    [activeWatcherLeaseKey, writerId],
+  );
+
   const pollNow = useCallback(async () => {
     const till = settings.receivingPublicKey;
     if (!enabled || !online || !till || polling.current) return;
+    const leaseKey = watcherLeaseKey(network, till);
+    if (
+      !claimWatcherLease(
+        window.localStorage,
+        leaseKey,
+        writerId,
+        Date.now(),
+        WATCHER_LEASE_MS,
+      )
+    ) {
+      return;
+    }
     polling.current = true;
     try {
       const result = await fetchIncomingPayments({
@@ -1818,7 +1943,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     } finally {
       polling.current = false;
     }
-  }, [applyPayments, enabled, network, online, persist, settings.receivingPublicKey, store.cursors]);
+  }, [applyPayments, enabled, network, online, persist, settings.receivingPublicKey, store.cursors, writerId]);
 
   const hasLiveCharge = useMemo(
     () => liveCharges(store.charges, network).length > 0,

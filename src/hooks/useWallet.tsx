@@ -62,6 +62,11 @@ import type { StellarMemoInput } from "@/lib/stellar-domain";
 import { describeResourceFailures, settleResourceMap } from "@/lib/wallet-refresh";
 import type { StorageIssue } from "@/lib/storage-load";
 import {
+  createTabSenderId,
+  openWalletCoordination,
+  type WalletCoordination,
+} from "@/lib/tab-coordination";
+import {
   applyTransactionPoll,
   clearDurableMergeReconciliations,
   createMergeReconciliation,
@@ -344,6 +349,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [tabSenderId] = useState(createTabSenderId);
+  const walletCoordinationRef = useRef<WalletCoordination | null>(null);
 
   const activeAccount = useMemo(
     () => accounts.find((a) => a.id === activeId) ?? null,
@@ -654,12 +661,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void accountBalancesRef.current();
   }, [phase, accounts, network]);
 
-  const lockVaultAndReset = useCallback(() => {
+  const lockVaultAndReset = useCallback((notifyPeers = true) => {
     lockVault();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
     setPhase("locked");
     setDataLoading(false);
+    if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
   }, []);
 
   useEffect(() => {
@@ -1046,7 +1054,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     lockVaultAndReset();
   }, [lockVaultAndReset]);
 
-  const resetWallet = useCallback(() => {
+  const resetWallet = useCallback((notifyPeers = true) => {
     invalidateTrackingTasks();
     wipeVault();
     clearDurableMergeReconciliations(
@@ -1071,7 +1079,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setHasDeletedWalletBackup(false);
     setVaultStorageIssue(null);
     setPhase("empty");
+    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
   }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
+
+  useEffect(() => {
+    const coordination = openWalletCoordination(tabSenderId, (signal) => {
+      if (signal.type === "wallet-reset") {
+        resetWallet(false);
+      } else if (phase === "unlocked") {
+        lockVaultAndReset(false);
+      } else {
+        lockVault();
+      }
+    });
+    walletCoordinationRef.current = coordination;
+    return () => {
+      walletCoordinationRef.current = null;
+      coordination.close();
+    };
+  }, [lockVaultAndReset, phase, resetWallet, tabSenderId]);
 
   const restoreDeletedWallet = useCallback(async (password: string) => {
     const vault = await restoreDeletedVault(password);
