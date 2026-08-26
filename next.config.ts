@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const isDevelopment = process.env.NODE_ENV === "development";
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
@@ -23,6 +26,9 @@ const nextConfig: NextConfig = {
   // explicitly trusted. Allow this private /24 so phone/tablet testing keeps
   // working when DHCP assigns the development machine a new final octet.
   allowedDevOrigins: ["192.168.0.*"],
+  turbopack: {
+    root: projectRoot,
+  },
   poweredByHeader: false,
   async headers() {
     return [
