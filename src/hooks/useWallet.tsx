@@ -67,6 +67,12 @@ import {
   type WalletCoordination,
 } from "@/lib/tab-coordination";
 import {
+  createLatestRequestLane,
+  useVisibleWalletRefresh,
+  WALLET_ACCOUNT_POLL_MS,
+  WALLET_MARKET_POLL_MS,
+} from "./useWalletResources";
+import {
   applyTransactionPoll,
   clearDurableMergeReconciliations,
   createMergeReconciliation,
@@ -125,10 +131,10 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
   };
 }
 
-const POLL_MS = 15_000;
 const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v1";
 const MERGE_RECONCILIATION_STORAGE_KEY = "wallet.merge-reconciliations.v2";
 const LEGACY_MERGE_RECONCILIATION_SESSION_KEY = "wallet.merge-reconciliations.v1";
+const TRANSACTION_POLL_MS = 15_000;
 const FIAT_LIST: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
 
 function restoreStorageValue(storage: Storage, key: string, value: string | null): void {
@@ -350,6 +356,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [tabSenderId] = useState(createTabSenderId);
+  const [accountRefreshLane] = useState(createLatestRequestLane);
+  const [marketRefreshLane] = useState(createLatestRequestLane);
   const walletCoordinationRef = useRef<WalletCoordination | null>(null);
 
   const activeAccount = useMemo(
@@ -498,28 +506,43 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refreshAccountData = useCallback(async () => {
     if (!activeAccount) return;
+    const request = accountRefreshLane.begin();
     const generation = ++refreshGeneration.current;
     const cacheKey = `${network}:${activeAccount.publicKey}`;
     setDataLoading(true);
     setDataError(null);
     try {
-      const cachedSeries = priceCache.current[priceRange];
       const resources = await settleResourceMap({
-        balances: api.fetchBalances(activeAccount.publicKey, network),
-        minimumBalance: api.fetchMinimumNativeBalance(activeAccount.publicKey, network),
-        claimableBalances: api.fetchClaimableBalances(activeAccount.publicKey, network),
-        activity: api.fetchActivity(activeAccount.publicKey, network),
-        // The market chart remains useful on testnet, but portfolio valuation
-        // explicitly ignores all testnet balances.
-        xlmPrice: api.fetchXlmPrice(),
-        priceSeries: cachedSeries ? Promise.resolve(cachedSeries) : api.fetchXlmSeries(priceRange),
-        fiatRates: fetchFiatRates(),
+        accountSnapshot: api.fetchAccountSnapshot(
+          activeAccount.publicKey,
+          network,
+          request.signal,
+        ),
+        baseReserve: api.fetchCurrentBaseReserve(network),
+        claimableBalances: api.fetchClaimableBalances(
+          activeAccount.publicKey,
+          network,
+          request.signal,
+        ),
+        activity: api.fetchActivity(
+          activeAccount.publicKey,
+          network,
+          30,
+          undefined,
+          request.signal,
+        ),
       });
-      if (generation !== refreshGeneration.current) return;
-      if (resources.balances.ok) setBalances(resources.balances.value);
-      if (resources.minimumBalance.ok) setMinimumBalanceXlm(resources.minimumBalance.value);
+      if (generation !== refreshGeneration.current || !request.isCurrent()) return;
+      const minimumBalance = resources.accountSnapshot.ok && resources.baseReserve.ok
+        ? api.minimumNativeBalanceForSnapshot(
+            resources.accountSnapshot.value,
+            resources.baseReserve.value,
+          )
+        : null;
+      if (resources.accountSnapshot.ok) setBalances(resources.accountSnapshot.value.balances);
+      if (minimumBalance !== null) setMinimumBalanceXlm(minimumBalance);
       if (resources.claimableBalances.ok) setClaimableBalances(resources.claimableBalances.value);
       // Merge the fresh first page into any already-loaded history instead of
       // replacing it — the poll must never wipe pages the user scrolled through.
@@ -534,22 +557,48 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         });
         if (!hadHistory) setActivityCursor(acts.nextCursor);
       }
-      if (resources.balances.ok) {
-        const bals = resources.balances.value;
+      if (resources.accountSnapshot.ok) {
+        const bals = resources.accountSnapshot.value.balances;
         const nativeBal = bals.find((b) => b.isNative);
         setAccountBalances((prev) => ({
           ...prev,
           [activeAccount.publicKey]: nativeBal ? parseFloat(nativeBal.balance) : 0,
         }));
       }
-      if (resources.balances.ok && resources.activity.ok && resources.minimumBalance.ok) {
+      if (resources.accountSnapshot.ok && resources.activity.ok && minimumBalance !== null) {
         snapshotCache.current.set(cacheKey, {
-          balances: resources.balances.value,
+          balances: resources.accountSnapshot.value.balances,
           activity: resources.activity.value.items,
           cursor: resources.activity.value.nextCursor,
-          minimumBalanceXlm: resources.minimumBalance.value,
+          minimumBalanceXlm: minimumBalance,
         });
       }
+      setDataError(describeResourceFailures(resources));
+    } catch (error) {
+      if (generation === refreshGeneration.current && request.isCurrent()) {
+        setDataError(error instanceof Error ? error.message : "Unable to refresh wallet data.");
+      }
+    } finally {
+      if (generation === refreshGeneration.current && request.isCurrent()) setDataLoading(false);
+    }
+  }, [accountRefreshLane, activeAccount, network]);
+
+  const refreshMarketData = useCallback(async () => {
+    if (!activeAccount) return;
+    const request = marketRefreshLane.begin();
+    const cachedSeries = priceCache.current[priceRange];
+    setPriceLoading(true);
+    try {
+      const resources = await settleResourceMap({
+        // The market chart remains useful on testnet, but portfolio valuation
+        // explicitly ignores all testnet balances.
+        xlmPrice: api.fetchXlmPrice(request.signal),
+        priceSeries: cachedSeries
+          ? Promise.resolve(cachedSeries)
+          : api.fetchXlmSeries(priceRange, request.signal),
+        fiatRates: fetchFiatRates(request.signal),
+      });
+      if (!request.isCurrent()) return;
       if (resources.xlmPrice.ok && resources.xlmPrice.value !== null) {
         setXlmPriceUsd(resources.xlmPrice.value);
       }
@@ -559,20 +608,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         priceCache.current[series.range] = series;
         setPriceData(series);
       }
-      setDataError(describeResourceFailures(resources));
-    } catch (error) {
-      if (generation === refreshGeneration.current) {
-        setDataError(error instanceof Error ? error.message : "Unable to refresh wallet data.");
-      }
     } finally {
-      if (generation === refreshGeneration.current) setDataLoading(false);
+      if (request.isCurrent()) setPriceLoading(false);
     }
-  }, [activeAccount, network, priceRange]);
+  }, [activeAccount, marketRefreshLane, priceRange]);
 
-  const refreshRef = useRef(refresh);
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshAccountData(), refreshMarketData()]);
+  }, [refreshAccountData, refreshMarketData]);
+
+  const accountRefreshRef = useRef(refreshAccountData);
   useEffect(() => {
-    refreshRef.current = refresh;
-  }, [refresh]);
+    accountRefreshRef.current = refreshAccountData;
+  }, [refreshAccountData]);
 
   useEffect(() => {
     activityRef.current = activity;
@@ -582,10 +630,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // and the aggregate portfolio read this map, so it must cover all
   // accounts, not just ones visited this session.
   const refreshAccountBalances = useCallback(async () => {
-    if (accounts.length === 0) return;
+    const backgroundAccounts = accounts.filter(
+      (account) => account.publicKey !== activeAccount?.publicKey,
+    );
+    if (backgroundAccounts.length === 0) return;
     const generation = ++accountBalanceGeneration.current;
     const results = await Promise.allSettled(
-      accounts.map(async (acct) => ({
+      backgroundAccounts.map(async (acct) => ({
         key: acct.publicKey,
         bal: await api.fetchNativeBalance(acct.publicKey, network),
       })),
@@ -601,30 +652,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  }, [accounts, network]);
+  }, [accounts, activeAccount?.publicKey, network]);
 
   const accountBalancesRef = useRef(refreshAccountBalances);
   useEffect(() => {
     accountBalancesRef.current = refreshAccountBalances;
   }, [refreshAccountBalances]);
 
-  useEffect(() => {
-    if (phase !== "unlocked" || !activeAccount) return;
-    void refreshRef.current();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      void refreshRef.current();
-      void accountBalancesRef.current();
-    }, POLL_MS);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refreshRef.current();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [phase, activeAccount, network]);
+  const walletRefreshEnabled = phase === "unlocked" && activeAccount !== null;
+  useVisibleWalletRefresh(
+    refreshAccountData,
+    walletRefreshEnabled,
+    WALLET_ACCOUNT_POLL_MS,
+    `${network}:${activeAccount?.publicKey ?? "none"}`,
+  );
+  useVisibleWalletRefresh(
+    refreshMarketData,
+    walletRefreshEnabled,
+    WALLET_MARKET_POLL_MS,
+    "market",
+  );
+
+  useEffect(
+    () => () => {
+      accountRefreshLane.cancel();
+      marketRefreshLane.cancel();
+    },
+    [accountRefreshLane, marketRefreshLane],
+  );
 
   // Real-time Horizon Server-Sent Event stream
   useEffect(() => {
@@ -644,7 +699,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       );
       es.onmessage = () => {
         triggerHaptic("success");
-        void refreshRef.current();
+        void accountRefreshRef.current();
       };
     } catch {
       // Ignore
@@ -768,7 +823,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ? `${transaction.label} expired and was not found on-chain. It can be reviewed and retried.`
         : `${transaction.label} failed on-chain`;
       toast(outcome ? `${transaction.label} confirmed` : failedMessage, outcome ? "success" : "error");
-      await refreshRef.current();
+      await accountRefreshRef.current();
       return;
     }
 
@@ -788,7 +843,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       void pollPendingRef.current(transaction);
-    }, POLL_MS);
+    }, TRANSACTION_POLL_MS);
     pendingPollTimers.current.set(identity, timer);
   }, [commitMergeReconciliations, commitTransactionTracking, toast]);
 
@@ -934,7 +989,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       commitTransactionTracking((current) =>
         applyTransactionPoll(current, confirmed, true).tracking);
       toast(`${label} confirmed`, "success");
-      void refreshRef.current();
+      void accountRefreshRef.current();
       return;
     }
     commitTransactionTracking((current) => trackPendingTransaction(current, pending));
@@ -1154,7 +1209,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const cached = target
       ? snapshotCache.current.get(`${network}:${target.publicKey}`)
       : undefined;
-    // Show last-known snapshot instantly; background poll refreshes it within POLL_MS
+    // Show the last-known snapshot instantly while the new account refresh begins.
     if (cached) {
       setBalances(cached.balances);
       setActivity(cached.activity);
@@ -1316,7 +1371,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           void reconcileMergeRecordRef.current(result.record!);
-        }, POLL_MS);
+        }, TRANSACTION_POLL_MS);
         mergeReconciliationTimers.current.set(identity, timer);
       }
 
@@ -1652,7 +1707,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const fundFromFriendbot = useCallback(async () => {
     if (!activeAccount) throw new Error("No active account");
     await api.fundWithFriendbot(activeAccount.publicKey, network);
-    await refreshRef.current();
+    await accountRefreshRef.current();
   }, [activeAccount, network]);
 
   const applyMultisigConfig = useCallback(

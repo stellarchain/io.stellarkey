@@ -111,6 +111,11 @@ test("production merchant surfaces use live runtime state and no specimen route"
   assert.doesNotMatch(merchantSettings, /MOCK_PERIPHERALS|MOCK_STAFF|MOCK_TERMINAL|States & offline/);
 });
 
+test("merchant context value stays stable across unrelated wallet provider renders", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  assert.match(hook, /const value = useMemo<MerchantContextValue>/);
+});
+
 test("customer display exit verifies a real staff PIN and does not show an amountless payment QR", () => {
   const display = source("src/components/merchant/CustomerDisplay.tsx");
   const hook = source("src/hooks/useMerchant.tsx");

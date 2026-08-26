@@ -55,7 +55,7 @@ export function parseFiatRates(
   return rates;
 }
 
-export async function fetchFiatRates(): Promise<FiatRates> {
+export async function fetchFiatRates(signal?: AbortSignal): Promise<FiatRates> {
   if (fiatCache && Date.now() - fiatCache.at < CACHE_TTL) return fiatCache.rates;
   try {
     return await withAbortDeadline(async (signal) => {
@@ -65,7 +65,7 @@ export async function fetchFiatRates(): Promise<FiatRates> {
       const rates = parseFiatRates(json.rates ?? {});
       fiatCache = { rates, at: Date.now() };
       return rates;
-    }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Fiat rates" });
+    }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Fiat rates", signal });
   } catch {
     return fiatCache?.rates ?? { USD: 1 };
   }
