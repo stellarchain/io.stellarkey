@@ -1861,7 +1861,9 @@ export function Dashboard() {
               )}
               <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
                   <h2 className="mt-1.5 text-[44px] sm:text-[54px] font-bold leading-none tracking-tight text-white">
-                    {balances === null ? (
+                    {balances === null && dataError ? (
+                      <span className="text-[18px] font-semibold text-neutral-400">Balance unavailable</span>
+                    ) : balances === null ? (
                       <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
                     ) : privacyMode ? (
                       "••••••"

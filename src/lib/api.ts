@@ -31,8 +31,10 @@ import type {
   SubmissionPreparedCallback,
   SubmissionResult,
 } from "./submission";
+import { withAbortDeadline } from "./wallet-refresh";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
+const MARKET_REQUEST_TIMEOUT_MS = 8_000;
 
 export async function getJson<T>(url: string): Promise<T | null> {
   try {
@@ -1194,12 +1196,18 @@ interface CoinGeckoPriceResp {
 
 export async function fetchXlmPrice(): Promise<number | null> {
   try {
-    const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd",
-    );
-    if (!res.ok) return null;
-    const json = (await res.json()) as CoinGeckoPriceResp;
-    return json.stellar?.usd ?? null;
+    return await withAbortDeadline(async (signal) => {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd",
+        { signal },
+      );
+      if (!res.ok) return null;
+      const json = (await res.json()) as CoinGeckoPriceResp;
+      return json.stellar?.usd ?? null;
+    }, {
+      timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
+      label: "XLM market price",
+    });
   } catch {
     return null;
   }
@@ -1222,21 +1230,27 @@ interface CoinGeckoChartResp {
 
 export async function fetchXlmSeries(range: PriceRange): Promise<PriceSeries | null> {
   try {
-    const res = await fetch(
-      `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
-    );
-    if (!res.ok) return null;
-    const json = (await res.json()) as CoinGeckoChartResp;
-    if (!json.prices || json.prices.length < 2) return null;
-    const points = json.prices.map(([t, p]) => ({ t, p }));
-    const first = points[0].p;
-    const last = points[points.length - 1].p;
-    return {
-      range,
-      points,
-      current: last,
-      changePct: ((last - first) / first) * 100,
-    };
+    return await withAbortDeadline(async (signal) => {
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/coins/stellar/market_chart?vs_currency=usd&days=${RANGE_DAYS[range]}`,
+        { signal },
+      );
+      if (!res.ok) return null;
+      const json = (await res.json()) as CoinGeckoChartResp;
+      if (!json.prices || json.prices.length < 2) return null;
+      const points = json.prices.map(([t, p]) => ({ t, p }));
+      const first = points[0].p;
+      const last = points[points.length - 1].p;
+      return {
+        range,
+        points,
+        current: last,
+        changePct: ((last - first) / first) * 100,
+      };
+    }, {
+      timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
+      label: "XLM market chart",
+    });
   } catch {
     return null;
   }

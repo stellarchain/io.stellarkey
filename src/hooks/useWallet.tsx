@@ -58,6 +58,7 @@ import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/l
 import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
 import { getHorizonUrl, type NetworkKey } from "@/lib/stellar";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
+import { describeResourceFailures, settleResourceMap } from "@/lib/wallet-refresh";
 import {
   applyTransactionPoll,
   clearDurableMergeReconciliations,
@@ -484,48 +485,60 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     try {
       const cachedSeries = priceCache.current[priceRange];
-      const [bals, minimumBalance, claims, acts, price, series, currentFiatRates] = await Promise.all([
-        api.fetchBalances(activeAccount.publicKey, network),
-        api.fetchMinimumNativeBalance(activeAccount.publicKey, network),
-        api.fetchClaimableBalances(activeAccount.publicKey, network),
-        api.fetchActivity(activeAccount.publicKey, network),
+      const resources = await settleResourceMap({
+        balances: api.fetchBalances(activeAccount.publicKey, network),
+        minimumBalance: api.fetchMinimumNativeBalance(activeAccount.publicKey, network),
+        claimableBalances: api.fetchClaimableBalances(activeAccount.publicKey, network),
+        activity: api.fetchActivity(activeAccount.publicKey, network),
         // The market chart remains useful on testnet, but portfolio valuation
         // explicitly ignores all testnet balances.
-        api.fetchXlmPrice(),
-        cachedSeries ? Promise.resolve(cachedSeries) : api.fetchXlmSeries(priceRange),
-        fetchFiatRates(),
-      ]);
+        xlmPrice: api.fetchXlmPrice(),
+        priceSeries: cachedSeries ? Promise.resolve(cachedSeries) : api.fetchXlmSeries(priceRange),
+        fiatRates: fetchFiatRates(),
+      });
       if (generation !== refreshGeneration.current) return;
-      setBalances(bals);
-      setMinimumBalanceXlm(minimumBalance);
-      setClaimableBalances(claims);
+      if (resources.balances.ok) setBalances(resources.balances.value);
+      if (resources.minimumBalance.ok) setMinimumBalanceXlm(resources.minimumBalance.value);
+      if (resources.claimableBalances.ok) setClaimableBalances(resources.claimableBalances.value);
       // Merge the fresh first page into any already-loaded history instead of
       // replacing it — the poll must never wipe pages the user scrolled through.
-      const hadHistory = activityRef.current.length > 0;
-      setActivity((prev) => {
-        if (prev.length === 0) return acts.items;
-        const seen = new Set(prev.map((i) => i.id));
-        const fresh = acts.items.filter((i) => !seen.has(i.id));
-        return fresh.length > 0 ? [...fresh, ...prev] : prev;
-      });
-      if (!hadHistory) setActivityCursor(acts.nextCursor);
-      snapshotCache.current.set(cacheKey, {
-        balances: bals,
-        activity: acts.items,
-        cursor: acts.nextCursor,
-        minimumBalanceXlm: minimumBalance,
-      });
-      const nativeBal = bals.find((b) => b.isNative);
-      setAccountBalances((prev) => ({
-        ...prev,
-        [activeAccount.publicKey]: nativeBal ? parseFloat(nativeBal.balance) : 0,
-      }));
-      if (price !== null) setXlmPriceUsd(price);
-      setFiatRates(currentFiatRates);
-      if (series !== null) {
+      if (resources.activity.ok) {
+        const hadHistory = activityRef.current.length > 0;
+        const acts = resources.activity.value;
+        setActivity((prev) => {
+          if (prev.length === 0) return acts.items;
+          const seen = new Set(prev.map((i) => i.id));
+          const fresh = acts.items.filter((i) => !seen.has(i.id));
+          return fresh.length > 0 ? [...fresh, ...prev] : prev;
+        });
+        if (!hadHistory) setActivityCursor(acts.nextCursor);
+      }
+      if (resources.balances.ok) {
+        const bals = resources.balances.value;
+        const nativeBal = bals.find((b) => b.isNative);
+        setAccountBalances((prev) => ({
+          ...prev,
+          [activeAccount.publicKey]: nativeBal ? parseFloat(nativeBal.balance) : 0,
+        }));
+      }
+      if (resources.balances.ok && resources.activity.ok && resources.minimumBalance.ok) {
+        snapshotCache.current.set(cacheKey, {
+          balances: resources.balances.value,
+          activity: resources.activity.value.items,
+          cursor: resources.activity.value.nextCursor,
+          minimumBalanceXlm: resources.minimumBalance.value,
+        });
+      }
+      if (resources.xlmPrice.ok && resources.xlmPrice.value !== null) {
+        setXlmPriceUsd(resources.xlmPrice.value);
+      }
+      if (resources.fiatRates.ok) setFiatRates(resources.fiatRates.value);
+      if (resources.priceSeries.ok && resources.priceSeries.value !== null) {
+        const series = resources.priceSeries.value;
         priceCache.current[series.range] = series;
         setPriceData(series);
       }
+      setDataError(describeResourceFailures(resources));
     } catch (error) {
       if (generation === refreshGeneration.current) {
         setDataError(error instanceof Error ? error.message : "Unable to refresh wallet data.");
