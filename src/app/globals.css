@@ -271,8 +271,17 @@ body::after {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.1);
   }
+
   .btn-secondary:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  /* The compact size used inside sheets and beside inline content. Defined once
+     so a small button is one height everywhere instead of six ad-hoc overrides. */
+  .btn-sm {
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 12px;
   }
 
   .icon-btn {

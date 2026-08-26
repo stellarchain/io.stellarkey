@@ -1,0 +1,1285 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { triggerHaptic } from "@/lib/haptics";
+import { useMerchant } from "@/hooks/useMerchant";
+import { orderReference } from "@/lib/merchant/charge";
+import { fmtMinor, lineGrossMinor } from "@/lib/merchant/money";
+import type {
+  Adjustment,
+  CatalogueItem,
+  Minor,
+  ModifierGroup,
+  Order,
+  OrderLine,
+  OrderLineModifier,
+} from "@/lib/merchant/types";
+import type { FiatCurrency } from "@/lib/format";
+import { useToast } from "../Toast";
+import { Dropdown, Modal, ModalHeader, SegmentedControl } from "../ui";
+import {
+  IconAlert,
+  IconCheck,
+  IconChevronDown,
+  IconClose,
+  IconEye,
+  IconList,
+  IconPlus,
+  IconTrash,
+  IconWallet,
+} from "../icons";
+import { IconPercent, IconReceipt } from "./icons";
+/* The five sheets below are DESIGN MOCKS. They read fixtures from
+   `lib/merchant/mock.ts`, compute their figures for real, and then say what they
+   would do rather than doing it — nothing under them writes to the merchant
+   store. The till's own behaviour above is unchanged: these are entry points. */
+import { AdjustmentSheet } from "./AdjustmentSheet";
+import { CashTenderSheet } from "./CashTenderSheet";
+import { CustomerDisplay } from "./CustomerDisplay";
+import { DuplicateChargeSheet, duplicateFixture } from "./DuplicateChargeSheet";
+import { PREVIEW_ORDER, PREVIEW_ORDER_NUMBER, previewOrder, ReceiptSheet } from "./ReceiptSheet";
+
+/** 999,999.99 — a till figure that no longer fits a shop is a mis-key. */
+const MAX_KEYPAD_MINOR = 99_999_999;
+
+const KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "backspace"] as const;
+
+type TerminalMode = "keypad" | "items";
+
+function BackspaceGlyph() {
+  return (
+    <svg
+      width={26}
+      height={26}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 5H9.6a2 2 0 0 0-1.5.7L3 12l5.1 6.3a2 2 0 0 0 1.5.7H20a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1Z" />
+      <path d="M16 9.5 11.5 14.5" />
+      <path d="M11.5 9.5 16 14.5" />
+    </svg>
+  );
+}
+
+function MinusGlyph({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+/** The overflow affordance beside Charge — one blue button, one "more". */
+function MoreGlyph({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
+
+/** A tile tint at low opacity, falling back to plain glass for an odd colour. */
+function tileStyle(colour: string): React.CSSProperties {
+  const usable = /^#[0-9a-fA-F]{6}$/.test(colour);
+  if (!usable) {
+    return {
+      backgroundColor: "rgba(255,255,255,0.06)",
+      boxShadow: "inset 0 0 0 0.5px rgba(255,255,255,0.1)",
+    };
+  }
+  return {
+    backgroundColor: `${colour}22`,
+    boxShadow: `inset 0 0 0 0.5px ${colour}59`,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Keypad                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fills from the right in minor units: 2, 7, 3, 3 reads 27.33. Shared by the
+ * till and the discount sheet so an amount is entered the same way everywhere.
+ */
+function Keypad({
+  minor,
+  currency,
+  label,
+  onChange,
+  /** The till gives the keypad its whole column; the discount sheet caps it. */
+  fill = false,
+}: {
+  minor: Minor;
+  currency: FiatCurrency;
+  label: string;
+  onChange: (next: Minor) => void;
+  fill?: boolean;
+}) {
+  function press(key: (typeof KEYPAD_KEYS)[number]) {
+    if (key === "backspace") {
+      triggerHaptic("selection");
+      onChange(Math.floor(minor / 10));
+      return;
+    }
+    const next = key === "00" ? minor * 100 : minor * 10 + Number(key);
+    if (next > MAX_KEYPAD_MINOR) {
+      triggerHaptic("warning");
+      return;
+    }
+    triggerHaptic("selection");
+    onChange(next);
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col items-center py-4">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          {label}
+        </span>
+        <span className="mono mt-1.5 text-[34px] font-semibold leading-none text-white">
+          {fmtMinor(minor, currency)}
+        </span>
+      </div>
+      <div className={`grid w-full grid-cols-3 gap-2 ${fill ? "" : "mx-auto max-w-[420px]"}`}>
+        {KEYPAD_KEYS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => press(key)}
+            aria-label={key === "backspace" ? "Backspace" : key}
+            className="flex min-h-[64px] items-center justify-center rounded-2xl bg-white/[0.08] text-[28px] font-medium leading-none text-white transition-[transform,background-color] duration-150 hover:bg-white/[0.13] active:scale-95"
+          >
+            {key === "backspace" ? <BackspaceGlyph /> : key}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Amount sheet — the discount entry                                   */
+/* ------------------------------------------------------------------ */
+
+function AmountSheet({
+  title,
+  subtitle,
+  initialMinor,
+  currency,
+  confirmLabel,
+  clearLabel,
+  onConfirm,
+  onClear,
+  onClose,
+}: {
+  title: string;
+  subtitle: string;
+  initialMinor: Minor;
+  currency: FiatCurrency;
+  confirmLabel: string;
+  clearLabel?: string;
+  onConfirm: (minor: Minor) => void;
+  onClear?: () => void;
+  onClose: () => void;
+}) {
+  const [minor, setMinor] = useState<Minor>(initialMinor);
+
+  return (
+    <Modal open onClose={onClose}>
+      <ModalHeader title={title} subtitle={subtitle} onClose={onClose} />
+      <div className="space-y-4 p-4 sm:p-6">
+        <Keypad minor={minor} currency={currency} label={title} onChange={setMinor} />
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="btn btn-primary w-full"
+            onClick={() => {
+              triggerHaptic("light");
+              onConfirm(minor);
+            }}
+          >
+            {confirmLabel}
+          </button>
+          {onClear && clearLabel && (
+            <button
+              type="button"
+              className="btn btn-danger w-full"
+              onClick={() => {
+                triggerHaptic("light");
+                onClear();
+              }}
+            >
+              {clearLabel}
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Modifier sheet                                                      */
+/* ------------------------------------------------------------------ */
+
+function groupHint(group: ModifierGroup): string {
+  if (group.min > 0 && group.min === group.max) return `Choose ${group.min}`;
+  if (group.min > 0) return `Choose ${group.min} to ${group.max}`;
+  return group.max === 1 ? "Choose one, or none" : `Up to ${group.max}`;
+}
+
+function ModifierSheet({
+  item,
+  groups,
+  currency,
+  onConfirm,
+  onClose,
+}: {
+  item: CatalogueItem;
+  groups: ModifierGroup[];
+  currency: FiatCurrency;
+  onConfirm: (modifiers: OrderLineModifier[]) => void;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+
+  const chosen = useMemo<OrderLineModifier[]>(
+    () =>
+      groups.flatMap((group) =>
+        (picked[group.id] ?? []).flatMap((id) => {
+          const modifier = group.modifiers.find((m) => m.id === id);
+          return modifier
+            ? [{ modifierId: modifier.id, name: modifier.name, priceMinor: modifier.priceMinor }]
+            : [];
+        }),
+      ),
+    [groups, picked],
+  );
+
+  const totalMinor = chosen.reduce((sum, m) => sum + m.priceMinor, item.priceMinor);
+  const unmet = groups.find((group) => (picked[group.id] ?? []).length < group.min);
+
+  function toggle(group: ModifierGroup, modifierId: string) {
+    setPicked((prev) => {
+      const current = prev[group.id] ?? [];
+      if (current.includes(modifierId)) {
+        triggerHaptic("selection");
+        return { ...prev, [group.id]: current.filter((id) => id !== modifierId) };
+      }
+      if (group.max <= 1) {
+        triggerHaptic("selection");
+        return { ...prev, [group.id]: [modifierId] };
+      }
+      if (current.length >= group.max) {
+        triggerHaptic("warning");
+        return prev;
+      }
+      triggerHaptic("selection");
+      return { ...prev, [group.id]: [...current, modifierId] };
+    });
+  }
+
+  return (
+    <Modal open onClose={onClose}>
+      <ModalHeader
+        title={item.name}
+        subtitle={fmtMinor(item.priceMinor, currency)}
+        onClose={onClose}
+      />
+      <div className="space-y-4 p-4 sm:p-6">
+        {groups.map((group) => {
+          const current = picked[group.id] ?? [];
+          return (
+            <section key={group.id}>
+              <div className="flex items-baseline justify-between px-1 pb-2">
+                <h3 className="text-[13.5px] font-semibold text-white">{group.name}</h3>
+                <span className="text-[11.5px] text-neutral-500">{groupHint(group)}</span>
+              </div>
+              <div className="list-group">
+                {group.modifiers.map((modifier, index) => {
+                  const on = current.includes(modifier.id);
+                  return (
+                    <button
+                      key={modifier.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggle(group, modifier.id)}
+                      className={`row-hover flex w-full items-center gap-3 px-4 py-3 text-left ${
+                        index > 0 ? "border-t border-white/[0.08]" : ""
+                      }`}
+                    >
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                          on ? "bg-[#0A84FF] text-white" : "bg-white/[0.1] text-transparent"
+                        }`}
+                      >
+                        <IconCheck size={12} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[14.5px] text-white">
+                        {modifier.name}
+                      </span>
+                      <span className="mono shrink-0 text-[13px] text-neutral-400">
+                        {modifier.priceMinor === 0
+                          ? "Free"
+                          : `+ ${fmtMinor(modifier.priceMinor, currency)}`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+
+        {unmet && (
+          <p className="px-1 text-[12.5px] text-[#FF9F0A]">
+            {groupHint(unmet)} from {unmet.name} before adding this to the ticket.
+          </p>
+        )}
+
+        <button
+          type="button"
+          disabled={Boolean(unmet)}
+          className="btn btn-primary w-full"
+          onClick={() => {
+            triggerHaptic("light");
+            onConfirm(chosen);
+          }}
+        >
+          Add {fmtMinor(totalMinor, currency)}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Catalogue tiles                                                     */
+/* ------------------------------------------------------------------ */
+
+function ItemTile({
+  item,
+  currency,
+  hasOptions,
+  onPick,
+}: {
+  item: CatalogueItem;
+  currency: FiatCurrency;
+  hasOptions: boolean;
+  onPick: () => void;
+}) {
+  const stock = item.trackStock ? item.stockOnHand : null;
+  const soldOut = item.trackStock && stock !== null && stock <= 0;
+  const low =
+    !soldOut &&
+    item.trackStock &&
+    stock !== null &&
+    item.lowStockAt !== null &&
+    stock <= item.lowStockAt;
+
+  return (
+    <button
+      type="button"
+      disabled={soldOut}
+      onClick={onPick}
+      style={tileStyle(item.colour)}
+      className={`flex min-h-[96px] flex-col justify-between rounded-2xl p-3 text-left transition-transform duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${
+        soldOut ? "" : "hover:brightness-125"
+      }`}
+    >
+      <span className="flex items-start justify-between gap-2">
+        <span className="line-clamp-2 text-[14.5px] font-semibold leading-snug text-white">
+          {item.name}
+        </span>
+        {hasOptions && !soldOut && (
+          <span className="shrink-0 text-white/45" aria-hidden="true">
+            <IconPlus size={13} />
+          </span>
+        )}
+      </span>
+      <span className="mt-2 flex items-end justify-between gap-2">
+        <span className="mono text-[13px] text-white/85">
+          {fmtMinor(item.priceMinor, currency)}
+        </span>
+        {soldOut ? (
+          <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10.5px] font-semibold text-neutral-300">
+            Sold out
+          </span>
+        ) : low ? (
+          <span className="mono text-[10.5px] font-semibold text-[#FF9F0A]">{stock} left</span>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Ticket overflow                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything a counter can reach beside Charge, under one control. Charge is
+ * the till's single primary action; these sit next to it rather than competing
+ * with it, and nothing that used to be a button of its own has been dropped.
+ */
+function TicketMenu({
+  onTender,
+  onCustomerView,
+  onAdjust,
+  onReceipt,
+}: {
+  onTender: () => void;
+  onCustomerView: () => void;
+  onAdjust: () => void;
+  onReceipt: () => void;
+}) {
+  return (
+    <Dropdown
+      align="right"
+      trigger={() => (
+        <button
+          type="button"
+          aria-label="More ticket actions"
+          className="btn btn-secondary w-11 shrink-0 !px-0"
+        >
+          <MoreGlyph />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div className="p-1">
+          <button
+            type="button"
+            className="menu-item !rounded-xl"
+            onClick={() => {
+              onTender();
+              close();
+            }}
+          >
+            <IconWallet size={15} /> <span>Other tender</span>
+          </button>
+          <button
+            type="button"
+            className="menu-item !rounded-xl"
+            onClick={() => {
+              onCustomerView();
+              close();
+            }}
+          >
+            <IconEye size={15} /> <span>Customer view</span>
+          </button>
+          <button
+            type="button"
+            className="menu-item !rounded-xl"
+            onClick={() => {
+              onAdjust();
+              close();
+            }}
+          >
+            <IconPercent size={15} /> <span>Discount, comp or void</span>
+          </button>
+          <button
+            type="button"
+            className="menu-item !rounded-xl"
+            onClick={() => {
+              onReceipt();
+              close();
+            }}
+          >
+            <IconReceipt size={15} /> <span>Receipt</span>
+          </button>
+        </div>
+      )}
+    </Dropdown>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Ticket                                                              */
+/* ------------------------------------------------------------------ */
+
+function TicketRow({
+  line,
+  currency,
+  first,
+  onQuantity,
+  onAdjust,
+  onRemove,
+}: {
+  line: OrderLine;
+  currency: FiatCurrency;
+  first: boolean;
+  onQuantity: (quantity: number) => void;
+  onAdjust: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <li className={`flex items-start gap-3 px-4 py-3 ${first ? "" : "border-t border-white/[0.08]"}`}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14.5px] font-medium leading-snug text-white">{line.name}</p>
+        {line.modifiers.length > 0 && (
+          <p className="mt-0.5 text-[12px] leading-relaxed text-neutral-500">
+            {line.modifiers.map((m) => m.name).join(" · ")}
+          </p>
+        )}
+        <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label={`One fewer ${line.name}`}
+            onClick={() => {
+              triggerHaptic("selection");
+              onQuantity(line.quantity - 1);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform duration-150 hover:bg-white/[0.14] active:scale-90"
+          >
+            <MinusGlyph />
+          </button>
+          <span className="mono w-7 text-center text-[14.5px] font-semibold text-white">
+            {line.quantity}
+          </span>
+          <button
+            type="button"
+            aria-label={`One more ${line.name}`}
+            onClick={() => {
+              triggerHaptic("selection");
+              onQuantity(line.quantity + 1);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white transition-transform duration-150 hover:bg-white/[0.14] active:scale-90"
+          >
+            <IconPlus size={15} />
+          </button>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <span className="mono text-[14.5px] text-white">
+          {fmtMinor(lineGrossMinor(line), currency)}
+        </span>
+        <div className="flex items-center gap-1">
+          {/* Discount, comp or void this one line, with a reason and a name on it. */}
+          <button
+            type="button"
+            aria-label={`Discount, comp or void ${line.name}`}
+            onClick={() => {
+              triggerHaptic("selection");
+              onAdjust();
+            }}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-neutral-500 transition-colors before:absolute before:-inset-1 before:content-[''] hover:bg-white/[0.06] hover:text-[#0A84FF]"
+          >
+            <IconPercent size={15} />
+          </button>
+          <button
+            type="button"
+            aria-label={`Remove ${line.name}`}
+            onClick={() => {
+              triggerHaptic("light");
+              onRemove();
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-[#FF453A]"
+          >
+            <IconTrash size={15} />
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* The till                                                            */
+/* ------------------------------------------------------------------ */
+
+export function PosTerminal() {
+  const {
+    settings,
+    catalogue,
+    modifierGroups,
+    ticket,
+    ticketTotals,
+    tipOptions,
+    addItemToTicket,
+    addCustomAmount,
+    setLineQuantity,
+    removeLine,
+    setDiscount,
+    clearTicket,
+    chargeBlockedReason,
+    createChargeFromTicket,
+  } = useMerchant();
+  const { toast } = useToast();
+
+  const [mode, setMode] = useState<TerminalMode>("keypad");
+  const [keypadMinor, setKeypadMinor] = useState<Minor>(0);
+  const [tipPromptOpen, setTipPromptOpen] = useState(false);
+  const [category, setCategory] = useState<string>("");
+  const [optionsFor, setOptionsFor] = useState<CatalogueItem | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
+
+  /* The mock surfaces. Each holds nothing but its own open state — none of them
+     reaches back into the store, and closing one leaves the till as it was. */
+  const [tenderOpen, setTenderOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
+  const [adjustLineId, setAdjustLineId] = useState<string | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
+  const [customerViewOpen, setCustomerViewOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [settled, setSettled] = useState<{ label: string; order: Order } | null>(null);
+
+  const currency = settings.currency;
+
+  const active = useMemo(
+    () => catalogue.filter((item) => item.active).sort((a, b) => a.sortIndex - b.sortIndex),
+    [catalogue],
+  );
+
+  const categories = useMemo(() => {
+    const seen: string[] = [];
+    for (const item of active) {
+      if (item.category && !seen.includes(item.category)) seen.push(item.category);
+    }
+    return seen;
+  }, [active]);
+
+  const visible = useMemo(
+    () => (category ? active.filter((item) => item.category === category) : active),
+    [active, category],
+  );
+
+  const groupsFor = useCallback(
+    (item: CatalogueItem): ModifierGroup[] =>
+      item.modifierGroupIds.flatMap((id) => {
+        const group = modifierGroups.find((g) => g.id === id);
+        return group ? [group] : [];
+      }),
+    [modifierGroups],
+  );
+
+  const taxLines = useMemo(() => {
+    const known = settings.taxRates
+      .filter((rate) => (ticketTotals.taxByRate[rate.id] ?? 0) !== 0)
+      .map((rate) => ({
+        id: rate.id,
+        label: `${rate.label} ${rate.percent} %`,
+        minor: ticketTotals.taxByRate[rate.id],
+      }));
+    const orphans = Object.entries(ticketTotals.taxByRate)
+      .filter(([id]) => !settings.taxRates.some((rate) => rate.id === id))
+      .map(([id, minor]) => ({ id, label: id, minor }));
+    return [...known, ...orphans];
+  }, [settings.taxRates, ticketTotals.taxByRate]);
+
+  const itemCount = ticket.lines.reduce((sum, line) => sum + line.quantity, 0);
+  const empty = ticket.lines.length === 0;
+  const chargeDisabled = empty || chargeBlockedReason !== null;
+
+  /* The memo the next order on this device would carry. There is one till, so
+     numbers simply run on from the last one this device issued. */
+  const reference = orderReference(settings.profile.name || "Till", PREVIEW_ORDER_NUMBER);
+
+  /* The ticket in the Order shape a receipt renders from. Built here rather than
+     inside the sheet so the same component serves a live ticket and a fixture. */
+  const ticketAsOrder = useMemo(
+    () =>
+      previewOrder({
+        lines: ticket.lines,
+        totals: ticketTotals,
+        currency,
+        shopName: settings.profile.name,
+        terminalName: settings.terminalName,
+        orderNumber: PREVIEW_ORDER_NUMBER,
+      }),
+    [currency, settings.profile.name, settings.terminalName, ticket.lines, ticketTotals],
+  );
+
+  const duplicate = useMemo(
+    () =>
+      duplicateFixture(
+        reference,
+        settled ? settled.order.totals.totalMinor : ticketTotals.totalMinor,
+      ),
+    [reference, settled, ticketTotals.totalMinor],
+  );
+
+  function pickItem(item: CatalogueItem) {
+    const groups = groupsFor(item);
+    if (groups.length > 0) {
+      triggerHaptic("selection");
+      setOptionsFor(item);
+      return;
+    }
+    triggerHaptic("light");
+    addItemToTicket(item);
+  }
+
+  function openReceipt(order: Order) {
+    triggerHaptic("selection");
+    setReceiptOrder(order);
+  }
+
+  function openAdjust(lineId: string | null) {
+    triggerHaptic("selection");
+    setAdjustLineId(lineId);
+    setAdjustOpen(true);
+  }
+
+  /**
+   * A mock adjustment carries who, why and how much. Only a ticket-wide discount
+   * maps onto a figure this till already holds, so that one is applied for real
+   * and everything else says what it would write.
+   */
+  function applyAdjustment(record: Adjustment, ticketDiscountMinor: Minor | null) {
+    if (ticketDiscountMinor !== null) {
+      setDiscount(ticketDiscountMinor);
+      toast(
+        `${fmtMinor(record.amountMinor, currency)} off — ${record.reasonCode}, ${record.staffName}.`,
+        "success",
+      );
+      return;
+    }
+    const verb = record.kind === "comp" ? "Comp" : record.kind === "void" ? "Void" : "Discount";
+    toast(
+      `${verb} of ${fmtMinor(record.amountMinor, currency)} on ${record.lineName ?? "the ticket"} would be recorded against ${record.staffName} — ${record.reasonCode}.`,
+    );
+  }
+
+  /**
+   * Charge does not raise the charge: it turns the screen to the customer to ask
+   * about a tip. Only their answer raises it, which is why the tip is passed
+   * straight into `createChargeFromTicket` rather than set first — a `setTip`
+   * here would not have landed before the charge read the total.
+   */
+  function charge() {
+    if (chargeBlockedReason || ticket.lines.length === 0) return;
+    triggerHaptic("light");
+    if (tipOptions.length === 0) {
+      raiseCharge(0);
+      return;
+    }
+    setTipPromptOpen(true);
+  }
+
+  function raiseCharge(tipMinor: Minor) {
+    try {
+      setTipPromptOpen(false);
+      createChargeFromTicket(tipMinor);
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The charge could not be raised.", "error");
+    }
+  }
+
+  // The till carries its own mobile clearance now — MerchantPage leaves the bottom
+  // padding to the sticky charge bar below, which parks exactly one gap above the
+  // floating tab bar.
+  return (
+    <section className="fade-up w-full">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] md:items-start md:gap-5">
+        {/* ---------- catalogue and keypad ---------- */}
+        <div className="min-w-0 space-y-3">
+          <div className="w-full">
+            <SegmentedControl<TerminalMode>
+              value={mode}
+              onChange={setMode}
+              options={[
+                { label: "Keypad", value: "keypad" },
+                { label: "Items", value: "items" },
+              ]}
+            />
+          </div>
+
+          {mode === "keypad" ? (
+            <div className="panel p-4">
+              <Keypad
+                minor={keypadMinor}
+                currency={currency}
+                label="Amount"
+                onChange={setKeypadMinor}
+                fill
+              />
+              {/* Full width under the keypad it belongs to. Charge stays the only
+                  btn-primary, so the hierarchy holds without shrinking this. */}
+              <button
+                type="button"
+                disabled={keypadMinor <= 0}
+                onClick={() => {
+                  triggerHaptic("light");
+                  addCustomAmount(keypadMinor);
+                  setKeypadMinor(0);
+                }}
+                className="btn btn-secondary mt-3 w-full"
+              >
+                Add to ticket
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {categories.length > 0 && (
+                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5">
+                  <button
+                    type="button"
+                    aria-pressed={category === ""}
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setCategory("");
+                    }}
+                    className={`chip ${category === "" ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
+                  >
+                    All
+                  </button>
+                  {categories.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      aria-pressed={category === name}
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setCategory(name);
+                      }}
+                      className={`chip ${category === name ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {visible.length === 0 ? (
+                <div className="panel flex flex-col items-center px-6 py-14 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-neutral-500">
+                    <IconList size={22} />
+                  </span>
+                  <p className="mt-3 text-[14.5px] font-semibold text-white">Nothing to sell yet</p>
+                  <p className="mt-1 max-w-[260px] text-[13px] leading-relaxed text-neutral-400">
+                    Add products in the catalogue, or ring the sale up on the keypad.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                  {visible.map((item) => (
+                    <ItemTile
+                      key={item.id}
+                      item={item}
+                      currency={currency}
+                      hasOptions={groupsFor(item).length > 0}
+                      onPick={() => pickItem(item)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ---------- the ticket ---------- */}
+        <div className="min-w-0 md:sticky md:top-4">
+          {/* MOCK — the post-sale strip. It is where the customer's copy is
+              offered once the money is in, and where a second payment against a
+              reference that is already settled surfaces. A live till raises that
+              notice from Horizon; here it stands in for one. */}
+          {settled && (
+            <div className="panel mb-3">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#30D158]/15 text-[#30D158]">
+                  <IconCheck size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold text-white">
+                    Order {PREVIEW_ORDER_NUMBER} settled
+                  </p>
+                  <p className="truncate text-[12px] text-neutral-500">{settled.label}</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Dismiss the settled order"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setSettled(null);
+                  }}
+                  className="-mr-1.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+                >
+                  <IconClose size={15} />
+                </button>
+              </div>
+
+              <div className="px-4 pb-3">
+                <button
+                  type="button"
+                  onClick={() => openReceipt(settled.order)}
+                  className="btn btn-secondary"
+                >
+                  <IconReceipt size={15} /> Receipt
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("warning");
+                  setDuplicateOpen(true);
+                }}
+                className="row-hover flex w-full items-center gap-3 border-t border-white/[0.08] px-4 py-3 text-left"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A]">
+                  <IconAlert size={15} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold text-[#FF9F0A]">
+                    A second payment landed on {reference}
+                  </span>
+                  <span className="block text-[11.5px] leading-relaxed text-neutral-500">
+                    Mock notice — a live till raises this only when Horizon reports a payment
+                    against a reference that is already settled.
+                  </span>
+                </span>
+                <IconChevronDown size={16} className="chevron -rotate-90" />
+              </button>
+            </div>
+          )}
+
+          <div className="panel">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-[15.5px] font-semibold text-white">Ticket</h2>
+                {itemCount > 0 && (
+                  <span className="mono text-[12px] text-neutral-500">
+                    {itemCount} {itemCount === 1 ? "item" : "items"}
+                  </span>
+                )}
+              </div>
+              {!empty && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("warning");
+                    clearTicket();
+                  }}
+                  className="-mr-2 rounded-lg px-2 py-1 text-[13px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/10"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {empty ? (
+              <div className="flex flex-col items-center px-6 pb-12 pt-6 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-neutral-500">
+                  <IconList size={22} />
+                </span>
+                <p className="mt-3 text-[14.5px] font-semibold text-white">Nothing rung up</p>
+                <p className="mt-1 max-w-[240px] text-[13px] leading-relaxed text-neutral-400">
+                  Key in an amount or tap a product, and it lands here.
+                </p>
+              </div>
+            ) : (
+              <>
+                <ul className="border-t border-white/[0.08] md:max-h-[38vh] md:overflow-y-auto">
+                  {ticket.lines.map((line, index) => (
+                    <TicketRow
+                      key={line.id}
+                      line={line}
+                      currency={currency}
+                      first={index === 0}
+                      onQuantity={(quantity) => setLineQuantity(line.id, quantity)}
+                      onAdjust={() => openAdjust(line.id)}
+                      onRemove={() => removeLine(line.id)}
+                    />
+                  ))}
+                </ul>
+
+                <div className="border-t border-white/[0.08]">
+                  <div className="flex items-center justify-between px-4 pt-3 text-[13.5px]">
+                    <span className="text-neutral-400">Subtotal</span>
+                    <span className="mono text-white">
+                      {fmtMinor(ticketTotals.grossMinor, currency)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setDiscountOpen(true);
+                    }}
+                    className="row-hover mt-1 flex w-full items-center justify-between rounded-xl px-4 py-2 text-left text-[13.5px]"
+                  >
+                    <span className="text-neutral-400">Discount</span>
+                    <span className="flex items-center gap-1.5">
+                      {ticketTotals.discountMinor > 0 ? (
+                        <span className="mono text-white">
+                          −{fmtMinor(ticketTotals.discountMinor, currency)}
+                        </span>
+                      ) : (
+                        <span className="text-[13px] font-semibold text-[#0A84FF]">Add</span>
+                      )}
+                      <IconChevronDown size={14} className="chevron -rotate-90" />
+                    </span>
+                  </button>
+
+                  {taxLines.map((tax) => (
+                    <div
+                      key={tax.id}
+                      className="flex items-center justify-between px-4 py-1 text-[13.5px]"
+                    >
+                      <span className="text-neutral-400">
+                        {tax.label}
+                        <span className="text-neutral-600">
+                          {settings.taxMode === "inclusive" ? " · included" : " · added"}
+                        </span>
+                      </span>
+                      <span className="mono text-white">{fmtMinor(tax.minor, currency)}</span>
+                    </div>
+                  ))}
+
+                  <div className="mt-2 flex items-center justify-between border-t border-white/[0.08] px-4 py-3">
+                    <span className="text-[15.5px] font-semibold text-white">Total</span>
+                    <span className="mono text-[20px] font-semibold text-white">
+                      {fmtMinor(ticketTotals.totalMinor, currency)}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* On a phone this sits below the fold under the keypad, so the
+                sticky bar at the foot of the till carries it instead. */}
+            <div className="hidden space-y-2 px-4 pb-4 md:block">
+              {chargeBlockedReason && (
+                <p className="text-center text-[12px] leading-relaxed text-[#FF9F0A]">
+                  {chargeBlockedReason}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={chargeDisabled}
+                  onClick={charge}
+                  className="btn btn-primary min-w-0 flex-1"
+                >
+                  Charge {fmtMinor(ticketTotals.totalMinor, currency)}
+                </button>
+                {/* Beside Charge, never instead of it. Nothing behind this
+                    control needs a price or a receiving account, so
+                    `chargeBlockedReason` does not gate it — a shop with no
+                    quote can still take cash. */}
+                {!empty && (
+                  <TicketMenu
+                    onTender={() => {
+                      triggerHaptic("selection");
+                      setTenderOpen(true);
+                    }}
+                    onCustomerView={() => {
+                      triggerHaptic("light");
+                      setCustomerViewOpen(true);
+                    }}
+                    onAdjust={() => openAdjust(null)}
+                    onReceipt={() => openReceipt(ticketAsOrder)}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* The ticket column stacks under the keypad on a phone, which puts the
+          Charge button below the fold on every sale. This bar keeps the primary
+          action under the thumb. It is a real element at the end of the till, so
+          the last ticket line always scrolls clear of it, and it settles one gap
+          above the floating tab bar rather than behind it. */}
+      {!empty && (
+        <div className="sticky bottom-[calc(90px+env(safe-area-inset-bottom))] z-30 mt-3 md:hidden">
+          <div className="panel shadow-[0_18px_50px_-12px_rgba(0,0,0,0.95)]">
+            {chargeBlockedReason && (
+              <p className="border-b border-white/[0.08] px-4 py-2 text-center text-[11.5px] leading-relaxed text-[#FF9F0A]">
+                {chargeBlockedReason}
+              </p>
+            )}
+            <div className="flex items-center gap-3 py-2.5 pl-4 pr-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
+                  Total · {itemCount} {itemCount === 1 ? "item" : "items"}
+                </p>
+                <p className="mono truncate text-[17px] font-semibold leading-tight text-white">
+                  {fmtMinor(ticketTotals.totalMinor, currency)}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={chargeDisabled}
+                  onClick={charge}
+                  className="btn btn-primary shrink-0"
+                >
+                  Charge
+                </button>
+                <TicketMenu
+                  onTender={() => {
+                    triggerHaptic("selection");
+                    setTenderOpen(true);
+                  }}
+                  onCustomerView={() => {
+                    triggerHaptic("light");
+                    setCustomerViewOpen(true);
+                  }}
+                  onAdjust={() => openAdjust(null)}
+                  onReceipt={() => openReceipt(ticketAsOrder)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {optionsFor && (
+        <ModifierSheet
+          item={optionsFor}
+          groups={groupsFor(optionsFor)}
+          currency={currency}
+          onClose={() => setOptionsFor(null)}
+          onConfirm={(modifiers) => {
+            addItemToTicket(optionsFor, modifiers);
+            setOptionsFor(null);
+          }}
+        />
+      )}
+
+      {discountOpen && (
+        <AmountSheet
+          title="Discount"
+          subtitle={`Taken off ${fmtMinor(ticketTotals.grossMinor, currency)}`}
+          initialMinor={ticket.discountMinor}
+          currency={currency}
+          confirmLabel="Apply discount"
+          clearLabel={ticket.discountMinor > 0 ? "Remove discount" : undefined}
+          onClear={
+            ticket.discountMinor > 0
+              ? () => {
+                  setDiscount(0);
+                  setDiscountOpen(false);
+                }
+              : undefined
+          }
+          onConfirm={(minor) => {
+            setDiscount(minor);
+            setDiscountOpen(false);
+          }}
+          onClose={() => setDiscountOpen(false)}
+        />
+      )}
+
+      {/* The screen is turned to the customer here, so it carries one question,
+          large, with no wallet chrome and no way to wander off. */}
+      <Modal open={tipPromptOpen} onClose={() => setTipPromptOpen(false)} dismissable={false}>
+        <ModalHeader
+          title="Add a tip?"
+          subtitle={`${fmtMinor(ticketTotals.totalMinor, currency)} before any tip`}
+          onClose={() => setTipPromptOpen(false)}
+        />
+        <div className="p-5">
+          <p className="text-center text-[13px] text-neutral-400">
+            Turn the screen to your customer.
+          </p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {tipOptions.map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  raiseCharge(option.amountMinor);
+                }}
+                className="flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-2xl bg-white/[0.08] text-white transition-colors hover:bg-white/[0.13]"
+              >
+                <span className="text-[19px] font-semibold">{option.label}</span>
+                <span className="mono text-[12px] text-neutral-400">
+                  {fmtMinor(option.amountMinor, currency)}
+                </span>
+              </button>
+            ))}
+          </div>
+          {/* Equal weight: a customer must never feel steered into tipping. */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              raiseCharge(0);
+            }}
+            className="btn btn-secondary mt-2 w-full"
+          >
+            No tip
+          </button>
+        </div>
+      </Modal>
+
+      {/* ---------- the mock surfaces ---------- */}
+
+      <CashTenderSheet
+        open={tenderOpen}
+        onClose={() => setTenderOpen(false)}
+        totalMinor={ticketTotals.totalMinor}
+        currency={currency}
+        onSettled={(label, tender) => {
+          // The order is captured before the ticket goes, so the strip below can
+          // still offer its receipt — and it carries how the money actually
+          // arrived, so the receipt does not claim a rail it never used.
+          setSettled({ label, order: { ...ticketAsOrder, tender } });
+          clearTicket();
+        }}
+      />
+
+      <AdjustmentSheet
+        open={adjustOpen}
+        onClose={() => setAdjustOpen(false)}
+        lineId={adjustLineId}
+        lines={ticket.lines}
+        taxRates={settings.taxRates}
+        taxMode={settings.taxMode}
+        discountMinor={ticket.discountMinor}
+        tipMinor={ticket.tipMinor}
+        currency={currency}
+        orderNumber={PREVIEW_ORDER_NUMBER}
+        onApply={applyAdjustment}
+      />
+
+      <ReceiptSheet
+        open={receiptOrder !== null}
+        onClose={() => setReceiptOrder(null)}
+        order={receiptOrder ?? PREVIEW_ORDER}
+      />
+
+      <CustomerDisplay
+        open={customerViewOpen}
+        onClose={() => setCustomerViewOpen(false)}
+        amountMinor={ticketTotals.totalMinor}
+        currency={currency}
+        reference={reference}
+      />
+
+      <DuplicateChargeSheet
+        open={duplicateOpen}
+        onClose={() => setDuplicateOpen(false)}
+        reference={reference}
+        orderNumber={PREVIEW_ORDER_NUMBER}
+        currency={currency}
+        settled={duplicate.settled}
+        duplicate={duplicate.duplicate}
+      />
+    </section>
+  );
+}

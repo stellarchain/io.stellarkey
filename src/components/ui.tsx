@@ -801,8 +801,10 @@ export function SegmentedControl<T extends string>({
   options: { label: string; value: T; disabled?: boolean }[];
   onChange: (val: T) => void;
 }) {
+  // 5px of padding, not 4: it puts the control at 36px, the same height as
+  // `.search-field`, so the two line up wherever they sit side by side.
   return (
-    <div className="flex items-center rounded-xl bg-white/[0.08] p-1 backdrop-blur-md">
+    <div className="flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md">
       {options.map((opt) => {
         const active = opt.value === value;
         return (
