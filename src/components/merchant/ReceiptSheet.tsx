@@ -151,8 +151,8 @@ function wrapped(text: string, width = COLUMNS): string[] {
 }
 
 /**
- * The thermal specimen. Every entry is measured against `COLUMNS`, which is what
- * makes this a specimen and not a screenshot of a web page.
+ * The thermal layout. Every entry is measured against `COLUMNS`, so the output
+ * describes the physical roll instead of taking a screenshot of the web page.
  */
 function thermalLines(
   order: Order,
@@ -309,7 +309,7 @@ const PRINT_CSS = `
   html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; }
   body > *:not(.modal-overlay) { display: none !important; }
   /* The ambient gradients are pseudo-elements of body, so the rule above cannot
-     reach them and they would print as a colour wash behind the receipt. */
+     reach them and they otherwise print as a colour wash behind the receipt. */
   body::before, body::after { display: none !important; }
   .modal-overlay {
     position: static !important;
@@ -728,7 +728,7 @@ function ReceiptSheetInner({
                         {printer.name} is not reachable from a browser
                       </p>
                       <p className="mt-1 text-neutral-300">
-                        {printer.detail}. Until there is a native transport, the specimen below goes
+                        {printer.detail}. Until there is a native transport, the receipt below goes
                         to the system print dialog instead — a roll printer set as the system
                         printer prints it correctly.
                       </p>
@@ -738,7 +738,7 @@ function ReceiptSheetInner({
               )}
               <div className="flex items-center justify-between px-1">
                 <p className="text-[12.5px] text-neutral-400">
-                  {COLUMNS}-column specimen · 80 mm roll
+                  {COLUMNS}-column layout · 80 mm roll
                 </p>
                 <span className="mono text-[11.5px] text-neutral-500">
                   widest line {widest}/{COLUMNS}
