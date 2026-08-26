@@ -96,6 +96,92 @@ function shiftRecords(
   });
 }
 
+function invoiceRecords(
+  value: unknown,
+  staff: MerchantStore["staff"],
+): MerchantStore["invoices"] {
+  const invoices = idRecords<MerchantStore["invoices"][number]>(value) ?? [];
+  return invoices.map((invoice) => {
+    const issuedAt = invoice.issuedAt === null || isFiniteNumber(invoice.issuedAt)
+      ? invoice.issuedAt
+      : null;
+    const paidAt = invoice.paidAt === null || isFiniteNumber(invoice.paidAt)
+      ? invoice.paidAt
+      : null;
+    const createdAt = isFiniteNumber(invoice.createdAt)
+      ? invoice.createdAt
+      : issuedAt ?? paidAt ?? 1;
+    const createdBy = typeof invoice.createdBy === "string" && invoice.createdBy.trim()
+      ? invoice.createdBy
+      : "Imported record";
+    const createdById = typeof invoice.createdById === "string" && invoice.createdById
+      ? invoice.createdById
+      : staff.find((member) => member.name === createdBy)?.id ?? `legacy:${invoice.id}`;
+    const issuedBy = issuedAt === null
+      ? null
+      : typeof invoice.issuedBy === "string" && invoice.issuedBy.trim()
+        ? invoice.issuedBy
+        : createdBy;
+    const issuedById = issuedAt === null
+      ? null
+      : typeof invoice.issuedById === "string" && invoice.issuedById
+        ? invoice.issuedById
+        : staff.find((member) => member.name === issuedBy)?.id ?? createdById;
+    const quotes = recordArray<MerchantStore["invoices"][number]["quotes"][number]>(
+      invoice.quotes,
+      (quote) =>
+        acceptedAsset(quote.asset) &&
+        isFiniteNumber(quote.unitPriceMinorE6) &&
+        typeof quote.amount === "string" &&
+        isFiniteNumber(quote.quotedAt),
+    ) ?? [];
+    const payments = recordArray<MerchantStore["invoices"][number]["payments"][number]>(
+      invoice.payments,
+      (payment) =>
+        typeof payment.id === "string" &&
+        (payment.kind === "stellar" || payment.kind === "manual") &&
+        isFiniteNumber(payment.amountMinor),
+    ) ?? [];
+    return {
+      ...invoice,
+      network: invoice.network === "testnet" ? "testnet" : "mainnet",
+      destination: nullableString(invoice.destination, null),
+      quotes,
+      payments,
+      createdAt,
+      updatedAt: isFiniteNumber(invoice.updatedAt)
+        ? invoice.updatedAt
+        : paidAt ?? issuedAt ?? createdAt,
+      createdById,
+      createdBy,
+      issuedById,
+      issuedBy,
+      voidedAt:
+        invoice.voidedAt === null || isFiniteNumber(invoice.voidedAt)
+          ? invoice.voidedAt
+          : null,
+      voidedById: nullableString(invoice.voidedById, null),
+      voidedBy: nullableString(invoice.voidedBy, null),
+      voidReason: nullableString(invoice.voidReason, null),
+    };
+  });
+}
+
+function nextInvoiceSequence(
+  value: unknown,
+  invoices: MerchantStore["invoices"],
+  fallback: number,
+): number {
+  const stored = positiveInteger(value, fallback);
+  const afterHighest = invoices.reduce((next, invoice) => {
+    const match = /^INV-\d{4}-(\d+)$/.exec(invoice.number);
+    if (!match) return next;
+    const sequence = Number(match[1]);
+    return Number.isSafeInteger(sequence) ? Math.max(next, sequence + 1) : next;
+  }, fallback);
+  return Math.max(stored, afterHighest);
+}
+
 function orderRecords(value: unknown): MerchantStore["orders"] {
   const orders = idRecords<MerchantStore["orders"][number]>(value) ?? [];
   return orders.map((order) => {
@@ -323,6 +409,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
   const terminalValue = isRecord(value.terminal) ? value.terminal : {};
   const settlementValue = isRecord(value.settlementRule) ? value.settlementRule : {};
   const staff = idRecords<MerchantStore["staff"][number]>(value.staff) ?? [];
+  const invoices = invoiceRecords(value.invoices, staff);
   const requestedActiveStaffId = nullableString(value.activeStaffId, null);
   const tillTextSize =
     value.tillTextSize === "standard" ||
@@ -349,7 +436,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
         ? requestedActiveStaffId
         : null,
     shifts: shiftRecords(value.shifts, settings, staff),
-    invoices: idRecords<MerchantStore["invoices"][number]>(value.invoices) ?? [],
+    invoices,
     counterCodes: idRecords<MerchantStore["counterCodes"][number]>(value.counterCodes) ?? [],
     counterPayments:
       idRecords<MerchantStore["counterPayments"][number]>(value.counterPayments) ?? [],
@@ -402,7 +489,11 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     tillTextSize,
     nextOrderNumber: positiveInteger(value.nextOrderNumber, base.nextOrderNumber),
     nextShiftNumber: positiveInteger(value.nextShiftNumber, base.nextShiftNumber),
-    nextInvoiceNumber: positiveInteger(value.nextInvoiceNumber, base.nextInvoiceNumber),
+    nextInvoiceNumber: nextInvoiceSequence(
+      value.nextInvoiceNumber,
+      invoices,
+      base.nextInvoiceNumber,
+    ),
     cursors: isRecord(value.cursors)
       ? (value.cursors as MerchantStore["cursors"])
       : base.cursors,

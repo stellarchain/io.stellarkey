@@ -477,6 +477,23 @@ export interface InvoiceLine {
   taxRateId: string;
 }
 
+export interface InvoicePayment {
+  /** Horizon operation ID or a locally minted manual-audit ID. */
+  id: string;
+  kind: "stellar" | "manual";
+  network: NetworkKey;
+  amountMinor: Minor;
+  asset: AcceptedAsset | null;
+  amount: StellarAmount | null;
+  transactionHash: string | null;
+  from: string | null;
+  observedAt: number;
+  /** Null for automatic Horizon reconciliation. */
+  recordedById: string | null;
+  recordedBy: string | null;
+  note: string | null;
+}
+
 export interface Invoice {
   id: string;
   number: string;
@@ -487,6 +504,12 @@ export interface Invoice {
   /** The payer's address once one has paid, otherwise null. */
   customerAddress: string | null;
   reference: string;
+  network: NetworkKey;
+  /** Snapshotted at issue so a later settings change cannot redirect the document. */
+  destination: string | null;
+  /** Immutable issue-time prices. A remaining-balance request reuses their unit price. */
+  quotes: ChargeQuote[];
+  payments: InvoicePayment[];
   lines: InvoiceLine[];
   totals: OrderTotals;
   currency: FiatCurrency;
@@ -495,6 +518,16 @@ export interface Invoice {
   paidAt: number | null;
   paidMinor: Minor;
   note: string | null;
+  createdAt: number;
+  updatedAt: number;
+  createdById: string;
+  createdBy: string;
+  issuedById: string | null;
+  issuedBy: string | null;
+  voidedAt: number | null;
+  voidedById: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
 }
 
 export type CounterCodeKind = "fixed" | "open" | "tip";

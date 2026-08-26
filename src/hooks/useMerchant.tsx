@@ -77,6 +77,16 @@ import {
   openShift as openPersistedShift,
   unresolvedShiftFlows,
 } from "@/lib/merchant/shifts";
+import {
+  createInvoiceDraft as createPersistedInvoiceDraft,
+  duplicateInvoice as duplicatePersistedInvoice,
+  invoicePayUri,
+  issueInvoice as issuePersistedInvoice,
+  reconcileInvoicePayments,
+  recordManualInvoicePayment as recordPersistedManualInvoicePayment,
+  updateInvoiceDraft as updatePersistedInvoiceDraft,
+  voidInvoice as voidPersistedInvoice,
+} from "@/lib/merchant/invoices";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -85,6 +95,8 @@ import type {
   AdjustmentKind,
   CatalogueItem,
   Charge,
+  Invoice,
+  InvoiceLine,
   MerchantSettings,
   MerchantStore,
   Minor,
@@ -232,6 +244,34 @@ interface MerchantContextValue {
   adjustments: Adjustment[];
   peripherals: Peripheral[];
   nextOrderNumber: number;
+
+  invoices: Invoice[];
+  nextInvoiceNumber: number;
+  invoiceBlockedReason: string | null;
+  createInvoiceDraft: (input: {
+    customerName: string;
+    customerEmail?: string | null;
+    lines: InvoiceLine[];
+    dueAt?: number | null;
+    note?: string | null;
+  }) => Invoice;
+  updateInvoiceDraft: (input: {
+    invoiceId: string;
+    customerName: string;
+    customerEmail?: string | null;
+    lines: InvoiceLine[];
+    dueAt?: number | null;
+    note?: string | null;
+  }) => Invoice;
+  issueInvoice: (invoiceId: string) => Invoice;
+  recordManualInvoicePayment: (input: {
+    invoiceId: string;
+    amountMinor: Minor;
+    note?: string | null;
+  }) => Invoice;
+  voidInvoice: (invoiceId: string, reason: string) => Invoice;
+  duplicateInvoice: (invoiceId: string) => Invoice;
+  invoicePayUriFor: (invoice: Invoice, asset: AcceptedAsset) => string | null;
 
   shifts: Shift[];
   activeShift: Shift | null;
@@ -677,6 +717,25 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, [network, paymentBlockedReason, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
 
+  const invoiceBlockedReason = useMemo(() => {
+    if (!activeStaff) return "Choose an active staff member before managing invoices.";
+    if (!activeStaff.permissions.takePayment) {
+      return `${activeStaff.name} is not allowed to issue or settle invoices.`;
+    }
+    if (!settings.receivingPublicKey) {
+      return "Choose the account that receives payments in Merchant settings.";
+    }
+    if (settings.acceptedAssets.length === 0) {
+      return "Add at least one accepted asset in Merchant settings.";
+    }
+    if (quotableAssets.length === 0) {
+      return network === "mainnet"
+        ? "No live price is available for the assets you accept, so this invoice cannot be issued."
+        : "No price is available for the assets you accept, so this invoice cannot be issued.";
+    }
+    return null;
+  }, [activeStaff, network, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
+
   /* ---------------- ticket ---------------- */
 
   const ticketTotals = useMemo(
@@ -819,6 +878,132 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     quotableAssets
       .map((asset) => ({ asset, currencyPerUnit: rateFor(asset) as number }))
       .filter((quote) => quote.currencyPerUnit > 0), [quotableAssets, rateFor]);
+
+  /* ---------------- invoices ---------------- */
+
+  const requireInvoiceActor = useCallback((current: MerchantStore): StaffMember => {
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before managing invoices.");
+    if (!actor.permissions.takePayment) {
+      throw new Error(`${actor.name} is not allowed to issue or settle invoices.`);
+    }
+    return actor;
+  }, [staffSessionId]);
+
+  const createInvoiceDraft = useCallback((input: {
+    customerName: string;
+    customerEmail?: string | null;
+    lines: InvoiceLine[];
+    dueAt?: number | null;
+    note?: string | null;
+  }): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const created = createPersistedInvoiceDraft(current, {
+      ...input,
+      id: uid("inv"),
+      actor,
+      network,
+      now: Date.now(),
+    });
+    commitStore(created.store);
+    return created.invoice;
+  }, [commitStore, network, requireInvoiceActor]);
+
+  const updateInvoiceDraft = useCallback((input: {
+    invoiceId: string;
+    customerName: string;
+    customerEmail?: string | null;
+    lines: InvoiceLine[];
+    dueAt?: number | null;
+    note?: string | null;
+  }): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const updated = updatePersistedInvoiceDraft(current, {
+      ...input,
+      actor,
+      network,
+      now: Date.now(),
+    });
+    commitStore(updated.store);
+    return updated.invoice;
+  }, [commitStore, network, requireInvoiceActor]);
+
+  const issueInvoice = useCallback((invoiceId: string): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const destination = current.settings.receivingPublicKey;
+    if (!destination) {
+      throw new Error("Choose the account that receives payments in Merchant settings.");
+    }
+    const quotes = quoteInputs();
+    if (quotes.length === 0) {
+      throw new Error(
+        network === "mainnet"
+          ? "No live price is available for the assets you accept, so this invoice cannot be issued."
+          : "No price is available for the assets you accept, so this invoice cannot be issued.",
+      );
+    }
+    const issued = issuePersistedInvoice(current, {
+      invoiceId,
+      actor,
+      network,
+      destination,
+      quotes,
+      now: Date.now(),
+    });
+    commitStore(issued.store);
+    return issued.invoice;
+  }, [commitStore, network, quoteInputs, requireInvoiceActor]);
+
+  const recordManualInvoicePayment = useCallback((input: {
+    invoiceId: string;
+    amountMinor: Minor;
+    note?: string | null;
+  }): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const settled = recordPersistedManualInvoicePayment(current, {
+      ...input,
+      paymentId: uid("invpay"),
+      actor,
+      now: Date.now(),
+    });
+    commitStore(settled.store);
+    return settled.invoice;
+  }, [commitStore, requireInvoiceActor]);
+
+  const voidInvoice = useCallback((invoiceId: string, reason: string): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const voided = voidPersistedInvoice(current, {
+      invoiceId,
+      actor,
+      reason,
+      now: Date.now(),
+    });
+    commitStore(voided.store);
+    return voided.invoice;
+  }, [commitStore, requireInvoiceActor]);
+
+  const duplicateInvoice = useCallback((invoiceId: string): Invoice => {
+    const current = storeRef.current;
+    const actor = requireInvoiceActor(current);
+    const duplicate = duplicatePersistedInvoice(current, {
+      invoiceId,
+      id: uid("inv"),
+      actor,
+      now: Date.now(),
+    });
+    commitStore(duplicate.store);
+    return duplicate.invoice;
+  }, [commitStore, requireInvoiceActor]);
 
   const cryptoChargeFor = useCallback((
     order: Order,
@@ -1089,9 +1274,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     (payments: ObservedPayment[]) => {
       if (payments.length === 0) return;
       const current = storeRef.current;
-      const next = reconcileIncomingPayments(current, {
+      const invoiceResult = reconcileInvoicePayments(current, {
         network,
         payments,
+        now: Date.now(),
+      });
+      const next = reconcileIncomingPayments(invoiceResult.store, {
+        network,
+        payments: invoiceResult.unclaimed,
         now: Date.now(),
       });
       if (next !== current) commitStore(next);
@@ -1148,6 +1338,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [network, store.charges],
   );
 
+  const hasLiveInvoice = useMemo(
+    () =>
+      store.invoices.some(
+        (invoice) =>
+          invoice.network === network &&
+          (invoice.status === "sent" ||
+            invoice.status === "partially_paid" ||
+            invoice.status === "overdue"),
+      ),
+    [network, store.invoices],
+  );
+
   // `pollNow` is rebuilt whenever the cursor advances. The timer must not restart
   // that often, so it reads the latest callback through a ref instead of closing
   // over one — otherwise every tick would replay the same Horizon page.
@@ -1164,12 +1366,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     })();
     const interval = setInterval(() => {
       void pollRef.current();
-    }, hasLiveCharge ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+    }, hasLiveCharge || hasLiveInvoice ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     return () => {
       alive = false;
       clearInterval(interval);
     };
-  }, [enabled, hasLiveCharge, network, settings.receivingPublicKey]);
+  }, [enabled, hasLiveCharge, hasLiveInvoice, network, settings.receivingPublicKey]);
 
   /* ---------------- tray ---------------- */
 
@@ -1685,6 +1887,23 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     adjustments: store.adjustments,
     peripherals: store.peripherals,
     nextOrderNumber: store.nextOrderNumber,
+
+    invoices: store.invoices,
+    nextInvoiceNumber: store.nextInvoiceNumber,
+    invoiceBlockedReason,
+    createInvoiceDraft,
+    updateInvoiceDraft,
+    issueInvoice,
+    recordManualInvoicePayment,
+    voidInvoice,
+    duplicateInvoice,
+    invoicePayUriFor: (invoice, asset) => {
+      try {
+        return invoicePayUri(invoice, asset, settings.profile.name);
+      } catch {
+        return null;
+      }
+    },
 
     shifts: store.shifts,
     activeShift,
