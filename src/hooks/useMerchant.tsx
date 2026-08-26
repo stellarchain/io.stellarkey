@@ -24,15 +24,36 @@ import {
   type QuoteInput,
 } from "@/lib/merchant/charge";
 import { chargeStatusFor, matchPayment, type ObservedPayment } from "@/lib/merchant/match";
-import { lineGrossMinor, orderTotals, tipPresets } from "@/lib/merchant/money";
+import {
+  fromStroops,
+  lineGrossMinor,
+  orderTotals,
+  tipPresets,
+  toStroops,
+} from "@/lib/merchant/money";
 import { loadMerchantStore, saveMerchantStore } from "@/lib/merchant/storage";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
-import { createMerchantPinCredential } from "@/lib/merchant/pin";
+import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
 import {
   completeMerchantSetup,
   needsMerchantSetup,
   type MerchantSetupInput,
 } from "@/lib/merchant/setup";
+import {
+  availableRefundMinor,
+  recordRefundSubmission,
+  reconcileRefundSubmission,
+  refundReservesFunds,
+} from "@/lib/merchant/refunds";
+import {
+  addStaffMember,
+  canReleaseRefund,
+  createRefundRequest,
+  decideRefundRequest,
+  nextPinAttempt,
+  updateStaffMember,
+  type PinAttemptState,
+} from "@/lib/merchant/permissions";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -49,6 +70,10 @@ import type {
   OrderTotals,
   Refund,
   RefundReason,
+  RefundRequest,
+  StaffMember,
+  StaffRole,
+  TerminalDevice,
   UnmatchedPayment,
 } from "@/lib/merchant/types";
 
@@ -98,6 +123,10 @@ export interface InsightsHistory {
   hoursElapsed: number;
 }
 
+export type MerchantRefundOutcome =
+  | { kind: "refunded"; refund: Refund }
+  | { kind: "requested"; request: RefundRequest };
+
 interface MerchantContextValue {
   ready: boolean;
   enabled: boolean;
@@ -109,6 +138,18 @@ interface MerchantContextValue {
   completeSetup: (
     input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string },
   ) => Promise<void>;
+
+  staff: StaffMember[];
+  activeStaff: StaffMember | null;
+  terminal: TerminalDevice;
+  refundRequests: RefundRequest[];
+  switchStaff: (memberId: string, pin: string) => Promise<void>;
+  addStaff: (input: { name: string; role: StaffRole; pin: string }) => Promise<void>;
+  updateStaff: (
+    memberId: string,
+    patch: Partial<Pick<StaffMember, "name" | "role" | "permissions" | "active">>,
+  ) => void;
+  resetStaffPin: (memberId: string, pin: string) => Promise<void>;
 
   catalogue: CatalogueItem[];
   modifierGroups: ModifierGroup[];
@@ -154,6 +195,14 @@ interface MerchantContextValue {
     reason: RefundReason;
     note?: string;
   }) => Promise<Refund>;
+  submitRefund: (params: {
+    orderId: string;
+    amountMinor: Minor;
+    reason: RefundReason;
+    note?: string;
+  }) => Promise<MerchantRefundOutcome>;
+  approveRefundRequest: (requestId: string) => Promise<Refund>;
+  declineRefundRequest: (requestId: string) => void;
 
   watching: boolean;
   watchedLedger: number | null;
@@ -214,7 +263,14 @@ function todayWindow(): { start: number; elapsedMs: number } {
 }
 
 export function MerchantProvider({ children }: { children: React.ReactNode }) {
-  const { network, activeAccount, xlmPriceUsd, fiatRates, send } = useWallet();
+  const {
+    network,
+    activeAccount,
+    xlmPriceUsd,
+    fiatRates,
+    send,
+    submissionStatus,
+  } = useWallet();
 
   const [store, setStore] = useState<MerchantStore>(() => emptyStore());
   const [ready, setReady] = useState(false);
@@ -223,7 +279,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
+  const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
   const storeRef = useRef(store);
+  const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
 
@@ -254,6 +312,48 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const commitStore = useCallback((next: MerchantStore): void => {
+    if (!saveMerchantStore(next)) {
+      throw new Error("Merchant data could not be saved on this device. Free storage and try again.");
+    }
+    storeRef.current = next;
+    setStore(next);
+  }, []);
+
+  // The wallet owns canonical-hash tracking. Merchant state mirrors a final
+  // resolution so an ambiguous outbound refund is never presented as complete.
+  useEffect(() => {
+    if (!ready) return;
+    const current = storeRef.current;
+    let next = current;
+    for (const refund of current.refunds) {
+      if (
+        !refund.transactionHash ||
+        (refund.submissionStatus !== "accepted" && refund.submissionStatus !== "status_unknown")
+      ) {
+        continue;
+      }
+      const resolved = submissionStatus({
+        hash: refund.transactionHash,
+        network: refund.network,
+        status: refund.submissionStatus,
+      });
+      if (resolved !== refund.submissionStatus) {
+        next = reconcileRefundSubmission(next, refund.id, resolved);
+      }
+    }
+    if (next === current) return;
+    try {
+      commitStore(next);
+    } catch (error) {
+      setWatchError(
+        error instanceof Error
+          ? error.message
+          : "A tracked refund changed status but could not be saved on this device.",
+      );
+    }
+  }, [commitStore, ready, store.refunds, submissionStatus]);
+
   const settings = store.settings;
   const enabled = settings.enabled;
   const configured = !needsMerchantSetup(settings, store.staff);
@@ -268,14 +368,85 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         { ...details, pinDigest },
         { now, ownerId: uid("staff") },
       );
-      if (!saveMerchantStore(next)) {
-        throw new Error("Merchant setup could not be saved on this device. Free storage and try again.");
-      }
-      storeRef.current = next;
-      setStore(next);
+      commitStore(next);
+      setStaffSessionId(next.activeStaffId);
     },
-    [],
+    [commitStore],
   );
+
+  const activeStaff = useMemo(
+    () =>
+      staffSessionId === store.activeStaffId
+        ? store.staff.find((member) => member.id === staffSessionId && member.active) ?? null
+        : null,
+    [staffSessionId, store.activeStaffId, store.staff],
+  );
+
+  const switchStaff = useCallback(async (memberId: string, pin: string): Promise<void> => {
+    const current = storeRef.current;
+    const member = current.staff.find((entry) => entry.id === memberId && entry.active);
+    if (!member?.pinDigest) throw new Error("This staff member does not have a PIN yet.");
+    const now = Date.now();
+    const prior = pinAttempts.current.get(memberId) ?? { failures: 0, blockedUntil: 0 };
+    if (now < prior.blockedUntil) {
+      const seconds = Math.max(1, Math.ceil((prior.blockedUntil - now) / 1000));
+      throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
+    }
+    const verified = await verifyMerchantPin(pin, member.pinDigest);
+    const attempt = nextPinAttempt(prior, verified, now);
+    pinAttempts.current.set(memberId, attempt.state);
+    if (!verified) {
+      throw new Error(
+        attempt.blocked
+          ? "Too many wrong PINs. Try again in 30 seconds."
+          : "That PIN is not correct.",
+      );
+    }
+    commitStore({ ...current, activeStaffId: member.id });
+    setStaffSessionId(member.id);
+  }, [commitStore]);
+
+  const addStaff = useCallback(async ({
+    name,
+    role,
+    pin,
+  }: {
+    name: string;
+    role: StaffRole;
+    pin: string;
+  }): Promise<void> => {
+    const actorId = staffSessionId;
+    if (!actorId) throw new Error("Choose an owner before adding staff.");
+    const pinDigest = await createMerchantPinCredential(pin);
+    const next = addStaffMember(storeRef.current, actorId, {
+      id: uid("staff"),
+      name,
+      role,
+      pinDigest,
+      now: Date.now(),
+    });
+    commitStore(next);
+  }, [commitStore, staffSessionId]);
+
+  const updateStaff = useCallback((
+    memberId: string,
+    patch: Partial<Pick<StaffMember, "name" | "role" | "permissions" | "active">>,
+  ): void => {
+    const actorId = staffSessionId;
+    if (!actorId) throw new Error("Choose an owner before changing staff.");
+    commitStore(updateStaffMember(storeRef.current, actorId, memberId, patch));
+  }, [commitStore, staffSessionId]);
+
+  const resetStaffPin = useCallback(async (memberId: string, pin: string): Promise<void> => {
+    const actorId = staffSessionId;
+    if (!actorId) throw new Error("Choose an owner before resetting a PIN.");
+    const pinDigest = await createMerchantPinCredential(pin);
+    commitStore(updateStaffMember(storeRef.current, actorId, memberId, {
+      pinDigest,
+      pinSetAt: Date.now(),
+    }));
+    pinAttempts.current.delete(memberId);
+  }, [commitStore, staffSessionId]);
 
   /* ---------------- prices ---------------- */
 
@@ -342,6 +513,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const chargeBlockedReason = useMemo(() => {
+    if (!activeStaff) return "Choose an active staff member before taking a payment.";
+    if (!activeStaff.permissions.takePayment) return `${activeStaff.name} is not allowed to take payments.`;
     if (!settings.receivingPublicKey) return "Choose the account that receives payments in Merchant settings.";
     if (settings.acceptedAssets.length === 0) return "Add at least one accepted asset in Merchant settings.";
     if (quotableAssets.length === 0) {
@@ -350,7 +523,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         : "No price is available for the assets you accept.";
     }
     return null;
-  }, [network, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
+  }, [activeStaff, network, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
 
   /* ---------------- ticket ---------------- */
 
@@ -481,7 +654,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       totals,
       currency: settings.currency,
       tender: [],
-      staffName: activeAccount?.label ?? "Till",
+      staffName: activeStaff?.name ?? "Till",
       terminalName: settings.terminalName,
       createdAt: now,
       paidAt: null,
@@ -505,7 +678,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     clearTicket();
     return charge;
   }, [
-    activeAccount?.label,
+    activeStaff?.name,
     chargeBlockedReason,
     clearTicket,
     network,
@@ -738,23 +911,48 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       amountMinor,
       reason,
       note,
+      approvalRequestId,
     }: {
       orderId: string;
       amountMinor: Minor;
       reason: RefundReason;
       note?: string;
+      approvalRequestId?: string;
     }): Promise<Refund> => {
-      const order = store.orders.find((o) => o.id === orderId);
-      const charge = store.charges.find((c) => c.orderId === orderId && c.payment);
+      const current = storeRef.current;
+      const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
+      if (!canReleaseRefund(member, amountMinor)) {
+        throw new Error("This refund needs approval from a staff member with a higher ceiling.");
+      }
+      const order = current.orders.find((entry) => entry.id === orderId);
+      const charge = current.charges.find((entry) => entry.orderId === orderId && entry.payment);
       if (!order || !charge?.payment) throw new Error("This order has no settled payment to refund.");
-      const quote = quoteFor(charge, charge.payment.asset);
-      if (!quote) throw new Error("The paid asset is no longer quoted on this charge.");
+      if (order.network !== network) throw new Error("Switch to the order's Stellar network before refunding it.");
+      if (activeAccount?.publicKey !== charge.destination) {
+        throw new Error("Switch to the receiving account that took this payment before refunding it.");
+      }
+      const priorRefunds = current.refunds.filter(
+        (refund) => refund.orderId === orderId && refundReservesFunds(refund),
+      );
+      const refundedMinor = priorRefunds.reduce((sum, refund) => sum + refund.amountMinor, 0);
+      const remainingMinor = availableRefundMinor(current, orderId, approvalRequestId);
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || amountMinor > remainingMinor) {
+        throw new Error(`Only ${remainingMinor} minor units remain refundable on this order.`);
+      }
 
-      const portion = Math.min(amountMinor, order.totals.totalMinor);
-      const amount =
-        portion === order.totals.totalMinor
-          ? charge.payment.amount
-          : (Number(charge.payment.amount) * (portion / order.totals.totalMinor)).toFixed(7);
+      // Calculate against cumulative refunded value so repeated partial refunds
+      // return every final stroop without floating-point drift.
+      const paymentStroops = toStroops(charge.payment.amount);
+      const priorRefundStroops = priorRefunds.reduce(
+        (sum, refund) => sum + toStroops(refund.amount),
+        BigInt(0),
+      );
+      const cumulativeMinor = refundedMinor + amountMinor;
+      const cumulativeStroops =
+        (paymentStroops * BigInt(cumulativeMinor)) / BigInt(order.totals.totalMinor);
+      const refundStroops = cumulativeStroops - priorRefundStroops;
+      if (refundStroops <= BigInt(0)) throw new Error("This refund is below the asset's minimum precision.");
+      const amount = fromStroops(refundStroops);
 
       const result = await send({
         destination: charge.payment.from,
@@ -767,36 +965,91 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const refund: Refund = {
         id: uid("rfd"),
         orderId,
-        network,
-        amountMinor: portion,
+        network: order.network,
+        amountMinor,
         asset: charge.payment.asset,
         amount,
         destination: charge.payment.from,
         reason,
-        note: note ?? null,
+        note: note?.trim() || null,
         transactionHash: result.hash,
+        submissionStatus: result.status,
         createdAt: Date.now(),
       };
 
-      persist((prev) => ({
-        ...prev,
-        refunds: [refund, ...prev.refunds],
-        orders: prev.orders.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                status:
-                  portion >= o.totals.totalMinor
-                    ? ("refunded" as const)
-                    : ("partially_refunded" as const),
-              }
-            : o,
-        ),
-      }));
+      const latest = storeRef.current;
+      commitStore(recordRefundSubmission(latest, refund));
       return refund;
     },
-    [network, persist, send, store.charges, store.orders],
+    [activeAccount?.publicKey, commitStore, network, send, staffSessionId],
   );
+
+  const submitRefund = useCallback(async (params: {
+    orderId: string;
+    amountMinor: Minor;
+    reason: RefundReason;
+    note?: string;
+  }): Promise<MerchantRefundOutcome> => {
+    const current = storeRef.current;
+    const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
+    if (canReleaseRefund(member, params.amountMinor)) {
+      return { kind: "refunded", refund: await refundOrder(params) };
+    }
+    if (!member) throw new Error("Choose a staff member before requesting a refund.");
+    const order = current.orders.find((entry) => entry.id === params.orderId);
+    if (!order || params.amountMinor > availableRefundMinor(current, params.orderId)) {
+      throw new Error("That amount is no longer refundable on this order.");
+    }
+    const requested = createRefundRequest(current, {
+      id: uid("rr"),
+      ...params,
+      requestedById: member.id,
+      now: Date.now(),
+    });
+    commitStore(requested.store);
+    return { kind: "requested", request: requested.request };
+  }, [commitStore, refundOrder, staffSessionId]);
+
+  const approveRefundRequest = useCallback(async (requestId: string): Promise<Refund> => {
+    const before = storeRef.current;
+    const request = before.refundRequests.find((entry) => entry.id === requestId);
+    const reviewerId = staffSessionId;
+    if (!request || !reviewerId) throw new Error("That refund request is no longer available.");
+    // Validate authority before opening the wallet signing path.
+    decideRefundRequest(before, {
+      requestId,
+      reviewerId,
+      decision: "approved",
+      now: Date.now(),
+      refundId: "authority-check",
+    });
+    const refund = await refundOrder({
+      orderId: request.orderId,
+      amountMinor: request.amountMinor,
+      reason: request.reason,
+      note: request.note ?? undefined,
+      approvalRequestId: request.id,
+    });
+    commitStore(decideRefundRequest(storeRef.current, {
+      requestId,
+      reviewerId,
+      decision: "approved",
+      now: Date.now(),
+      refundId: refund.id,
+    }));
+    return refund;
+  }, [commitStore, refundOrder, staffSessionId]);
+
+  const declineRefundRequest = useCallback((requestId: string): void => {
+    const current = storeRef.current;
+    if (!staffSessionId) throw new Error("Choose a staff member before reviewing refunds.");
+    commitStore(decideRefundRequest(current, {
+      requestId,
+      reviewerId: staffSessionId,
+      decision: "declined",
+      now: Date.now(),
+    }));
+  }, [commitStore, staffSessionId]);
 
   /* ---------------- derived ---------------- */
 
@@ -809,7 +1062,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     const tipsMinor = paid.reduce((sum, o) => sum + o.totals.tipMinor, 0);
     const taxMinor = paid.reduce((sum, o) => sum + o.totals.taxMinor, 0);
     const refundedMinor = store.refunds
-      .filter((r) => r.network === network && r.createdAt >= from)
+      .filter(
+        (r) =>
+          r.network === network &&
+          r.createdAt >= from &&
+          r.submissionStatus === "confirmed",
+      )
       .reduce((sum, r) => sum + r.amountMinor, 0);
 
     const hours = new Map<number, { orders: number; takingsMinor: Minor }>();
@@ -973,6 +1231,15 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
     completeSetup,
 
+    staff: store.staff,
+    activeStaff,
+    terminal: store.terminal,
+    refundRequests: store.refundRequests,
+    switchStaff,
+    addStaff,
+    updateStaff,
+    resetStaffPin,
+
     catalogue: store.catalogue,
     modifierGroups: store.modifierGroups,
     upsertItem: (item) =>
@@ -1018,6 +1285,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     attachPayment,
     dismissUnmatched,
     refundOrder,
+    submitRefund,
+    approveRefundRequest,
+    declineRefundRequest,
 
     watching: enabled && Boolean(settings.receivingPublicKey),
     watchedLedger,

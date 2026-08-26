@@ -59,6 +59,22 @@ function idRecords<T>(value: unknown): T[] | null {
   return recordArray<T>(value, (entry) => typeof entry.id === "string");
 }
 
+function refundRecords(value: unknown): MerchantStore["refunds"] {
+  const refunds = idRecords<MerchantStore["refunds"][number]>(value) ?? [];
+  return refunds.map((refund) => ({
+    ...refund,
+    // Refunds written before outbound lifecycle tracking were presented as
+    // completed, so preserve that historical meaning during the v1/v2 read.
+    submissionStatus:
+      refund.submissionStatus === "accepted" ||
+      refund.submissionStatus === "confirmed" ||
+      refund.submissionStatus === "status_unknown" ||
+      refund.submissionStatus === "failed"
+        ? refund.submissionStatus
+        : "confirmed",
+  }));
+}
+
 function acceptedAsset(value: unknown): value is AcceptedAsset {
   return (
     isRecord(value) &&
@@ -190,7 +206,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
       base.modifierGroups,
     orders: idRecords<MerchantStore["orders"][number]>(value.orders) ?? [],
     charges: idRecords<MerchantStore["charges"][number]>(value.charges) ?? [],
-    refunds: idRecords<MerchantStore["refunds"][number]>(value.refunds) ?? [],
+    refunds: refundRecords(value.refunds),
     unmatched: idRecords<MerchantStore["unmatched"][number]>(value.unmatched) ?? [],
     staff,
     activeStaffId:

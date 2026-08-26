@@ -1,33 +1,17 @@
 "use client";
 
-/**
- * MOCK — the Settings sub-page for who may work the till on this device.
- *
- * What is mocked: the roster (`MOCK_STAFF`), the refund queue
- * (`MOCK_REFUND_REQUESTS`, via `RefundRequestsPanel`) and today's per-member
- * takings (derived from `MOCK_SHIFT` by `shiftStaffLines`). Editing a role, a
- * permission, a refund ceiling and resetting a PIN all move local state and
- * raise a toast; the fixtures are never mutated and nothing is written.
- *
- * Staff are roles held on this device, not accounts: nobody signs in from
- * anywhere, a member exists because this app says so, and the whole matrix is
- * read out of local storage while the till runs. One install is one till — the
- * roster, the order sequence and the unconfirmed queue all belong to it alone.
- *
- * What a real implementation replaces: the fixtures become the merchant store's
- * own staff records, Save writes the permission matrix through it, and "Reset
- * PIN" salts and digests a new PIN *outside* the vault (it must be checkable
- * while the vault is locked, and it can never sign). Nothing here writes, signs,
- * or reaches Horizon.
- */
-
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_NOW, MOCK_STAFF, MOCK_TERMINAL } from "@/lib/merchant/mock";
+import { defaultPermissionsFor } from "@/lib/merchant/permissions";
 import { fmtMinor } from "@/lib/merchant/money";
-import type { StaffMember, StaffPermissions, StaffRole } from "@/lib/merchant/types";
+import type {
+  StaffMember,
+  StaffPermissions,
+  StaffRole,
+  TerminalDevice,
+} from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import {
   Avatar,
@@ -43,7 +27,6 @@ import { IconAlert, IconLock } from "../icons";
 import { IconClock, IconTerminal } from "./icons";
 import { MerchantDisclosure } from "./Disclosure";
 import { RefundRequestsPanel } from "./RefundRequestsPanel";
-import { shiftStaffLines } from "./ShiftSheet";
 
 /** Said once, then reused by the chip and the disclosure beside it. */
 
@@ -76,18 +59,8 @@ const PERMISSION_ROWS: { key: SwitchPermission; label: string; sub: string }[] =
 
 const CEILING_PRESETS: number[] = [0, 1000, 2000, 5000, 10000];
 
-/**
- * The device this app is running on, and the only one there is. The name is a
- * real setting — the shop types it in Merchant settings — while the build number
- * and the unconfirmed queue come from the fixture; a wired screen reads the
- * build it was compiled from and counts the charges the local store has not yet
- * seen close.
- */
-const DEVICE = MOCK_TERMINAL;
-
-/** Fixtures are UTC instants, and MOCK_NOW is the shop's clock. */
 function fmtAgo(ts: number): string {
-  const seconds = Math.max(0, Math.round((MOCK_NOW - ts) / 1000));
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
   if (seconds < 60) return `${seconds} seconds ago`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
@@ -104,32 +77,72 @@ function ceilingLabel(ceiling: number | null, currency: FiatCurrency): string {
 }
 
 interface StaffEdit {
+  name: string;
+  active: boolean;
   role: StaffRole;
   permissions: StaffPermissions;
 }
 
 export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
-  const { settings } = useMerchant();
+  const {
+    settings,
+    staff: members,
+    activeStaff,
+    terminal,
+    orders,
+    charges,
+    switchStaff,
+    addStaff,
+    updateStaff,
+    resetStaffPin,
+  } = useMerchant();
   const { toast } = useToast();
   const currency = settings.currency;
 
-  const [edits, setEdits] = useState<Record<string, StaffEdit>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
-  // Retained so the sheet keeps its contents while it animates out.
-  const [lastEditingId, setLastEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [switchingTo, setSwitchingTo] = useState(activeStaff?.id ?? "");
+  const [switchPin, setSwitchPin] = useState("");
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
-  const takingsById = useMemo(
-    () => new Map(shiftStaffLines().map((line) => [line.id, line])),
-    [],
-  );
+  const takingsById = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const byName = new Map<string, { takingsMinor: number; orderCount: number }>();
+    for (const order of orders) {
+      if (order.paidAt === null || order.paidAt < start.getTime()) continue;
+      const entry = byName.get(order.staffName) ?? { takingsMinor: 0, orderCount: 0 };
+      entry.takingsMinor += order.totals.totalMinor;
+      entry.orderCount += 1;
+      byName.set(order.staffName, entry);
+    }
+    return new Map(
+      members.map((member) => [member.id, byName.get(member.name) ?? { takingsMinor: 0, orderCount: 0 }]),
+    );
+  }, [members, orders]);
 
-  const members: StaffMember[] = MOCK_STAFF.map((member) =>
-    edits[member.id] ? { ...member, ...edits[member.id] } : member,
-  );
-  if (editingId !== null && editingId !== lastEditingId) setLastEditingId(editingId);
-  const editing = members.find((member) => member.id === (editingId ?? lastEditingId)) ?? null;
+  const editing = members.find((member) => member.id === editingId) ?? null;
 
   const deviceName = settings.terminalName.trim() || "This device";
+  const queuedCharges = charges.filter((charge) => charge.status === "awaiting").length;
+
+  async function handleSwitch() {
+    if (!switchingTo || switching) return;
+    setSwitching(true);
+    setSwitchError(null);
+    try {
+      await switchStaff(switchingTo, switchPin);
+      setSwitchPin("");
+      triggerHaptic("success");
+      toast(`Till switched to ${members.find((member) => member.id === switchingTo)?.name ?? "staff"}`, "success");
+    } catch (error) {
+      triggerHaptic("error");
+      setSwitchError(error instanceof Error ? error.message : "The till could not switch staff.");
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   return (
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
@@ -166,14 +179,64 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
       <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* ---------------- staff ---------------- */}
         <div className="space-y-4">
+          <section aria-labelledby="active-operator-title" className="panel p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 id="active-operator-title" className="text-[15px] font-semibold text-white">
+                  Active operator
+                </h2>
+                <p className="mt-0.5 text-[12px] text-neutral-400">
+                  Orders and approvals are attributed to this person.
+                </p>
+              </div>
+              <span className="chip cursor-default">{activeStaff?.name ?? "None"}</span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
+              <Select
+                ariaLabel="Staff member to switch to"
+                value={switchingTo}
+                options={members
+                  .filter((member) => member.active)
+                  .map((member) => ({ value: member.id, label: member.name, sublabel: ROLE_LABEL[member.role] }))}
+                onChange={(value) => {
+                  setSwitchingTo(value);
+                  setSwitchPin("");
+                  setSwitchError(null);
+                }}
+              />
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={6}
+                value={switchPin}
+                onChange={(event) => setSwitchPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void handleSwitch();
+                }}
+                aria-label="Staff PIN"
+                placeholder="PIN"
+                className="input mono text-base sm:text-[13.5px]"
+              />
+              <Button loading={switching} disabled={!/^\d{4,6}$/.test(switchPin)} onClick={() => void handleSwitch()}>
+                Switch
+              </Button>
+            </div>
+            {switchError && <p role="alert" className="mt-2 text-[12px] text-[#FF6961]">{switchError}</p>}
+          </section>
+
           <section>
             <div className="flex items-baseline justify-between px-1 pb-2">
               <h2 className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                 Staff
               </h2>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                Takings today
-              </span>
+              <button
+                type="button"
+                className="text-[12px] font-semibold text-[#0A84FF] hover:text-[#64D2FF]"
+                onClick={() => setAdding(true)}
+              >
+                Add staff
+              </button>
             </div>
             <div className="list-group">
               {members.map((member, i) => (
@@ -197,7 +260,10 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* ---------------- this device ---------------- */}
-        <ThisDevice name={deviceName} />
+        <ThisDevice
+          device={{ ...terminal, name: deviceName }}
+          queuedCharges={queuedCharges}
+        />
       </div>
 
       <Modal open={editingId !== null} onClose={() => setEditingId(null)}>
@@ -208,21 +274,35 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
             currency={currency}
             onCancel={() => setEditingId(null)}
             onSave={(edit) => {
-              triggerHaptic("success");
-              setEdits((prev) => ({ ...prev, [editing.id]: edit }));
-              setEditingId(null);
-              toast(`${editing.name}'s permissions would be saved on this device.`, "success");
+              try {
+                updateStaff(editing.id, edit);
+                triggerHaptic("success");
+                setEditingId(null);
+                toast(`${edit.name.trim()}'s staff access was saved on this device.`, "success");
+              } catch (error) {
+                triggerHaptic("error");
+                toast(error instanceof Error ? error.message : "Staff permissions could not be saved.", "error");
+              }
             }}
-            onResetPin={() => {
-              triggerHaptic("medium");
-              toast(
-                editing.pinDigest
-                  ? `A new PIN for ${editing.name} would be salted, digested and stored outside the vault.`
-                  : `A first PIN for ${editing.name} would be salted, digested and stored outside the vault.`,
-              );
+            onResetPin={async (pin) => {
+              await resetStaffPin(editing.id, pin);
+              triggerHaptic("success");
+              toast(`${editing.name}'s PIN was reset`, "success");
             }}
           />
         )}
+      </Modal>
+
+      <Modal open={adding} onClose={() => setAdding(false)}>
+        <AddStaffForm
+          onCancel={() => setAdding(false)}
+          onAdd={async (input) => {
+            await addStaff(input);
+            setAdding(false);
+            triggerHaptic("success");
+            toast(`${input.name.trim()} was added to this till`, "success");
+          }}
+        />
       </Modal>
     </div>
   );
@@ -277,6 +357,11 @@ function StaffRow({
             {member.name}
           </span>
           <PinPill member={member} />
+          {!member.active && (
+            <span className="rounded-full bg-white/[0.08] px-2 py-[3px] text-[11px] font-semibold leading-none text-neutral-400">
+              Inactive
+            </span>
+          )}
         </span>
         <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
           {ROLE_LABEL[member.role]} ·{" "}
@@ -319,10 +404,16 @@ function StaffEditor({
   currency: FiatCurrency;
   onCancel: () => void;
   onSave: (edit: StaffEdit) => void;
-  onResetPin: () => void;
+  onResetPin: (pin: string) => Promise<void>;
 }) {
+  const [name, setName] = useState(member.name);
+  const [active, setActive] = useState(member.active);
   const [role, setRole] = useState<StaffRole>(member.role);
   const [permissions, setPermissions] = useState<StaffPermissions>(member.permissions);
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const ceilingOptions = useMemo(() => {
     const presets = CEILING_PRESETS.includes(permissions.refundCeilingMinor ?? -1)
@@ -358,6 +449,34 @@ function StaffEditor({
             </p>
           </div>
           <PinPill member={member} />
+        </div>
+
+        <div>
+          <span className="field-label">Name</span>
+          <input
+            type="text"
+            value={name}
+            maxLength={80}
+            onChange={(event) => setName(event.target.value)}
+            aria-label="Staff name"
+            className="input text-base sm:text-[13.5px]"
+          />
+        </div>
+
+        <div className="panel flex items-center gap-3.5 px-4 py-3.5">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15.5px] font-normal leading-tight text-white">
+              Active on this till
+            </span>
+            <span className="mt-0.5 block text-[12px] leading-relaxed text-neutral-400">
+              Inactive staff stay in historical records but cannot switch in or approve work.
+            </span>
+          </span>
+          <Toggle
+            checked={active}
+            label="Active on this till"
+            onChange={(next) => setActive(next ?? !active)}
+          />
         </div>
 
         <div>
@@ -440,8 +559,50 @@ function StaffEditor({
               A salted digest kept outside the vault. It authorises this till and nothing else: it
               cannot sign, and it cannot move money.
             </p>
-            <Button variant="secondary" onClick={onResetPin}>
-              {member.pinDigest === null ? "Set a PIN" : "Reset PIN"}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={6}
+                value={pin}
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                aria-label={`New PIN for ${member.name}`}
+                placeholder="New PIN"
+                className="input mono text-base sm:text-[13.5px]"
+              />
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={6}
+                value={pinConfirm}
+                onChange={(event) => setPinConfirm(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                aria-label={`Confirm new PIN for ${member.name}`}
+                placeholder="Confirm PIN"
+                className="input mono text-base sm:text-[13.5px]"
+              />
+            </div>
+            {pinError && <p role="alert" className="text-[12px] text-[#FF6961]">{pinError}</p>}
+            <Button
+              variant="secondary"
+              loading={pinBusy}
+              disabled={!/^\d{4,6}$/.test(pin) || pin !== pinConfirm}
+              onClick={() => {
+                setPinBusy(true);
+                setPinError(null);
+                void onResetPin(pin)
+                  .then(() => {
+                    setPin("");
+                    setPinConfirm("");
+                  })
+                  .catch((error: unknown) => {
+                    setPinError(error instanceof Error ? error.message : "The PIN could not be reset.");
+                  })
+                  .finally(() => setPinBusy(false));
+              }}
+            >
+              {member.pinDigest === null ? "Set PIN" : "Reset PIN"}
             </Button>
           </div>
         </section>
@@ -450,8 +611,108 @@ function StaffEditor({
           <Button variant="secondary" className="flex-1" onClick={onCancel}>
             Cancel
           </Button>
-          <Button className="flex-1" onClick={() => onSave({ role, permissions })}>
+          <Button
+            className="flex-1"
+            disabled={!name.trim()}
+            onClick={() => onSave({ name, active, role, permissions })}
+          >
             Save
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Add staff                                                           */
+/* ------------------------------------------------------------------ */
+
+function AddStaffForm({
+  onCancel,
+  onAdd,
+}: {
+  onCancel: () => void;
+  onAdd: (input: { name: string; role: StaffRole; pin: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<StaffRole>("server");
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = name.trim().length > 0 && /^\d{4,6}$/.test(pin) && pin === confirm;
+
+  return (
+    <>
+      <ModalHeader title="Add staff" subtitle="A local till role, never a wallet signer" onClose={busy ? undefined : onCancel} />
+      <div className="space-y-4 p-4 sm:p-5">
+        <div>
+          <span className="field-label">Name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            aria-label="Staff name"
+            className="input text-base sm:text-[13.5px]"
+          />
+        </div>
+        <div>
+          <span className="field-label">Role</span>
+          <SegmentedControl<StaffRole>
+            value={role}
+            options={ROLE_OPTIONS}
+            onChange={setRole}
+          />
+          <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">
+            Starts with {Object.values(defaultPermissionsFor(role)).filter((value) => value === true).length} enabled till permissions. The owner can tune them after creation.
+          </p>
+        </div>
+        <div>
+          <span className="field-label">PIN</span>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={6}
+              value={pin}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              aria-label="New staff PIN"
+              placeholder="4 to 6 digits"
+              className="input mono text-base sm:text-[13.5px]"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={6}
+              value={confirm}
+              onChange={(event) => setConfirm(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              aria-label="Confirm new staff PIN"
+              placeholder="Confirm PIN"
+              className="input mono text-base sm:text-[13.5px]"
+            />
+          </div>
+        </div>
+        {error && <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p>}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button variant="secondary" className="flex-1" disabled={busy} onClick={onCancel}>Cancel</Button>
+          <Button
+            className="flex-1"
+            loading={busy}
+            disabled={!valid}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              void onAdd({ name, role, pin })
+                .catch((cause: unknown) => {
+                  setError(cause instanceof Error ? cause.message : "Staff could not be added.");
+                })
+                .finally(() => setBusy(false));
+            }}
+          >
+            Add staff
           </Button>
         </div>
       </div>
@@ -469,8 +730,13 @@ function StaffEditor({
  * this app's own storage, and a second till would need a channel between them
  * that a self-custody wallet with no server does not have.
  */
-function ThisDevice({ name }: { name: string }) {
-  const queued = DEVICE.queuedCharges;
+function ThisDevice({
+  device,
+  queuedCharges,
+}: {
+  device: TerminalDevice;
+  queuedCharges: number;
+}) {
   return (
     <section aria-labelledby="device-title">
       <h2
@@ -490,10 +756,10 @@ function ThisDevice({ name }: { name: string }) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15.5px] font-normal leading-tight text-white">
-              {name}
+              {device.name}
             </span>
             <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-              Merchant Mode v{DEVICE.appVersion} · renamed in Merchant settings
+              Merchant Mode v{device.appVersion} · renamed in Merchant settings
             </span>
           </span>
         </div>
@@ -510,22 +776,22 @@ function ThisDevice({ name }: { name: string }) {
               Waiting to confirm
             </span>
             <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
-              Charges taken while this device is offline
+              Open charges still awaiting a matched payment
             </span>
           </span>
           <span
             className={`mono text-[14.5px] font-medium ${
-              queued > 0 ? "text-[#FF9F0A]" : "text-neutral-400"
+              queuedCharges > 0 ? "text-[#FF9F0A]" : "text-neutral-400"
             }`}
           >
-            {queued}
+            {queuedCharges}
           </span>
         </div>
       </div>
       <p className="px-1 pt-2 text-[12px] leading-relaxed text-neutral-400">
-        {queued > 0
-          ? "Charges taken while this device was offline sit in this app’s storage and confirm themselves as soon as Horizon answers again."
-          : "Anything taken while this device is offline waits in this app’s storage and confirms itself as soon as Horizon answers again."}
+        {queuedCharges > 0
+          ? "These charges remain on this device until Horizon observes and matches a payment, or staff voids them."
+          : "No charge is currently waiting for payment confirmation on this device."}
       </p>
     </section>
   );

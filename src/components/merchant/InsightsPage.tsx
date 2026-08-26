@@ -168,7 +168,13 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const taxRows = traded ? realTaxRows : MOCK_INSIGHTS.taxByRate;
 
   const refundsToday = useMemo(
-    () => refunds.filter((r) => r.network === network && r.createdAt >= dayStart),
+    () =>
+      refunds.filter(
+        (r) =>
+          r.network === network &&
+          r.createdAt >= dayStart &&
+          r.submissionStatus === "confirmed",
+      ),
     [dayStart, network, refunds],
   );
 
