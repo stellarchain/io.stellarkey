@@ -5,22 +5,11 @@ export const metadata: Metadata = {
   title: "Wallet — Stellar",
   description:
     "A self-custodial Stellar wallet. Keys are generated and encrypted in your browser and never leave your device.",
-  manifest: "/manifest.json",
   applicationName: "Wallet",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Wallet",
-  },
-  icons: {
-    icon: "/icon.svg",
-    apple: [
-      {
-        url: "/apple-touch-icon.png",
-        sizes: "180x180",
-        type: "image/png",
-      },
-    ],
   },
 };
 
