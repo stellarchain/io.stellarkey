@@ -37,6 +37,10 @@ import {
   loadMerchantStoreResult,
   saveMerchantStore,
 } from "@/lib/merchant/storage";
+import {
+  commitMerchantUpdate,
+  isMerchantStorageError,
+} from "@/lib/merchant/commit";
 import type { StorageIssue } from "@/lib/storage-load";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
@@ -248,6 +252,7 @@ export type MerchantRefundOutcome =
 interface MerchantContextValue {
   ready: boolean;
   storageIssue: StorageIssue | null;
+  storageError: string | null;
   exportRecoveryData: () => string | null;
   resetRecoveryData: () => void;
   online: boolean;
@@ -505,6 +510,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [storageIssue, setStorageIssue] = useState<StorageIssue | null>(null);
   const storageIssueRef = useRef<StorageIssue | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [ticket, setTicket] = useState<Ticket>({
     lines: [],
     discountMinor: 0,
@@ -556,28 +562,38 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const persist = useCallback((next: MerchantStore | ((prev: MerchantStore) => MerchantStore)) => {
-    if (storageIssueRef.current) {
-      throw new Error("Merchant data needs recovery before it can be changed.");
-    }
-    setStore((prev) => {
-      const value = typeof next === "function" ? next(prev) : next;
-      saveMerchantStore(value);
-      storeRef.current = value;
-      return value;
-    });
-  }, []);
+  const commitStore = useCallback(
+    (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): void => {
+      try {
+        commitMerchantUpdate({
+          current: storeRef.current,
+          update,
+          locked: Boolean(storageIssueRef.current),
+          save: saveMerchantStore,
+          publish: (next) => {
+            storeRef.current = next;
+            setStore(next);
+          },
+        });
+        setStorageError(null);
+      } catch (error) {
+        if (isMerchantStorageError(error)) setStorageError(error.message);
+        throw error;
+      }
+    },
+    [],
+  );
 
-  const commitStore = useCallback((next: MerchantStore): void => {
-    if (storageIssueRef.current) {
-      throw new Error("Merchant data needs recovery before it can be changed.");
-    }
-    if (!saveMerchantStore(next)) {
-      throw new Error("Merchant data could not be saved on this device. Free storage and try again.");
-    }
-    storeRef.current = next;
-    setStore(next);
-  }, []);
+  const persist = useCallback(
+    (update: MerchantStore | ((current: MerchantStore) => MerchantStore)) => {
+      try {
+        commitStore(update);
+      } catch (error) {
+        if (!isMerchantStorageError(error)) throw error;
+      }
+    },
+    [commitStore],
+  );
 
   const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
   const resetRecoveryData = useCallback(() => {
@@ -585,6 +601,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     const fresh = emptyStore();
     storageIssueRef.current = null;
     setStorageIssue(null);
+    setStorageError(null);
     storeRef.current = fresh;
     setStore(fresh);
   }, []);
@@ -615,11 +632,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     try {
       commitStore(next);
     } catch (error) {
-      setWatchError(
-        error instanceof Error
-          ? error.message
-          : "A tracked refund changed status but could not be saved on this device.",
-      );
+      if (!isMerchantStorageError(error)) throw error;
     }
   }, [commitStore, ready, store.refunds, submissionStatus]);
 
@@ -1717,22 +1730,22 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (!enabled) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      setStore((prev) => {
-        const stale = prev.charges.some((c) => c.status === "awaiting" && now >= c.expiresAt);
-        if (!stale) return prev;
-        const next = {
-          ...prev,
-          charges: prev.charges.map((c) =>
+      const current = storeRef.current;
+      const stale = current.charges.some((c) => c.status === "awaiting" && now >= c.expiresAt);
+      if (!stale) return;
+      try {
+        commitStore({
+          ...current,
+          charges: current.charges.map((c) =>
             c.status === "awaiting" && now >= c.expiresAt ? { ...c, status: "expired" as const } : c,
           ),
-        };
-        saveMerchantStore(next);
-        storeRef.current = next;
-        return next;
-      });
+        });
+      } catch (error) {
+        if (!isMerchantStorageError(error)) throw error;
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, [enabled]);
+  }, [commitStore, enabled]);
 
   /* ---------------- the watcher ---------------- */
 
@@ -1800,7 +1813,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       }
       setWatchError(null);
     } catch (error) {
-      setWatchError(describeWatchFailure(error));
+      if (isMerchantStorageError(error)) {
+        setWatchError(null);
+      } else {
+        setWatchError(describeWatchFailure(error));
+      }
     } finally {
       polling.current = false;
     }
@@ -2316,6 +2333,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const value: MerchantContextValue = {
     ready,
     storageIssue,
+    storageError,
     exportRecoveryData,
     resetRecoveryData,
     online,

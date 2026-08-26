@@ -131,6 +131,7 @@ export function MerchantPage({
   const {
     ready,
     storageIssue,
+    storageError,
     exportRecoveryData,
     resetRecoveryData,
     online,
@@ -254,7 +255,7 @@ export function MerchantPage({
   const showTray = needsAttention > 0 && sub !== "orders";
   const showChargeBlock = Boolean(chargeBlockedReason) && online;
   const showRuntime = !online || Boolean(watchError) || phase === "locked" || connectionRestored;
-  const showAlerts = showChargeBlock || showTray || showRuntime;
+  const showAlerts = Boolean(storageError) || showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
   const onBilling = sub === "invoices" || sub === "links";
 
@@ -282,6 +283,20 @@ export function MerchantPage({
     <section className="fade-up mx-auto w-full min-w-0 max-w-[1000px]">
       {showAlerts && (
         <div className="mb-4 space-y-2.5">
+          {storageError && (
+            <div role="alert">
+              <Notice tone="warn">
+                <span className="flex items-start gap-2.5">
+                  <IconAlert size={15} className="mt-[1px] shrink-0 text-[#FF9F0A]" />
+                  <span>
+                    <span className="font-semibold text-white">Changes are not being saved. </span>
+                    {storageError}
+                  </span>
+                </span>
+              </Notice>
+            </div>
+          )}
+
           {!online && (
             <OfflineBanner
               queuedCount={queuedChargeCount}
