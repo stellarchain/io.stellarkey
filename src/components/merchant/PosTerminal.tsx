@@ -384,9 +384,9 @@ function TicketMenu({
   return (
     <Dropdown
       align="right"
-      trigger={() => (
+      trigger={(_, triggerProps) => (
         <button
-          type="button"
+          {...triggerProps}
           aria-label="More ticket actions"
           className="btn btn-secondary w-11 shrink-0 !px-0"
         >
@@ -398,30 +398,33 @@ function TicketMenu({
         <div className="p-1">
           <button
             type="button"
+            role="menuitem"
             className="menu-item !rounded-xl"
             onClick={() => {
-              onTender();
               close();
+              onTender();
             }}
           >
             <IconWallet size={15} /> <span>Other tender</span>
           </button>
           <button
             type="button"
+            role="menuitem"
             className="menu-item !rounded-xl"
             onClick={() => {
-              onCustomerView();
               close();
+              onCustomerView();
             }}
           >
             <IconEye size={15} /> <span>Customer view</span>
           </button>
           <button
             type="button"
+            role="menuitem"
             className="menu-item !rounded-xl"
             onClick={() => {
-              onAdjust();
               close();
+              onAdjust();
             }}
           >
             <IconPercent size={15} /> <span>Discount, comp or void</span>

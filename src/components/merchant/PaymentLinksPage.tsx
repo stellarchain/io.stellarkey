@@ -367,18 +367,18 @@ function CodeRow({
         {/* Copying, editing and the poster are second-order: one menu, not three
             buttons repeated down every row. */}
         <Dropdown
-          trigger={(open) => (
-            /* The Dropdown wrapper is already the button; a nested one would be
-               a second tab stop. The name rides on the icon. */
-            <span
+          trigger={(open, triggerProps) => (
+            <button
+              {...triggerProps}
+              aria-label={`More actions for ${code.title}`}
               className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-colors before:absolute before:-inset-1.5 before:content-[''] ${
                 open
                   ? "bg-white/[0.10] text-white"
                   : "text-neutral-400 hover:bg-white/[0.08] hover:text-white"
               }`}
             >
-              <IconMore size={16} label={`More actions for ${code.title}`} />
-            </span>
+              <IconMore size={16} />
+            </button>
           )}
         >
           {(close) => (
@@ -386,6 +386,7 @@ function CodeRow({
               {canShare && (
                 <button
                   type="button"
+                  role="menuitem"
                   className="menu-item !rounded-xl"
                   onClick={() => {
                     close();
@@ -398,6 +399,7 @@ function CodeRow({
               )}
               <button
                 type="button"
+                role="menuitem"
                 className="menu-item !rounded-xl"
                 onClick={() => {
                   close();
@@ -409,6 +411,7 @@ function CodeRow({
               </button>
               <button
                 type="button"
+                role="menuitem"
                 className="menu-item !rounded-xl"
                 onClick={() => {
                   close();
