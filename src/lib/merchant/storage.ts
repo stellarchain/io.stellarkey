@@ -7,6 +7,7 @@ import type {
   MerchantStore,
   TipSettings,
 } from "./types";
+import type { StorageLoadResult } from "../storage-load";
 
 /**
  * Merchant data uses the wallet prefix so the wallet reset path owns it too.
@@ -685,30 +686,64 @@ export function decodeMerchantStore(value: unknown): MerchantStore | null {
   return null;
 }
 
-export function loadMerchantStore(): MerchantStore {
-  if (typeof window === "undefined") return emptyStore();
+export function loadMerchantStoreResult(): StorageLoadResult<MerchantStore> {
+  if (typeof window === "undefined") return { kind: "absent" };
 
   const currentRaw = window.localStorage.getItem(KEY);
   if (currentRaw !== null) {
     try {
-      return decodeMerchantStore(JSON.parse(currentRaw)) ?? emptyStore();
+      const parsed: unknown = JSON.parse(currentRaw);
+      if (isRecord(parsed) && typeof parsed.version === "number" && parsed.version > 2) {
+        return {
+          kind: "future",
+          raw: currentRaw,
+          version: parsed.version,
+          message: `Merchant data uses a newer schema (${parsed.version}).`,
+        };
+      }
+      const decoded = decodeMerchantStore(parsed);
+      return decoded
+        ? { kind: "ready", value: decoded }
+        : {
+            kind: "corrupt",
+            raw: currentRaw,
+            message: "Merchant data is incomplete or uses an unsupported schema.",
+          };
     } catch {
-      // Preserve the unreadable payload for recovery; do not overwrite it here.
-      return emptyStore();
+      return {
+        kind: "corrupt",
+        raw: currentRaw,
+        message: "Merchant data is not valid JSON.",
+      };
     }
   }
 
   const legacyRaw = window.localStorage.getItem(LEGACY_KEY);
-  if (legacyRaw === null) return emptyStore();
+  if (legacyRaw === null) return { kind: "absent" };
   try {
     const parsed: unknown = JSON.parse(legacyRaw);
-    if (!isLegacyStore(parsed)) return emptyStore();
+    if (!isLegacyStore(parsed)) {
+      return {
+        kind: "corrupt",
+        raw: legacyRaw,
+        message: "Legacy merchant data is incomplete or malformed.",
+      };
+    }
     const migrated = migrateV1(parsed);
     saveMerchantStore(migrated);
-    return migrated;
+    return { kind: "ready", value: migrated };
   } catch {
-    return emptyStore();
+    return {
+      kind: "corrupt",
+      raw: legacyRaw,
+      message: "Legacy merchant data is not valid JSON.",
+    };
   }
+}
+
+export function loadMerchantStore(): MerchantStore {
+  const result = loadMerchantStoreResult();
+  return result.kind === "ready" ? result.value : emptyStore();
 }
 
 /** Returns false when quota or storage policy prevents a durable commit. */

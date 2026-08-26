@@ -8,6 +8,7 @@ import {
   validateMnemonic,
 } from "./hd";
 import type { AccountMeta, StoredAccount, VaultFile } from "./types";
+import type { StorageLoadResult } from "./storage-load";
 
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
@@ -64,19 +65,81 @@ export function canUseBiometrics(): boolean {
   return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
 }
 
-function readVault(): VaultFile | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(VAULT_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as VaultFile;
-    if (!parsed || (parsed.version !== 1 && parsed.version !== 2) || !Array.isArray(parsed.accounts)) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStoredAccount(value: unknown): value is StoredAccount {
+  if (!isRecord(value)) return false;
+  if (typeof value.id !== "string" || !value.id) return false;
+  if (typeof value.label !== "string") return false;
+  if (typeof value.publicKey !== "string" || !StrKey.isValidEd25519PublicKey(value.publicKey)) {
+    return false;
+  }
+  if (typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt)) return false;
+  if (value.emoji !== undefined && typeof value.emoji !== "string") return false;
+  if (
+    value.index !== undefined &&
+    (typeof value.index !== "number" || !Number.isSafeInteger(value.index) || value.index < 0)
+  ) {
+    return false;
+  }
+  if (value.path !== undefined && typeof value.path !== "string") return false;
+  if (value.secret !== undefined && !isEncryptedPayload(value.secret)) return false;
+  if (value.watchOnly !== undefined && typeof value.watchOnly !== "boolean") return false;
+  if (value.hardware !== undefined && value.hardware !== "ledger" && value.hardware !== "trezor") {
+    return false;
+  }
+  return true;
+}
+
+function decodeVault(value: unknown): VaultFile | null {
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) return null;
+  if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
+  if (!value.accounts.every(isStoredAccount)) return null;
+  if (value.archivedAccounts !== undefined) {
+    if (!Array.isArray(value.archivedAccounts) || !value.archivedAccounts.every(isStoredAccount)) {
       return null;
     }
-    return parsed;
-  } catch {
+  }
+  if (value.activeAccountId !== null && typeof value.activeAccountId !== "string") return null;
+  if (
+    typeof value.activeAccountId === "string" &&
+    !value.accounts.some((account) => account.id === value.activeAccountId)
+  ) {
     return null;
   }
+  if (value.mnemonic !== undefined && !isEncryptedPayload(value.mnemonic)) return null;
+  if (value.passwordCheck !== undefined && !isEncryptedPayload(value.passwordCheck)) return null;
+  return value as unknown as VaultFile;
+}
+
+export function loadVaultResult(): StorageLoadResult<VaultFile> {
+  if (typeof window === "undefined") return { kind: "absent" };
+  const raw = window.localStorage.getItem(VAULT_KEY);
+  if (!raw) return { kind: "absent" };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (isRecord(parsed) && typeof parsed.version === "number" && parsed.version > 2) {
+      return {
+        kind: "future",
+        raw,
+        version: parsed.version,
+        message: `This wallet was created by a newer app version (${parsed.version}).`,
+      };
+    }
+    const vault = decodeVault(parsed);
+    return vault
+      ? { kind: "ready", value: vault }
+      : { kind: "corrupt", raw, message: "The encrypted wallet record is incomplete or malformed." };
+  } catch {
+    return { kind: "corrupt", raw, message: "The encrypted wallet record is not valid JSON." };
+  }
+}
+
+function readVault(): VaultFile | null {
+  const result = loadVaultResult();
+  return result.kind === "ready" ? result.value : null;
 }
 
 function persist(vault: VaultFile): void {
@@ -85,6 +148,13 @@ function persist(vault: VaultFile): void {
 
 export function loadVault(): VaultFile | null {
   return readVault();
+}
+
+function assertVaultCreationAllowed(): void {
+  const result = loadVaultResult();
+  if (result.kind === "corrupt" || result.kind === "future") {
+    throw new Error("Existing wallet data needs recovery before a new wallet can be created.");
+  }
 }
 
 export function hasDeletedVault(): boolean {
@@ -170,6 +240,7 @@ export async function initializeVault(
   password: string,
   opts: InitializeOptions = {},
 ): Promise<{ account: AccountMeta; revealed: string }> {
+  assertVaultCreationAllowed();
   if (password.length < 8) {
     throw new Error("Password must be at least 8 characters");
   }
@@ -253,6 +324,7 @@ export async function initializeHardwareVault(
     label?: string;
   },
 ): Promise<{ account: AccountMeta }> {
+  assertVaultCreationAllowed();
   if (account.device !== "trezor") {
     throw new Error("Ledger is not supported in this build. No account was imported.");
   }

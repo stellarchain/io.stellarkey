@@ -499,6 +499,24 @@ test("future versions are rejected without overwriting their data", () => {
   });
 });
 
+test("merchant loading exposes corrupt and future records for explicit recovery", () => {
+  const future = JSON.stringify({ version: 99, orders: [{ id: "future" }] });
+  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: future });
+
+  withWindow(localStorage, () => {
+    const futureResult = storage.loadMerchantStoreResult();
+    assert.equal(futureResult.kind, "future");
+    assert.equal(futureResult.version, 99);
+    assert.equal(futureResult.raw, future);
+
+    localStorage.setItem(storage.MERCHANT_STORAGE_KEY, "{broken");
+    const corruptResult = storage.loadMerchantStoreResult();
+    assert.equal(corruptResult.kind, "corrupt");
+    assert.equal(corruptResult.raw, "{broken");
+    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), "{broken");
+  });
+});
+
 test("pruning retains every unresolved financial record", () => {
   const old = Date.now() - 900 * 86_400_000;
   const store = {

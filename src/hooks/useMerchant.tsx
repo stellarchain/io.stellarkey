@@ -32,7 +32,12 @@ import {
   toStroops,
   unitPriceE6,
 } from "@/lib/merchant/money";
-import { loadMerchantStore, saveMerchantStore } from "@/lib/merchant/storage";
+import {
+  clearMerchantStore,
+  loadMerchantStoreResult,
+  saveMerchantStore,
+} from "@/lib/merchant/storage";
+import type { StorageIssue } from "@/lib/storage-load";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
 import {
@@ -242,6 +247,9 @@ export type MerchantRefundOutcome =
 
 interface MerchantContextValue {
   ready: boolean;
+  storageIssue: StorageIssue | null;
+  exportRecoveryData: () => string | null;
+  resetRecoveryData: () => void;
   online: boolean;
   enabled: boolean;
   configured: boolean;
@@ -495,6 +503,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const [store, setStore] = useState<MerchantStore>(() => emptyStore());
   const [ready, setReady] = useState(false);
+  const [storageIssue, setStorageIssue] = useState<StorageIssue | null>(null);
+  const storageIssueRef = useRef<StorageIssue | null>(null);
   const [ticket, setTicket] = useState<Ticket>({
     lines: [],
     discountMinor: 0,
@@ -532,7 +542,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       await Promise.resolve();
       if (!alive) return;
-      const loaded = loadMerchantStore();
+      const result = loadMerchantStoreResult();
+      const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
+      const loaded = result.kind === "ready" ? result.value : emptyStore();
+      storageIssueRef.current = issue;
+      setStorageIssue(issue);
       storeRef.current = loaded;
       setStore(loaded);
       setReady(true);
@@ -543,6 +557,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const persist = useCallback((next: MerchantStore | ((prev: MerchantStore) => MerchantStore)) => {
+    if (storageIssueRef.current) {
+      throw new Error("Merchant data needs recovery before it can be changed.");
+    }
     setStore((prev) => {
       const value = typeof next === "function" ? next(prev) : next;
       saveMerchantStore(value);
@@ -552,11 +569,24 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const commitStore = useCallback((next: MerchantStore): void => {
+    if (storageIssueRef.current) {
+      throw new Error("Merchant data needs recovery before it can be changed.");
+    }
     if (!saveMerchantStore(next)) {
       throw new Error("Merchant data could not be saved on this device. Free storage and try again.");
     }
     storeRef.current = next;
     setStore(next);
+  }, []);
+
+  const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
+  const resetRecoveryData = useCallback(() => {
+    clearMerchantStore();
+    const fresh = emptyStore();
+    storageIssueRef.current = null;
+    setStorageIssue(null);
+    storeRef.current = fresh;
+    setStore(fresh);
   }, []);
 
   // The wallet owns canonical-hash tracking. Merchant state mirrors a final
@@ -2285,6 +2315,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const value: MerchantContextValue = {
     ready,
+    storageIssue,
+    exportRecoveryData,
+    resetRecoveryData,
     online,
     enabled,
     configured,
