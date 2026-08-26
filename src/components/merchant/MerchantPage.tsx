@@ -29,14 +29,10 @@ import {
  * The Merchant Mode shell: alerts, the mobile sub-navigation, and the surface
  * the chosen tab renders into.
  *
- * Mocked here: nothing of its own. The till, Orders, Catalogue, Insights, and
- * shift lifecycle are wired to the real merchant store; Invoices, Counter codes,
- * and Customers are still replaced by their respective persisted milestones.
- * This file only routes to them, and which tab is open plus whether the shift
- * sheet is showing are the only state it holds.
- *
- * A real implementation swaps each mocked page's fixture for stored records;
- * this navigation does not change when it does.
+ * The till, orders, catalogue, invoices, counter codes, customers, insights, and
+ * shift lifecycle all read the persisted merchant store. This file only routes
+ * to those operational surfaces; its local state is limited to the selected tab
+ * and whether the shift sheet is showing.
  */
 
 export type MerchantSub =
