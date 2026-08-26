@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { useWallet } from "./useWallet";
+import { randomHex } from "@/lib/crypto";
 import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
 import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
 import {
@@ -469,7 +470,7 @@ const TYPICAL_WEEKS = 4;
 const HOUR_MS = 60 * 60 * 1000;
 
 function uid(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`;
+  return `${prefix}_${Date.now().toString(36)}_${randomHex(12)}`;
 }
 
 /** Local midnight of the calendar day `at` falls in. */

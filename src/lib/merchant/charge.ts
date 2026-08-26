@@ -1,6 +1,7 @@
 import { buildSep7PayUri } from "../payuri";
 import { NETWORKS } from "../stellar";
 import type { NetworkKey } from "../stellar";
+import { randomHex } from "../crypto";
 import { memoByteLength } from "../format";
 import { assetAmountFor, unitPriceE6 } from "./money";
 import type {
@@ -122,7 +123,7 @@ export function createCharge({
     throw new Error("A charge must be a positive minor-unit amount within the order total.");
   }
   return {
-    id: id ?? `chg_${now.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`,
+    id: id ?? `chg_${now.toString(36)}_${randomHex(12)}`,
     orderId: order.id,
     reference: order.reference,
     network,
