@@ -688,9 +688,9 @@ export const MOCK_TAX_PERIODS: TaxPeriod[] = [
 ];
 
 export const MOCK_EXPORTS: ExportRecord[] = [
-  { id: "ex_1", format: "csv", rangeLabel: "1 – 24 Aug 2026", rowCount: 890, runBy: "Rui Fonseca", runAt: daysAgo(0) - 4 * 60 * 60 * 1000 },
-  { id: "ex_2", format: "json", rangeLabel: "July 2026", rowCount: 1043, runBy: "Rui Fonseca", runAt: daysAgo(23) },
-  { id: "ex_3", format: "xero", rangeLabel: "Q2 2026", rowCount: 3120, runBy: "Ana Reis", runAt: daysAgo(55) },
+  { id: "ex_1", format: "csv", basis: "transaction", from: MOCK_NOW, to: MOCK_NOW + 1, fileName: "legacy.csv", rangeLabel: "1 – 24 Aug 2026", rowCount: 890, runById: "st_rui", runBy: "Rui Fonseca", runAt: daysAgo(0) - 4 * 60 * 60 * 1000 },
+  { id: "ex_2", format: "json", basis: "transaction", from: MOCK_NOW, to: MOCK_NOW + 1, fileName: "legacy.json", rangeLabel: "July 2026", rowCount: 1043, runById: "st_rui", runBy: "Rui Fonseca", runAt: daysAgo(23) },
+  { id: "ex_3", format: "xero", basis: "transaction", from: MOCK_NOW, to: MOCK_NOW + 1, fileName: "legacy.xero", rangeLabel: "Q2 2026", rowCount: 3120, runById: "st_ana", runBy: "Ana Reis", runAt: daysAgo(55) },
 ];
 
 export const MOCK_ADJUSTMENTS: Adjustment[] = [

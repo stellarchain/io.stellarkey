@@ -85,6 +85,8 @@ export interface MerchantSettings {
   holdAutoLockDuringCharge: boolean;
   /** Name of this device, attributed to every order it rings up. */
   terminalName: string;
+  /** Resolved local records kept on this device; null keeps them indefinitely. */
+  recordRetentionMonths: number | null;
 }
 
 export interface Modifier {
@@ -664,8 +666,13 @@ export interface TaxPeriod {
 export interface ExportRecord {
   id: string;
   format: "csv" | "json" | "xero" | "saft";
+  basis: "transaction" | "settlement";
+  from: number;
+  to: number;
+  fileName: string;
   rangeLabel: string;
   rowCount: number;
+  runById: string;
   runBy: string;
   runAt: number;
 }

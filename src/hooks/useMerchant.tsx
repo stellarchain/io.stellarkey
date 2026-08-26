@@ -107,6 +107,14 @@ import {
   updateCustomerNote as updatePersistedCustomerNote,
   type CustomerHistoryEntry,
 } from "@/lib/merchant/customers";
+import {
+  buildReportFile,
+  createReportExport as createPersistedReportExport,
+  deriveTaxPeriods,
+  type ReportBasis,
+  type ReportFile,
+  type ReportFormat,
+} from "@/lib/merchant/reporting";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -119,6 +127,7 @@ import type {
   CounterCodeKind,
   CounterPayment,
   CustomerRecord,
+  ExportRecord,
   Invoice,
   InvoiceLine,
   MerchantSettings,
@@ -139,6 +148,7 @@ import type {
   ShiftReport,
   StaffMember,
   StaffRole,
+  TaxPeriod,
   TerminalDevice,
   TenderKind,
   TenderPart,
@@ -338,6 +348,21 @@ interface MerchantContextValue {
   redeemLoyaltyReward: (address: string) => CustomerRecord;
   forgetCustomer: (address: string) => void;
 
+  taxPeriods: TaxPeriod[];
+  exportRecords: ExportRecord[];
+  previewReportExport: (input: {
+    from: number;
+    to: number;
+    basis: ReportBasis;
+    format: ReportFormat;
+  }) => ReportFile;
+  createReportExport: (input: {
+    from: number;
+    to: number;
+    basis: ReportBasis;
+    format: ReportFormat;
+  }) => { file: ReportFile; record: ExportRecord };
+
   shifts: Shift[];
   activeShift: Shift | null;
   shiftReport: ShiftReport | null;
@@ -461,6 +486,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
+  const [reportingNow] = useState(() => Date.now());
   const storeRef = useRef(store);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
@@ -561,6 +587,57 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         ? store.staff.find((member) => member.id === staffSessionId && member.active) ?? null
         : null,
     [staffSessionId, store.activeStaffId, store.staff],
+  );
+
+  const taxPeriods = useMemo(
+    () => deriveTaxPeriods(store, { network, now: reportingNow }),
+    [network, reportingNow, store],
+  );
+
+  const previewReportExport = useCallback(
+    (input: {
+      from: number;
+      to: number;
+      basis: ReportBasis;
+      format: ReportFormat;
+    }): ReportFile => {
+      const current = storeRef.current;
+      const actor = current.staff.find(
+        (member) =>
+          member.id === staffSessionId &&
+          member.id === current.activeStaffId &&
+          member.active &&
+          member.permissions.seeReports,
+      );
+      if (!actor) throw new Error("This staff member cannot view merchant reports.");
+      return buildReportFile(current, { ...input, network });
+    },
+    [network, staffSessionId],
+  );
+
+  const createReportExport = useCallback(
+    (input: {
+      from: number;
+      to: number;
+      basis: ReportBasis;
+      format: ReportFormat;
+    }): { file: ReportFile; record: ExportRecord } => {
+      const current = storeRef.current;
+      const actor = current.staff.find(
+        (member) => member.id === staffSessionId && member.id === current.activeStaffId,
+      );
+      if (!actor) throw new Error("Choose an active staff member before exporting records.");
+      const created = createPersistedReportExport(current, {
+        ...input,
+        id: uid("export"),
+        actor,
+        network,
+        now: Date.now(),
+      });
+      commitStore(created.store);
+      return { file: created.file, record: created.record };
+    },
+    [commitStore, network, staffSessionId],
   );
 
   useEffect(() => {
@@ -2189,6 +2266,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     startLoyaltyCard,
     redeemLoyaltyReward,
     forgetCustomer,
+
+    taxPeriods,
+    exportRecords: store.exportRecords,
+    previewReportExport,
+    createReportExport,
 
     shifts: store.shifts,
     activeShift,

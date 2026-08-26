@@ -119,6 +119,7 @@ export function defaultSettings(): MerchantSettings {
     toleranceFloorMinor: 2,
     holdAutoLockDuringCharge: true,
     terminalName: "This device",
+    recordRetentionMonths: 120,
   };
 }
 

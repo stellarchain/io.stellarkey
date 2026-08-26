@@ -1,40 +1,22 @@
 "use client";
 
-/**
- * DESIGN MOCK — the tax and records sub-page of Merchant settings.
- *
- * What is mocked: the period figures come from `MOCK_TAX_PERIODS` and the audit
- * trail from `MOCK_EXPORTS`. The rate table and the category mapping are read
- * from the live store (`settings.taxRates`, `catalogue`) because both are already
- * real. Nothing here writes: the range, the basis, the format and the retention
- * choice are local state, and every export button raises a toast instead of
- * building a file. No download is produced and no setting is saved.
- *
- * What a real implementation replaces: periods derived from stored orders rather
- * than a fixture; `updateSettings` behind the retention control; a generator per
- * format that streams rows out of the store and, for the auditor shapes, joins
- * each order to the `MatchedPayment` that settled it; and an `ExportRecord`
- * appended per run, attributed to the staff member who ran it.
- */
-
 import { useMemo, useState, type ReactNode } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_EXPORTS, MOCK_NOW, MOCK_TAX_PERIODS } from "@/lib/merchant/mock";
-import { fmtMinor, taxOn } from "@/lib/merchant/money";
-import type { ExportRecord, Minor } from "@/lib/merchant/types";
+import { fmtMinor } from "@/lib/merchant/money";
+import type { ExportRecord } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { Button, IOSBackButton, Notice, SegmentedControl, Select } from "../ui";
+import { Button, IOSBackButton, Notice, Select } from "../ui";
 import { IconDownload } from "../icons";
 import { IconInfo, IconPercent } from "./icons";
 import { MerchantDisclosure } from "./Disclosure";
 
 type ExportFormat = ExportRecord["format"];
-type Basis = "transaction" | "settlement";
+type Basis = ExportRecord["basis"];
 
 /** Said once, then reused by the chip and the disclosure beside it. */
 
-const FORMATS: { value: ExportFormat; name: string; body: string }[] = [
+const FORMATS: { value: ExportFormat; name: string; body: string; disabled?: boolean }[] = [
   {
     value: "csv",
     name: "CSV",
@@ -47,19 +29,16 @@ const FORMATS: { value: ExportFormat; name: string; body: string }[] = [
   },
   {
     value: "xero",
-    name: "Xero",
-    body: "A sales-invoice import — contact, invoice number, line, account code, tax type, amount. One invoice per order.",
+    name: "Xero — unavailable",
+    body: "Xero needs an explicit, tested account and tax-code mapping. This build does not claim that schema.",
+    disabled: true,
   },
   {
     value: "saft",
-    name: "SAF-T (PT)",
-    body: "The XML schedule the Portuguese tax authority asks for. Producing the file is not the same as being certified to issue those invoices.",
+    name: "SAF-T (PT) — unavailable",
+    body: "SAF-T is disabled because this app is not certified Portuguese invoicing software.",
+    disabled: true,
   },
-];
-
-const BASIS_OPTIONS: { label: string; value: Basis }[] = [
-  { label: "Transaction date", value: "transaction" },
-  { label: "Settlement rate", value: "settlement" },
 ];
 
 const RETENTION_OPTIONS = [
@@ -80,6 +59,14 @@ function isoDay(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+function dayStart(value: string): number {
+  return Date.parse(`${value}T00:00:00.000Z`);
+}
+
+function nextDay(value: string): number {
+  return dayStart(value) + 24 * 60 * 60 * 1000;
+}
+
 function fmtWhen(ts: number): string {
   return new Date(ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
@@ -89,22 +76,36 @@ function fmtWhen(ts: number): string {
 /* ------------------------------------------------------------------ */
 
 export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
-  const { settings, catalogue } = useMerchant();
+  const {
+    settings,
+    catalogue,
+    taxPeriods,
+    exportRecords,
+    updateSettings,
+    previewReportExport,
+    createReportExport,
+  } = useMerchant();
   const { toast } = useToast();
   const currency = settings.currency;
 
-  /* Local, in-screen state only. Nothing below is written or persisted. */
-  const [periodId, setPeriodId] = useState(MOCK_TAX_PERIODS[0]?.id ?? "");
+  const currentMonth = useMemo(() => {
+    const now = new Date();
+    const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    const to = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+    return { from, to };
+  }, []);
+  const [periodId, setPeriodId] = useState("");
   const [format, setFormat] = useState<ExportFormat>("csv");
-  const [basis, setBasis] = useState<Basis>("transaction");
-  const [retention, setRetention] = useState("120");
-  const [from, setFrom] = useState(isoDay(MOCK_TAX_PERIODS[0]?.from ?? MOCK_NOW));
-  const [to, setTo] = useState(isoDay(MOCK_TAX_PERIODS[0]?.to ?? MOCK_NOW));
+  const basis: Basis = "transaction";
+  const [from, setFrom] = useState(() => isoDay(currentMonth.from));
+  const [to, setTo] = useState(() => isoDay(currentMonth.to - 1));
+  const [preview, setPreview] = useState<string | null>(null);
 
   const period = useMemo(
-    () => MOCK_TAX_PERIODS.find((p) => p.id === periodId) ?? MOCK_TAX_PERIODS[0],
-    [periodId],
+    () => taxPeriods.find((p) => p.id === periodId) ?? taxPeriods[0],
+    [periodId, taxPeriods],
   );
+  const selectedPeriodId = periodId || period?.id || "";
 
   /** Which catalogue categories sit behind each rate — read from the real store. */
   const mapped = useMemo(() => {
@@ -135,23 +136,52 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
    * headline percentage off the grand total is a different number, and on a
    * mixed-rate day it is the wrong one.
    */
-  const headline = taxRows.reduce<(typeof taxRows)[number] | null>(
-    (best, row) => ((row.percent ?? -1) > (best?.percent ?? -1) ? row : best),
-    null,
-  );
-  const shortcutMinor: Minor | null =
-    period && headline?.percent
-      ? taxOn(period.grossMinor, headline.percent, settings.taxMode)
-      : null;
-  const gapMinor = shortcutMinor === null ? null : shortcutMinor - taxTotalMinor;
-
-  const periodOptions = MOCK_TAX_PERIODS.map((p) => ({
+  const periodOptions = taxPeriods.map((p) => ({
     value: p.id,
     label: p.label,
     sublabel: `${p.orderCount} orders`,
   }));
 
   const chosenFormat = FORMATS.find((f) => f.value === format);
+
+  function reportInput() {
+    const fromAt = dayStart(from);
+    const toAt = nextDay(to);
+    if (!Number.isFinite(fromAt) || !Number.isFinite(toAt) || fromAt >= toAt) {
+      throw new Error("Choose a valid reporting date range.");
+    }
+    return { from: fromAt, to: toAt, basis, format };
+  }
+
+  function handleExport() {
+    try {
+      triggerHaptic("medium");
+      const { file } = createReportExport(reportInput());
+      const blob = new Blob([file.contents], { type: file.mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.fileName;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast(`${file.rowCount.toLocaleString("en-US")} rows exported`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The export could not be created.");
+    }
+  }
+
+  function handlePreview() {
+    try {
+      triggerHaptic("selection");
+      const file = previewReportExport(reportInput());
+      setPreview(file.contents.replace(/^\uFEFF/, "").slice(0, 5000));
+      toast(`${file.rowCount.toLocaleString("en-US")} rows ready to preview`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The preview could not be created.");
+    }
+  }
 
   return (
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
@@ -236,9 +266,16 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             <div className="p-4 sm:max-w-[320px]">
               <Select
                 ariaLabel="Tax period"
-                value={periodId}
+                value={selectedPeriodId}
                 options={periodOptions}
-                onChange={setPeriodId}
+                onChange={(next) => {
+                  setPeriodId(next);
+                  const selected = taxPeriods.find((candidate) => candidate.id === next);
+                  if (selected) {
+                    setFrom(isoDay(selected.from));
+                    setTo(isoDay(selected.to - 1));
+                  }
+                }}
               />
             </div>
 
@@ -295,31 +332,6 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   </span>
                 </div>
 
-                {/* The per-line-versus-shortcut point: a figure first, the
-                    arithmetic behind it only for whoever asks. */}
-                {shortcutMinor !== null && gapMinor !== null && headline && (
-                  <div className="border-t border-white/[0.08] px-4 py-1">
-                    <MerchantDisclosure
-                      label={`Why this is not ${headline.percent} % of the total`}
-                    >
-                      <p>
-                        Tax due is the sum of the tax on each line, at that line&rsquo;s own rate.
-                        Taking {headline.percent} % off the grand total gives{" "}
-                        <span className="mono font-semibold text-white">
-                          {fmtMinor(shortcutMinor, currency)}
-                        </span>{" "}
-                        instead — {fmtMinor(Math.abs(gapMinor), currency)}{" "}
-                        {gapMinor >= 0 ? "too much" : "too little"}, and wrong on any day that sold
-                        at more than one rate. The difference is the{" "}
-                        {taxRows
-                          .filter((r) => r.id !== headline.id)
-                          .map((r) => r.label.toLowerCase())
-                          .join(" and ")}{" "}
-                        lines.
-                      </p>
-                    </MerchantDisclosure>
-                  </div>
-                )}
               </>
             )}
           </div>
@@ -335,7 +347,11 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
               <Select
                 ariaLabel="Export format"
                 value={format}
-                options={FORMATS.map((f) => ({ value: f.value, label: f.name }))}
+                options={FORMATS.map((f) => ({
+                  value: f.value,
+                  label: f.name,
+                  disabled: f.disabled,
+                }))}
                 onChange={(next) => setFormat(next as ExportFormat)}
               />
               <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-400">
@@ -372,60 +388,55 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
 
             <div>
               <p className="field-label">Basis</p>
-              <SegmentedControl<Basis>
-                value={basis}
-                options={BASIS_OPTIONS}
-                onChange={(next) => {
-                  setBasis(next);
-                  toast(
-                    next === "transaction"
-                      ? "Rows would be valued at the rate quoted when the order was rung up"
-                      : "Rows would be valued at the rate the settlement batch actually converted at",
-                  );
-                }}
-              />
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label="Export basis">
+                <button
+                  type="button"
+                  aria-pressed="true"
+                  className="min-h-11 rounded-xl border border-[#0A84FF]/50 bg-[#0A84FF]/15 px-3 text-[13px] font-semibold text-[#64D2FF]"
+                >
+                  Transaction date
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="min-h-11 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-[13px] font-semibold text-neutral-500 disabled:cursor-not-allowed"
+                >
+                  Settlement unavailable
+                </button>
+              </div>
               <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-400">
-                Pick one, state it on the export, and do not change it mid-year.
+                Orders use the immutable shop-currency value quoted when the sale was rung up.
               </p>
               <MerchantDisclosure label="Why the basis changes the numbers">
                 <p>
-                  <span className="font-semibold text-neutral-200">Transaction date</span> values
-                  every order at the rate it was quoted at, the moment the customer paid.{" "}
-                  <span className="font-semibold text-neutral-200">Settlement rate</span> values it
-                  at the rate the batch converted at, hours later. On a day the market moved four
-                  per cent, the two returns differ by real money.
+                  Settlement-rate reporting stays unavailable until conversion batches and their
+                  execution rates are recorded. Offering it now would invent an accounting fact.
                 </p>
               </MerchantDisclosure>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                onClick={() => {
-                  triggerHaptic("medium");
-                  toast(
-                    `Would build a ${chosenFormat?.name ?? format} export for ${from} → ${to} on the ${
-                      basis === "transaction" ? "transaction-date" : "settlement"
-                    } basis`,
-                    "success",
-                  );
-                }}
+                onClick={handleExport}
               >
                 <IconDownload size={15} />
                 Export
               </Button>
               <Button
                 variant="secondary"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  toast("Would show the first 50 rows exactly as they would be written");
-                }}
+                onClick={handlePreview}
               >
                 Preview rows
               </Button>
             </div>
-            <p className="text-[12px] leading-relaxed text-neutral-400">
-              Nothing is written to disk — these buttons describe the file.
-            </p>
+            {preview && (
+              <div>
+                <p className="field-label">File preview</p>
+                <pre className="scrollbar-none max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-white/[0.08] bg-black/30 p-3 text-[11px] leading-relaxed text-neutral-300">
+                  {preview}
+                </pre>
+              </div>
+            )}
           </div>
         </Section>
 
@@ -435,12 +446,12 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             <div className="sm:max-w-[280px]">
               <Select
                 ariaLabel="How long records are kept on this device"
-                value={retention}
+                value={String(settings.recordRetentionMonths ?? 0)}
                 options={RETENTION_OPTIONS}
                 onChange={(next) => {
-                  setRetention(next);
+                  updateSettings({ recordRetentionMonths: next === "0" ? null : Number(next) });
                   const label = RETENTION_OPTIONS.find((o) => o.value === next)?.label ?? next;
-                  toast(`Records older than ${label.toLowerCase()} would be dropped after an export`);
+                  toast(`Record retention set to ${label.toLowerCase()}`, "success");
                 }}
               />
             </div>
@@ -462,7 +473,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
         {/* ---------------- audit trail ---------------- */}
         <Section title="Audit trail">
           <div className="list-group">
-            {MOCK_EXPORTS.map((record, i) => (
+            {exportRecords.map((record, i) => (
               <div
                 key={record.id}
                 className={`flex w-full items-center gap-3.5 px-4 py-3.5 ${i > 0 ? "ios-sep" : ""}`}
@@ -483,6 +494,11 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 </span>
               </div>
             ))}
+            {exportRecords.length === 0 && (
+              <p className="px-4 py-6 text-center text-[13px] text-neutral-400">
+                No exports have been run on this device.
+              </p>
+            )}
           </div>
         </Section>
 
@@ -516,9 +532,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 This app has none of it.
               </p>
               <p>
-                The SAF-T shape offered above is a convenience for a bookkeeper who will re-key the
-                numbers into certified software. It is not a filing, and nothing here should be read
-                as a claim of certification.
+                SAF-T remains disabled. CSV and JSON are local evidence files for a bookkeeper; they
+                are not filings and make no certification claim.
               </p>
             </MerchantDisclosure>
           </div>
