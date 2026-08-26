@@ -182,6 +182,68 @@ function nextInvoiceSequence(
   return Math.max(stored, afterHighest);
 }
 
+function quoteRecords(value: unknown): MerchantStore["counterCodes"][number]["quotes"] {
+  return recordArray<MerchantStore["counterCodes"][number]["quotes"][number]>(
+    value,
+    (quote) =>
+      acceptedAsset(quote.asset) &&
+      isFiniteNumber(quote.unitPriceMinorE6) &&
+      typeof quote.amount === "string" &&
+      isFiniteNumber(quote.quotedAt),
+  ) ?? [];
+}
+
+function counterCodeRecords(
+  value: unknown,
+  staff: MerchantStore["staff"],
+): MerchantStore["counterCodes"] {
+  const codes = idRecords<MerchantStore["counterCodes"][number]>(value) ?? [];
+  return codes.map((code) => {
+    const createdAt = isFiniteNumber(code.createdAt) ? code.createdAt : 1;
+    const createdBy = typeof code.createdBy === "string" && code.createdBy.trim()
+      ? code.createdBy
+      : "Imported record";
+    const createdById = typeof code.createdById === "string" && code.createdById
+      ? code.createdById
+      : staff.find((member) => member.name === createdBy)?.id ?? `legacy:${code.id}`;
+    return {
+      ...code,
+      network: code.network === "testnet" ? "testnet" : "mainnet",
+      // Never redirect a previously shared payment request during migration.
+      // An absent snapshot stays absent and the UI treats it as audit-only.
+      destination: typeof code.destination === "string" ? code.destination : "",
+      requestMessage:
+        typeof code.requestMessage === "string" && code.requestMessage.trim()
+          ? code.requestMessage
+          : code.title,
+      quotes: quoteRecords(code.quotes),
+      expiresAt:
+        code.expiresAt === null || isFiniteNumber(code.expiresAt) ? code.expiresAt : null,
+      createdAt,
+      updatedAt: isFiniteNumber(code.updatedAt) ? code.updatedAt : createdAt,
+      createdById,
+      createdBy,
+    };
+  });
+}
+
+function counterPaymentRecords(value: unknown): MerchantStore["counterPayments"] {
+  return recordArray<MerchantStore["counterPayments"][number]>(
+    value,
+    (entry) =>
+      typeof entry.id === "string" &&
+      typeof entry.codeId === "string" &&
+      isRecord(entry.payment) &&
+      acceptedAsset(entry.payment.asset),
+  )?.map((entry) => ({
+    ...entry,
+    amountMinor:
+      entry.amountMinor === null || isFiniteNumber(entry.amountMinor) ? entry.amountMinor : null,
+    quote: isRecord(entry.quote) ? quoteRecords([entry.quote])[0] ?? null : null,
+    seenAt: isFiniteNumber(entry.seenAt) ? entry.seenAt : 1,
+  })) ?? [];
+}
+
 function orderRecords(value: unknown): MerchantStore["orders"] {
   const orders = idRecords<MerchantStore["orders"][number]>(value) ?? [];
   return orders.map((order) => {
@@ -437,9 +499,8 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
         : null,
     shifts: shiftRecords(value.shifts, settings, staff),
     invoices,
-    counterCodes: idRecords<MerchantStore["counterCodes"][number]>(value.counterCodes) ?? [],
-    counterPayments:
-      idRecords<MerchantStore["counterPayments"][number]>(value.counterPayments) ?? [],
+    counterCodes: counterCodeRecords(value.counterCodes, staff),
+    counterPayments: counterPaymentRecords(value.counterPayments),
     customers:
       recordArray<MerchantStore["customers"][number]>(
         value.customers,

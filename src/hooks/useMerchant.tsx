@@ -25,10 +25,12 @@ import {
 import type { ObservedPayment } from "@/lib/merchant/match";
 import {
   fromStroops,
+  assetAmountFor,
   lineGrossMinor,
   orderTotals,
   tipPresets,
   toStroops,
+  unitPriceE6,
 } from "@/lib/merchant/money";
 import { loadMerchantStore, saveMerchantStore } from "@/lib/merchant/storage";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
@@ -87,6 +89,14 @@ import {
   updateInvoiceDraft as updatePersistedInvoiceDraft,
   voidInvoice as voidPersistedInvoice,
 } from "@/lib/merchant/invoices";
+import {
+  buildCounterCodePayUri,
+  counterCodePayUri,
+  createCounterCode as createPersistedCounterCode,
+  reconcileCounterPayments,
+  setCounterCodeActive as setPersistedCounterCodeActive,
+  updateCounterCode as updatePersistedCounterCode,
+} from "@/lib/merchant/counter-codes";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -95,6 +105,9 @@ import type {
   AdjustmentKind,
   CatalogueItem,
   Charge,
+  CounterCode,
+  CounterCodeKind,
+  CounterPayment,
   Invoice,
   InvoiceLine,
   MerchantSettings,
@@ -142,6 +155,18 @@ export interface MerchantTenderOutcome {
   order: Order;
   /** Present only while a Stellar leg still needs to settle. */
   charge: Charge | null;
+}
+
+export interface MerchantCounterCodeDraft {
+  title: string;
+  kind: CounterCodeKind;
+  amountMinor: Minor | null;
+  suggestedMinor: Minor[];
+  acceptedAssets: AcceptedAsset[];
+  memoPrefix: string;
+  staffId: string | null;
+  expiresAt: number | null;
+  active: boolean;
 }
 
 export interface TodaySummary {
@@ -272,6 +297,28 @@ interface MerchantContextValue {
   voidInvoice: (invoiceId: string, reason: string) => Invoice;
   duplicateInvoice: (invoiceId: string) => Invoice;
   invoicePayUriFor: (invoice: Invoice, asset: AcceptedAsset) => string | null;
+
+  counterCodes: CounterCode[];
+  counterPayments: CounterPayment[];
+  counterCodeBlockedReason: string | null;
+  createCounterCode: (input: MerchantCounterCodeDraft) => CounterCode;
+  updateCounterCode: (input: {
+    codeId: string;
+    title: string;
+    suggestedMinor: Minor[];
+    staffId: string | null;
+    expiresAt: number | null;
+    active: boolean;
+  }) => CounterCode;
+  setCounterCodeActive: (codeId: string, active: boolean) => CounterCode;
+  counterCodePayUriFor: (code: CounterCode, asset: AcceptedAsset) => string | null;
+  counterCodePreviewUri: (input: {
+    kind: CounterCodeKind;
+    amountMinor: Minor | null;
+    asset: AcceptedAsset;
+    memo: string;
+    title: string;
+  }) => string | null;
 
   shifts: Shift[];
   activeShift: Shift | null;
@@ -736,6 +783,20 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, [activeStaff, network, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
 
+  const counterCodeBlockedReason = useMemo(() => {
+    if (!activeStaff) return "Choose an active staff member before managing counter codes.";
+    if (!activeStaff.permissions.takePayment) {
+      return `${activeStaff.name} is not allowed to manage payment requests.`;
+    }
+    if (!settings.receivingPublicKey) {
+      return "Choose the account that receives payments in Merchant settings.";
+    }
+    if (settings.acceptedAssets.length === 0) {
+      return "Add at least one accepted asset in Merchant settings.";
+    }
+    return null;
+  }, [activeStaff, settings.acceptedAssets.length, settings.receivingPublicKey]);
+
   /* ---------------- ticket ---------------- */
 
   const ticketTotals = useMemo(
@@ -1004,6 +1065,121 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     commitStore(duplicate.store);
     return duplicate.invoice;
   }, [commitStore, requireInvoiceActor]);
+
+  const requireCounterCodeActor = useCallback((current: MerchantStore): StaffMember => {
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before managing counter codes.");
+    if (!actor.permissions.takePayment) {
+      throw new Error(`${actor.name} is not allowed to manage payment requests.`);
+    }
+    return actor;
+  }, [staffSessionId]);
+
+  const createCounterCode = useCallback((input: MerchantCounterCodeDraft): CounterCode => {
+    const current = storeRef.current;
+    const actor = requireCounterCodeActor(current);
+    const destination = current.settings.receivingPublicKey;
+    if (!destination) {
+      throw new Error("Choose the account that receives payments in Merchant settings.");
+    }
+    const quotes = input.kind === "fixed"
+      ? input.acceptedAssets.map((asset) => {
+          const currencyPerUnit = rateFor(asset);
+          if (currencyPerUnit === null) {
+            throw new Error(`No live price is available for ${asset.code}, so its fixed request cannot be published.`);
+          }
+          return { asset, currencyPerUnit };
+        })
+      : [];
+    const now = Date.now();
+    const created = createPersistedCounterCode(current, {
+      ...input,
+      id: uid("cc"),
+      actor,
+      network,
+      destination,
+      quotes,
+      now,
+    });
+    const final = input.active
+      ? created
+      : setPersistedCounterCodeActive(created.store, {
+          codeId: created.code.id,
+          actor,
+          active: false,
+          now,
+        });
+    commitStore(final.store);
+    return final.code;
+  }, [commitStore, network, rateFor, requireCounterCodeActor]);
+
+  const updateCounterCode = useCallback((input: {
+    codeId: string;
+    title: string;
+    suggestedMinor: Minor[];
+    staffId: string | null;
+    expiresAt: number | null;
+    active: boolean;
+  }): CounterCode => {
+    const current = storeRef.current;
+    const actor = requireCounterCodeActor(current);
+    const now = Date.now();
+    const updated = updatePersistedCounterCode(current, { ...input, actor, now });
+    const final = updated.code.active === input.active
+      ? updated
+      : setPersistedCounterCodeActive(updated.store, {
+          codeId: updated.code.id,
+          actor,
+          active: input.active,
+          now,
+        });
+    commitStore(final.store);
+    return final.code;
+  }, [commitStore, requireCounterCodeActor]);
+
+  const setCounterCodeActive = useCallback((codeId: string, active: boolean): CounterCode => {
+    const current = storeRef.current;
+    const actor = requireCounterCodeActor(current);
+    const changed = setPersistedCounterCodeActive(current, {
+      codeId,
+      actor,
+      active,
+      now: Date.now(),
+    });
+    commitStore(changed.store);
+    return changed.code;
+  }, [commitStore, requireCounterCodeActor]);
+
+  const counterCodePreviewUri = useCallback((input: {
+    kind: CounterCodeKind;
+    amountMinor: Minor | null;
+    asset: AcceptedAsset;
+    memo: string;
+    title: string;
+  }): string | null => {
+    const destination = storeRef.current.settings.receivingPublicKey;
+    if (!destination) return null;
+    let amount: string | null = null;
+    if (input.kind === "fixed") {
+      const rate = rateFor(input.asset);
+      if (rate === null || input.amountMinor === null || input.amountMinor <= 0) return null;
+      amount = assetAmountFor(input.amountMinor, unitPriceE6(rate));
+    }
+    return buildCounterCodePayUri({
+      destination,
+      network,
+      asset: input.asset,
+      memo: input.memo,
+      title: input.title || "Counter code",
+      shopName: storeRef.current.settings.profile.name.trim() || "Your shop",
+      amount,
+    });
+  }, [network, rateFor]);
 
   const cryptoChargeFor = useCallback((
     order: Order,
@@ -1279,14 +1455,20 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         payments,
         now: Date.now(),
       });
-      const next = reconcileIncomingPayments(invoiceResult.store, {
+      const counterResult = reconcileCounterPayments(invoiceResult.store, {
         network,
         payments: invoiceResult.unclaimed,
+        rates: quoteInputs(),
+        now: Date.now(),
+      });
+      const next = reconcileIncomingPayments(counterResult.store, {
+        network,
+        payments: counterResult.unclaimed,
         now: Date.now(),
       });
       if (next !== current) commitStore(next);
     },
-    [commitStore, network],
+    [commitStore, network, quoteInputs],
   );
 
   /**
@@ -1904,6 +2086,21 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
     },
+
+    counterCodes: store.counterCodes,
+    counterPayments: store.counterPayments,
+    counterCodeBlockedReason,
+    createCounterCode,
+    updateCounterCode,
+    setCounterCodeActive,
+    counterCodePayUriFor: (code, asset) => {
+      try {
+        return counterCodePayUri(code, asset);
+      } catch {
+        return null;
+      }
+    },
+    counterCodePreviewUri,
 
     shifts: store.shifts,
     activeShift,

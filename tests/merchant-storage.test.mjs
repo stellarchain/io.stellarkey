@@ -345,6 +345,36 @@ test("older adjustment records reconcile stable order, line, and staff identitie
   });
 });
 
+test("older counter codes migrate as audit-only records without redirecting shared requests", () => {
+  const decoded = storage.decodeMerchantStore({
+    ...emptyStore(),
+    counterCodes: [
+      {
+        id: "counter-legacy",
+        title: "Old poster",
+        kind: "fixed",
+        amountMinor: 500,
+        suggestedMinor: [],
+        currency: "EUR",
+        acceptedAssets: [{ code: "XLM", issuer: null }],
+        memoPrefix: "OLDPOSTER",
+        staffId: null,
+        active: true,
+        payments: 2,
+        takingsMinor: 1000,
+        createdAt: 50,
+      },
+    ],
+  });
+
+  assert.equal(decoded.counterCodes[0].destination, "");
+  assert.equal(decoded.counterCodes[0].requestMessage, "Old poster");
+  assert.equal(decoded.counterCodes[0].network, "mainnet");
+  assert.deepEqual(decoded.counterCodes[0].quotes, []);
+  assert.equal(decoded.counterCodes[0].createdBy, "Imported record");
+  assert.equal(decoded.counterCodes[0].createdById, "legacy:counter-legacy");
+});
+
 test("a settled cash order reloads with tender, stock, and adjustment audit intact", () => {
   const now = Date.now();
   const actor = {
