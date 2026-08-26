@@ -1,25 +1,10 @@
 "use client";
 
-/**
- * MOCK — the queue a refund lands in when it is larger than the ceiling of the
- * person asking for it.
- *
- * What is mocked: the queue itself (`MOCK_REFUND_REQUESTS`) and the ceilings it
- * is judged against (`MOCK_STAFF`). Approving or declining moves local state and
- * raises a toast; nothing is recorded and no money moves.
- *
- * What a real implementation replaces: the fixtures become the requests recorded
- * against the shift, Decline writes the outcome back to the requesting till, and
- * Approve hands the refund to the existing refund path — an ordinary outbound
- * payment, which is why it needs the vault unlocked to sign and can never be
- * released by a PIN alone. Nothing here writes, signs, or reaches Horizon.
- */
-
 import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_REFUND_REQUESTS, MOCK_STAFF } from "@/lib/merchant/mock";
 import { fmtMinor } from "@/lib/merchant/money";
+import { canReleaseRefund } from "@/lib/merchant/permissions";
 import type { RefundReason, RefundRequest, StaffMember } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Button } from "../ui";
@@ -35,48 +20,66 @@ const REASON_LABEL: Record<RefundReason, string> = {
   other: "Other",
 };
 
-type Decision = "approved" | "declined";
-
-/** Fixtures are UTC instants: format them in UTC so the shop reads 16:05. */
 function fmtClock(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "UTC",
   });
 }
 
-function requesterOf(name: string, staff: StaffMember[]): StaffMember | undefined {
-  return staff.find((member) => member.name === name);
+function requesterOf(id: string, staff: StaffMember[]): StaffMember | undefined {
+  return staff.find((member) => member.id === id);
 }
 
 export function RefundRequestsPanel({
-  requests = MOCK_REFUND_REQUESTS,
-  staff = MOCK_STAFF,
   className = "",
 }: {
-  requests?: RefundRequest[];
-  staff?: StaffMember[];
   className?: string;
 }) {
-  const { settings } = useMerchant();
+  const {
+    settings,
+    staff,
+    activeStaff,
+    refunds,
+    refundRequests: requests,
+    approveRefundRequest,
+    declineRefundRequest,
+  } = useMerchant();
   const { toast } = useToast();
-  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const currency = settings.currency;
-  const pending = requests.filter(
-    (request) => request.status === "pending" && !decisions[request.id],
-  );
+  const pending = requests.filter((request) => request.status === "pending");
 
-  function decide(request: RefundRequest, decision: Decision) {
-    triggerHaptic(decision === "approved" ? "success" : "warning");
-    setDecisions((prev) => ({ ...prev, [request.id]: decision }));
-    toast(
-      decision === "approved"
-        ? `Approved. Sending ${fmtMinor(request.amountMinor, currency)} back for order #${request.orderNumber} needs the vault unlocked to sign.`
-        : `Declined. ${request.requestedBy} would see it on the till with your note.`,
-      decision === "approved" ? "success" : "info",
-    );
+  async function decide(request: RefundRequest, decision: "approved" | "declined") {
+    if (busyId) return;
+    setBusyId(request.id);
+    setError(null);
+    try {
+      if (decision === "approved") {
+        const refund = await approveRefundRequest(request.id);
+        const confirmed = refund.submissionStatus === "confirmed";
+        triggerHaptic(confirmed ? "success" : "warning");
+        toast(
+          confirmed
+            ? `Refund confirmed for ${fmtMinor(request.amountMinor, currency)}`
+            : refund.submissionStatus === "status_unknown"
+              ? "Refund status unknown. Do not retry while its hash is tracked."
+              : "Refund approved, submitted, and confirming.",
+          confirmed ? "success" : "info",
+        );
+      } else {
+        declineRefundRequest(request.id);
+        triggerHaptic("warning");
+        toast(`Declined refund request for order #${request.orderNumber}`, "info");
+      }
+    } catch (cause) {
+      triggerHaptic("error");
+      setError(cause instanceof Error ? cause.message : "The refund request could not be updated.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -101,8 +104,17 @@ export function RefundRequestsPanel({
               A refund larger than a member&rsquo;s ceiling is not refused — it is raised here for
               someone who can release it.
             </p>
+            <p className="mt-1 text-[11.5px] text-neutral-500">
+              Reviewing as {activeStaff?.name ?? "no active staff member"}
+            </p>
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="border-t border-[#FF453A]/20 bg-[#FF453A]/10 px-4 py-3 text-[12px] text-[#FF6961]">
+            {error}
+          </p>
+        )}
 
         {requests.length === 0 ? (
           <p className="border-t border-white/[0.08] px-4 py-5 text-center text-[13px] text-neutral-500">
@@ -110,9 +122,12 @@ export function RefundRequestsPanel({
           </p>
         ) : (
           requests.map((request) => {
-            const decision = decisions[request.id] ?? null;
-            const requester = requesterOf(request.requestedBy, staff);
+            const requester = requesterOf(request.requestedById, staff);
             const ceiling = requester?.permissions.refundCeilingMinor ?? null;
+            const reviewerCanDecide = canReleaseRefund(activeStaff, request.amountMinor);
+            const linkedRefund = request.refundId
+              ? refunds.find((refund) => refund.id === request.refundId) ?? null
+              : null;
 
             return (
               <div key={request.id} className="border-t border-white/[0.08] px-4 py-3.5">
@@ -128,6 +143,7 @@ export function RefundRequestsPanel({
 
                 <p className="mt-1 text-[12.5px] leading-relaxed text-neutral-400">
                   {REASON_LABEL[request.reason]}
+                  {request.note ? ` · ${request.note}` : ""}
                   {ceiling === null
                     ? ""
                     : ceiling === 0
@@ -135,42 +151,55 @@ export function RefundRequestsPanel({
                       : ` · above ${request.requestedBy.split(" ")[0]}’s ${fmtMinor(ceiling, currency)} ceiling`}
                 </p>
 
-                {decision === null ? (
+                {request.status === "pending" ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <Button
                       className="min-h-11 px-4 py-2 text-[13px]"
-                      onClick={() => decide(request, "approved")}
+                      loading={busyId === request.id}
+                      disabled={!reviewerCanDecide || (busyId !== null && busyId !== request.id)}
+                      onClick={() => void decide(request, "approved")}
                     >
                       Approve
                     </Button>
                     <Button
                       variant="secondary"
                       className="min-h-11 px-4 py-2 text-[13px]"
-                      onClick={() => decide(request, "declined")}
+                      disabled={!reviewerCanDecide || busyId !== null}
+                      onClick={() => void decide(request, "declined")}
                     >
                       Decline
                     </Button>
                     <span className="flex items-center gap-1.5 text-[11.5px] text-neutral-500">
                       <IconLock size={11} />
-                      Approving still needs the vault to sign
+                      {reviewerCanDecide
+                        ? "Approving still needs the vault to sign"
+                        : "Switch to staff with a sufficient refund ceiling"}
                     </span>
                   </div>
                 ) : (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span
                       className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-semibold ${
-                        decision === "approved"
+                        request.status === "approved"
                           ? "bg-[#30D158]/15 text-[#30D158]"
                           : "bg-white/[0.08] text-neutral-400"
                       }`}
                     >
-                      {decision === "approved" ? <IconCheck size={10} /> : <IconClose size={10} />}
-                      {decision === "approved" ? "Approved" : "Declined"}
+                      {request.status === "approved" ? <IconCheck size={10} /> : <IconClose size={10} />}
+                      {request.status === "approved"
+                        ? linkedRefund?.submissionStatus === "confirmed"
+                          ? "Approved & confirmed"
+                          : linkedRefund?.submissionStatus === "failed"
+                            ? "Approved · failed"
+                            : linkedRefund?.submissionStatus === "status_unknown"
+                              ? "Approved · status unknown"
+                              : "Approved · confirming"
+                        : "Declined"}
                     </span>
                     <span className="text-[12px] leading-relaxed text-neutral-400">
-                      {decision === "approved"
-                        ? "Queued as an outbound payment. Unlock the vault to sign and send it."
-                        : `Sent back to ${request.requestedBy} on the till.`}
+                      {request.status === "approved"
+                        ? `Refund record ${request.refundId ?? "saved"}. Never retry an unconfirmed hash blindly.`
+                        : `Reviewed by ${staff.find((member) => member.id === request.reviewedById)?.name ?? "staff"}.`}
                     </span>
                   </div>
                 )}

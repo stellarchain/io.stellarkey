@@ -603,12 +603,18 @@ export const MOCK_ADJUSTMENTS: Adjustment[] = [
 export const MOCK_REFUND_REQUESTS: RefundRequest[] = [
   {
     id: "rr_1",
+    orderId: "ord_2081",
     orderNumber: 2081,
     amountMinor: 4200,
     reason: "customer_request",
+    note: null,
+    requestedById: "st_tomas",
     requestedBy: "Tomás Silva",
     requestedAt: at(16, 5),
     status: "pending",
+    reviewedById: null,
+    reviewedAt: null,
+    refundId: null,
   },
 ];
 

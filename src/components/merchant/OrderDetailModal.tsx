@@ -5,6 +5,7 @@ import { useMerchant } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor, lineGrossMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
+import { refundReservesFunds } from "@/lib/merchant/refunds";
 import type {
   Charge,
   MatchLane,
@@ -12,6 +13,7 @@ import type {
   Order,
   OrderLine,
   RefundReason,
+  RefundSubmissionStatus,
 } from "@/lib/merchant/types";
 import { NETWORKS } from "@/lib/stellar";
 import { VaultLockedError } from "@/lib/vault";
@@ -190,6 +192,13 @@ function fmtWhen(ts: number): string {
   return new Date(ts).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
+const REFUND_SUBMISSION_LABEL: Record<RefundSubmissionStatus, string> = {
+  confirmed: "Confirmed",
+  accepted: "Confirming",
+  status_unknown: "Status unknown — do not retry",
+  failed: "Failed — safe to retry",
+};
+
 /* ------------------------------------------------------------------ */
 /* Receipt rows                                                        */
 /* ------------------------------------------------------------------ */
@@ -292,7 +301,13 @@ export function OrderDetailModal({
   order: Order | null;
   onClose: () => void;
 }) {
-  const { charges, refunds, settings, refundOrder, openCharge } = useMerchant();
+  const {
+    charges,
+    refunds,
+    settings,
+    submitRefund: submitMerchantRefund,
+    openCharge,
+  } = useMerchant();
   const { toast } = useToast();
 
   const orderId = order?.id ?? null;
@@ -350,8 +365,14 @@ export function OrderDetailModal({
     totals.taxMinor > 0 &&
     totals.netMinor + totals.taxMinor === totals.grossMinor - totals.discountMinor;
 
-  const refundedMinor: Minor = orderRefunds.reduce((sum, r) => sum + r.amountMinor, 0);
-  const remainingMinor: Minor = Math.max(0, totals.totalMinor - refundedMinor);
+  const refundedMinor: Minor = orderRefunds
+    .filter((refund) => refund.submissionStatus === "confirmed")
+    .reduce((sum, refund) => sum + refund.amountMinor, 0);
+  const reservedRefundMinor: Minor = orderRefunds
+    .filter(refundReservesFunds)
+    .reduce((sum, refund) => sum + refund.amountMinor, 0);
+  const pendingRefundMinor = reservedRefundMinor - refundedMinor;
+  const remainingMinor: Minor = Math.max(0, totals.totalMinor - reservedRefundMinor);
   const canRefund = payment !== null && remainingMinor > 0;
 
   let requestedMinor = 0;
@@ -398,14 +419,25 @@ export function OrderDetailModal({
     setBusy(true);
     setError(null);
     try {
-      await refundOrder({
+      const outcome = await submitMerchantRefund({
         orderId: order.id,
         amountMinor: requestedMinor,
         reason,
         note: note.trim() ? note.trim() : undefined,
       });
-      triggerHaptic("success");
-      toast(`Refunded ${fmtMinor(requestedMinor, currency)}`, "success");
+      if (outcome.kind === "requested") {
+        triggerHaptic("warning");
+        toast(`Sent ${fmtMinor(requestedMinor, currency)} for approval`, "info");
+      } else if (outcome.refund.submissionStatus === "confirmed") {
+        triggerHaptic("success");
+        toast(`Refund confirmed for ${fmtMinor(requestedMinor, currency)}`, "success");
+      } else if (outcome.refund.submissionStatus === "status_unknown") {
+        triggerHaptic("warning");
+        toast("Refund status unknown. Do not retry while its hash is being tracked.", "info");
+      } else {
+        triggerHaptic("medium");
+        toast(`Refund submitted for ${fmtMinor(requestedMinor, currency)} and confirming`, "info");
+      }
       setConfirming(false);
     } catch (cause) {
       triggerHaptic("error");
@@ -487,6 +519,13 @@ export function OrderDetailModal({
                 label="Refunded"
                 value={`−${fmtMinor(refundedMinor, currency)}`}
                 tone="neg"
+              />
+            )}
+            {pendingRefundMinor > 0 && (
+              <TotalRow
+                label="Refund pending"
+                value={`−${fmtMinor(pendingRefundMinor, currency)}`}
+                tone="muted"
               />
             )}
           </div>
@@ -587,6 +626,17 @@ export function OrderDetailModal({
                   </div>
                   <p className="mt-0.5 text-[12px] text-neutral-400">
                     {REASON_LABEL[refund.reason]} · {fmtWhen(refund.createdAt)}
+                  </p>
+                  <p
+                    className={`mt-0.5 text-[11.5px] font-semibold ${
+                      refund.submissionStatus === "confirmed"
+                        ? "text-[#30D158]"
+                        : refund.submissionStatus === "failed"
+                          ? "text-[#FF6961]"
+                          : "text-[#FF9F0A]"
+                    }`}
+                  >
+                    {REFUND_SUBMISSION_LABEL[refund.submissionStatus]}
                   </p>
                   {refund.note && (
                     <p className="mt-0.5 text-[12px] text-neutral-500">{refund.note}</p>

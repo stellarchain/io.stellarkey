@@ -212,7 +212,9 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
     assert.equal(migrated.version, 2);
     assert.deepEqual(migrated.orders, legacy.orders);
     assert.deepEqual(migrated.charges, legacy.charges);
-    assert.deepEqual(migrated.refunds, legacy.refunds);
+    assert.deepEqual(migrated.refunds, [
+      { ...legacy.refunds[0], submissionStatus: "confirmed" },
+    ]);
     assert.equal(migrated.nextOrderNumber, 1002);
     assert.equal(migrated.terminal.name, "Counter");
 

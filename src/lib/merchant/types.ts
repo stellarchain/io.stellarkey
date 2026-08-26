@@ -263,6 +263,13 @@ export type RefundReason =
   | "overpayment"
   | "other";
 
+/** Canonical-hash lifecycle for the outbound Stellar payment behind a refund. */
+export type RefundSubmissionStatus =
+  | "accepted"
+  | "confirmed"
+  | "status_unknown"
+  | "failed";
+
 export interface Refund {
   id: string;
   orderId: string;
@@ -274,6 +281,8 @@ export interface Refund {
   reason: RefundReason;
   note: string | null;
   transactionHash: string | null;
+  /** Never infer success from a hash alone: ambiguous submissions stay reserved and tracked. */
+  submissionStatus: RefundSubmissionStatus;
   createdAt: number;
 }
 
@@ -517,12 +526,19 @@ export interface Adjustment {
 
 export interface RefundRequest {
   id: string;
+  orderId: string;
   orderNumber: number;
   amountMinor: Minor;
   reason: RefundReason;
+  note: string | null;
+  requestedById: string;
   requestedBy: string;
   requestedAt: number;
   status: "pending" | "approved" | "declined";
+  reviewedById: string | null;
+  reviewedAt: number | null;
+  /** Present only after the explicitly signed refund has been persisted. */
+  refundId: string | null;
 }
 
 export type PeripheralKind = "printer" | "drawer" | "scanner" | "display";
