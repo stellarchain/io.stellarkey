@@ -10,14 +10,15 @@ import { sameAsset } from "@/lib/merchant/charge";
 import { minorToDecimal, toMinor } from "@/lib/merchant/money";
 import {
   MOCK_PERIPHERALS,
-  MOCK_SETTLEMENT,
   MOCK_STAFF,
   MOCK_TERMINAL,
-  MOCK_TREASURY_ADDRESS,
 } from "@/lib/merchant/mock";
+import type {
+  SettlementSwapIntent,
+  SettlementSweepIntent,
+} from "@/lib/merchant/settlement";
 import type { AcceptedAsset, TaxMode, TipMode } from "@/lib/merchant/types";
 import { BASE_RESERVE_XLM } from "@/lib/stellar";
-import { isValidPublicAddress } from "@/lib/vault";
 import type { SettingsSub } from "../SettingsPage";
 import { Avatar, Notice, SegmentedControl, Select, Toggle } from "../ui";
 import { useToast } from "../Toast";
@@ -401,11 +402,20 @@ export function MerchantSettings({
   /** Absent when this screen is shown outside the Settings stack; rows go inert. */
   onNavigate?: (sub: SettingsSub) => void;
   /** The wallet's DEX Swap — where a conversion is actually made and signed. */
-  onOpenSwap?: () => void;
+  onOpenSwap?: (intent: SettlementSwapIntent) => void;
   /** The wallet's Send — where a sweep is actually made and signed. */
-  onOpenSend?: (destination?: string) => void;
+  onOpenSend?: (intent: SettlementSweepIntent) => void;
 }) {
-  const { settings, updateSettings, setEnabled, orders, charges } = useMerchant();
+  const {
+    settings,
+    updateSettings,
+    setEnabled,
+    orders,
+    charges,
+    settlementRule,
+    settlementHandoffs,
+    updateSettlementRule,
+  } = useMerchant();
   const { accounts, balances } = useWallet();
   const { toast } = useToast();
 
@@ -414,21 +424,6 @@ export function MerchantSettings({
   const specimenHash = specimenOrder
     ? charges.find((charge) => charge.orderId === specimenOrder.id)?.payment?.transactionHash ?? null
     : null;
-
-  /* MOCK — the settlement rule has no home on the merchant store yet, so it is
-     seeded from `MOCK_SETTLEMENT` and lives for as long as this screen does.
-     A real implementation keeps a `SettlementRule` beside the other settings and
-     writes through `updateSettings`; these rows do not change shape when it does.
-     Nothing here converts, sweeps, quotes or signs — the two rows at the foot of
-     the section hand that work to the wallet's own screens. */
-  const [autoConvert, setAutoConvert] = useState(MOCK_SETTLEMENT.autoConvert);
-  const [slippageBps, setSlippageBps] = useState(MOCK_SETTLEMENT.maxSlippageBps);
-  const [sweepAboveMinor, setSweepAboveMinor] = useState(MOCK_SETTLEMENT.sweepAboveMinor ?? 0);
-  const [retainedFloatMinor, setRetainedFloatMinor] = useState(MOCK_SETTLEMENT.retainedFloatMinor);
-  const [treasury, setTreasury] = useState(
-    MOCK_SETTLEMENT.sweepDestination ?? MOCK_TREASURY_ADDRESS,
-  );
-  const [sweepHour, setSweepHour] = useState(MOCK_SETTLEMENT.sweepPromptHour ?? 21);
 
   const symbol = FIAT_SYMBOLS[settings.currency] ?? "";
 
@@ -468,7 +463,21 @@ export function MerchantSettings({
     (balance) => !balance.isNative && balance.issuer !== null,
   ).length;
   const reserveXlm = BASE_RESERVE_XLM * (2 + subentries);
-  const askAt = `${String(sweepHour).padStart(2, "0")}:00`;
+  const askAt = `${String(settlementRule.sweepPromptHour ?? 21).padStart(2, "0")}:00`;
+  const treasury = settlementRule.sweepDestination ?? "";
+
+  function changeSettlementRule(patch: Parameters<typeof updateSettlementRule>[0]): boolean {
+    try {
+      updateSettlementRule(patch);
+      return true;
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Settlement settings could not be saved.",
+        "error",
+      );
+      return false;
+    }
+  }
 
   /* MOCK — the counts under the navigation rows below are read straight from the
      fixtures those pages render, so a row never promises a figure the page it
@@ -764,9 +773,11 @@ export function MerchantSettings({
             sub={`Into ${settings.settlementAsset.code} at settlement`}
           >
             <Toggle
-              on={autoConvert}
+              on={settlementRule.autoConvert}
               label="Convert takings at settlement"
-              onChange={() => setAutoConvert((was) => !was)}
+              onChange={() =>
+                changeSettlementRule({ autoConvert: !settlementRule.autoConvert })
+              }
             />
           </Row>
 
@@ -779,12 +790,12 @@ export function MerchantSettings({
             <Select
               size="sm"
               className="shrink-0"
-              value={String(slippageBps)}
+              value={String(settlementRule.maxSlippageBps)}
               options={SLIPPAGE_OPTIONS}
               ariaLabel="Maximum slippage"
               onChange={(next) => {
                 const bps = Number.parseInt(next, 10);
-                if (Number.isFinite(bps)) setSlippageBps(bps);
+                if (Number.isFinite(bps)) changeSettlementRule({ maxSlippageBps: bps });
               }}
             />
           </Row>
@@ -794,16 +805,19 @@ export function MerchantSettings({
             tint="#0A84FF"
             label="Sweep above"
             sub={`Asked above this, in ${symbol}`}
-            value={minorToDecimal(sweepAboveMinor)}
+            value={minorToDecimal(settlementRule.sweepAboveMinor ?? 0)}
             inputMode="decimal"
             className="mono"
             onCommit={(next) => {
               const parsed = parseMinorList(next);
               if (!parsed || parsed.length !== 1) {
                 toast("Give a single amount, such as 500.00.", "error");
-                return minorToDecimal(sweepAboveMinor);
+                return minorToDecimal(settlementRule.sweepAboveMinor ?? 0);
               }
-              setSweepAboveMinor(parsed[0]);
+              changeSettlementRule({
+                sweepAboveMinor: parsed[0],
+                sweepPromptHour: settlementRule.sweepPromptHour ?? 21,
+              });
               return minorToDecimal(parsed[0]);
             }}
           />
@@ -813,16 +827,16 @@ export function MerchantSettings({
             tint="#30D158"
             label="Retained float"
             sub={`Never swept, in ${symbol}`}
-            value={minorToDecimal(retainedFloatMinor)}
+            value={minorToDecimal(settlementRule.retainedFloatMinor)}
             inputMode="decimal"
             className="mono"
             onCommit={(next) => {
               const parsed = parseMinorList(next);
               if (!parsed || parsed.length !== 1) {
                 toast("Give a single amount, such as 200.00.", "error");
-                return minorToDecimal(retainedFloatMinor);
+                return minorToDecimal(settlementRule.retainedFloatMinor);
               }
-              setRetainedFloatMinor(parsed[0]);
+              changeSettlementRule({ retainedFloatMinor: parsed[0] });
               return minorToDecimal(parsed[0]);
             }}
           />
@@ -840,12 +854,11 @@ export function MerchantSettings({
               value={treasury}
               onCommit={(next) => {
                 const address = next.trim().toUpperCase();
-                if (!isValidPublicAddress(address)) {
-                  toast("That is not a Stellar public address.", "error");
-                  return treasury;
-                }
-                setTreasury(address);
-                return address;
+                const saved = changeSettlementRule({
+                  sweepDestination: address || null,
+                  sweepPromptHour: address ? settlementRule.sweepPromptHour ?? 21 : null,
+                });
+                return saved ? address : treasury;
               }}
             />
           </ChoiceRow>
@@ -859,12 +872,12 @@ export function MerchantSettings({
             <Select
               size="sm"
               className="shrink-0"
-              value={String(sweepHour)}
+              value={String(settlementRule.sweepPromptHour ?? 21)}
               options={HOUR_OPTIONS}
               ariaLabel="Hour the till offers the sweep"
               onChange={(next) => {
                 const hour = Number.parseInt(next, 10);
-                if (Number.isFinite(hour)) setSweepHour(hour);
+                if (Number.isFinite(hour)) changeSettlementRule({ sweepPromptHour: hour });
               }}
             />
           </Row>
@@ -877,24 +890,53 @@ export function MerchantSettings({
         {/* The two jobs, pointed at the screens that already do them rather than
             rebuilt behind a second set of controls. */}
         <div className="list-group">
-          <Row
-            first
-            icon={<IconSwap size={16} />}
-            tint="#5E5CE6"
-            label="Convert in DEX Swap"
-            sub="A strict-send swap on this account"
-            chevron={Boolean(onOpenSwap)}
-            onClick={onOpenSwap}
-          />
+          {settlementHandoffs.swaps.map((intent, index) => (
+            <Row
+              key={intent.contextId}
+              first={index === 0}
+              icon={<IconSwap size={16} />}
+              tint="#5E5CE6"
+              label={`Convert ${intent.sourceAsset.code} in DEX Swap`}
+              sub={`${fmtAmount(intent.amount)} ${intent.sourceAsset.code} → ${intent.destinationAsset.code}`}
+              chevron={Boolean(onOpenSwap)}
+              onClick={onOpenSwap ? () => onOpenSwap(intent) : undefined}
+            />
+          ))}
+          {settlementHandoffs.swaps.length === 0 && (
+            <Row
+              first
+              icon={<IconSwap size={16} />}
+              tint="#5E5CE6"
+              label="No conversion due"
+              sub={
+                settlementRule.autoConvert
+                  ? "No priced accepted balance is ready"
+                  : "Automatic conversion prompts are off"
+              }
+            />
+          )}
           <Row
             icon={<IconArrowUpRight size={16} />}
             tint="#0A84FF"
-            label="Sweep in Send"
-            sub={`An ordinary payment to ${formatTrezorAddress(treasury)}`}
-            chevron={Boolean(onOpenSend)}
-            onClick={onOpenSend ? () => onOpenSend(treasury) : undefined}
+            label={settlementHandoffs.sweep ? "Review treasury sweep in Send" : "No sweep due"}
+            sub={
+              settlementHandoffs.sweep
+                ? `${fmtAmount(settlementHandoffs.sweep.amount)} ${settlementHandoffs.sweep.asset.code} to ${formatTrezorAddress(settlementHandoffs.sweep.destination)}`
+                : treasury
+                  ? `Nothing ready for ${formatTrezorAddress(treasury)}`
+                  : "Add a treasury address to enable sweep prompts"
+            }
+            chevron={Boolean(onOpenSend && settlementHandoffs.sweep)}
+            onClick={
+              onOpenSend && settlementHandoffs.sweep
+                ? () => onOpenSend(settlementHandoffs.sweep as SettlementSweepIntent)
+                : undefined
+            }
           />
         </div>
+        {settlementHandoffs.blocked.length > 0 && (
+          <Caption tone="warn">{settlementHandoffs.blocked[0]}</Caption>
+        )}
 
         {/* The arithmetic behind the float: at the foot, under a hairline, and
             closed until someone wants it. */}

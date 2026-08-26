@@ -115,6 +115,11 @@ import {
   type ReportFile,
   type ReportFormat,
 } from "@/lib/merchant/reporting";
+import {
+  deriveSettlementHandoffs,
+  updateSettlementRule as updatePersistedSettlementRule,
+  type SettlementHandoffs,
+} from "@/lib/merchant/settlement";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -146,6 +151,7 @@ import type {
   RefundRequest,
   Shift,
   ShiftReport,
+  SettlementRule,
   StaffMember,
   StaffRole,
   TaxPeriod,
@@ -363,6 +369,10 @@ interface MerchantContextValue {
     format: ReportFormat;
   }) => { file: ReportFile; record: ExportRecord };
 
+  settlementRule: SettlementRule;
+  settlementHandoffs: SettlementHandoffs;
+  updateSettlementRule: (patch: Partial<SettlementRule>) => void;
+
   shifts: Shift[];
   activeShift: Shift | null;
   shiftReport: ShiftReport | null;
@@ -466,6 +476,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const {
     network,
     activeAccount,
+    balances,
+    minimumBalanceXlm,
+    recommendedBaseFeeStroops,
     xlmPriceUsd,
     fiatRates,
     contacts,
@@ -638,6 +651,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       return { file: created.file, record: created.record };
     },
     [commitStore, network, staffSessionId],
+  );
+
+  const updateSettlementRule = useCallback(
+    (patch: Partial<SettlementRule>): void => {
+      commitStore(updatePersistedSettlementRule(storeRef.current, patch));
+    },
+    [commitStore],
   );
 
   useEffect(() => {
@@ -844,6 +864,40 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     () => settings.acceptedAssets.filter((a) => rateFor(a) !== null),
     [rateFor, settings.acceptedAssets],
   );
+
+  const settlementHandoffs = useMemo(() => {
+    const holdings = (balances ?? []).map((balance) => {
+      let available = toStroops(balance.balance) - toStroops(balance.sellingLiabilities);
+      if (balance.isNative && minimumBalanceXlm !== null) {
+        // One fee pays the prepared handoff; one remains so settlement cannot
+        // strand the account at reserve with no way to move again.
+        available -= toStroops(minimumBalanceXlm) + BigInt(recommendedBaseFeeStroops) * BigInt(2);
+      }
+      if (available < BigInt(0)) available = BigInt(0);
+      const asset: AcceptedAsset = { code: balance.code, issuer: balance.issuer };
+      const rate = rateFor(asset);
+      return {
+        asset,
+        available: fromStroops(available),
+        unitPriceMinorE6: rate === null ? null : unitPriceE6(rate),
+      };
+    });
+    return deriveSettlementHandoffs(store, {
+      network,
+      sourceAccount: activeAccount?.publicKey ?? null,
+      holdings,
+      localHour: new Date(reportingNow).getHours(),
+    });
+  }, [
+    activeAccount?.publicKey,
+    balances,
+    minimumBalanceXlm,
+    network,
+    rateFor,
+    recommendedBaseFeeStroops,
+    reportingNow,
+    store,
+  ]);
 
   const paymentBlockedReason = useMemo(() => {
     if (!activeStaff) return "Choose an active staff member before taking a payment.";
@@ -2271,6 +2325,10 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     exportRecords: store.exportRecords,
     previewReportExport,
     createReportExport,
+
+    settlementRule: store.settlementRule,
+    settlementHandoffs,
+    updateSettlementRule,
 
     shifts: store.shifts,
     activeShift,
