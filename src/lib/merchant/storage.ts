@@ -14,9 +14,6 @@ import type {
 const KEY = "wallet.merchant.v2";
 const LEGACY_KEY = "wallet.merchant.v1";
 
-/** Records older than this may be pruned only after they are fully resolved. */
-const RETAIN_DAYS = 400;
-
 type UnknownRecord = Record<string, unknown>;
 
 interface MerchantStoreV1 {
@@ -409,6 +406,45 @@ function refundRequestRecords(value: unknown): MerchantStore["refundRequests"] {
   }));
 }
 
+function exportRecords(
+  value: unknown,
+  staff: MerchantStore["staff"],
+): MerchantStore["exportRecords"] {
+  const records = idRecords<MerchantStore["exportRecords"][number]>(value) ?? [];
+  return records.map((record) => {
+    const runBy = typeof record.runBy === "string" && record.runBy.trim()
+      ? record.runBy
+      : "Imported record";
+    const runAt = isFiniteNumber(record.runAt) ? record.runAt : 1;
+    const from = isFiniteNumber(record.from) ? record.from : runAt;
+    const to = isFiniteNumber(record.to) && record.to > from ? record.to : from + 1;
+    const format =
+      record.format === "json" || record.format === "xero" || record.format === "saft"
+        ? record.format
+        : "csv";
+    return {
+      ...record,
+      format,
+      basis: record.basis === "settlement" ? "settlement" : "transaction",
+      from,
+      to,
+      fileName:
+        typeof record.fileName === "string" && record.fileName.trim()
+          ? record.fileName
+          : `legacy-export-${record.id}.${format}`,
+      rangeLabel:
+        typeof record.rangeLabel === "string" ? record.rangeLabel : "Imported range",
+      rowCount: isFiniteNumber(record.rowCount) ? Math.max(0, Math.trunc(record.rowCount)) : 0,
+      runById:
+        typeof record.runById === "string" && record.runById
+          ? record.runById
+          : staff.find((member) => member.name === runBy)?.id ?? `legacy:${record.id}`,
+      runBy,
+      runAt,
+    };
+  });
+}
+
 function acceptedAsset(value: unknown): value is AcceptedAsset {
   return (
     isRecord(value) &&
@@ -505,6 +541,12 @@ function reconcileSettings(value: unknown, base: MerchantSettings): MerchantSett
       typeof value.terminalName === "string" && value.terminalName.trim()
         ? value.terminalName
         : base.terminalName,
+    recordRetentionMonths:
+      value.recordRetentionMonths === null
+        ? null
+        : isFiniteNumber(value.recordRetentionMonths) && value.recordRetentionMonths > 0
+          ? Math.trunc(value.recordRetentionMonths)
+          : base.recordRetentionMonths,
   };
 }
 
@@ -581,7 +623,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     adjustments: adjustmentRecords(value.adjustments),
     refundRequests: refundRequestRecords(value.refundRequests),
     peripherals: idRecords<MerchantStore["peripherals"][number]>(value.peripherals) ?? [],
-    exportRecords: idRecords<MerchantStore["exportRecords"][number]>(value.exportRecords) ?? [],
+    exportRecords: exportRecords(value.exportRecords, staff),
     terminal: {
       name:
         typeof terminalValue.name === "string" && terminalValue.name.trim()
@@ -675,9 +717,15 @@ export function saveMerchantStore(store: MerchantStore): boolean {
   }
 }
 
-/** Drops resolved history beyond the retention window and retains live work. */
-export function prune(store: MerchantStore, retainDays = RETAIN_DAYS): MerchantStore {
-  const cutoff = Date.now() - retainDays * 24 * 60 * 60 * 1000;
+/** Drops resolved history beyond the configured window and retains live work. */
+export function prune(store: MerchantStore, retainDays?: number): MerchantStore {
+  const cutoff = (() => {
+    if (retainDays !== undefined) return Date.now() - retainDays * 24 * 60 * 60 * 1000;
+    if (store.settings.recordRetentionMonths === null) return Number.NEGATIVE_INFINITY;
+    const date = new Date();
+    date.setMonth(date.getMonth() - store.settings.recordRetentionMonths);
+    return date.getTime();
+  })();
   const unresolvedReconciliations = store.paymentReconciliations.filter(
     (record) => record.resolution === null,
   );

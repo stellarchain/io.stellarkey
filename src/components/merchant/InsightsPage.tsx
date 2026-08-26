@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useMerchant, type InsightsHistory, type TodaySummary } from "@/hooks/useMerchant";
+import { useMerchant } from "@/hooks/useMerchant";
 import { useWallet } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import type { FiatCurrency } from "@/lib/format";
 import { assetKey, isNative } from "@/lib/merchant/charge";
-import { MOCK_INSIGHTS, MOCK_INSIGHTS_HISTORY } from "@/lib/merchant/mock";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { AcceptedAsset, Minor } from "@/lib/merchant/types";
 import { Sparkline } from "../Sparkline";
@@ -122,20 +121,8 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const { network } = useWallet();
   const currency = settings.currency;
 
-  /**
-   * A till that has never taken a payment has nothing to show, and an empty
-   * chart teaches nobody what the screen is for. Until the first sale settles,
-   * every figure on this screen comes from one sample day; from that sale
-   * onwards, none of them does. The annotation is the till's own summary and
-   * its own history, so the fixtures cannot drift out of the shapes they stand
-   * in for.
-   */
-  // Gated on whether the shop has *ever* settled anything, not on today: orders
-  // are kept for 400 days, so gating on today would put the sample back on an
-  // established shop's screen every midnight until its first sale.
-  const traded = orders.some((order) => order.paidAt !== null);
-  const summary: TodaySummary = traded ? today : MOCK_INSIGHTS;
-  const past: InsightsHistory = traded ? history : MOCK_INSIGHTS_HISTORY;
+  const summary = today;
+  const past = history;
 
   const dayStart = useMemo(() => {
     const d = new Date();
@@ -165,7 +152,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
       .sort((a, b) => b.minor - a.minor);
   }, [paidToday, settings.taxRates]);
 
-  const taxRows = traded ? realTaxRows : MOCK_INSIGHTS.taxByRate;
+  const taxRows = realTaxRows;
 
   const refundsToday = useMemo(
     () =>
@@ -178,7 +165,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
     [dayStart, network, refunds],
   );
 
-  const refundCount = traded ? refundsToday.length : MOCK_INSIGHTS.refundCount;
+  const refundCount = refundsToday.length;
 
   /**
    * What today is held against. A day is over when the hours the shop normally
@@ -628,12 +615,8 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             settled payment actually arrived in, valued at the rate quoted when the charge was
             raised.
           </p>
-          {!traded && (
-            <p>
-              Nothing has settled here yet, so the figures above are one sample day and the
-              fortnight behind it. They are replaced in full &mdash; not merged &mdash; by the first
-              real sale.
-            </p>
+          {summary.orderCount === 0 && (
+            <p>No settled orders have been recorded today. Empty figures are shown as zero.</p>
           )}
         </MerchantDisclosure>
       </div>
