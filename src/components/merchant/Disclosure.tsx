@@ -75,10 +75,3 @@ export function MerchantDisclosure({
     </div>
   );
 }
-
-/**
- * The standing "these figures are fixtures" condition, as a chip rather than an
- * alert. Neutral on purpose: amber is for what needs doing, and this only needs
- * knowing. The full sentence rides along in `title` and is repeated in whatever
- * disclosure sits beside it.
- */

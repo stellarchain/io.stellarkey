@@ -153,7 +153,7 @@ export function daysPastDue(invoice: Invoice, now = Date.now()): number | null {
   return Math.round((now - invoice.dueAt) / DAY);
 }
 
-/** Day-first, the register the fixture's own range labels use. */
+/** Day-first invoice dates for the shop's persisted document record. */
 export function fmtInvoiceDate(ts: number): string {
   return new Date(ts).toLocaleDateString("en-GB", {
     day: "numeric",
