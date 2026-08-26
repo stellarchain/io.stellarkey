@@ -27,6 +27,12 @@ import { chargeStatusFor, matchPayment, type ObservedPayment } from "@/lib/merch
 import { lineGrossMinor, orderTotals, tipPresets } from "@/lib/merchant/money";
 import { loadMerchantStore, saveMerchantStore } from "@/lib/merchant/storage";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
+import { createMerchantPinCredential } from "@/lib/merchant/pin";
+import {
+  completeMerchantSetup,
+  needsMerchantSetup,
+  type MerchantSetupInput,
+} from "@/lib/merchant/setup";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -95,9 +101,14 @@ export interface InsightsHistory {
 interface MerchantContextValue {
   ready: boolean;
   enabled: boolean;
+  configured: boolean;
   setEnabled: (on: boolean) => void;
   settings: MerchantSettings;
+  tillTextSize: MerchantStore["tillTextSize"];
   updateSettings: (patch: Partial<MerchantSettings>) => void;
+  completeSetup: (
+    input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string },
+  ) => Promise<void>;
 
   catalogue: CatalogueItem[];
   modifierGroups: ModifierGroup[];
@@ -212,6 +223,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
+  const storeRef = useRef(store);
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
 
@@ -223,7 +235,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       await Promise.resolve();
       if (!alive) return;
-      setStore(loadMerchantStore());
+      const loaded = loadMerchantStore();
+      storeRef.current = loaded;
+      setStore(loaded);
       setReady(true);
     })();
     return () => {
@@ -235,12 +249,33 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     setStore((prev) => {
       const value = typeof next === "function" ? next(prev) : next;
       saveMerchantStore(value);
+      storeRef.current = value;
       return value;
     });
   }, []);
 
   const settings = store.settings;
   const enabled = settings.enabled;
+  const configured = !needsMerchantSetup(settings, store.staff);
+
+  const completeSetup = useCallback(
+    async (input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string }) => {
+      const { pin, ...details } = input;
+      const pinDigest = await createMerchantPinCredential(pin);
+      const now = Date.now();
+      const next = completeMerchantSetup(
+        storeRef.current,
+        { ...details, pinDigest },
+        { now, ownerId: uid("staff") },
+      );
+      if (!saveMerchantStore(next)) {
+        throw new Error("Merchant setup could not be saved on this device. Free storage and try again.");
+      }
+      storeRef.current = next;
+      setStore(next);
+    },
+    [],
+  );
 
   /* ---------------- prices ---------------- */
 
@@ -515,6 +550,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           ),
         };
         saveMerchantStore(next);
+        storeRef.current = next;
         return next;
       });
     }, 1000);
@@ -924,11 +960,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const value: MerchantContextValue = {
     ready,
     enabled,
+    configured,
     setEnabled: (on) =>
-      persist((prev) => ({ ...prev, settings: { ...prev.settings, enabled: on } })),
+      persist((prev) =>
+        on && needsMerchantSetup(prev.settings, prev.staff)
+          ? prev
+          : { ...prev, settings: { ...prev.settings, enabled: on } },
+      ),
     settings,
+    tillTextSize: store.tillTextSize,
     updateSettings: (patch) =>
       persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
+    completeSetup,
 
     catalogue: store.catalogue,
     modifierGroups: store.modifierGroups,

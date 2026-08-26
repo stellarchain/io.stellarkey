@@ -2521,9 +2521,11 @@ export function Dashboard() {
       <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
-      {/* Opened when Merchant Mode is switched on for a shop that has nothing set
-          up yet. It is a mock: it collects a draft and writes none of it. */}
-      <SetupWizard open={setupWizardOpen} onClose={() => setSetupWizardOpen(false)} />
+      <SetupWizard
+        open={setupWizardOpen}
+        onClose={() => setSetupWizardOpen(false)}
+        onComplete={() => switchTab("merchant")}
+      />
     </div>
   );
 }
