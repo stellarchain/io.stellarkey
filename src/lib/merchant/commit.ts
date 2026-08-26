@@ -2,6 +2,7 @@ export type MerchantStorageErrorCode =
   | "recovery_required"
   | "write_failed"
   | "conflict"
+  | "writer_unavailable"
   | "vault_locked";
 
 export class MerchantStorageError extends Error {
@@ -13,6 +14,8 @@ export class MerchantStorageError extends Error {
         ? "Merchant data needs recovery before it can be changed."
         : code === "conflict"
           ? "Merchant data changed in another tab. The newer version has been loaded; try again."
+          : code === "writer_unavailable"
+            ? "Merchant editing is active in another tab. Close it or wait for this tab to take over, then try again."
           : code === "vault_locked"
             ? "Unlock the wallet before changing encrypted merchant data."
             : "Merchant data could not be saved on this device. Free storage and try again.",
