@@ -10,6 +10,8 @@ import {
 } from "../src/lib/merchant/orders.ts";
 import * as storage from "../src/lib/merchant/storage.ts";
 
+const TEST_KEY = new Uint8Array(32).fill(42);
+
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
   return {
@@ -139,6 +141,7 @@ test("a v2 store round-trips every operational collection", () => {
   const localStorage = memoryStorage();
   const store = {
     ...emptyStore(),
+    settings: { ...emptyStore().settings, recordRetentionMonths: null },
     activeStaffId: "staff-1",
     staff: [
       {
@@ -207,8 +210,8 @@ test("a v2 store round-trips every operational collection", () => {
   };
 
   withWindow(localStorage, () => {
-    assert.equal(storage.saveMerchantStore(store), true);
-    assert.deepEqual(storage.loadMerchantStore(), store);
+    assert.equal(storage.saveMerchantStore(store, TEST_KEY), true);
+    assert.deepEqual(storage.loadMerchantStore(TEST_KEY), store);
   });
 });
 
@@ -220,7 +223,7 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
   });
 
   withWindow(localStorage, () => {
-    const migrated = storage.loadMerchantStore();
+    const migrated = storage.loadMerchantStore(TEST_KEY);
     assert.equal(migrated.version, 2);
     assert.deepEqual(migrated.orders, [
       {
@@ -243,7 +246,7 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
 
     const values = localStorage.snapshot();
     assert.equal(values[storage.MERCHANT_LEGACY_STORAGE_KEY], undefined);
-    assert.equal(JSON.parse(values[storage.MERCHANT_STORAGE_KEY]).version, 2);
+    assert.equal(JSON.parse(values[storage.MERCHANT_STORAGE_KEY]).version, 3);
   });
 });
 
@@ -455,8 +458,8 @@ test("a settled cash order reloads with tender, stock, and adjustment audit inta
   const localStorage = memoryStorage();
 
   withWindow(localStorage, () => {
-    assert.equal(storage.saveMerchantStore(committed), true);
-    const reloaded = storage.loadMerchantStore();
+    assert.equal(storage.saveMerchantStore(committed, TEST_KEY), true);
+    const reloaded = storage.loadMerchantStore(TEST_KEY);
     assert.deepEqual(reloaded.orders[0].tender, [
       { kind: "cash", amountMinor: order.totals.totalMinor, receivedMinor: 500, changeMinor: 100 },
     ]);
@@ -489,6 +492,31 @@ test("a failed v2 migration write leaves the recoverable v1 payload intact", () 
   });
 });
 
+test("a failed verified write restores the previous encrypted merchant archive", () => {
+  const localStorage = memoryStorage();
+
+  withWindow(localStorage, () => {
+    const original = { ...emptyStore(), revision: 1, writerId: "writer-a", updatedAt: 10 };
+    assert.equal(storage.saveMerchantStore(original, TEST_KEY), true);
+    const previousRaw = localStorage.getItem(storage.MERCHANT_STORAGE_KEY);
+    const setItem = localStorage.setItem;
+    let candidateWrites = 0;
+    localStorage.setItem = (key, value) => {
+      if (key === storage.MERCHANT_STORAGE_KEY && candidateWrites < 2) {
+        candidateWrites += 1;
+        setItem.call(localStorage, key, "{corrupted-after-write");
+        return;
+      }
+      setItem.call(localStorage, key, value);
+    };
+
+    const candidate = { ...original, revision: 2, writerId: "writer-b", updatedAt: 20 };
+    assert.equal(storage.saveMerchantStore(candidate, TEST_KEY), false);
+    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), previousRaw);
+    assert.deepEqual(storage.loadMerchantStore(TEST_KEY), original);
+  });
+});
+
 test("future versions are rejected without overwriting their data", () => {
   const future = JSON.stringify({ version: 99, orders: [{ id: "future" }] });
   const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: future });
@@ -514,6 +542,32 @@ test("merchant loading exposes corrupt and future records for explicit recovery"
     assert.equal(corruptResult.kind, "corrupt");
     assert.equal(corruptResult.raw, "{broken");
     assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), "{broken");
+  });
+});
+
+test("plaintext merchant data migrates losslessly to an encrypted envelope", () => {
+  const key = new Uint8Array(32).fill(9);
+  const plaintext = {
+    ...emptyStore(),
+    settings: {
+      ...emptyStore().settings,
+      profile: { ...emptyStore().settings.profile, name: "Migration Coffee" },
+    },
+  };
+  const localStorage = memoryStorage({
+    [storage.MERCHANT_STORAGE_KEY]: JSON.stringify(plaintext),
+  });
+
+  withWindow(localStorage, () => {
+    const result = storage.loadMerchantStoreResult(key);
+    assert.equal(result.kind, "ready");
+    assert.equal(result.value.settings.profile.name, "Migration Coffee");
+    const encrypted = localStorage.getItem(storage.MERCHANT_STORAGE_KEY);
+    assert.ok(encrypted);
+    assert.doesNotMatch(encrypted, /Migration Coffee/);
+    assert.equal(JSON.parse(encrypted).kind, "polaris-merchant-store");
+    assert.deepEqual(storage.loadMerchantStore(key), result.value);
+    assert.equal(storage.loadMerchantStoreResult().kind, "locked");
   });
 });
 
@@ -639,6 +693,66 @@ test("pruning keeps the order graph behind an unresolved payment and tracked ref
   assert.deepEqual(pruned.unmatched.map((entry) => entry.id), [payment.id]);
   assert.deepEqual(pruned.paymentReconciliations.map((entry) => entry.id), [payment.id]);
   assert.deepEqual(pruned.refunds.map((entry) => entry.id), ["tracked-refund"]);
+});
+
+test("retention removes expired customer PII but preserves unresolved provenance", () => {
+  const now = Date.now();
+  const old = now - 900 * 86_400_000;
+  const recent = now - 2 * 86_400_000;
+  const customer = (address, sourceId, lastSeenAt, note) => ({
+    address,
+    name: `Name ${sourceId}`,
+    firstSeenAt: lastSeenAt,
+    lastSeenAt,
+    orderCount: 1,
+    lifetimeMinor: 100,
+    averageMinor: 100,
+    preferredAsset: { code: "XLM", issuer: null },
+    sourceIds: [sourceId],
+    loyalty: {
+      stamps: 1,
+      target: 10,
+      redeemedCount: 0,
+      events: [{ id: `event-${sourceId}`, kind: "earned", sourceId, at: lastSeenAt, actorId: null, actorName: null }],
+    },
+    note,
+  });
+  const unresolvedPayment = {
+    id: "unresolved-source",
+    network: "mainnet",
+    payment: {
+      id: "unresolved-source",
+      transactionHash: "c".repeat(64),
+      ledger: 5,
+      from: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      amount: "1.0000000",
+      asset: { code: "XLM", issuer: null },
+      memo: null,
+      createdAt: new Date(old).toISOString(),
+    },
+    outcome: "unmatched",
+    chargeId: null,
+    orderId: null,
+    amountMinor: null,
+    observedAt: old,
+    resolution: null,
+  };
+  const store = {
+    ...emptyStore(),
+    customers: [
+      customer("GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF", "expired", old, "delete me"),
+      customer("GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBPLO", "recent", recent, "keep me"),
+      customer("GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC3", "unresolved-source", old, "expire note"),
+    ],
+    paymentReconciliations: [unresolvedPayment],
+  };
+
+  const pruned = storage.prune(store, 30);
+  assert.deepEqual(pruned.customers.map((entry) => entry.sourceIds[0]), ["recent", "unresolved-source"]);
+  assert.equal(pruned.customers[0].note, "keep me");
+  assert.equal(pruned.customers[1].note, null);
+  assert.deepEqual(pruned.customers[1].sourceIds, ["unresolved-source"]);
+  assert.deepEqual(pruned.customers[1].loyalty.events.map((event) => event.sourceId), ["unresolved-source"]);
 });
 
 test("clearing merchant storage removes both schema generations", () => {

@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { useWallet } from "./useWallet";
+import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
 import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
 import {
   assetKey,
@@ -36,6 +37,7 @@ import {
   clearMerchantStore,
   loadMerchantStoreResult,
   MERCHANT_STORAGE_KEY,
+  prune as pruneMerchantStore,
   saveMerchantStore,
 } from "@/lib/merchant/storage";
 import {
@@ -561,9 +563,25 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     setStore(next);
   }, []);
 
+  const readMerchantKey = useCallback(() => {
+    try {
+      return getMerchantEncryptionKey();
+    } catch (error) {
+      if (error instanceof VaultLockedError) throw new MerchantStorageError("vault_locked");
+      throw error;
+    }
+  }, []);
+
   const reloadExternalStore = useCallback(
     (allowAbsent: boolean) => {
-      const result = loadMerchantStoreResult();
+      let key: Uint8Array;
+      try {
+        key = readMerchantKey();
+      } catch (error) {
+        if (isMerchantStorageError(error) && error.code === "vault_locked") return;
+        throw error;
+      }
+      const result = loadMerchantStoreResult(key);
       if (result.kind === "ready") {
         const newer = newerMerchantStore(storeRef.current, result.value);
         if (newer) installLoadedStore(newer);
@@ -573,10 +591,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         if (allowAbsent) installLoadedStore(emptyStore());
         return;
       }
+      if (result.kind === "locked") return;
       storageIssueRef.current = result;
       setStorageIssue(result);
     },
-    [installLoadedStore],
+    [installLoadedStore, readMerchantKey],
   );
 
   // Deferred the way the wallet bootstraps its own vault: localStorage is not
@@ -587,7 +606,25 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       await Promise.resolve();
       if (!alive) return;
-      const result = loadMerchantStoreResult();
+      if (phase !== "unlocked") {
+        const fresh = emptyStore();
+        storeRef.current = fresh;
+        setStore(fresh);
+        setStaffSessionId(null);
+        setReady(false);
+        return;
+      }
+      let key: Uint8Array;
+      try {
+        key = readMerchantKey();
+      } catch (error) {
+        if (isMerchantStorageError(error) && error.code === "vault_locked") {
+          if (alive) setReady(false);
+          return;
+        }
+        throw error;
+      }
+      const result = loadMerchantStoreResult(key);
       const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
       const loaded = result.kind === "ready" ? result.value : emptyStore();
       if (issue) {
@@ -601,7 +638,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [installLoadedStore]);
+  }, [installLoadedStore, phase, readMerchantKey]);
 
   useEffect(() => {
     if (!ready) return;
@@ -633,14 +670,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           });
           return;
         }
-        const persistedResult = loadMerchantStoreResult();
+        const key = readMerchantKey();
+        const persistedResult = loadMerchantStoreResult(key);
         if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
           storageIssueRef.current = persistedResult;
           setStorageIssue(persistedResult);
           throw new MerchantStorageError("recovery_required");
         }
-        const candidate = typeof update === "function" ? update(current) : update;
-        if (candidate === current) return;
+        const updated = typeof update === "function" ? update(current) : update;
+        if (updated === current) return;
+        const candidate = pruneMerchantStore(updated);
         let coordinated: MerchantStore;
         try {
           coordinated = prepareMerchantCommit({
@@ -662,7 +701,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         const committed = commitMerchantUpdate({
           current,
           update: coordinated,
-          save: saveMerchantStore,
+          save: (next) => saveMerchantStore(next, key),
           publish: (next) => {
             storeRef.current = next;
             setStore(next);
@@ -675,7 +714,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         throw error;
       }
     },
-    [installLoadedStore, writerId],
+    [installLoadedStore, readMerchantKey, writerId],
   );
 
   const persist = useCallback(

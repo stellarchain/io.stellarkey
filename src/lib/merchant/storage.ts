@@ -8,6 +8,11 @@ import type {
   TipSettings,
 } from "./types";
 import type { StorageLoadResult } from "../storage-load";
+import {
+  decryptMerchantStore,
+  encryptMerchantStore,
+  isEncryptedMerchantEnvelope,
+} from "./crypto";
 
 /**
  * Merchant data uses the wallet prefix so the wallet reset path owns it too.
@@ -698,13 +703,46 @@ export function decodeMerchantStore(value: unknown): MerchantStore | null {
   return null;
 }
 
-export function loadMerchantStoreResult(): StorageLoadResult<MerchantStore> {
+export type MerchantStoreLoadResult = StorageLoadResult<MerchantStore> | {
+  kind: "locked";
+  raw: string;
+  message: string;
+};
+
+export function loadMerchantStoreResult(key?: Uint8Array): MerchantStoreLoadResult {
   if (typeof window === "undefined") return { kind: "absent" };
 
   const currentRaw = window.localStorage.getItem(KEY);
   if (currentRaw !== null) {
     try {
       const parsed: unknown = JSON.parse(currentRaw);
+      if (isEncryptedMerchantEnvelope(parsed)) {
+        if (!key) {
+          return {
+            kind: "locked",
+            raw: currentRaw,
+            message: "Unlock the wallet to read encrypted merchant data.",
+          };
+        }
+        try {
+          const decoded = decodeMerchantStore(decryptMerchantStore(parsed, key));
+          if (
+            !decoded ||
+            decoded.revision !== parsed.revision ||
+            decoded.writerId !== parsed.writerId ||
+            decoded.updatedAt !== parsed.updatedAt
+          ) {
+            throw new Error("Merchant envelope metadata does not match its payload.");
+          }
+          return { kind: "ready", value: decoded };
+        } catch {
+          return {
+            kind: "corrupt",
+            raw: currentRaw,
+            message: "Encrypted merchant data could not be decrypted or authenticated.",
+          };
+        }
+      }
       if (isRecord(parsed) && typeof parsed.version === "number" && parsed.version > 2) {
         return {
           kind: "future",
@@ -714,6 +752,13 @@ export function loadMerchantStoreResult(): StorageLoadResult<MerchantStore> {
         };
       }
       const decoded = decodeMerchantStore(parsed);
+      if (decoded && key && !saveMerchantStore(decoded, key)) {
+        return {
+          kind: "corrupt",
+          raw: currentRaw,
+          message: "Merchant data could not be migrated to encrypted storage.",
+        };
+      }
       return decoded
         ? { kind: "ready", value: decoded }
         : {
@@ -742,7 +787,7 @@ export function loadMerchantStoreResult(): StorageLoadResult<MerchantStore> {
       };
     }
     const migrated = migrateV1(parsed);
-    saveMerchantStore(migrated);
+    if (key) saveMerchantStore(migrated, key);
     return { kind: "ready", value: migrated };
   } catch {
     return {
@@ -753,25 +798,53 @@ export function loadMerchantStoreResult(): StorageLoadResult<MerchantStore> {
   }
 }
 
-export function loadMerchantStore(): MerchantStore {
-  const result = loadMerchantStoreResult();
+export function loadMerchantStore(key?: Uint8Array): MerchantStore {
+  const result = loadMerchantStoreResult(key);
   return result.kind === "ready" ? result.value : emptyStore();
 }
 
 /** Returns false when quota or storage policy prevents a durable commit. */
-export function saveMerchantStore(store: MerchantStore): boolean {
-  if (typeof window === "undefined") return false;
+export function saveMerchantStore(store: MerchantStore, key?: Uint8Array): boolean {
+  if (typeof window === "undefined" || !key) return false;
+  let previousRaw: string | null;
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(prune(store)));
+    previousRaw = window.localStorage.getItem(KEY);
+  } catch {
+    return false;
+  }
+  const restorePrevious = () => {
+    try {
+      if (previousRaw === null) window.localStorage.removeItem(KEY);
+      else window.localStorage.setItem(KEY, previousRaw);
+    } catch {
+      // The caller still receives a failed durable commit. Storage may be
+      // unavailable entirely, so restoration is best-effort at this point.
+    }
+  };
+  const writeVerified = (value: MerchantStore) => {
+    const raw = JSON.stringify(encryptMerchantStore(value, key));
+    window.localStorage.setItem(KEY, raw);
+    const storedRaw = window.localStorage.getItem(KEY);
+    if (storedRaw !== raw) throw new Error("Merchant storage did not retain the encrypted write.");
+    const stored: unknown = JSON.parse(storedRaw);
+    if (!isEncryptedMerchantEnvelope(stored)) throw new Error("Merchant storage envelope is invalid.");
+    const verified = decryptMerchantStore(stored, key);
+    if (verified.revision !== value.revision || verified.writerId !== value.writerId) {
+      throw new Error("Merchant storage verification failed.");
+    }
+  };
+  try {
+    writeVerified(prune(store));
     window.localStorage.removeItem(LEGACY_KEY);
     return true;
   } catch {
     // Quota exhausted: retain unresolved records and retry with shorter history.
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(prune(store, 30)));
+      writeVerified(prune(store, 30));
       window.localStorage.removeItem(LEGACY_KEY);
       return true;
     } catch {
+      restorePrevious();
       return false;
     }
   }
@@ -813,6 +886,37 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
   const keptOrderIds = new Set(orders.map((order) => order.id));
   const unresolvedPaymentIds = new Set(unresolvedReconciliations.map((record) => record.id));
   const openInvoiceStatuses = new Set(["draft", "sent", "partially_paid", "overdue"]);
+  const invoices = store.invoices.filter(
+    (invoice) =>
+      openInvoiceStatuses.has(invoice.status) ||
+      (invoice.paidAt ?? invoice.issuedAt ?? cutoff) >= cutoff,
+  );
+  const protectedCustomerSources = new Set<string>(unresolvedPaymentIds);
+  for (const order of orders) protectedCustomerSources.add(`order:${order.id}`);
+  for (const invoice of invoices) {
+    for (const payment of invoice.payments ?? []) {
+      protectedCustomerSources.add(`invoice-payment:${payment.id}`);
+    }
+  }
+  const customers = store.customers.flatMap((customer) => {
+    const recent = customer.lastSeenAt >= cutoff;
+    const sourceIds = recent
+      ? customer.sourceIds
+      : customer.sourceIds.filter((sourceId) => protectedCustomerSources.has(sourceId));
+    const events = customer.loyalty?.events.filter(
+      (event) =>
+        event.at >= cutoff ||
+        (event.sourceId !== null && protectedCustomerSources.has(event.sourceId)),
+    ) ?? [];
+    if (!recent && sourceIds.length === 0 && events.length === 0) return [];
+    return [{
+      ...customer,
+      name: recent ? customer.name : null,
+      note: recent ? customer.note : null,
+      sourceIds,
+      loyalty: customer.loyalty ? { ...customer.loyalty, events } : null,
+    }];
+  });
 
   return {
     ...store,
@@ -838,17 +942,14 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     shifts: store.shifts.filter(
       (shift) => shift.closedAt === null || shift.closedAt >= cutoff,
     ),
-    invoices: store.invoices.filter(
-      (invoice) =>
-        openInvoiceStatuses.has(invoice.status) ||
-        (invoice.paidAt ?? invoice.issuedAt ?? cutoff) >= cutoff,
-    ),
+    invoices,
     counterPayments: store.counterPayments.filter((payment) => payment.seenAt >= cutoff),
     adjustments: store.adjustments.filter((adjustment) => adjustment.at >= cutoff),
     refundRequests: store.refundRequests.filter(
       (request) => request.status === "pending" || request.requestedAt >= cutoff,
     ),
     exportRecords: store.exportRecords.filter((record) => record.runAt >= cutoff),
+    customers,
   };
 }
 
@@ -856,6 +957,17 @@ export function clearMerchantStore(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(KEY);
   window.localStorage.removeItem(LEGACY_KEY);
+}
+
+export function exportEncryptedMerchantArchive(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(KEY);
+  if (!raw) return null;
+  try {
+    return isEncryptedMerchantEnvelope(JSON.parse(raw)) ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 export const MERCHANT_STORAGE_KEY = KEY;

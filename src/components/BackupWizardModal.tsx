@@ -712,6 +712,12 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="shrink-0 text-neutral-400">Merchant archive</span>
+                  <span className="text-right text-white">
+                    {restoreInfo.hasMerchantArchive ? "Included" : "Not included"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="shrink-0 text-neutral-400">Encryption</span>
                   <span className="mono text-right text-[12px] text-neutral-300">
                     AES-256-GCM · whole file

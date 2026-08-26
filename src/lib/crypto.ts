@@ -48,6 +48,30 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
+export async function deriveEncryptionKeyBytes(
+  password: string,
+  context: string,
+): Promise<Uint8Array> {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    te.encode(password) as unknown as ArrayBuffer,
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: te.encode(`polaris:${context}:v1`) as unknown as ArrayBuffer,
+      iterations: KDF_ITERATIONS,
+      hash: "SHA-256",
+    },
+    material,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
 export async function encryptString(
   plaintext: string,
   password: string,

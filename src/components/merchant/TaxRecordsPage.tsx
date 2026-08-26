@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
+import { exportEncryptedMerchantArchive } from "@/lib/merchant/storage";
 import type { ExportRecord } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Button, IOSBackButton, Notice, Select } from "../ui";
@@ -170,6 +171,21 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     } catch (error) {
       toast(error instanceof Error ? error.message : "The export could not be created.");
     }
+  }
+
+  function handleEncryptedArchive() {
+    const archive = exportEncryptedMerchantArchive();
+    if (!archive) {
+      toast("No encrypted merchant archive is available yet.", "error");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([archive], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `merchant-archive-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast("Encrypted merchant archive downloaded", "success");
   }
 
   function handlePreview() {
@@ -428,7 +444,15 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
               >
                 Preview rows
               </Button>
+              <Button variant="secondary" onClick={handleEncryptedArchive}>
+                <IconDownload size={15} />
+                Encrypted archive
+              </Button>
             </div>
+            <p className="text-[12px] leading-relaxed text-neutral-500">
+              The archive contains the complete retained merchant record encrypted with this
+              wallet&rsquo;s password-derived key. Keep it with your wallet backup.
+            </p>
             {preview && (
               <div>
                 <p className="field-label">File preview</p>
