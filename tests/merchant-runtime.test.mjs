@@ -116,6 +116,15 @@ test("merchant context value stays stable across unrelated wallet provider rende
   assert.match(hook, /const value = useMemo<MerchantContextValue>/);
 });
 
+test("persisted merchant record identifiers use Web Crypto randomness", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const charge = source("src/lib/merchant/charge.ts");
+  assert.match(hook, /randomHex/);
+  assert.match(charge, /randomHex/);
+  assert.doesNotMatch(hook, /Math\.random/);
+  assert.doesNotMatch(charge, /Math\.random/);
+});
+
 test("customer display exit verifies a real staff PIN and does not show an amountless payment QR", () => {
   const display = source("src/components/merchant/CustomerDisplay.tsx");
   const hook = source("src/hooks/useMerchant.tsx");
