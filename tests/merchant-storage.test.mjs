@@ -196,6 +196,7 @@ test("a v2 store round-trips every operational collection", () => {
         lifetimeMinor: 250,
         averageMinor: 250,
         preferredAsset: { code: "XLM", issuer: null },
+        sourceIds: [],
         loyalty: null,
         note: null,
       },

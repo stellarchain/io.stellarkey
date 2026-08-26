@@ -591,11 +591,26 @@ export interface CounterPayment {
   seenAt: number;
 }
 
+export type LoyaltyEventKind = "opened" | "earned" | "redeemed";
+
+export interface LoyaltyEvent {
+  id: string;
+  kind: LoyaltyEventKind;
+  /** Visit source for an earned stamp; null for manual lifecycle actions. */
+  sourceId: string | null;
+  at: number;
+  /** Automatic earning has no actor; opening and redemption retain one. */
+  actorId: string | null;
+  actorName: string | null;
+}
+
 export interface LoyaltyCard {
   /** Stamps collected toward the reward. */
   stamps: number;
   target: number;
   redeemedCount: number;
+  /** Append-only local audit of card opening, automatic stamps, and redemption. */
+  events: LoyaltyEvent[];
 }
 
 export interface CustomerRecord {
@@ -609,6 +624,8 @@ export interface CustomerRecord {
   lifetimeMinor: Minor;
   averageMinor: Minor;
   preferredAsset: AcceptedAsset;
+  /** Immutable settlement sources already applied to this local summary. */
+  sourceIds: string[];
   loyalty: LoyaltyCard | null;
   note: string | null;
 }

@@ -604,7 +604,8 @@ export const MOCK_CUSTOMERS: CustomerRecord[] = [
     lifetimeMinor: 24213,
     averageMinor: 2421,
     preferredAsset: MOCK_USDC,
-    loyalty: { stamps: 10, target: 10, redeemedCount: 1 },
+    sourceIds: [],
+    loyalty: { stamps: 10, target: 10, redeemedCount: 1, events: [] },
     note: "Oat flat white, no sugar.",
   },
   {
@@ -616,6 +617,7 @@ export const MOCK_CUSTOMERS: CustomerRecord[] = [
     lifetimeMinor: 184600,
     averageMinor: 7100,
     preferredAsset: MOCK_USDC,
+    sourceIds: [],
     loyalty: null,
     note: null,
   },
@@ -628,7 +630,8 @@ export const MOCK_CUSTOMERS: CustomerRecord[] = [
     lifetimeMinor: 8640,
     averageMinor: 960,
     preferredAsset: MOCK_XLM,
-    loyalty: { stamps: 9, target: 10, redeemedCount: 0 },
+    sourceIds: [],
+    loyalty: { stamps: 9, target: 10, redeemedCount: 0, events: [] },
     note: null,
   },
   {
@@ -640,7 +643,8 @@ export const MOCK_CUSTOMERS: CustomerRecord[] = [
     lifetimeMinor: 320,
     averageMinor: 320,
     preferredAsset: MOCK_XLM,
-    loyalty: { stamps: 1, target: 10, redeemedCount: 0 },
+    sourceIds: [],
+    loyalty: { stamps: 1, target: 10, redeemedCount: 0, events: [] },
     note: null,
   },
 ];

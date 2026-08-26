@@ -15,6 +15,7 @@ import {
 import { NETWORKS } from "@/lib/stellar";
 import type {
   MerchantProfile,
+  LoyaltyCard,
   Minor,
   Order,
   TaxMode,
@@ -159,6 +160,7 @@ function thermalLines(
   rows: VatRow[],
   taxMode: TaxMode,
   hash: string | null,
+  loyalty: LoyaltyCard | null,
 ): string[] {
   const currency = order.currency;
   const money = (minor: Minor) => minorToDecimal(minor);
@@ -249,6 +251,16 @@ function thermalLines(
   if (order.payerAddress) {
     out.push(columns("PAYER", `${order.payerAddress.slice(0, 4)}...${order.payerAddress.slice(-4)}`));
   }
+  if (loyalty) {
+    out.push(
+      columns(
+        "LOYALTY",
+        loyalty.stamps >= loyalty.target
+          ? "REWARD READY"
+          : `${loyalty.stamps}/${loyalty.target} STAMPS`,
+      ),
+    );
+  }
   out.push(rule("="));
 
   for (const piece of wrapped(profile.receiptFooter || "Thank you.")) out.push(centred(piece));
@@ -259,7 +271,13 @@ function thermalLines(
 }
 
 /** The plain body an SMS or a mail draft carries. */
-function messageBody(order: Order, profile: MerchantProfile, rows: VatRow[], verifyUrl: string | null): string {
+function messageBody(
+  order: Order,
+  profile: MerchantProfile,
+  rows: VatRow[],
+  verifyUrl: string | null,
+  loyalty: LoyaltyCard | null,
+): string {
   const money = (minor: Minor) => fmtMinor(minor, order.currency);
   const parts = [
     `${profile.name || "Your receipt"} — order ${order.number} (${order.reference})`,
@@ -274,6 +292,13 @@ function messageBody(order: Order, profile: MerchantProfile, rows: VatRow[], ver
     "",
     `Paid by ${tenderLabel(order).toLowerCase()}`,
     ...(verifyUrl ? [`Verify: ${verifyUrl}`] : []),
+    ...(loyalty
+      ? [
+          loyalty.stamps >= loyalty.target
+            ? "Loyalty reward ready"
+            : `Loyalty ${loyalty.stamps}/${loyalty.target} stamps`,
+        ]
+      : []),
     ...(profile.receiptFooter ? ["", profile.receiptFooter] : []),
   ];
   return parts.join("\n");
@@ -359,7 +384,7 @@ function ReceiptSheetInner({
   order: Order;
   transactionHash: string | null;
 }) {
-  const { settings, peripherals } = useMerchant();
+  const { customers, settings, peripherals } = useMerchant();
   const { toast } = useToast();
 
   const [channel, setChannel] = useState<ReceiptChannel>("screen");
@@ -368,6 +393,9 @@ function ReceiptSheetInner({
   const [qr, setQr] = useState<{ url: string; dataUrl: string } | null>(null);
 
   const profile = settings.profile;
+  const loyalty = order.payerAddress
+    ? customers.find((customer) => customer.address === order.payerAddress)?.loyalty ?? null
+    : null;
   const rows = useMemo(
     () => vatRows(order, settings.taxRates, settings.taxMode),
     [order, settings.taxRates, settings.taxMode],
@@ -376,12 +404,12 @@ function ReceiptSheetInner({
     ? NETWORKS[order.network].explorerTxUrl(transactionHash)
     : null;
   const body = useMemo(
-    () => messageBody(order, profile, rows, verifyUrl),
-    [order, profile, rows, verifyUrl],
+    () => messageBody(order, profile, rows, verifyUrl, loyalty),
+    [loyalty, order, profile, rows, verifyUrl],
   );
   const paper = useMemo(
-    () => thermalLines(order, profile, rows, settings.taxMode, transactionHash),
-    [order, profile, rows, settings.taxMode, transactionHash],
+    () => thermalLines(order, profile, rows, settings.taxMode, transactionHash, loyalty),
+    [loyalty, order, profile, rows, settings.taxMode, transactionHash],
   );
   const widest = paper.reduce((max, entry) => Math.max(max, entry.length), 0);
   const printer = peripherals.find((peripheral) => peripheral.kind === "printer");
@@ -598,6 +626,18 @@ function ReceiptSheetInner({
                 <p className="border-t border-white/[0.08] px-4 py-3 text-center text-[12px] leading-relaxed text-neutral-400">
                   {profile.receiptFooter}
                 </p>
+              )}
+              {loyalty && (
+                <div className="border-t border-white/[0.08] px-4 py-3 text-center">
+                  <p className="text-[12px] font-semibold text-white">
+                    {loyalty.stamps >= loyalty.target
+                      ? "Loyalty reward ready"
+                      : `${loyalty.stamps} of ${loyalty.target} loyalty stamps`}
+                  </p>
+                  <p className="mt-1 text-[11.5px] text-neutral-500">
+                    The current card state is stored on this device.
+                  </p>
+                </div>
               )}
             </div>
 
