@@ -59,6 +59,16 @@ export function lineGrossMinor(line: OrderLine): Minor {
   return unit * line.quantity;
 }
 
+/** The line-level discount/comp retained on the line itself. */
+export function lineAdjustmentMinor(line: OrderLine): Minor {
+  return Math.min(Math.max(line.adjustmentMinor ?? 0, 0), lineGrossMinor(line));
+}
+
+/** What remains on a line before any ticket-wide discount is distributed. */
+export function linePayableMinor(line: OrderLine): Minor {
+  return lineGrossMinor(line) - lineAdjustmentMinor(line);
+}
+
 /**
  * Split `amount` across `weights` so the parts sum to exactly `amount`.
  * Largest-remainder, so a pro-rata discount never loses or invents a cent.
@@ -128,15 +138,22 @@ export function orderTotals({
 }: TotalsInput): OrderTotals {
   const lineGross = lines.map(lineGrossMinor);
   const grossMinor = lineGross.reduce((a, b) => a + b, 0);
-  const discount = Math.min(Math.max(discountMinor, 0), grossMinor);
-  const discountPerLine = distribute(discount, lineGross);
+  const lineAdjustments = lines.map(lineAdjustmentMinor);
+  const lineAdjustmentTotal = lineAdjustments.reduce((a, b) => a + b, 0);
+  const afterLineAdjustments = lineGross.map((gross, index) => gross - lineAdjustments[index]);
+  const ticketDiscount = Math.min(
+    Math.max(discountMinor, 0),
+    grossMinor - lineAdjustmentTotal,
+  );
+  const discountPerLine = distribute(ticketDiscount, afterLineAdjustments);
+  const discount = lineAdjustmentTotal + ticketDiscount;
 
   const rateById = new Map(taxRates.map((r) => [r.id, r]));
   const taxByRate: Record<string, Minor> = {};
   let taxMinor = 0;
 
   lines.forEach((line, i) => {
-    const payable = lineGross[i] - discountPerLine[i];
+    const payable = afterLineAdjustments[i] - discountPerLine[i];
     const rate = rateById.get(line.taxRateId);
     const tax = taxOn(payable, rate?.percent ?? 0, taxMode);
     if (tax === 0) return;

@@ -5,7 +5,6 @@ import { createCharge, chargePayUri, orderReference, referencePrefix, quoteFor }
 import { matchPayment, chargeStatusFor } from "../src/lib/merchant/match.ts";
 import { fetchIncomingPayments, ledgerFromPagingToken } from "../src/lib/merchant/watch.ts";
 import { defaultSettings } from "../src/lib/merchant/defaults.ts";
-import { unitPriceE6 } from "../src/lib/merchant/money.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
@@ -109,6 +108,23 @@ test("a native quote omits the asset code, as SEP-7 requires", () => {
   assert.equal(parsed.assetCode, undefined);
   assert.equal(parsed.assetIssuer, undefined);
   assert.equal(parsed.amount, "107.9383887");
+});
+
+test("a split charge quotes only its exact outstanding remainder", () => {
+  const total = order(1042, 1000, "MC1042");
+  const c = createCharge({
+    order: total,
+    settings: settings(),
+    network: "mainnet",
+    destination: TILL,
+    quotes: [{ asset: USDC_ASSET, currencyPerUnit: 1 }],
+    amountMinor: 600,
+    now: NOW,
+    id: "split-charge",
+  });
+
+  assert.equal(c.amountMinor, 600);
+  assert.equal(quoteFor(c, USDC_ASSET).amount, "6.0000000");
 });
 
 test("the memo lane names a charge outright", () => {

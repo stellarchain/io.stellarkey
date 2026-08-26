@@ -86,6 +86,8 @@ export interface CreateChargeInput {
   network: NetworkKey;
   destination: string;
   quotes: QuoteInput[];
+  /** Defaults to the order total; a split charge uses only its outstanding leg. */
+  amountMinor?: Minor;
   now?: number;
   id?: string;
 }
@@ -96,20 +98,25 @@ export function createCharge({
   network,
   destination,
   quotes,
+  amountMinor,
   now = Date.now(),
   id,
 }: CreateChargeInput): Charge {
   if (!destination) throw new Error("Merchant Mode needs a receiving account before it can charge.");
   if (quotes.length === 0) throw new Error("No accepted asset has a price right now.");
+  const chargeAmount = amountMinor ?? order.totals.totalMinor;
+  if (!Number.isSafeInteger(chargeAmount) || chargeAmount <= 0 || chargeAmount > order.totals.totalMinor) {
+    throw new Error("A charge must be a positive minor-unit amount within the order total.");
+  }
   return {
     id: id ?? `chg_${now.toString(36)}_${Math.floor(Math.random() * 1e6).toString(36)}`,
     orderId: order.id,
     reference: order.reference,
     network,
     destination,
-    amountMinor: order.totals.totalMinor,
+    amountMinor: chargeAmount,
     currency: order.currency,
-    quotes: buildQuotes(order.totals.totalMinor, quotes, now),
+    quotes: buildQuotes(chargeAmount, quotes, now),
     status: "awaiting",
     createdAt: now,
     expiresAt: now + settings.chargeExpirySeconds * 1000,

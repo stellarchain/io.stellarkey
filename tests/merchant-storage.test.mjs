@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import {
+  applyTicketAdjustment,
+  buildOrder,
+  cashTender,
+  settleNewOrder,
+} from "../src/lib/merchant/orders.ts";
 import * as storage from "../src/lib/merchant/storage.ts";
 
 function memoryStorage(initial = {}) {
@@ -210,7 +216,13 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
   withWindow(localStorage, () => {
     const migrated = storage.loadMerchantStore();
     assert.equal(migrated.version, 2);
-    assert.deepEqual(migrated.orders, legacy.orders);
+    assert.deepEqual(migrated.orders, [
+      {
+        ...legacy.orders[0],
+        staffId: null,
+        stockAppliedAt: legacy.orders[0].paidAt,
+      },
+    ]);
     assert.deepEqual(migrated.charges, legacy.charges);
     assert.deepEqual(migrated.refunds, [
       { ...legacy.refunds[0], submissionStatus: "confirmed" },
@@ -260,6 +272,157 @@ test("nested partial settings reconcile and malformed collections are discarded"
     assert.equal(recovered.tillTextSize, "standard");
     assert.equal(recovered.nextOrderNumber, 1001);
     assert.equal(recovered.terminal.name, "Front till");
+  });
+});
+
+test("older orders reconcile immutable staff, stock, and line-adjustment fields", () => {
+  const paidAt = Date.now();
+  const decoded = storage.decodeMerchantStore({
+    ...emptyStore(),
+    orders: [
+      legacyOrder({
+        paidAt,
+        lines: [
+          {
+            id: "line-old",
+            itemId: null,
+            name: "Old line",
+            quantity: 1,
+            unitPriceMinor: 250,
+            modifiers: [],
+            taxRateId: "standard",
+            note: null,
+          },
+        ],
+      }),
+    ],
+  });
+
+  assert.equal(decoded.orders[0].staffId, null);
+  assert.equal(decoded.orders[0].stockAppliedAt, paidAt);
+  assert.equal(decoded.orders[0].lines[0].adjustmentMinor, 0);
+});
+
+test("older adjustment records reconcile stable order, line, and staff identities", () => {
+  const decoded = storage.decodeMerchantStore({
+    ...emptyStore(),
+    adjustments: [
+      {
+        id: "adjustment-old",
+        kind: "discount",
+        orderNumber: 72,
+        lineName: null,
+        amountMinor: 125,
+        reasonCode: "Loyalty",
+        staffName: "Owner",
+        at: 99,
+      },
+    ],
+  });
+
+  assert.deepEqual(decoded.adjustments[0], {
+    id: "adjustment-old",
+    kind: "discount",
+    orderId: "legacy-order-72",
+    orderNumber: 72,
+    lineId: null,
+    lineName: null,
+    amountMinor: 125,
+    reasonCode: "Loyalty",
+    staffId: "legacy-staff",
+    staffName: "Owner",
+    at: 99,
+  });
+});
+
+test("a settled cash order reloads with tender, stock, and adjustment audit intact", () => {
+  const now = Date.now();
+  const actor = {
+    id: "staff-owner",
+    name: "Owner",
+    role: "owner",
+    permissions: {
+      takePayment: true,
+      applyDiscount: true,
+      comp: true,
+      void: true,
+      refundCeilingMinor: null,
+      openDrawer: true,
+      seeReports: true,
+      exportRecords: true,
+    },
+    pinDigest: null,
+    pinSetAt: null,
+    active: true,
+  };
+  const line = {
+    id: "line-stock",
+    itemId: "item-stock",
+    name: "Stock item",
+    quantity: 1,
+    unitPriceMinor: 500,
+    modifiers: [],
+    taxRateId: "standard",
+    note: null,
+    adjustmentMinor: 0,
+  };
+  const base = {
+    ...emptyStore(),
+    catalogue: [
+      {
+        id: "item-stock",
+        name: "Stock item",
+        sku: "STOCK",
+        category: "Test",
+        priceMinor: 500,
+        taxRateId: "standard",
+        colour: "#0A84FF",
+        modifierGroupIds: [],
+        trackStock: true,
+        stockOnHand: 2,
+        lowStockAt: 1,
+        active: true,
+        sortIndex: 0,
+      },
+    ],
+  };
+  const ticket = { lines: [line], discountMinor: 0, tipMinor: 0 };
+  const adjusted = applyTicketAdjustment(base, ticket, {
+    id: "adjustment-live",
+    kind: "discount",
+    lineId: line.id,
+    amountMinor: 100,
+    reasonCode: "Loyalty",
+    actor,
+    now,
+  });
+  const order = buildOrder(base, {
+    id: "order-live",
+    network: "testnet",
+    ...adjusted.ticket,
+    staffId: actor.id,
+    staffName: actor.name,
+    now: now + 1,
+  });
+  const committed = settleNewOrder(
+    base,
+    order,
+    [cashTender(order.totals.totalMinor, 500)],
+    [adjusted.adjustment],
+    now + 2,
+  ).store;
+  const localStorage = memoryStorage();
+
+  withWindow(localStorage, () => {
+    assert.equal(storage.saveMerchantStore(committed), true);
+    const reloaded = storage.loadMerchantStore();
+    assert.deepEqual(reloaded.orders[0].tender, [
+      { kind: "cash", amountMinor: order.totals.totalMinor, receivedMinor: 500, changeMinor: 100 },
+    ]);
+    assert.equal(reloaded.orders[0].stockAppliedAt, now + 2);
+    assert.equal(reloaded.catalogue[0].stockOnHand, 1);
+    assert.equal(reloaded.adjustments[0].orderId, "order-live");
+    assert.equal(reloaded.adjustments[0].staffId, actor.id);
   });
 });
 

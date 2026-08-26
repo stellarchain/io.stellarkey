@@ -105,6 +105,28 @@ test("discount spreads pro-rata and never loses a cent", () => {
   assert.deepEqual(distribute(0, [5, 5]), [0, 0]);
 });
 
+test("line adjustments reduce that line before ticket discount and tax", () => {
+  const lines = [
+    line({ id: "standard", unitPriceMinor: 1000, adjustmentMinor: 250 }),
+    line({ id: "zero", unitPriceMinor: 1000, taxRateId: "zero", adjustmentMinor: 0 }),
+  ];
+
+  const totals = orderTotals({
+    lines,
+    taxRates: RATES,
+    taxMode: "inclusive",
+    discountMinor: 100,
+  });
+
+  assert.equal(totals.grossMinor, 2000);
+  assert.equal(totals.discountMinor, 350);
+  // The remaining ticket-wide 100 is distributed over 750:1000, so 43 lands
+  // on the standard-rate line after its own 250 adjustment.
+  assert.equal(totals.taxByRate.std, taxOn(707, 23, "inclusive"));
+  assert.equal(totals.taxByRate.zero, undefined);
+  assert.equal(totals.totalMinor, 1650);
+});
+
 test("a discount cannot exceed the ticket and a tip is never taxed", () => {
   const lines = [line({ unitPriceMinor: 1000 })];
   const over = orderTotals({ lines, taxRates: RATES, taxMode: "inclusive", discountMinor: 9999 });
