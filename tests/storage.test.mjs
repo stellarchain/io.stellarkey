@@ -94,6 +94,26 @@ test("private transaction notes are encrypted at rest and require an unlocked va
   assert.throws(() => getMerchantEncryptionKey(), /locked/i);
 });
 
+test("merchant session keys are unique to each vault even when passwords match", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    getMerchantEncryptionKey,
+    initializeVault,
+    wipeVault,
+  } = await import("../src/lib/vault.ts");
+  const password = "same password across separate vaults";
+
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const firstKey = getMerchantEncryptionKey();
+  wipeVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const secondKey = getMerchantEncryptionKey();
+
+  assert.notDeepEqual(firstKey, secondKey);
+});
+
 test("vault loading distinguishes absent, corrupt, and future data without overwriting it", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
