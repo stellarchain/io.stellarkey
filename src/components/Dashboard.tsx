@@ -7,7 +7,7 @@ import { useMerchant } from "@/hooks/useMerchant";
 import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
 import { lookupKnownAsset } from "@/lib/assets";
 import { assetMetadataCacheKey, fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
-import { parseSep7PayUri, type PayUriPayload } from "@/lib/payuri";
+import { parseSep7PayUri } from "@/lib/payuri";
 import {
   fmtAmount,
   fmtFiat,
@@ -65,6 +65,11 @@ import {
 import { IconBars, IconReceipt, IconStorefront, IconTag } from "./merchant/icons";
 import { ModeSwitcher, type ShellMode } from "./merchant/ModeSwitcher";
 import type { MerchantSub } from "./merchant/MerchantPage";
+import type {
+  SettlementSwapIntent,
+  SettlementSweepIntent,
+} from "@/lib/merchant/settlement";
+import type { SendPrefill } from "./SendModal";
 
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
 const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
@@ -239,7 +244,8 @@ export function Dashboard() {
   const [hideActivityDust, setHideActivityDust] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
-  const [sendPrefill, setSendPrefill] = useState<PayUriPayload | null>(null);
+  const [sendPrefill, setSendPrefill] = useState<SendPrefill | null>(null);
+  const [swapPrefill, setSwapPrefill] = useState<SettlementSwapIntent | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [addAssetOpen, setAddAssetOpen] = useState(false);
   const [settingsSub, setSettingsSub] = useState<SettingsSub>("root");
@@ -795,6 +801,7 @@ export function Dashboard() {
 
   function switchTab(v: View) {
     triggerHaptic("selection");
+    if (v === "swap") setSwapPrefill(null);
     setView(v);
     if (isMerchantView(v)) {
       setMode("merchant");
@@ -1707,14 +1714,25 @@ export function Dashboard() {
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
               onOpenMultisigStudio={() => setMultisigOpen(true)}
               onOpenSetupWizard={() => setSetupWizardOpen(true)}
-              onOpenSwap={() => switchTab("swap")}
-              onOpenSend={(destination) => {
-                setSendPrefill(destination ? { destination } : null);
+              onOpenSwap={(intent: SettlementSwapIntent) => {
+                switchTab("swap");
+                setSwapPrefill(intent);
+              }}
+              onOpenSend={(intent: SettlementSweepIntent) => {
+                setSendPrefill({
+                  destination: intent.destination,
+                  amount: intent.amount,
+                  ...(intent.asset.issuer
+                    ? { assetCode: intent.asset.code, assetIssuer: intent.asset.issuer }
+                    : {}),
+                  msg: "Merchant treasury sweep",
+                  settlementIntent: intent,
+                });
                 setSendOpen(true);
               }}
             />
           ) : view === "swap" ? (
-            <SwapPage />
+            <SwapPage key={swapPrefill?.contextId ?? "manual-swap"} prefill={swapPrefill} />
           ) : view === "contacts" ? (
             <AddressBookPage onSendTo={handleSendToContact} />
           ) : isMerchantView(view) ? (
@@ -2484,7 +2502,14 @@ export function Dashboard() {
         </button>
       </nav>
 
-      <SendModal open={sendOpen} onClose={() => setSendOpen(false)} prefill={sendPrefill} />
+      <SendModal
+        open={sendOpen}
+        onClose={() => {
+          setSendOpen(false);
+          setSendPrefill(null);
+        }}
+        prefill={sendPrefill}
+      />
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
       <ReceiveModal open={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />

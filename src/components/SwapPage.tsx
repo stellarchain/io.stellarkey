@@ -22,15 +22,23 @@ import {
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
 import type { SubmissionResult } from "@/lib/submission";
+import { assetKey as merchantAssetKey } from "@/lib/merchant/charge";
+import type { SettlementSwapIntent } from "@/lib/merchant/settlement";
 import { Button, ErrorText, HashValue, Select } from "./ui";
 import { IconAlert, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
 
-export function SwapPage() {
+export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | null }) {
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, swap, network, refresh, activeAccount, submissionStatus } = useWallet();
-  const [sendKey, setSendKey] = useState("native");
-  const [destKey, setDestKey] = useState("");
-  const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState<number>(0.5); // 0.5% default
+  const [sendKey, setSendKey] = useState(() =>
+    prefill ? merchantAssetKey(prefill.sourceAsset) : "native",
+  );
+  const [destKey, setDestKey] = useState(() =>
+    prefill ? merchantAssetKey(prefill.destinationAsset) : "",
+  );
+  const [amount, setAmount] = useState(prefill?.amount ?? "");
+  const [slippage, setSlippage] = useState<number>(
+    prefill ? prefill.maxSlippageBps / 100 : 0.5,
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [invertRate, setInvertRate] = useState(false);
   const [stage, setStage] = useState<"form" | "review">("form");
@@ -66,7 +74,9 @@ export function SwapPage() {
     sendAsset !== null &&
     destAsset !== null &&
     compareStellarAmounts(amount, sendAvailable) <= 0 &&
-    sendAsset.key !== destAsset?.key;
+    sendAsset.key !== destAsset?.key &&
+    (!prefill ||
+      (prefill.network === network && prefill.sourceAccount === activeAccount?.publicKey));
 
   const routeKey =
     valid && sendAsset && destAsset
@@ -240,6 +250,21 @@ export function SwapPage() {
           <IconSliders size={16} />
         </button>
       </div>
+
+      {prefill && (
+        <div className="mb-3 rounded-2xl border border-[#5E5CE6]/35 bg-[#5E5CE6]/10 p-3.5">
+          <p className="text-[12.5px] font-semibold text-white">Merchant settlement handoff</p>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-300">
+            Rule context {prefill.contextId}. The exact amount and assets were carried here for
+            review; no transaction has been signed.
+          </p>
+          {(prefill.network !== network || prefill.sourceAccount !== activeAccount?.publicKey) && (
+            <p className="mt-2 text-[11.5px] font-semibold text-[#FF9F0A]">
+              Switch back to the handoff&rsquo;s {prefill.network} receiving account to continue.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Slippage Settings (toggled by the toolbar gear) */}
       {showSettings && (

@@ -32,6 +32,7 @@ import {
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import type { SubmissionResult } from "@/lib/submission";
+import type { SettlementSweepIntent } from "@/lib/merchant/settlement";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader, QrScannerBox, SegmentedControl, Select, Spinner } from "./ui";
 import { FiatValue } from "./FiatValue";
 import {
@@ -49,6 +50,10 @@ type Stage = "form" | "review" | "sending" | "cosign" | "done" | "status_unknown
 type MemoType = StellarMemoInput["type"];
 type FeeTier = "normal" | "priority" | "urgent";
 
+export type SendPrefill = PayUriPayload & {
+  settlementIntent?: SettlementSweepIntent;
+};
+
 export function SendModal({
   open,
   onClose,
@@ -56,7 +61,7 @@ export function SendModal({
 }: {
   open: boolean;
   onClose: () => void;
-  prefill?: PayUriPayload | null;
+  prefill?: SendPrefill | null;
 }) {
   if (!open) return null;
   return <SendInner onClose={onClose} prefill={prefill} />;
@@ -67,7 +72,7 @@ function SendInner({
   prefill,
 }: {
   onClose: () => void;
-  prefill?: PayUriPayload | null;
+  prefill?: SendPrefill | null;
 }) {
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, send, prepareCosignPayment, network, refresh, contacts, activeAccount, accounts, activity, submissionStatus } = useWallet();
   const prefillError = prefill
@@ -172,7 +177,15 @@ function SendInner({
     () => options.find((b) => b.key === effectiveAssetKey) ?? null,
     [options, effectiveAssetKey],
   );
-  const effectiveError = error ?? pendingPrefillAsset?.error ?? null;
+  const settlementIntent = prefill?.settlementIntent ?? null;
+  const settlementContextError = settlementIntent
+    ? settlementIntent.network !== network
+      ? `Switch to ${settlementIntent.network} to review this merchant settlement handoff.`
+      : settlementIntent.sourceAccount !== activeAccount?.publicKey
+        ? "Switch to the merchant receiving account to review this settlement handoff."
+        : null
+    : null;
+  const effectiveError = error ?? pendingPrefillAsset?.error ?? settlementContextError;
   const reviewMemo = memoReviewPresentation(memo, memoType);
 
   // Recent recipients derived from outgoing activity (most recent first)
@@ -678,6 +691,15 @@ function SendInner({
           </>
         ) : (
           <div className="space-y-4">
+            {settlementIntent && (
+              <div className="rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-3.5">
+                <p className="text-[12.5px] font-semibold text-white">Merchant settlement handoff</p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-300">
+                  Rule context {settlementIntent.contextId}. Destination, asset, and exact amount
+                  were carried here for review; no transaction has been signed.
+                </p>
+              </div>
+            )}
                             {/* Asset picker and Amount Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Asset picker */}

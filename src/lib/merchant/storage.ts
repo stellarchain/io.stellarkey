@@ -1,4 +1,5 @@
 import { emptyStore } from "./defaults";
+import { StrKey } from "@stellar/stellar-sdk";
 import type {
   AcceptedAsset,
   LoyaltyEvent,
@@ -602,22 +603,34 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
           ? settlementValue.autoConvert
           : base.settlementRule.autoConvert,
       maxSlippageBps: isFiniteNumber(settlementValue.maxSlippageBps)
+        && Number.isInteger(settlementValue.maxSlippageBps)
+        && settlementValue.maxSlippageBps >= 1
+        && settlementValue.maxSlippageBps <= 1_000
         ? settlementValue.maxSlippageBps
         : base.settlementRule.maxSlippageBps,
       sweepAboveMinor:
-        settlementValue.sweepAboveMinor === null || isFiniteNumber(settlementValue.sweepAboveMinor)
-          ? settlementValue.sweepAboveMinor
+        settlementValue.sweepAboveMinor === null ||
+        (Number.isSafeInteger(settlementValue.sweepAboveMinor) &&
+          (settlementValue.sweepAboveMinor as number) >= 0)
+          ? (settlementValue.sweepAboveMinor as number | null)
           : base.settlementRule.sweepAboveMinor,
-      sweepDestination: nullableString(
-        settlementValue.sweepDestination,
-        base.settlementRule.sweepDestination,
-      ),
-      retainedFloatMinor: isFiniteNumber(settlementValue.retainedFloatMinor)
-        ? settlementValue.retainedFloatMinor
+      sweepDestination:
+        settlementValue.sweepDestination === null ||
+        (typeof settlementValue.sweepDestination === "string" &&
+          StrKey.isValidEd25519PublicKey(settlementValue.sweepDestination))
+          ? settlementValue.sweepDestination
+          : base.settlementRule.sweepDestination,
+      retainedFloatMinor:
+        Number.isSafeInteger(settlementValue.retainedFloatMinor) &&
+        (settlementValue.retainedFloatMinor as number) >= 0
+        ? (settlementValue.retainedFloatMinor as number)
         : base.settlementRule.retainedFloatMinor,
       sweepPromptHour:
-        settlementValue.sweepPromptHour === null || isFiniteNumber(settlementValue.sweepPromptHour)
-          ? settlementValue.sweepPromptHour
+        settlementValue.sweepPromptHour === null ||
+        (Number.isInteger(settlementValue.sweepPromptHour) &&
+          (settlementValue.sweepPromptHour as number) >= 0 &&
+          (settlementValue.sweepPromptHour as number) <= 23)
+          ? (settlementValue.sweepPromptHour as number | null)
           : base.settlementRule.sweepPromptHour,
     },
     adjustments: adjustmentRecords(value.adjustments),

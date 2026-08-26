@@ -62,6 +62,10 @@ import {
 } from "./icons";
 import { IconStorefront } from "./merchant/icons";
 import { MerchantSettings } from "./merchant/MerchantSettings";
+import type {
+  SettlementSwapIntent,
+  SettlementSweepIntent,
+} from "@/lib/merchant/settlement";
 
 /* The merchant sub-pages are design mocks and none of them is small; they load
    only when the shop actually walks into one. */
@@ -129,9 +133,9 @@ export function SettingsPage({
   /** Offered when Merchant Mode is switched on for a shop with nothing set up. */
   onOpenSetupWizard?: () => void;
   /** The wallet's own DEX Swap, where a merchant conversion is made and signed. */
-  onOpenSwap?: () => void;
+  onOpenSwap?: (intent: SettlementSwapIntent) => void;
   /** The wallet's own Send, where a merchant sweep is made and signed. */
-  onOpenSend?: (destination?: string) => void;
+  onOpenSend?: (intent: SettlementSweepIntent) => void;
 }) {
   const {
     network,
