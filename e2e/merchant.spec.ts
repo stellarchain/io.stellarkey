@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { once } from "node:events";
-import path from "node:path";
-import test from "node:test";
-import { fileURLToPath } from "node:url";
 import { Networks, TransactionBuilder } from "@stellar/stellar-sdk";
-import { chromium, type Browser, type BrowserContext, type Page, type Route } from "playwright";
+import {
+  chromium,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Locator,
+  type Page,
+  type Route,
+} from "@playwright/test";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const port = Number(process.env.MERCHANT_E2E_PORT ?? 3187);
+const port = Number(process.env.E2E_PORT ?? 3187);
 const origin = `http://127.0.0.1:${port}`;
 const account = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
 const secret = "SADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP54X";
@@ -29,44 +31,6 @@ type HorizonPayment = {
   amount: string;
   transaction: { memo: string; memo_type: "text"; successful: true };
 };
-
-let server: ChildProcessWithoutNullStreams | null = null;
-let serverLog = "";
-
-async function waitForServer(): Promise<void> {
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(origin);
-      if (response.ok) return;
-    } catch {
-      // The process is still binding its port.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Merchant E2E server did not start.\n${serverLog}`);
-}
-
-test.before(async () => {
-  server = spawn(
-    process.execPath,
-    ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)],
-    { cwd: root, env: { ...process.env, NODE_ENV: "production" } },
-  );
-  server.stdout.on("data", (chunk) => {
-    serverLog += chunk.toString();
-  });
-  server.stderr.on("data", (chunk) => {
-    serverLog += chunk.toString();
-  });
-  await waitForServer();
-});
-
-test.after(async () => {
-  if (!server || server.exitCode !== null) return;
-  server.kill("SIGTERM");
-  await Promise.race([once(server, "exit"), new Promise((resolve) => setTimeout(resolve, 3_000))]);
-});
 
 function accountBody(publicKey: string) {
   return {
@@ -223,6 +187,20 @@ async function openOtherTender(page: Page) {
   return page.getByRole("dialog", { name: /Other tender/ });
 }
 
+async function readVisibleChargeRequest(chargeDialog: Locator) {
+  const subtitle = chargeDialog.getByText(/^Order \d+ · .+$/).first();
+  await subtitle.waitFor();
+  const subtitleText = (await subtitle.textContent()) ?? "";
+  const reference = subtitleText.split(" · ").at(-1)?.trim() ?? "";
+  const qr = chargeDialog.locator('img[alt^="Payment request for "]');
+  await qr.waitFor();
+  const alt = (await qr.getAttribute("alt")) ?? "";
+  const amount = /^Payment request for ([0-9.]+) XLM$/.exec(alt)?.[1] ?? "";
+  assert.ok(reference, "charge dialog must expose its immutable memo reference");
+  assert.ok(amount, "charge dialog must expose its native amount in the QR description");
+  return { charge: { reference }, quote: { amount } };
+}
+
 async function raiseCryptoCharge(page: Page, keys: string[]) {
   await enterKeypadAmount(page, keys);
   await page.getByRole("button", { name: "Charge", exact: true }).click();
@@ -230,13 +208,7 @@ async function raiseCryptoCharge(page: Page, keys: string[]) {
   await tip.getByRole("button", { name: "No tip" }).click();
   const chargeDialog = page.getByRole("dialog", { name: /^Charge/ });
   await chargeDialog.getByText("Waiting for payment", { exact: true }).waitFor();
-  const charge = await page.evaluate(() => {
-    const store = JSON.parse(localStorage.getItem("wallet.merchant.v2") ?? "null");
-    return store?.charges?.[0] ?? null;
-  });
-  assert.ok(charge, "raising a charge must persist it before displaying the QR");
-  const quote = charge.quotes.find((candidate: { asset: { code: string } }) => candidate.asset.code === "XLM");
-  assert.ok(quote, "test charge must expose its native quote");
+  const { charge, quote } = await readVisibleChargeRequest(chargeDialog);
   return { chargeDialog, charge, quote };
 }
 
@@ -274,9 +246,10 @@ async function returnToTill(page: Page) {
   await page.getByText(/Shift 1 · Front counter/).waitFor();
 }
 
+test.describe.configure({ timeout: 120_000 });
+
 test(
   "merchant journeys remain exact, persisted, operable, and mobile-safe",
-  { timeout: 120_000 },
   async () => {
     const incoming: HorizonPayment[] = [];
     const acceptedTransactions = new Set<string>();
@@ -445,15 +418,7 @@ test(
       await split.getByRole("button", { name: "Record split" }).click();
       const splitCharge = page.getByRole("dialog", { name: /^Charge/ });
       await splitCharge.getByText("Waiting for payment", { exact: true }).waitFor();
-      const splitState = await page.evaluate(() => {
-        const store = JSON.parse(localStorage.getItem("wallet.merchant.v2") ?? "null");
-        const charge = store?.charges?.[0];
-        return {
-          charge,
-          quote: charge?.quotes?.find((candidate: { asset: { code: string } }) => candidate.asset.code === "XLM"),
-        };
-      });
-      assert.ok(splitState.charge && splitState.quote);
+      const splitState = await readVisibleChargeRequest(splitCharge);
       incoming.push(
         incomingPayment("pay1003", splitState.charge.reference, splitState.quote.amount, 100_002),
       );

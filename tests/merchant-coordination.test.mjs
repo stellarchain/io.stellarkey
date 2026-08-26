@@ -87,4 +87,5 @@ test("the merchant provider reloads revisions and leases Horizon polling", () =>
   assert.match(hook, /prepareMerchantCommit/);
   assert.match(hook, /claimWatcherLease/);
   assert.match(hook, /releaseWatcherLease/);
+  assert.match(hook, /window\.addEventListener\("pagehide", release\)/);
 });

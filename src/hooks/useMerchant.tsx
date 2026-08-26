@@ -1936,14 +1936,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [network, settings.receivingPublicKey],
   );
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const release = () => {
       if (activeWatcherLeaseKey) {
         releaseWatcherLease(window.localStorage, activeWatcherLeaseKey, writerId);
       }
-    },
-    [activeWatcherLeaseKey, writerId],
-  );
+    };
+    window.addEventListener("pagehide", release);
+    return () => {
+      window.removeEventListener("pagehide", release);
+      release();
+    };
+  }, [activeWatcherLeaseKey, writerId]);
 
   const pollNow = useCallback(async () => {
     const till = settings.receivingPublicKey;
