@@ -123,16 +123,44 @@ export function defaultSettings(): MerchantSettings {
 }
 
 export function emptyStore(): MerchantStore {
+  const settings = defaultSettings();
   return {
-    version: 1,
-    settings: defaultSettings(),
+    version: 2,
+    settings,
     catalogue: DEFAULT_CATALOGUE,
     modifierGroups: DEFAULT_MODIFIER_GROUPS,
     orders: [],
     charges: [],
     refunds: [],
     unmatched: [],
+    staff: [],
+    activeStaffId: null,
+    shifts: [],
+    invoices: [],
+    counterCodes: [],
+    counterPayments: [],
+    customers: [],
+    settlementRule: {
+      autoConvert: false,
+      maxSlippageBps: 100,
+      sweepAboveMinor: null,
+      sweepDestination: null,
+      retainedFloatMinor: 0,
+      sweepPromptHour: null,
+    },
+    adjustments: [],
+    refundRequests: [],
+    peripherals: [],
+    exportRecords: [],
+    terminal: {
+      name: settings.terminalName,
+      appVersion: "0.1.0",
+      queuedCharges: 0,
+    },
+    tillTextSize: "standard",
     nextOrderNumber: 1001,
+    nextShiftNumber: 1,
+    nextInvoiceNumber: 1,
     cursors: {},
   };
 }
