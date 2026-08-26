@@ -8,8 +8,17 @@ A self-custodial Stellar wallet built with Next.js 16, React 19, and `@stellar/s
 - Exact seven-decimal Stellar amount arithmetic, typed memos, live base-reserve calculation, multisig envelopes, and SEP-7 unsigned payment links
 - Password-encrypted local vaults and backups, encrypted private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
 - Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup
+- Local-first Merchant Mode with cash, external-card, split, and Horizon-confirmed crypto sales; staff permissions; refund approval; shifts; invoices; counter codes; customer/loyalty records; reports; and explicit treasury handoffs
 
 Ledger signing is not implemented and is intentionally unavailable. The app never creates a simulated Ledger account. Biometric unlock is also unavailable until it can be backed by a real passkey or smart-account authorization flow.
+
+## Merchant Mode
+
+Merchant Mode turns one unlocked wallet and browser into a single-device point of sale. Cash and external-card records stay local; crypto payments settle only after Horizon reports the exact network, destination, asset, memo, and amount. Refunds, trustlines, swaps, and treasury transfers always return to the wallet's reviewed signing flow.
+
+Merchant records do not synchronize between devices and are not a cloud backup. Export the accounting records you need before resetting the app or clearing browser storage. Direct ESC/POS, Bluetooth, cash-drawer, and external-display control require a separate hardware bridge and are shown as unavailable when one is not present.
+
+See [Merchant Mode operations](docs/merchant-mode.md) for setup, daily use, offline behavior, and security boundaries.
 
 ## Asset and price safety
 
@@ -36,9 +45,10 @@ npm run typecheck
 npm run lint
 npm run audit:prod
 npm run build
+npm run test:e2e:merchant
 ```
 
-CI runs the same checks on pushes and pull requests.
+The merchant browser command builds the production app and exercises a deterministic Chromium journey. CI runs the same checks on pushes and pull requests.
 
 ## Security and deployment notes
 
