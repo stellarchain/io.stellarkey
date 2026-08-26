@@ -608,6 +608,7 @@ export const MOCK_REFUND_REQUESTS: RefundRequest[] = [
     amountMinor: 4200,
     reason: "customer_request",
     note: null,
+    sourcePaymentId: null,
     requestedById: "st_tomas",
     requestedBy: "Tomás Silva",
     requestedAt: at(16, 5),

@@ -225,7 +225,12 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
     ]);
     assert.deepEqual(migrated.charges, legacy.charges);
     assert.deepEqual(migrated.refunds, [
-      { ...legacy.refunds[0], submissionStatus: "confirmed" },
+      {
+        ...legacy.refunds[0],
+        kind: "order",
+        sourcePaymentId: null,
+        submissionStatus: "confirmed",
+      },
     ]);
     assert.equal(migrated.nextOrderNumber, 1002);
     assert.equal(migrated.terminal.name, "Counter");
@@ -513,6 +518,73 @@ test("pruning retains every unresolved financial record", () => {
   assert.equal(pruned.charges.length, 1);
   assert.equal(pruned.invoices.length, 1);
   assert.equal(pruned.refundRequests.length, 1);
+});
+
+test("pruning keeps the order graph behind an unresolved payment and tracked refund", () => {
+  const old = Date.now() - 900 * 86_400_000;
+  const order = legacyOrder({ id: "review-order", status: "paid", createdAt: old });
+  const charge = {
+    ...legacyStore().charges[0],
+    id: "review-charge",
+    orderId: order.id,
+    status: "paid",
+    createdAt: old,
+  };
+  const payment = {
+    id: "review-payment",
+    transactionHash: "a".repeat(64),
+    ledger: 123,
+    from: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    amount: "1.0000000",
+    asset: { code: "XLM", issuer: null },
+    memo: "M1001",
+    createdAt: new Date(old).toISOString(),
+  };
+  const store = {
+    ...emptyStore(),
+    orders: [order],
+    charges: [charge],
+    unmatched: [{
+      ...payment,
+      seenAt: old,
+      reconciliationOutcome: "duplicate",
+      candidateChargeId: charge.id,
+    }],
+    paymentReconciliations: [{
+      id: payment.id,
+      network: "mainnet",
+      payment,
+      outcome: "duplicate",
+      chargeId: charge.id,
+      orderId: order.id,
+      amountMinor: 100,
+      observedAt: old,
+      resolution: null,
+    }],
+    refunds: [{
+      id: "tracked-refund",
+      orderId: order.id,
+      kind: "payment_reversal",
+      sourcePaymentId: payment.id,
+      network: "mainnet",
+      amountMinor: 100,
+      asset: payment.asset,
+      amount: payment.amount,
+      destination: payment.from,
+      reason: "duplicate",
+      note: null,
+      transactionHash: "b".repeat(64),
+      submissionStatus: "status_unknown",
+      createdAt: old,
+    }],
+  };
+
+  const pruned = storage.prune(store, 30);
+  assert.deepEqual(pruned.orders.map((entry) => entry.id), [order.id]);
+  assert.deepEqual(pruned.charges.map((entry) => entry.id), [charge.id]);
+  assert.deepEqual(pruned.unmatched.map((entry) => entry.id), [payment.id]);
+  assert.deepEqual(pruned.paymentReconciliations.map((entry) => entry.id), [payment.id]);
+  assert.deepEqual(pruned.refunds.map((entry) => entry.id), ["tracked-refund"]);
 });
 
 test("clearing merchant storage removes both schema generations", () => {

@@ -107,10 +107,51 @@ function adjustmentRecords(value: unknown): MerchantStore["adjustments"] {
   });
 }
 
+function paymentOutcome(value: unknown): MerchantStore["paymentReconciliations"][number]["outcome"] {
+  return value === "settled" ||
+    value === "needs_confirmation" ||
+    value === "underpaid" ||
+    value === "overpaid" ||
+    value === "late" ||
+    value === "duplicate" ||
+    value === "ambiguous" ||
+    value === "wrong_asset" ||
+    value === "outside_band"
+    ? value
+    : "unmatched";
+}
+
+function unmatchedRecords(value: unknown): MerchantStore["unmatched"] {
+  const payments = idRecords<MerchantStore["unmatched"][number]>(value) ?? [];
+  return payments.map((payment) => ({
+    ...payment,
+    reconciliationOutcome: paymentOutcome(payment.reconciliationOutcome),
+    candidateChargeId: nullableString(payment.candidateChargeId, null),
+  }));
+}
+
+function reconciliationRecords(value: unknown): MerchantStore["paymentReconciliations"] {
+  return recordArray<MerchantStore["paymentReconciliations"][number]>(
+    value,
+    (record) => typeof record.id === "string" && isRecord(record.payment),
+  )?.map((record) => ({
+    ...record,
+    outcome: paymentOutcome(record.outcome),
+    chargeId: nullableString(record.chargeId, null),
+    orderId: nullableString(record.orderId, null),
+    amountMinor: record.amountMinor === null || isFiniteNumber(record.amountMinor)
+      ? record.amountMinor
+      : null,
+    resolution: isRecord(record.resolution) ? record.resolution : null,
+  })) ?? [];
+}
+
 function refundRecords(value: unknown): MerchantStore["refunds"] {
   const refunds = idRecords<MerchantStore["refunds"][number]>(value) ?? [];
   return refunds.map((refund) => ({
     ...refund,
+    kind: refund.kind === "payment_reversal" ? "payment_reversal" as const : "order" as const,
+    sourcePaymentId: nullableString(refund.sourcePaymentId, null),
     // Refunds written before outbound lifecycle tracking were presented as
     // completed, so preserve that historical meaning during the v1/v2 read.
     submissionStatus:
@@ -120,6 +161,14 @@ function refundRecords(value: unknown): MerchantStore["refunds"] {
       refund.submissionStatus === "failed"
         ? refund.submissionStatus
         : "confirmed",
+  }));
+}
+
+function refundRequestRecords(value: unknown): MerchantStore["refundRequests"] {
+  const requests = idRecords<MerchantStore["refundRequests"][number]>(value) ?? [];
+  return requests.map((request) => ({
+    ...request,
+    sourcePaymentId: nullableString(request.sourcePaymentId, null),
   }));
 }
 
@@ -255,7 +304,8 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     orders: orderRecords(value.orders),
     charges: idRecords<MerchantStore["charges"][number]>(value.charges) ?? [],
     refunds: refundRecords(value.refunds),
-    unmatched: idRecords<MerchantStore["unmatched"][number]>(value.unmatched) ?? [],
+    unmatched: unmatchedRecords(value.unmatched),
+    paymentReconciliations: reconciliationRecords(value.paymentReconciliations),
     staff,
     activeStaffId:
       requestedActiveStaffId && staff.some((member) => member.id === requestedActiveStaffId)
@@ -296,8 +346,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
           : base.settlementRule.sweepPromptHour,
     },
     adjustments: adjustmentRecords(value.adjustments),
-    refundRequests:
-      idRecords<MerchantStore["refundRequests"][number]>(value.refundRequests) ?? [],
+    refundRequests: refundRequestRecords(value.refundRequests),
     peripherals: idRecords<MerchantStore["peripherals"][number]>(value.peripherals) ?? [],
     exportRecords: idRecords<MerchantStore["exportRecords"][number]>(value.exportRecords) ?? [],
     terminal: {
@@ -392,21 +441,55 @@ export function saveMerchantStore(store: MerchantStore): boolean {
 /** Drops resolved history beyond the retention window and retains live work. */
 export function prune(store: MerchantStore, retainDays = RETAIN_DAYS): MerchantStore {
   const cutoff = Date.now() - retainDays * 24 * 60 * 60 * 1000;
+  const unresolvedReconciliations = store.paymentReconciliations.filter(
+    (record) => record.resolution === null,
+  );
+  const protectedOrderIds = new Set<string>();
+  const protectedChargeIds = new Set<string>();
+  for (const record of unresolvedReconciliations) {
+    if (record.orderId) protectedOrderIds.add(record.orderId);
+    if (record.chargeId) protectedChargeIds.add(record.chargeId);
+  }
+  for (const refund of store.refunds) {
+    if (refund.submissionStatus === "accepted" || refund.submissionStatus === "status_unknown") {
+      protectedOrderIds.add(refund.orderId);
+    }
+  }
+  for (const request of store.refundRequests) {
+    if (request.status === "pending") protectedOrderIds.add(request.orderId);
+  }
   const orders = store.orders.filter(
     (order) =>
-      order.createdAt >= cutoff || order.status === "open" || order.status === "awaiting",
+      order.createdAt >= cutoff ||
+      order.status === "open" ||
+      order.status === "awaiting" ||
+      protectedOrderIds.has(order.id),
   );
   const keptOrderIds = new Set(orders.map((order) => order.id));
+  const unresolvedPaymentIds = new Set(unresolvedReconciliations.map((record) => record.id));
   const openInvoiceStatuses = new Set(["draft", "sent", "partially_paid", "overdue"]);
 
   return {
     ...store,
     orders,
     charges: store.charges.filter(
-      (charge) => keptOrderIds.has(charge.orderId) || charge.status === "awaiting",
+      (charge) =>
+        keptOrderIds.has(charge.orderId) ||
+        charge.status === "awaiting" ||
+        protectedChargeIds.has(charge.id),
     ),
-    refunds: store.refunds.filter((refund) => keptOrderIds.has(refund.orderId)),
-    unmatched: store.unmatched.filter((payment) => payment.seenAt >= cutoff),
+    refunds: store.refunds.filter(
+      (refund) =>
+        keptOrderIds.has(refund.orderId) ||
+        refund.submissionStatus === "accepted" ||
+        refund.submissionStatus === "status_unknown",
+    ),
+    unmatched: store.unmatched.filter(
+      (payment) => payment.seenAt >= cutoff || unresolvedPaymentIds.has(payment.id),
+    ),
+    paymentReconciliations: store.paymentReconciliations.filter(
+      (record) => record.observedAt >= cutoff || record.resolution === null,
+    ),
     shifts: store.shifts.filter(
       (shift) => shift.closedAt === null || shift.closedAt >= cutoff,
     ),

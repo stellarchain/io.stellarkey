@@ -24,6 +24,8 @@ function refund(id, amountMinor, submissionStatus) {
   return {
     id,
     orderId: "order-1",
+    kind: "order",
+    sourcePaymentId: null,
     network: "testnet",
     amountMinor,
     asset: { code: "XLM", issuer: null },
@@ -77,6 +79,26 @@ test("canonically failed submissions release their reserved amount", () => {
   assert.equal(refundableMinor(failed, "order-1"), 5_000);
 });
 
+test("refunding an unmatched payment never reduces the order's refundable sale value", () => {
+  const base = { ...emptyStore(), orders: [order()] };
+  const reversal = {
+    ...refund("duplicate-payment", 6_000, "confirmed"),
+    kind: "payment_reversal",
+    sourcePaymentId: "payment-duplicate",
+    reason: "duplicate",
+    amount: "60.0000000",
+  };
+  const recorded = recordRefundSubmission(base, reversal);
+
+  assert.equal(recorded.orders[0].status, "paid");
+  assert.equal(refundableMinor(recorded, "order-1"), 5_000);
+  assert.equal(recorded.refunds[0].sourcePaymentId, "payment-duplicate");
+  assert.throws(
+    () => recordRefundSubmission(recorded, { ...reversal, id: "again", transactionHash: "f".repeat(64) }),
+    /payment.*already.*refund/i,
+  );
+});
+
 test("pending approval requests reserve value except for their own signed release", () => {
   const base = {
     ...emptyStore(),
@@ -86,6 +108,7 @@ test("pending approval requests reserve value except for their own signed releas
         id: "request-1",
         orderId: "order-1",
         amountMinor: 2_000,
+        sourcePaymentId: null,
         status: "pending",
       },
     ],
