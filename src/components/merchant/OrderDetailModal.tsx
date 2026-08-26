@@ -335,7 +335,7 @@ export function OrderDetailModal({
   const orderRefunds = useMemo(
     () =>
       refunds
-        .filter((r) => r.orderId === orderId)
+        .filter((r) => r.kind === "order" && r.orderId === orderId)
         .sort((a, b) => b.createdAt - a.createdAt),
     [orderId, refunds],
   );

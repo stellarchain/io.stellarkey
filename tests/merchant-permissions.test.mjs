@@ -4,8 +4,14 @@ import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
 import {
+  availableRefundMinor,
+  recordRefundSubmission,
+} from "../src/lib/merchant/refunds.ts";
+import {
   addStaffMember,
+  assertCanReviewRefundRequest,
   canReleaseRefund,
+  createPaymentRefundRequest,
   createRefundRequest,
   decideRefundRequest,
   defaultPermissionsFor,
@@ -185,6 +191,37 @@ test("over-ceiling refunds become immutable pending requests", () => {
   );
 });
 
+test("an over-ceiling duplicate-payment refund requests approval without reserving the order", () => {
+  const store = staffedStore();
+  const order = { id: "order-1", number: 1204, status: "paid", totals: { totalMinor: 5_000 } };
+  const reconciliation = {
+    id: "payment-duplicate",
+    network: "mainnet",
+    payment: { id: "payment-duplicate" },
+    outcome: "duplicate",
+    chargeId: "charge-1",
+    orderId: order.id,
+    amountMinor: 2_500,
+    observedAt: 1,
+    resolution: null,
+  };
+  const requested = createPaymentRefundRequest(
+    { ...store, orders: [order], paymentReconciliations: [reconciliation] },
+    {
+      id: "request-duplicate",
+      paymentId: reconciliation.id,
+      requestedById: "server",
+      note: "Paid twice",
+      now: 10,
+    },
+  );
+
+  assert.equal(requested.request.sourcePaymentId, reconciliation.id);
+  assert.equal(requested.request.amountMinor, 2_500);
+  assert.equal(requested.request.reason, "duplicate");
+  assert.equal(availableRefundMinor(requested.store, order.id), 5_000);
+});
+
 test("a qualified reviewer can decline or record a signed refund result", () => {
   const store = staffedStore();
   const order = { id: "order-1", number: 1204, status: "paid", totals: { totalMinor: 5_000 } };
@@ -209,7 +246,42 @@ test("a qualified reviewer can decline or record a signed refund result", () => 
     /signed refund/i,
   );
 
-  const approved = decideRefundRequest(pending, {
+  assert.equal(
+    assertCanReviewRefundRequest(pending, {
+      requestId: "request-1",
+      reviewerId: "owner",
+    }).id,
+    "request-1",
+  );
+  assert.throws(
+    () => decideRefundRequest(pending, {
+      requestId: "request-1",
+      reviewerId: "owner",
+      decision: "approved",
+      now: 20,
+      refundId: "refund-1",
+    }),
+    /persisted signed refund/i,
+  );
+
+  const refund = {
+    id: "refund-1",
+    orderId: order.id,
+    kind: "order",
+    sourcePaymentId: null,
+    network: "testnet",
+    amountMinor: 2_500,
+    asset: { code: "XLM", issuer: null },
+    amount: "1.0000000",
+    destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    reason: "other",
+    note: null,
+    transactionHash: "a".repeat(64),
+    submissionStatus: "accepted",
+    createdAt: 19,
+  };
+  const withRefund = recordRefundSubmission(pending, refund);
+  const approved = decideRefundRequest(withRefund, {
     requestId: "request-1",
     reviewerId: "owner",
     decision: "approved",
@@ -217,12 +289,29 @@ test("a qualified reviewer can decline or record a signed refund result", () => 
     refundId: "refund-1",
   });
   assert.deepEqual(approved.refundRequests[0], {
-    ...pending.refundRequests[0],
+    ...withRefund.refundRequests[0],
     status: "approved",
     reviewedById: "owner",
     reviewedAt: 20,
     refundId: "refund-1",
   });
+
+  const failedRefund = recordRefundSubmission(pending, {
+    ...refund,
+    id: "refund-failed",
+    transactionHash: "b".repeat(64),
+    submissionStatus: "failed",
+  });
+  assert.throws(
+    () => decideRefundRequest(failedRefund, {
+      requestId: "request-1",
+      reviewerId: "owner",
+      decision: "approved",
+      now: 20,
+      refundId: "refund-failed",
+    }),
+    /failed|did not move/i,
+  );
 
   const declined = decideRefundRequest(pending, {
     requestId: "request-1",

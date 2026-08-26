@@ -1,5 +1,5 @@
 import { quoteFor } from "./charge";
-import { compareToBand, toleranceStroops } from "./money";
+import { compareToBand, toStroops, toleranceStroops } from "./money";
 import type { Charge, MatchedPayment, MerchantSettings } from "./types";
 
 /** A payment Horizon has shown us, before we know what it belongs to. */
@@ -7,15 +7,28 @@ export type ObservedPayment = Omit<MatchedPayment, "lane">;
 
 export type MatchOutcome =
   /** The memo named a charge. Nothing to confirm. */
-  | { lane: "memo"; charge: Charge; verdict: AmountVerdict }
+  | {
+      lane: "memo";
+      charge: Charge;
+      verdict: AmountVerdict;
+      direction: AmountDirection;
+      late: boolean;
+    }
   /** One live charge fits and a person has to agree before it is filed. */
-  | { lane: "amount"; charge: Charge; verdict: AmountVerdict; needsConfirmation: true }
+  | {
+      lane: "amount";
+      charge: Charge;
+      verdict: AmountVerdict;
+      direction: AmountDirection;
+      needsConfirmation: true;
+    }
   /** A second payment against a reference that is already settled. */
   | { lane: "duplicate"; charge: Charge }
   /** Nothing safe to say. It goes to the tray until staff attach it. */
   | { lane: "unmatched"; reason: UnmatchedReason };
 
 export type AmountVerdict = "exact" | "inside" | "short" | "over";
+export type AmountDirection = "exact" | "short" | "over";
 
 export type UnmatchedReason =
   | "no_candidate"
@@ -28,7 +41,7 @@ function amountVerdict(
   payment: ObservedPayment,
   charge: Charge,
   settings: MerchantSettings,
-): AmountVerdict | null {
+): { verdict: AmountVerdict; direction: AmountDirection } | null {
   const quote = quoteFor(charge, payment.asset);
   if (!quote) return null;
   const band = toleranceStroops(
@@ -37,7 +50,13 @@ function amountVerdict(
     settings.toleranceFloorMinor,
     quote.unitPriceMinorE6,
   );
-  return compareToBand(payment.amount, quote.amount, band);
+  const verdict = compareToBand(payment.amount, quote.amount, band);
+  const actual = toStroops(payment.amount);
+  const expected = toStroops(quote.amount);
+  return {
+    verdict,
+    direction: actual === expected ? "exact" : actual < expected ? "short" : "over",
+  };
 }
 
 /**
@@ -62,10 +81,13 @@ export function matchPayment(
   if (payment.memo) {
     const named = charges.find((c) => c.reference === payment.memo);
     if (named) {
-      if (named.status !== "awaiting") return { lane: "duplicate", charge: named };
-      const verdict = amountVerdict(payment, named, settings);
-      if (!verdict) return { lane: "unmatched", reason: "wrong_asset" };
-      return { lane: "memo", charge: named, verdict };
+      const late = named.status === "expired" || (named.status === "awaiting" && now >= named.expiresAt);
+      if (named.status !== "awaiting" && named.status !== "expired") {
+        return { lane: "duplicate", charge: named };
+      }
+      const comparison = amountVerdict(payment, named, settings);
+      if (!comparison) return { lane: "unmatched", reason: "wrong_asset" };
+      return { lane: "memo", charge: named, ...comparison, late };
     }
   }
 
@@ -83,18 +105,24 @@ export function matchPayment(
   }
 
   // Exact to the stroop. This is the only test that can read a sub-cent salt.
-  const exact = live.filter((c) => amountVerdict(payment, c, settings) === "exact");
+  const exact = live.filter((charge) => amountVerdict(payment, charge, settings)?.verdict === "exact");
   if (exact.length === 1) {
-    return { lane: "amount", charge: exact[0], verdict: "exact", needsConfirmation: true };
+    return {
+      lane: "amount",
+      charge: exact[0],
+      verdict: "exact",
+      direction: "exact",
+      needsConfirmation: true,
+    };
   }
   if (exact.length > 1) return { lane: "unmatched", reason: "ambiguous" };
 
   // The band, and only against a single remaining candidate.
   if (live.length > 1) return { lane: "unmatched", reason: "ambiguous" };
   const only = live[0];
-  const verdict = amountVerdict(payment, only, settings);
-  if (verdict === "inside") {
-    return { lane: "amount", charge: only, verdict, needsConfirmation: true };
+  const comparison = amountVerdict(payment, only, settings);
+  if (comparison?.verdict === "inside") {
+    return { lane: "amount", charge: only, ...comparison, needsConfirmation: true };
   }
   return { lane: "unmatched", reason: "outside_band" };
 }

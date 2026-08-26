@@ -133,6 +133,7 @@ export function emptyStore(): MerchantStore {
     charges: [],
     refunds: [],
     unmatched: [],
+    paymentReconciliations: [],
     staff: [],
     activeStaffId: null,
     shifts: [],

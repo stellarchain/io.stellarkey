@@ -1,170 +1,179 @@
 "use client";
 
-/**
- * DESIGN MOCK — the interstitial for a second payment on a settled reference.
- *
- * What is mocked: the two payments and the outcome. Nothing is signed, nothing
- * is attached and nothing is dismissed — choosing only says what it would do.
- * The fixture pair is built from mock.ts (the payer is MOCK_CUSTOMERS[0], the
- * asset MOCK_USDC) against whichever reference the caller passes, and the asset
- * figure is derived through `fromStroops` rather than a float.
- *
- * What a real implementation replaces: `refund()` would call
- * `refundOrder({ orderId, amountMinor, reason: "duplicate" })` — which builds an
- * ordinary outbound payment and needs the vault unlocked — and `leave()` would
- * do nothing at all, which is the point: the payment stays in `unmatched` until
- * a person decides. The one rule this screen exists to enforce is that neither
- * happens on its own. A till that quietly attaches a second payment to a settled
- * order, or quietly sends money back, is a till that loses arguments.
- */
-
 import { useState } from "react";
+import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { fmtMinor, fromStroops } from "@/lib/merchant/money";
-import { MOCK_CUSTOMERS, MOCK_NOW, MOCK_USDC } from "@/lib/merchant/mock";
-import type { MatchedPayment, Minor, RefundReason } from "@/lib/merchant/types";
+import { fmtMinor } from "@/lib/merchant/money";
+import type { MatchedPayment, Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { HashValue, Modal, ModalHeader, Notice } from "../ui";
+import { Button, ErrorText, HashValue, Modal, ModalHeader, Notice } from "../ui";
 import { IconAlert, IconCheck } from "../icons";
-import { IconClock, IconInfo, IconRefund } from "./icons";
+import { IconInfo, IconRefund, IconXCircle } from "./icons";
 
-/** A payment, plus what it is worth in the shop's own money. */
-export interface DuplicateArrival {
-  payment: MatchedPayment;
+interface DuplicateArrival {
+  payment: Omit<MatchedPayment, "lane">;
   amountMinor: Minor;
 }
 
-/** The reason a refund of a double payment is filed under. */
-const DUPLICATE_REASON: RefundReason = "duplicate";
-
-/** USDC settles one-for-one with the shop's cent, so 1 minor unit is 10^5 stroops. */
-function usdcAmount(minor: Minor): string {
-  return fromStroops(BigInt(minor) * BigInt(100_000));
-}
-
-/**
- * The pair this screen is built to show: one payment that settled the order and
- * one that arrived on the same reference afterwards.
- */
-export function duplicateFixture(
-  reference: string,
-  amountMinor: Minor,
-): { settled: DuplicateArrival; duplicate: DuplicateArrival } {
-  const payer = MOCK_CUSTOMERS[0].address;
-  const amount = usdcAmount(amountMinor);
-  return {
-    settled: {
-      amountMinor,
-      payment: {
-        id: "op_248130119377",
-        transactionHash: "9c31be7f04a25d8613ff0a7c5e2b48d0916a3fc8e57b2049da16c3b8f7e50a24",
-        ledger: 56_218_904,
-        from: payer,
-        amount,
-        asset: MOCK_USDC,
-        memo: reference,
-        createdAt: new Date(MOCK_NOW - 6 * 60 * 1000).toISOString(),
-        lane: "memo",
-      },
-    },
-    duplicate: {
-      amountMinor,
-      payment: {
-        id: "op_248130188402",
-        transactionHash: "b7042ea9581c3f6d20be91a4c7d5308fe164b29a0c83df57e6a1d4b90c2f8735",
-        ledger: 56_218_931,
-        from: payer,
-        amount,
-        asset: MOCK_USDC,
-        memo: reference,
-        createdAt: new Date(MOCK_NOW - 40 * 1000).toISOString(),
-        lane: "memo",
-      },
-    },
-  };
-}
+type Choice = "none" | "refund" | "dismiss";
 
 function clockTime(iso: string): string {
   const at = Date.parse(iso);
-  if (Number.isNaN(at)) return "unknown time";
-  return new Date(at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(at)) return "Unknown time";
+  return new Date(at).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-type Choice = "none" | "refund" | "leave";
+function actionError(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message.trim() : "";
+  if (/vault|locked|not available in the current session/i.test(message)) {
+    return "Unlock the till wallet to sign this refund, then try again.";
+  }
+  if (/watch-only/i.test(message)) {
+    return "The receiving account is watch-only. Switch to the signing account that received this payment.";
+  }
+  if (/underfunded|insufficient/i.test(message)) {
+    return "The till account does not currently hold enough of this asset to return the payment.";
+  }
+  return message || "This payment could not be resolved.";
+}
 
 export function DuplicateChargeSheet({
   open,
   onClose,
-  reference,
-  orderNumber,
-  currency,
-  settled,
-  duplicate,
+  paymentId,
 }: {
   open: boolean;
   onClose: () => void;
-  reference: string;
-  orderNumber: number;
-  currency: FiatCurrency;
-  settled: DuplicateArrival;
-  duplicate: DuplicateArrival;
+  paymentId: string | null;
 }) {
-  if (!open) return null;
-  return (
-    <DuplicateChargeSheetInner
-      onClose={onClose}
-      reference={reference}
-      orderNumber={orderNumber}
-      currency={currency}
-      settled={settled}
-      duplicate={duplicate}
-    />
-  );
-}
-
-function DuplicateChargeSheetInner({
-  onClose,
-  reference,
-  orderNumber,
-  currency,
-  settled,
-  duplicate,
-}: {
-  onClose: () => void;
-  reference: string;
-  orderNumber: number;
-  currency: FiatCurrency;
-  settled: DuplicateArrival;
-  duplicate: DuplicateArrival;
-}) {
+  const {
+    charges,
+    orders,
+    paymentReconciliations,
+    settings,
+    submitPaymentRefund,
+    dismissUnmatched,
+  } = useMerchant();
   const { toast } = useToast();
   const [choice, setChoice] = useState<Choice>("none");
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  function refund() {
-    triggerHaptic("success");
-    toast(
-      `Would send ${duplicate.payment.amount} ${duplicate.payment.asset.code} back to the payer and file it against order ${orderNumber} as a duplicate. Nothing was signed.`,
-      "success",
-    );
+  if (!open || !paymentId) return null;
+  const resolvedPaymentId = paymentId;
+
+  const reconciliation = paymentReconciliations.find(
+    (entry) => entry.id === resolvedPaymentId && entry.outcome === "duplicate",
+  );
+  const charge = reconciliation?.chargeId
+    ? charges.find((entry) => entry.id === reconciliation.chargeId) ?? null
+    : null;
+  const order = reconciliation?.orderId
+    ? orders.find((entry) => entry.id === reconciliation.orderId) ?? null
+    : null;
+  const duplicate = reconciliation?.amountMinor === null || !reconciliation
+    ? null
+    : {
+        payment: reconciliation.payment,
+        amountMinor: reconciliation.amountMinor,
+      };
+  const settled = charge?.payment
+    ? { payment: charge.payment, amountMinor: charge.amountMinor }
+    : null;
+
+  function close(): void {
+    if (busy) return;
+    resetAndClose();
+  }
+
+  function resetAndClose(): void {
+    setChoice("none");
+    setNote("");
+    setError("");
     onClose();
   }
 
-  function leave() {
-    triggerHaptic("light");
-    toast(
-      `Left in the unmatched tray. It stays on the Orders screen against ${reference} until someone deals with it.`,
+  async function refund(): Promise<void> {
+    if (!duplicate || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const outcome = await submitPaymentRefund(resolvedPaymentId, note);
+      if (outcome.kind === "requested") {
+        toast(`Refund approval requested for ${fmtMinor(duplicate.amountMinor, settings.currency)}`);
+        triggerHaptic("light");
+        resetAndClose();
+        return;
+      }
+      if (outcome.refund.submissionStatus === "failed") {
+        setError("The network rejected this refund. The payment remains in review and is safe to retry.");
+        triggerHaptic("error");
+        return;
+      }
+      const confirmed = outcome.refund.submissionStatus === "confirmed";
+      toast(
+        confirmed
+          ? `Duplicate refund confirmed for ${duplicate.payment.amount} ${duplicate.payment.asset.code}`
+          : outcome.refund.submissionStatus === "status_unknown"
+            ? "Refund status is unknown. Its transaction is tracked; do not retry."
+            : "Refund submitted and confirming on Stellar.",
+        confirmed ? "success" : "info",
+      );
+      triggerHaptic(confirmed ? "success" : "light");
+      resetAndClose();
+    } catch (cause) {
+      setError(actionError(cause));
+      triggerHaptic("error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function dismiss(): void {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      dismissUnmatched(resolvedPaymentId);
+      toast("Duplicate payment dismissed with a staff audit record");
+      triggerHaptic("warning");
+      resetAndClose();
+    } catch (cause) {
+      setError(actionError(cause));
+      triggerHaptic("error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!reconciliation || !charge || !order || !duplicate || !settled) {
+    return (
+      <Modal open onClose={close}>
+        <ModalHeader title="Duplicate payment" onClose={close} />
+        <div className="space-y-4 p-4 sm:p-6">
+          <Notice tone="warn">
+            The original payment record is no longer complete enough to resolve safely. Keep this
+            item in review and check the Stellar transaction before taking action.
+          </Notice>
+          <Button variant="secondary" className="w-full" onClick={close}>
+            Close
+          </Button>
+        </div>
+      </Modal>
     );
-    onClose();
   }
 
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal open onClose={close} wide>
       <ModalHeader
         title="Paid twice"
-        subtitle={`Order ${orderNumber} · ${reference}`}
-        onClose={onClose}
+        subtitle={`Order #${order.number} · ${charge.reference}`}
+        onClose={close}
       />
 
       <div className="space-y-4 p-4 sm:p-6">
@@ -174,145 +183,128 @@ function DuplicateChargeSheetInner({
               <IconAlert size={15} />
             </span>
             <div>
-              <p className="font-semibold text-white">
-                A second payment arrived on a reference that is already settled
-              </p>
+              <p className="font-semibold text-white">A second payment used a settled reference</p>
               <p className="mt-1 text-neutral-300">
-                Both carry the memo {reference}. The till has attached neither of them to anything
-                new and will not: matching a second payment to a paid order by itself is how a shop
-                ends up unable to say what it was paid for.
+                The first payment remains attached to order #{order.number}. This arrival is held
+                separately until a staff member refunds or dismisses it.
               </p>
             </div>
           </div>
         </Notice>
 
-        {/* ---------------- both payments, side by side ---------------- */}
         <div className="grid gap-3 sm:grid-cols-2">
           <PaymentCard
             arrival={settled}
-            currency={currency}
+            currency={settings.currency}
             tone="#30D158"
-            heading="Settled this order"
+            heading="Settled the order"
             glyph={<IconCheck size={13} />}
           />
           <PaymentCard
             arrival={duplicate}
-            currency={currency}
+            currency={settings.currency}
             tone="#FF9F0A"
-            heading="Arrived afterwards"
+            heading="Duplicate arrival"
             glyph={<IconAlert size={13} />}
           />
         </div>
 
-        {/* ---------------- two choices of equal weight ---------------- */}
+        <ErrorText message={error} />
+
         {choice === "none" && (
           <>
             <div className="grid gap-3 sm:grid-cols-2">
               <ChoiceCard
                 title="Refund the duplicate"
-                body={`Sends ${duplicate.payment.amount} ${duplicate.payment.asset.code} back to the address it came from, as an ordinary payment out of the till account. The network fee comes off the shop, not the customer.`}
-                action="Refund it"
+                body={`Return exactly ${duplicate.payment.amount} ${duplicate.payment.asset.code} to the address it came from. The till wallet must review and sign the payment.`}
+                action="Review refund"
                 icon={<IconRefund size={16} />}
                 onPick={() => {
                   triggerHaptic("selection");
+                  setError("");
                   setChoice("refund");
                 }}
               />
               <ChoiceCard
-                title="Leave it in the tray"
-                body="Nothing is sent. The payment sits in the unmatched tray on Orders, where it can be filed against another order, refunded later, or settled with the customer in person."
-                action="Leave it"
-                icon={<IconClock size={16} />}
+                title="Dismiss from review"
+                body="Remove this arrival from the action tray without attaching it to a sale or moving funds. The staff decision remains in the reconciliation audit."
+                action="Review dismissal"
+                icon={<IconXCircle size={16} />}
                 onPick={() => {
                   triggerHaptic("selection");
-                  setChoice("leave");
+                  setError("");
+                  setChoice("dismiss");
                 }}
               />
             </div>
             <p className="flex items-start gap-2 px-1 text-[12px] leading-relaxed text-neutral-500">
               <IconInfo size={13} className="mt-0.5 shrink-0" />
-              Neither happens on its own, and this screen does not close until one of them is
-              chosen by a person.
+              Closing this sheet leaves the duplicate in the tray. The till never attaches or
+              returns a second payment automatically.
             </p>
           </>
         )}
 
-        {/* ---------------- refund, spelled out ---------------- */}
         {choice === "refund" && (
           <div className="space-y-3">
             <div className="list-group">
-              <Fact label="Sending back" value={`${duplicate.payment.amount} ${duplicate.payment.asset.code}`} mono />
-              <Fact label="Worth" value={fmtMinor(duplicate.amountMinor, currency)} mono sep />
+              <Fact
+                label="Sending back"
+                value={`${duplicate.payment.amount} ${duplicate.payment.asset.code}`}
+                mono
+              />
+              <Fact label="Recorded value" value={fmtMinor(duplicate.amountMinor, settings.currency)} mono sep />
               <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
                 <span className="shrink-0 text-[13px] text-neutral-400">To</span>
                 <HashValue value={duplicate.payment.from} className="text-[12.5px] text-neutral-200" />
               </div>
-              <Fact label="Filed as" value={DUPLICATE_REASON} sep />
+              <Fact label="Reason" value="Duplicate payment" sep />
             </div>
 
             <div className="space-y-1.5">
-              <label className="field-label !pb-0" htmlFor="duplicate-note">
-                Note on the refund
+              <label className="field-label !pb-0" htmlFor="duplicate-refund-note">
+                Audit note <span className="font-normal text-neutral-500">Optional</span>
               </label>
               <input
-                id="duplicate-note"
+                id="duplicate-refund-note"
                 type="text"
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Paid twice at the counter"
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Customer paid twice at the counter"
                 className="input text-base sm:text-[14px]"
+                autoComplete="off"
               />
             </div>
 
             <Notice>
-              A refund is an ordinary outbound payment, so the wallet has to be unlocked to sign it
-              and the customer sees it arrive like any other. There is nothing to reverse and
-              nothing to dispute.
+              The exact incoming asset amount will be returned as a new Stellar payment. If this
+              exceeds the active staff member&rsquo;s ceiling, it goes to Refund requests first.
             </Notice>
 
             <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setChoice("none");
-                }}
-                className="btn btn-ghost w-full"
-              >
+              <Button variant="ghost" disabled={busy} onClick={() => setChoice("none")}>
                 Back
-              </button>
-              <button type="button" onClick={refund} className="btn btn-primary w-full">
-                Send the refund
-              </button>
+              </Button>
+              <Button loading={busy} onClick={() => void refund()}>
+                Sign or request approval
+              </Button>
             </div>
           </div>
         )}
 
-        {/* ---------------- leaving it, spelled out ---------------- */}
-        {choice === "leave" && (
+        {choice === "dismiss" && (
           <div className="space-y-3">
-            <Notice>
-              <p className="font-semibold text-white">It stays exactly where it is</p>
-              <p className="mt-1 text-neutral-300">
-                The payment keeps its place in the unmatched tray with its hash, its payer and the
-                memo it carried. Orders shows it until somebody files it or refunds it — it will not
-                quietly disappear, and it will not quietly attach itself to order {orderNumber}.
-              </p>
+            <Notice tone="warn">
+              Dismissal does not return money and does not attach this payment to order #{order.number}.
+              It removes the tray alert and records who made the decision.
             </Notice>
             <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setChoice("none");
-                }}
-                className="btn btn-ghost w-full"
-              >
-                Back
-              </button>
-              <button type="button" onClick={leave} className="btn btn-secondary w-full">
-                Leave it in the tray
-              </button>
+              <Button variant="ghost" disabled={busy} onClick={() => setChoice("none")}>
+                Keep in tray
+              </Button>
+              <Button variant="danger" loading={busy} onClick={dismiss}>
+                Dismiss with audit
+              </Button>
             </div>
           </div>
         )}
@@ -358,12 +350,8 @@ function PaymentCard({
 
       <div className="mt-3 space-y-1.5 border-t border-white/[0.08] pt-2.5">
         <CardRow label="At">{clockTime(payment.createdAt)}</CardRow>
-        <CardRow label="Ledger">
-          <span className="mono">{payment.ledger}</span>
-        </CardRow>
-        <CardRow label="Memo">
-          <span className="mono">{payment.memo ?? "none"}</span>
-        </CardRow>
+        <CardRow label="Ledger"><span className="mono">{payment.ledger}</span></CardRow>
+        <CardRow label="Memo"><span className="mono">{payment.memo ?? "None"}</span></CardRow>
         <CardRow label="From">
           <HashValue value={payment.from} head={4} tail={4} className="text-[12px] text-neutral-200" />
         </CardRow>
@@ -411,9 +399,9 @@ function ChoiceCard({
         {title}
       </p>
       <p className="mt-2 flex-1 text-[12.5px] leading-relaxed text-neutral-400">{body}</p>
-      <button type="button" onClick={onPick} className="btn btn-secondary mt-3 w-full">
+      <Button variant="secondary" className="mt-3 w-full" onClick={onPick}>
         {action}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -430,13 +418,11 @@ function Fact({
   sep?: boolean;
 }) {
   return (
-    <div
-      className={`flex items-center justify-between gap-3 px-4 py-3 ${
-        sep ? "border-t border-white/[0.08]" : ""
-      }`}
-    >
+    <div className={`flex items-center justify-between gap-3 px-4 py-3 ${sep ? "border-t border-white/[0.08]" : ""}`}>
       <span className="shrink-0 text-[13px] text-neutral-400">{label}</span>
-      <span className={`truncate text-[13px] text-neutral-200 ${mono ? "mono" : ""}`}>{value}</span>
+      <span className={`${mono ? "mono" : ""} text-right text-[13px] font-medium text-white`}>
+        {value}
+      </span>
     </div>
   );
 }

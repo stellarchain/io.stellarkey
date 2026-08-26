@@ -227,6 +227,7 @@ export function createRefundRequest(
   if (store.refundRequests.some(
     (request) =>
       request.status === "pending" &&
+      request.sourcePaymentId === null &&
       request.orderId === input.orderId &&
       request.amountMinor === input.amountMinor,
   )) {
@@ -239,6 +240,7 @@ export function createRefundRequest(
     amountMinor: input.amountMinor,
     reason: input.reason,
     note: input.note?.trim() || null,
+    sourcePaymentId: null,
     requestedById: requester.id,
     requestedBy: requester.name,
     requestedAt: input.now,
@@ -248,6 +250,78 @@ export function createRefundRequest(
     refundId: null,
   };
   return { store: { ...store, refundRequests: [request, ...store.refundRequests] }, request };
+}
+
+/** Request approval to return a reviewed incoming payment without refunding the sale itself. */
+export function createPaymentRefundRequest(
+  store: MerchantStore,
+  input: {
+    id: string;
+    paymentId: string;
+    requestedById: string;
+    note?: string;
+    now: number;
+  },
+): { store: MerchantStore; request: RefundRequest } {
+  const requester = store.staff.find((member) => member.id === input.requestedById);
+  if (!requester?.active) throw new Error("Choose an active staff member before requesting a refund.");
+  const reconciliation = store.paymentReconciliations.find(
+    (entry) => entry.id === input.paymentId,
+  );
+  if (!reconciliation || reconciliation.resolution) {
+    throw new Error("That incoming payment is no longer available for refund.");
+  }
+  const order = reconciliation.orderId
+    ? store.orders.find((entry) => entry.id === reconciliation.orderId) ?? null
+    : null;
+  const amountMinor = reconciliation.amountMinor;
+  if (!order || amountMinor === null || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+    throw new Error("This payment has no verified order value to approve.");
+  }
+  if (canReleaseRefund(requester, amountMinor)) {
+    throw new Error("This refund is within the active staff member's ceiling and can be released directly.");
+  }
+  if (store.refundRequests.some(
+    (request) => request.status === "pending" && request.sourcePaymentId === reconciliation.id,
+  )) {
+    throw new Error("A refund request for this payment is already pending.");
+  }
+  const request: RefundRequest = {
+    id: input.id,
+    orderId: order.id,
+    orderNumber: order.number,
+    amountMinor,
+    reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
+    note: input.note?.trim() || null,
+    sourcePaymentId: reconciliation.id,
+    requestedById: requester.id,
+    requestedBy: requester.name,
+    requestedAt: input.now,
+    status: "pending",
+    reviewedById: null,
+    reviewedAt: null,
+    refundId: null,
+  };
+  return {
+    store: { ...store, refundRequests: [request, ...store.refundRequests] },
+    request,
+  };
+}
+
+/** Validate refund-review authority without pretending an outbound payment already exists. */
+export function assertCanReviewRefundRequest(
+  store: MerchantStore,
+  input: { requestId: string; reviewerId: string },
+): RefundRequest {
+  const request = store.refundRequests.find((entry) => entry.id === input.requestId);
+  if (!request || request.status !== "pending") {
+    throw new Error("That refund request is no longer pending.");
+  }
+  const reviewer = store.staff.find((member) => member.id === input.reviewerId);
+  if (!canReleaseRefund(reviewer, request.amountMinor)) {
+    throw new Error("This refund is above the reviewer's ceiling.");
+  }
+  return request;
 }
 
 export function decideRefundRequest(
@@ -260,15 +334,31 @@ export function decideRefundRequest(
     refundId?: string;
   },
 ): MerchantStore {
-  const request = store.refundRequests.find((entry) => entry.id === input.requestId);
-  if (!request || request.status !== "pending") throw new Error("That refund request is no longer pending.");
+  const request = assertCanReviewRefundRequest(store, input);
   const reviewer = store.staff.find((member) => member.id === input.reviewerId);
-  if (!canReleaseRefund(reviewer, request.amountMinor)) {
-    throw new Error("This refund is above the reviewer's ceiling.");
-  }
   if (!Number.isSafeInteger(input.now) || input.now <= 0) throw new Error("Refund audit time is invalid.");
   if (input.decision === "approved" && !input.refundId) {
     throw new Error("Approval requires the persisted signed refund result.");
+  }
+  if (input.decision === "approved") {
+    const refund = store.refunds.find((entry) => entry.id === input.refundId);
+    if (!refund) throw new Error("Approval requires the persisted signed refund result.");
+    if (refund.submissionStatus === "failed") {
+      throw new Error("The signed refund failed and did not move funds, so the request remains pending.");
+    }
+    const paymentRefundMatches =
+      request.sourcePaymentId !== null &&
+      refund.kind === "payment_reversal" &&
+      refund.sourcePaymentId === request.sourcePaymentId;
+    const orderRefundMatches = request.sourcePaymentId === null && refund.kind === "order";
+    if (
+      (!paymentRefundMatches && !orderRefundMatches) ||
+      refund.orderId !== request.orderId ||
+      refund.amountMinor !== request.amountMinor ||
+      refund.reason !== request.reason
+    ) {
+      throw new Error("The persisted signed refund does not match this approval request.");
+    }
   }
   return {
     ...store,

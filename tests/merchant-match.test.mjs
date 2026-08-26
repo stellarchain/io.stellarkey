@@ -203,11 +203,25 @@ test("an expired charge stops being a candidate", () => {
   // The memo lane still resolves it, so a late payer is not stranded.
   const named = matchPayment(payment({ memo: "MC1042" }), [c], settings(), after);
   assert.equal(named.lane, "memo");
+  assert.equal(named.late, true);
 });
 
 test("an asset the charge does not quote cannot match", () => {
   const usdcOnly = charge(1042, 2733, {}, [{ asset: USDC_ASSET, currencyPerUnit: 1 }]);
   const out = matchPayment(payment({ asset: NATIVE, amount: "107.9383887" }), [usdcOnly], settings(), NOW);
+  assert.equal(out.lane, "unmatched");
+  assert.equal(out.reason, "wrong_asset");
+});
+
+test("asset matching requires the exact issuer even when the code is the same", () => {
+  const usdcOnly = charge(1042, 2733, {}, [{ asset: USDC_ASSET, currencyPerUnit: 1 }]);
+  const otherIssuer = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+  const out = matchPayment(
+    payment({ asset: { code: "USDC", issuer: otherIssuer } }),
+    [usdcOnly],
+    settings(),
+    NOW,
+  );
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "wrong_asset");
 });

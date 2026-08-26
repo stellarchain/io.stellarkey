@@ -22,7 +22,7 @@ import {
   secondsRemaining,
   type QuoteInput,
 } from "@/lib/merchant/charge";
-import { chargeStatusFor, matchPayment, type ObservedPayment } from "@/lib/merchant/match";
+import type { ObservedPayment } from "@/lib/merchant/match";
 import {
   fromStroops,
   lineGrossMinor,
@@ -46,7 +46,9 @@ import {
 } from "@/lib/merchant/refunds";
 import {
   addStaffMember,
+  assertCanReviewRefundRequest,
   canReleaseRefund,
+  createPaymentRefundRequest,
   createRefundRequest,
   decideRefundRequest,
   nextPinAttempt,
@@ -59,10 +61,15 @@ import {
   buildOrder,
   cardTender,
   cashTender,
-  completeCryptoTender,
   settleNewOrder,
   voidNewOrder,
 } from "@/lib/merchant/orders";
+import {
+  attachReconciledPayment,
+  dismissReconciledPayment,
+  markReconciledRefund,
+  reconcileIncomingPayments,
+} from "@/lib/merchant/reconciliation";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -80,6 +87,7 @@ import type {
   OrderLineModifier,
   OrderTotals,
   PendingAdjustment,
+  PaymentReconciliation,
   Peripheral,
   Refund,
   RefundReason,
@@ -211,6 +219,7 @@ interface MerchantContextValue {
   charges: Charge[];
   refunds: Refund[];
   unmatched: UnmatchedPayment[];
+  paymentReconciliations: PaymentReconciliation[];
   adjustments: Adjustment[];
   peripherals: Peripheral[];
   nextOrderNumber: number;
@@ -244,6 +253,7 @@ interface MerchantContextValue {
     reason: RefundReason;
     note?: string;
   }) => Promise<MerchantRefundOutcome>;
+  submitPaymentRefund: (paymentId: string, note?: string) => Promise<MerchantRefundOutcome>;
   approveRefundRequest: (requestId: string) => Promise<Refund>;
   declineRefundRequest: (requestId: string) => void;
 
@@ -979,46 +989,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const applyPayments = useCallback(
     (payments: ObservedPayment[]) => {
       if (payments.length === 0) return;
-      let next = storeRef.current;
-      const unmatched = [...next.unmatched];
-      const seen = new Set(
-        [...next.unmatched.map((payment) => payment.id), ...next.charges.map((charge) => charge.payment?.id)]
-          .filter(Boolean) as string[],
-      );
-
-      for (const payment of payments) {
-        if (seen.has(payment.id)) continue;
-        seen.add(payment.id);
-        const scoped = next.charges.filter((charge) => charge.network === network);
-        const outcome = matchPayment(payment, scoped, next.settings);
-
-        if (outcome.lane === "memo") {
-          const status = chargeStatusFor(outcome.verdict);
-          next = {
-            ...next,
-            charges: next.charges.map((charge) =>
-              charge.id === outcome.charge.id
-                ? { ...charge, status, payment: { ...payment, lane: "memo" as const } }
-                : charge,
-            ),
-          };
-          if (status === "paid") {
-            next = completeCryptoTender(next, {
-              orderId: outcome.charge.orderId,
-              chargeId: outcome.charge.id,
-              amountMinor: outcome.charge.amountMinor,
-              payerAddress: payment.from,
-              now: Date.now(),
-            }).store;
-          }
-          continue;
-        }
-
-        // Everything else needs a person: the tray holds it until they decide.
-        unmatched.unshift({ ...payment, seenAt: Date.now() });
-      }
-
-      commitStore({ ...next, unmatched: unmatched.slice(0, 200) });
+      const current = storeRef.current;
+      const next = reconcileIncomingPayments(current, {
+        network,
+        payments,
+        now: Date.now(),
+      });
+      if (next !== current) commitStore(next);
     },
     [commitStore, network],
   );
@@ -1100,44 +1077,28 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const attachPayment = useCallback(
     (paymentId: string, chargeId: string) => {
       const current = storeRef.current;
-      const payment = current.unmatched.find((entry) => entry.id === paymentId);
-      const charge = current.charges.find((entry) => entry.id === chargeId);
-      if (!payment || !charge) return;
-      // A manual match deliberately overrides the automatic lane, but still
-      // settles only the charge's exact outstanding amount.
-      const withPayment: MerchantStore = {
-        ...current,
-        unmatched: current.unmatched.filter((entry) => entry.id !== paymentId),
-        charges: current.charges.map((entry) =>
-          entry.id === chargeId
-            ? {
-                ...entry,
-                status: "paid" as const,
-                payment: { ...payment, lane: "manual" as const },
-              }
-            : entry,
-        ),
-      };
-      const committed = completeCryptoTender(withPayment, {
-        orderId: charge.orderId,
+      const actor = requirePaymentActor(current);
+      commitStore(attachReconciledPayment(current, {
+        paymentId,
         chargeId,
-        amountMinor: charge.amountMinor,
-        payerAddress: payment.from,
+        actor,
         now: Date.now(),
-      });
-      commitStore(committed.store);
+      }));
     },
-    [commitStore],
+    [commitStore, requirePaymentActor],
   );
 
   const dismissUnmatched = useCallback(
     (paymentId: string) => {
-      persist((prev) => ({
-        ...prev,
-        unmatched: prev.unmatched.filter((p) => p.id !== paymentId),
+      const current = storeRef.current;
+      const actor = requirePaymentActor(current);
+      commitStore(dismissReconciledPayment(current, {
+        paymentId,
+        actor,
+        now: Date.now(),
       }));
     },
-    [persist],
+    [commitStore, requirePaymentActor],
   );
 
   /* ---------------- refunds ---------------- */
@@ -1169,7 +1130,10 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Switch to the receiving account that took this payment before refunding it.");
       }
       const priorRefunds = current.refunds.filter(
-        (refund) => refund.orderId === orderId && refundReservesFunds(refund),
+        (refund) =>
+          refund.kind === "order" &&
+          refund.orderId === orderId &&
+          refundReservesFunds(refund),
       );
       const refundedMinor = priorRefunds.reduce((sum, refund) => sum + refund.amountMinor, 0);
       const remainingMinor = availableRefundMinor(current, orderId, approvalRequestId);
@@ -1202,6 +1166,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const refund: Refund = {
         id: uid("rfd"),
         orderId,
+        kind: "order",
+        sourcePaymentId: null,
         network: order.network,
         amountMinor,
         asset: charge.payment.asset,
@@ -1247,26 +1213,133 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return { kind: "requested", request: requested.request };
   }, [commitStore, refundOrder, staffSessionId]);
 
+  const refundReconciledPayment = useCallback(async ({
+    paymentId,
+    note,
+  }: {
+    paymentId: string;
+    note?: string;
+  }): Promise<Refund> => {
+    const current = storeRef.current;
+    const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
+    const reconciliation = current.paymentReconciliations.find(
+      (entry) => entry.id === paymentId,
+    );
+    if (!reconciliation || reconciliation.resolution) {
+      throw new Error("That incoming payment is no longer available for refund.");
+    }
+    const amountMinor = reconciliation.amountMinor;
+    if (amountMinor === null || !canReleaseRefund(member, amountMinor)) {
+      throw new Error("This payment refund needs approval from a staff member with a higher ceiling.");
+    }
+    const order = reconciliation.orderId
+      ? current.orders.find((entry) => entry.id === reconciliation.orderId) ?? null
+      : null;
+    const charge = reconciliation.chargeId
+      ? current.charges.find((entry) => entry.id === reconciliation.chargeId) ?? null
+      : null;
+    if (!order || !charge) throw new Error("The payment's original order is no longer available.");
+    if (reconciliation.network !== network) {
+      throw new Error("Switch to the payment's Stellar network before refunding it.");
+    }
+    if (activeAccount?.publicKey !== charge.destination) {
+      throw new Error("Switch to the receiving account that took this payment before refunding it.");
+    }
+
+    const payment = reconciliation.payment;
+    const result = await send({
+      destination: payment.from,
+      amount: payment.amount,
+      assetCode: payment.asset.code,
+      issuer: payment.asset.issuer,
+      memo: { type: "text", value: `DP${order.number}` },
+    });
+    const now = Date.now();
+    const refund: Refund = {
+      id: uid("rfd"),
+      orderId: order.id,
+      kind: "payment_reversal",
+      sourcePaymentId: reconciliation.id,
+      network: reconciliation.network,
+      amountMinor,
+      asset: payment.asset,
+      amount: payment.amount,
+      destination: payment.from,
+      reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
+      note: note?.trim() || null,
+      transactionHash: result.hash,
+      submissionStatus: result.status,
+      createdAt: now,
+    };
+    const recorded = recordRefundSubmission(storeRef.current, refund);
+    if (refund.submissionStatus === "failed") {
+      // Keep the incoming payment in review: a canonical failure proves no
+      // money moved and the operator may safely retry after correcting it.
+      commitStore(recorded);
+      return refund;
+    }
+    const resolved = markReconciledRefund(recorded, {
+      paymentId,
+      refundId: refund.id,
+      actor: member as StaffMember,
+      now,
+    });
+    commitStore(resolved);
+    return refund;
+  }, [activeAccount?.publicKey, commitStore, network, send, staffSessionId]);
+
+  const submitPaymentRefund = useCallback(async (
+    paymentId: string,
+    note?: string,
+  ): Promise<MerchantRefundOutcome> => {
+    const current = storeRef.current;
+    const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
+    const reconciliation = current.paymentReconciliations.find(
+      (entry) => entry.id === paymentId,
+    );
+    if (!reconciliation || reconciliation.amountMinor === null) {
+      throw new Error("That payment has no verified value to refund.");
+    }
+    if (canReleaseRefund(member, reconciliation.amountMinor)) {
+      return {
+        kind: "refunded",
+        refund: await refundReconciledPayment({ paymentId, note }),
+      };
+    }
+    if (!member) throw new Error("Choose a staff member before requesting a refund.");
+    const requested = createPaymentRefundRequest(current, {
+      id: uid("rr"),
+      paymentId,
+      requestedById: member.id,
+      note,
+      now: Date.now(),
+    });
+    commitStore(requested.store);
+    return { kind: "requested", request: requested.request };
+  }, [commitStore, refundReconciledPayment, staffSessionId]);
+
   const approveRefundRequest = useCallback(async (requestId: string): Promise<Refund> => {
     const before = storeRef.current;
     const request = before.refundRequests.find((entry) => entry.id === requestId);
     const reviewerId = staffSessionId;
     if (!request || !reviewerId) throw new Error("That refund request is no longer available.");
     // Validate authority before opening the wallet signing path.
-    decideRefundRequest(before, {
+    assertCanReviewRefundRequest(before, {
       requestId,
       reviewerId,
-      decision: "approved",
-      now: Date.now(),
-      refundId: "authority-check",
     });
-    const refund = await refundOrder({
-      orderId: request.orderId,
-      amountMinor: request.amountMinor,
-      reason: request.reason,
-      note: request.note ?? undefined,
-      approvalRequestId: request.id,
-    });
+    const refund = request.sourcePaymentId
+      ? await refundReconciledPayment({
+          paymentId: request.sourcePaymentId,
+          note: request.note ?? undefined,
+        })
+      : await refundOrder({
+          orderId: request.orderId,
+          amountMinor: request.amountMinor,
+          reason: request.reason,
+          note: request.note ?? undefined,
+          approvalRequestId: request.id,
+        });
     commitStore(decideRefundRequest(storeRef.current, {
       requestId,
       reviewerId,
@@ -1275,7 +1348,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       refundId: refund.id,
     }));
     return refund;
-  }, [commitStore, refundOrder, staffSessionId]);
+  }, [commitStore, refundOrder, refundReconciledPayment, staffSessionId]);
 
   const declineRefundRequest = useCallback((requestId: string): void => {
     const current = storeRef.current;
@@ -1509,6 +1582,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     charges: store.charges,
     refunds: store.refunds,
     unmatched: store.unmatched,
+    paymentReconciliations: store.paymentReconciliations,
     adjustments: store.adjustments,
     peripherals: store.peripherals,
     nextOrderNumber: store.nextOrderNumber,
@@ -1531,6 +1605,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     dismissUnmatched,
     refundOrder,
     submitRefund,
+    submitPaymentRefund,
     approveRefundRequest,
     declineRefundRequest,
 

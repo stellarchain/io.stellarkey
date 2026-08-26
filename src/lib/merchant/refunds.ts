@@ -23,7 +23,12 @@ export function refundReservesFunds(refund: Refund): boolean {
 
 export function confirmedRefundMinor(store: MerchantStore, orderId: string): number {
   return store.refunds
-    .filter((refund) => refund.orderId === orderId && refund.submissionStatus === "confirmed")
+    .filter(
+      (refund) =>
+        refund.kind === "order" &&
+        refund.orderId === orderId &&
+        refund.submissionStatus === "confirmed",
+    )
     .reduce((sum, refund) => sum + refund.amountMinor, 0);
 }
 
@@ -31,7 +36,12 @@ export function refundableMinor(store: MerchantStore, orderId: string): number {
   const order = store.orders.find((entry) => entry.id === orderId);
   if (!order) throw new Error("The order no longer exists.");
   const reserved = store.refunds
-    .filter((refund) => refund.orderId === orderId && refundReservesFunds(refund))
+    .filter(
+      (refund) =>
+        refund.kind === "order" &&
+        refund.orderId === orderId &&
+        refundReservesFunds(refund),
+    )
     .reduce((sum, refund) => sum + refund.amountMinor, 0);
   return Math.max(0, order.totals.totalMinor - reserved);
 }
@@ -46,6 +56,7 @@ export function availableRefundMinor(
     .filter(
       (request) =>
         request.orderId === orderId &&
+        request.sourcePaymentId === null &&
         request.status === "pending" &&
         request.id !== excludeRequestId,
     )
@@ -97,15 +108,34 @@ export function recordRefundSubmission(store: MerchantStore, refund: Refund): Me
   if (
     !Number.isSafeInteger(refund.amountMinor) ||
     refund.amountMinor <= 0 ||
-    (refund.submissionStatus !== "failed" && refund.amountMinor > refundableMinor(store, order.id))
+    (
+      refund.kind === "order" &&
+      refund.submissionStatus !== "failed" &&
+      refund.amountMinor > refundableMinor(store, order.id)
+    )
   ) {
     throw new Error(
       `Only ${refundableMinor(store, order.id)} minor units remain refundable on this order.`,
     );
   }
 
+  if (
+    refund.kind === "payment_reversal" &&
+    (
+      !refund.sourcePaymentId ||
+      store.refunds.some(
+        (entry) =>
+          entry.kind === "payment_reversal" &&
+          entry.sourcePaymentId === refund.sourcePaymentId &&
+          entry.submissionStatus !== "failed",
+      )
+    )
+  ) {
+    throw new Error("That incoming payment already has a refund submission recorded.");
+  }
+
   const recorded = { ...store, refunds: [refund, ...store.refunds] };
-  return deriveOrder(recorded, order.id);
+  return refund.kind === "order" ? deriveOrder(recorded, order.id) : recorded;
 }
 
 /** Apply the wallet's canonical-hash resolution without allowing a final state to regress. */
@@ -125,5 +155,5 @@ export function reconcileRefundSubmission(
     refunds: store.refunds.map((entry) =>
       entry.id === refund.id ? { ...entry, submissionStatus: status } : entry),
   };
-  return deriveOrder(next, refund.orderId);
+  return refund.kind === "order" ? deriveOrder(next, refund.orderId) : next;
 }

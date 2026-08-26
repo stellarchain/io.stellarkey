@@ -259,8 +259,47 @@ export interface MatchedPayment {
 /** A payment that reached the till but belongs to no charge yet. */
 export interface UnmatchedPayment extends Omit<MatchedPayment, "lane"> {
   seenAt: number;
-  /** Set when staff attach it by hand. */
-  attachedOrderId?: string;
+  /** Durable explanation and candidate retained from reconciliation. */
+  reconciliationOutcome: PaymentReconciliationOutcome;
+  candidateChargeId: string | null;
+}
+
+export type PaymentReconciliationOutcome =
+  | "settled"
+  | "needs_confirmation"
+  | "underpaid"
+  | "overpaid"
+  | "late"
+  | "duplicate"
+  | "ambiguous"
+  | "wrong_asset"
+  | "outside_band"
+  | "unmatched";
+
+export type PaymentResolutionKind = "attached" | "dismissed" | "refund_submitted";
+
+export interface PaymentResolution {
+  kind: PaymentResolutionKind;
+  staffId: string;
+  staffName: string;
+  at: number;
+  targetChargeId: string | null;
+  refundId: string | null;
+}
+
+/** One immutable observation per Horizon payment operation ID. */
+export interface PaymentReconciliation {
+  /** Horizon payment operation ID and the idempotency key. */
+  id: string;
+  network: NetworkKey;
+  payment: Omit<MatchedPayment, "lane">;
+  outcome: PaymentReconciliationOutcome;
+  chargeId: string | null;
+  orderId: string | null;
+  /** Exact held-quote value where a matching asset/charge exists. */
+  amountMinor: Minor | null;
+  observedAt: number;
+  resolution: PaymentResolution | null;
 }
 
 export type RefundReason =
@@ -278,9 +317,14 @@ export type RefundSubmissionStatus =
   | "status_unknown"
   | "failed";
 
+export type RefundKind = "order" | "payment_reversal";
+
 export interface Refund {
   id: string;
   orderId: string;
+  kind: RefundKind;
+  /** Horizon payment operation being returned outside the order's sale value. */
+  sourcePaymentId: string | null;
   network: NetworkKey;
   amountMinor: Minor;
   asset: AcceptedAsset;
@@ -547,6 +591,8 @@ export interface RefundRequest {
   amountMinor: Minor;
   reason: RefundReason;
   note: string | null;
+  /** Present when approval is for a duplicate/ambiguous incoming payment. */
+  sourcePaymentId: string | null;
   requestedById: string;
   requestedBy: string;
   requestedAt: number;
@@ -581,6 +627,7 @@ export interface MerchantStore {
   charges: Charge[];
   refunds: Refund[];
   unmatched: UnmatchedPayment[];
+  paymentReconciliations: PaymentReconciliation[];
   staff: StaffMember[];
   activeStaffId: string | null;
   shifts: Shift[];

@@ -4,8 +4,14 @@ import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { fmtMinor } from "@/lib/merchant/money";
-import type { Charge, Order, UnmatchedPayment } from "@/lib/merchant/types";
+import { quoteFor } from "@/lib/merchant/charge";
+import { fmtMinor, toStroops } from "@/lib/merchant/money";
+import type {
+  Charge,
+  Order,
+  PaymentReconciliationOutcome,
+  UnmatchedPayment,
+} from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Button, HashValue, SegmentedControl, Select } from "../ui";
 import { IconAlert, IconSearch } from "../icons";
@@ -17,6 +23,7 @@ import {
   VIEW_LABEL,
   orderView,
 } from "./OrderDetailModal";
+import { DuplicateChargeSheet } from "./DuplicateChargeSheet";
 
 type StatusFilter = "all" | "awaiting" | "paid" | "refunded";
 
@@ -41,6 +48,32 @@ const FILABLE_LABEL = {
 } as const;
 
 type FilableStatus = keyof typeof FILABLE_LABEL;
+
+const RECONCILIATION_LABEL: Record<PaymentReconciliationOutcome, string> = {
+  settled: "Settled",
+  needs_confirmation: "Exact amount — confirm",
+  underpaid: "Underpaid",
+  overpaid: "Overpaid",
+  late: "Arrived after expiry",
+  duplicate: "Paid twice",
+  ambiguous: "More than one charge fits",
+  wrong_asset: "Wrong asset",
+  outside_band: "Amount does not fit",
+  unmatched: "No matching charge",
+};
+
+const RECONCILIATION_DETAIL: Record<PaymentReconciliationOutcome, string> = {
+  settled: "This payment has already settled its order.",
+  needs_confirmation: "The amount and asset fit one charge, but no usable memo named it.",
+  underpaid: "The memo names a charge, but the received amount is short.",
+  overpaid: "The memo names a charge, but the received amount is higher than quoted.",
+  late: "The payment is exact, but it arrived after the held quote expired.",
+  duplicate: "This reference already has a settled payment. Review the second arrival separately.",
+  ambiguous: "Several open charges fit exactly, so staff must choose one.",
+  wrong_asset: "No open charge quotes the asset that arrived.",
+  outside_band: "The amount is outside the configured tolerance for every open charge.",
+  unmatched: "No open charge can safely claim this payment.",
+};
 
 function isFilable(charge: Charge): charge is Charge & { status: FilableStatus } {
   return (
@@ -128,6 +161,7 @@ export function OrdersPage() {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const [duplicatePaymentId, setDuplicatePaymentId] = useState<string | null>(null);
 
   const needle = query.trim().toLowerCase();
 
@@ -179,15 +213,26 @@ export function OrdersPage() {
           payments={unmatched}
           filable={filableCharges}
           onAttach={(paymentId, chargeId, orderNumber) => {
-            attachPayment(paymentId, chargeId);
-            triggerHaptic("success");
-            toast(`Payment filed against order #${orderNumber}`, "success");
+            try {
+              attachPayment(paymentId, chargeId);
+              triggerHaptic("success");
+              toast(`Payment filed against order #${orderNumber}`, "success");
+            } catch (cause) {
+              triggerHaptic("error");
+              toast(cause instanceof Error ? cause.message : "The payment could not be filed.", "error");
+            }
           }}
           onDismiss={(paymentId) => {
-            dismissUnmatched(paymentId);
-            triggerHaptic("warning");
-            toast("Payment dismissed from the tray");
+            try {
+              dismissUnmatched(paymentId);
+              triggerHaptic("warning");
+              toast("Payment dismissed with a staff audit record");
+            } catch (cause) {
+              triggerHaptic("error");
+              toast(cause instanceof Error ? cause.message : "The payment could not be dismissed.", "error");
+            }
           }}
+          onReviewDuplicate={setDuplicatePaymentId}
         />
       )}
 
@@ -323,6 +368,11 @@ export function OrdersPage() {
       </div>
 
       <OrderDetailModal order={openOrder} onClose={() => setOpenOrderId(null)} />
+      <DuplicateChargeSheet
+        open={duplicatePaymentId !== null}
+        paymentId={duplicatePaymentId}
+        onClose={() => setDuplicatePaymentId(null)}
+      />
     </section>
   );
 }
@@ -446,31 +496,49 @@ function UnmatchedTray({
   filable,
   onAttach,
   onDismiss,
+  onReviewDuplicate,
 }: {
   payments: UnmatchedPayment[];
   filable: (Charge & { status: FilableStatus })[];
   onAttach: (paymentId: string, chargeId: string, orderNumber: string) => void;
   onDismiss: (paymentId: string) => void;
+  onReviewDuplicate: (paymentId: string) => void;
 }) {
-  const { orderFor } = useMerchant();
+  const { orderFor, paymentReconciliations } = useMerchant();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [confirmingDismiss, setConfirmingDismiss] = useState<string | null>(null);
 
   // Newest first, each one carrying the state it is in: two charges for the same
   // money are told apart by whether one expired and the other came up short.
-  const options = useMemo(
-    () =>
-      filable.map((charge) => {
-        const order = orderFor(charge.id);
-        const name = order ? `#${order.number}` : charge.reference;
-        return {
-          value: charge.id,
-          label: `${name} · ${FILABLE_LABEL[charge.status]}`,
-          sublabel: fmtMinor(charge.amountMinor, charge.currency),
-        };
-      }),
-    [filable, orderFor],
-  );
+  const optionsByPayment = useMemo(() => {
+    const result = new Map<string, Array<{ value: string; label: string; sublabel: string }>>();
+    for (const payment of payments) {
+      const reconciliation = paymentReconciliations.find((entry) => entry.id === payment.id);
+      const exact = filable.filter((charge) => {
+        if (!reconciliation || charge.network !== reconciliation.network) return false;
+        const quote = quoteFor(charge, payment.asset);
+        if (!quote) return false;
+        try {
+          return toStroops(quote.amount) === toStroops(payment.amount);
+        } catch {
+          return false;
+        }
+      });
+      result.set(
+        payment.id,
+        exact.map((charge) => {
+          const order = orderFor(charge.id);
+          const name = order ? `#${order.number}` : charge.reference;
+          return {
+            value: charge.id,
+            label: `${name} · ${FILABLE_LABEL[charge.status]}`,
+            sublabel: fmtMinor(charge.amountMinor, charge.currency),
+          };
+        }),
+      );
+    }
+    return result;
+  }, [filable, orderFor, paymentReconciliations, payments]);
 
   return (
     <section
@@ -496,11 +564,19 @@ function UnmatchedTray({
         </div>
 
         {payments.map((payment) => {
+          const options = optionsByPayment.get(payment.id) ?? [];
           const orderNumberFor = (chargeId: string) => {
             const order = orderFor(chargeId);
             return order ? String(order.number) : "—";
           };
-          const chosen = picked[payment.id] ?? (options.length === 1 ? options[0].value : "");
+          const suggested = payment.candidateChargeId && options.some(
+            (option) => option.value === payment.candidateChargeId,
+          )
+            ? payment.candidateChargeId
+            : options.length === 1
+              ? options[0].value
+              : "";
+          const chosen = picked[payment.id] ?? suggested;
           const dismissing = confirmingDismiss === payment.id;
 
           return (
@@ -517,7 +593,13 @@ function UnmatchedTray({
                         timeStyle: "short",
                       })}
                     </span>
+                    <span className="rounded-full bg-[#FF9F0A]/15 px-2 py-0.5 text-[11px] font-semibold text-[#FF9F0A]">
+                      {RECONCILIATION_LABEL[payment.reconciliationOutcome]}
+                    </span>
                   </div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-neutral-400">
+                    {RECONCILIATION_DETAIL[payment.reconciliationOutcome]}
+                  </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
                     <span className="text-neutral-500">From</span>
                     <HashValue value={payment.from} className="text-[12px] text-neutral-300" />
@@ -532,7 +614,15 @@ function UnmatchedTray({
                 </div>
 
                 <div className="flex flex-col gap-2 lg:w-[340px] lg:shrink-0">
-                  {options.length === 0 ? (
+                  {payment.reconciliationOutcome === "duplicate" ? (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => onReviewDuplicate(payment.id)}
+                    >
+                      Review duplicate
+                    </Button>
+                  ) : options.length === 0 ? (
                     <p className="text-[12.5px] leading-relaxed text-neutral-400">
                       No open or unsettled charge to file this against. Raise the charge first, or
                       leave the payment here until you do.
