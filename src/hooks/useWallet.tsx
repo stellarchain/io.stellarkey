@@ -33,6 +33,7 @@ import {
   loadAutoLockPref,
   loadNetworkPref,
   loadVault,
+  loadVaultResult,
   lockVault,
   removeStoredAccount,
   restoreAccountByIndex as restoreAccountByIndexVault,
@@ -59,6 +60,7 @@ import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
 import { getHorizonUrl, type NetworkKey } from "@/lib/stellar";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
 import { describeResourceFailures, settleResourceMap } from "@/lib/wallet-refresh";
+import type { StorageIssue } from "@/lib/storage-load";
 import {
   applyTransactionPoll,
   clearDurableMergeReconciliations,
@@ -92,7 +94,7 @@ import {
   type TransactionTrackingState,
 } from "@/lib/submission";
 
-type Phase = "loading" | "empty" | "locked" | "unlocked";
+type Phase = "loading" | "empty" | "recovery" | "locked" | "unlocked";
 
 function stripSecret(account: StoredAccount): AccountMeta {
   return {
@@ -135,6 +137,7 @@ function restoreStorageValue(storage: Storage, key: string, value: string | null
 
 interface WalletContextValue {
   phase: Phase;
+  vaultStorageIssue: StorageIssue | null;
   network: NetworkKey;
   accounts: AccountMeta[];
   activeAccount: AccountMeta | null;
@@ -279,6 +282,7 @@ const WalletContext = createContext<WalletContextValue | null>(null);
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>("loading");
+  const [vaultStorageIssue, setVaultStorageIssue] = useState<StorageIssue | null>(null);
   const [network, setNetworkState] = useState<NetworkKey>("testnet");
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
@@ -462,11 +466,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAutoLockMsState(loadAutoLockPref());
       setContacts(loadContacts());
       setHasDeletedWalletBackup(hasDeletedVault());
-      const vault = loadVault();
-      if (!vault || vault.accounts.length === 0) {
+      const vaultResult = loadVaultResult();
+      if (vaultResult.kind !== "ready") {
+        if (vaultResult.kind === "absent") {
+          setPhase("empty");
+          return;
+        }
+        setVaultStorageIssue(vaultResult);
+        setPhase("recovery");
+        return;
+      }
+      if (vaultResult.value.accounts.length === 0) {
         setPhase("empty");
         return;
       }
+      const vault = vaultResult.value;
       setAccounts(vault.accounts.map(stripSecret));
       setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
       setActiveId(vault.activeAccountId ?? vault.accounts[0].id);
@@ -1055,6 +1069,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
     commitMergeReconciliations(() => []);
     setHasDeletedWalletBackup(false);
+    setVaultStorageIssue(null);
     setPhase("empty");
   }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
 
@@ -1773,6 +1788,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<WalletContextValue>(
     () => ({
       phase,
+      vaultStorageIssue,
       network,
       accounts,
       activeAccount,
@@ -1847,6 +1863,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       phase,
+      vaultStorageIssue,
       network,
       accounts,
       activeAccount,

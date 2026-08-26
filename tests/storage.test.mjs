@@ -91,3 +91,50 @@ test("private transaction notes are encrypted at rest and require an unlocked va
   lockVault();
   await assert.rejects(() => loadPrivateTxNote("deadbeef"), /locked/i);
 });
+
+test("vault loading distinguishes absent, corrupt, and future data without overwriting it", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { loadVaultResult } = await import("../src/lib/vault.ts");
+
+  assert.deepEqual(loadVaultResult(), { kind: "absent" });
+
+  localStorage.setItem("polaris.vault.v1", "{not-json");
+  const corrupt = loadVaultResult();
+  assert.equal(corrupt.kind, "corrupt");
+  assert.equal(corrupt.raw, "{not-json");
+  assert.equal(localStorage.getItem("polaris.vault.v1"), "{not-json");
+
+  const futureRaw = JSON.stringify({ version: 99, accounts: [] });
+  localStorage.setItem("polaris.vault.v1", futureRaw);
+  const future = loadVaultResult();
+  assert.equal(future.kind, "future");
+  assert.equal(future.version, 99);
+  assert.equal(future.raw, futureRaw);
+  assert.equal(localStorage.getItem("polaris.vault.v1"), futureRaw);
+});
+
+test("vault validation rejects malformed account entries before UI mapping", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { loadVaultResult } = await import("../src/lib/vault.ts");
+  localStorage.setItem(
+    "polaris.vault.v1",
+    JSON.stringify({ version: 1, accounts: [null], activeAccountId: null }),
+  );
+  assert.equal(loadVaultResult().kind, "corrupt");
+});
+
+test("wallet creation refuses to overwrite recoverable invalid data", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const raw = "{recover-me";
+  localStorage.setItem("polaris.vault.v1", raw);
+  const { initializeVault } = await import("../src/lib/vault.ts");
+
+  await assert.rejects(
+    () => initializeVault("correct horse battery staple"),
+    /needs recovery/i,
+  );
+  assert.equal(localStorage.getItem("polaris.vault.v1"), raw);
+});

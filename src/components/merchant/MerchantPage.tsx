@@ -5,8 +5,8 @@ import { useMerchant } from "@/hooks/useMerchant";
 import { useWallet } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
-import { Notice, SegmentedControl } from "../ui";
-import { IconAlert, IconChevronDown } from "../icons";
+import { Button, Notice, SegmentedControl } from "../ui";
+import { IconAlert, IconChevronDown, IconDownload } from "../icons";
 import { IconClock, IconInfo, IconStorefront } from "./icons";
 import { Stat, StatStrip } from "./Stat";
 import { ChargeSheet } from "./ChargeSheet";
@@ -130,6 +130,9 @@ export function MerchantPage({
 }) {
   const {
     ready,
+    storageIssue,
+    exportRecoveryData,
+    resetRecoveryData,
     online,
     enabled,
     settings,
@@ -179,6 +182,45 @@ export function MerchantPage({
         <div className="skeleton h-[44px] rounded-xl md:hidden" />
         <div className="skeleton h-[340px] rounded-[20px]" />
       </div>
+    );
+  }
+
+  if (storageIssue) {
+    return (
+      <section className="panel mx-auto w-full max-w-[560px] p-6 text-center sm:p-8">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A]">
+          <IconAlert size={21} />
+        </span>
+        <h2 className="display-h mt-4 text-[21px] font-bold text-white">Merchant data needs recovery</h2>
+        <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{storageIssue.message}</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">
+          Till writes are blocked so the original record cannot be overwritten.
+        </p>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Button
+            onClick={() => {
+              const raw = exportRecoveryData();
+              if (!raw) return;
+              const url = URL.createObjectURL(new Blob([raw], { type: "application/json" }));
+              const anchor = document.createElement("a");
+              anchor.href = url;
+              anchor.download = `merchant-recovery-${new Date().toISOString().slice(0, 10)}.json`;
+              anchor.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            <IconDownload size={16} /> Export recovery data
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (window.confirm("Erase this device's unreadable merchant data?")) resetRecoveryData();
+            }}
+          >
+            Erase merchant data
+          </Button>
+        </div>
+      </section>
     );
   }
 
