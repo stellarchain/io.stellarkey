@@ -70,6 +70,13 @@ import {
   markReconciledRefund,
   reconcileIncomingPayments,
 } from "@/lib/merchant/reconciliation";
+import {
+  activeShiftForTerminal,
+  buildShiftReport,
+  closeShift as closePersistedShift,
+  openShift as openPersistedShift,
+  unresolvedShiftFlows,
+} from "@/lib/merchant/shifts";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -92,6 +99,8 @@ import type {
   Refund,
   RefundReason,
   RefundRequest,
+  Shift,
+  ShiftReport,
   StaffMember,
   StaffRole,
   TerminalDevice,
@@ -223,6 +232,14 @@ interface MerchantContextValue {
   adjustments: Adjustment[];
   peripherals: Peripheral[];
   nextOrderNumber: number;
+
+  shifts: Shift[];
+  activeShift: Shift | null;
+  shiftReport: ShiftReport | null;
+  shiftBlockers: ReturnType<typeof unresolvedShiftFlows>;
+  paymentBlockedReason: string | null;
+  openShift: (floatMinor: Minor) => Shift;
+  closeShift: (countedMinor: Minor) => ShiftReport;
 
   /** Assets that both the shop accepts and the app can price right now. */
   quotableAssets: AcceptedAsset[];
@@ -440,6 +457,74 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [staffSessionId, store.activeStaffId, store.staff],
   );
 
+  const activeShift = useMemo(
+    () => activeShiftForTerminal(store),
+    [store],
+  );
+
+  const shiftReport = useMemo(
+    () => (activeShift ? buildShiftReport(store, activeShift.id) : null),
+    [activeShift, store],
+  );
+
+  const shiftBlockers = useMemo(
+    () =>
+      activeShift
+        ? [
+            ...unresolvedShiftFlows(store, activeShift.id),
+            ...(ticket.lines.length > 0
+              ? [{ kind: "order" as const, id: "draft-ticket", label: "The current ticket has not been settled or cleared." }]
+              : []),
+          ]
+        : [],
+    [activeShift, store, ticket.lines.length],
+  );
+
+  const openShift = useCallback((floatMinor: Minor): Shift => {
+    const current = storeRef.current;
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before opening a shift.");
+    const opened = openPersistedShift(current, {
+      id: uid("shift"),
+      actor,
+      terminalName: current.settings.terminalName,
+      network,
+      floatMinor,
+      now: Date.now(),
+    });
+    commitStore(opened.store);
+    return opened.shift;
+  }, [commitStore, network, staffSessionId]);
+
+  const closeShift = useCallback((countedMinor: Minor): ShiftReport => {
+    const current = storeRef.current;
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (!actor) throw new Error("Choose an active staff member before closing a shift.");
+    if (ticket.lines.length > 0) {
+      throw new Error("Clear or settle the current ticket before closing this shift.");
+    }
+    const shift = activeShiftForTerminal(current);
+    if (!shift) throw new Error("Open a shift before counting the drawer.");
+    const closed = closePersistedShift(current, {
+      shiftId: shift.id,
+      actor,
+      countedMinor,
+      now: Date.now(),
+    });
+    commitStore(closed.store);
+    return closed.report;
+  }, [commitStore, staffSessionId, ticket.lines.length]);
+
   const switchStaff = useCallback(async (memberId: string, pin: string): Promise<void> => {
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === memberId && entry.active);
@@ -570,9 +655,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [rateFor, settings.acceptedAssets],
   );
 
-  const chargeBlockedReason = useMemo(() => {
+  const paymentBlockedReason = useMemo(() => {
     if (!activeStaff) return "Choose an active staff member before taking a payment.";
     if (!activeStaff.permissions.takePayment) return `${activeStaff.name} is not allowed to take payments.`;
+    if (!activeShift) return `Open a shift on ${settings.terminalName} before taking a payment.`;
+    if (activeShift.network !== network) {
+      return `Shift ${activeShift.number} is open on ${activeShift.network}; switch network or close it first.`;
+    }
+    return null;
+  }, [activeShift, activeStaff, network, settings.terminalName]);
+
+  const chargeBlockedReason = useMemo(() => {
+    if (paymentBlockedReason) return paymentBlockedReason;
     if (!settings.receivingPublicKey) return "Choose the account that receives payments in Merchant settings.";
     if (settings.acceptedAssets.length === 0) return "Add at least one accepted asset in Merchant settings.";
     if (quotableAssets.length === 0) {
@@ -581,7 +675,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         : "No price is available for the assets you accept.";
     }
     return null;
-  }, [activeStaff, network, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
+  }, [network, paymentBlockedReason, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
 
   /* ---------------- ticket ---------------- */
 
@@ -696,8 +790,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (!actor.permissions.takePayment) {
       throw new Error(`${actor.name} is not allowed to take payments.`);
     }
+    const shift = activeShiftForTerminal(current);
+    if (!shift) throw new Error(`Open a shift on ${current.settings.terminalName} before taking a payment.`);
+    if (shift.network !== network) {
+      throw new Error(`Shift ${shift.number} is open on ${shift.network}; switch network or close it first.`);
+    }
     return actor;
-  }, [staffSessionId]);
+  }, [network, staffSessionId]);
 
   const buildTicketOrder = useCallback((
     current: MerchantStore,
@@ -1586,6 +1685,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     adjustments: store.adjustments,
     peripherals: store.peripherals,
     nextOrderNumber: store.nextOrderNumber,
+
+    shifts: store.shifts,
+    activeShift,
+    shiftReport,
+    shiftBlockers,
+    paymentBlockedReason,
+    openShift,
+    closeShift,
 
     quotableAssets,
     chargeBlockedReason,

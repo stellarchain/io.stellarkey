@@ -538,6 +538,8 @@ export function PosTerminal() {
     setLineQuantity,
     removeLine,
     clearTicket,
+    activeShift,
+    paymentBlockedReason,
     chargeBlockedReason,
     createChargeFromTicket,
     orders,
@@ -639,6 +641,16 @@ export function PosTerminal() {
     setAdjustOpen(true);
   }
 
+  function openTender() {
+    if (paymentBlockedReason) {
+      triggerHaptic("warning");
+      toast(paymentBlockedReason, "error");
+      return;
+    }
+    triggerHaptic("selection");
+    setTenderOpen(true);
+  }
+
   /**
    * Charge does not raise the charge: it turns the screen to the customer to ask
    * about a tip. Only their answer raises it, which is why the tip is passed
@@ -670,6 +682,30 @@ export function PosTerminal() {
   // floating tab bar.
   return (
     <section className="fade-up w-full">
+      <div
+        role="status"
+        className={`mb-3 flex items-center gap-3 rounded-[18px] border px-3.5 py-3 ${
+          activeShift
+            ? "border-[#30D158]/20 bg-[#30D158]/[0.06]"
+            : "border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.07]"
+        }`}
+      >
+        <span
+          className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+            activeShift ? "bg-[#30D158] shadow-[0_0_14px_rgba(48,209,88,0.7)]" : "bg-[#FF9F0A]"
+          }`}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-semibold text-white">
+            {activeShift ? `Shift ${activeShift.number} · ${activeShift.terminalName}` : "Till locked · no open shift"}
+          </span>
+          <span className="block truncate text-[11.5px] text-neutral-400">
+            {activeShift
+              ? `Opened ${new Date(activeShift.openedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} by ${activeShift.openedBy} · ${activeShift.network}`
+              : "Open a shift from the Shift button before accepting any tender."}
+          </span>
+        </span>
+      </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] md:items-start md:gap-5">
         {/* ---------- catalogue and keypad ---------- */}
         <div className="min-w-0 space-y-3">
@@ -940,10 +976,7 @@ export function PosTerminal() {
                     quote can still take cash. */}
                 {!empty && (
                   <TicketMenu
-                    onTender={() => {
-                      triggerHaptic("selection");
-                      setTenderOpen(true);
-                    }}
+                    onTender={openTender}
                     onCustomerView={() => {
                       triggerHaptic("light");
                       setCustomerViewOpen(true);
@@ -989,10 +1022,7 @@ export function PosTerminal() {
                   Charge
                 </button>
                 <TicketMenu
-                  onTender={() => {
-                    triggerHaptic("selection");
-                    setTenderOpen(true);
-                  }}
+                  onTender={openTender}
                   onCustomerView={() => {
                     triggerHaptic("light");
                     setCustomerViewOpen(true);
