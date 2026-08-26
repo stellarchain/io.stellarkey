@@ -120,6 +120,7 @@ import {
   updateSettlementRule as updatePersistedSettlementRule,
   type SettlementHandoffs,
 } from "@/lib/merchant/settlement";
+import { BROWSER_PERIPHERALS, merchantRuntimeState } from "@/lib/merchant/runtime";
 import { fetchIncomingPayments } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
@@ -241,11 +242,13 @@ export type MerchantRefundOutcome =
 
 interface MerchantContextValue {
   ready: boolean;
+  online: boolean;
   enabled: boolean;
   configured: boolean;
   setEnabled: (on: boolean) => void;
   settings: MerchantSettings;
   tillTextSize: MerchantStore["tillTextSize"];
+  setTillTextSize: (size: MerchantStore["tillTextSize"]) => void;
   updateSettings: (patch: Partial<MerchantSettings>) => void;
   completeSetup: (
     input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string },
@@ -256,6 +259,7 @@ interface MerchantContextValue {
   terminal: TerminalDevice;
   refundRequests: RefundRequest[];
   switchStaff: (memberId: string, pin: string) => Promise<void>;
+  unlockCustomerDisplay: (pin: string) => Promise<StaffMember>;
   addStaff: (input: { name: string; role: StaffRole; pin: string }) => Promise<void>;
   updateStaff: (
     memberId: string,
@@ -417,6 +421,8 @@ interface MerchantContextValue {
   watching: boolean;
   watchedLedger: number | null;
   watchError: string | null;
+  queuedChargeCount: number;
+  expiredChargeCount: number;
   pollNow: () => Promise<void>;
 
   today: TodaySummary;
@@ -474,6 +480,7 @@ function todayWindow(): { start: number; elapsedMs: number } {
 
 export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const {
+    phase,
     network,
     activeAccount,
     balances,
@@ -498,12 +505,24 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
+  const [online, setOnline] = useState(true);
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
   const [reportingNow] = useState(() => Date.now());
   const storeRef = useRef(store);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine);
+    updateOnline();
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
 
   // Deferred the way the wallet bootstraps its own vault: localStorage is not
   // available while the page is server-rendered, and the first client render has
@@ -759,6 +778,36 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     setStaffSessionId(member.id);
   }, [commitStore]);
 
+  const unlockCustomerDisplay = useCallback(async (pin: string): Promise<StaffMember> => {
+    const current = storeRef.current;
+    const member = current.staff.find(
+      (entry) =>
+        entry.id === staffSessionId &&
+        entry.id === current.activeStaffId &&
+        entry.active,
+    );
+    if (!member?.pinDigest) {
+      throw new Error("The active staff session cannot unlock this display.");
+    }
+    const now = Date.now();
+    const prior = pinAttempts.current.get(member.id) ?? { failures: 0, blockedUntil: 0 };
+    if (now < prior.blockedUntil) {
+      const seconds = Math.max(1, Math.ceil((prior.blockedUntil - now) / 1000));
+      throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
+    }
+    const verified = await verifyMerchantPin(pin, member.pinDigest);
+    const attempt = nextPinAttempt(prior, verified, now);
+    pinAttempts.current.set(member.id, attempt.state);
+    if (!verified) {
+      throw new Error(
+        attempt.blocked
+          ? "Too many wrong PINs. Try again in 30 seconds."
+          : "That PIN is not correct.",
+      );
+    }
+    return member;
+  }, [staffSessionId]);
+
   const addStaff = useCallback(async ({
     name,
     role,
@@ -911,6 +960,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const chargeBlockedReason = useMemo(() => {
     if (paymentBlockedReason) return paymentBlockedReason;
+    if (!online) return "This device is offline. Reconnect before raising a new priced charge.";
     if (!settings.receivingPublicKey) return "Choose the account that receives payments in Merchant settings.";
     if (settings.acceptedAssets.length === 0) return "Add at least one accepted asset in Merchant settings.";
     if (quotableAssets.length === 0) {
@@ -919,7 +969,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         : "No price is available for the assets you accept.";
     }
     return null;
-  }, [network, paymentBlockedReason, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
+  }, [network, online, paymentBlockedReason, quotableAssets.length, settings.acceptedAssets.length, settings.receivingPublicKey]);
 
   const invoiceBlockedReason = useMemo(() => {
     if (!activeStaff) return "Choose an active staff member before managing invoices.";
@@ -1705,7 +1755,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   const pollNow = useCallback(async () => {
     const till = settings.receivingPublicKey;
-    if (!enabled || !till || polling.current) return;
+    if (!enabled || !online || !till || polling.current) return;
     polling.current = true;
     try {
       const result = await fetchIncomingPayments({
@@ -1724,7 +1774,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     } finally {
       polling.current = false;
     }
-  }, [applyPayments, enabled, network, persist, settings.receivingPublicKey, store.cursors]);
+  }, [applyPayments, enabled, network, online, persist, settings.receivingPublicKey, store.cursors]);
 
   const hasLiveCharge = useMemo(
     () => liveCharges(store.charges, network).length > 0,
@@ -1751,7 +1801,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, [pollNow]);
 
   useEffect(() => {
-    if (!enabled || !settings.receivingPublicKey) return;
+    if (!enabled || !online || !settings.receivingPublicKey) return;
     let alive = true;
     void (async () => {
       await Promise.resolve();
@@ -1764,7 +1814,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       alive = false;
       clearInterval(interval);
     };
-  }, [enabled, hasLiveCharge, hasLiveInvoice, network, settings.receivingPublicKey]);
+  }, [enabled, hasLiveCharge, hasLiveInvoice, network, online, settings.receivingPublicKey]);
 
   /* ---------------- tray ---------------- */
 
@@ -2220,8 +2270,22 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [activeChargeId, store.charges],
   );
 
+  const runtime = useMemo(
+    () =>
+      merchantRuntimeState({
+        online,
+        vaultPhase: phase,
+        watchError,
+        charges: store.charges,
+        network,
+        now: reportingNow,
+      }),
+    [network, online, phase, reportingNow, store.charges, watchError],
+  );
+
   const value: MerchantContextValue = {
     ready,
+    online,
     enabled,
     configured,
     setEnabled: (on) =>
@@ -2232,15 +2296,21 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ),
     settings,
     tillTextSize: store.tillTextSize,
+    setTillTextSize: (size) => persist((prev) => ({ ...prev, tillTextSize: size })),
     updateSettings: (patch) =>
       persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
     completeSetup,
 
     staff: store.staff,
     activeStaff,
-    terminal: store.terminal,
+    terminal: {
+      ...store.terminal,
+      name: settings.terminalName,
+      queuedCharges: runtime.queuedChargeCount,
+    },
     refundRequests: store.refundRequests,
     switchStaff,
+    unlockCustomerDisplay,
     addStaff,
     updateStaff,
     resetStaffPin,
@@ -2279,7 +2349,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     unmatched: store.unmatched,
     paymentReconciliations: store.paymentReconciliations,
     adjustments: store.adjustments,
-    peripherals: store.peripherals,
+    peripherals: [...BROWSER_PERIPHERALS],
     nextOrderNumber: store.nextOrderNumber,
 
     invoices: store.invoices,
@@ -2360,9 +2430,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     approveRefundRequest,
     declineRefundRequest,
 
-    watching: enabled && Boolean(settings.receivingPublicKey),
+    watching: online && enabled && Boolean(settings.receivingPublicKey),
     watchedLedger,
     watchError,
+    queuedChargeCount: runtime.queuedChargeCount,
+    expiredChargeCount: runtime.expiredChargeCount,
     pollNow,
 
     today,

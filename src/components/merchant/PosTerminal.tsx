@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
 import { useMerchant } from "@/hooks/useMerchant";
 import { orderReference } from "@/lib/merchant/charge";
 import { fmtMinor, lineGrossMinor } from "@/lib/merchant/money";
+import { findScannedCatalogueItem } from "@/lib/merchant/runtime";
 import type {
   CatalogueItem,
   Minor,
@@ -453,7 +454,7 @@ function TicketRow({
   return (
     <li className={`flex items-start gap-3 px-4 py-3 ${first ? "" : "border-t border-white/[0.08]"}`}>
       <div className="min-w-0 flex-1">
-        <p className="text-[14.5px] font-medium leading-snug text-white">{line.name}</p>
+        <p className="till-line text-[14.5px] font-medium leading-snug text-white">{line.name}</p>
         {line.modifiers.length > 0 && (
           <p className="mt-0.5 text-[12px] leading-relaxed text-neutral-500">
             {line.modifiers.map((m) => m.name).join(" · ")}
@@ -488,7 +489,7 @@ function TicketRow({
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-2">
-        <span className="mono text-[14.5px] text-white">
+        <span className="till-line mono text-[14.5px] text-white">
           {fmtMinor(lineGrossMinor(line), currency)}
         </span>
         <div className="flex items-center gap-1">
@@ -528,6 +529,7 @@ function TicketRow({
 export function PosTerminal() {
   const {
     settings,
+    tillTextSize,
     catalogue,
     modifierGroups,
     ticket,
@@ -559,6 +561,8 @@ export function PosTerminal() {
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [customerViewOpen, setCustomerViewOpen] = useState(false);
   const [lastSettledOrderId, setLastSettledOrderId] = useState<string | null>(null);
+  const scannerBuffer = useRef("");
+  const scannerResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currency = settings.currency;
 
@@ -619,16 +623,72 @@ export function PosTerminal() {
     ? charges.find((charge) => charge.orderId === receiptOrder.id)?.payment?.transactionHash ?? null
     : null;
 
-  function pickItem(item: CatalogueItem) {
+  const pickItem = useCallback((item: CatalogueItem): "added" | "options" => {
     const groups = groupsFor(item);
     if (groups.length > 0) {
       triggerHaptic("selection");
       setOptionsFor(item);
-      return;
+      return "options";
     }
     triggerHaptic("light");
     addItemToTicket(item);
-  }
+    return "added";
+  }, [addItemToTicket, groupsFor]);
+
+  useEffect(() => {
+    function clearScannerBuffer() {
+      scannerBuffer.current = "";
+      if (scannerResetTimer.current) clearTimeout(scannerResetTimer.current);
+      scannerResetTimer.current = null;
+    }
+
+    function onScannerKey(event: KeyboardEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        target?.closest('[role="dialog"]') ||
+        target?.matches("input, textarea, select, [contenteditable=true]")
+      ) {
+        return;
+      }
+      if (event.key === "Enter") {
+        const code = scannerBuffer.current.trim();
+        clearScannerBuffer();
+        if (!code) return;
+        event.preventDefault();
+        const item = findScannedCatalogueItem(active, code);
+        if (!item) {
+          triggerHaptic("warning");
+          toast(`No active catalogue item has SKU ${code}.`, "error");
+          return;
+        }
+        const outcome = pickItem(item);
+        toast(
+          outcome === "added"
+            ? `${item.name} added from scanner`
+            : `${item.name} scanned — choose its options`,
+          "success",
+        );
+        return;
+      }
+      if (
+        event.key.length !== 1 ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+      scannerBuffer.current += event.key;
+      if (scannerResetTimer.current) clearTimeout(scannerResetTimer.current);
+      scannerResetTimer.current = setTimeout(clearScannerBuffer, 120);
+    }
+
+    window.addEventListener("keydown", onScannerKey);
+    return () => {
+      window.removeEventListener("keydown", onScannerKey);
+      clearScannerBuffer();
+    };
+  }, [active, pickItem, toast]);
 
   function openReceipt(order: Order) {
     triggerHaptic("selection");
@@ -681,7 +741,13 @@ export function PosTerminal() {
   // padding to the sticky charge bar below, which parks exactly one gap above the
   // floating tab bar.
   return (
-    <section className="fade-up w-full">
+    <section className={`fade-up till-size-${tillTextSize} w-full`}>
+      <style>{`
+        .till-size-large .till-line { font-size: 16.5px; }
+        .till-size-large .till-total { font-size: 24px; }
+        .till-size-xlarge .till-line { font-size: 19px; }
+        .till-size-xlarge .till-total { font-size: 30px; }
+      `}</style>
       <div
         role="status"
         className={`mb-3 flex items-center gap-3 rounded-[18px] border px-3.5 py-3 ${
@@ -945,7 +1011,7 @@ export function PosTerminal() {
 
                   <div className="mt-2 flex items-center justify-between border-t border-white/[0.08] px-4 py-3">
                     <span className="text-[15.5px] font-semibold text-white">Total</span>
-                    <span className="mono text-[20px] font-semibold text-white">
+                    <span className="till-total mono text-[20px] font-semibold text-white">
                       {fmtMinor(ticketTotals.totalMinor, currency)}
                     </span>
                   </div>
@@ -1008,7 +1074,7 @@ export function PosTerminal() {
                 <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
                   Total · {itemCount} {itemCount === 1 ? "item" : "items"}
                 </p>
-                <p className="mono truncate text-[17px] font-semibold leading-tight text-white">
+                <p className="till-total mono truncate text-[17px] font-semibold leading-tight text-white">
                   {fmtMinor(ticketTotals.totalMinor, currency)}
                 </p>
               </div>

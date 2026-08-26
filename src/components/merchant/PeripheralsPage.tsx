@@ -1,36 +1,10 @@
 "use client";
 
-/**
- * MOCK — the Peripherals sub-page of Merchant settings.
- *
- * What is mocked: the hardware. Rows come from `MOCK_PERIPHERALS`; nothing is
- * paired, kicked, printed or rotated, and the till text size chosen here is
- * local state that vanishes with the page. Every Connect/Test control is wired
- * to a local state change plus a toast saying what a real build would do.
- *
- * Every row here is hardware attached to *this* device — a cable, a short-range
- * radio, a keyboard, or the screen itself turned around. None of it is another
- * device reached over a network, and none of it is a service that has to be
- * running somewhere: the missing piece is a native bridge on this machine, not a
- * server.
- *
- * What is honest rather than mocked: two of the four rows carry the app's
- * "Unavailable" treatment because this build genuinely cannot drive them — a
- * thermal printer needs an ESC/POS transport (Bluetooth serial or USB) that a
- * browser does not expose, and the cash drawer has no radio of its own at all.
- * The barcode scanner is marked working because an HID scanner really is just a
- * keyboard: the capture field below is a real capture field.
- *
- * What a real implementation replaces: `Peripheral.connected` starts coming from
- * a native bridge instead of the fixture, "Test" calls that bridge, and the text
- * size becomes `settings.tillTextSize` written through `updateSettings`.
- */
-
 import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_PERIPHERALS } from "@/lib/merchant/mock";
 import { fmtMinor } from "@/lib/merchant/money";
+import { findScannedCatalogueItem } from "@/lib/merchant/runtime";
 import type { Peripheral, PeripheralKind, TillTextSize } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { IOSBackButton, SegmentedControl } from "../ui";
@@ -58,17 +32,16 @@ const KIND_TINT: Record<PeripheralKind, string> = {
   display: "#5E5CE6",
 };
 
-/** The action word on each row, and what the app would actually do. */
-const KIND_ACTION: Record<PeripheralKind, string> = {
-  printer: "Print a test receipt",
-  drawer: "Open the drawer",
-  scanner: "Test a scan",
-  display: "Preview the display",
-};
+function actionLabel(peripheral: Peripheral): string {
+  if (peripheral.id === "system-print") return "Open a test print";
+  if (peripheral.id === "keyboard-scanner") return "Test a scan";
+  if (peripheral.id === "same-device-display") return "Preview the display";
+  return "Unavailable in this browser";
+}
 
 const KIND_EXPLAINER: Record<PeripheralKind, string> = {
   printer:
-    "A thermal printer speaks ESC/POS down a Bluetooth serial or USB port, and a web app can open neither — so this build cannot reach the printer at all without a native bridge it does not have. Until it does, the receipt lives on screen: read it to the customer, or send it as a payment record.",
+    "The system print dialog works in the browser and offers AirPrint on supported iPhones and iPads. Direct ESC/POS control needs a native USB or Bluetooth bridge that is not installed.",
   drawer:
     "A cash drawer has no radio and no driver. It opens on a kick pulse from the receipt printer's RJ11 socket, so it is exactly as available as the printer — which needs the bridge above.",
   scanner:
@@ -81,20 +54,20 @@ const KIND_EXPLAINER: Record<PeripheralKind, string> = {
 /* Status                                                              */
 /* ------------------------------------------------------------------ */
 
-type State = "connected" | "idle" | "unavailable";
+type State = "available" | "idle" | "unavailable";
 
 function stateOf(peripheral: Peripheral): State {
   if (peripheral.unavailable) return "unavailable";
-  return peripheral.connected ? "connected" : "idle";
+  return peripheral.connected ? "available" : "idle";
 }
 
 /** Never colour alone: each of these is a glyph and a word. */
 function StatusPill({ state }: { state: State }) {
   const map = {
-    connected: {
+    available: {
       className: "text-[#30D158] bg-[#30D158]/15",
       Glyph: IconCheck,
-      label: "Connected",
+      label: "Available",
     },
     idle: {
       className: "text-neutral-400 bg-white/[0.08]",
@@ -145,11 +118,10 @@ const TEXT_SIZE_LINE: Record<TillTextSize, string> = {
 /* ------------------------------------------------------------------ */
 
 export function PeripheralsPage({ onBack }: { onBack: () => void }) {
-  const { settings } = useMerchant();
+  const { settings, catalogue, peripherals, tillTextSize, setTillTextSize } = useMerchant();
   const { toast } = useToast();
 
   const [openRow, setOpenRow] = useState<string | null>(null);
-  const [textSize, setTextSize] = useState<TillTextSize>("standard");
   const [scanDraft, setScanDraft] = useState("");
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [displayPreview, setDisplayPreview] = useState(false);
@@ -163,17 +135,17 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
   }
 
   function runAction(peripheral: Peripheral) {
-    if (peripheral.kind === "printer") {
-      triggerHaptic("warning");
-      toast("No ESC/POS bridge in this build", "error");
+    if (peripheral.id === "system-print") {
+      triggerHaptic("selection");
+      window.print();
       return;
     }
-    if (peripheral.kind === "drawer") {
+    if (peripheral.unavailable) {
       triggerHaptic("warning");
-      toast("The drawer needs the printer bridge", "error");
+      toast(`${peripheral.name} needs a native bridge that is not installed.`, "error");
       return;
     }
-    if (peripheral.kind === "scanner") {
+    if (peripheral.id === "keyboard-scanner") {
       triggerHaptic("light");
       setOpenRow(peripheral.id);
       toast("Scan into the field below");
@@ -182,11 +154,34 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
     triggerHaptic("light");
     setOpenRow(peripheral.id);
     setDisplayPreview((on) => !on);
-    toast(displayPreview ? "Preview closed" : "Would flip the whole till 180°");
+    toast(displayPreview ? "Preview closed" : "Same-device display preview opened");
   }
 
   return (
     <section className="fade-up w-full pb-[132px] md:pb-12">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          body::before, body::after { display: none !important; }
+          #merchant-test-receipt, #merchant-test-receipt * { visibility: visible !important; }
+          #merchant-test-receipt {
+            display: block !important;
+            position: fixed !important;
+            inset: 0 auto auto 0 !important;
+            width: 72mm !important;
+            padding: 8mm !important;
+            background: #fff !important;
+            color: #000 !important;
+            font: 12px/1.45 ui-monospace, monospace !important;
+          }
+        }
+      `}</style>
+      <div id="merchant-test-receipt" className="hidden" aria-hidden="true">
+        <p className="text-center font-bold">{settings.profile.name.trim() || "Merchant receipt"}</p>
+        <p className="mt-3">System print / AirPrint test</p>
+        <p>{deviceName}</p>
+        <p className="mt-3 border-t border-black pt-2 font-bold">Printer ready</p>
+      </div>
       {/* ---------------- header ---------------- */}
       <div className="flex items-center justify-between pb-1 pt-2">
         <IOSBackButton onClick={onBack} label="Back to Merchant settings" />
@@ -219,7 +214,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
             Hardware
           </h2>
           <div className="list-group">
-            {MOCK_PERIPHERALS.map((peripheral, index) => {
+            {peripherals.map((peripheral, index) => {
               const state = stateOf(peripheral);
               const Glyph = KIND_ICON[peripheral.kind];
               const expanded = openRow === peripheral.id;
@@ -290,10 +285,16 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                               if (e.key !== "Enter") return;
                               const code = scanDraft.trim();
                               if (!code) return;
-                              triggerHaptic("success");
                               setLastScan(code);
                               setScanDraft("");
-                              toast(`Read ${code} — would add it to the ticket`);
+                              const item = findScannedCatalogueItem(catalogue, code);
+                              triggerHaptic(item ? "success" : "warning");
+                              toast(
+                                item
+                                  ? `Matched ${item.name}. The till adds this SKU when scanned.`
+                                  : `No active catalogue item has SKU ${code}.`,
+                                item ? "success" : "error",
+                              );
                             }}
                             className="input mono text-base sm:text-[13.5px]"
                           />
@@ -331,9 +332,10 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                         <button
                           type="button"
                           onClick={() => runAction(peripheral)}
+                          disabled={state === "unavailable"}
                           className="btn btn-secondary"
                         >
-                          {KIND_ACTION[peripheral.kind]}
+                          {actionLabel(peripheral)}
                         </button>
                         {state === "unavailable" && (
                           <span className="text-[12px] text-neutral-500">
@@ -366,8 +368,8 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
             <div className="px-4 py-3.5">
               <div className="sm:max-w-[320px]">
                 <SegmentedControl<TillTextSize>
-                  value={textSize}
-                  onChange={setTextSize}
+                  value={tillTextSize}
+                  onChange={setTillTextSize}
                   options={(Object.keys(TEXT_SIZE_LABEL) as TillTextSize[]).map((size) => ({
                     label: TEXT_SIZE_LABEL[size],
                     value: size,
@@ -388,12 +390,12 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                 Preview
               </p>
               <div className="mt-2 rounded-[14px] border border-white/[0.08] px-4 py-3.5">
-                <div className={`mono flex justify-between gap-3 text-neutral-300 ${TEXT_SIZE_LINE[textSize]}`}>
+                <div className={`mono flex justify-between gap-3 text-neutral-300 ${TEXT_SIZE_LINE[tillTextSize]}`}>
                   <span className="truncate">1 × Flat White</span>
                   <span className="shrink-0">{fmtMinor(320, currency)}</span>
                 </div>
                 <div
-                  className={`mono mt-1 flex justify-between gap-3 text-neutral-300 ${TEXT_SIZE_LINE[textSize]}`}
+                  className={`mono mt-1 flex justify-between gap-3 text-neutral-300 ${TEXT_SIZE_LINE[tillTextSize]}`}
                 >
                   <span className="truncate">1 × Pastel de Nata</span>
                   <span className="shrink-0">{fmtMinor(160, currency)}</span>
@@ -403,7 +405,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                     Total
                   </p>
                   <p
-                    className={`mono mt-1 font-semibold leading-none text-white ${TEXT_SIZE_TOTAL[textSize]}`}
+                    className={`mono mt-1 font-semibold leading-none text-white ${TEXT_SIZE_TOTAL[tillTextSize]}`}
                   >
                     {fmtMinor(480, currency)}
                   </p>

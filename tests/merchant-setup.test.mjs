@@ -57,6 +57,14 @@ test("an unconfigured store needs setup and cancelling leaves it disabled", () =
   assert.deepEqual(store, before);
 });
 
+test("setup asset choices merge exact identities without duplicating native or issued assets", async () => {
+  const { uniqueAssets } = await import("../src/lib/merchant/charge.ts");
+  const xlm = { code: "XLM", issuer: null };
+  const usdc = { code: "USDC", issuer: USDC_ISSUER };
+  const result = uniqueAssets([xlm, usdc, xlm, { ...usdc }]);
+  assert.deepEqual(result, [xlm, usdc]);
+});
+
 test("setup commits the complete till configuration and owner atomically", () => {
   const original = {
     ...emptyStore(),

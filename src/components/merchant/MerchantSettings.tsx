@@ -8,11 +8,6 @@ import { formatTrezorAddress } from "@/lib/address-display";
 import { fmtAmount, FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { sameAsset } from "@/lib/merchant/charge";
 import { minorToDecimal, toMinor } from "@/lib/merchant/money";
-import {
-  MOCK_PERIPHERALS,
-  MOCK_STAFF,
-  MOCK_TERMINAL,
-} from "@/lib/merchant/mock";
 import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
@@ -23,7 +18,6 @@ import type { SettingsSub } from "../SettingsPage";
 import { Avatar, Notice, SegmentedControl, Select, Toggle } from "../ui";
 import { useToast } from "../Toast";
 import {
-  IconAlert,
   IconArrowUpRight,
   IconChevronDown,
   IconFileText,
@@ -412,6 +406,9 @@ export function MerchantSettings({
     setEnabled,
     orders,
     charges,
+    staff,
+    terminal,
+    peripherals,
     settlementRule,
     settlementHandoffs,
     updateSettlementRule,
@@ -479,14 +476,8 @@ export function MerchantSettings({
     }
   }
 
-  /* MOCK — the counts under the navigation rows below are read straight from the
-     fixtures those pages render, so a row never promises a figure the page it
-     opens then contradicts. A real implementation reads the shop's own staff,
-     the till and peripherals here and the rows do not change. */
-  const staffCount = MOCK_STAFF.filter((member) => member.active).length;
-  // One device, because nothing syncs between tills without a server.
-  const terminalName = MOCK_TERMINAL.name;
-  const peripheralsConnected = MOCK_PERIPHERALS.filter((item) => item.connected).length;
+  const staffCount = staff.filter((member) => member.active).length;
+  const availablePeripherals = peripherals.filter((item) => item.connected).length;
 
   function toggleAsset(asset: AcceptedAsset, on: boolean) {
     updateSettings({
@@ -1206,7 +1197,7 @@ export function MerchantSettings({
             icon={<IconUsers size={16} />}
             tint="#5E5CE6"
             label="Staff & terminals"
-            sub={`${staffCount} ${staffCount === 1 ? "person" : "people"} · ${terminalName}`}
+            sub={`${staffCount} ${staffCount === 1 ? "person" : "people"} · ${terminal.name}`}
             chevron={Boolean(onNavigate)}
             onClick={onNavigate && (() => onNavigate("staff"))}
           />
@@ -1215,24 +1206,10 @@ export function MerchantSettings({
             icon={<IconPrinter size={16} />}
             tint="#64D2FF"
             label="Peripherals"
-            sub={`${peripheralsConnected} of ${MOCK_PERIPHERALS.length} connected · printer, drawer, scanner, display`}
+            sub={`${availablePeripherals} browser capabilities available · print, scanner, display`}
             chevron={Boolean(onNavigate)}
             onClick={onNavigate && (() => onNavigate("peripherals"))}
           />
-
-          {/* Not part of the shop's day-to-day settings: a gallery kept here so
-              the offline and outage designs can be reviewed without contriving
-              an outage to see them. */}
-          <Advanced>
-            <Row
-              icon={<IconAlert size={16} />}
-              tint="#FF9F0A"
-              label="States & offline"
-              sub="Every offline, unconfirmed and outage state"
-              chevron={Boolean(onNavigate)}
-              onClick={onNavigate && (() => onNavigate("states"))}
-            />
-          </Advanced>
         </div>
       </Section>
 
