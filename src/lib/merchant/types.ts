@@ -552,6 +552,13 @@ export interface CounterCode {
   acceptedAssets: AcceptedAsset[];
   /** Prefix for the memo every payment against this code carries. */
   memoPrefix: string;
+  /** Immutable human-readable SEP-7 message captured when the request is published. */
+  requestMessage: string;
+  /** Snapshotted publication network and destination; shared paper cannot be redirected later. */
+  network: NetworkKey;
+  destination: string;
+  /** Fixed-price requests lock one quote per accepted asset. Open and tip codes keep this empty. */
+  quotes: ChargeQuote[];
   /** Attributes a tip code to one staff member. */
   staffId: string | null;
   /**
@@ -563,7 +570,12 @@ export interface CounterCode {
   active: boolean;
   payments: number;
   takingsMinor: Minor;
+  /** Filing deadline only. A paper copy remains readable after this instant. */
+  expiresAt: number | null;
   createdAt: number;
+  updatedAt: number;
+  createdById: string;
+  createdBy: string;
 }
 
 /** One immutable Horizon payment attributed to a reusable counter code. */

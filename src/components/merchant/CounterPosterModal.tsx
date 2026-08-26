@@ -1,38 +1,17 @@
 "use client";
 
-/**
- * DESIGN MOCK — the A6 card that sits on the counter.
- *
- * What is mocked: the code, its takings and the shop's fixture till address all
- * come from `src/lib/merchant/mock.ts`, and the amount on a fixed-price card is
- * worked out at the illustrative rate in `LinkEditorModal` rather than a quote.
- *
- * What is real: the QR is a real encoding of a SEP-7 request against the shop's
- * own account, and Print really does call `window.print()` against the
- * stylesheet below, which drops the app and lays the card out black-on-white at
- * A6 (105 × 148 mm) with the code at 44 mm. The paper carries the whole request:
- * nothing is fetched, and nothing else is in the path.
- *
- * What a real implementation replaces: the destination and the amount, which
- * would come from the shop's own receiving account and the rate it accepts at
- * the moment it prints. Paper cannot re-quote, so whatever is printed is what
- * every scan asks for until the card is replaced.
- */
-
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
 import { assetKey } from "@/lib/merchant/charge";
-import { MOCK_TILL_ADDRESS } from "@/lib/merchant/mock";
+import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { AcceptedAsset, CounterCode } from "@/lib/merchant/types";
 import { Button, CopyButton, Modal, ModalHeader, Notice } from "../ui";
 import { IconInfo, IconPrinter } from "./icons";
-import { codePayUri, previewAssetAmount } from "./LinkEditorModal";
 
 /** A6 in millimetres, and the code's printed width inside it. */
 const A6_WIDTH_MM = 105;
@@ -277,39 +256,29 @@ export function CounterPosterModal({
 }
 
 function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => void }) {
-  const { settings } = useMerchant();
-  const { network } = useWallet();
+  const { counterCodePayUriFor, settings } = useMerchant();
 
   const [chosenKey, setChosenKey] = useState(() =>
     code.acceptedAssets.length > 0 ? assetKey(code.acceptedAssets[0]) : "",
   );
+  const [now] = useState(() => Date.now());
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const mounted = useSyncExternalStore(subscribeNothing, readMounted, readNotMounted);
 
   const asset =
     code.acceptedAssets.find((a) => assetKey(a) === chosenKey) ?? code.acceptedAssets[0] ?? null;
 
-  const destination = settings.receivingPublicKey ?? MOCK_TILL_ADDRESS;
-  const usingFixtureAddress = settings.receivingPublicKey === null;
   const shopName = settings.profile.name.trim() || "Your shop";
   /* Paper cannot count, so the memo is fixed: every payment against this card
      carries it, and Horizon totals the account on it. */
   const memo = code.memoPrefix;
-  const printedAmount =
-    code.kind === "fixed" && code.amountMinor !== null && asset
-      ? previewAssetAmount(code.amountMinor, asset)
-      : null;
-
-  const uri = asset
-    ? codePayUri({
-        destination,
-        asset,
-        memo,
-        message: `${shopName} · ${code.title}`,
-        networkPassphrase: NETWORKS[network].networkPassphrase,
-        amount: printedAmount,
-      })
+  const printedAmount = asset
+    ? code.quotes.find((quote) => assetKey(quote.asset) === assetKey(asset))?.amount ?? null
     : null;
+  const uri = asset ? counterCodePayUriFor(code, asset) : null;
+  const availability = counterCodeAvailability(code, now);
+  const receivingAccountChanged = settings.receivingPublicKey !== code.destination;
+  const canShare = availability === "active" && !receivingAccountChanged && uri !== null;
 
   /* A real encoding, at a resolution that still has ink at 44 mm and 300 dpi. */
   useEffect(() => {
@@ -338,7 +307,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
 
   const priceLine =
     code.kind === "fixed" && code.amountMinor !== null
-      ? fmtMinor(code.amountMinor, code.currency)
+      ? `${fmtMinor(code.amountMinor, code.currency)}${printedAmount && asset ? ` · ${printedAmount} ${asset.code}` : ""}`
       : code.kind === "tip"
         ? "Thank you — any amount"
         : "Choose your amount";
@@ -357,7 +326,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
       priceLine={priceLine}
       suggestionLine={suggestionLine}
       qrDataUrl={qrDataUrl}
-      assetsText={assetLine(code.acceptedAssets)}
+      assetsText={asset ? asset.code : assetLine(code.acceptedAssets)}
       memo={memo}
       footer={
         settings.profile.receiptFooter.trim() ||
@@ -441,6 +410,12 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                   <dt className="text-neutral-400">Memo</dt>
                   <dd className="mono text-white">{memo}</dd>
                 </div>
+                {printedAmount && asset && (
+                  <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-neutral-400">Exact request</dt>
+                    <dd className="mono text-white">{printedAmount} {asset.code}</dd>
+                  </div>
+                )}
               </dl>
 
               <p className="text-[11.5px] leading-relaxed text-neutral-500">
@@ -450,6 +425,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
 
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Button
+                  disabled={!canShare || !qrDataUrl}
                   onClick={() => {
                     triggerHaptic("light");
                     window.print();
@@ -458,38 +434,59 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                   <IconPrinter size={16} />
                   Print
                 </Button>
-                <CopyButton
-                  value={uri ?? ""}
-                  label="Copy request"
-                  iconSize={15}
-                  className="btn btn-secondary w-full"
-                />
+                {canShare && uri ? (
+                  <CopyButton
+                    value={uri}
+                    label="Copy request"
+                    iconSize={15}
+                    className="btn btn-secondary w-full"
+                  />
+                ) : (
+                  <Button variant="secondary" disabled>
+                    {uri ? "Sharing disabled" : "Request unavailable"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
 
-          <Notice tone={usingFixtureAddress ? "warn" : "info"}>
+          <Notice tone={availability !== "active" || receivingAccountChanged || !uri ? "warn" : "info"}>
             <span className="flex items-start gap-2.5">
               <IconInfo
                 size={15}
                 className={`mt-[1px] shrink-0 ${
-                  usingFixtureAddress ? "text-[#FF9F0A]" : "text-neutral-400"
+                  availability !== "active" || receivingAccountChanged || !uri
+                    ? "text-[#FF9F0A]"
+                    : "text-neutral-400"
                 }`}
               />
               <span>
-                {usingFixtureAddress ? (
+                {!uri ? (
                   <>
-                    <span className="font-semibold text-white">Fixture address. </span>
-                    The code is a real SEP-7 request, but it points at the mock till until a
-                    receiving account is set in Merchant settings. Do not print this one for a real
-                    counter.
+                    <span className="font-semibold text-white">Incomplete legacy record. </span>
+                    This saved code has no reproducible publication request and cannot be printed.
+                  </>
+                ) : availability !== "active" ? (
+                  <>
+                    <span className="font-semibold text-white">
+                      {availability === "expired" ? "Expired. " : "Retired. "}
+                    </span>
+                    Existing paper is still readable, but new printing is disabled and matching
+                    ledger payments are no longer filed to this code.
+                  </>
+                ) : receivingAccountChanged ? (
+                  <>
+                    <span className="font-semibold text-white">Receiving account changed. </span>
+                    This poster still pays {code.destination.slice(0, 4)}…{code.destination.slice(-4)}
+                    on {NETWORKS[code.network].label}. Re-select that account for reconciliation or
+                    retire this code before sharing it.
                   </>
                 ) : (
                   <>
                     <span className="font-semibold text-white">What prints. </span>
                     The card alone, black on white at A6 — no app chrome, no background. The code is
                     a SEP-7 request against this shop&apos;s own account on{" "}
-                    {NETWORKS[network].label}, and the paper carries all of it.
+                    {NETWORKS[code.network].label}, and the paper carries all of it.
                   </>
                 )}
               </span>

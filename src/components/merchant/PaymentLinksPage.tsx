@@ -1,36 +1,14 @@
 "use client";
 
-/**
- * DESIGN MOCK — counter codes.
- *
- * What is mocked: every code, and both figures on it — payments and takings —
- * is read from `MOCK_COUNTER_CODES` in `src/lib/merchant/mock.ts`, and the staff
- * a tip code is attributed to comes from `MOCK_STAFF`. The in-use toggle, the
- * filter and anything the editor saves live in this component's state and are
- * gone on reload: nothing is written, fetched or signed here.
- *
- * What is real: the request each card copies is a genuine SEP-7 `web+stellar:pay`
- * URI built against the shop's own receiving account and its memo, so a
- * customer's wallet really reads it. The code carries the whole request; there
- * is no address behind it to resolve.
- *
- * What a real implementation replaces: the fixture array with the shop's own
- * codes from the merchant store, and the two counters with what Horizon totals
- * for each code's memo. The shapes are the real `CounterCode` contract, so none
- * of this markup moves.
- */
-
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
-import { NETWORKS } from "@/lib/stellar";
-import { MOCK_COUNTER_CODES, MOCK_NOW, MOCK_STAFF, MOCK_TILL_ADDRESS } from "@/lib/merchant/mock";
+import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { FiatCurrency } from "@/lib/format";
 import type { CounterCode, Minor } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { Button, Dropdown, SegmentedControl, Toggle } from "../ui";
+import { Button, Dropdown, Notice, SegmentedControl, Toggle } from "../ui";
 import { IconCopy, IconPlus } from "../icons";
 import { IconPrinter, IconQr, IconTag } from "./icons";
 import { Stat, StatStrip } from "./Stat";
@@ -39,8 +17,6 @@ import {
   CODE_KIND_META,
   CodeEditorModal,
   CodeKindIcon,
-  codePayUri,
-  previewAssetAmount,
 } from "./LinkEditorModal";
 import { CounterPosterModal } from "./CounterPosterModal";
 
@@ -91,8 +67,8 @@ function takingsByCurrency(codes: CounterCode[]): { currency: FiatCurrency; mino
   return [...totals.entries()].map(([currency, minor]) => ({ currency, minor }));
 }
 
-function ageLabel(createdAt: number): string {
-  const days = Math.max(0, Math.round((MOCK_NOW - createdAt) / 86_400_000));
+function ageLabel(createdAt: number, now: number): string {
+  const days = Math.max(0, Math.round((now - createdAt) / 86_400_000));
   if (days === 0) return "Saved today";
   if (days === 1) return "Saved yesterday";
   if (days < 60) return `Saved ${days} days ago`;
@@ -100,31 +76,39 @@ function ageLabel(createdAt: number): string {
 }
 
 export function PaymentLinksPage() {
-  const { settings } = useMerchant();
-  const { network } = useWallet();
+  const {
+    counterCodes: codes,
+    counterPayments,
+    pollNow,
+    setCounterCodeActive,
+    settings,
+    watchError,
+    watching,
+  } = useMerchant();
   const { toast } = useToast();
 
-  /* The fixture, copied into state so the screen can be used without writing. */
-  const [codes, setCodes] = useState<CounterCode[]>(MOCK_COUNTER_CODES);
   const [filter, setFilter] = useState<CodeFilter>("all");
+  const [now] = useState(() => Date.now());
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<CounterCode | null>(null);
   const [posterCode, setPosterCode] = useState<CounterCode | null>(null);
 
   const shown = useMemo(
     () =>
-      codes.filter((code) =>
-        filter === "all" ? true : filter === "active" ? code.active : !code.active,
-      ),
-    [filter, codes],
+      codes.filter((code) => {
+        const availability = counterCodeAvailability(code, now);
+        return filter === "all"
+          ? true
+          : filter === "active"
+            ? availability === "active"
+            : availability !== "active";
+      }),
+    [filter, codes, now],
   );
 
   const totalPayments = codes.reduce((sum, code) => sum + code.payments, 0);
   const totals = takingsByCurrency(codes);
-
-  const destination = settings.receivingPublicKey ?? MOCK_TILL_ADDRESS;
-  const shopName = settings.profile.name.trim() || "Your shop";
-  const networkPassphrase = NETWORKS[network].networkPassphrase;
+  const unpricedPayments = counterPayments.filter((payment) => payment.amountMinor === null);
 
   function openEditor(code: CounterCode | null) {
     triggerHaptic("selection");
@@ -132,22 +116,18 @@ export function PaymentLinksPage() {
     setEditorOpen(true);
   }
 
-  function handleSave(draft: CounterCode) {
-    setCodes((prev) =>
-      prev.some((code) => code.id === draft.id)
-        ? prev.map((code) => (code.id === draft.id ? draft : code))
-        : [draft, ...prev],
-    );
-  }
-
   function handleToggle(code: CounterCode, next: boolean) {
-    setCodes((prev) => prev.map((c) => (c.id === code.id ? { ...c, active: next } : c)));
-    toast(
-      next
-        ? `${code.title} is back in use on this screen`
-        : `${code.title} is retired here. A printed card keeps paying — take it off the counter.`,
-      next ? "success" : "info",
-    );
+    try {
+      setCounterCodeActive(code.id, next);
+      toast(
+        next
+          ? `${code.title} is back in reconciliation`
+          : `${code.title} is retired. A printed card still resolves — take it off the counter.`,
+        next ? "success" : "info",
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The counter code could not be updated.", "error");
+    }
   }
 
   return (
@@ -166,6 +146,25 @@ export function PaymentLinksPage() {
           }
         />
       </StatStrip>
+      {unpricedPayments.length > 0 && (
+        <div className="mb-3">
+          <Notice tone="warn">
+            {unpricedPayments.length} counter-code {unpricedPayments.length === 1 ? "payment has" : "payments have"} no verified shop-currency price. The ledger payment is retained for review and excluded from takings.
+          </Notice>
+        </div>
+      )}
+      {watchError && (
+        <div className="mb-3">
+          <Notice tone="warn">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>{watchError} Counter-code reconciliation will retry automatically.</span>
+              <Button variant="secondary" disabled={!watching} onClick={() => void pollNow()}>
+                Retry now
+              </Button>
+            </div>
+          </Notice>
+        </div>
+      )}
 
       <div className="mb-3 flex items-center gap-2.5">
         <div className="min-w-0 flex-1 sm:max-w-[288px]">
@@ -211,9 +210,7 @@ export function PaymentLinksPage() {
               key={code.id}
               code={code}
               sep={i > 0}
-              destination={destination}
-              shopName={shopName}
-              networkPassphrase={networkPassphrase}
+              now={now}
               onToggle={(next) => handleToggle(code, next)}
               onEdit={() => openEditor(code)}
               onPoster={() => {
@@ -228,7 +225,6 @@ export function PaymentLinksPage() {
       {editorOpen && (
         <CodeEditorModal
           code={editing}
-          onSave={handleSave}
           onClose={() => {
             setEditorOpen(false);
             setEditing(null);
@@ -270,42 +266,30 @@ export function PaymentLinksPage() {
 function CodeRow({
   code,
   sep,
-  destination,
-  shopName,
-  networkPassphrase,
+  now,
   onToggle,
   onEdit,
   onPoster,
 }: {
   code: CounterCode;
   sep: boolean;
-  destination: string;
-  shopName: string;
-  networkPassphrase: string;
+  now: number;
   onToggle: (next: boolean) => void;
   onEdit: () => void;
   onPoster: () => void;
 }) {
+  const { counterCodePayUriFor, settings, staff: staffRoster } = useMerchant();
   const { toast } = useToast();
   const meta = CODE_KIND_META[code.kind];
-  const staff = MOCK_STAFF.find((member) => member.id === code.staffId) ?? null;
+  const staff = staffRoster.find((member) => member.id === code.staffId) ?? null;
+  const availability = counterCodeAvailability(code, now);
 
   /* The row copies what a wallet reads, for the first asset it accepts. The
      poster is where one code is chosen per asset and printed. */
   const asset = code.acceptedAssets[0] ?? null;
-  const uri = asset
-    ? codePayUri({
-        destination,
-        asset,
-        memo: code.memoPrefix,
-        message: `${shopName} · ${code.title}`,
-        networkPassphrase,
-        amount:
-          code.kind === "fixed" && code.amountMinor !== null
-            ? previewAssetAmount(code.amountMinor, asset)
-            : null,
-      })
-    : null;
+  const uri = asset ? counterCodePayUriFor(code, asset) : null;
+  const canShare =
+    availability === "active" && code.destination === settings.receivingPublicKey && uri !== null;
 
   const amountLine =
     code.kind === "fixed" && code.amountMinor !== null
@@ -323,7 +307,9 @@ function CodeRow({
     code.acceptedAssets.map((option) => option.code).join("/"),
     code.memoPrefix,
     `${code.payments} payments`,
-    ageLabel(code.createdAt).toLowerCase(),
+    availability === "expired" ? "expired" : availability === "paused" ? "retired" : null,
+    code.destination !== settings.receivingPublicKey ? "receiving account changed" : null,
+    ageLabel(code.createdAt, now).toLowerCase(),
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
@@ -372,7 +358,8 @@ function CodeRow({
 
         {/* The switch is the state: in use or filed away. */}
         <Toggle
-          checked={code.active}
+          checked={availability === "active"}
+          disabled={availability === "expired"}
           label={`${code.title} in use`}
           onChange={(value) => onToggle(value ?? !code.active)}
         />
@@ -396,7 +383,7 @@ function CodeRow({
         >
           {(close) => (
             <div className="p-1">
-              {uri && (
+              {canShare && (
                 <button
                   type="button"
                   className="menu-item !rounded-xl"
