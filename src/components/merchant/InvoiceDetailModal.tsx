@@ -4,15 +4,23 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_NOW } from "@/lib/merchant/mock";
-import { fmtMinor } from "@/lib/merchant/money";
+import { assetKey } from "@/lib/merchant/charge";
+import { invoiceStatusAt } from "@/lib/merchant/invoices";
+import { assetAmountFor, fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import type { Invoice, InvoiceStatus, Minor } from "@/lib/merchant/types";
-import { buildSep7PayUri } from "@/lib/payuri";
-import { NETWORKS } from "@/lib/stellar";
 import { useToast } from "../Toast";
-import { Button, CopyButton, HashValue, Modal, ModalHeader, Notice } from "../ui";
+import {
+  Button,
+  CopyButton,
+  ErrorText,
+  Field,
+  HashValue,
+  Modal,
+  ModalHeader,
+  Notice,
+  Select,
+} from "../ui";
 import {
   IconAlert,
   IconArrowDownLeft,
@@ -22,27 +30,6 @@ import {
   IconSend,
 } from "../icons";
 import { IconCheckCircle, IconPrinter, IconXCircle } from "./icons";
-
-/**
- * DESIGN MOCK — the invoice as a document.
- *
- * Mocked: the invoice arrives from `MOCK_INVOICES`, "now" is the fixture's fixed
- * `MOCK_NOW` so a screenshot never drifts, and marking it paid or voiding it
- * moves local state and says so. Nothing is written and nothing is signed.
- *
- * Real already, and all of it on the device: the money is the invoice's own
- * stored `totals`, printed only through `fmtMinor`; the QR is a genuine SEP-7
- * `web+stellar:pay` request built with `buildSep7PayUri` against the shop's
- * receiving account, so a customer's wallet really reads it; Print lays the
- * document out at A4 against the stylesheet below and calls `window.print()`,
- * which is also how it is saved as a PDF; and the reminder hands the OS a
- * `mailto:` draft carrying the figures. Nothing leaves the device on its own —
- * the shop presses send in its own mail app.
- *
- * A real implementation swaps the fixture for a stored `Invoice`, writes a
- * manual tender when the invoice is marked paid, and stamps the timeline from
- * the record's own issued and paid times.
- */
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -161,7 +148,7 @@ export function invoiceBalanceMinor(invoice: Invoice): Minor {
 }
 
 /** Positive when the due date has passed, negative when it has not, null for a draft. */
-export function daysPastDue(invoice: Invoice, now = MOCK_NOW): number | null {
+export function daysPastDue(invoice: Invoice, now = Date.now()): number | null {
   if (invoice.dueAt === null) return null;
   return Math.round((now - invoice.dueAt) / DAY);
 }
@@ -196,22 +183,35 @@ export function InvoiceDetailModal({
 }
 
 function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
-  const { settings } = useMerchant();
-  const { network } = useWallet();
+  const {
+    duplicateInvoice,
+    invoiceBlockedReason,
+    invoicePayUriFor,
+    issueInvoice,
+    recordManualInvoicePayment,
+    settings,
+    voidInvoice,
+  } = useMerchant();
   const { toast } = useToast();
 
-  /* Local only. A real till would write these; here they move the screen and say so. */
-  const [statusOverride, setStatusOverride] = useState<InvoiceStatus | null>(null);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [confirmingVoid, setConfirmingVoid] = useState(false);
+  const [manualAmount, setManualAmount] = useState(() => minorToDecimal(invoiceBalanceMinor(invoice)));
+  const [manualNote, setManualNote] = useState("");
+  const [voidReason, setVoidReason] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [selectedAssetKey, setSelectedAssetKey] = useState(
+    () => invoice.quotes[0] ? assetKey(invoice.quotes[0].asset) : "",
+  );
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const mounted = useSyncExternalStore(subscribeNothing, readMounted, readNotMounted);
 
-  const status = statusOverride ?? invoice.status;
+  const status = invoiceStatusAt(invoice);
   const currency = invoice.currency;
   const shopName = settings.profile.name.trim();
-  const destination = settings.receivingPublicKey;
+  const destination = invoice.destination;
 
-  const paidMinor = status === "paid" ? invoice.totals.totalMinor : invoice.paidMinor;
+  const paidMinor = invoice.paidMinor;
   const balanceMinor = Math.max(0, invoice.totals.totalMinor - paidMinor);
   const overdueDays = daysPastDue(invoice);
 
@@ -223,20 +223,16 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     };
   }, [settings.taxRates]);
 
-  /* A real SEP-7 request: the shop's own account, the invoice reference as the
-     memo, and the network passphrase so a testnet request cannot be mistaken for
-     a mainnet one. No amount rides on it — the invoice is priced in the shop's
-     currency and the asset amount is only fixed when the payer picks an asset. */
+  const selectedQuote = invoice.quotes.find(
+    (quote) => assetKey(quote.asset) === selectedAssetKey,
+  ) ?? invoice.quotes[0] ?? null;
+  const payAmount = selectedQuote && balanceMinor > 0
+    ? assetAmountFor(balanceMinor, selectedQuote.unitPriceMinorE6)
+    : null;
   const payUri = useMemo(() => {
-    if (!destination) return null;
-    return buildSep7PayUri({
-      destination,
-      memo: invoice.reference,
-      memoType: "text",
-      msg: shopName ? `${shopName} · ${invoice.number}` : invoice.number,
-      networkPassphrase: NETWORKS[network].networkPassphrase,
-    });
-  }, [destination, invoice.number, invoice.reference, network, shopName]);
+    if (!selectedQuote) return null;
+    return invoicePayUriFor(invoice, selectedQuote.asset);
+  }, [invoice, invoicePayUriFor, selectedQuote]);
 
   useEffect(() => {
     if (!payUri) return;
@@ -316,6 +312,77 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     payUri,
     shopName,
   ]);
+
+  function handleIssue() {
+    setActionError("");
+    try {
+      issueInvoice(invoice.id);
+      triggerHaptic("success");
+      toast(`${invoice.number} issued with locked asset quotes`, "success");
+    } catch (error) {
+      triggerHaptic("error");
+      setActionError(error instanceof Error ? error.message : "The invoice could not be issued.");
+    }
+  }
+
+  function handleManualPayment() {
+    setActionError("");
+    try {
+      const amountMinor = toMinor(manualAmount);
+      recordManualInvoicePayment({
+        invoiceId: invoice.id,
+        amountMinor,
+        note: manualNote,
+      });
+      triggerHaptic("success");
+      toast(`${fmtMinor(amountMinor, currency)} recorded against ${invoice.number}`, "success");
+      setConfirmingPayment(false);
+      setManualNote("");
+    } catch (error) {
+      triggerHaptic("error");
+      setActionError(error instanceof Error ? error.message : "The payment could not be recorded.");
+    }
+  }
+
+  function handleVoid() {
+    setActionError("");
+    try {
+      voidInvoice(invoice.id, voidReason);
+      triggerHaptic("warning");
+      toast(`${invoice.number} voided with an audit reason`, "success");
+      setConfirmingVoid(false);
+    } catch (error) {
+      triggerHaptic("error");
+      setActionError(error instanceof Error ? error.message : "The invoice could not be voided.");
+    }
+  }
+
+  function handleDuplicate() {
+    setActionError("");
+    try {
+      const duplicate = duplicateInvoice(invoice.id);
+      triggerHaptic("success");
+      toast(`${duplicate.number} saved as a new draft`, "success");
+      onClose();
+    } catch (error) {
+      triggerHaptic("error");
+      setActionError(error instanceof Error ? error.message : "The invoice could not be duplicated.");
+    }
+  }
+
+  function exportInvoice() {
+    const blob = new Blob([JSON.stringify(invoice, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = `${invoice.number.toLowerCase()}.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    triggerHaptic("light");
+    toast("Invoice audit record exported", "success");
+  }
 
   const steps = buildTimeline(invoice, status, paidMinor);
 
@@ -523,8 +590,53 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               </p>
             </div>
 
-            {destination && payUri ? (
+            {status === "draft" ? (
+              <Notice tone="info">
+                <p className="font-semibold text-white">Issue before sharing a payment request.</p>
+                <p className="mt-1">
+                  Issuing snapshots the receiving account and live asset prices so this document
+                  cannot silently change after it reaches the customer.
+                </p>
+              </Notice>
+            ) : status === "paid" ? (
+              <Notice tone="pos">
+                <p className="font-semibold text-white">Paid in full.</p>
+                <p className="mt-1">The payment history below is the settlement audit for this invoice.</p>
+              </Notice>
+            ) : status === "void" ? (
+              <Notice tone="warn">
+                <p className="font-semibold text-white">This invoice is void.</p>
+                <p className="mt-1">Its old payment request must no longer be shared.</p>
+              </Notice>
+            ) : destination && payUri && selectedQuote && payAmount ? (
               <>
+                {invoice.quotes.length > 1 && (
+                  <div>
+                    <span className="field-label">Pay with</span>
+                    <Select
+                      value={assetKey(selectedQuote.asset)}
+                      onChange={setSelectedAssetKey}
+                      options={invoice.quotes.map((quote) => ({
+                        value: assetKey(quote.asset),
+                        label: quote.asset.code,
+                        sublabel: quote.asset.issuer ? `${quote.asset.issuer.slice(0, 5)}…${quote.asset.issuer.slice(-5)}` : "native",
+                      }))}
+                      ariaLabel="Invoice payment asset"
+                      preserveOptionLabels
+                    />
+                  </div>
+                )}
+                <div className="rounded-2xl bg-[#0A84FF]/10 px-4 py-3 text-center">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#64AFFF]">
+                    Exact amount requested
+                  </p>
+                  <p className="mono mt-1 text-[24px] font-semibold text-white">
+                    {payAmount} {selectedQuote.asset.code}
+                  </p>
+                  <p className="mt-1 text-[11.5px] text-neutral-400">
+                    Locked when issued · balance {fmtMinor(balanceMinor, currency)}
+                  </p>
+                </div>
                 <div className="flex justify-center pt-1">
                   <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
                     {qrDataUrl ? (
@@ -542,9 +654,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
                   </div>
                 </div>
                 <p className="text-center text-[12px] leading-relaxed text-neutral-400">
-                  The request carries the account and the reference, not an amount: the invoice is
-                  priced in {currency} and the asset amount is fixed when the payer chooses one. It
-                  prints on the document too, so the paper copy can be paid from.
+                  The request carries this exact amount, asset, issuer, memo, destination and
+                  {invoice.network} network. Horizon applies matching payments to the balance once.
                 </p>
                 <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] pt-3">
                   <span className="shrink-0 text-[13px] text-neutral-400">To</span>
@@ -553,10 +664,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               </>
             ) : (
               <Notice tone="warn">
-                <p className="font-semibold text-white">No receiving account is set.</p>
+                <p className="font-semibold text-white">A payable request is unavailable.</p>
                 <p className="mt-1">
-                  Merchant settings → Receiving account. Until one is chosen there is nothing to
-                  address the payment to, so no request and no QR can be made.
+                  This issued record has no complete destination and asset quote snapshot. It is
+                  preserved for audit, but the app will not invent payment details for it.
                 </p>
               </Notice>
             )}
@@ -579,7 +690,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               {/* An anchor, not a Button: only a real `mailto:` href makes the OS
                   open its own composer. The classes match `variant="secondary"`
                   so it sits level with the buttons beside it. */}
-              {reminderHref && status !== "void" ? (
+              {reminderHref && status !== "draft" && status !== "void" ? (
                 <a
                   href={reminderHref}
                   onClick={() => triggerHaptic("light")}
@@ -595,65 +706,113 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               <Button variant="secondary" disabled={!payUri} onClick={() => void copyPayUri()}>
                 <IconCopy size={14} /> Copy request
               </Button>
-              <Button
-                variant="secondary"
-                disabled={status === "paid" || status === "void"}
-                onClick={() => {
-                  triggerHaptic("success");
-                  setStatusOverride("paid");
-                  toast(
-                    `${invoice.number} would be closed with a manual tender for ${fmtMinor(balanceMinor, currency)}`,
-                    "success",
-                  );
-                }}
-              >
-                <IconCheck size={14} /> Mark as paid
+              <Button variant="secondary" onClick={exportInvoice}>
+                <IconFileText size={14} /> Export record
               </Button>
-              {confirmingVoid ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="secondary"
-                    className="flex-1 !px-3 !text-[13.5px]"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setConfirmingVoid(false);
-                    }}
-                  >
-                    Keep it
-                  </Button>
-                  <Button
-                    variant="danger"
-                    className="flex-1 !px-3 !text-[13.5px]"
-                    onClick={() => {
-                      triggerHaptic("warning");
-                      setConfirmingVoid(false);
-                      setStatusOverride("void");
-                      toast(`${invoice.number} would be voided and no longer chased`, "error");
-                    }}
-                  >
-                    Void it
-                  </Button>
-                </div>
+              <Button variant="secondary" onClick={handleDuplicate}>
+                <IconCopy size={14} /> Duplicate
+              </Button>
+              {status === "draft" ? (
+                <Button disabled={Boolean(invoiceBlockedReason)} onClick={handleIssue}>
+                  <IconSend size={14} /> Issue invoice
+                </Button>
               ) : (
                 <Button
-                  variant="danger"
-                  disabled={status === "void"}
+                  variant="secondary"
+                  disabled={status === "paid" || status === "void"}
                   onClick={() => {
-                    triggerHaptic("warning");
-                    setConfirmingVoid(true);
+                    setActionError("");
+                    setManualAmount(minorToDecimal(balanceMinor));
+                    setConfirmingPayment(true);
                   }}
                 >
-                  <IconXCircle size={14} /> Void
+                  <IconCheck size={14} /> Record payment
                 </Button>
               )}
+              <Button
+                variant="danger"
+                disabled={status === "void" || paidMinor > 0}
+                onClick={() => {
+                  triggerHaptic("warning");
+                  setActionError("");
+                  setConfirmingVoid(true);
+                }}
+              >
+                <IconXCircle size={14} /> Void
+              </Button>
             </div>
 
+            {status === "draft" && invoiceBlockedReason && (
+              <Notice tone="warn">{invoiceBlockedReason}</Notice>
+            )}
+
+            {confirmingPayment && (
+              <div className="panel-inset space-y-3 p-4">
+                <p className="text-[13.5px] font-semibold text-white">Record an external payment</p>
+                <p className="text-[12px] leading-relaxed text-neutral-400">
+                  Use this only after checking the bank, cash, or another rail. The staff member,
+                  amount, time and note are written to the audit record.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label={`Amount · ${currency}`}>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={manualAmount}
+                      onChange={(event) => setManualAmount(event.target.value)}
+                      className="input mono text-base sm:text-[14px]"
+                    />
+                  </Field>
+                  <Field label="Evidence note" hint="Optional">
+                    <input
+                      type="text"
+                      value={manualNote}
+                      onChange={(event) => setManualNote(event.target.value)}
+                      placeholder="Bank transfer checked"
+                      className="input text-base sm:text-[14px]"
+                    />
+                  </Field>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="secondary" className="flex-1" onClick={() => setConfirmingPayment(false)}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1" onClick={handleManualPayment}>
+                    Record payment
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {confirmingVoid && (
+              <div className="panel-inset space-y-3 p-4">
+                <p className="text-[13.5px] font-semibold text-white">Void this invoice?</p>
+                <Field label="Audit reason">
+                  <input
+                    type="text"
+                    value={voidReason}
+                    onChange={(event) => setVoidReason(event.target.value)}
+                    placeholder="Created in error"
+                    className="input text-base sm:text-[14px]"
+                  />
+                </Field>
+                <div className="flex gap-2">
+                  <Button variant="secondary" className="flex-1" onClick={() => setConfirmingVoid(false)}>
+                    Keep it
+                  </Button>
+                  <Button variant="danger" className="flex-1" onClick={handleVoid}>
+                    Void invoice
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {actionError && <ErrorText message={actionError} />}
+
             <p className="text-center text-[12px] leading-relaxed text-neutral-500">
-              {statusOverride
-                ? `Shown on this screen only. Nothing has been written, and reopening the invoice brings back ${INVOICE_STATUS_LABEL[invoice.status].toLowerCase()}.`
-                : invoice.customerEmail
-                  ? "The reminder opens your mail app with the figures and the reference already in it. Nothing is sent until you send it."
-                  : "No email on file, so there is no draft to open. Print the invoice and hand it over instead."}
+              {invoice.customerEmail
+                ? "The reminder opens your mail app with the figures and exact request already in it. Nothing is sent until you send it."
+                : "No email is stored, so there is no mail draft to open. Print or export the invoice instead."}
             </p>
           </div>
 
@@ -701,8 +860,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               ))}
             </ol>
             <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-500">
-              Handed over is derived from the issue date here. A real record stamps it when the
-              document is printed or the draft is opened, and stamps settlement from the ledger.
+              Stellar payments come from Horizon; manual entries retain the operator and evidence note.
             </p>
           </div>
         </div>
@@ -725,6 +883,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               footer={settings.profile.receiptFooter.trim()}
               destination={destination}
               qrDataUrl={qrDataUrl}
+              payAmount={payAmount}
+              payAssetCode={selectedQuote?.asset.code ?? null}
               taxModeNote={
                 settings.taxMode === "inclusive"
                   ? "Unit prices include VAT."
@@ -779,6 +939,8 @@ function InvoicePaper({
   footer,
   destination,
   qrDataUrl,
+  payAmount,
+  payAssetCode,
   taxModeNote,
 }: {
   invoice: Invoice;
@@ -792,6 +954,8 @@ function InvoicePaper({
   footer: string;
   destination: string | null;
   qrDataUrl: string | null;
+  payAmount: string | null;
+  payAssetCode: string | null;
   taxModeNote: string;
 }) {
   const currency = invoice.currency;
@@ -962,6 +1126,11 @@ function InvoicePaper({
           <p style={{ margin: "2mm 0 0", fontSize: "7.5pt" }}>
             A payment without the reference has to be matched by hand.
           </p>
+          {payAmount && payAssetCode && (
+            <p style={{ margin: "3mm 0 0", fontSize: "11pt", fontWeight: 700, fontFamily: MONO }}>
+              Pay exactly {payAmount} {payAssetCode}
+            </p>
+          )}
         </div>
         {qrDataUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -1029,42 +1198,38 @@ interface TimelineStep {
   state: "done" | "pending" | "alert";
 }
 
-/**
- * Built from the dates the fixture actually carries. Where a record would hold
- * its own stamp and this one does not, the step still shows — with the reason it
- * has no time against it, rather than an invented one.
- */
 function buildTimeline(
   invoice: Invoice,
   status: InvoiceStatus,
   paidMinor: Minor,
 ): TimelineStep[] {
-  const issued = invoice.issuedAt;
-  const partial = paidMinor > 0 && paidMinor < invoice.totals.totalMinor;
   const overdueDays = daysPastDue(invoice);
   const steps: TimelineStep[] = [
     {
-      key: "issued",
-      label: "Issued",
-      at: issued,
-      pendingText: "Still a draft",
-      state: issued === null ? "pending" : "done",
+      key: "created",
+      label: `Draft created by ${invoice.createdBy}`,
+      at: invoice.createdAt,
+      pendingText: "Creation time unavailable",
+      state: "done",
     },
     {
-      key: "handed-over",
-      label: "Handed over",
-      at: issued,
-      pendingText: "Not issued yet",
-      state: issued === null ? "pending" : "done",
+      key: "issued",
+      label: invoice.issuedBy ? `Issued by ${invoice.issuedBy}` : "Issued",
+      at: invoice.issuedAt,
+      pendingText: "Still a draft",
+      state: invoice.issuedAt === null ? "pending" : "done",
     },
   ];
 
-  if (partial) {
+  for (const payment of [...invoice.payments].sort((a, b) => a.observedAt - b.observedAt)) {
     steps.push({
-      key: "part",
-      label: `Part paid — ${fmtMinor(paidMinor, invoice.currency)} received`,
-      at: invoice.paidAt,
-      pendingText: "No stamp on the fixture",
+      key: `payment-${payment.id}`,
+      label:
+        payment.kind === "stellar"
+          ? `${fmtMinor(payment.amountMinor, invoice.currency)} received in ${payment.asset?.code ?? "Stellar asset"}`
+          : `${fmtMinor(payment.amountMinor, invoice.currency)} recorded by ${payment.recordedBy ?? "staff"}`,
+      at: payment.observedAt,
+      pendingText: payment.note ?? "Payment recorded",
       state: "done",
     });
   }
@@ -1081,18 +1246,26 @@ function buildTimeline(
     });
   }
 
-  steps.push({
-    key: "settled",
-    label:
-      status === "void"
-        ? "Voided"
-        : status === "paid"
-          ? "Paid in full"
-          : "Settlement",
-    at: status === "paid" ? invoice.paidAt : null,
-    pendingText: status === "void" ? "Closed without payment" : "Still outstanding",
-    state: status === "paid" ? "done" : "pending",
-  });
+  if (status === "void") {
+    steps.push({
+      key: "void",
+      label: `Voided by ${invoice.voidedBy ?? "staff"} · ${invoice.voidReason ?? "No reason retained"}`,
+      at: invoice.voidedAt,
+      pendingText: "Void time unavailable",
+      state: "done",
+    });
+  } else {
+    steps.push({
+      key: "settled",
+      label: status === "paid" ? "Paid in full" : "Settlement",
+      at: status === "paid" ? invoice.paidAt : null,
+      pendingText:
+        paidMinor > 0
+          ? `${fmtMinor(invoice.totals.totalMinor - paidMinor, invoice.currency)} remains`
+          : "Still outstanding",
+      state: status === "paid" ? "done" : "pending",
+    });
+  }
 
   return steps;
 }

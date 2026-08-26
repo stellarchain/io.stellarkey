@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_INVOICES, MOCK_NOW } from "@/lib/merchant/mock";
+import { invoiceStatusAt } from "@/lib/merchant/invoices";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { Invoice } from "@/lib/merchant/types";
-import { Button, SegmentedControl } from "../ui";
+import { Button, Notice, SegmentedControl } from "../ui";
 import { IconPlus, IconSearch, IconSliders } from "../icons";
 import { IconReceipt } from "./icons";
 import { MerchantDisclosure } from "./Disclosure";
@@ -21,25 +21,7 @@ import {
   invoiceBalanceMinor,
 } from "./InvoiceDetailModal";
 
-/**
- * DESIGN MOCK — the invoice ledger.
- *
- * Mocked: every row comes from `MOCK_INVOICES` and "now" is the fixture's fixed
- * `MOCK_NOW`, so the overdue counts hold still for a screenshot. Filtering,
- * search and which sheet is open are local state; nothing is written, nothing is
- * fetched, and no invoice is created by the composer this page opens.
- *
- * Real already: every figure is printed through `fmtMinor` from the invoice's
- * own stored `totals`, so a row that renders a fixture today renders a record
- * tomorrow without changing.
- *
- * A real implementation swaps `MOCK_INVOICES` for the shop's stored invoices and
- * `MOCK_NOW` for `Date.now()`, and nothing else on this screen has to move.
- */
-
 type StatusFilter = "all" | "draft" | "sent" | "overdue" | "paid";
-
-/** The mock disclosure, said once and reused by the chip and its disclosure. */
 
 const FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "all" },
@@ -48,6 +30,13 @@ const FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "Overdue", value: "overdue" },
   { label: "Paid", value: "paid" },
 ];
+
+const subscribeMinute = (notify: () => void) => {
+  const interval = window.setInterval(notify, 60_000);
+  return () => window.clearInterval(interval);
+};
+const readMinute = () => Math.floor(Date.now() / 60_000) * 60_000;
+const readServerMinute = () => 0;
 
 /** Issued, not settled and not yet late — everything the Sent tab should hold. */
 function isSent(invoice: Invoice): boolean {
@@ -86,30 +75,38 @@ function matchesQuery(invoice: Invoice, needle: string): boolean {
 
 /** Drafts sit at the top: they are the ones still being worked on. */
 function sortKey(invoice: Invoice): number {
-  return invoice.issuedAt ?? Number.MAX_SAFE_INTEGER;
+  return invoice.issuedAt ?? invoice.createdAt;
 }
 
 export function InvoicesPage() {
-  const { settings } = useMerchant();
+  const { invoices, pollNow, settings, watchError, watching } = useMerchant();
 
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composing, setComposing] = useState<Invoice | null>(null);
+  const now = useSyncExternalStore(subscribeMinute, readMinute, readServerMinute);
 
-  const invoices = MOCK_INVOICES;
-
-  /* Every fixture is billed in one currency. A real ledger has to group the
-     summary by currency before it can add anything up. */
-  const currency = invoices[0]?.currency ?? settings.currency;
+  const displayedInvoices = useMemo(
+    () =>
+      invoices.map((invoice) => {
+        const status = now > 0 ? invoiceStatusAt(invoice, now) : invoice.status;
+        return status === invoice.status ? invoice : { ...invoice, status };
+      }),
+    [invoices, now],
+  );
+  const currency = settings.currency;
+  const mixedCurrencies = displayedInvoices.some((invoice) => invoice.currency !== currency);
 
   const summary = useMemo(() => {
-    const open = invoices.filter(isOpen);
-    const overdue = invoices.filter((inv) => inv.status === "overdue");
-    const month = new Date(MOCK_NOW);
-    const paidThisMonth = invoices.filter(
+    const sameCurrency = displayedInvoices.filter((invoice) => invoice.currency === currency);
+    const open = sameCurrency.filter(isOpen);
+    const overdue = sameCurrency.filter((inv) => inv.status === "overdue");
+    const month = new Date(now);
+    const paidThisMonth = sameCurrency.filter(
       (inv) =>
+        now > 0 &&
         inv.paidAt !== null &&
         new Date(inv.paidAt).getUTCFullYear() === month.getUTCFullYear() &&
         new Date(inv.paidAt).getUTCMonth() === month.getUTCMonth(),
@@ -122,16 +119,16 @@ export function InvoicesPage() {
       paidCount: paidThisMonth.length,
       paidMinor: paidThisMonth.reduce((sum, inv) => sum + inv.paidMinor, 0),
     };
-  }, [invoices]);
+  }, [currency, displayedInvoices, now]);
 
   const needle = query.trim().toLowerCase();
 
   const filtered = useMemo(
     () =>
-      invoices
+      displayedInvoices
         .filter((inv) => matchesFilter(inv, filter) && matchesQuery(inv, needle))
         .sort((a, b) => sortKey(b) - sortKey(a)),
-    [filter, invoices, needle],
+    [displayedInvoices, filter, needle],
   );
 
   const openInvoice = useMemo(
@@ -177,6 +174,23 @@ export function InvoicesPage() {
           divider="left"
         />
       </StatStrip>
+      {mixedCurrencies && (
+        <p className="mt-2 text-[11.5px] text-neutral-500">
+          Summary totals show {currency} only. Invoices in other currencies remain in the ledger below.
+        </p>
+      )}
+      {watchError && (
+        <div className="mt-3">
+          <Notice tone="warn">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>{watchError} Invoice settlement will retry automatically.</span>
+              <Button variant="secondary" disabled={!watching} onClick={() => void pollNow()}>
+                Retry now
+              </Button>
+            </div>
+          </Notice>
+        </div>
+      )}
 
       {/* ---------------- narrowing it down ---------------- */}
       <div className="mt-3 flex flex-col gap-2.5 lg:flex-row lg:items-center">

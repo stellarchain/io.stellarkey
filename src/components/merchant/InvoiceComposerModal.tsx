@@ -4,31 +4,12 @@ import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
-import { MOCK_INVOICES, MOCK_NOW } from "@/lib/merchant/mock";
+import { referencePrefix } from "@/lib/merchant/charge";
 import { fmtMinor, minorToDecimal, orderTotals, toMinor } from "@/lib/merchant/money";
-import type { Invoice, Minor, OrderLine } from "@/lib/merchant/types";
+import type { Invoice, InvoiceLine, Minor, OrderLine } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Button, ErrorText, Field, Modal, ModalHeader, Select } from "../ui";
 import { IconPlus, IconTrash } from "../icons";
-
-/**
- * DESIGN MOCK — the invoice composer.
- *
- * Mocked: saving raises a toast and closes. Nothing is written and no invoice is
- * numbered; the next number is guessed from `MOCK_INVOICES` so the header reads
- * like the real thing. "Today" is the fixture's fixed `MOCK_NOW`, so payment
- * terms land on stable dates.
- *
- * Real already: the catalogue picker reads the shop's live catalogue through
- * `useMerchant()`, and every figure on the screen comes out of `orderTotals`
- * with the shop's own `taxRates` and `taxMode` — the same function the till
- * prices a ticket with. Nothing here fakes a total or does arithmetic on a
- * formatted string.
- *
- * A real implementation replaces `handleSave` with a write that mints the
- * number and reference and stores the `Invoice`. Everything after that happens
- * on the invoice itself: printing it, showing its code, or drafting an email.
- */
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -70,20 +51,18 @@ function toDateInput(ts: number): string {
 }
 
 function fromDateInput(value: string): number | null {
-  const ms = Date.parse(`${value}T00:00:00.000Z`);
+  const ms = Date.parse(`${value}T23:59:59.999Z`);
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** What the next invoice would be called. A real till mints this on save. */
-function nextInvoiceIdentity(): { number: string; reference: string } {
-  const highest = MOCK_INVOICES.reduce((max, inv) => {
-    const tail = Number(inv.number.split("-").pop());
-    return Number.isFinite(tail) ? Math.max(max, tail) : max;
-  }, 0);
-  const padded = String(highest + 1).padStart(4, "0");
+function nextInvoiceIdentity(
+  sequence: number,
+  shopName: string,
+  now: number,
+): { number: string; reference: string } {
   return {
-    number: `INV-${new Date(MOCK_NOW).getUTCFullYear()}-${padded}`,
-    reference: `MCINV${padded}`,
+    number: `INV-${new Date(now).getUTCFullYear()}-${String(sequence).padStart(4, "0")}`,
+    reference: `${referencePrefix(shopName || "Till")}INV${sequence}`,
   };
 }
 
@@ -110,17 +89,26 @@ export function InvoiceComposerModal({
 }
 
 function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () => void }) {
-  const { catalogue, settings } = useMerchant();
+  const {
+    catalogue,
+    createInvoiceDraft,
+    nextInvoiceNumber,
+    settings,
+    updateInvoiceDraft,
+  } = useMerchant();
   const { toast } = useToast();
+  const [draftBase] = useState(() => invoice?.issuedAt ?? Date.now());
 
   const isEdit = invoice !== null;
   const identity = useMemo(
-    () => (invoice ? { number: invoice.number, reference: invoice.reference } : nextInvoiceIdentity()),
-    [invoice],
+    () =>
+      invoice
+        ? { number: invoice.number, reference: invoice.reference }
+        : nextInvoiceIdentity(nextInvoiceNumber, settings.profile.name, draftBase),
+    [draftBase, invoice, nextInvoiceNumber, settings.profile.name],
   );
   const currency = invoice?.currency ?? settings.currency;
   const symbol = FIAT_SYMBOLS[currency].trim();
-  const issuedBase = invoice?.issuedAt ?? MOCK_NOW;
   const defaultRate = settings.taxRates.some((r) => r.id === settings.defaultTaxRateId)
     ? settings.defaultTaxRateId
     : (settings.taxRates[0]?.id ?? "standard");
@@ -139,7 +127,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
   );
   const [terms, setTerms] = useState<Terms>(invoice?.dueAt ? "custom" : "14");
   const [dueDate, setDueDate] = useState(
-    toDateInput(invoice?.dueAt ?? issuedBase + 14 * DAY),
+    toDateInput(invoice?.dueAt ?? draftBase + 14 * DAY),
   );
   const [note, setNote] = useState(invoice?.note ?? "");
   const [error, setError] = useState("");
@@ -243,7 +231,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
     setTerms(next);
     if (next === "custom") return;
     const days = next === "receipt" ? 0 : Number(next);
-    setDueDate(toDateInput(issuedBase + days * DAY));
+    setDueDate(toDateInput(draftBase + days * DAY));
   }
 
   function handleSave() {
@@ -270,14 +258,45 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
       );
       return;
     }
-    if (fromDateInput(dueDate) === null) {
+    const dueAt = fromDateInput(dueDate);
+    if (dueAt === null) {
       triggerHaptic("error");
       setError("The due date has to be a real date.");
       return;
     }
-    triggerHaptic("success");
-    toast("Invoice saved as a draft", "success");
-    onClose();
+    const invoiceLines: InvoiceLine[] = lines.map((line) => ({
+      id: line.id,
+      description: line.description.trim(),
+      quantity: parseQuantity(line.quantityText) as number,
+      unitPriceMinor: parsePrice(line.priceText) as Minor,
+      taxRateId: line.taxRateId,
+    }));
+    try {
+      if (invoice) {
+        updateInvoiceDraft({
+          invoiceId: invoice.id,
+          customerName,
+          customerEmail,
+          lines: invoiceLines,
+          dueAt,
+          note,
+        });
+      } else {
+        createInvoiceDraft({
+          customerName,
+          customerEmail,
+          lines: invoiceLines,
+          dueAt,
+          note,
+        });
+      }
+      triggerHaptic("success");
+      toast(invoice ? "Invoice draft updated" : "Invoice saved as a draft", "success");
+      onClose();
+    } catch (saveError) {
+      triggerHaptic("error");
+      setError(saveError instanceof Error ? saveError.message : "The invoice could not be saved.");
+    }
   }
 
   return (
