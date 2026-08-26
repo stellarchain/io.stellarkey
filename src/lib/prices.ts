@@ -1,6 +1,7 @@
 import type { NetworkKey } from "./stellar";
 import type { AssetBalance } from "./types";
 import type { FiatCurrency } from "./format";
+import { withAbortDeadline } from "./wallet-refresh";
 
 export interface PricedAssetIdentity {
   code: string;
@@ -31,6 +32,7 @@ interface CacheEntry {
 
 let cache: CacheEntry | null = null;
 const CACHE_TTL = 60_000;
+const MARKET_REQUEST_TIMEOUT_MS = 8_000;
 
 export type FiatRates = Partial<Record<FiatCurrency, number>> & { USD: 1 };
 
@@ -56,12 +58,14 @@ export function parseFiatRates(
 export async function fetchFiatRates(): Promise<FiatRates> {
   if (fiatCache && Date.now() - fiatCache.at < CACHE_TTL) return fiatCache.rates;
   try {
-    const response = await fetch("https://api.coingecko.com/api/v3/exchange_rates");
-    if (!response.ok) return fiatCache?.rates ?? { USD: 1 };
-    const json = (await response.json()) as { rates?: Record<string, { value?: unknown }> };
-    const rates = parseFiatRates(json.rates ?? {});
-    fiatCache = { rates, at: Date.now() };
-    return rates;
+    return await withAbortDeadline(async (signal) => {
+      const response = await fetch("https://api.coingecko.com/api/v3/exchange_rates", { signal });
+      if (!response.ok) return fiatCache?.rates ?? { USD: 1 };
+      const json = (await response.json()) as { rates?: Record<string, { value?: unknown }> };
+      const rates = parseFiatRates(json.rates ?? {});
+      fiatCache = { rates, at: Date.now() };
+      return rates;
+    }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Fiat rates" });
   } catch {
     return fiatCache?.rates ?? { USD: 1 };
   }
@@ -84,18 +88,21 @@ export async function fetchAssetPrices(assets: PricedAssetIdentity[]): Promise<A
 
   try {
     const ids = [...new Set(wanted.map((key) => COINGECKO_IDS[key]))];
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`,
-    );
-    if (!response.ok) return cache?.prices ?? {};
-    const json = (await response.json()) as Record<string, { usd?: number }>;
-    const prices: AssetPrices = {};
-    for (const key of wanted) {
-      const price = json[COINGECKO_IDS[key]]?.usd;
-      if (typeof price === "number" && Number.isFinite(price)) prices[key] = price;
-    }
-    cache = { prices, at: Date.now() };
-    return prices;
+    return await withAbortDeadline(async (signal) => {
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`,
+        { signal },
+      );
+      if (!response.ok) return cache?.prices ?? {};
+      const json = (await response.json()) as Record<string, { usd?: number }>;
+      const prices: AssetPrices = {};
+      for (const key of wanted) {
+        const price = json[COINGECKO_IDS[key]]?.usd;
+        if (typeof price === "number" && Number.isFinite(price)) prices[key] = price;
+      }
+      cache = { prices, at: Date.now() };
+      return prices;
+    }, { timeoutMs: MARKET_REQUEST_TIMEOUT_MS, label: "Asset prices" });
   } catch {
     return cache?.prices ?? {};
   }
