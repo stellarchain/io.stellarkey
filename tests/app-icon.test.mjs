@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const readText = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -14,18 +14,27 @@ function pngInfo(path) {
   };
 }
 
-test("the visible wallet logo is also used for installable app icons", () => {
+test("Next serves install metadata and an Apple icon through native app routes", async () => {
   const logo = readText("src/components/icons.tsx");
   const sourceIcon = readText("src/app/icon.svg");
-  const manifest = JSON.parse(readText("public/manifest.json"));
   const layout = readText("src/app/layout.tsx");
+  const nativeManifestUrl = new URL("../src/app/manifest.ts", import.meta.url);
+
+  assert.equal(existsSync(nativeManifestUrl), true, "manifest must use Next's metadata route");
+  assert.equal(
+    existsSync(new URL("../public/manifest.json", import.meta.url)),
+    false,
+    "a public manifest must not shadow Next's metadata route",
+  );
+  const { default: createManifest } = await import("../src/app/manifest.ts");
+  const manifest = createManifest();
 
   // This distinctive wallet-pocket path anchors every generated icon to LogoMark artwork.
   const walletPocket = "M7 25C7 22.7909 8.79086 21 11 21H23";
   assert.match(logo, new RegExp(walletPocket));
   assert.match(sourceIcon, new RegExp(walletPocket));
 
-  assert.deepEqual(pngInfo("public/apple-touch-icon.png"), {
+  assert.deepEqual(pngInfo("src/app/apple-icon.png"), {
     width: 180,
     height: 180,
     colorType: 2,
@@ -42,15 +51,14 @@ test("the visible wallet logo is also used for installable app icons", () => {
   });
 
   assert.deepEqual(
-    manifest.icons.map(({ src, sizes, type }) => ({ src, sizes, type })),
+    manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),
     [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
     ],
   );
-  assert.match(
-    layout,
-    /apple:\s*\[\s*\{\s*url:\s*"\/apple-touch-icon\.png",\s*sizes:\s*"180x180",\s*type:\s*"image\/png",?\s*\},?\s*\]/,
-  );
-  assert.match(layout, /icons:\s*\{\s*icon:\s*"\/icon\.svg",/);
+  assert.equal(manifest.id, "/");
+  assert.equal(manifest.scope, "/");
+  assert.doesNotMatch(layout, /manifest:\s*"\/manifest\.json"/);
+  assert.doesNotMatch(layout, /icons:\s*\{/);
 });
