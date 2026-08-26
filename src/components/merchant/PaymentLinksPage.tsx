@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -88,7 +89,7 @@ export function PaymentLinksPage() {
   const { toast } = useToast();
 
   const [filter, setFilter] = useState<CodeFilter>("all");
-  const [now] = useState(() => Date.now());
+  const now = useLiveNow();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<CounterCode | null>(null);
   const [posterCode, setPosterCode] = useState<CounterCode | null>(null);

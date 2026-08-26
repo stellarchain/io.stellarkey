@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { invoiceStatusAt } from "@/lib/merchant/invoices";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -30,13 +31,6 @@ const FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "Overdue", value: "overdue" },
   { label: "Paid", value: "paid" },
 ];
-
-const subscribeMinute = (notify: () => void) => {
-  const interval = window.setInterval(notify, 60_000);
-  return () => window.clearInterval(interval);
-};
-const readMinute = () => Math.floor(Date.now() / 60_000) * 60_000;
-const readServerMinute = () => 0;
 
 /** Issued, not settled and not yet late — everything the Sent tab should hold. */
 function isSent(invoice: Invoice): boolean {
@@ -86,7 +80,7 @@ export function InvoicesPage() {
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [composing, setComposing] = useState<Invoice | null>(null);
-  const now = useSyncExternalStore(subscribeMinute, readMinute, readServerMinute);
+  const now = useLiveNow();
 
   const displayedInvoices = useMemo(
     () =>

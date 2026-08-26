@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
 import { assetKey } from "@/lib/merchant/charge";
@@ -261,7 +262,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
   const [chosenKey, setChosenKey] = useState(() =>
     code.acceptedAssets.length > 0 ? assetKey(code.acceptedAssets[0]) : "",
   );
-  const [now] = useState(() => Date.now());
+  const now = useLiveNow();
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const mounted = useSyncExternalStore(subscribeNothing, readMounted, readNotMounted);
 

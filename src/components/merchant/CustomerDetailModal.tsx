@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -147,7 +148,7 @@ function CustomerDetail({
   const [note, setNote] = useState(customer.note ?? "");
   const [contactName, setContactName] = useState(customer.name ?? "");
   const [confirmingForget, setConfirmingForget] = useState(false);
-  const [now] = useState(() => Date.now());
+  const now = useLiveNow();
 
   const history = customerHistory(customer.address);
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { FiatCurrency } from "@/lib/format";
@@ -47,7 +48,7 @@ export function CustomersPage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [openAddress, setOpenAddress] = useState<string | null>(null);
-  const [now] = useState(() => Date.now());
+  const now = useLiveNow();
 
   const needle = query.trim().toLowerCase();
 

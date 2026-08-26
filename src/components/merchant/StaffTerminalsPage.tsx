@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { useLiveNow } from "@/hooks/useLiveNow";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { defaultPermissionsFor } from "@/lib/merchant/permissions";
@@ -59,8 +60,8 @@ const PERMISSION_ROWS: { key: SwitchPermission; label: string; sub: string }[] =
 
 const CEILING_PRESETS: number[] = [0, 1000, 2000, 5000, 10000];
 
-function fmtAgo(ts: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+function fmtAgo(ts: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - ts) / 1000));
   if (seconds < 60) return `${seconds} seconds ago`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
@@ -98,6 +99,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
   } = useMerchant();
   const { toast } = useToast();
   const currency = settings.currency;
+  const now = useLiveNow();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -107,7 +109,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
   const [switchError, setSwitchError] = useState<string | null>(null);
 
   const takingsById = useMemo(() => {
-    const start = new Date();
+    const start = new Date(now);
     start.setHours(0, 0, 0, 0);
     const byName = new Map<string, { takingsMinor: number; orderCount: number }>();
     for (const order of orders) {
@@ -120,7 +122,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
     return new Map(
       members.map((member) => [member.id, byName.get(member.name) ?? { takingsMinor: 0, orderCount: 0 }]),
     );
-  }, [members, orders]);
+  }, [members, now, orders]);
 
   const editing = members.find((member) => member.id === editingId) ?? null;
 
@@ -406,6 +408,7 @@ function StaffEditor({
   onSave: (edit: StaffEdit) => void;
   onResetPin: (pin: string) => Promise<void>;
 }) {
+  const now = useLiveNow();
   const [name, setName] = useState(member.name);
   const [active, setActive] = useState(member.active);
   const [role, setRole] = useState<StaffRole>(member.role);
@@ -445,7 +448,7 @@ function StaffEditor({
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15.5px] font-semibold text-white">{member.name}</p>
             <p className="mt-0.5 text-[12px] text-neutral-400">
-              {member.pinSetAt === null ? "No PIN set" : `PIN set ${fmtAgo(member.pinSetAt)}`}
+              {member.pinSetAt === null ? "No PIN set" : `PIN set ${fmtAgo(member.pinSetAt, now)}`}
             </p>
           </div>
           <PinPill member={member} />

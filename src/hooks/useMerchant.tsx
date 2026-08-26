@@ -19,9 +19,9 @@ import {
   liveCharges,
   quoteFor,
   sameAsset,
-  secondsRemaining,
   type QuoteInput,
 } from "@/lib/merchant/charge";
+import { LIVE_MINUTE_MS, useLiveNow } from "./useLiveNow";
 import type { ObservedPayment } from "@/lib/merchant/match";
 import {
   fromStroops,
@@ -409,8 +409,6 @@ interface MerchantContextValue {
   voidCharge: (id: string) => void;
   closeCharge: () => void;
   payUriFor: (charge: Charge, asset: AcceptedAsset) => string | null;
-  secondsLeft: (charge: Charge) => number;
-
   /** File a tray payment against an order by hand. */
   attachPayment: (paymentId: string, chargeId: string) => void;
   dismissUnmatched: (paymentId: string) => void;
@@ -477,16 +475,15 @@ function shiftDays(dayStart: number, days: number): number {
   return d.getTime();
 }
 
-function startOfToday(): number {
-  return startOfDay(Date.now());
+function startOfToday(now = Date.now()): number {
+  return startOfDay(now);
 }
 
 /**
  * Midnight this morning and how far the clock has got past it, read once so the
  * two can never come from different instants.
  */
-function todayWindow(): { start: number; elapsedMs: number } {
-  const now = Date.now();
+function todayWindow(now = Date.now()): { start: number; elapsedMs: number } {
   const start = startOfDay(now);
   return { start, elapsedMs: now - start };
 }
@@ -523,7 +520,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [watchError, setWatchError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
-  const [reportingNow] = useState(() => Date.now());
+  const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const storeRef = useRef(store);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
@@ -2156,7 +2153,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   /* ---------------- derived ---------------- */
 
   const today = useMemo<TodaySummary>(() => {
-    const from = startOfToday();
+    const from = startOfToday(reportingNow);
     const paid = store.orders.filter(
       (o) => o.network === network && o.paidAt !== null && o.paidAt >= from,
     );
@@ -2223,7 +2220,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         }))
         .sort((a, b) => b.takingsMinor - a.takingsMinor),
     };
-  }, [network, store.charges, store.orders, store.refunds]);
+  }, [network, reportingNow, store.charges, store.orders, store.refunds]);
 
   /**
    * The same ledger of settled orders, read backwards. It recomputes on exactly
@@ -2232,7 +2229,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
    * than no comparison at all.
    */
   const history = useMemo<InsightsHistory>(() => {
-    const { start: todayStart, elapsedMs } = todayWindow();
+    const { start: todayStart, elapsedMs } = todayWindow(reportingNow);
 
     const paid = store.orders.filter(
       (o) => o.network === network && o.paidAt !== null,
@@ -2310,7 +2307,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.hour - b.hour),
       hoursElapsed: elapsedMs / HOUR_MS,
     };
-  }, [network, store.orders]);
+  }, [network, reportingNow, store.orders]);
 
   const activeCharge = useMemo(
     () => store.charges.find((c) => c.id === activeChargeId) ?? null,
@@ -2471,8 +2468,6 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const quote = quoteFor(charge, asset);
       return quote ? chargePayUri(charge, quote, settings.profile.name) : null;
     },
-    secondsLeft: (charge) => secondsRemaining(charge),
-
     attachPayment,
     dismissUnmatched,
     refundOrder,

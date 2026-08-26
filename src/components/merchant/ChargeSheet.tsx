@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { useMerchant } from "@/hooks/useMerchant";
-import { assetKey, quoteFor } from "@/lib/merchant/charge";
+import { LIVE_SECOND_MS, useLiveNow } from "@/hooks/useLiveNow";
+import { assetKey, quoteFor, secondsRemaining } from "@/lib/merchant/charge";
 import { fmtMinor, fromStroops, minorForAssetAmount, toStroops } from "@/lib/merchant/money";
 import type { Charge, ChargeQuote, MatchedPayment } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
@@ -55,7 +56,6 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const {
     settings,
     payUriFor,
-    secondsLeft,
     voidCharge,
     watchedLedger,
     watchError,
@@ -66,7 +66,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
 
   const [selectedKey, setSelectedKey] = useState(() => assetKey(charge.quotes[0].asset));
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
-  const [, setTick] = useState(0);
+  const now = useLiveNow(LIVE_SECOND_MS);
 
   const quote =
     charge.quotes.find((q) => assetKey(q.asset) === selectedKey) ?? charge.quotes[0];
@@ -75,20 +75,13 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const payUri = payUriFor(charge, quote.asset);
   const order = orderFor(charge.id);
   const awaiting = charge.status === "awaiting";
-  const seconds = secondsLeft(charge);
+  const seconds = secondsRemaining(charge, now);
   const urgent = seconds < URGENT_SECONDS;
   const gap = payment && paidQuote ? difference(payment, paidQuote) : null;
   /** A closed charge shows the asset it was actually settled in, not a pick list. */
   const shownQuote = !awaiting && paidQuote ? paidQuote : quote;
   /** The window this charge actually held, not whatever the setting says today. */
   const heldMinutes = Math.max(1, Math.round((charge.expiresAt - charge.createdAt) / 60_000));
-
-  /* The countdown. Only the tick lives in state; the figure is read from the hook. */
-  useEffect(() => {
-    if (!awaiting) return;
-    const timer = window.setInterval(() => setTick((n) => n + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [awaiting]);
 
   /* Hold the wallet open while the customer pays.
 
