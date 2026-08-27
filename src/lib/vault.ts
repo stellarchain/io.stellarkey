@@ -322,7 +322,7 @@ export async function initializeVault(
 
   const rawMnemonic = opts.mnemonic ? normalizeMnemonic(opts.mnemonic) : await generateMnemonic();
   if (!(await validateMnemonic(rawMnemonic))) {
-    throw new Error("Invalid 12-word BIP39 recovery phrase");
+    throw new Error("Invalid BIP-39 recovery phrase");
   }
 
   return createDerivedVault(password, rawMnemonic, opts.label);
