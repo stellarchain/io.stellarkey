@@ -340,9 +340,35 @@ test("staff and refund production surfaces use persisted merchant actions", () =
   assert.doesNotMatch(staffPage, /merchant\/mock|MOCK_STAFF|would be saved/);
   assert.doesNotMatch(requests, /merchant\/mock|MOCK_REFUND|Queued as an outbound/);
   assert.match(staffPage, /await switchStaff\(/);
+  assert.match(staffPage, /dismissable=\{!operatorPending\}/);
+  assert.match(staffPage, /onBusyChange=\{setOperatorPending\}/);
+  assert.match(staffPage, /On this shift/);
+  assert.match(staffPage, /Current operator/);
+  assert.match(staffPage, /Add operator/);
+  assert.match(staffPage, /Lock after every sale/);
+  assert.match(staffPage, /After inactivity/);
+  assert.match(staffPage, /await lockStaffSession\(/);
+  assert.match(staffPage, /await endStaffSession\(/);
+  assert.doesNotMatch(staffPage, /ariaLabel="Staff member to switch to"/);
   assert.match(staffPage, /await resetStaffPin\(/);
   assert.match(staffPage, /aria-label="Staff name"/);
   assert.match(staffPage, /label="Active on this till"/);
   assert.match(requests, /await approveRefundRequest\(/);
   assert.match(orderDetail, /submitRefund: submitMerchantRefund/);
+});
+
+test("staff who are on shift must leave the roster before being deactivated", () => {
+  const owner = member("owner", "owner");
+  const server = member("server", "server");
+  const store = {
+    ...emptyStore(),
+    staff: [owner, server],
+    activeStaffId: owner.id,
+    onShiftStaffIds: [owner.id, server.id],
+  };
+
+  assert.throws(
+    () => updateStaffMember(store, owner.id, server.id, { active: false }),
+    /end their operator session/i,
+  );
 });

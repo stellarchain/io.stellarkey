@@ -85,6 +85,14 @@ import {
   type PinAttemptState,
 } from "@/lib/merchant/permissions";
 import {
+  activateVerifiedOperator,
+  applyCompletedSalePolicy,
+  applyOperatorSalePolicy,
+  endOperatorShift,
+  lockOperator,
+  operatorTimeoutMs,
+} from "@/lib/merchant/operators";
+import {
   applyTicketAdjustment,
   awaitNewOrder,
   buildOrder,
@@ -290,9 +298,12 @@ interface MerchantContextValue {
 
   staff: StaffMember[];
   activeStaff: StaffMember | null;
+  onShiftStaff: StaffMember[];
   terminal: TerminalDevice;
   refundRequests: RefundRequest[];
   switchStaff: (memberId: string, pin: string) => Promise<void>;
+  lockStaffSession: () => Promise<void>;
+  endStaffSession: (memberId: string) => Promise<void>;
   unlockCustomerDisplay: (pin: string) => Promise<StaffMember>;
   addStaff: (input: { name: string; role: StaffRole; pin: string }) => Promise<void>;
   updateStaff: (
@@ -559,6 +570,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const storeRef = useRef(store);
+  const staffSessionIdRef = useRef<string | null>(null);
   const [writerId] = useState(createMerchantWriterId);
   const merchantWriterLockRef = useRef<"pending" | "held" | "fallback">("pending");
   const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
@@ -567,6 +579,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const pollRef = useRef<() => Promise<void>>(async () => {});
   const repositoryRef = useRef(getMerchantRepository());
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const updateStaffSessionId = useCallback((memberId: string | null) => {
+    staffSessionIdRef.current = memberId;
+    setStaffSessionId(memberId);
+  }, []);
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -580,12 +597,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const installLoadedStore = useCallback((next: MerchantStore) => {
+    // Persisted revisions never carry proof that this tab verified a PIN.
+    updateStaffSessionId(null);
     storageIssueRef.current = null;
     setStorageIssue(null);
     setStorageError(null);
     storeRef.current = next;
     setStore(next);
-  }, []);
+  }, [updateStaffSessionId]);
 
   const readMerchantKey = useCallback(() => {
     try {
@@ -645,7 +664,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         const fresh = emptyStore();
         storeRef.current = fresh;
         setStore(fresh);
-        setStaffSessionId(null);
+        updateStaffSessionId(null);
         setReady(false);
         return;
       }
@@ -689,7 +708,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [installLoadedStore, phase, readMerchantKey]);
+  }, [installLoadedStore, phase, readMerchantKey, updateStaffSessionId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -924,9 +943,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         { now, ownerId: uid("staff") },
       );
       await commitStore(next);
-      setStaffSessionId(next.activeStaffId);
+      updateStaffSessionId(next.activeStaffId);
     },
-    [commitStore],
+    [commitStore, updateStaffSessionId],
   );
 
   const activeStaff = useMemo(
@@ -936,6 +955,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         : null,
     [staffSessionId, store.activeStaffId, store.staff],
   );
+
+  const onShiftStaff = useMemo(() => {
+    const roster = new Set(store.onShiftStaffIds);
+    return store.staff.filter((member) => member.active && roster.has(member.id));
+  }, [store.onShiftStaffIds, store.staff]);
 
   const taxPeriods = useMemo(
     () => deriveTaxPeriods(store, { network, now: reportingNow }),
@@ -1074,13 +1098,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === memberId && entry.active);
     if (!member?.pinDigest) throw new Error("This staff member does not have a PIN yet.");
+    const expectedPinDigest = member.pinDigest;
     const now = Date.now();
     const prior = pinAttempts.current.get(memberId) ?? { failures: 0, blockedUntil: 0 };
     if (now < prior.blockedUntil) {
       const seconds = Math.max(1, Math.ceil((prior.blockedUntil - now) / 1000));
       throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
     }
-    const verified = await verifyMerchantPin(pin, member.pinDigest);
+    const verified = await verifyMerchantPin(pin, expectedPinDigest);
     const attempt = nextPinAttempt(prior, verified, now);
     pinAttempts.current.set(memberId, attempt.state);
     if (!verified) {
@@ -1090,9 +1115,66 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           : "That PIN is not correct.",
       );
     }
-    await commitStore({ ...current, activeStaffId: member.id });
-    setStaffSessionId(member.id);
-  }, [commitStore]);
+    await commitStore((latest) =>
+      activateVerifiedOperator(latest, member.id, expectedPinDigest));
+    updateStaffSessionId(member.id);
+  }, [commitStore, updateStaffSessionId]);
+
+  const lockStaffSession = useCallback(async (): Promise<void> => {
+    updateStaffSessionId(null);
+    await commitStore((current) => lockOperator(current));
+  }, [commitStore, updateStaffSessionId]);
+
+  const endStaffSession = useCallback(async (memberId: string): Promise<void> => {
+    const current = storeRef.current;
+    const actor = current.staff.find(
+      (member) =>
+        member.id === staffSessionId &&
+        member.id === current.activeStaffId &&
+        member.active,
+    );
+    if (memberId !== staffSessionId && actor?.role !== "owner") {
+      throw new Error("Only the owner can end another operator's session.");
+    }
+    const next = endOperatorShift(current, memberId);
+    if (next === current) return;
+    if (memberId === staffSessionId) updateStaffSessionId(null);
+    await commitStore(next);
+  }, [commitStore, staffSessionId, updateStaffSessionId]);
+
+  useEffect(() => {
+    const timeout = operatorTimeoutMs(settings);
+    if (!ready || !staffSessionId || timeout === null) return;
+    let timer = window.setTimeout(() => {
+      updateStaffSessionId(null);
+      void persist((current) => lockOperator(current));
+    }, timeout);
+    const resetTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        updateStaffSessionId(null);
+        void persist((current) => lockOperator(current));
+      }, timeout);
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        window.clearTimeout(timer);
+        updateStaffSessionId(null);
+        void persist((current) => lockOperator(current));
+      } else {
+        resetTimer();
+      }
+    };
+    window.addEventListener("pointerdown", resetTimer, { passive: true });
+    window.addEventListener("keydown", resetTimer);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", resetTimer);
+      window.removeEventListener("keydown", resetTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [persist, ready, settings, staffSessionId, updateStaffSessionId]);
 
   const unlockCustomerDisplay = useCallback(async (pin: string): Promise<StaffMember> => {
     const current = storeRef.current;
@@ -1813,10 +1895,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ticket.adjustments,
       now,
     );
-    await commitStore(committed.store);
+    const securedStore = applyOperatorSalePolicy(committed.store);
+    await commitStore(securedStore);
+    if (securedStore.activeStaffId === null) updateStaffSessionId(null);
     clearTicket();
     return committed.order;
-  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
+  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
 
   const settleCard = useCallback(async (externalReference?: string): Promise<Order> => {
     const current = storeRef.current;
@@ -1831,10 +1915,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ticket.adjustments,
       now,
     );
-    await commitStore(committed.store);
+    const securedStore = applyOperatorSalePolicy(committed.store);
+    await commitStore(securedStore);
+    if (securedStore.activeStaffId === null) updateStaffSessionId(null);
     clearTicket();
     return committed.order;
-  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
+  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
 
   const startSplitCharge = useCallback(async (
     input: MerchantSplitTenderInput,
@@ -1867,14 +1953,20 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
     if (cryptoIndex < 0) {
       const committed = settleNewOrder(current, order, parts, ticket.adjustments, now);
-      await commitStore(committed.store);
+      const securedStore = applyOperatorSalePolicy(committed.store);
+      await commitStore(securedStore);
+      if (securedStore.activeStaffId === null) updateStaffSessionId(null);
       clearTicket();
       return { order: committed.order, charge: null };
     }
 
     const awaiting = awaitNewOrder(current, order, parts, ticket.adjustments);
     const charge = cryptoChargeFor(awaiting.order, amounts[cryptoIndex], current, now);
-    await commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
+    const nextStore = {
+      ...awaiting.store,
+      charges: [charge, ...awaiting.store.charges],
+    };
+    await commitStore(nextStore);
     setActiveChargeId(charge.id);
     clearTicket();
     return { order: awaiting.order, charge };
@@ -1885,6 +1977,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     cryptoChargeFor,
     requirePaymentActor,
     ticket,
+    updateStaffSessionId,
   ]);
 
   const adjustTicket = useCallback(async (
@@ -1925,14 +2018,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const adjustedTicket: Ticket = { ...result.ticket, adjustments };
       const order = buildTicketOrder(current, adjustedTicket, actor, now);
       const committed = settleNewOrder(current, order, [], adjustments, now);
-      await commitStore(committed.store);
+      const securedStore = applyOperatorSalePolicy(committed.store);
+      await commitStore(securedStore);
+      if (securedStore.activeStaffId === null) updateStaffSessionId(null);
       clearTicket();
       return committed.order;
     }
 
     setTicket({ ...result.ticket, adjustments });
     return null;
-  }, [buildTicketOrder, clearTicket, commitStore, staffSessionId, ticket]);
+  }, [buildTicketOrder, clearTicket, commitStore, staffSessionId, ticket, updateStaffSessionId]);
 
   const applyAdjustment = useCallback((input: {
     lineId: string | null;
@@ -1980,7 +2075,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       current,
       now,
     );
-    await commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
+    const nextStore = {
+      ...awaiting.store,
+      charges: [charge, ...awaiting.store.charges],
+    };
+    await commitStore(nextStore);
     setActiveChargeId(charge.id);
     clearTicket();
     return charge;
@@ -2054,9 +2153,24 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         now: Date.now(),
       });
       const withCustomers = reconcileCustomerSettlements(current, next, { contacts });
-      if (withCustomers !== current) await commitStore(withCustomers);
+      if (withCustomers !== current) {
+        const settlementStaffId = staffSessionIdRef.current;
+        const securedStore = applyCompletedSalePolicy(
+          current,
+          withCustomers,
+          settlementStaffId,
+        );
+        await commitStore(securedStore);
+        if (
+          securedStore.activeStaffId === null &&
+          current.activeStaffId !== null &&
+          staffSessionIdRef.current === settlementStaffId
+        ) {
+          updateStaffSessionId(null);
+        }
+      }
     },
-    [commitStore, contacts, network, quoteInputs],
+    [commitStore, contacts, network, quoteInputs, updateStaffSessionId],
   );
 
   /**
@@ -2206,9 +2320,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         actor,
         now: Date.now(),
       });
-      await commitStore(reconcileCustomerSettlements(current, attached, { contacts }));
+      const reconciled = reconcileCustomerSettlements(current, attached, { contacts });
+      const securedStore = applyOperatorSalePolicy(reconciled);
+      await commitStore(securedStore);
+      if (securedStore.activeStaffId === null && staffSessionIdRef.current === actor.id) {
+        updateStaffSessionId(null);
+      }
     },
-    [commitStore, contacts, requirePaymentActor],
+    [commitStore, contacts, requirePaymentActor, updateStaffSessionId],
   );
 
   const dismissUnmatched = useCallback(
@@ -2684,6 +2803,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
     staff: store.staff,
     activeStaff,
+    onShiftStaff,
     terminal: {
       ...store.terminal,
       name: settings.terminalName,
@@ -2691,6 +2811,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     },
     refundRequests: store.refundRequests,
     switchStaff,
+    lockStaffSession,
+    endStaffSession,
     unlockCustomerDisplay,
     addStaff,
     updateStaff,
@@ -2850,6 +2972,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     dismissUnmatched,
     duplicateInvoice,
     enabled,
+    endStaffSession,
     exportEncryptedArchive,
     exportRecoveryData,
     foreground,
@@ -2857,7 +2980,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     history,
     invoiceBlockedReason,
     issueInvoice,
+    lockStaffSession,
     online,
+    onShiftStaff,
     openShift,
     paymentBlockedReason,
     persist,

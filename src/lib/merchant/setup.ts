@@ -189,6 +189,9 @@ export function completeMerchantSetup(
   const staff = existingOwner
     ? store.staff.map((member) => (member.id === existingOwner.id ? owner : member))
     : [owner, ...store.staff];
+  const activeStaffIds = new Set(staff.filter((member) => member.active).map((member) => member.id));
+  const onShiftStaffIds = store.onShiftStaffIds.filter((id) => activeStaffIds.has(id));
+  if (!onShiftStaffIds.includes(owner.id)) onShiftStaffIds.push(owner.id);
 
   return {
     ...store,
@@ -209,6 +212,7 @@ export function completeMerchantSetup(
     },
     staff,
     activeStaffId: owner.id,
+    onShiftStaffIds,
     terminal: { ...store.terminal, name: terminalName },
     tillTextSize: input.textSize,
   };

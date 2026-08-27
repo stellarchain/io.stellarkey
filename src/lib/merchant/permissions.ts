@@ -178,6 +178,9 @@ export function updateStaffMember(
   if (patch.active === false && member.id === store.activeStaffId) {
     throw new Error("Switch operators before deactivating the active staff member.");
   }
+  if (patch.active === false && store.onShiftStaffIds.includes(member.id)) {
+    throw new Error("End their operator session before deactivating this staff member.");
+  }
   return {
     ...store,
     staff: store.staff.map((entry) => (entry.id === memberId ? next : entry)),

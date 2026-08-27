@@ -83,6 +83,10 @@ export interface MerchantSettings {
   toleranceFloorMinor: Minor;
   /** Suspend the wallet's idle auto-lock while a charge is open. */
   holdAutoLockDuringCharge: boolean;
+  /** When the PIN-verified till operator is cleared. */
+  operatorLockMode: "after_sale" | "after_timeout";
+  /** Idle minutes before an operator session clears in timeout mode. */
+  operatorLockTimeoutMinutes: 1 | 5 | 15;
   /** Name of this device, attributed to every order it rings up. */
   terminalName: string;
   /** Resolved local records kept on this device; null keeps them indefinitely. */
@@ -750,6 +754,8 @@ export interface MerchantStore {
   paymentReconciliations: PaymentReconciliation[];
   staff: StaffMember[];
   activeStaffId: string | null;
+  /** Staff currently rostered on this local till, independent of the selected operator. */
+  onShiftStaffIds: string[];
   shifts: Shift[];
   invoices: Invoice[];
   counterCodes: CounterCode[];

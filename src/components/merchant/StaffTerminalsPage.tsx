@@ -89,10 +89,14 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
     settings,
     staff: members,
     activeStaff,
+    onShiftStaff,
     terminal,
     orders,
     charges,
     switchStaff,
+    lockStaffSession,
+    endStaffSession,
+    updateSettings,
     addStaff,
     updateStaff,
     resetStaffPin,
@@ -103,10 +107,11 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [switchingTo, setSwitchingTo] = useState(activeStaff?.id ?? "");
-  const [switchPin, setSwitchPin] = useState("");
-  const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
+  const [operatorSheetOpen, setOperatorSheetOpen] = useState(false);
+  const [operatorTargetId, setOperatorTargetId] = useState<string | null>(null);
+  const [operatorPending, setOperatorPending] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [lockingOpen, setLockingOpen] = useState(false);
 
   const takingsById = useMemo(() => {
     const start = new Date(now);
@@ -125,24 +130,22 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
   }, [members, now, orders]);
 
   const editing = members.find((member) => member.id === editingId) ?? null;
+  const operatorTarget = members.find((member) => member.id === operatorTargetId) ?? null;
+  const availableOperators = members.filter(
+    (member) => member.active && !onShiftStaff.some((entry) => entry.id === member.id),
+  );
 
   const deviceName = settings.terminalName.trim() || "This device";
   const queuedCharges = charges.filter((charge) => charge.status === "awaiting").length;
 
-  async function handleSwitch() {
-    if (!switchingTo || switching) return;
-    setSwitching(true);
-    setSwitchError(null);
+  async function handleLock() {
     try {
-      await switchStaff(switchingTo, switchPin);
-      setSwitchPin("");
+      await lockStaffSession();
       triggerHaptic("success");
-      toast(`Till switched to ${members.find((member) => member.id === switchingTo)?.name ?? "staff"}`, "success");
+      toast("Till locked; the on-shift roster is still ready", "info");
     } catch (error) {
       triggerHaptic("error");
-      setSwitchError(error instanceof Error ? error.message : "The till could not switch staff.");
-    } finally {
-      setSwitching(false);
+      toast(error instanceof Error ? error.message : "The till could not lock.", "error");
     }
   }
 
@@ -181,50 +184,140 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
       <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* ---------------- staff ---------------- */}
         <div className="space-y-4">
-          <section aria-labelledby="active-operator-title" className="panel p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 id="active-operator-title" className="text-[15px] font-semibold text-white">
-                  Active operator
+          <section aria-labelledby="on-shift-title">
+            <div className="flex items-baseline justify-between px-1 pb-2">
+              <div className="flex items-baseline gap-2">
+                <h2
+                  id="on-shift-title"
+                  className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  On this shift
                 </h2>
-                <p className="mt-0.5 text-[12px] text-neutral-400">
-                  Orders and approvals are attributed to this person.
-                </p>
+                <span className="text-[11px] text-neutral-500">{onShiftStaff.length}</span>
               </div>
-              <span className="chip cursor-default">{activeStaff?.name ?? "None"}</span>
+              {onShiftStaff.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRosterOpen(true)}
+                  className="min-h-11 px-1 text-[12px] font-semibold text-[#0A84FF] active:opacity-60"
+                >
+                  Manage
+                </button>
+              )}
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_140px_auto]">
-              <Select
-                ariaLabel="Staff member to switch to"
-                value={switchingTo}
-                options={members
-                  .filter((member) => member.active)
-                  .map((member) => ({ value: member.id, label: member.name, sublabel: ROLE_LABEL[member.role] }))}
-                onChange={(value) => {
-                  setSwitchingTo(value);
-                  setSwitchPin("");
-                  setSwitchError(null);
-                }}
-              />
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={6}
-                value={switchPin}
-                onChange={(event) => setSwitchPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleSwitch();
-                }}
-                aria-label="Staff PIN"
-                placeholder="PIN"
-                className="input mono text-base sm:text-[13.5px]"
-              />
-              <Button loading={switching} disabled={!/^\d{4,6}$/.test(switchPin)} onClick={() => void handleSwitch()}>
-                Switch
-              </Button>
+
+            <div className="list-group overflow-hidden">
+              <div className="flex min-h-[78px] items-center gap-3.5 px-4 py-3.5">
+                {activeStaff ? (
+                  <Avatar seed={activeStaff.name} size={46} />
+                ) : (
+                  <span className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-neutral-400">
+                    <IconLock size={19} />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                    Current operator
+                  </span>
+                  <span className="mt-0.5 block truncate text-[16px] font-semibold text-white">
+                    {activeStaff?.name ?? "Till locked"}
+                  </span>
+                  <span className="block truncate text-[12px] text-neutral-400">
+                    {activeStaff
+                      ? `${ROLE_LABEL[activeStaff.role]} · actions are attributed to them`
+                      : "Choose an operator before the next till action"}
+                  </span>
+                </span>
+                {activeStaff && (
+                  <Button
+                    variant="secondary"
+                    className="min-h-11 shrink-0"
+                    onClick={() => void handleLock()}
+                  >
+                    Lock
+                  </Button>
+                )}
+              </div>
+
+              <div className="ios-sep">
+                <div className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-3">
+                  {onShiftStaff.map((member) => {
+                    const current = member.id === activeStaff?.id;
+                    return (
+                      <button
+                        key={member.id}
+                        type="button"
+                        aria-pressed={current}
+                        aria-label={current ? `${member.name}, current operator` : `Switch to ${member.name}`}
+                        disabled={current}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setOperatorTargetId(member.id);
+                          setOperatorSheetOpen(true);
+                        }}
+                        className={`flex min-h-[82px] min-w-[78px] max-w-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-2.5 text-center transition-colors disabled:opacity-100 ${
+                          current
+                            ? "border-[#0A84FF]/45 bg-[#0A84FF]/15"
+                            : "border-white/[0.08] bg-white/[0.04] active:bg-white/[0.1]"
+                        }`}
+                      >
+                        <span className="relative">
+                          <Avatar seed={member.name} size={34} />
+                          {current && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#17171a] bg-[#30D158]"
+                            />
+                          )}
+                        </span>
+                        <span className="w-full truncate text-[11.5px] font-semibold text-white">
+                          {member.name.split(" ")[0]}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setOperatorTargetId(null);
+                      setOperatorSheetOpen(true);
+                    }}
+                    className="flex min-h-[82px] min-w-[78px] max-w-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/[0.14] bg-white/[0.025] px-2 py-2.5 text-center text-neutral-400 active:bg-white/[0.08]"
+                  >
+                    <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/[0.08] text-[22px] font-light text-[#0A84FF]">
+                      +
+                    </span>
+                    <span className="text-[11.5px] font-semibold">Add operator</span>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setLockingOpen(true)}
+                className="row-hover ios-sep flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left"
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                  <IconLock size={14} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14.5px] text-white">Operator locking</span>
+                  <span className="block truncate text-[11.5px] text-neutral-400">
+                    {settings.operatorLockMode === "after_sale"
+                      ? "After every sale"
+                      : `After ${settings.operatorLockTimeoutMinutes} minutes inactive`}
+                  </span>
+                </span>
+                <svg className="chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m1.5 1.5 5 5.5-5 5.5" />
+                </svg>
+              </button>
             </div>
-            {switchError && <p role="alert" className="mt-2 text-[12px] text-[#FF6961]">{switchError}</p>}
+            <p className="px-1 pt-2 text-[12px] leading-relaxed text-neutral-400">
+              Several people can stay on shift. One PIN-verified operator owns each action.
+            </p>
           </section>
 
           <section>
@@ -235,7 +328,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 className="text-[12px] font-semibold text-[#0A84FF] hover:text-[#64D2FF] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={activeStaff?.role !== "owner" || switching}
+                disabled={activeStaff?.role !== "owner"}
                 onClick={() => setAdding(true)}
               >
                 Add staff
@@ -268,6 +361,68 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
           queuedCharges={queuedCharges}
         />
       </div>
+
+      <Modal
+        open={operatorSheetOpen}
+        dismissable={!operatorPending}
+        onClose={() => {
+          if (!operatorPending) setOperatorSheetOpen(false);
+        }}
+      >
+        {operatorTarget ? (
+          <OperatorPinSheet
+            key={operatorTarget.id}
+            member={operatorTarget}
+            alreadyOnShift={onShiftStaff.some((member) => member.id === operatorTarget.id)}
+            onBack={availableOperators.length > 0 ? () => setOperatorTargetId(null) : undefined}
+            onCancel={() => setOperatorSheetOpen(false)}
+            onBusyChange={setOperatorPending}
+            onSwitch={async (pin) => {
+              await switchStaff(operatorTarget.id, pin);
+              setOperatorSheetOpen(false);
+              triggerHaptic("success");
+              toast(`${operatorTarget.name} is now the current operator`, "success");
+            }}
+          />
+        ) : (
+          <OperatorPickerSheet
+            members={availableOperators}
+            onCancel={() => setOperatorSheetOpen(false)}
+            onChoose={(memberId) => setOperatorTargetId(memberId)}
+          />
+        )}
+      </Modal>
+
+      <Modal open={rosterOpen} onClose={() => setRosterOpen(false)}>
+        <OperatorRosterSheet
+          members={onShiftStaff}
+          activeStaff={activeStaff}
+          onCancel={() => setRosterOpen(false)}
+          onEnd={async (member) => {
+            await endStaffSession(member.id);
+            if (member.id === activeStaff?.id) setRosterOpen(false);
+            triggerHaptic("success");
+            toast(`${member.name} ended their operator session`, "info");
+          }}
+        />
+      </Modal>
+
+      <Modal open={lockingOpen} onClose={() => setLockingOpen(false)}>
+        <OperatorLockSheet
+          mode={settings.operatorLockMode}
+          timeoutMinutes={settings.operatorLockTimeoutMinutes}
+          onClose={() => setLockingOpen(false)}
+          onChange={async (patch) => {
+            try {
+              await updateSettings(patch);
+              triggerHaptic("selection");
+            } catch (error) {
+              triggerHaptic("error");
+              toast(error instanceof Error ? error.message : "Operator locking could not be updated.", "error");
+            }
+          }}
+        />
+      </Modal>
 
       <Modal open={editingId !== null} onClose={() => setEditingId(null)}>
         {editing && (
@@ -308,6 +463,326 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         />
       </Modal>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Operator sessions                                                   */
+/* ------------------------------------------------------------------ */
+
+function OperatorPickerSheet({
+  members,
+  onCancel,
+  onChoose,
+}: {
+  members: StaffMember[];
+  onCancel: () => void;
+  onChoose: (memberId: string) => void;
+}) {
+  return (
+    <>
+      <ModalHeader
+        title="Add operator"
+        subtitle="Join this device's on-shift roster"
+        onClose={onCancel}
+      />
+      <div className="p-4 sm:p-5">
+        {members.length > 0 ? (
+          <div className="list-group">
+            {members.map((member, index) => (
+              <button
+                key={member.id}
+                type="button"
+                autoFocus={index === 0}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onChoose(member.id);
+                }}
+                className={`row-hover flex min-h-[64px] w-full items-center gap-3.5 px-4 py-3 text-left ${
+                  index > 0 ? "ios-sep" : ""
+                }`}
+              >
+                <Avatar seed={member.name} size={38} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-semibold text-white">
+                    {member.name}
+                  </span>
+                  <span className="block truncate text-[12px] text-neutral-400">
+                    {ROLE_LABEL[member.role]} · personal PIN required
+                  </span>
+                </span>
+                <svg className="chevron" width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m1.5 1.5 5 5.5-5 5.5" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center px-5 py-8 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#30D158]/12 text-[#30D158]">
+              <span className="text-xl">✓</span>
+            </span>
+            <p className="mt-3 text-[15px] font-semibold text-white">Everyone active is on shift</p>
+            <p className="mt-1 max-w-[30ch] text-[12px] leading-relaxed text-neutral-400">
+              Add another staff member below the roster before they can join this till.
+            </p>
+          </div>
+        )}
+        <Button variant="secondary" className="mt-4 min-h-11 w-full" onClick={onCancel}>
+          Done
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function OperatorPinSheet({
+  member,
+  alreadyOnShift,
+  onBack,
+  onCancel,
+  onBusyChange,
+  onSwitch,
+}: {
+  member: StaffMember;
+  alreadyOnShift: boolean;
+  onBack?: () => void;
+  onCancel: () => void;
+  onBusyChange: (busy: boolean) => void;
+  onSwitch: (pin: string) => Promise<void>;
+}) {
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!/^\d{4,6}$/.test(pin) || busy) return;
+    setBusy(true);
+    onBusyChange(true);
+    setError(null);
+    try {
+      await onSwitch(pin);
+    } catch (cause) {
+      triggerHaptic("error");
+      setPin("");
+      setError(cause instanceof Error ? cause.message : "This operator could not be selected.");
+    } finally {
+      setBusy(false);
+      onBusyChange(false);
+    }
+  }
+
+  return (
+    <>
+      <ModalHeader
+        title={member.name}
+        subtitle={alreadyOnShift ? "Select current operator" : "Join shift and become current"}
+        onClose={busy ? undefined : onCancel}
+      />
+      <form
+        className="p-4 sm:p-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div className="flex flex-col items-center py-2 text-center">
+          <Avatar seed={member.name} size={58} />
+          <p className="mt-3 text-[15px] font-semibold text-white">Enter {member.name.split(" ")[0]}&apos;s PIN</p>
+          <p className="mt-1 text-[12px] text-neutral-400">
+            Actions after this point are attributed to {member.name.split(" ")[0]}.
+          </p>
+        </div>
+
+        <input
+          autoFocus
+          type="password"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={pin}
+          onChange={(event) => {
+            setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
+            setError(null);
+          }}
+          aria-label={`PIN for ${member.name}`}
+          aria-invalid={Boolean(error)}
+          placeholder="4 to 6 digits"
+          className="input mono mt-4 text-center text-base tracking-[0.32em] sm:text-[15px]"
+        />
+        {error && <p role="alert" className="mt-2 text-center text-[12px] text-[#FF6961]">{error}</p>}
+
+        {onBack && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onBack}
+            className="mt-3 min-h-11 w-full text-[12.5px] font-semibold text-[#0A84FF] active:opacity-60"
+          >
+            Choose someone else
+          </button>
+        )}
+        <div className="mt-3 flex gap-2">
+          <Button type="button" variant="secondary" className="min-h-11 flex-1" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" className="min-h-11 flex-1" loading={busy} disabled={!/^\d{4,6}$/.test(pin)}>
+            {alreadyOnShift ? "Select" : "Join shift"}
+          </Button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function OperatorRosterSheet({
+  members,
+  activeStaff,
+  onCancel,
+  onEnd,
+}: {
+  members: StaffMember[];
+  activeStaff: StaffMember | null;
+  onCancel: () => void;
+  onEnd: (member: StaffMember) => Promise<void>;
+}) {
+  const [endingId, setEndingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <>
+      <ModalHeader title="On this shift" subtitle={`${members.length} operator${members.length === 1 ? "" : "s"} on this device`} onClose={endingId ? undefined : onCancel} />
+      <div className="space-y-3 p-4 sm:p-5">
+        <div className="list-group">
+          {members.map((member, index) => {
+            const isCurrent = member.id === activeStaff?.id;
+            const canEnd = isCurrent || activeStaff?.role === "owner";
+            return (
+              <div
+                key={member.id}
+                className={`flex min-h-[64px] items-center gap-3 px-4 py-3 ${index > 0 ? "ios-sep" : ""}`}
+              >
+                <Avatar seed={member.name} size={38} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[15px] font-semibold text-white">{member.name}</span>
+                    {isCurrent && (
+                      <span className="rounded-full bg-[#30D158]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#30D158]">
+                        Current
+                      </span>
+                    )}
+                  </span>
+                  <span className="block truncate text-[12px] text-neutral-400">{ROLE_LABEL[member.role]}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={!canEnd || Boolean(endingId)}
+                  onClick={() => {
+                    setEndingId(member.id);
+                    setError(null);
+                    void onEnd(member)
+                      .catch((cause: unknown) => {
+                        triggerHaptic("error");
+                        setError(cause instanceof Error ? cause.message : "The session could not end.");
+                      })
+                      .finally(() => setEndingId(null));
+                  }}
+                  className="min-h-11 shrink-0 px-2 text-[12.5px] font-semibold text-[#FF6961] disabled:opacity-35"
+                >
+                  {endingId === member.id ? "Ending…" : "End"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {error && <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p>}
+        <p className="px-1 text-[12px] leading-relaxed text-neutral-400">
+          Operators can end their own session. The current owner can end another operator&apos;s session.
+        </p>
+        <Button variant="secondary" className="min-h-11 w-full" disabled={Boolean(endingId)} onClick={onCancel}>
+          Done
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function OperatorLockSheet({
+  mode,
+  timeoutMinutes,
+  onClose,
+  onChange,
+}: {
+  mode: "after_sale" | "after_timeout";
+  timeoutMinutes: 1 | 5 | 15;
+  onClose: () => void;
+  onChange: (patch: {
+    operatorLockMode?: "after_sale" | "after_timeout";
+    operatorLockTimeoutMinutes?: 1 | 5 | 15;
+  }) => Promise<void>;
+}) {
+  return (
+    <>
+      <ModalHeader title="Operator locking" subtitle="Keep attribution accurate on a shared till" onClose={onClose} />
+      <div className="space-y-5 p-4 sm:p-5">
+        <section>
+          <h3 className="field-label">When to lock</h3>
+          <SegmentedControl<"after_sale" | "after_timeout">
+            ariaLabel="Operator lock timing"
+            value={mode}
+            options={[
+              { value: "after_sale", label: "Every sale" },
+              { value: "after_timeout", label: "Inactivity" },
+            ]}
+            onChange={(operatorLockMode) => void onChange({ operatorLockMode })}
+          />
+        </section>
+
+        <div className="list-group">
+          <div className="flex gap-3.5 px-4 py-3.5">
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${mode === "after_sale" ? "bg-[#30D158]" : "bg-neutral-600"}`} />
+            <span>
+              <span className="block text-[14.5px] font-medium text-white">Lock after every sale</span>
+              <span className="mt-0.5 block text-[12px] leading-relaxed text-neutral-400">
+                Best for busy shared tills. The roster stays ready, but the next operator enters their PIN.
+              </span>
+            </span>
+          </div>
+          <div className="ios-sep flex gap-3.5 px-4 py-3.5">
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${mode === "after_timeout" ? "bg-[#30D158]" : "bg-neutral-600"}`} />
+            <span>
+              <span className="block text-[14.5px] font-medium text-white">After inactivity</span>
+              <span className="mt-0.5 block text-[12px] leading-relaxed text-neutral-400">
+                Better for one operator serving a run of customers. Leaving the app locks immediately.
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {mode === "after_timeout" && (
+          <section>
+            <h3 className="field-label">Inactivity time</h3>
+            <SegmentedControl<"1" | "5" | "15">
+              ariaLabel="Operator inactivity timeout"
+              value={String(timeoutMinutes) as "1" | "5" | "15"}
+              options={[
+                { value: "1", label: "1 min" },
+                { value: "5", label: "5 min" },
+                { value: "15", label: "15 min" },
+              ]}
+              onChange={(value) =>
+                void onChange({ operatorLockTimeoutMinutes: Number(value) as 1 | 5 | 15 })
+              }
+            />
+          </section>
+        )}
+
+        <p className="text-[12px] leading-relaxed text-neutral-400">
+          This policy is stored only in encrypted merchant data on this device. It does not change wallet auto-lock.
+        </p>
+        <Button className="min-h-11 w-full" onClick={onClose}>Done</Button>
+      </div>
+    </>
   );
 }
 
