@@ -325,6 +325,18 @@ function orderRecords(value: unknown): MerchantStore["orders"] {
           : historicallySettled
             ? (isFiniteNumber(order.paidAt) ? order.paidAt : order.createdAt)
             : null,
+      stockExceptions: Array.isArray(order.stockExceptions)
+        ? order.stockExceptions.filter((entry) =>
+            entry !== null &&
+            typeof entry === "object" &&
+            (entry.reason === "insufficient_stock" || entry.reason === "missing_count") &&
+            typeof entry.itemId === "string" &&
+            typeof entry.itemName === "string" &&
+            Number.isSafeInteger(entry.requested) &&
+            (entry.available === null || Number.isSafeInteger(entry.available)) &&
+            isFiniteNumber(entry.recordedAt),
+          )
+        : [],
     };
   });
 }

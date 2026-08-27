@@ -176,6 +176,7 @@ export function buildOrder(store: MerchantStore, input: BuildOrderInput): Order 
     createdAt: input.now,
     paidAt: null,
     stockAppliedAt: null,
+    stockExceptions: [],
     payerAddress: null,
     note: null,
   };
@@ -240,14 +241,30 @@ export function applyStockForOrder(
     quantities.set(line.itemId, (quantities.get(line.itemId) ?? 0) + line.quantity);
   }
 
+  const stockExceptions: Order["stockExceptions"] = [];
   for (const item of store.catalogue) {
     const quantity = quantities.get(item.id) ?? 0;
     if (!item.trackStock || quantity === 0) continue;
     if (!Number.isSafeInteger(item.stockOnHand)) {
-      throw new Error(`${item.name} is stock-tracked but has no stock count.`);
+      stockExceptions.push({
+        reason: "missing_count",
+        itemId: item.id,
+        itemName: item.name,
+        requested: quantity,
+        available: null,
+        recordedAt: now,
+      });
+      continue;
     }
     if ((item.stockOnHand as number) < quantity) {
-      throw new Error(`${item.name} does not have enough stock to settle this order.`);
+      stockExceptions.push({
+        reason: "insufficient_stock",
+        itemId: item.id,
+        itemName: item.name,
+        requested: quantity,
+        available: item.stockOnHand,
+        recordedAt: now,
+      });
     }
   }
 
@@ -255,12 +272,18 @@ export function applyStockForOrder(
     ...store,
     catalogue: store.catalogue.map((item) => {
       const quantity = quantities.get(item.id) ?? 0;
-      return item.trackStock && quantity > 0
+      return item.trackStock && quantity > 0 && Number.isSafeInteger(item.stockOnHand)
         ? { ...item, stockOnHand: (item.stockOnHand as number) - quantity }
         : item;
     }),
     orders: store.orders.map((entry) =>
-      entry.id === orderId ? { ...entry, stockAppliedAt: now } : entry,
+      entry.id === orderId
+        ? {
+            ...entry,
+            stockAppliedAt: now,
+            stockExceptions: [...(entry.stockExceptions ?? []), ...stockExceptions],
+          }
+        : entry,
     ),
   };
 }

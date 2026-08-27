@@ -358,6 +358,7 @@ export function OrderDetailModal({
   const view = orderView(order, charges);
   const explorer = NETWORKS[order.network];
   const payment = settled?.payment ?? null;
+  const stockExceptions = order.stockExceptions ?? [];
 
   // Derived from the order's own figures rather than today's settings, so an
   // old receipt keeps describing the tax rules it was actually rung up under.
@@ -530,6 +531,26 @@ export function OrderDetailModal({
             )}
           </div>
         </div>
+
+        {stockExceptions.length > 0 && (
+          <>
+            <SectionTitle>Stock needs attention</SectionTitle>
+            <Notice tone="warn">
+              <span className="block font-semibold">Payment is recorded.</span>
+              <span className="mt-1 block">
+                Inventory could not cover {stockExceptions.length === 1 ? "this sale" : "parts of this sale"}.
+                Reconcile the following stock counts without charging the customer again.
+              </span>
+              <ul className="mt-2 space-y-1">
+                {stockExceptions.map((entry, index) => (
+                  <li key={`${entry.itemId}:${entry.recordedAt}:${index}`}>
+                    {entry.itemName}: requested {entry.requested}, available {entry.available ?? "not set"}
+                  </li>
+                ))}
+              </ul>
+            </Notice>
+          </>
+        )}
 
         {/* ---------------- payment ---------------- */}
 

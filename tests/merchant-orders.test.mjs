@@ -330,3 +330,11 @@ test("the till, tender, adjustment, and receipt surfaces use persisted actions i
   assert.doesNotMatch(till, /would be recorded|Mock notice/);
   assert.match(receipt, /peripherals/);
 });
+
+test("the order detail surfaces durable inventory exceptions without questioning payment", () => {
+  const detail = source("src/components/merchant/OrderDetailModal.tsx");
+
+  assert.match(detail, /stockExceptions/);
+  assert.match(detail, /Payment is recorded/);
+  assert.match(detail, /Stock needs attention/);
+});
