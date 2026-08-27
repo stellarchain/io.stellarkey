@@ -305,7 +305,7 @@ function ItemRow({
         className="row-icon text-[12.5px] font-bold"
         style={{
           background: `color-mix(in srgb, ${item.colour} 20%, transparent)`,
-          color: item.colour,
+          color: "#fff",
         }}
       >
         {initialsOf(item.name)}
@@ -378,7 +378,7 @@ function ItemTile({
       }}
     >
       <span className="flex items-start justify-between gap-2">
-        <span className="mono text-[10.5px] tracking-wide" style={{ color: item.colour }}>
+        <span className="mono text-[10.5px] tracking-wide text-neutral-300">
           {item.sku}
         </span>
         {!item.active && (
