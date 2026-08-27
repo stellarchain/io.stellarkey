@@ -284,6 +284,7 @@ export interface UnmatchedPayment extends Omit<MatchedPayment, "lane"> {
   /** Durable explanation and candidate retained from reconciliation. */
   reconciliationOutcome: PaymentReconciliationOutcome;
   candidateChargeId: string | null;
+  candidateInvoiceId: string | null;
 }
 
 export type PaymentReconciliationOutcome =
@@ -319,8 +320,11 @@ export interface PaymentReconciliation {
   outcome: PaymentReconciliationOutcome;
   chargeId: string | null;
   orderId: string | null;
+  invoiceId: string | null;
   /** Exact held-quote value where a matching asset/charge exists. */
   amountMinor: Minor | null;
+  /** Exact source-asset amount reversible when only a surplus should be returned. */
+  reversalAmount: StellarAmount | null;
   observedAt: number;
   resolution: PaymentResolution | null;
 }
@@ -344,7 +348,9 @@ export type RefundKind = "order" | "payment_reversal";
 
 export interface Refund {
   id: string;
+  /** Sale order identity, or the owning invoice identity for legacy-compatible payment reversals. */
   orderId: string;
+  invoiceId?: string | null;
   kind: RefundKind;
   /** Exact Horizon payment operation funding the outbound return; legacy order refunds may be null. */
   sourcePaymentId: string | null;
@@ -505,7 +511,12 @@ export interface InvoicePayment {
   id: string;
   kind: "stellar" | "manual";
   network: NetworkKey;
+  /** Value applied to the invoice balance. */
   amountMinor: Minor;
+  /** Full held-quote value observed on the payment rail. */
+  receivedMinor: Minor;
+  /** Value retained outside invoice takings for explicit reconciliation. */
+  overpaymentMinor: Minor;
   asset: AcceptedAsset | null;
   amount: StellarAmount | null;
   transactionHash: string | null;
@@ -723,6 +734,8 @@ export interface RefundRequest {
   id: string;
   orderId: string;
   orderNumber: number;
+  invoiceId?: string | null;
+  invoiceNumber?: string | null;
   amountMinor: Minor;
   reason: RefundReason;
   note: string | null;

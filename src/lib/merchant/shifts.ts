@@ -234,6 +234,7 @@ function deriveLiveReport(store: MerchantStore, shift: Shift, generatedAt: numbe
     .map(cloneAdjustment);
   const confirmedRefunds = store.refunds.filter(
     (refund) =>
+      refund.kind === "order" &&
       refund.network === shift.network &&
       refund.submissionStatus === "confirmed" &&
       inWindow(refund.createdAt, shift, generatedAt),

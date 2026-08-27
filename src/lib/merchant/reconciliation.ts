@@ -58,6 +58,7 @@ function asUnmatched(
     seenAt: now,
     reconciliationOutcome: outcome,
     candidateChargeId,
+    candidateInvoiceId: null,
   };
 }
 
@@ -75,7 +76,9 @@ function recordFor(
     outcome,
     chargeId: charge?.id ?? null,
     orderId: charge?.orderId ?? null,
+    invoiceId: null,
     amountMinor: valueFor(payment, charge),
+    reversalAmount: null,
     observedAt: now,
     resolution: null,
   };

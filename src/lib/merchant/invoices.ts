@@ -11,7 +11,13 @@ import {
   type QuoteInput,
 } from "./charge";
 import type { ObservedPayment } from "./match";
-import { assetAmountFor, minorForAssetAmount, orderTotals } from "./money";
+import {
+  assetAmountFor,
+  fromStroops,
+  minorForAssetAmount,
+  orderTotals,
+  toStroops,
+} from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import type {
   AcceptedAsset,
@@ -369,6 +375,8 @@ export function reconcileInvoicePayments(
   const now = safeTime(input.now ?? Date.now(), "Invoice reconciliation time");
   const claimedIds = new Set(store.invoices.flatMap((invoice) => invoice.payments.map((payment) => payment.id)));
   let invoices = store.invoices;
+  let paymentReconciliations = store.paymentReconciliations;
+  let unmatched = store.unmatched;
   const unclaimed: ObservedPayment[] = [];
 
   for (const payment of input.payments) {
@@ -399,18 +407,23 @@ export function reconcileInvoicePayments(
       unclaimed.push(payment);
       continue;
     }
-    const amountMinor = minorForAssetAmount(payment.amount, quote.unitPriceMinorE6);
-    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+    const receivedMinor = minorForAssetAmount(payment.amount, quote.unitPriceMinorE6);
+    if (!Number.isSafeInteger(receivedMinor) || receivedMinor <= 0) {
       unclaimed.push(payment);
       continue;
     }
-    const nextPaidMinor = Math.min(invoice.totals.totalMinor, invoice.paidMinor + amountMinor);
+    const remainingMinor = invoice.totals.totalMinor - invoice.paidMinor;
+    const amountMinor = Math.min(remainingMinor, receivedMinor);
+    const overpaymentMinor = receivedMinor - amountMinor;
+    const nextPaidMinor = invoice.paidMinor + amountMinor;
     const settled = nextPaidMinor >= invoice.totals.totalMinor;
     const record: InvoicePayment = {
       id: payment.id,
       kind: "stellar",
       network: input.network,
       amountMinor,
+      receivedMinor,
+      overpaymentMinor,
       asset: { ...payment.asset },
       amount: payment.amount,
       transactionHash: payment.transactionHash,
@@ -430,9 +443,48 @@ export function reconcileInvoicePayments(
       updatedAt: now,
     };
     invoices = invoices.map((entry, index) => (index === invoiceIndex ? updated : entry));
+    if (overpaymentMinor > 0) {
+      const dueAmount = assetAmountFor(remainingMinor, quote.unitPriceMinorE6);
+      const reversalStroops = toStroops(payment.amount) - toStroops(dueAmount);
+      if (reversalStroops > BigInt(0)) {
+        const reversalAmount = fromStroops(reversalStroops);
+        paymentReconciliations = [
+          {
+            id: payment.id,
+            network: input.network,
+            payment: { ...payment },
+            outcome: "overpaid",
+            chargeId: null,
+            orderId: null,
+            invoiceId: invoice.id,
+            amountMinor: overpaymentMinor,
+            reversalAmount,
+            observedAt: now,
+            resolution: null,
+          },
+          ...paymentReconciliations,
+        ];
+        unmatched = [
+          {
+            ...payment,
+            seenAt: now,
+            reconciliationOutcome: "overpaid" as const,
+            candidateChargeId: null,
+            candidateInvoiceId: invoice.id,
+          },
+          ...unmatched,
+        ].slice(0, 200);
+      }
+    }
     claimedIds.add(payment.id);
   }
-  return { store: invoices === store.invoices ? store : { ...store, invoices }, unclaimed };
+  return {
+    store:
+      invoices === store.invoices
+        ? store
+        : { ...store, invoices, paymentReconciliations, unmatched },
+    unclaimed,
+  };
 }
 
 export function recordManualInvoicePayment(
@@ -467,6 +519,8 @@ export function recordManualInvoicePayment(
     kind: "manual",
     network: invoice.network,
     amountMinor: input.amountMinor,
+    receivedMinor: input.amountMinor,
+    overpaymentMinor: 0,
     asset: null,
     amount: null,
     transactionHash: null,

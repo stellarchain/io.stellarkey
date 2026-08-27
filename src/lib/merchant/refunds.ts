@@ -138,7 +138,6 @@ function deriveOrder(store: MerchantStore, orderId: string): MerchantStore {
 /** Persist the signed submission before presenting any refund as complete. */
 export function recordRefundSubmission(store: MerchantStore, refund: Refund): MerchantStore {
   const order = store.orders.find((entry) => entry.id === refund.orderId);
-  if (!order) throw new Error("The order no longer exists.");
   if (!refund.id || store.refunds.some((entry) => entry.id === refund.id)) {
     throw new Error("That refund submission is already recorded.");
   }
@@ -160,6 +159,7 @@ export function recordRefundSubmission(store: MerchantStore, refund: Refund): Me
   }
 
   if (refund.kind === "order") {
+    if (!order) throw new Error("The order no longer exists.");
     const source = settledOrderPaymentSource(store, order.id, refund.sourcePaymentId);
     if (!refund.sourcePaymentId || !source?.payment) {
       throw new Error("An ordinary refund requires its exact settled payment on a paid order.");
@@ -198,7 +198,9 @@ export function recordRefundSubmission(store: MerchantStore, refund: Refund): Me
       !reconciliation ||
       reconciliation.resolution ||
       reconciliation.outcome === "settled" ||
-      reconciliation.orderId !== refund.orderId
+      (reconciliation.orderId !== null
+        ? reconciliation.orderId !== refund.orderId
+        : reconciliation.invoiceId !== refund.invoiceId)
     ) {
       throw new Error("That source payment is not an unresolved receipt available for reversal.");
     }
@@ -225,14 +227,15 @@ export function recordRefundSubmission(store: MerchantStore, refund: Refund): Me
       reconciliation.amountMinor === null ||
       refund.submissionStatus !== "failed" &&
         (priorMinor + refund.amountMinor > reconciliation.amountMinor ||
-          priorStroops + toStroops(refund.amount) > toStroops(payment.amount))
+          priorStroops + toStroops(refund.amount) >
+            toStroops(reconciliation.reversalAmount ?? payment.amount))
     ) {
       throw new Error("The reversal exceeds the amount received from its source payment.");
     }
   }
 
   const recorded = { ...store, refunds: [refund, ...store.refunds] };
-  return refund.kind === "order" ? deriveOrder(recorded, order.id) : recorded;
+  return refund.kind === "order" ? deriveOrder(recorded, refund.orderId) : recorded;
 }
 
 /** Apply the wallet's canonical-hash resolution without allowing a final state to regress. */

@@ -101,6 +101,7 @@ function refundsInRange(store: MerchantStore, range: ReportRange): Refund[] {
   return store.refunds
     .filter(
       (refund) =>
+        refund.kind === "order" &&
         refund.network === range.network &&
         refund.submissionStatus === "confirmed" &&
         inRange(refund.createdAt, range.from, range.to),
@@ -314,7 +315,10 @@ export function deriveTaxPeriods(
     ...store.refunds
       .filter(
         (refund) =>
-          refund.network === network && refund.submissionStatus === "confirmed" && refund.createdAt <= now,
+          refund.kind === "order" &&
+          refund.network === network &&
+          refund.submissionStatus === "confirmed" &&
+          refund.createdAt <= now,
       )
       .map((refund) => refund.createdAt),
   ];

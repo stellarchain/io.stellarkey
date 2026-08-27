@@ -172,7 +172,15 @@ function invoiceRecords(
         typeof payment.id === "string" &&
         (payment.kind === "stellar" || payment.kind === "manual") &&
         isFiniteNumber(payment.amountMinor),
-    ) ?? [];
+    )?.map((payment) => {
+      const receivedMinor =
+        Number.isSafeInteger(payment.receivedMinor) &&
+        (payment.receivedMinor as number) >= payment.amountMinor
+          ? (payment.receivedMinor as number)
+          : payment.amountMinor;
+      const overpaymentMinor = Math.max(0, receivedMinor - payment.amountMinor);
+      return { ...payment, receivedMinor, overpaymentMinor };
+    }) ?? [];
     return {
       ...invoice,
       network: invoice.network === "testnet" ? "testnet" : "mainnet",
@@ -443,6 +451,7 @@ function unmatchedRecords(
       ),
       reconciliationOutcome: paymentOutcome(payment.reconciliationOutcome),
       candidateChargeId,
+      candidateInvoiceId: nullableString(payment.candidateInvoiceId, null),
     };
   });
 }
@@ -470,9 +479,11 @@ function reconciliationRecords(
       outcome: paymentOutcome(record.outcome),
       chargeId,
       orderId: nullableString(record.orderId, null),
+      invoiceId: nullableString(record.invoiceId, null),
       amountMinor: record.amountMinor === null || isFiniteNumber(record.amountMinor)
         ? record.amountMinor
         : null,
+      reversalAmount: nullableString(record.reversalAmount, null),
       resolution: isRecord(record.resolution) ? record.resolution : null,
     };
   }) ?? [];
@@ -977,17 +988,23 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
   );
   const protectedOrderIds = new Set<string>();
   const protectedChargeIds = new Set<string>();
+  const protectedInvoiceIds = new Set<string>();
   for (const record of unresolvedReconciliations) {
     if (record.orderId) protectedOrderIds.add(record.orderId);
     if (record.chargeId) protectedChargeIds.add(record.chargeId);
+    if (record.invoiceId) protectedInvoiceIds.add(record.invoiceId);
   }
   for (const refund of store.refunds) {
     if (refund.submissionStatus === "accepted" || refund.submissionStatus === "status_unknown") {
       protectedOrderIds.add(refund.orderId);
+      if (refund.invoiceId) protectedInvoiceIds.add(refund.invoiceId);
     }
   }
   for (const request of store.refundRequests) {
     if (request.status === "pending") protectedOrderIds.add(request.orderId);
+    if (request.status === "pending" && request.invoiceId) {
+      protectedInvoiceIds.add(request.invoiceId);
+    }
   }
   const orders = store.orders.filter(
     (order) =>
@@ -1002,8 +1019,10 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
   const invoices = store.invoices.filter(
     (invoice) =>
       openInvoiceStatuses.has(invoice.status) ||
+      protectedInvoiceIds.has(invoice.id) ||
       (invoice.paidAt ?? invoice.issuedAt ?? cutoff) >= cutoff,
   );
+  const keptInvoiceIds = new Set(invoices.map((invoice) => invoice.id));
   const protectedCustomerSources = new Set<string>(unresolvedPaymentIds);
   for (const order of orders) protectedCustomerSources.add(`order:${order.id}`);
   for (const invoice of invoices) {
@@ -1043,6 +1062,9 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     refunds: store.refunds.filter(
       (refund) =>
         keptOrderIds.has(refund.orderId) ||
+        (refund.invoiceId !== undefined &&
+          refund.invoiceId !== null &&
+          keptInvoiceIds.has(refund.invoiceId)) ||
         refund.submissionStatus === "accepted" ||
         refund.submissionStatus === "status_unknown",
     ),

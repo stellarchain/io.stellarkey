@@ -506,7 +506,7 @@ function UnmatchedTray({
   onDismiss: (paymentId: string) => void;
   onReviewDuplicate: (paymentId: string) => void;
 }) {
-  const { orderFor, paymentReconciliations } = useMerchant();
+  const { invoices, orderFor, paymentReconciliations } = useMerchant();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [confirmingDismiss, setConfirmingDismiss] = useState<string | null>(null);
 
@@ -567,6 +567,9 @@ function UnmatchedTray({
 
         {payments.map((payment) => {
           const options = optionsByPayment.get(payment.id) ?? [];
+          const invoice = payment.candidateInvoiceId
+            ? invoices.find((entry) => entry.id === payment.candidateInvoiceId) ?? null
+            : null;
           const orderNumberFor = (chargeId: string) => {
             const order = orderFor(chargeId);
             return order ? String(order.number) : "—";
@@ -624,6 +627,11 @@ function UnmatchedTray({
                     >
                       Review duplicate
                     </Button>
+                  ) : invoice ? (
+                    <p className="text-[12.5px] leading-relaxed text-neutral-400">
+                      This is the surplus on {invoice.number}. Open that invoice to return the exact
+                      excess without changing its paid total.
+                    </p>
                   ) : options.length === 0 ? (
                     <p className="text-[12.5px] leading-relaxed text-neutral-400">
                       No open or unsettled charge to file this against. Raise the charge first, or

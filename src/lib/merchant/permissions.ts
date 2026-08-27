@@ -277,9 +277,17 @@ export function createPaymentRefundRequest(
   const order = reconciliation.orderId
     ? store.orders.find((entry) => entry.id === reconciliation.orderId) ?? null
     : null;
+  const invoice = reconciliation.invoiceId
+    ? store.invoices.find((entry) => entry.id === reconciliation.invoiceId) ?? null
+    : null;
   const amountMinor = reconciliation.amountMinor;
-  if (!order || amountMinor === null || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
-    throw new Error("This payment has no verified order value to approve.");
+  if (
+    (!order && !invoice) ||
+    amountMinor === null ||
+    !Number.isSafeInteger(amountMinor) ||
+    amountMinor <= 0
+  ) {
+    throw new Error("This payment has no verified sale or invoice value to approve.");
   }
   if (canReleaseRefund(requester, amountMinor)) {
     throw new Error("This refund is within the active staff member's ceiling and can be released directly.");
@@ -291,8 +299,10 @@ export function createPaymentRefundRequest(
   }
   const request: RefundRequest = {
     id: input.id,
-    orderId: order.id,
-    orderNumber: order.number,
+    orderId: order?.id ?? invoice?.id ?? "",
+    orderNumber: order?.number ?? 0,
+    invoiceId: invoice?.id ?? null,
+    invoiceNumber: invoice?.number ?? null,
     amountMinor,
     reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
     note: input.note?.trim() || null,
