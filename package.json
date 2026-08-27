@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/generate-static-headers.mjs",
+    "check:bundle": "node scripts/check-bundle-budget.mjs",
     "start": "node scripts/static-server.mjs",
     "lint": "eslint",
     "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/*.test.mjs",

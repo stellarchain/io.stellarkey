@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantSettings } from "@/hooks/useMerchant";
 import {
   enablePasskeyUnlock,
   hasPasskeyUnlock,
@@ -183,7 +183,7 @@ export function SettingsPage({
     configured: merchantConfigured,
     setEnabled: setMerchantEnabled,
     settings: merchantSettings,
-  } = useMerchant();
+  } = useMerchantSettings();
   const { toast } = useToast();
 
   const [sub, setSub] = useState<Sub>(initialSub);

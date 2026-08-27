@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantShell } from "@/hooks/useMerchant";
 import { NETWORKS } from "@/lib/stellar";
 import {
   getHorizonUrl,
@@ -240,7 +240,7 @@ export function Dashboard() {
     unmatched: merchantUnmatched,
     charges: merchantCharges,
     activeShift: merchantActiveShift,
-  } = useMerchant();
+  } = useMerchantShell();
 
   const [storedView, setView] = useState<View>("home");
   // The sidebar shows one mode's navigation at a time. Settings is global, so

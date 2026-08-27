@@ -10,10 +10,7 @@ import {
   useState,
 } from "react";
 import type { Asset } from "@stellar/stellar-sdk";
-import * as api from "@/lib/api";
-import type { PriceRange, ClaimableBalanceItem } from "@/lib/api";
-import * as swapLib from "@/lib/swap";
-import * as msig from "@/lib/multisig";
+import type { ClaimableBalanceItem, PriceRange, PriceSeries } from "@/lib/api";
 import type {
   CosignOutcome,
   MultisigConfig,
@@ -58,7 +55,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import type { FiatCurrency } from "@/lib/format";
 import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
-import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
+import type { HardwareSigner } from "@/lib/hardware";
 import type { NetworkKey } from "@/lib/stellar";
 import { getHorizonUrl, STELLAR_ENDPOINTS_CHANGED_EVENT } from "@/lib/stellar-endpoints";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
@@ -109,6 +106,40 @@ import {
 } from "@/lib/submission";
 
 type Phase = "loading" | "empty" | "recovery" | "locked" | "unlocked";
+
+type WalletApi = typeof import("@/lib/api");
+type SwapApi = typeof import("@/lib/swap");
+type MultisigApi = typeof import("@/lib/multisig");
+
+let walletApiPromise: Promise<WalletApi> | null = null;
+let swapApiPromise: Promise<SwapApi> | null = null;
+let multisigApiPromise: Promise<MultisigApi> | null = null;
+
+function loadWalletApi(): Promise<WalletApi> {
+  walletApiPromise ??= import("@/lib/api").catch((error) => {
+    walletApiPromise = null;
+    throw error;
+  });
+  return walletApiPromise;
+}
+
+function loadSwapApi(): Promise<SwapApi> {
+  swapApiPromise ??= import("@/lib/swap").catch((error) => {
+    swapApiPromise = null;
+    throw error;
+  });
+  return swapApiPromise;
+}
+
+function loadMultisigApi(): Promise<MultisigApi> {
+  multisigApiPromise ??= import("@/lib/multisig").catch((error) => {
+    multisigApiPromise = null;
+    throw error;
+  });
+  return multisigApiPromise;
+}
+
+const DEFAULT_BASE_FEE_STROOPS = 100;
 
 function stripSecret(account: StoredAccount): AccountMeta {
   return {
@@ -191,9 +222,9 @@ interface WalletContextValue {
   dataLoading: boolean;
   loadingMore: boolean;
   xlmPriceUsd: number | null;
-  priceData: api.PriceSeries | null;
-  priceRange: api.PriceRange;
-  changePriceRange: (r: api.PriceRange) => Promise<void>;
+  priceData: PriceSeries | null;
+  priceRange: PriceRange;
+  changePriceRange: (r: PriceRange) => Promise<void>;
   priceLoading: boolean;
   unfunded: boolean;
   privacyMode: boolean;
@@ -304,6 +335,25 @@ interface WalletContextValue {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
+interface WalletPhaseContextValue {
+  phase: Phase;
+  vaultStorageIssue: StorageIssue | null;
+}
+
+type WalletLifecycleActionsValue = Pick<
+  WalletContextValue,
+  | "createWallet"
+  | "createHardwareVault"
+  | "completeSetup"
+  | "unlock"
+  | "unlockWithPasskey"
+  | "resetWallet"
+  | "restoreWalletFromBackup"
+>;
+
+const WalletPhaseContext = createContext<WalletPhaseContextValue | null>(null);
+const WalletLifecycleActionsContext = createContext<WalletLifecycleActionsValue | null>(null);
+
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>("loading");
@@ -318,10 +368,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [recommendedFeeSelection, setRecommendedFeeSelection] = useState<{
     network: NetworkKey;
     baseFeeStroops: number;
-  }>(() => ({ network: "testnet", baseFeeStroops: api.selectRecommendedBaseFee(null) }));
+  }>(() => ({ network: "testnet", baseFeeStroops: DEFAULT_BASE_FEE_STROOPS }));
   const recommendedBaseFeeStroops = recommendedFeeSelection.network === network
     ? recommendedFeeSelection.baseFeeStroops
-    : api.selectRecommendedBaseFee(null);
+    : DEFAULT_BASE_FEE_STROOPS;
   const feeSelectionGeneration = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
@@ -360,10 +410,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [dataLoading, setDataLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
-  const [priceData, setPriceData] = useState<api.PriceSeries | null>(null);
+  const [priceData, setPriceData] = useState<PriceSeries | null>(null);
   const [priceRange, setPriceRangeState] = useState<PriceRange>("7D");
   const [priceLoading, setPriceLoading] = useState(false);
-  const priceCache = useRef<Partial<Record<PriceRange, api.PriceSeries>>>({});
+  const priceCache = useRef<Partial<Record<PriceRange, PriceSeries>>>({});
   const [privacyMode, setPrivacyMode] = useState(false);
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
   const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
@@ -401,13 +451,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (phase !== "unlocked") return;
     const generation = ++feeSelectionGeneration.current;
-    void api.loadRecommendedBaseFee(network).then((fee) => {
-      if (generation === feeSelectionGeneration.current) {
-        setRecommendedFeeSelection({ network, baseFeeStroops: fee });
-      }
-    });
-  }, [network, endpointRevision]);
+    void loadWalletApi()
+      .then((api) => api.loadRecommendedBaseFee(network))
+      .then((fee) => {
+        if (generation === feeSelectionGeneration.current) {
+          setRecommendedFeeSelection({ network, baseFeeStroops: fee });
+        }
+      })
+      .catch(() => {
+        // The default base fee remains safe; a later endpoint/network change retries the chunk.
+      });
+  }, [endpointRevision, network, phase]);
 
   const commitTransactionTracking = useCallback(
     (update: (current: TransactionTrackingState) => TransactionTrackingState) => {
@@ -478,7 +534,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // so signing should not first wait for a cold dynamic import.
   useEffect(() => {
     if (phase === "unlocked" && activeAccount?.hardware === "trezor") {
-      warmTrezorConnect();
+      void import("@/lib/hardware")
+        .then(({ warmTrezorConnect }) => warmTrezorConnect())
+        .catch(() => {
+          // The interactive hardware action retries and surfaces a useful error.
+        });
     }
   }, [phase, activeAccount?.hardware]);
 
@@ -548,6 +608,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataLoading(true);
     setDataError(null);
     try {
+      const api = await loadWalletApi();
       const resources = await settleResourceMap({
         accountSnapshot: api.fetchAccountSnapshot(
           activeAccount.publicKey,
@@ -623,6 +684,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const cachedSeries = priceCache.current[priceRange];
     setPriceLoading(true);
     try {
+      const api = await loadWalletApi();
       const resources = await settleResourceMap({
         // The market chart remains useful on testnet, but portfolio valuation
         // explicitly ignores all testnet balances.
@@ -670,6 +732,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (backgroundAccounts.length === 0) return;
     const generation = ++accountBalanceGeneration.current;
     const startedEndpointRevision = endpointRevision;
+    const api = await loadWalletApi();
     const results = await Promise.allSettled(
       backgroundAccounts.map(async (acct) => ({
         key: acct.publicKey,
@@ -814,6 +877,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const expired = transaction.expiresAt !== undefined &&
       transaction.expiresAt * 1000 <= Date.now();
+    const api = await loadWalletApi();
     const expiredLookup = expired
       ? await api.lookupCanonicalTransaction(transaction.network, transaction.hash)
       : null;
@@ -1363,6 +1427,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     mergeReconciliationInFlight.current.add(identity);
     try {
+      const api = await loadWalletApi();
       const result = await reconcileMergeRecovery(
         record,
         accounts,
@@ -1538,6 +1603,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!activeAccount || !activityCursor || loadingMore) return;
     setLoadingMore(true);
     try {
+      const api = await loadWalletApi();
       const more = await api.fetchActivity(
         activeAccount.publicKey,
         network,
@@ -1579,6 +1645,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("This is a watch-only account — switch to a signing account to send.");
       }
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Payment",
@@ -1611,6 +1678,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Batch Payment",
@@ -1632,6 +1700,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const claimAirdrop = useCallback(
     async (balanceId: string) => {
       if (!activeAccount) throw new Error("No active account");
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Airdrop claim",
@@ -1653,6 +1722,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const mergeAccount = useCallback(
     async (destination: string) => {
       if (!activeAccount) throw new Error("No active account");
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Account merge",
@@ -1674,6 +1744,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trustAsset = useCallback(
     async (params: { code: string; issuer: string; add: boolean }) => {
       if (!activeAccount) throw new Error("No active account");
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
@@ -1695,6 +1766,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trustAssets = useCallback(
     async (assets: Array<{ code: string; issuer: string }>) => {
       if (!activeAccount) throw new Error("No active account");
+      const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         `${assets.length} trustlines`,
@@ -1725,6 +1797,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       intermediates: Asset[];
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Swap",
@@ -1745,6 +1818,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const fundFromFriendbot = useCallback(async () => {
     if (!activeAccount) throw new Error("No active account");
+    const api = await loadWalletApi();
     await api.fundWithFriendbot(activeAccount.publicKey, network);
     await accountRefreshRef.current();
   }, [activeAccount, network]);
@@ -1755,6 +1829,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
+      const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
       const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Multi-sig update",
@@ -1783,6 +1858,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (activeAccount.watchOnly) {
       throw new Error("Watch-only accounts cannot sign transactions.");
     }
+    const msig = await loadMultisigApi();
     const hw = hardwareSignerFor(activeAccount);
     const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
       "Multi-sig disabled",
@@ -1813,6 +1889,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       feeStroops?: number;
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
         network,
@@ -1829,6 +1906,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const cosignTransaction = useCallback(
     async (xdr: string, confirmedNetwork: NetworkKey | null) => {
       if (!activeAccount) throw new Error("No active account");
+      const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Co-signed transaction",
@@ -1858,6 +1936,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       setPriceLoading(true);
       try {
+        const api = await loadWalletApi();
         const series = await api.fetchXlmSeries(r);
         if (series) {
           priceCache.current[r] = series;
@@ -2056,11 +2135,54 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+  const phaseValue = useMemo<WalletPhaseContextValue>(
+    () => ({ phase, vaultStorageIssue }),
+    [phase, vaultStorageIssue],
+  );
+  const lifecycleActions = useMemo<WalletLifecycleActionsValue>(
+    () => ({
+      createWallet,
+      createHardwareVault,
+      completeSetup,
+      unlock,
+      unlockWithPasskey,
+      resetWallet,
+      restoreWalletFromBackup,
+    }),
+    [
+      completeSetup,
+      createHardwareVault,
+      createWallet,
+      resetWallet,
+      restoreWalletFromBackup,
+      unlock,
+      unlockWithPasskey,
+    ],
+  );
+
+  return (
+    <WalletPhaseContext.Provider value={phaseValue}>
+      <WalletLifecycleActionsContext.Provider value={lifecycleActions}>
+        <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+      </WalletLifecycleActionsContext.Provider>
+    </WalletPhaseContext.Provider>
+  );
 }
 
 export function useWallet(): WalletContextValue {
   const ctx = useContext(WalletContext);
   if (!ctx) throw new Error("useWallet must be used within WalletProvider");
   return ctx;
+}
+
+export function useWalletPhase(): WalletPhaseContextValue {
+  const context = useContext(WalletPhaseContext);
+  if (!context) throw new Error("useWalletPhase must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletLifecycleActions(): WalletLifecycleActionsValue {
+  const context = useContext(WalletLifecycleActionsContext);
+  if (!context) throw new Error("useWalletLifecycleActions must be used within WalletProvider");
+  return context;
 }
