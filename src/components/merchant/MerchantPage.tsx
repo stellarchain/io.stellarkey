@@ -119,11 +119,13 @@ function UnmatchedStrip({
 export function MerchantPage({
   sub,
   onSubChange,
+  onOpenStaff,
   shiftOpen,
   onShiftOpenChange,
 }: {
   sub: MerchantSub;
   onSubChange: (next: MerchantSub) => void;
+  onOpenStaff: () => void;
   /** Optional: lets the desktop sidebar drive the same sheet this page mounts. */
   shiftOpen?: boolean;
   onShiftOpenChange?: (open: boolean) => void;
@@ -254,6 +256,7 @@ export function MerchantPage({
   // it. Two banners for one fact is exactly the noise this pass removed.
   const showTray = needsAttention > 0 && sub !== "orders";
   const showChargeBlock = Boolean(chargeBlockedReason) && online;
+  const needsStaff = chargeBlockedReason?.startsWith("Choose an active staff member") ?? false;
   const showRuntime = !online || Boolean(watchError) || phase === "locked" || connectionRestored;
   const showAlerts = Boolean(storageError) || showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
@@ -317,12 +320,26 @@ export function MerchantPage({
           {showChargeBlock && chargeBlockedReason && (
             <div role="status">
               <Notice tone="warn">
-                <span className="flex items-start gap-2.5">
-                  <IconInfo size={15} className="mt-[1px] shrink-0 text-[#FF9F0A]" />
-                  <span>
-                    <span className="font-semibold text-white">Charges are paused. </span>
-                    {chargeBlockedReason}
+                <span className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="flex items-start gap-2.5">
+                    <IconInfo size={15} className="mt-[1px] shrink-0 text-[#FF9F0A]" />
+                    <span>
+                      <span className="font-semibold text-white">Charges are paused. </span>
+                      {chargeBlockedReason}
+                    </span>
                   </span>
+                  {needsStaff && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onOpenStaff();
+                      }}
+                      className="btn btn-secondary btn-sm min-h-11 shrink-0 self-start sm:self-auto"
+                    >
+                      Choose staff
+                    </button>
+                  )}
                 </span>
               </Notice>
             </div>
@@ -430,7 +447,7 @@ export function MerchantPage({
       )}
 
       {sub === "pos" ? (
-        <PosTerminal />
+        <PosTerminal onOpenShift={() => setShiftShowing(true)} />
       ) : sub === "orders" ? (
         <OrdersPage />
       ) : sub === "catalogue" ? (

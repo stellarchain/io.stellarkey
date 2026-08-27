@@ -529,7 +529,11 @@ function TicketRow({
 /* The till                                                            */
 /* ------------------------------------------------------------------ */
 
-export function PosTerminal() {
+export function PosTerminal({
+  onOpenShift,
+}: {
+  onOpenShift: () => void;
+}) {
   const {
     settings,
     tillTextSize,
@@ -774,6 +778,18 @@ export function PosTerminal() {
               : "Open a shift from the Shift button before accepting any tender."}
           </span>
         </span>
+        {!activeShift && (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              onOpenShift();
+            }}
+            className="btn btn-secondary btn-sm min-h-11 shrink-0"
+          >
+            Open shift
+          </button>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] md:items-start md:gap-5">
         {/* ---------- catalogue and keypad ---------- */}
