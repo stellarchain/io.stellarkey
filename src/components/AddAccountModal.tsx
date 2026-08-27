@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { hasMnemonic, isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   connectTrezorDevice,
   getStellarDerivationPath,
-  type HardwareDeviceType,
+  warmTrezorConnect,
+  type HardwareAccountInfo,
 } from "@/lib/hardware";
 import { IconTrezor } from "./icons";
 import { Button, ErrorText, Field, HashValue, Modal, ModalHeader, SegmentedControl } from "./ui";
@@ -18,25 +19,21 @@ export function AddAccountModal({
   open,
   onClose,
   initialMode = "generate",
-  initialDevice = "trezor",
 }: {
   open: boolean;
   onClose: () => void;
   initialMode?: Mode;
-  initialDevice?: HardwareDeviceType;
 }) {
   if (!open) return null;
-  return <AddAccountInner onClose={onClose} initialMode={initialMode} initialDevice={initialDevice} />;
+  return <AddAccountInner onClose={onClose} initialMode={initialMode} />;
 }
 
 function AddAccountInner({
   onClose,
   initialMode = "generate",
-  initialDevice = "trezor",
 }: {
   onClose: () => void;
   initialMode?: Mode;
-  initialDevice?: HardwareDeviceType;
 }) {
   const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWallet();
   // Deriving needs the vault mnemonic — hardware/secret vaults don't have one
@@ -44,12 +41,8 @@ function AddAccountInner({
   const [mode, setMode] = useState<Mode>(
     !hasMnemonicVault && initialMode === "generate" ? "import" : initialMode,
   );
-  const [hardwareDevice] = useState<HardwareDeviceType>(
-    initialDevice === "trezor" ? "trezor" : "trezor",
-  );
   const [hardwareIndex, setHardwareIndex] = useState(0);
-  void setHardwareIndex;
-  const [hardwareKey, setHardwareKey] = useState("");
+  const [connectedInfo, setConnectedInfo] = useState<HardwareAccountInfo | null>(null);
   const [label, setLabel] = useState("");
   const [secretInput, setSecretInput] = useState("");
   const [watchKey, setWatchKey] = useState("");
@@ -59,12 +52,18 @@ function AddAccountInner({
   const watchValid = isValidPublicAddress(watchKey.trim());
   const importValid = validateStellarSecret(secretInput);
 
+  useEffect(() => {
+    if (mode === "hardware") {
+      warmTrezorConnect();
+    }
+  }, [mode]);
+
   async function handleConnectHardware() {
     setError(null);
     setBusy(true);
     try {
       const info = await connectTrezorDevice(hardwareIndex);
-      setHardwareKey(info.publicKey);
+      setConnectedInfo(info);
       if (!label) {
         setLabel(info.label);
       }
@@ -82,15 +81,15 @@ function AddAccountInner({
     setBusy(true);
     try {
       if (mode === "hardware") {
-        if (!hardwareKey) {
+        if (!connectedInfo) {
           throw new Error("Please connect your hardware device first.");
         }
         await addHardwareAccount({
-          publicKey: hardwareKey,
-          device: hardwareDevice,
-          path: getStellarDerivationPath(hardwareIndex),
+          publicKey: connectedInfo.publicKey,
+          device: connectedInfo.device,
+          path: connectedInfo.path,
           label: label || undefined,
-          index: hardwareIndex,
+          index: connectedInfo.index,
         });
       } else if (mode === "watch") {
         await addWatchOnly(watchKey.trim(), label || undefined);
@@ -106,7 +105,8 @@ function AddAccountInner({
       setLabel("");
       setSecretInput("");
       setWatchKey("");
-      setHardwareKey("");
+      setConnectedInfo(null);
+      setHardwareIndex(0);
       setMode(hasMnemonicVault ? "generate" : "import");
     } catch (e) {
       triggerHaptic("error");
@@ -120,12 +120,12 @@ function AddAccountInner({
     !busy &&
     (mode === "generate" ||
       (mode === "import" && importValid) ||
-      (mode === "hardware" && Boolean(hardwareKey)) ||
+      (mode === "hardware" && Boolean(connectedInfo)) ||
       (mode === "watch" && watchValid));
 
   const subtitle =
     mode === "hardware"
-      ? "Connect with Trezor Connect"
+      ? "Connect a device and verify its Stellar address"
       : mode === "watch"
         ? "Track any address — balances only, no keys"
         : `Derives at m/44'/148'/${accounts.length}'`;
@@ -212,30 +212,77 @@ function AddAccountInner({
 
           {mode === "hardware" && (
             <div className="space-y-3.5">
-              <div className="rounded-2xl border border-[#0A84FF] bg-[#0A84FF]/10 p-3 text-left text-white shadow-sm">
-                <p className="flex items-center gap-2 text-[14px] font-bold text-white">
-                  <IconTrezor size={18} className="text-emerald-400" />
-                  <span>Trezor</span>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 text-left">
+                <p className="text-[13px] font-semibold text-white">Hardware wallet</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-neutral-400">
+                  Keys stay on your device. Confirm the Stellar address on its screen before
+                  adding it to this wallet.
                 </p>
-                <p className="mt-0.5 text-[11px] text-neutral-400">Model One / T / Safe</p>
+                <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3 text-[11.5px]">
+                  <span className="text-neutral-400">Supported signer</span>
+                  <span className="flex items-center gap-1.5 font-semibold text-neutral-200">
+                    <IconTrezor size={14} className="text-emerald-400" />
+                    Trezor Connect
+                  </span>
+                </div>
               </div>
 
-              {/* Derivation Path Index */}
-              <div className="flex items-center justify-between px-1 text-[12px] text-neutral-300">
-                <span>Derivation Path:</span>
-                <span className="mono font-semibold text-[#0A84FF]">
-                  {getStellarDerivationPath(hardwareIndex)}
-                </span>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 space-y-3">
+                <div className="flex items-center justify-between gap-3 text-[12px]">
+                  <span className="font-semibold text-neutral-300">Account index</span>
+                  <span className="mono truncate text-[11px] font-semibold text-[#64D2FF]">
+                    {getStellarDerivationPath(hardwareIndex)}
+                  </span>
+                </div>
+                <div
+                  className="grid grid-cols-5 gap-1.5"
+                  role="group"
+                  aria-label="Hardware account index"
+                >
+                  {[0, 1, 2, 3, 4].map((index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Account index ${index}`}
+                      aria-pressed={hardwareIndex === index}
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setHardwareIndex(index);
+                        if (label === connectedInfo?.label) {
+                          setLabel("");
+                        }
+                        setConnectedInfo(null);
+                        setError(null);
+                      }}
+                      className={`min-h-11 rounded-xl text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                        hardwareIndex === index
+                          ? "bg-[#0A84FF] text-white"
+                          : "bg-white/[0.06] text-neutral-300 hover:bg-white/[0.1] hover:text-white"
+                      }`}
+                    >
+                      {index}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {hardwareKey ? (
-                <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3 text-[12px] space-y-1">
-                  <p className="font-semibold text-[#30D158]">✓ Device Connected</p>
-                  <HashValue
-                    full
-                    value={hardwareKey}
-                    className="text-[11px] leading-loose text-neutral-300"
-                  />
+              {connectedInfo ? (
+                <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 text-[12px] space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-[#30D158]">Address received</p>
+                    <span className="mono text-[10.5px] text-neutral-400">{connectedInfo.path}</span>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-black/30 p-2.5">
+                    <HashValue
+                      full
+                      value={connectedInfo.publicKey}
+                      className="w-full justify-center text-center text-[11px] leading-loose text-neutral-200"
+                    />
+                  </div>
+                  <p className="text-[11.5px] leading-relaxed text-neutral-300">
+                    Confirm this address on your device before adding the account.
+                  </p>
                 </div>
               ) : (
                 <Button
@@ -245,7 +292,7 @@ function AddAccountInner({
                   loading={busy}
                   onClick={() => void handleConnectHardware()}
                 >
-                  Connect with Trezor Connect
+                  Connect Trezor
                 </Button>
               )}
             </div>
@@ -295,7 +342,7 @@ function AddAccountInner({
             : mode === "import"
               ? "Import Account"
               : mode === "hardware"
-                ? "Import Hardware Account"
+                ? "Add Hardware Account"
                 : "Track Address"}
         </Button>
       </div>
