@@ -1060,9 +1060,17 @@ function HourChart({
                 stroke="rgba(255,255,255,0.34)"
                 strokeDasharray="2 3"
               />
-              <text x={nowX - 4} y={padT - 12} fontSize="9.5" textAnchor="end" fill={AXIS}>
-                now
-              </text>
+              {/*
+                The ceiling figure is pinned to the same top rail. On a day whose
+                trading all sits near the left of the window the two land on each
+                other, so the marker keeps its line and drops its word — the line
+                is the part that carries the meaning.
+              */}
+              {nowX - 26 > padL + fmtMinor(ceiling, currency).length * 6.2 + 6 && (
+                <text x={nowX - 4} y={padT - 12} fontSize="9.5" textAnchor="end" fill={AXIS}>
+                  now
+                </text>
+              )}
             </>
           )}
 
