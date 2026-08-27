@@ -50,7 +50,7 @@ Browser print/AirPrint, downloads, keyboard-wedge scanners, and the protected sa
 ## Local-data and release safety
 
 - Merchant operational data is encrypted, committed transactionally in IndexedDB, and browser-local. It does not synchronize or form part of a hosted backup.
-- Payment monitoring is foreground-only. The open till requests Screen Wake Lock when supported and reconciles after visibility returns, but a closed or suspended browser cannot keep watching Horizon without a backend.
+- Payment monitoring is foreground-only. An open, awaiting checkout requests Screen Wake Lock when supported and reconciliation resumes after visibility returns, but a closed or suspended browser cannot keep watching Horizon without a backend.
 - Resetting the wallet removes wallet-owned merchant storage. Export required records first.
 - Verify the network, receiving account, issuer, memo, amount, and signing-device details before authorizing a mainnet transaction.
 - Serve installed or production deployments over HTTPS. A raw LAN HTTP origin cannot provide every iOS secure-context capability.

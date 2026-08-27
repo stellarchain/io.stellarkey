@@ -25,7 +25,7 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Confirm endpoint overrides reject HTTP, credentials, fragments, and the wrong Stellar network. Verify both Horizon and RPC reset to the built-in defaults.
 - Confirm offline cold launch exposes only the cached application shell; wallet, merchant, price, and Horizon responses must not enter the service-worker cache.
 - Confirm merchant encrypted records survive reload and that a second tab cannot overwrite a newer revision.
-- Confirm merchant payment monitoring says foreground-only. Closing or suspending the browser pauses checks; reopening and unlocking must reconcile missed payments. Do not describe this as background monitoring without adding a backend.
+- Confirm merchant documentation describes payment monitoring as foreground-only. An open checkout may keep the screen awake; closing or suspending the browser pauses checks, and reopening and unlocking must reconcile missed payments. Do not describe this as background monitoring without adding a backend.
 
 ## Accepted dependency boundary
 

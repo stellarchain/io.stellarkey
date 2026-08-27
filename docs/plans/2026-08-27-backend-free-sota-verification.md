@@ -13,7 +13,7 @@ Verified on 27 August 2026 against branch `codex/backend-free-sota`.
 | Key handling | Vault v3 wraps a random master key; session state does not retain the password or mnemonic; software secrets are decrypted or derived only inside scoped operations. |
 | Device unlock | WebAuthn PRF can wrap the existing master key locally; password unlock remains available; adding and removing the wrapper require the current password. |
 | Stellar connectivity | HTTPS Horizon/RPC endpoints are network-checked; reads have bounded time, size, abort, retry, and typed-error behavior; multi-account loading can partially settle. |
-| Merchant monitoring | The till communicates foreground-only monitoring, uses Screen Wake Lock when available, and catches up immediately after visibility returns. |
+| Merchant monitoring | The open checkout uses Screen Wake Lock when available and shows a quiet live payment status; the merchant shell stays clear, while visibility return still triggers immediate catch-up. |
 | Performance | Locked/onboarding paths avoid eager merchant initialization, wallet refreshes are coalesced, lazy feature boundaries are in place, and the static JS bundle has an enforced budget. |
 | Browser quality | Desktop Chromium plus iPhone and iPad WebKit profiles exercise onboarding, dashboard, lock/unlock, send review, settings, merchant setup/till, responsive overflow, and blocking accessibility rules. |
 | Supply chain | GitHub Actions use commit SHAs, Node/npm versions are explicit, dependency lifecycle scripts are approved by exact package version, and high/critical production advisories fail the release. |

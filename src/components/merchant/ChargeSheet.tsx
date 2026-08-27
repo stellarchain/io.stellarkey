@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { useMerchant } from "@/hooks/useMerchant";
 import { LIVE_SECOND_MS, useLiveNow } from "@/hooks/useLiveNow";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { assetKey, quoteFor, secondsRemaining } from "@/lib/merchant/charge";
 import { fmtMinor, fromStroops, minorForAssetAmount, toStroops } from "@/lib/merchant/money";
 import type { Charge, ChargeQuote, MatchedPayment } from "@/lib/merchant/types";
@@ -75,6 +76,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const payUri = payUriFor(charge, quote.asset);
   const order = orderFor(charge.id);
   const awaiting = charge.status === "awaiting";
+  const wakeLock = useWakeLock(awaiting);
   const seconds = secondsRemaining(charge, now);
   const urgent = seconds < URGENT_SECONDS;
   const gap = payment && paidQuote ? difference(payment, paidQuote) : null;
@@ -155,7 +157,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
       case "voided":
         return "Charge cancelled";
       default:
-        return "Waiting for payment";
+        return "Watching for payment";
     }
   }, [charge.status]);
 
@@ -257,6 +259,16 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
             </div>
           )}
         </div>
+
+        {awaiting && (wakeLock.state === "error" || wakeLock.state === "released") && (
+          <button
+            type="button"
+            onClick={wakeLock.retry}
+            className="mx-auto flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium text-neutral-500"
+          >
+            Screen may sleep <span className="text-[#0A84FF]">Retry</span>
+          </button>
+        )}
 
         {awaiting && watchError && (
           <Notice tone="warn">
