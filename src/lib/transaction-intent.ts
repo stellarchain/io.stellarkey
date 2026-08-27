@@ -8,31 +8,48 @@ export interface SwapRequestIdentity {
   network: NetworkKey;
   sendAssetKey: string;
   destinationAssetKey: string;
-  sendAmount: string;
+  mode: SwapExecutionMode;
+  exactAmount: string;
   slippage: string;
 }
 
-export interface BoundSwapQuote {
+export type SwapExecutionMode = "strict-send" | "strict-receive";
+
+interface BoundSwapQuoteBase {
   readonly requestKey: string;
   readonly sendAssetKey: string;
   readonly destinationAssetKey: string;
   readonly sendAmount: string;
   readonly slippage: string;
   readonly destinationAmount: string;
-  readonly destinationMinimum: string;
   readonly intermediates: readonly StellarAsset[];
 }
+
+export interface StrictSendBoundSwapQuote extends BoundSwapQuoteBase {
+  readonly mode: "strict-send";
+  readonly destinationMinimum: string;
+}
+
+export interface StrictReceiveBoundSwapQuote extends BoundSwapQuoteBase {
+  readonly mode: "strict-receive";
+  readonly sendMaximum: string;
+}
+
+export type BoundSwapQuote = StrictSendBoundSwapQuote | StrictReceiveBoundSwapQuote;
 
 export function swapRequestKey(request: SwapRequestIdentity): string {
   return JSON.stringify([
     request.network,
     request.sendAssetKey,
     request.destinationAssetKey,
-    request.sendAmount,
+    request.mode,
+    request.exactAmount,
     request.slippage,
   ]);
 }
 
+export function bindSwapQuote(quote: StrictSendBoundSwapQuote): StrictSendBoundSwapQuote;
+export function bindSwapQuote(quote: StrictReceiveBoundSwapQuote): StrictReceiveBoundSwapQuote;
 export function bindSwapQuote(quote: BoundSwapQuote): BoundSwapQuote {
   return Object.freeze({
     ...quote,
@@ -51,10 +68,10 @@ export function isCurrentSwapQuote(
  * Returns a quote only when it is bound to the request currently visible in the form.
  * UI review and submission boundaries both call this guard directly.
  */
-export function guardCurrentSwapQuote(
-  quote: BoundSwapQuote | null,
+export function guardCurrentSwapQuote<T extends BoundSwapQuote>(
+  quote: T | null,
   currentRequestKey: string | null,
-): BoundSwapQuote | null {
+): T | null {
   return quote !== null && currentRequestKey !== null && quote.requestKey === currentRequestKey
     ? quote
     : null;

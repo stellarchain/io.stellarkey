@@ -22,7 +22,7 @@ import {
   guardCurrentSwapQuote,
   spendableAssetBalance,
   swapRequestKey,
-  type BoundSwapQuote,
+  type StrictSendBoundSwapQuote,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
@@ -50,7 +50,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
   const [showSettings, setShowSettings] = useState(false);
   const [invertRate, setInvertRate] = useState(false);
   const [stage, setStage] = useState<"form" | "review">("form");
-  const [route, setRoute] = useState<BoundSwapQuote | null>(null);
+  const [route, setRoute] = useState<StrictSendBoundSwapQuote | null>(null);
   const [routingKey, setRoutingKey] = useState<string | null>(null);
   const [noRouteKey, setNoRouteKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -92,7 +92,8 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           network,
           sendAssetKey: sendAsset.key,
           destinationAssetKey: destAsset.key,
-          sendAmount: amount,
+          mode: "strict-send",
+          exactAmount: amount,
           slippage: String(slippage),
         })
       : null;
@@ -155,6 +156,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
         if (found) {
           const minVal = applySlippage(found.destinationAmount, quotedSlippage);
           setRoute(bindSwapQuote({
+            mode: "strict-send",
             requestKey: quotedRequestKey,
             sendAssetKey: quotedSendAssetKey,
             destinationAssetKey: quotedDestinationAssetKey,
@@ -213,6 +215,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     setError(null);
     try {
       const result = await swap({
+        mode: "strict-send",
         sendCode: sendAsset.code,
         sendIssuer: sendAsset.issuer,
         sendAmount: submissionQuote.sendAmount,
