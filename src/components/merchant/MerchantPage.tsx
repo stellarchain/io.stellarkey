@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { useWallet } from "@/hooks/useWallet";
+import { useWakeLock } from "@/hooks/useWakeLock";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Notice, SegmentedControl } from "../ui";
@@ -20,6 +21,7 @@ import { InsightsPage } from "./InsightsPage";
 import { ShiftSheet } from "./ShiftSheet";
 import {
   ConnectionRestoredNotice,
+  ForegroundMonitoringStatus,
   HorizonOutageNotice,
   OfflineBanner,
   VaultLockedNotice,
@@ -142,6 +144,7 @@ export function MerchantPage({
     chargeBlockedReason,
     unmatched,
     watchError,
+    watching,
     queuedChargeCount,
     expiredChargeCount,
     pollNow,
@@ -149,6 +152,7 @@ export function MerchantPage({
     closeCharge,
   } = useMerchant();
   const { phase } = useWallet();
+  const wakeLock = useWakeLock(ready && enabled && !storageIssue);
 
   // Uncontrolled by default so the page works on its own; the shell passes both
   // props so the sidebar's shift row opens this very sheet.
@@ -340,6 +344,12 @@ export function MerchantPage({
           )}
         </div>
       )}
+
+      <ForegroundMonitoringStatus
+        watching={watching && !watchError}
+        wakeLockState={wakeLock.state}
+        onWakeLockRetry={wakeLock.retry}
+      />
 
       {/* Mobile keeps its own sub-nav: the tab bar only has one Merchant slot. */}
       <div className="mb-4 space-y-2.5 md:hidden">

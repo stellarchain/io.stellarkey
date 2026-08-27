@@ -5,6 +5,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { Spinner } from "../ui";
 import { IconAlert, IconCheck, IconLock, IconRefresh } from "../icons";
 import { IconClock } from "./icons";
+import type { WakeLockState } from "@/hooks/useWakeLock";
 
 type Tone = "warn" | "positive" | "indigo";
 
@@ -164,5 +165,54 @@ export function ConnectionRestoredNotice({
           : "There are no unexpired charges waiting for confirmation on this network."}
       </p>
     </StateCard>
+  );
+}
+
+export function ForegroundMonitoringStatus({
+  watching,
+  wakeLockState,
+  onWakeLockRetry,
+}: {
+  watching: boolean;
+  wakeLockState: WakeLockState;
+  onWakeLockRetry: () => void;
+}) {
+  const awake = wakeLockState === "active";
+  const canRetry = wakeLockState === "error" || wakeLockState === "released";
+  const label = !watching
+    ? "Foreground monitoring paused"
+    : awake
+      ? "Foreground monitoring active"
+      : wakeLockState === "requesting"
+        ? "Starting foreground monitoring"
+        : "Foreground monitoring · keep this app open";
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Payment monitoring status"
+      className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-neutral-400"
+    >
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 shrink-0 rounded-full ${watching ? "bg-[#30D158]" : "bg-[#FF9F0A]"}`}
+      />
+      <span className="font-semibold text-neutral-200">{label}</span>
+      <span className="min-w-[220px] flex-1">
+        {awake
+          ? "Screen awake protection is on. Closing or suspending the app pauses checks; reopening and unlocking reconciles missed payments."
+          : "This browser cannot guarantee checks while closed or suspended. Reopening and unlocking reconciles missed payments."}
+      </span>
+      {canRetry && (
+        <button
+          type="button"
+          onClick={onWakeLockRetry}
+          className="min-h-11 rounded-lg px-2 font-semibold text-[#0A84FF]"
+        >
+          Retry screen lock
+        </button>
+      )}
+    </div>
   );
 }

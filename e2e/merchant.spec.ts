@@ -290,6 +290,24 @@ test(
           }
         }
         Object.defineProperty(window, "EventSource", { configurable: true, value: QuietEventSource });
+        class TestWakeLockSentinel extends EventTarget {
+          released = false;
+
+          async release() {
+            if (this.released) return;
+            this.released = true;
+            this.dispatchEvent(new Event("release"));
+          }
+        }
+        Object.defineProperty(navigator, "wakeLock", {
+          configurable: true,
+          value: {
+            request: async (kind: string) => {
+              if (kind !== "screen") throw new Error("Unexpected wake-lock type");
+              return new TestWakeLockSentinel();
+            },
+          },
+        });
       });
       await installNetworkFixtures(context, incoming, acceptedTransactions);
 
@@ -326,6 +344,8 @@ test(
       await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
       await setup.getByRole("button", { name: "Open the till" }).click();
       await setup.waitFor({ state: "hidden" });
+      await page.getByText("Foreground monitoring active", { exact: true }).waitFor();
+      await page.getByText(/Closing or suspending the app pauses checks/).waitFor();
       await assertMobileSurface(page, "first merchant till");
       const persistedRecord = await page.evaluate(async () => {
         const value = await new Promise<string | null>((resolve, reject) => {
