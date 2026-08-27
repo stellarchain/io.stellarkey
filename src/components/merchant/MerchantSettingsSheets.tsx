@@ -296,6 +296,10 @@ export function MerchantSettingsSheetContent({
                 onChange={(receivingPublicKey) => updateSettings({ receivingPublicKey })}
               />
             </SettingsRow>
+            <NoteRow>
+              Issued requests keep their original receiving account and remain monitored until
+              resolved.
+            </NoteRow>
             <SettingsRow
               icon={<span className="mono text-[12px] font-bold">{symbol}</span>}
               tint="#64D2FF"

@@ -8,6 +8,7 @@ import type {
   TipSettings,
 } from "./types";
 import type { StorageLoadResult } from "../storage-load";
+import { merchantCursorKey } from "./watch-targets";
 import {
   decryptMerchantStore,
   encryptMerchantStore,
@@ -42,6 +43,31 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function cursorRecords(value: unknown, settings: MerchantSettings): MerchantStore["cursors"] {
+  if (!isRecord(value)) return {};
+  const cursors: MerchantStore["cursors"] = {};
+  for (const [key, cursor] of Object.entries(value)) {
+    if (typeof cursor !== "string" || cursor === "") continue;
+    if (key === "mainnet" || key === "testnet") {
+      if (settings.receivingPublicKey) {
+        cursors[merchantCursorKey(key, settings.receivingPublicKey)] = cursor;
+      }
+      continue;
+    }
+    const separator = key.indexOf(":");
+    const network = key.slice(0, separator);
+    const destination = key.slice(separator + 1);
+    if (
+      separator > 0 &&
+      (network === "mainnet" || network === "testnet") &&
+      StrKey.isValidEd25519PublicKey(destination)
+    ) {
+      cursors[key] = cursor;
+    }
+  }
+  return cursors;
 }
 
 function positiveInteger(value: unknown, fallback: number): number {
@@ -375,29 +401,81 @@ function paymentOutcome(value: unknown): MerchantStore["paymentReconciliations"]
     : "unmatched";
 }
 
-function unmatchedRecords(value: unknown): MerchantStore["unmatched"] {
-  const payments = idRecords<MerchantStore["unmatched"][number]>(value) ?? [];
-  return payments.map((payment) => ({
-    ...payment,
-    reconciliationOutcome: paymentOutcome(payment.reconciliationOutcome),
-    candidateChargeId: nullableString(payment.candidateChargeId, null),
+function storedPaymentDestination(
+  value: unknown,
+  inferredDestination: string | null | undefined,
+): string {
+  return typeof value === "string" && value.trim()
+    ? value
+    : inferredDestination?.trim() ?? "";
+}
+
+function chargeRecords(value: unknown): MerchantStore["charges"] {
+  const charges = idRecords<MerchantStore["charges"][number]>(value) ?? [];
+  return charges.map((charge) => ({
+    ...charge,
+    payment: charge.payment
+      ? {
+          ...charge.payment,
+          destination: storedPaymentDestination(
+            charge.payment.destination,
+            charge.destination,
+          ),
+        }
+      : null,
   }));
 }
 
-function reconciliationRecords(value: unknown): MerchantStore["paymentReconciliations"] {
+function unmatchedRecords(
+  value: unknown,
+  charges: MerchantStore["charges"],
+  currentDestination: string | null,
+): MerchantStore["unmatched"] {
+  const payments = idRecords<MerchantStore["unmatched"][number]>(value) ?? [];
+  return payments.map((payment) => {
+    const candidateChargeId = nullableString(payment.candidateChargeId, null);
+    const candidate = charges.find((charge) => charge.id === candidateChargeId);
+    return {
+      ...payment,
+      destination: storedPaymentDestination(
+        payment.destination,
+        candidate?.destination ?? currentDestination,
+      ),
+      reconciliationOutcome: paymentOutcome(payment.reconciliationOutcome),
+      candidateChargeId,
+    };
+  });
+}
+
+function reconciliationRecords(
+  value: unknown,
+  charges: MerchantStore["charges"],
+  currentDestination: string | null,
+): MerchantStore["paymentReconciliations"] {
   return recordArray<MerchantStore["paymentReconciliations"][number]>(
     value,
     (record) => typeof record.id === "string" && isRecord(record.payment),
-  )?.map((record) => ({
-    ...record,
-    outcome: paymentOutcome(record.outcome),
-    chargeId: nullableString(record.chargeId, null),
-    orderId: nullableString(record.orderId, null),
-    amountMinor: record.amountMinor === null || isFiniteNumber(record.amountMinor)
-      ? record.amountMinor
-      : null,
-    resolution: isRecord(record.resolution) ? record.resolution : null,
-  })) ?? [];
+  )?.map((record) => {
+    const chargeId = nullableString(record.chargeId, null);
+    const charge = charges.find((entry) => entry.id === chargeId);
+    return {
+      ...record,
+      payment: {
+        ...record.payment,
+        destination: storedPaymentDestination(
+          record.payment.destination,
+          charge?.destination ?? currentDestination,
+        ),
+      },
+      outcome: paymentOutcome(record.outcome),
+      chargeId,
+      orderId: nullableString(record.orderId, null),
+      amountMinor: record.amountMinor === null || isFiniteNumber(record.amountMinor)
+        ? record.amountMinor
+        : null,
+      resolution: isRecord(record.resolution) ? record.resolution : null,
+    };
+  }) ?? [];
 }
 
 function refundRecords(value: unknown): MerchantStore["refunds"] {
@@ -608,6 +686,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     ? [...reconciledOnShiftStaffIds, activeStaffId]
     : reconciledOnShiftStaffIds;
   const invoices = invoiceRecords(value.invoices, staff);
+  const charges = chargeRecords(value.charges);
   const tillTextSize =
     value.tillTextSize === "standard" ||
     value.tillTextSize === "large" ||
@@ -635,10 +714,14 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
       idRecords<MerchantStore["modifierGroups"][number]>(value.modifierGroups) ??
       base.modifierGroups,
     orders: orderRecords(value.orders),
-    charges: idRecords<MerchantStore["charges"][number]>(value.charges) ?? [],
+    charges,
     refunds: refundRecords(value.refunds),
-    unmatched: unmatchedRecords(value.unmatched),
-    paymentReconciliations: reconciliationRecords(value.paymentReconciliations),
+    unmatched: unmatchedRecords(value.unmatched, charges, settings.receivingPublicKey),
+    paymentReconciliations: reconciliationRecords(
+      value.paymentReconciliations,
+      charges,
+      settings.receivingPublicKey,
+    ),
     staff,
     activeStaffId,
     onShiftStaffIds,
@@ -708,9 +791,7 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
       invoices,
       base.nextInvoiceNumber,
     ),
-    cursors: isRecord(value.cursors)
-      ? (value.cursors as MerchantStore["cursors"])
-      : base.cursors,
+    cursors: cursorRecords(value.cursors, settings),
   };
 }
 

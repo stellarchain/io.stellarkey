@@ -156,7 +156,11 @@ import {
   type SettlementHandoffs,
 } from "@/lib/merchant/settlement";
 import { BROWSER_PERIPHERALS, merchantRuntimeState } from "@/lib/merchant/runtime";
-import { fetchIncomingPayments } from "@/lib/merchant/watch";
+import {
+  fetchIncomingPayments,
+  merchantCursorKey,
+  merchantWatchDestinations,
+} from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
 import type {
   AcceptedAsset,
@@ -2194,17 +2198,28 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return "The Stellar network is not answering right now.";
   }
 
-  const activeWatcherLeaseKey = useMemo(
-    () => settings.receivingPublicKey
-      ? watcherLeaseKey(network, settings.receivingPublicKey)
-      : null,
-    [network, settings.receivingPublicKey],
+  const watchDestinations = useMemo(
+    () => merchantWatchDestinations(
+      {
+        receivingPublicKey: settings.receivingPublicKey,
+        charges: store.charges,
+        counterCodes: store.counterCodes,
+        invoices: store.invoices,
+      },
+      network,
+    ),
+    [network, settings.receivingPublicKey, store.charges, store.counterCodes, store.invoices],
+  );
+
+  const activeWatcherLeaseKeys = useMemo(
+    () => watchDestinations.map((destination) => watcherLeaseKey(network, destination)),
+    [network, watchDestinations],
   );
 
   useEffect(() => {
     const release = () => {
-      if (activeWatcherLeaseKey) {
-        releaseWatcherLease(window.localStorage, activeWatcherLeaseKey, writerId);
+      for (const leaseKey of activeWatcherLeaseKeys) {
+        releaseWatcherLease(window.localStorage, leaseKey, writerId);
       }
     };
     let wasVisible = document.visibilityState === "visible";
@@ -2227,46 +2242,61 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", handleVisibility);
       release();
     };
-  }, [activeWatcherLeaseKey, writerId]);
+  }, [activeWatcherLeaseKeys, writerId]);
 
   const pollNow = useCallback(async () => {
-    const till = settings.receivingPublicKey;
-    if (!enabled || !online || !till || polling.current) return;
-    const leaseKey = watcherLeaseKey(network, till);
-    if (
-      !claimWatcherLease(
-        window.localStorage,
-        leaseKey,
-        writerId,
-        Date.now(),
-        WATCHER_LEASE_MS,
-      )
-    ) {
-      return;
-    }
+    if (!enabled || !online || watchDestinations.length === 0 || polling.current) return;
     polling.current = true;
+    let latestLedger: number | null = null;
+    let firstFailure: unknown = null;
     try {
-      const result = await fetchIncomingPayments({
-        publicKey: till,
-        network,
-        cursor: store.cursors[network] ?? null,
-      });
-      if (result.latestLedger) setWatchedLedger(result.latestLedger);
-      await applyPayments(result.payments);
-      if (result.cursor) {
-        await persist((prev) => ({ ...prev, cursors: { ...prev.cursors, [network]: result.cursor } }));
+      for (const destination of watchDestinations) {
+        const leaseKey = watcherLeaseKey(network, destination);
+        if (
+          !claimWatcherLease(
+            window.localStorage,
+            leaseKey,
+            writerId,
+            Date.now(),
+            WATCHER_LEASE_MS,
+          )
+        ) {
+          continue;
+        }
+        const cursorKey = merchantCursorKey(network, destination);
+        try {
+          const result = await fetchIncomingPayments({
+            publicKey: destination,
+            network,
+            cursor: storeRef.current.cursors[cursorKey] ?? null,
+          });
+          if (
+            result.latestLedger &&
+            (latestLedger === null || result.latestLedger > latestLedger)
+          ) {
+            latestLedger = result.latestLedger;
+          }
+          await applyPayments(result.payments);
+          if (result.cursor) {
+            await persist((prev) => ({
+              ...prev,
+              cursors: { ...prev.cursors, [cursorKey]: result.cursor as string },
+            }));
+          }
+        } catch (error) {
+          firstFailure ??= error;
+        }
       }
-      setWatchError(null);
-    } catch (error) {
-      if (isMerchantStorageError(error)) {
+      if (latestLedger !== null) setWatchedLedger(latestLedger);
+      if (firstFailure === null || isMerchantStorageError(firstFailure)) {
         setWatchError(null);
       } else {
-        setWatchError(describeWatchFailure(error));
+        setWatchError(describeWatchFailure(firstFailure));
       }
     } finally {
       polling.current = false;
     }
-  }, [applyPayments, enabled, network, online, persist, settings.receivingPublicKey, store.cursors, writerId]);
+  }, [applyPayments, enabled, network, online, persist, watchDestinations, writerId]);
 
   const hasLiveCharge = useMemo(
     () => liveCharges(store.charges, network).length > 0,
@@ -2285,6 +2315,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [network, store.invoices],
   );
 
+  const hasLiveCounterCode = useMemo(
+    () => store.counterCodes.some((code) => code.network === network && code.active),
+    [network, store.counterCodes],
+  );
+
   // `pollNow` is rebuilt whenever the cursor advances. The timer must not restart
   // that often, so it reads the latest callback through a ref instead of closing
   // over one — otherwise every tick would replay the same Horizon page.
@@ -2293,7 +2328,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, [pollNow]);
 
   useEffect(() => {
-    if (!enabled || !online || !foreground || !settings.receivingPublicKey) return;
+    if (!enabled || !online || !foreground || watchDestinations.length === 0) return;
     let alive = true;
     void (async () => {
       await Promise.resolve();
@@ -2301,12 +2336,21 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     })();
     const interval = setInterval(() => {
       void pollRef.current();
-    }, hasLiveCharge || hasLiveInvoice ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+    }, hasLiveCharge || hasLiveInvoice || hasLiveCounterCode ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     return () => {
       alive = false;
       clearInterval(interval);
     };
-  }, [enabled, foreground, hasLiveCharge, hasLiveInvoice, network, online, settings.receivingPublicKey]);
+  }, [
+    enabled,
+    foreground,
+    hasLiveCharge,
+    hasLiveCounterCode,
+    hasLiveInvoice,
+    network,
+    online,
+    watchDestinations.length,
+  ]);
 
   /* ---------------- tray ---------------- */
 

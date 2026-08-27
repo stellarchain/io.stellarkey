@@ -92,6 +92,7 @@ function payment(id, amount, asset, memo) {
     transactionHash: "a".repeat(64),
     ledger: 12345,
     from: PAYER,
+    destination: TILL,
     amount,
     asset,
     memo,
@@ -211,6 +212,25 @@ test("a counter-code payment with an invalid ledger timestamp stays unclaimed", 
   const observed = {
     ...payment("invalid-time", "10.0000000", USDC, created.code.memoPrefix),
     createdAt: "not-a-timestamp",
+  };
+  const reconciled = reconcileCounterPayments(created.store, {
+    network: "mainnet",
+    payments: [observed],
+    rates: [],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed, [observed]);
+  assert.equal(reconciled.store.counterPayments.length, 0);
+});
+
+test("a counter-code payment cannot file against another receiving account", async () => {
+  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { member, store } = merchantStore();
+  const created = createCounterCode(store, fixedInput(member));
+  const observed = {
+    ...payment("wrong-code-destination", "10.0000000", USDC, created.code.memoPrefix),
+    destination: ISSUER,
   };
   const reconciled = reconcileCounterPayments(created.store, {
     network: "mainnet",

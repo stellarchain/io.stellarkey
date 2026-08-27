@@ -69,6 +69,7 @@ function payment(over = {}) {
     transactionHash: "7b3e0d5c".padEnd(64, "0"),
     ledger: 56_420_130,
     from: PAYER,
+    destination: TILL,
     amount: "27.3300000",
     asset: USDC_ASSET,
     memo: null,
@@ -272,6 +273,7 @@ test("the watcher reads /payments with the transaction joined for its memo", asy
   assert.equal(result.payments.length, 1);
   assert.equal(result.payments[0].memo, "MC1042");
   assert.equal(result.payments[0].asset.code, "USDC");
+  assert.equal(result.payments[0].destination, TILL);
   assert.equal(result.payments[0].ledger, 56_420_130);
   assert.equal(result.latestLedger, 56_420_130);
 });

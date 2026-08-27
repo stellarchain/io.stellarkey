@@ -269,6 +269,8 @@ export interface MatchedPayment {
   transactionHash: string;
   ledger: number;
   from: string;
+  /** Exact receiving account observed by Horizon. */
+  destination: string;
   amount: StellarAmount;
   asset: AcceptedAsset;
   memo: string | null;
@@ -789,6 +791,6 @@ export interface MerchantStore {
   nextShiftNumber: number;
   /** Next human invoice sequence. */
   nextInvoiceNumber: number;
-  /** Horizon paging token the payment watcher resumes from, per network. */
-  cursors: Partial<Record<NetworkKey, string>>;
+  /** Horizon paging token per exact `network:destination` watcher. */
+  cursors: Record<string, string>;
 }

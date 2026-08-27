@@ -11,6 +11,7 @@ import {
 import * as storage from "../src/lib/merchant/storage.ts";
 
 const TEST_KEY = new Uint8Array(32).fill(42);
+const TILL = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -75,7 +76,12 @@ function legacyStore() {
   const order = legacyOrder();
   return {
     version: 1,
-    settings: { ...settings, enabled: true, terminalName: "Counter" },
+    settings: {
+      ...settings,
+      enabled: true,
+      terminalName: "Counter",
+      receivingPublicKey: TILL,
+    },
     catalogue: emptyStore().catalogue,
     modifierGroups: emptyStore().modifierGroups,
     orders: [order],
@@ -85,7 +91,7 @@ function legacyStore() {
         orderId: order.id,
         reference: order.reference,
         network: "testnet",
-        destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        destination: TILL,
         amountMinor: 250,
         currency: "EUR",
         quotes: [],
@@ -103,7 +109,7 @@ function legacyStore() {
         amountMinor: 50,
         asset: { code: "XLM", issuer: null },
         amount: "1.0000000",
-        destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        destination: TILL,
         reason: "customer_request",
         note: null,
         transactionHash: "abc",
@@ -271,6 +277,7 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
       },
     ]);
     assert.deepEqual(migrated.charges, legacy.charges);
+    assert.deepEqual(migrated.cursors, { [`testnet:${TILL}`]: "123" });
     assert.deepEqual(migrated.refunds, [
       {
         ...legacy.refunds[0],
@@ -418,6 +425,53 @@ test("older counter codes migrate as audit-only records without redirecting shar
   assert.deepEqual(decoded.counterCodes[0].quotes, []);
   assert.equal(decoded.counterCodes[0].createdBy, "Imported record");
   assert.equal(decoded.counterCodes[0].createdById, "legacy:counter-legacy");
+});
+
+test("older payment observations inherit the immutable charge destination", () => {
+  const charge = {
+    ...legacyStore().charges[0],
+    status: "overpaid",
+  };
+  const payment = {
+    id: "payment-legacy",
+    transactionHash: "a".repeat(64),
+    ledger: 321,
+    from: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL",
+    amount: "2.0000000",
+    asset: { code: "XLM", issuer: null },
+    memo: charge.reference,
+    createdAt: new Date(charge.createdAt).toISOString(),
+  };
+  const decoded = storage.decodeMerchantStore({
+    ...emptyStore(),
+    settings: { ...emptyStore().settings, receivingPublicKey: TILL },
+    charges: [{ ...charge, payment: { ...payment, lane: "memo" } }],
+    unmatched: [
+      {
+        ...payment,
+        seenAt: charge.createdAt,
+        reconciliationOutcome: "overpaid",
+        candidateChargeId: charge.id,
+      },
+    ],
+    paymentReconciliations: [
+      {
+        id: payment.id,
+        network: charge.network,
+        payment,
+        outcome: "overpaid",
+        chargeId: charge.id,
+        orderId: charge.orderId,
+        amountMinor: charge.amountMinor * 2,
+        observedAt: charge.createdAt,
+        resolution: null,
+      },
+    ],
+  });
+
+  assert.equal(decoded.charges[0].payment.destination, TILL);
+  assert.equal(decoded.unmatched[0].destination, TILL);
+  assert.equal(decoded.paymentReconciliations[0].payment.destination, TILL);
 });
 
 test("a settled cash order reloads with tender, stock, and adjustment audit intact", () => {

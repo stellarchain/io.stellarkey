@@ -123,6 +123,7 @@ function payment(overrides = {}) {
     transactionHash: "a".repeat(64),
     ledger: 60_000_001,
     from: PAYER,
+    destination: TILL,
     amount: "10.0000000",
     asset: USDC,
     memo: "M1001",
@@ -256,6 +257,60 @@ test("an invalid Horizon payment timestamp is retained for review", () => {
   assert.equal(reconciled.charges[0].status, "awaiting");
   assert.equal(reconciled.paymentReconciliations[0].outcome, "invalid_time");
   assert.equal(reconciled.unmatched[0].reconciliationOutcome, "invalid_time");
+});
+
+test("a payment cannot settle a charge issued to another receiving account", () => {
+  const reconciled = reconcileIncomingPayments(awaitingStore(), {
+    network: "mainnet",
+    payments: [payment({ destination: ISSUER })],
+    now: NOW,
+  });
+
+  assert.equal(reconciled.orders[0].status, "awaiting");
+  assert.equal(reconciled.charges[0].status, "awaiting");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "unmatched");
+});
+
+test("watch targets and cursors retain immutable destinations after settings change", async () => {
+  const watch = await import("../src/lib/merchant/watch.ts");
+  assert.equal(typeof watch.merchantWatchDestinations, "function");
+  assert.equal(typeof watch.merchantCursorKey, "function");
+
+  const initial = awaitingStore();
+  const store = {
+    ...initial,
+    settings: { ...initial.settings, receivingPublicKey: ISSUER },
+    invoices: [
+      {
+        id: "invoice-old-destination",
+        network: "mainnet",
+        destination: PAYER,
+        status: "partially_paid",
+      },
+    ],
+    counterCodes: [
+      {
+        id: "counter-old-destination",
+        network: "mainnet",
+        destination: TILL,
+        active: true,
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    watch.merchantWatchDestinations(
+      {
+        receivingPublicKey: store.settings.receivingPublicKey,
+        charges: store.charges,
+        invoices: store.invoices,
+        counterCodes: store.counterCodes,
+      },
+      "mainnet",
+    ),
+    [ISSUER, TILL, PAYER],
+  );
+  assert.equal(watch.merchantCursorKey("mainnet", TILL), `mainnet:${TILL}`);
 });
 
 test("a second payment on a paid memo is a duplicate and cannot mutate the order", () => {
@@ -408,6 +463,7 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
   assert.equal(requested.searchParams.get("order"), "desc");
   assert.deepEqual(first.payments.map((entry) => entry.id), ["older", "newer"]);
   assert.equal(first.cursor, newerToken);
+  assert.ok(first.payments.every((entry) => entry.destination === TILL));
 
   await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: first.cursor });
   assert.equal(requested.searchParams.get("order"), "asc");
