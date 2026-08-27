@@ -80,6 +80,7 @@ test("mobile scrolling has one document owner and hides scrollbar chrome", () =>
 test("Dashboard owns the only mobile page gutter and Settings restores desktop spacing", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   const settings = read("src/components/SettingsPage.tsx");
+  const swap = read("src/components/SwapPage.tsx");
   const ui = read("src/components/ui.tsx");
 
   assert.match(dashboard, /max-w-\[560px\] px-4/);
@@ -90,6 +91,10 @@ test("Dashboard owns the only mobile page gutter and Settings restores desktop s
   assert.match(
     settings,
     /max-w-\[1000px\][^"\n]*min-w-0[^"\n]*px-0[^"\n]*pb-0[^"\n]*md:px-5[^"\n]*md:pb-\[150px\]/,
+  );
+  assert.match(
+    swap,
+    /max-w-\[520px\][^"\n]*min-w-0[^"\n]*px-0[^"\n]*pb-0/,
   );
   assert.match(ui, /modal-dialog[^`]*min-w-0/);
   assert.match(ui, /bg-\[#121214\]\/80 px-4 py-4[^"\n]*sm:px-6/);

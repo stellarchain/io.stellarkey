@@ -243,7 +243,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
       : null;
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[520px] px-5 pb-[150px]">
+    <div className="fade-up mx-auto w-full max-w-[520px] min-w-0 px-0 pb-0">
       {/* Slim toolbar — the page title lives in the app chrome */}
       <div className="flex items-center justify-end pb-3 pt-2">
         <button

@@ -852,6 +852,7 @@ export function HashValue({
         e.stopPropagation();
         void copy();
       }}
+      data-mobile-truncate={truncate ? "true" : undefined}
       title={`${value}\nClick to copy`}
       className={`mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors ${
         truncate ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
