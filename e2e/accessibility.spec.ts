@@ -44,6 +44,46 @@ async function expectAccessibleSurface(
   expect(blocking, `${label} has blocking accessibility violations`).toEqual([]);
 }
 
+async function expectMobileContainment(page: Page, label: string): Promise<void> {
+  const failures = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const escaped: string[] = [];
+    const describe = (element: Element) => {
+      const html = element as HTMLElement;
+      const name =
+        html.getAttribute("aria-label") ??
+        html.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) ??
+        element.tagName.toLowerCase();
+      return `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(/\s+/).slice(0, 3).join(".")}` : ""} “${name}”`;
+    };
+
+    for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > innerHeight) continue;
+      const style = getComputedStyle(element);
+      if (style.position === "fixed" || style.position === "sticky") {
+        if (rect.left < -1 || rect.right > viewportWidth + 1) escaped.push(describe(element));
+      }
+      const allowsHorizontalScroll =
+        element.dataset.mobileScroll === "true" ||
+        style.overflowX === "auto" ||
+        style.overflowX === "scroll";
+      const intentionallyTruncated = style.textOverflow === "ellipsis";
+      if (
+        !allowsHorizontalScroll &&
+        !intentionallyTruncated &&
+        element.clientWidth > 0 &&
+        element.scrollWidth > element.clientWidth + 1
+      ) {
+        escaped.push(describe(element));
+      }
+    }
+    return [...new Set(escaped)].slice(0, 12);
+  });
+
+  expect(failures, `${label} must not clip or escape mobile content`).toEqual([]);
+}
+
 async function clickPrimaryNavigation(page: Page, name: string): Promise<void> {
   const tabs = page.getByRole("navigation", { name: "Tabs" });
   if (await tabs.isVisible().catch(() => false)) {
@@ -119,4 +159,20 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expect(setup).toBeHidden();
   await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "merchant till", browserName);
+});
+
+test("the largest valid native balance remains inside the iPhone dashboard", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "This is the focused iPhone WebKit containment gate.");
+  await context.unrouteAll({ behavior: "wait" });
+  await installQuietEventSource(context);
+  await installNetworkFixtures(context, { nativeBalance: "922337203685.4775807" });
+  await page.setViewportSize({ width: 320, height: 693 });
+
+  await importTestWallet(page);
+  await expect(page.getByText("922,337,203,685.4775807", { exact: true })).toBeVisible();
+  await expectMobileContainment(page, "dashboard with a maximum Stellar balance");
 });
