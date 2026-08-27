@@ -6,17 +6,14 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
-test("document security headers use fresh nonces without breaking LAN-safe viewport policy", async ({ page }) => {
+test("document security headers use build-time hashes without weakening viewport policy", async ({ page }) => {
   const first = await page.goto("/", { waitUntil: "domcontentloaded" });
   const firstPolicy = first?.headers()["content-security-policy"] ?? "";
   const second = await page.reload({ waitUntil: "domcontentloaded" });
   const secondPolicy = second?.headers()["content-security-policy"] ?? "";
-  const firstNonce = /'nonce-([^']+)'/.exec(firstPolicy)?.[1];
-  const secondNonce = /'nonce-([^']+)'/.exec(secondPolicy)?.[1];
-
-  expect(firstNonce).toBeTruthy();
-  expect(secondNonce).toBeTruthy();
-  expect(secondNonce).not.toBe(firstNonce);
+  expect(firstPolicy).toContain("'sha256-");
+  expect(secondPolicy).toBe(firstPolicy);
+  expect(firstPolicy).not.toContain("'nonce-");
   expect(firstPolicy).not.toContain("script-src 'self' 'unsafe-inline'");
   expect(first?.headers()["cross-origin-opener-policy"]).toBe("same-origin-allow-popups");
   await expect.poll(() => page.evaluate(() =>

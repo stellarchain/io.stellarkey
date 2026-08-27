@@ -14,20 +14,20 @@ function pngInfo(path) {
   };
 }
 
-test("Next serves install metadata and an Apple icon through native app routes", async () => {
+test("Next serves static install metadata and an Apple icon through native app routes", () => {
   const logo = readText("src/components/icons.tsx");
   const sourceIcon = readText("src/app/icon.svg");
   const layout = readText("src/app/layout.tsx");
-  const nativeManifestUrl = new URL("../src/app/manifest.ts", import.meta.url);
+  const nativeManifestUrl = new URL("../src/app/manifest.webmanifest", import.meta.url);
 
-  assert.equal(existsSync(nativeManifestUrl), true, "manifest must use Next's metadata route");
+  assert.equal(existsSync(nativeManifestUrl), true, "manifest must be a static metadata file");
+  assert.equal(existsSync(new URL("../src/app/manifest.ts", import.meta.url)), false);
   assert.equal(
     existsSync(new URL("../public/manifest.json", import.meta.url)),
     false,
     "a public manifest must not shadow Next's metadata route",
   );
-  const { default: createManifest } = await import("../src/app/manifest.ts");
-  const manifest = createManifest();
+  const manifest = JSON.parse(readFileSync(nativeManifestUrl, "utf8"));
 
   // This distinctive wallet-pocket path anchors every generated icon to LogoMark artwork.
   const walletPocket = "M7 25C7 22.7909 8.79086 21 11 21H23";
