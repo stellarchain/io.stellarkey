@@ -6,6 +6,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 test("production is deployable as immutable static files without an application server", () => {
   assert.equal(existsSync(new URL("../scripts/generate-static-headers.mjs", import.meta.url)), true);
+  assert.equal(existsSync(new URL("../scripts/generate-service-worker.mjs", import.meta.url)), true);
   assert.equal(existsSync(new URL("../scripts/static-server.mjs", import.meta.url)), true);
   assert.equal(existsSync(new URL("../public/_headers", import.meta.url)), true);
 
