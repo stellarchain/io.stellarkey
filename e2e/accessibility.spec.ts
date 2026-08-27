@@ -96,6 +96,10 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
 
   await clickPrimaryNavigation(page, "Settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  for (const category of ["Recovery", "Device Security", "Signing Security", "Privacy & Feedback"]) {
+    await expect(page.getByRole("heading", { name: category, exact: true })).toBeVisible();
+  }
+  await expect(page.getByText("Security & Backup", { exact: true })).toHaveCount(0);
   await expectAccessibleSurface(page, "settings", browserName);
 
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
