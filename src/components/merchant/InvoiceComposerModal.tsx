@@ -445,7 +445,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
             <button
               type="button"
               onClick={addFreeLine}
-              className="input flex shrink-0 cursor-pointer items-center justify-center gap-1.5 text-[14px] font-medium text-[#0A84FF] transition-colors hover:bg-[rgba(118,118,128,0.28)] sm:w-auto sm:px-4"
+              className="input flex shrink-0 cursor-pointer items-center justify-center gap-1.5 text-[14px] font-medium text-[#64D2FF] transition-colors hover:bg-[rgba(118,118,128,0.28)] sm:w-auto sm:px-4"
             >
               <IconPlus size={14} /> Free-text line
             </button>

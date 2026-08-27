@@ -538,7 +538,7 @@ export function Select({
                 </>
               )
             ) : (
-              <span className="text-[rgba(235,235,245,0.38)]">{placeholder}</span>
+              <span className="text-neutral-400">{placeholder}</span>
             )}
           </span>
           <IconChevronDown
