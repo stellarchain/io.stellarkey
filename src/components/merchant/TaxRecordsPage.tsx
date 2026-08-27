@@ -4,7 +4,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
-import { exportEncryptedMerchantArchive } from "@/lib/merchant/storage";
 import type { ExportRecord } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Button, IOSBackButton, Notice, Select } from "../ui";
@@ -85,6 +84,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     updateSettings,
     previewReportExport,
     createReportExport,
+    exportEncryptedArchive,
   } = useMerchant();
   const { toast } = useToast();
   const currency = settings.currency;
@@ -154,10 +154,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     return { from: fromAt, to: toAt, basis, format };
   }
 
-  function handleExport() {
+  async function handleExport() {
     try {
       triggerHaptic("medium");
-      const { file } = createReportExport(reportInput());
+      const { file } = await createReportExport(reportInput());
       const blob = new Blob([file.contents], { type: file.mimeType });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -173,8 +173,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     }
   }
 
-  function handleEncryptedArchive() {
-    const archive = exportEncryptedMerchantArchive();
+  async function handleEncryptedArchive() {
+    const archive = await exportEncryptedArchive();
     if (!archive) {
       toast("No encrypted merchant archive is available yet.", "error");
       return;

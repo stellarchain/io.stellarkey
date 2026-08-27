@@ -156,9 +156,9 @@ function CustomerDetail({
   const full = loyalty !== null && loyalty.stamps >= loyalty.target;
   const noteDirty = note.trim() !== (customer.note ?? "").trim();
 
-  function redeem() {
+  async function redeem() {
     try {
-      redeemLoyaltyReward(customer.address);
+      await redeemLoyaltyReward(customer.address);
       triggerHaptic("success");
       toast("Reward redeemed and added to the loyalty audit.", "success");
     } catch (error) {
@@ -167,9 +167,9 @@ function CustomerDetail({
     }
   }
 
-  function startCard() {
+  async function startCard() {
     try {
-      startLoyaltyCard(customer.address, 10);
+      await startLoyaltyCard(customer.address, 10);
       triggerHaptic("success");
       toast("Loyalty card opened. New eligible payments earn one stamp.", "success");
     } catch (error) {
@@ -178,9 +178,9 @@ function CustomerDetail({
     }
   }
 
-  function saveNote() {
+  async function saveNote() {
     try {
-      updateCustomerNote(customer.address, note);
+      await updateCustomerNote(customer.address, note);
       triggerHaptic("success");
       toast("Customer note saved on this device.", "success");
     } catch (error) {
@@ -206,11 +206,16 @@ function CustomerDetail({
     }
   }
 
-  function forget() {
+  async function forget() {
     triggerHaptic("warning");
-    forgetCustomer(customer.address);
-    toast("Local customer record forgotten. Ledger payments are unchanged.", "info");
-    onClose();
+    try {
+      await forgetCustomer(customer.address);
+      toast("Local customer record forgotten. Ledger payments are unchanged.", "info");
+      onClose();
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The customer could not be forgotten.", "error");
+    }
   }
 
   /*

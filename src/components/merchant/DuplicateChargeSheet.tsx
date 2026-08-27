@@ -134,12 +134,12 @@ export function DuplicateChargeSheet({
     }
   }
 
-  function dismiss(): void {
+  async function dismiss(): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError("");
     try {
-      dismissUnmatched(resolvedPaymentId);
+      await dismissUnmatched(resolvedPaymentId);
       toast("Duplicate payment dismissed with a staff audit record");
       triggerHaptic("warning");
       resetAndClose();

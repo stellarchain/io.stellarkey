@@ -50,6 +50,7 @@ import {
   type InitializeOptions,
   type VaultRestoreResult,
 } from "@/lib/vault";
+import { getMerchantRepository } from "@/lib/merchant/repository";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
@@ -215,7 +216,7 @@ interface WalletContextValue {
   completeSetup: () => void;
   unlock: (password: string) => Promise<void>;
   lock: () => void;
-  resetWallet: () => void;
+  resetWallet: () => Promise<void>;
   restoreDeletedWallet: (password: string) => Promise<void>;
   /** Replace the entire wallet from a backup file; wallet returns to locked state */
   restoreWalletFromBackup: (json: string, password?: string) => Promise<VaultRestoreResult>;
@@ -1109,8 +1110,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     lockVaultAndReset();
   }, [lockVaultAndReset]);
 
-  const resetWallet = useCallback((notifyPeers = true) => {
+  const resetWallet = useCallback(async (notifyPeers = true): Promise<void> => {
     invalidateTrackingTasks();
+    if (typeof indexedDB !== "undefined") await getMerchantRepository().clear();
     wipeVault();
     clearDurableMergeReconciliations(
       window.localStorage,
@@ -1140,7 +1142,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const coordination = openWalletCoordination(tabSenderId, (signal) => {
       if (signal.type === "wallet-reset") {
-        resetWallet(false);
+        void resetWallet(false);
       } else if (phase === "unlocked") {
         lockVaultAndReset(false);
       } else {

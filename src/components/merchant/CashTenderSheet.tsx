@@ -180,9 +180,9 @@ function CashTenderSheetInner({
     toast(error instanceof Error ? error.message : "This tender could not be saved.", "error");
   }
 
-  function takeCash() {
+  async function takeCash() {
     try {
-      const order = settleCash(receivedMinor);
+      const order = await settleCash(receivedMinor);
       finish(
         { order, charge: null },
         changeMinor > 0
@@ -195,9 +195,9 @@ function CashTenderSheetInner({
     }
   }
 
-  function takeCard() {
+  async function takeCard() {
     try {
-      const order = settleCard(cardReference);
+      const order = await settleCard(cardReference);
       finish(
         { order, charge: null },
         `Card sale saved${cardReference.trim() ? ` · ${cardReference.trim()}` : ""}.`,
@@ -208,10 +208,10 @@ function CashTenderSheetInner({
     }
   }
 
-  function takeSplit() {
+  async function takeSplit() {
     if (firstMinor === null) return;
     try {
-      const outcome = startSplitCharge({
+      const outcome = await startSplitCharge({
         firstKind: firstLeg,
         secondKind: secondLeg,
         firstMinor,

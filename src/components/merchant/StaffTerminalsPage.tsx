@@ -275,9 +275,9 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
             member={editing}
             currency={currency}
             onCancel={() => setEditingId(null)}
-            onSave={(edit) => {
+            onSave={async (edit) => {
               try {
-                updateStaff(editing.id, edit);
+                await updateStaff(editing.id, edit);
                 triggerHaptic("success");
                 setEditingId(null);
                 toast(`${edit.name.trim()}'s staff access was saved on this device.`, "success");

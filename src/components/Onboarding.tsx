@@ -553,8 +553,8 @@ export function Onboarding() {
         eyebrow="Create Wallet"
         title="Back up your recovery phrase"
         subtitle="The only way to recover this wallet. Write the words down in order and keep them offline."
-        onBack={() => {
-          resetWallet();
+        onBack={async () => {
+          await resetWallet();
           setStep("choose");
           setRevealed(null);
           setSaved(false);

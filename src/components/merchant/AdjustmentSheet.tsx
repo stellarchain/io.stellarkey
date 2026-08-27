@@ -222,13 +222,13 @@ function AdjustmentSheetInner({
       minor: after.taxByRate[rate.id],
     }));
 
-  function apply() {
+  async function apply() {
     try {
       const finalized = kind === "discount"
-        ? applyAdjustment({ lineId, amountMinor, reasonCode: reason })
+        ? await applyAdjustment({ lineId, amountMinor, reasonCode: reason })
         : kind === "comp"
-          ? compLine(lineId, reason)
-          : voidLine(lineId, reason);
+          ? await compLine(lineId, reason)
+          : await voidLine(lineId, reason);
       triggerHaptic(kind === "void" ? "warning" : "success");
       toast(
         `${kind === "discount" ? "Discount" : kind === "comp" ? "Comp" : "Void"} saved · ${reason}.`,

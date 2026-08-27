@@ -83,7 +83,10 @@ test("watcher leases elect one tab and transfer after expiry without Web Locks",
 test("the merchant provider reloads revisions and leases Horizon polling", () => {
   const hook = readFileSync(new URL("../src/hooks/useMerchant.tsx", import.meta.url), "utf8");
   assert.match(hook, /openMerchantRevisionChannel/);
-  assert.match(hook, /window\.addEventListener\("storage"/);
+  assert.match(hook, /getMerchantRepository/);
+  assert.match(hook, /repositoryRef\.current\.commit/);
+  assert.match(hook, /requestedRevision/);
+  assert.doesNotMatch(hook, /window\.addEventListener\("storage"/);
   assert.match(hook, /prepareMerchantCommit/);
   assert.match(hook, /claimWatcherLease/);
   assert.match(hook, /releaseWatcherLease/);

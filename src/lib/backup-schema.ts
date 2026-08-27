@@ -1,6 +1,7 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import type { EncryptedPayload } from "./crypto";
 import type { StoredAccount, VaultFile } from "./types";
+import { isEncryptedMerchantEnvelope } from "./merchant/crypto";
 
 export interface BackupSettings {
   network: "testnet" | "mainnet";
@@ -142,6 +143,13 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
     typeof value.merchantStore !== "string"
   ) {
     return null;
+  }
+  if (typeof value.merchantStore === "string") {
+    try {
+      if (!isEncryptedMerchantEnvelope(JSON.parse(value.merchantStore))) return null;
+    } catch {
+      return null;
+    }
   }
   return {
     exportedAt: value.exportedAt,

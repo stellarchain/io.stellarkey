@@ -181,11 +181,11 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
   const canExport = Boolean(activeStaff?.permissions.exportRecords);
   const canOperateShift = Boolean(activeStaff?.permissions.openDrawer);
 
-  function submitOpen() {
+  async function submitOpen() {
     const floatMinor = parseAmount(draft);
     if (floatMinor === null) return;
     try {
-      const shift = openShift(floatMinor);
+      const shift = await openShift(floatMinor);
       triggerHaptic("success");
       toast(`Shift ${shift.number} opened on ${shift.terminalName}.`, "success");
       setOpening(false);
@@ -198,11 +198,11 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
     }
   }
 
-  function submitClose() {
+  async function submitClose() {
     const countedMinor = parseAmount(draft);
     if (countedMinor === null) return;
     try {
-      const closed = closeShift(countedMinor);
+      const closed = await closeShift(countedMinor);
       triggerHaptic("success");
       setZReport(closed);
       setStep("report");

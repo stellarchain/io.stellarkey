@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Modal, ModalHeader } from "./ui";
@@ -12,6 +13,7 @@ export function ResetWalletModal({
   onClose: () => void;
 }) {
   const { resetWallet } = useWallet();
+  const [error, setError] = useState<string | null>(null);
   if (!open) return null;
 
   return (
@@ -34,15 +36,21 @@ export function ResetWalletModal({
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
+            onClick={async () => {
               triggerHaptic("error");
-              onClose();
-              resetWallet();
+              setError(null);
+              try {
+                await resetWallet();
+                onClose();
+              } catch (caught) {
+                setError(caught instanceof Error ? caught.message : "Wallet data could not be erased.");
+              }
             }}
           >
             Erase Everything
           </Button>
         </div>
+        {error && <p className="mt-3 text-[12.5px] text-[#FF453A]">{error}</p>}
       </div>
     </Modal>
   );

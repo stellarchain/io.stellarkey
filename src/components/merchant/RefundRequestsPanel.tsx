@@ -70,7 +70,7 @@ export function RefundRequestsPanel({
           confirmed ? "success" : "info",
         );
       } else {
-        declineRefundRequest(request.id);
+        await declineRefundRequest(request.id);
         triggerHaptic("warning");
         toast(`Declined refund request for order #${request.orderNumber}`, "info");
       }

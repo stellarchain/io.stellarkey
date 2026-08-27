@@ -114,7 +114,7 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
     triggerHaptic("error");
   }
 
-  function handleSave() {
+  async function handleSave() {
     const trimmedName = name.trim();
     if (!trimmedName) {
       fail("Give the item a name. It is what staff tap on the till.");
@@ -177,15 +177,25 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
       sortIndex: item?.sortIndex ?? nextSortIndex,
     };
 
-    upsertItem(next);
+    try {
+      await upsertItem(next);
+    } catch (caught) {
+      fail(caught instanceof Error ? caught.message : "The item could not be saved.");
+      return;
+    }
     triggerHaptic("success");
     toast(isEdit ? `${next.name} updated` : `${next.name} added to the catalogue`, "success");
     onClose();
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!item) return;
-    removeItem(item.id);
+    try {
+      await removeItem(item.id);
+    } catch (caught) {
+      fail(caught instanceof Error ? caught.message : "The item could not be removed.");
+      return;
+    }
     triggerHaptic("success");
     toast(`${item.name} removed from the catalogue`, "info");
     onClose();

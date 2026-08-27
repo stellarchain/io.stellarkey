@@ -47,9 +47,9 @@ test("merchant records are authenticated and absent from stored plaintext", asyn
 });
 
 test("tax records exposes the standalone encrypted operational archive", () => {
-  const storage = readFileSync(new URL("../src/lib/merchant/storage.ts", import.meta.url), "utf8");
+  const repository = readFileSync(new URL("../src/lib/merchant/repository.ts", import.meta.url), "utf8");
   const page = readFileSync(new URL("../src/components/merchant/TaxRecordsPage.tsx", import.meta.url), "utf8");
-  assert.match(storage, /exportEncryptedMerchantArchive/);
+  assert.match(repository, /exportEncryptedArchive/);
   assert.match(page, /Encrypted archive/);
-  assert.match(page, /exportEncryptedMerchantArchive/);
+  assert.match(page, /exportEncryptedArchive/);
 });

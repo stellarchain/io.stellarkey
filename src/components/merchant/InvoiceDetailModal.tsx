@@ -313,10 +313,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     shopName,
   ]);
 
-  function handleIssue() {
+  async function handleIssue() {
     setActionError("");
     try {
-      issueInvoice(invoice.id);
+      await issueInvoice(invoice.id);
       triggerHaptic("success");
       toast(`${invoice.number} issued with locked asset quotes`, "success");
     } catch (error) {
@@ -325,11 +325,11 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     }
   }
 
-  function handleManualPayment() {
+  async function handleManualPayment() {
     setActionError("");
     try {
       const amountMinor = toMinor(manualAmount);
-      recordManualInvoicePayment({
+      await recordManualInvoicePayment({
         invoiceId: invoice.id,
         amountMinor,
         note: manualNote,
@@ -344,10 +344,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     }
   }
 
-  function handleVoid() {
+  async function handleVoid() {
     setActionError("");
     try {
-      voidInvoice(invoice.id, voidReason);
+      await voidInvoice(invoice.id, voidReason);
       triggerHaptic("warning");
       toast(`${invoice.number} voided with an audit reason`, "success");
       setConfirmingVoid(false);
@@ -357,10 +357,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     }
   }
 
-  function handleDuplicate() {
+  async function handleDuplicate() {
     setActionError("");
     try {
-      const duplicate = duplicateInvoice(invoice.id);
+      const duplicate = await duplicateInvoice(invoice.id);
       triggerHaptic("success");
       toast(`${duplicate.number} saved as a new draft`, "success");
       onClose();

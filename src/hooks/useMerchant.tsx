@@ -35,17 +35,14 @@ import {
   unitPriceE6,
 } from "@/lib/merchant/money";
 import {
-  clearMerchantStore,
-  loadMerchantStoreResult,
-  MERCHANT_STORAGE_KEY,
-  prune as pruneMerchantStore,
-  saveMerchantStore,
-} from "@/lib/merchant/storage";
-import {
-  commitMerchantUpdate,
   isMerchantStorageError,
   MerchantStorageError,
 } from "@/lib/merchant/commit";
+import { prune as pruneMerchantStore } from "@/lib/merchant/storage";
+import {
+  getMerchantRepository,
+  MerchantRepositoryConflictError,
+} from "@/lib/merchant/repository";
 import {
   claimWatcherLease,
   createMerchantWriterId,
@@ -58,6 +55,11 @@ import {
   type MerchantRevisionChannel,
 } from "@/lib/merchant/coordination";
 import type { StorageIssue } from "@/lib/storage-load";
+import {
+  inspectStorageHealth,
+  requestPersistentStorage as requestBrowserPersistentStorage,
+  type StorageHealth,
+} from "@/lib/storage-health";
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
 import {
@@ -269,16 +271,19 @@ interface MerchantContextValue {
   ready: boolean;
   storageIssue: StorageIssue | null;
   storageError: string | null;
+  storageHealth: StorageHealth | null;
+  requestPersistentStorage: () => Promise<boolean>;
+  exportEncryptedArchive: () => Promise<string | null>;
   exportRecoveryData: () => string | null;
-  resetRecoveryData: () => void;
+  resetRecoveryData: () => Promise<void>;
   online: boolean;
   enabled: boolean;
   configured: boolean;
-  setEnabled: (on: boolean) => void;
+  setEnabled: (on: boolean) => Promise<void>;
   settings: MerchantSettings;
   tillTextSize: MerchantStore["tillTextSize"];
-  setTillTextSize: (size: MerchantStore["tillTextSize"]) => void;
-  updateSettings: (patch: Partial<MerchantSettings>) => void;
+  setTillTextSize: (size: MerchantStore["tillTextSize"]) => Promise<void>;
+  updateSettings: (patch: Partial<MerchantSettings>) => Promise<void>;
   completeSetup: (
     input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string },
   ) => Promise<void>;
@@ -293,13 +298,13 @@ interface MerchantContextValue {
   updateStaff: (
     memberId: string,
     patch: Partial<Pick<StaffMember, "name" | "role" | "permissions" | "active">>,
-  ) => void;
+  ) => Promise<void>;
   resetStaffPin: (memberId: string, pin: string) => Promise<void>;
 
   catalogue: CatalogueItem[];
   modifierGroups: ModifierGroup[];
-  upsertItem: (item: CatalogueItem) => void;
-  removeItem: (id: string) => void;
+  upsertItem: (item: CatalogueItem) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
 
   ticket: Ticket;
   ticketTotals: OrderTotals;
@@ -310,16 +315,16 @@ interface MerchantContextValue {
   removeLine: (lineId: string) => void;
   clearTicket: () => void;
 
-  settleCash: (receivedMinor: Minor) => Order;
-  settleCard: (externalReference?: string) => Order;
-  startSplitCharge: (input: MerchantSplitTenderInput) => MerchantTenderOutcome;
+  settleCash: (receivedMinor: Minor) => Promise<Order>;
+  settleCard: (externalReference?: string) => Promise<Order>;
+  startSplitCharge: (input: MerchantSplitTenderInput) => Promise<MerchantTenderOutcome>;
   applyAdjustment: (input: {
     lineId: string | null;
     amountMinor: Minor;
     reasonCode: string;
-  }) => Order | null;
-  voidLine: (lineId: string | null, reasonCode: string) => Order | null;
-  compLine: (lineId: string | null, reasonCode: string) => Order | null;
+  }) => Promise<Order | null>;
+  voidLine: (lineId: string | null, reasonCode: string) => Promise<Order | null>;
+  compLine: (lineId: string | null, reasonCode: string) => Promise<Order | null>;
 
   orders: Order[];
   charges: Charge[];
@@ -339,7 +344,7 @@ interface MerchantContextValue {
     lines: InvoiceLine[];
     dueAt?: number | null;
     note?: string | null;
-  }) => Invoice;
+  }) => Promise<Invoice>;
   updateInvoiceDraft: (input: {
     invoiceId: string;
     customerName: string;
@@ -347,21 +352,21 @@ interface MerchantContextValue {
     lines: InvoiceLine[];
     dueAt?: number | null;
     note?: string | null;
-  }) => Invoice;
-  issueInvoice: (invoiceId: string) => Invoice;
+  }) => Promise<Invoice>;
+  issueInvoice: (invoiceId: string) => Promise<Invoice>;
   recordManualInvoicePayment: (input: {
     invoiceId: string;
     amountMinor: Minor;
     note?: string | null;
-  }) => Invoice;
-  voidInvoice: (invoiceId: string, reason: string) => Invoice;
-  duplicateInvoice: (invoiceId: string) => Invoice;
+  }) => Promise<Invoice>;
+  voidInvoice: (invoiceId: string, reason: string) => Promise<Invoice>;
+  duplicateInvoice: (invoiceId: string) => Promise<Invoice>;
   invoicePayUriFor: (invoice: Invoice, asset: AcceptedAsset) => string | null;
 
   counterCodes: CounterCode[];
   counterPayments: CounterPayment[];
   counterCodeBlockedReason: string | null;
-  createCounterCode: (input: MerchantCounterCodeDraft) => CounterCode;
+  createCounterCode: (input: MerchantCounterCodeDraft) => Promise<CounterCode>;
   updateCounterCode: (input: {
     codeId: string;
     title: string;
@@ -369,8 +374,8 @@ interface MerchantContextValue {
     staffId: string | null;
     expiresAt: number | null;
     active: boolean;
-  }) => CounterCode;
-  setCounterCodeActive: (codeId: string, active: boolean) => CounterCode;
+  }) => Promise<CounterCode>;
+  setCounterCodeActive: (codeId: string, active: boolean) => Promise<CounterCode>;
   counterCodePayUriFor: (code: CounterCode, asset: AcceptedAsset) => string | null;
   counterCodePreviewUri: (input: {
     kind: CounterCodeKind;
@@ -382,10 +387,10 @@ interface MerchantContextValue {
 
   customers: CustomerRecord[];
   customerHistory: (address: string) => CustomerHistoryEntry[];
-  updateCustomerNote: (address: string, note: string) => CustomerRecord;
-  startLoyaltyCard: (address: string, target?: number) => CustomerRecord;
-  redeemLoyaltyReward: (address: string) => CustomerRecord;
-  forgetCustomer: (address: string) => void;
+  updateCustomerNote: (address: string, note: string) => Promise<CustomerRecord>;
+  startLoyaltyCard: (address: string, target?: number) => Promise<CustomerRecord>;
+  redeemLoyaltyReward: (address: string) => Promise<CustomerRecord>;
+  forgetCustomer: (address: string) => Promise<void>;
 
   taxPeriods: TaxPeriod[];
   exportRecords: ExportRecord[];
@@ -400,19 +405,19 @@ interface MerchantContextValue {
     to: number;
     basis: ReportBasis;
     format: ReportFormat;
-  }) => { file: ReportFile; record: ExportRecord };
+  }) => Promise<{ file: ReportFile; record: ExportRecord }>;
 
   settlementRule: SettlementRule;
   settlementHandoffs: SettlementHandoffs;
-  updateSettlementRule: (patch: Partial<SettlementRule>) => void;
+  updateSettlementRule: (patch: Partial<SettlementRule>) => Promise<void>;
 
   shifts: Shift[];
   activeShift: Shift | null;
   shiftReport: ShiftReport | null;
   shiftBlockers: ReturnType<typeof unresolvedShiftFlows>;
   paymentBlockedReason: string | null;
-  openShift: (floatMinor: Minor) => Shift;
-  closeShift: (countedMinor: Minor) => ShiftReport;
+  openShift: (floatMinor: Minor) => Promise<Shift>;
+  closeShift: (countedMinor: Minor) => Promise<ShiftReport>;
 
   /** Assets that both the shop accepts and the app can price right now. */
   quotableAssets: AcceptedAsset[];
@@ -421,13 +426,13 @@ interface MerchantContextValue {
 
   activeCharge: Charge | null;
   openCharge: (id: string) => void;
-  createChargeFromTicket: (tipMinor?: Minor) => Charge;
-  voidCharge: (id: string) => void;
+  createChargeFromTicket: (tipMinor?: Minor) => Promise<Charge>;
+  voidCharge: (id: string) => Promise<void>;
   closeCharge: () => void;
   payUriFor: (charge: Charge, asset: AcceptedAsset) => string | null;
   /** File a tray payment against an order by hand. */
-  attachPayment: (paymentId: string, chargeId: string) => void;
-  dismissUnmatched: (paymentId: string) => void;
+  attachPayment: (paymentId: string, chargeId: string) => Promise<void>;
+  dismissUnmatched: (paymentId: string) => Promise<void>;
 
   refundOrder: (params: {
     orderId: string;
@@ -443,7 +448,7 @@ interface MerchantContextValue {
   }) => Promise<MerchantRefundOutcome>;
   submitPaymentRefund: (paymentId: string, note?: string) => Promise<MerchantRefundOutcome>;
   approveRefundRequest: (requestId: string) => Promise<Refund>;
-  declineRefundRequest: (requestId: string) => void;
+  declineRefundRequest: (requestId: string) => Promise<void>;
 
   watching: boolean;
   watchedLedger: number | null;
@@ -525,6 +530,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [storageIssue, setStorageIssue] = useState<StorageIssue | null>(null);
   const storageIssueRef = useRef<StorageIssue | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [storageHealth, setStorageHealth] = useState<StorageHealth | null>(null);
   const [ticket, setTicket] = useState<Ticket>({
     lines: [],
     discountMinor: 0,
@@ -545,6 +551,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
+  const repositoryRef = useRef(getMerchantRepository());
+  const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -575,7 +583,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const reloadExternalStore = useCallback(
-    (allowAbsent: boolean) => {
+    async (allowAbsent: boolean) => {
       let key: Uint8Array;
       try {
         key = readMerchantKey();
@@ -583,7 +591,17 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         if (isMerchantStorageError(error) && error.code === "vault_locked") return;
         throw error;
       }
-      const result = loadMerchantStoreResult(key);
+      let result;
+      try {
+        result = await repositoryRef.current.load(key);
+      } catch (error) {
+        setStorageError(
+          error instanceof Error
+            ? error.message
+            : "Merchant storage could not be opened on this device.",
+        );
+        return;
+      }
       if (result.kind === "ready") {
         const newer = newerMerchantStore(storeRef.current, result.value);
         if (newer) installLoadedStore(newer);
@@ -593,7 +611,6 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         if (allowAbsent) installLoadedStore(emptyStore());
         return;
       }
-      if (result.kind === "locked") return;
       storageIssueRef.current = result;
       setStorageIssue(result);
     },
@@ -626,7 +643,21 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         }
         throw error;
       }
-      const result = loadMerchantStoreResult(key);
+      let result;
+      try {
+        result = await repositoryRef.current.load(key);
+      } catch (error) {
+        if (alive) {
+          setStorageError(
+            error instanceof Error
+              ? error.message
+              : "Merchant storage could not be opened on this device.",
+          );
+          setReady(true);
+        }
+        return;
+      }
+      if (!alive) return;
       const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
       const loaded = result.kind === "ready" ? result.value : emptyStore();
       if (issue) {
@@ -641,6 +672,23 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       alive = false;
     };
   }, [installLoadedStore, phase, readMerchantKey]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    void inspectStorageHealth().then((health) => {
+      if (alive) setStorageHealth(health);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ready, store.revision]);
+
+  const requestPersistentStorage = useCallback(async (): Promise<boolean> => {
+    const granted = await requestBrowserPersistentStorage();
+    setStorageHealth(await inspectStorageHealth());
+    return granted;
+  }, []);
 
   useEffect(() => {
     if (!ready || phase !== "unlocked") {
@@ -679,23 +727,19 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    const onRevision = () => reloadExternalStore(false);
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === MERCHANT_STORAGE_KEY) reloadExternalStore(event.newValue === null);
-    };
+    const onRevision = () => void reloadExternalStore(true);
     const channel = openMerchantRevisionChannel(onRevision);
     revisionChannelRef.current = channel;
-    window.addEventListener("storage", onStorage);
     return () => {
       revisionChannelRef.current = null;
       channel.close();
-      window.removeEventListener("storage", onStorage);
     };
   }, [ready, reloadExternalStore]);
 
   const commitStore = useCallback(
-    (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): void => {
-      try {
+    (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): Promise<void> => {
+      const requestedRevision = storeRef.current.revision;
+      const operation = commitQueueRef.current.then(async () => {
         if (
           merchantWriterLockRef.current === "pending" &&
           "locks" in navigator &&
@@ -707,18 +751,19 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           merchantWriterLockRef.current = "fallback";
         }
         const current = storeRef.current;
+        if (typeof update !== "function" && current.revision !== requestedRevision) {
+          throw new MerchantStorageError("conflict");
+        }
         if (storageIssueRef.current) {
-          commitMerchantUpdate({
-            current,
-            update,
-            locked: true,
-            save: saveMerchantStore,
-            publish: () => {},
-          });
-          return;
+          throw new MerchantStorageError("recovery_required");
         }
         const key = readMerchantKey();
-        const persistedResult = loadMerchantStoreResult(key);
+        let persistedResult;
+        try {
+          persistedResult = await repositoryRef.current.load(key);
+        } catch {
+          throw new MerchantStorageError("write_failed");
+        }
         if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
           storageIssueRef.current = persistedResult;
           setStorageIssue(persistedResult);
@@ -745,29 +790,38 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           }
           throw new MerchantStorageError("conflict");
         }
-        const committed = commitMerchantUpdate({
-          current,
-          update: coordinated,
-          save: (next) => saveMerchantStore(next, key),
-          publish: (next) => {
-            storeRef.current = next;
-            setStore(next);
-          },
-        });
+        let committed: MerchantStore;
+        try {
+          committed = await repositoryRef.current.commit(
+            coordinated,
+            key,
+            persistedResult.kind === "ready" ? persistedResult.value.revision : null,
+          );
+        } catch (error) {
+          if (error instanceof MerchantRepositoryConflictError) {
+            await reloadExternalStore(false);
+            throw new MerchantStorageError("conflict");
+          }
+          throw new MerchantStorageError("write_failed");
+        }
+        storeRef.current = committed;
+        setStore(committed);
         revisionChannelRef.current?.postRevision(committed);
         setStorageError(null);
-      } catch (error) {
+      }).catch((error: unknown) => {
         if (isMerchantStorageError(error)) setStorageError(error.message);
         throw error;
-      }
+      });
+      commitQueueRef.current = operation.catch(() => {});
+      return operation;
     },
-    [installLoadedStore, readMerchantKey, writerId],
+    [installLoadedStore, readMerchantKey, reloadExternalStore, writerId],
   );
 
   const persist = useCallback(
-    (update: MerchantStore | ((current: MerchantStore) => MerchantStore)) => {
+    async (update: MerchantStore | ((current: MerchantStore) => MerchantStore)) => {
       try {
-        commitStore(update);
+        await commitStore(update);
       } catch (error) {
         if (!isMerchantStorageError(error)) throw error;
       }
@@ -776,14 +830,26 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
-  const resetRecoveryData = useCallback(() => {
-    clearMerchantStore();
+  const exportEncryptedArchive = useCallback(
+    () => repositoryRef.current.exportEncryptedArchive(),
+    [],
+  );
+  const resetRecoveryData = useCallback(async () => {
+    try {
+      await repositoryRef.current.clear();
+    } catch (error) {
+      setStorageError(
+        error instanceof Error ? error.message : "Merchant recovery data could not be erased.",
+      );
+      return;
+    }
     const fresh = emptyStore();
     storageIssueRef.current = null;
     setStorageIssue(null);
     setStorageError(null);
     storeRef.current = fresh;
     setStore(fresh);
+    revisionChannelRef.current?.postRevision(fresh);
   }, []);
 
   // The wallet owns canonical-hash tracking. Merchant state mirrors a final
@@ -809,12 +875,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       }
     }
     if (next === current) return;
-    try {
-      commitStore(next);
-    } catch (error) {
-      if (!isMerchantStorageError(error)) throw error;
-    }
-  }, [commitStore, ready, store.refunds, submissionStatus]);
+    void persist(next);
+  }, [persist, ready, store.refunds, submissionStatus]);
 
   const settings = store.settings;
   const enabled = settings.enabled;
@@ -830,7 +892,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         { ...details, pinDigest },
         { now, ownerId: uid("staff") },
       );
-      commitStore(next);
+      await commitStore(next);
       setStaffSessionId(next.activeStaffId);
     },
     [commitStore],
@@ -871,12 +933,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createReportExport = useCallback(
-    (input: {
+    async (input: {
       from: number;
       to: number;
       basis: ReportBasis;
       format: ReportFormat;
-    }): { file: ReportFile; record: ExportRecord } => {
+    }): Promise<{ file: ReportFile; record: ExportRecord }> => {
       const current = storeRef.current;
       const actor = current.staff.find(
         (member) => member.id === staffSessionId && member.id === current.activeStaffId,
@@ -889,15 +951,15 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         network,
         now: Date.now(),
       });
-      commitStore(created.store);
+      await commitStore(created.store);
       return { file: created.file, record: created.record };
     },
     [commitStore, network, staffSessionId],
   );
 
   const updateSettlementRule = useCallback(
-    (patch: Partial<SettlementRule>): void => {
-      commitStore(updatePersistedSettlementRule(storeRef.current, patch));
+    async (patch: Partial<SettlementRule>): Promise<void> => {
+      await commitStore(updatePersistedSettlementRule(storeRef.current, patch));
     },
     [commitStore],
   );
@@ -906,7 +968,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     const current = storeRef.current;
     const next = syncCustomerContacts(current, contacts);
-    if (next !== current) persist(next);
+    if (next !== current) void persist(next);
   }, [contacts, persist, ready]);
 
   const activeShift = useMemo(
@@ -932,7 +994,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [activeShift, store, ticket.lines.length],
   );
 
-  const openShift = useCallback((floatMinor: Minor): Shift => {
+  const openShift = useCallback(async (floatMinor: Minor): Promise<Shift> => {
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -949,11 +1011,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       floatMinor,
       now: Date.now(),
     });
-    commitStore(opened.store);
+    await commitStore(opened.store);
     return opened.shift;
   }, [commitStore, network, staffSessionId]);
 
-  const closeShift = useCallback((countedMinor: Minor): ShiftReport => {
+  const closeShift = useCallback(async (countedMinor: Minor): Promise<ShiftReport> => {
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -973,7 +1035,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       countedMinor,
       now: Date.now(),
     });
-    commitStore(closed.store);
+    await commitStore(closed.store);
     return closed.report;
   }, [commitStore, staffSessionId, ticket.lines.length]);
 
@@ -997,7 +1059,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           : "That PIN is not correct.",
       );
     }
-    commitStore({ ...current, activeStaffId: member.id });
+    await commitStore({ ...current, activeStaffId: member.id });
     setStaffSessionId(member.id);
   }, [commitStore]);
 
@@ -1050,23 +1112,23 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       pinDigest,
       now: Date.now(),
     });
-    commitStore(next);
+    await commitStore(next);
   }, [commitStore, staffSessionId]);
 
-  const updateStaff = useCallback((
+  const updateStaff = useCallback(async (
     memberId: string,
     patch: Partial<Pick<StaffMember, "name" | "role" | "permissions" | "active">>,
-  ): void => {
+  ): Promise<void> => {
     const actorId = staffSessionId;
     if (!actorId) throw new Error("Choose an owner before changing staff.");
-    commitStore(updateStaffMember(storeRef.current, actorId, memberId, patch));
+    await commitStore(updateStaffMember(storeRef.current, actorId, memberId, patch));
   }, [commitStore, staffSessionId]);
 
   const resetStaffPin = useCallback(async (memberId: string, pin: string): Promise<void> => {
     const actorId = staffSessionId;
     if (!actorId) throw new Error("Choose an owner before resetting a PIN.");
     const pinDigest = await createMerchantPinCredential(pin);
-    commitStore(updateStaffMember(storeRef.current, actorId, memberId, {
+    await commitStore(updateStaffMember(storeRef.current, actorId, memberId, {
       pinDigest,
       pinSetAt: Date.now(),
     }));
@@ -1386,13 +1448,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return actor;
   }, [staffSessionId]);
 
-  const createInvoiceDraft = useCallback((input: {
+  const createInvoiceDraft = useCallback(async (input: {
     customerName: string;
     customerEmail?: string | null;
     lines: InvoiceLine[];
     dueAt?: number | null;
     note?: string | null;
-  }): Invoice => {
+  }): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const created = createPersistedInvoiceDraft(current, {
@@ -1402,18 +1464,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       network,
       now: Date.now(),
     });
-    commitStore(created.store);
+    await commitStore(created.store);
     return created.invoice;
   }, [commitStore, network, requireInvoiceActor]);
 
-  const updateInvoiceDraft = useCallback((input: {
+  const updateInvoiceDraft = useCallback(async (input: {
     invoiceId: string;
     customerName: string;
     customerEmail?: string | null;
     lines: InvoiceLine[];
     dueAt?: number | null;
     note?: string | null;
-  }): Invoice => {
+  }): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const updated = updatePersistedInvoiceDraft(current, {
@@ -1422,11 +1484,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       network,
       now: Date.now(),
     });
-    commitStore(updated.store);
+    await commitStore(updated.store);
     return updated.invoice;
   }, [commitStore, network, requireInvoiceActor]);
 
-  const issueInvoice = useCallback((invoiceId: string): Invoice => {
+  const issueInvoice = useCallback(async (invoiceId: string): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const destination = current.settings.receivingPublicKey;
@@ -1449,15 +1511,15 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       quotes,
       now: Date.now(),
     });
-    commitStore(issued.store);
+    await commitStore(issued.store);
     return issued.invoice;
   }, [commitStore, network, quoteInputs, requireInvoiceActor]);
 
-  const recordManualInvoicePayment = useCallback((input: {
+  const recordManualInvoicePayment = useCallback(async (input: {
     invoiceId: string;
     amountMinor: Minor;
     note?: string | null;
-  }): Invoice => {
+  }): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const settled = recordPersistedManualInvoicePayment(current, {
@@ -1466,11 +1528,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       actor,
       now: Date.now(),
     });
-    commitStore(settled.store);
+    await commitStore(settled.store);
     return settled.invoice;
   }, [commitStore, requireInvoiceActor]);
 
-  const voidInvoice = useCallback((invoiceId: string, reason: string): Invoice => {
+  const voidInvoice = useCallback(async (invoiceId: string, reason: string): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const voided = voidPersistedInvoice(current, {
@@ -1479,11 +1541,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       reason,
       now: Date.now(),
     });
-    commitStore(voided.store);
+    await commitStore(voided.store);
     return voided.invoice;
   }, [commitStore, requireInvoiceActor]);
 
-  const duplicateInvoice = useCallback((invoiceId: string): Invoice => {
+  const duplicateInvoice = useCallback(async (invoiceId: string): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const duplicate = duplicatePersistedInvoice(current, {
@@ -1492,7 +1554,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       actor,
       now: Date.now(),
     });
-    commitStore(duplicate.store);
+    await commitStore(duplicate.store);
     return duplicate.invoice;
   }, [commitStore, requireInvoiceActor]);
 
@@ -1510,7 +1572,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return actor;
   }, [staffSessionId]);
 
-  const createCounterCode = useCallback((input: MerchantCounterCodeDraft): CounterCode => {
+  const createCounterCode = useCallback(async (
+    input: MerchantCounterCodeDraft,
+  ): Promise<CounterCode> => {
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const destination = current.settings.receivingPublicKey;
@@ -1544,18 +1608,18 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           active: false,
           now,
         });
-    commitStore(final.store);
+    await commitStore(final.store);
     return final.code;
   }, [commitStore, network, rateFor, requireCounterCodeActor]);
 
-  const updateCounterCode = useCallback((input: {
+  const updateCounterCode = useCallback(async (input: {
     codeId: string;
     title: string;
     suggestedMinor: Minor[];
     staffId: string | null;
     expiresAt: number | null;
     active: boolean;
-  }): CounterCode => {
+  }): Promise<CounterCode> => {
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const now = Date.now();
@@ -1568,11 +1632,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           active: input.active,
           now,
         });
-    commitStore(final.store);
+    await commitStore(final.store);
     return final.code;
   }, [commitStore, requireCounterCodeActor]);
 
-  const setCounterCodeActive = useCallback((codeId: string, active: boolean): CounterCode => {
+  const setCounterCodeActive = useCallback(async (
+    codeId: string,
+    active: boolean,
+  ): Promise<CounterCode> => {
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const changed = setPersistedCounterCodeActive(current, {
@@ -1581,7 +1648,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       active,
       now: Date.now(),
     });
-    commitStore(changed.store);
+    await commitStore(changed.store);
     return changed.code;
   }, [commitStore, requireCounterCodeActor]);
 
@@ -1622,13 +1689,19 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return actor;
   }, [staffSessionId]);
 
-  const updateCustomerNote = useCallback((address: string, note: string): CustomerRecord => {
+  const updateCustomerNote = useCallback(async (
+    address: string,
+    note: string,
+  ): Promise<CustomerRecord> => {
     const next = updatePersistedCustomerNote(storeRef.current, address, note);
-    commitStore(next);
+    await commitStore(next);
     return next.customers.find((customer) => customer.address === address) as CustomerRecord;
   }, [commitStore]);
 
-  const startLoyaltyCard = useCallback((address: string, target = 10): CustomerRecord => {
+  const startLoyaltyCard = useCallback(async (
+    address: string,
+    target = 10,
+  ): Promise<CustomerRecord> => {
     const current = storeRef.current;
     const next = startPersistedLoyaltyCard(current, {
       address,
@@ -1637,11 +1710,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       eventId: uid("loyalty"),
       now: Date.now(),
     });
-    commitStore(next);
+    await commitStore(next);
     return next.customers.find((customer) => customer.address === address) as CustomerRecord;
   }, [commitStore, requireCustomerActor]);
 
-  const redeemLoyaltyReward = useCallback((address: string): CustomerRecord => {
+  const redeemLoyaltyReward = useCallback(async (address: string): Promise<CustomerRecord> => {
     const current = storeRef.current;
     const next = redeemPersistedLoyaltyReward(current, {
       address,
@@ -1649,14 +1722,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       eventId: uid("loyalty"),
       now: Date.now(),
     });
-    commitStore(next);
+    await commitStore(next);
     return next.customers.find((customer) => customer.address === address) as CustomerRecord;
   }, [commitStore, requireCustomerActor]);
 
-  const forgetCustomer = useCallback((address: string): void => {
+  const forgetCustomer = useCallback(async (address: string): Promise<void> => {
     const current = storeRef.current;
     const next = forgetPersistedCustomer(current, address);
-    if (next !== current) commitStore(next);
+    if (next !== current) await commitStore(next);
   }, [commitStore]);
 
   const customerHistory = useCallback(
@@ -1696,7 +1769,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     });
   }, [network, quoteInputs]);
 
-  const settleCash = useCallback((receivedMinor: Minor): Order => {
+  const settleCash = useCallback(async (receivedMinor: Minor): Promise<Order> => {
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -1709,12 +1782,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ticket.adjustments,
       now,
     );
-    commitStore(committed.store);
+    await commitStore(committed.store);
     clearTicket();
     return committed.order;
   }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
 
-  const settleCard = useCallback((externalReference?: string): Order => {
+  const settleCard = useCallback(async (externalReference?: string): Promise<Order> => {
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -1727,12 +1800,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ticket.adjustments,
       now,
     );
-    commitStore(committed.store);
+    await commitStore(committed.store);
     clearTicket();
     return committed.order;
   }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket]);
 
-  const startSplitCharge = useCallback((input: MerchantSplitTenderInput): MerchantTenderOutcome => {
+  const startSplitCharge = useCallback(async (
+    input: MerchantSplitTenderInput,
+  ): Promise<MerchantTenderOutcome> => {
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -1761,14 +1836,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
     if (cryptoIndex < 0) {
       const committed = settleNewOrder(current, order, parts, ticket.adjustments, now);
-      commitStore(committed.store);
+      await commitStore(committed.store);
       clearTicket();
       return { order: committed.order, charge: null };
     }
 
     const awaiting = awaitNewOrder(current, order, parts, ticket.adjustments);
     const charge = cryptoChargeFor(awaiting.order, amounts[cryptoIndex], current, now);
-    commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
+    await commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
     setActiveChargeId(charge.id);
     clearTicket();
     return { order: awaiting.order, charge };
@@ -1781,12 +1856,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     ticket,
   ]);
 
-  const adjustTicket = useCallback((
+  const adjustTicket = useCallback(async (
     kind: AdjustmentKind,
     lineId: string | null,
     amountMinor: Minor,
     reasonCode: string,
-  ): Order | null => {
+  ): Promise<Order | null> => {
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -1810,7 +1885,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (kind === "void" && result.ticket.lines.length === 0) {
       const order = buildTicketOrder(current, ticket, actor, now);
       const committed = voidNewOrder(current, order, adjustments);
-      commitStore(committed.store);
+      await commitStore(committed.store);
       clearTicket();
       return committed.order;
     }
@@ -1819,7 +1894,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const adjustedTicket: Ticket = { ...result.ticket, adjustments };
       const order = buildTicketOrder(current, adjustedTicket, actor, now);
       const committed = settleNewOrder(current, order, [], adjustments, now);
-      commitStore(committed.store);
+      await commitStore(committed.store);
       clearTicket();
       return committed.order;
     }
@@ -1832,7 +1907,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     lineId: string | null;
     amountMinor: Minor;
     reasonCode: string;
-  }): Order | null => adjustTicket(
+  }): Promise<Order | null> => adjustTicket(
     "discount",
     input.lineId,
     input.amountMinor,
@@ -1840,13 +1915,13 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   ), [adjustTicket]);
 
   const voidLine = useCallback(
-    (lineId: string | null, reasonCode: string): Order | null =>
+    (lineId: string | null, reasonCode: string): Promise<Order | null> =>
       adjustTicket("void", lineId, 0, reasonCode),
     [adjustTicket],
   );
 
   const compLine = useCallback(
-    (lineId: string | null, reasonCode: string): Order | null =>
+    (lineId: string | null, reasonCode: string): Promise<Order | null> =>
       adjustTicket("comp", lineId, 0, reasonCode),
     [adjustTicket],
   );
@@ -1859,7 +1934,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
    * visible to this call, and the charge — and therefore the QR the customer
    * scans — would encode the untipped total.
    */
-  const createChargeFromTicket = useCallback((tipMinorOverride?: Minor): Charge => {
+  const createChargeFromTicket = useCallback(async (
+    tipMinorOverride?: Minor,
+  ): Promise<Charge> => {
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -1872,7 +1949,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       current,
       now,
     );
-    commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
+    await commitStore({ ...awaiting.store, charges: [charge, ...awaiting.store.charges] });
     setActiveChargeId(charge.id);
     clearTicket();
     return charge;
@@ -1886,9 +1963,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   ]);
 
   const voidCharge = useCallback(
-    (id: string) => {
+    async (id: string): Promise<void> => {
       const current = storeRef.current;
-      commitStore({
+      await commitStore({
         ...current,
         charges: current.charges.map((charge) =>
           charge.id === id ? { ...charge, status: "voided" } : charge,
@@ -1913,24 +1990,20 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       const current = storeRef.current;
       const stale = current.charges.some((c) => c.status === "awaiting" && now >= c.expiresAt);
       if (!stale) return;
-      try {
-        commitStore({
+      void persist({
           ...current,
           charges: current.charges.map((c) =>
             c.status === "awaiting" && now >= c.expiresAt ? { ...c, status: "expired" as const } : c,
           ),
         });
-      } catch (error) {
-        if (!isMerchantStorageError(error)) throw error;
-      }
     }, 1000);
     return () => clearInterval(timer);
-  }, [commitStore, enabled]);
+  }, [enabled, persist]);
 
   /* ---------------- the watcher ---------------- */
 
   const applyPayments = useCallback(
-    (payments: ObservedPayment[]) => {
+    async (payments: ObservedPayment[]): Promise<void> => {
       if (payments.length === 0) return;
       const current = storeRef.current;
       const invoiceResult = reconcileInvoicePayments(current, {
@@ -1950,7 +2023,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         now: Date.now(),
       });
       const withCustomers = reconcileCustomerSettlements(current, next, { contacts });
-      if (withCustomers !== current) commitStore(withCustomers);
+      if (withCustomers !== current) await commitStore(withCustomers);
     },
     [commitStore, contacts, network, quoteInputs],
   );
@@ -2019,9 +2092,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         cursor: store.cursors[network] ?? null,
       });
       if (result.latestLedger) setWatchedLedger(result.latestLedger);
-      applyPayments(result.payments);
+      await applyPayments(result.payments);
       if (result.cursor) {
-        persist((prev) => ({ ...prev, cursors: { ...prev.cursors, [network]: result.cursor } }));
+        await persist((prev) => ({ ...prev, cursors: { ...prev.cursors, [network]: result.cursor } }));
       }
       setWatchError(null);
     } catch (error) {
@@ -2078,7 +2151,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   /* ---------------- tray ---------------- */
 
   const attachPayment = useCallback(
-    (paymentId: string, chargeId: string) => {
+    async (paymentId: string, chargeId: string): Promise<void> => {
       const current = storeRef.current;
       const actor = requirePaymentActor(current);
       const attached = attachReconciledPayment(current, {
@@ -2087,16 +2160,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         actor,
         now: Date.now(),
       });
-      commitStore(reconcileCustomerSettlements(current, attached, { contacts }));
+      await commitStore(reconcileCustomerSettlements(current, attached, { contacts }));
     },
     [commitStore, contacts, requirePaymentActor],
   );
 
   const dismissUnmatched = useCallback(
-    (paymentId: string) => {
+    async (paymentId: string): Promise<void> => {
       const current = storeRef.current;
       const actor = requirePaymentActor(current);
-      commitStore(dismissReconciledPayment(current, {
+      await commitStore(dismissReconciledPayment(current, {
         paymentId,
         actor,
         now: Date.now(),
@@ -2185,7 +2258,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       };
 
       const latest = storeRef.current;
-      commitStore(recordRefundSubmission(latest, refund));
+      await commitStore(recordRefundSubmission(latest, refund));
       return refund;
     },
     [activeAccount?.publicKey, commitStore, network, send, staffSessionId],
@@ -2213,7 +2286,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       requestedById: member.id,
       now: Date.now(),
     });
-    commitStore(requested.store);
+    await commitStore(requested.store);
     return { kind: "requested", request: requested.request };
   }, [commitStore, refundOrder, staffSessionId]);
 
@@ -2279,7 +2352,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     if (refund.submissionStatus === "failed") {
       // Keep the incoming payment in review: a canonical failure proves no
       // money moved and the operator may safely retry after correcting it.
-      commitStore(recorded);
+      await commitStore(recorded);
       return refund;
     }
     const resolved = markReconciledRefund(recorded, {
@@ -2288,7 +2361,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       actor: member as StaffMember,
       now,
     });
-    commitStore(resolved);
+    await commitStore(resolved);
     return refund;
   }, [activeAccount?.publicKey, commitStore, network, send, staffSessionId]);
 
@@ -2318,7 +2391,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       note,
       now: Date.now(),
     });
-    commitStore(requested.store);
+    await commitStore(requested.store);
     return { kind: "requested", request: requested.request };
   }, [commitStore, refundReconciledPayment, staffSessionId]);
 
@@ -2344,7 +2417,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           note: request.note ?? undefined,
           approvalRequestId: request.id,
         });
-    commitStore(decideRefundRequest(storeRef.current, {
+    await commitStore(decideRefundRequest(storeRef.current, {
       requestId,
       reviewerId,
       decision: "approved",
@@ -2354,10 +2427,10 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     return refund;
   }, [commitStore, refundOrder, refundReconciledPayment, staffSessionId]);
 
-  const declineRefundRequest = useCallback((requestId: string): void => {
+  const declineRefundRequest = useCallback(async (requestId: string): Promise<void> => {
     const current = storeRef.current;
     if (!staffSessionId) throw new Error("Choose a staff member before reviewing refunds.");
-    commitStore(decideRefundRequest(current, {
+    await commitStore(decideRefundRequest(current, {
       requestId,
       reviewerId: staffSessionId,
       decision: "declined",
@@ -2546,13 +2619,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     ready,
     storageIssue,
     storageError,
+    storageHealth,
+    requestPersistentStorage,
+    exportEncryptedArchive,
     exportRecoveryData,
     resetRecoveryData,
     online,
     enabled,
     configured,
     setEnabled: (on) =>
-      persist((prev) =>
+      commitStore((prev) =>
         on && needsMerchantSetup(prev.settings, prev.staff)
           ? prev
           : { ...prev, settings: { ...prev.settings, enabled: on } },
@@ -2581,14 +2657,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     catalogue: store.catalogue,
     modifierGroups: store.modifierGroups,
     upsertItem: (item) =>
-      persist((prev) => ({
+      commitStore((prev) => ({
         ...prev,
         catalogue: prev.catalogue.some((i) => i.id === item.id)
           ? prev.catalogue.map((i) => (i.id === item.id ? item : i))
           : [...prev.catalogue, item],
       })),
     removeItem: (id) =>
-      persist((prev) => ({ ...prev, catalogue: prev.catalogue.filter((i) => i.id !== id) })),
+      commitStore((prev) => ({ ...prev, catalogue: prev.catalogue.filter((i) => i.id !== id) })),
 
     ticket,
     ticketTotals,
@@ -2717,6 +2793,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     chargeBlockedReason,
     clearTicket,
     closeShift,
+    commitStore,
     compLine,
     completeSetup,
     configured,
@@ -2731,6 +2808,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     dismissUnmatched,
     duplicateInvoice,
     enabled,
+    exportEncryptedArchive,
     exportRecoveryData,
     forgetCustomer,
     history,
@@ -2749,6 +2827,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     refundOrder,
     removeLine,
     resetRecoveryData,
+    requestPersistentStorage,
     resetStaffPin,
     runtime,
     setCounterCodeActive,
@@ -2762,6 +2841,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     startLoyaltyCard,
     startSplitCharge,
     storageError,
+    storageHealth,
     storageIssue,
     store,
     submitPaymentRefund,

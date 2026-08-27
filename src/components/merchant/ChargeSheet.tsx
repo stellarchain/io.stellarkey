@@ -362,10 +362,14 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
               <div>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     triggerHaptic("warning");
-                    voidCharge(charge.id);
-                    onClose();
+                    try {
+                      await voidCharge(charge.id);
+                      onClose();
+                    } catch (error) {
+                      toast(error instanceof Error ? error.message : "The charge could not be cancelled.", "error");
+                    }
                   }}
                   className="btn btn-danger w-full"
                 >
