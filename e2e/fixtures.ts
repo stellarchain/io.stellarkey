@@ -155,6 +155,13 @@ export async function installNetworkFixtures(
       return;
     }
 
+    if (pathname === "/paths/strict-receive") {
+      await json(route, {
+        _embedded: { records: [{ source_amount: "8.0000000", path: [] }] },
+      });
+      return;
+    }
+
     if (/^\/accounts\/[^/]+\/payments$/.test(pathname)) {
       const cursor = url.searchParams.get("cursor");
       const records = incoming.filter(

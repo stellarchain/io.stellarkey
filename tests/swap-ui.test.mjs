@@ -17,3 +17,23 @@ test("swap asset options preserve the full asset code on narrow screens", () => 
   assert.match(ui, /preserveOptionLabels\s*\?\s*"shrink-0 whitespace-nowrap"/);
   assert.match(ui, /preserveOptionLabels\s*\?\s*"truncate"\s*:\s*"whitespace-nowrap"/);
 });
+
+test("swap treats both amount fields as responsive editable intent controls", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /amountLabel="You pay amount"/);
+  assert.match(swap, /amountLabel="You receive amount"/);
+  assert.match(swap, /aria-label=\{amountLabel\}/);
+  assert.match(swap, /findStrictReceiveRoute/);
+  assert.match(swap, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(swap, /Minimum received/);
+  assert.match(swap, /Maximum paid/);
+});
+
+test("swap mobile toolbar explains dual editing and exposes the slippage value", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /Edit either amount/);
+  assert.match(swap, /Slippage \{slippage\}%/);
+  assert.match(swap, /justify-between/);
+});
