@@ -152,4 +152,10 @@ test("asset favorites are managed from the asset detail modal, not the Home list
   );
   assert.match(assetDetail, /onToggleFavorite\(asset\.key\)/);
   assert.match(assetDetail, /\{favorite \? "★" : "☆"\}/);
+  assert.match(assetDetail, /min-h-11/);
+  assert.match(assetDetail, />Favorite<\/span>/);
+  assert.match(assetDetail, /\{favorite && \([\s\S]*?✓[\s\S]*?\)\}/);
+  assert.doesNotMatch(assetDetail, /Favorite asset/);
+  assert.doesNotMatch(assetDetail, /Favorites appear first on Home/);
+  assert.doesNotMatch(assetDetail, /\{favorite \? "On" : "Off"\}/);
 });

@@ -227,33 +227,22 @@ export function AssetDetailModal({
               : `Mark ${asset.code} as favorite`
           }
           onClick={() => onToggleFavorite(asset.key)}
-          className={`row-hover mt-5 flex min-h-14 w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-colors ${
-            favorite
-              ? "border-[#FFD60A]/25 bg-[#FFD60A]/10"
-              : "border-white/[0.08] bg-white/[0.04]"
-          }`}
+          className="row-hover mt-4 flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3.5 py-2 text-left transition-colors"
         >
           <span
             aria-hidden="true"
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[19px] ${
-              favorite ? "bg-[#FFD60A]/15 text-[#FFD60A]" : "bg-white/[0.07] text-neutral-400"
+            className={`flex h-6 w-6 shrink-0 items-center justify-center text-[16px] ${
+              favorite ? "text-[#FFD60A]" : "text-neutral-500"
             }`}
           >
             {favorite ? "★" : "☆"}
           </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15.5px] font-medium text-white">Favorite asset</span>
-            <span className="block text-[12px] leading-tight text-neutral-400">
-              Favorites appear first on Home
+          <span className="flex-1 text-[14px] font-medium text-neutral-300">Favorite</span>
+          {favorite && (
+            <span aria-hidden="true" className="text-[13px] font-semibold text-[#FFD60A]">
+              ✓
             </span>
-          </span>
-          <span
-            className={`text-[14px] font-medium ${
-              favorite ? "text-[#FFD60A]" : "text-neutral-400"
-            }`}
-          >
-            {favorite ? "On" : "Off"}
-          </span>
+          )}
         </button>
 
         {/* Liability-aware balance availability for every asset. */}
