@@ -105,11 +105,11 @@ test("the mobile wallet header begins directly below the iOS safe area", () => {
 
   assert.match(
     dashboard,
-    /app-mobile-sticky-header md:hidden sticky[\s\S]*?<div className="flex h-\[44px\] items-center justify-between">/,
+    /app-mobile-sticky-header md:hidden sticky[\s\S]*?<div className="flex h-\[44px\][^"\n]*min-w-0[^"\n]*items-center[^"\n]*justify-between[^"\n]*gap-1">/,
   );
   assert.match(
     dashboard,
-    /className="flex min-h-11 items-center gap-2 rounded-full/,
+    /className="flex min-h-11[^"\n]*min-w-0[^"\n]*items-center[^"\n]*rounded-full/,
   );
   assert.ok(
     (dashboard.match(/className="icon-btn !h-11 !w-11"/g) ?? []).length >= 3,
