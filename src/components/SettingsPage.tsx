@@ -6,11 +6,15 @@ import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchant } from "@/hooks/useMerchant";
 import {
-    importKeystore,
+  enablePasskeyUnlock,
+  hasPasskeyUnlock,
+  importKeystore,
+  removePasskeyUnlock,
   revealSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
+import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { networkFeeXlm, testHorizonPing } from "@/lib/api";
 import type { NetworkKey } from "@/lib/stellar";
 import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
@@ -46,6 +50,8 @@ import {
   Field,
   HashValue,
   IOSBackButton,
+  Modal,
+  ModalHeader,
   NetworkBadge,
   SegmentedControl,
   Spinner,
@@ -173,6 +179,12 @@ export function SettingsPage({
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
+  const [passkeyConfigured, setPasskeyConfigured] = useState(() => hasPasskeyUnlock());
+  const [passkeyAvailable] = useState(() => canOfferPasskeyUnlock());
+  const [passkeyDialog, setPasskeyDialog] = useState<"enable" | "remove" | null>(null);
+  const [passkeyPassword, setPasskeyPassword] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
 
   useEffect(() => {
     const refresh = () => setBackupHealth(loadBackupHealth());
@@ -267,6 +279,34 @@ export function SettingsPage({
     } finally {
       setPinging(false);
     }
+  }
+
+  async function handleEnablePasskey() {
+    if (!passkeyPassword) return;
+    setPasskeyBusy(true);
+    setPasskeyError(null);
+    try {
+      await enablePasskeyUnlock(passkeyPassword);
+      setPasskeyConfigured(true);
+      setPasskeyPassword("");
+      setPasskeyDialog(null);
+      triggerHaptic("success");
+      toast("Face ID / Touch ID unlock enabled on this device", "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      setPasskeyError(cause instanceof Error ? cause.message : "Passkey setup failed.");
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
+  function handleRemovePasskey() {
+    removePasskeyUnlock();
+    setPasskeyConfigured(false);
+    setPasskeyDialog(null);
+    setPasskeyError(null);
+    triggerHaptic("success");
+    toast("Device passkey unlock removed", "info");
   }
 
   async function handleAirReview() {
@@ -655,7 +695,22 @@ export function SettingsPage({
                     icon={<IconFingerprint size={16} />}
                     tint="#5E5CE6"
                     label="Touch ID / Face ID"
-                    value="Unavailable"
+                    value={passkeyConfigured ? "On" : passkeyAvailable ? "Off" : "Requires HTTPS"}
+                    sub={passkeyConfigured
+                      ? "Local passkey unlock on this device"
+                      : passkeyAvailable
+                        ? "Optional · password remains available"
+                        : "Open the installed app or an HTTPS address"}
+                    chevron={passkeyAvailable || passkeyConfigured}
+                    onClick={() => {
+                      if (!passkeyAvailable && !passkeyConfigured) {
+                        toast("Face ID / Touch ID requires HTTPS and a compatible browser", "info");
+                        return;
+                      }
+                      setPasskeyError(null);
+                      setPasskeyPassword("");
+                      setPasskeyDialog(passkeyConfigured ? "remove" : "enable");
+                    }}
                     sep
                   />
                   <RowButton
@@ -1702,6 +1757,75 @@ export function SettingsPage({
         account={editingAccount}
         onClose={() => setEditingAccount(null)}
       />
+
+      <Modal
+        open={passkeyDialog !== null}
+        onClose={() => {
+          if (passkeyBusy) return;
+          setPasskeyDialog(null);
+          setPasskeyPassword("");
+          setPasskeyError(null);
+        }}
+        dismissable={!passkeyBusy}
+      >
+        <ModalHeader
+          title={passkeyDialog === "remove" ? "Remove Passkey Unlock?" : "Enable Face ID / Touch ID"}
+          subtitle="Origin-bound with a wrapper stored by this app"
+          onClose={passkeyBusy ? undefined : () => {
+            setPasskeyDialog(null);
+            setPasskeyPassword("");
+            setPasskeyError(null);
+          }}
+        />
+        <div className="space-y-4 p-4 sm:p-6">
+          {passkeyDialog === "remove" ? (
+            <>
+              <p className="text-[13.5px] leading-relaxed text-neutral-300">
+                This removes the local wrapper that lets this device unlock your vault. It does not
+                delete a passkey entry from iCloud Keychain or change your wallet password.
+              </p>
+              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                Your password and encrypted backup remain the recovery path.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="ghost" onClick={() => setPasskeyDialog(null)}>Cancel</Button>
+                <Button variant="danger" onClick={handleRemovePasskey}>Remove</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[13.5px] leading-relaxed text-neutral-300">
+                Your device will create a passkey and use Face ID or Touch ID to derive a key that
+                unwraps this vault locally. No account, server, or cloud wallet service is required.
+              </p>
+              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                Your password and encrypted backup remain the recovery path. Passkey unlock works
+                only from this exact app origin, so keep both.
+              </p>
+              <Field label="Wallet Password" hint="Confirms access before adding this device">
+                <input
+                  className="input text-base sm:text-[14px]"
+                  type="password"
+                  autoComplete="current-password"
+                  value={passkeyPassword}
+                  onChange={(event) => setPasskeyPassword(event.target.value)}
+                  placeholder="Enter password"
+                  disabled={passkeyBusy}
+                />
+              </Field>
+              <ErrorText message={passkeyError ?? ""} />
+              <Button
+                className="w-full !py-3 text-[14px] font-semibold"
+                loading={passkeyBusy}
+                disabled={!passkeyPassword || passkeyBusy}
+                onClick={() => void handleEnablePasskey()}
+              >
+                Enable Face ID / Touch ID
+              </Button>
+            </>
+          )}
+        </div>
+      </Modal>
 
       {/* Reset Confirmation Modal */}
       <ResetWalletModal

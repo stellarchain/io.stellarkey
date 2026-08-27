@@ -187,9 +187,11 @@ test("full encrypted backups round-trip the encrypted merchant archive", async (
 
   const backup = await exportVaultBackup(password);
   localStorage.removeItem(MERCHANT_STORAGE_KEY);
+  localStorage.setItem("wallet.passkey-prf.v1", "wrapper-for-replaced-vault");
   await restoreVaultBackup(backup, password);
 
   assert.equal(localStorage.getItem(MERCHANT_STORAGE_KEY), originalMerchant);
+  assert.equal(localStorage.getItem("wallet.passkey-prf.v1"), null);
   assert.doesNotMatch(backup, /Backup Coffee/);
 });
 
@@ -250,6 +252,7 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
     "wallet.currency.v1",
     "wallet.tx-notes.v1",
     "wallet.merchant.v2",
+    "wallet.passkey-prf.v1",
   ];
   const targetVault = JSON.parse(localStorage.getItem("polaris.vault.v1"));
   targetVault.accounts[0].label = "Keep this wallet";
@@ -264,6 +267,7 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
   localStorage.setItem("wallet.currency.v1", "GBP");
   localStorage.setItem("wallet.tx-notes.v1", "before-notes");
   localStorage.setItem("wallet.merchant.v2", "before-merchant");
+  localStorage.setItem("wallet.passkey-prf.v1", "before-passkey-wrapper");
   const before = new Map(targetKeys.map((key) => [key, localStorage.getItem(key)]));
 
   const setItem = localStorage.setItem.bind(localStorage);

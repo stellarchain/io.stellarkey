@@ -16,6 +16,26 @@ class MemoryStorage {
   removeItem(key) { this.#items.delete(key); }
 }
 
+function passkeyDependencies(storage) {
+  const credentialId = new Uint8Array([11, 22, 33, 44]);
+  const prfOutput = new Uint8Array(32).fill(91);
+  const credential = (registration = false) => ({
+    type: "public-key",
+    rawId: credentialId.slice().buffer,
+    getClientExtensionResults: () => registration
+      ? { prf: { enabled: true, results: { first: prfOutput.slice().buffer } } }
+      : { prf: { results: { first: prfOutput.slice().buffer } } },
+  });
+  return {
+    credentials: {
+      create: async () => credential(true),
+      get: async () => credential(false),
+    },
+    secureContext: true,
+    storage,
+  };
+}
+
 const password = "correct horse battery staple";
 
 test("new wallets persist a password-wrapped v3 master key without plaintext secrets", async () => {
@@ -185,6 +205,40 @@ test("password-sensitive exports verify the password at the point of use", async
   await assert.rejects(() => revealSecret(account.id, "wrong password"), /incorrect password/i);
   assert.equal(await revealSecret(account.id, password), source.secret());
   assert.match(await exportVaultBackup(password), /stellar-wallet-backup/);
+});
+
+test("an optional local passkey unwraps the v3 master key while password fallback remains", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    enablePasskeyUnlock,
+    hasPasskeyUnlock,
+    initializeVault,
+    lockVault,
+    removePasskeyUnlock,
+    unlockVault,
+    unlockVaultWithPasskey,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+  const deps = passkeyDependencies(localStorage);
+
+  await enablePasskeyUnlock(password, deps);
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+  assert.equal(localStorage.getItem("wallet.passkey-prf.v1").includes(password), false);
+
+  lockVault();
+  await unlockVaultWithPasskey(deps);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  lockVault();
+  await unlockVault(password);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  removePasskeyUnlock(localStorage);
+  assert.equal(hasPasskeyUnlock(localStorage), false);
 });
 
 test("wallet runtime retains only key bytes, never passwords, mnemonics, or account secrets", () => {
