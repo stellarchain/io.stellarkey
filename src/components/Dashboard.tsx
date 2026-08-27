@@ -102,7 +102,6 @@ const TxDetailModal = dynamic(() => import("./TxDetailModal").then((m) => m.TxDe
 const KeyboardShortcutsModal = dynamic(() => import("./KeyboardShortcutsModal").then((m) => m.KeyboardShortcutsModal), { ssr: false });
 const CurrencyConverterModal = dynamic(() => import("./CurrencyConverterModal").then((m) => m.CurrencyConverterModal), { ssr: false });
 const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) => m.NetworkStatsModal), { ssr: false });
-const TrezorModal = dynamic(() => import("./TrezorModal").then((m) => m.TrezorModal), { ssr: false });
 const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
 const MerchantPage = dynamic(() => import("./merchant/MerchantPage").then((m) => m.MerchantPage), { ssr: false });
 const SetupWizard = dynamic(() => import("./merchant/SetupWizard").then((m) => m.SetupWizard), { ssr: false });
@@ -268,7 +267,6 @@ export function Dashboard() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [converterOpen, setConverterOpen] = useState(false);
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
-  const [trezorModalOpen, setTrezorModalOpen] = useState(false);
   const [renamingAccount, setRenamingAccount] = useState<AccountMeta | null>(null);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
   const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
@@ -927,7 +925,7 @@ export function Dashboard() {
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
-      { id: "trezor-suite", label: "Trezor Hardware Suite (Safe 3 / Model T / Model One)", run: () => setTrezorModalOpen(true) },
+      { id: "add-account", label: "Add account", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "rename-account", label: "Rename Active Account", hint: activeAccount?.label, run: () => setRenamingAccount(activeAccount) },
       { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
@@ -1408,16 +1406,7 @@ export function Dashboard() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                     Accounts ({accounts.length})
                   </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTrezorModalOpen(true)}
-                      className="text-[11px] font-semibold text-emerald-400 hover:underline flex items-center gap-1"
-                      title="Open Trezor Hardware Suite"
-                    >
-                      <IconTrezor size={12} />
-                      <span>Trezor</span>
-                    </button>
+                  <div className="flex items-center">
                     <button
                       type="button"
                       onClick={() => setAddAccountOpen(true)}
@@ -1676,7 +1665,10 @@ export function Dashboard() {
         <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[44px] items-center justify-between">
-              <AccountMenu onManageAccounts={() => openSettings("accounts")} onOpenTrezor={() => setTrezorModalOpen(true)} />
+              <AccountMenu
+                onAddAccount={() => setAddAccountOpen(true)}
+                onManageAccounts={() => openSettings("accounts")}
+              />
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -2598,7 +2590,6 @@ export function Dashboard() {
         merchantEnabled={merchantEnabled}
       />
       <NetworkStatsModal open={networkStatsOpen} onClose={() => setNetworkStatsOpen(false)} />
-      <TrezorModal open={trezorModalOpen} onClose={() => setTrezorModalOpen(false)} />
       <RenameAccountModal
         account={renamingAccount}
         onClose={() => setRenamingAccount(null)}
@@ -2889,12 +2880,12 @@ function NetworkModal({
 }
 
 function AccountMenu({
+  onAddAccount,
   onManageAccounts,
-  onOpenTrezor,
   compact = false,
 }: {
+  onAddAccount: () => void;
   onManageAccounts: () => void;
-  onOpenTrezor?: () => void;
   compact?: boolean;
 }) {
   const { accounts, activeAccount, selectAccount, lock, network } = useWallet();
@@ -2985,11 +2976,11 @@ function AccountMenu({
             className="menu-item !rounded-xl !py-2 !px-3"
             onClick={() => {
               triggerHaptic("selection");
-              if (onOpenTrezor) onOpenTrezor();
+              onAddAccount();
               close();
             }}
           >
-            <IconTrezor size={14} className="text-emerald-400" /> <span>Trezor Hardware Suite</span>
+            <IconPlus size={14} /> <span>Add Account</span>
           </button>
           <button
             type="button"
