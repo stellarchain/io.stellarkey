@@ -1,4 +1,4 @@
-import { getHorizonUrl } from "../stellar";
+import { getHorizonUrl } from "../stellar-endpoints";
 import type { NetworkKey } from "../stellar";
 import { getHorizonJson } from "../horizon";
 import type { ObservedPayment } from "./match";

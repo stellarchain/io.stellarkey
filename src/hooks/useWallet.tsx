@@ -59,7 +59,8 @@ import type { FiatCurrency } from "@/lib/format";
 import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import { warmTrezorConnect, type HardwareSigner } from "@/lib/hardware";
-import { getHorizonUrl, type NetworkKey } from "@/lib/stellar";
+import type { NetworkKey } from "@/lib/stellar";
+import { getHorizonUrl, STELLAR_ENDPOINTS_CHANGED_EVENT } from "@/lib/stellar-endpoints";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
 import { describeResourceFailures, settleResourceMap } from "@/lib/wallet-refresh";
 import type { StorageIssue } from "@/lib/storage-load";
@@ -367,6 +368,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
   const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
+  const [endpointRevision, setEndpointRevision] = useState(0);
+  const endpointRevisionRef = useRef(0);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [tabSenderId] = useState(createTabSenderId);
   const [accountRefreshLane] = useState(createLatestRequestLane);
@@ -380,13 +383,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const unfunded = phase === "unlocked" && balances !== null && balances.length === 0;
 
   useEffect(() => {
+    const refreshEndpoints = () => {
+      endpointRevisionRef.current += 1;
+      setEndpointRevision(endpointRevisionRef.current);
+    };
+    const refreshStoredEndpoint = (event: StorageEvent) => {
+      if (event.key?.startsWith("wallet.endpoint.") || event.key?.startsWith("wallet.horizon.")) {
+        refreshEndpoints();
+      }
+    };
+    window.addEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoints);
+    window.addEventListener("storage", refreshStoredEndpoint);
+    return () => {
+      window.removeEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoints);
+      window.removeEventListener("storage", refreshStoredEndpoint);
+    };
+  }, []);
+
+  useEffect(() => {
     const generation = ++feeSelectionGeneration.current;
     void api.loadRecommendedBaseFee(network).then((fee) => {
       if (generation === feeSelectionGeneration.current) {
         setRecommendedFeeSelection({ network, baseFeeStroops: fee });
       }
     });
-  }, [network]);
+  }, [network, endpointRevision]);
 
   const commitTransactionTracking = useCallback(
     (update: (current: TransactionTrackingState) => TransactionTrackingState) => {
@@ -523,7 +544,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!activeAccount) return;
     const request = accountRefreshLane.begin();
     const generation = ++refreshGeneration.current;
-    const cacheKey = `${network}:${activeAccount.publicKey}`;
+    const cacheKey = `${network}:${endpointRevision}:${activeAccount.publicKey}`;
     setDataLoading(true);
     setDataError(null);
     try {
@@ -594,7 +615,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (generation === refreshGeneration.current && request.isCurrent()) setDataLoading(false);
     }
-  }, [accountRefreshLane, activeAccount, network]);
+  }, [accountRefreshLane, activeAccount, endpointRevision, network]);
 
   const refreshMarketData = useCallback(async () => {
     if (!activeAccount) return;
@@ -648,13 +669,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     );
     if (backgroundAccounts.length === 0) return;
     const generation = ++accountBalanceGeneration.current;
+    const startedEndpointRevision = endpointRevision;
     const results = await Promise.allSettled(
       backgroundAccounts.map(async (acct) => ({
         key: acct.publicKey,
         bal: await api.fetchNativeBalance(acct.publicKey, network),
       })),
     );
-    if (generation !== accountBalanceGeneration.current) return;
+    if (
+      generation !== accountBalanceGeneration.current ||
+      startedEndpointRevision !== endpointRevisionRef.current
+    ) return;
     setAccountBalances((prev) => {
       const next = { ...prev };
       for (const r of results) {
@@ -665,7 +690,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  }, [accounts, activeAccount?.publicKey, network]);
+  }, [accounts, activeAccount?.publicKey, endpointRevision, network]);
 
   const accountBalancesRef = useRef(refreshAccountBalances);
   useEffect(() => {
@@ -677,7 +702,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     refreshAccountData,
     walletRefreshEnabled,
     WALLET_ACCOUNT_POLL_MS,
-    `${network}:${activeAccount?.publicKey ?? "none"}`,
+    `${network}:${endpointRevision}:${activeAccount?.publicKey ?? "none"}`,
   );
   useVisibleWalletRefresh(
     refreshMarketData,
@@ -721,7 +746,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (es) es.close();
     };
-  }, [phase, activeAccount, network]);
+  }, [phase, activeAccount, endpointRevision, network]);
 
 
   useEffect(() => {
@@ -1228,7 +1253,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const target = vault.accounts.find((a) => a.id === id);
     refreshGeneration.current += 1;
     const cached = target
-      ? snapshotCache.current.get(`${network}:${target.publicKey}`)
+      ? snapshotCache.current.get(`${network}:${endpointRevision}:${target.publicKey}`)
       : undefined;
     // Show the last-known snapshot instantly while the new account refresh begins.
     if (cached) {
@@ -1245,7 +1270,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setDataError(null);
     setActiveId(id);
-  }, [network]);
+  }, [endpointRevision, network]);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
     const account = await addStoredAccount(opts);

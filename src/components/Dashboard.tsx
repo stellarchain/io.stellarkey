@@ -4,7 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchant } from "@/hooks/useMerchant";
-import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
+import { NETWORKS } from "@/lib/stellar";
+import {
+  getHorizonUrl,
+  STELLAR_ENDPOINTS_CHANGED_EVENT,
+  testHorizonEndpoint,
+} from "@/lib/stellar-endpoints";
 import { lookupKnownAsset } from "@/lib/assets";
 import { assetMetadataCacheKey, fetchAssetLogo, getCachedAssetLogo } from "@/lib/toml";
 import { parseSep7PayUri } from "@/lib/payuri";
@@ -288,6 +293,7 @@ export function Dashboard() {
     });
   };
   const [nodePing, setNodePing] = useState<number | null>(null);
+  const [endpointRevision, setEndpointRevision] = useState(0);
   const [detailAsset, setDetailAsset] = useState<AssetBalance | null>(null);
   const [txDetail, setTxDetail] = useState<ActivityItem | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -514,9 +520,8 @@ export function Dashboard() {
     let alive = true;
     const ping = async () => {
       try {
-        const start = performance.now();
-        const res = await fetch(getHorizonUrl(network), { method: "GET", signal: AbortSignal.timeout(4000) });
-        if (alive) setNodePing(res.ok ? Math.round(performance.now() - start) : null);
+        const result = await testHorizonEndpoint(network, getHorizonUrl(network), { timeoutMs: 4_000 });
+        if (alive) setNodePing(result.latencyMs);
       } catch {
         if (alive) setNodePing(null);
       }
@@ -527,7 +532,22 @@ export function Dashboard() {
       alive = false;
       clearInterval(iv);
     };
-  }, [network]);
+  }, [network, endpointRevision]);
+
+  useEffect(() => {
+    const refreshEndpoint = () => setEndpointRevision((revision) => revision + 1);
+    const refreshStoredEndpoint = (event: StorageEvent) => {
+      if (event.key?.startsWith("wallet.endpoint.") || event.key?.startsWith("wallet.horizon.")) {
+        refreshEndpoint();
+      }
+    };
+    window.addEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoint);
+    window.addEventListener("storage", refreshStoredEndpoint);
+    return () => {
+      window.removeEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoint);
+      window.removeEventListener("storage", refreshStoredEndpoint);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

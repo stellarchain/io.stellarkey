@@ -15,9 +15,20 @@ import {
   hasMnemonic as hasMnemonicAlias,
 } from "@/lib/vault";
 import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
-import { networkFeeXlm, testHorizonPing } from "@/lib/api";
+import { networkFeeXlm } from "@/lib/api";
 import type { NetworkKey } from "@/lib/stellar";
-import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
+import { NETWORKS } from "@/lib/stellar";
+import {
+  getHorizonUrl,
+  getRpcUrl,
+  loadCustomEndpoint,
+  resetCustomEndpoints,
+  saveCustomEndpoint,
+  testHorizonEndpoint,
+  testRpcEndpoint,
+  type EndpointHealth,
+  type StellarEndpointKind,
+} from "@/lib/stellar-endpoints";
 import { stellarAccountPath } from "@/lib/hd";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { triggerHaptic } from "@/lib/haptics";
@@ -246,6 +257,11 @@ export function SettingsPage({
   const hasMnemonicVault = hasMnemonicAlias();
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [pinging, setPinging] = useState(false);
+  const [horizonDraft, setHorizonDraft] = useState(() => getHorizonUrl(network));
+  const [rpcDraft, setRpcDraft] = useState(() => getRpcUrl(network) ?? "");
+  const [endpointTesting, setEndpointTesting] = useState<StellarEndpointKind | null>(null);
+  const [endpointHealth, setEndpointHealth] = useState<Partial<Record<StellarEndpointKind, EndpointHealth>>>({});
+  const [endpointError, setEndpointError] = useState<string | null>(null);
 
   const [airXdr, setAirXdr] = useState("");
   const [airPw, setAirPw] = useState("");
@@ -271,13 +287,62 @@ export function SettingsPage({
 
   async function handlePing() {
     setPinging(true);
+    setEndpointError(null);
     triggerHaptic("selection");
     try {
-      const ms = await testHorizonPing(network);
-      setPingMs(ms);
+      const health = await testHorizonEndpoint(network, getHorizonUrl(network));
+      setPingMs(health.latencyMs);
+      setEndpointHealth((current) => ({ ...current, horizon: health }));
       triggerHaptic("success");
+    } catch (cause) {
+      setPingMs(null);
+      setEndpointError(cause instanceof Error ? cause.message : "Horizon health check failed.");
+      triggerHaptic("error");
     } finally {
       setPinging(false);
+    }
+  }
+
+  async function handleTestAndSaveEndpoint(kind: StellarEndpointKind) {
+    const value = kind === "horizon" ? horizonDraft : rpcDraft;
+    if (!value.trim()) return;
+    setEndpointTesting(kind);
+    setEndpointError(null);
+    try {
+      const health = kind === "horizon"
+        ? await testHorizonEndpoint(network, value)
+        : await testRpcEndpoint(network, value);
+      saveCustomEndpoint(network, kind, health.url);
+      if (kind === "horizon") {
+        setHorizonDraft(health.url);
+        setPingMs(health.latencyMs);
+      } else {
+        setRpcDraft(health.url);
+      }
+      setEndpointHealth((current) => ({ ...current, [kind]: health }));
+      triggerHaptic("success");
+      toast(`${kind === "horizon" ? "Horizon" : "RPC"} endpoint verified for ${NETWORKS[network].label}`, "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      setEndpointError(cause instanceof Error ? cause.message : "Endpoint verification failed.");
+    } finally {
+      setEndpointTesting(null);
+    }
+  }
+
+  function handleResetEndpoints() {
+    setEndpointError(null);
+    try {
+      resetCustomEndpoints(network);
+      setHorizonDraft(NETWORKS[network].horizonUrl);
+      setRpcDraft(NETWORKS[network].rpcUrl ?? "");
+      setEndpointHealth({});
+      setPingMs(null);
+      triggerHaptic("success");
+      toast(`${NETWORKS[network].label} endpoints reset to built-in defaults`, "info");
+    } catch (cause) {
+      triggerHaptic("error");
+      setEndpointError(cause instanceof Error ? cause.message : "Could not reset the endpoint settings.");
     }
   }
 
@@ -1667,6 +1732,11 @@ export function SettingsPage({
             onChange={(n) => {
               triggerHaptic("selection");
               switchNetwork(n);
+              setHorizonDraft(getHorizonUrl(n));
+              setRpcDraft(getRpcUrl(n) ?? "");
+              setEndpointHealth({});
+              setEndpointError(null);
+              setPingMs(null);
             }}
             options={[
               { value: "testnet", label: "Testnet" },
@@ -1674,9 +1744,9 @@ export function SettingsPage({
             ]}
           />
 
-          <div className="panel-inset p-4 space-y-2.5 text-[12.5px]">
+          <div className="panel-inset space-y-2.5 p-4 text-[12.5px]">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Live Network Health & Horizon RPC
+              Live Network Health
             </p>
             <div className="flex justify-between text-neutral-300">
               <span>Status</span>
@@ -1693,7 +1763,7 @@ export function SettingsPage({
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Horizon Endpoint</span>
-              <span className="mono text-[11px] text-neutral-400 truncate max-w-[200px]">
+              <span className="mono max-w-[200px] truncate text-[11px] text-neutral-400">
                 {getHorizonUrl(network)}
               </span>
             </div>
@@ -1709,10 +1779,119 @@ export function SettingsPage({
                   disabled={pinging}
                   className="chip !py-0.5 !px-2 text-[11px] text-[#0A84FF]"
                 >
-                  {pinging ? <Spinner /> : "Ping"}
+                  {pinging ? <Spinner /> : "Test active"}
                 </button>
               </div>
             </div>
+            {endpointHealth.horizon?.latestLedger !== undefined && (
+              <div className="flex justify-between text-neutral-300">
+                <span>Latest observed ledger</span>
+                <span className="mono text-white">{endpointHealth.horizon.latestLedger.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="list-group space-y-4 p-4">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[13.5px] font-semibold text-white">Horizon</p>
+                  <p className="text-[11.5px] text-neutral-400">
+                    {loadCustomEndpoint(network, "horizon") ? "Custom endpoint" : "Built-in public endpoint"}
+                  </p>
+                </div>
+                {endpointHealth.horizon && (
+                  <span className="text-[11.5px] font-semibold text-[#30D158]">
+                    Verified · {endpointHealth.horizon.latencyMs}ms
+                  </span>
+                )}
+              </div>
+              <input
+                className="input mono text-base sm:text-[12.5px]"
+                type="url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={horizonDraft}
+                onChange={(event) => {
+                  setHorizonDraft(event.target.value);
+                  setEndpointHealth((current) => ({ ...current, horizon: undefined }));
+                  setEndpointError(null);
+                }}
+                placeholder="https://horizon.example"
+                aria-label="Horizon endpoint"
+              />
+              <Button
+                variant="secondary"
+                className="mt-2 w-full"
+                loading={endpointTesting === "horizon"}
+                disabled={!horizonDraft.trim() || endpointTesting !== null}
+                onClick={() => void handleTestAndSaveEndpoint("horizon")}
+              >
+                {"Test & Save Horizon"}
+              </Button>
+            </div>
+
+            <div className="border-t border-white/[0.08] pt-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[13.5px] font-semibold text-white">Stellar RPC</p>
+                  <p className="text-[11.5px] text-neutral-400">
+                    {loadCustomEndpoint(network, "rpc")
+                      ? "Custom endpoint"
+                      : NETWORKS[network].rpcUrl
+                        ? "Built-in public endpoint"
+                        : "Optional · no Mainnet provider bundled"}
+                  </p>
+                </div>
+                {endpointHealth.rpc && (
+                  <span className="text-[11.5px] font-semibold text-[#30D158]">
+                    Verified · {endpointHealth.rpc.latencyMs}ms
+                  </span>
+                )}
+              </div>
+              <input
+                className="input mono text-base sm:text-[12.5px]"
+                type="url"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={rpcDraft}
+                onChange={(event) => {
+                  setRpcDraft(event.target.value);
+                  setEndpointHealth((current) => ({ ...current, rpc: undefined }));
+                  setEndpointError(null);
+                }}
+                placeholder="https://rpc.example"
+                aria-label="Stellar RPC endpoint"
+              />
+              <Button
+                variant="secondary"
+                className="mt-2 w-full"
+                loading={endpointTesting === "rpc"}
+                disabled={!rpcDraft.trim() || endpointTesting !== null}
+                onClick={() => void handleTestAndSaveEndpoint("rpc")}
+              >
+                {"Test & Save RPC"}
+              </Button>
+            </div>
+
+            <ErrorText message={endpointError ?? ""} />
+
+            <button
+              type="button"
+              className="block min-h-11 w-full text-center text-[13px] font-medium text-[#0A84FF]"
+              onClick={handleResetEndpoints}
+              disabled={endpointTesting !== null}
+            >
+              Reset to Defaults
+            </button>
+            <p className="text-[11.5px] leading-relaxed text-neutral-500">
+              Endpoints are stored only in this browser. The app accepts HTTPS URLs only and verifies
+              the network passphrase before saving.
+            </p>
           </div>
 
           {network === "testnet" && (

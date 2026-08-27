@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
-import { getHorizonUrl, NETWORKS } from "@/lib/stellar";
+import { NETWORKS } from "@/lib/stellar";
+import { getHorizonUrl } from "@/lib/stellar-endpoints";
 import { lookupKnownAsset } from "@/lib/assets";
 import { fmtAmount, fmtFiat } from "@/lib/format";
 import {

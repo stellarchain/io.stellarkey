@@ -44,6 +44,32 @@ test("corrupt vault data enters explicit recovery without overwriting the payloa
     .toBe(corrupt);
 });
 
+test("network settings verify, persist, and reset direct endpoints", async ({ page }) => {
+  await importTestWallet(page);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button").filter({
+    has: page.getByText("Network", { exact: true }),
+  }).click();
+  await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Test & Save Horizon" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
+  )).toBe("https://horizon-testnet.stellar.org");
+
+  await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
+  )).toBe("https://soroban-testnet.stellar.org");
+
+  await page.getByRole("button", { name: "Reset to Defaults" }).click();
+  await expect.poll(() => page.evaluate(() => ({
+    horizon: localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
+    rpc: localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
+  }))).toEqual({ horizon: null, rpc: null });
+});
+
 test("unlock, send review, swap review, and watch-only safety stay operable", async ({ page }) => {
   const failures = observePageFailures(page);
   await importTestWallet(page);

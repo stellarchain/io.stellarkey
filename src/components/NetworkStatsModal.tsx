@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
-import { fetchFeeStats, testHorizonPing, type FeeStats } from "@/lib/api";
+import { fetchFeeStats, type FeeStats } from "@/lib/api";
+import { getHorizonUrl, testHorizonEndpoint } from "@/lib/stellar-endpoints";
 import { stroopsToAmount } from "@/lib/stellar-domain";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconShield } from "./icons";
@@ -23,7 +24,10 @@ export function NetworkStatsModal({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    void Promise.all([fetchFeeStats(network), testHorizonPing(network)])
+    void Promise.all([
+      fetchFeeStats(network),
+      testHorizonEndpoint(network, getHorizonUrl(network)).then((result) => result.latencyMs),
+    ])
       .then(([fees, latency]) => {
         if (!alive) return;
         setFeeStats(fees);
