@@ -99,10 +99,16 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await page.getByRole("dialog", { name: "Send Payment" }).getByRole("button", { name: "Close" }).click();
 
   await page.getByRole("button", { name: "DEX Swap", exact: true }).click();
-  await page.getByPlaceholder("0.0").fill("1");
+  const payAmount = page.getByLabel("You pay amount");
+  const receiveAmount = page.getByLabel("You receive amount");
+  await payAmount.fill("1");
+  await expect(receiveAmount).toHaveValue("0.25");
+  await receiveAmount.fill("2");
+  await expect(payAmount).toHaveValue("8");
   await expect(page.getByRole("button", { name: "Review Swap" })).toBeEnabled();
   await page.getByRole("button", { name: "Review Swap" }).click();
   await expect(page.getByText("Review Swap Details & Routing", { exact: true })).toBeVisible();
+  await expect(page.getByText("Maximum paid", { exact: true }).last()).toBeVisible();
 
   await page.getByRole("button", { name: "+ Add", exact: true }).click();
   const add = page.getByRole("dialog", { name: "Add Account" });

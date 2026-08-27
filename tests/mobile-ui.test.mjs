@@ -100,6 +100,15 @@ test("Dashboard owns the only mobile page gutter and Settings restores desktop s
   assert.match(ui, /bg-\[#121214\]\/80 px-4 py-4[^"\n]*sm:px-6/);
 });
 
+test("swap amount cards give mobile numbers and asset selectors separate layout ownership", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(swap, /min-w-0[^"\n]*text-\[clamp\(/);
+  assert.match(swap, /grid-cols-4/);
+  assert.match(swap, /break-words text-right/);
+});
+
 test("five-tab mobile bar is viewport-safe at every supported iPhone width", () => {
   const css = read("src/app/globals.css");
   assert.match(css, /\.tab-bar\s*\{[\s\S]*?width:\s*calc\(100vw - 24px\);/);

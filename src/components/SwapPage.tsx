@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   useWalletIdentity,
   useWalletLedger,
   useWalletSubmission,
   useWalletTransactions,
 } from "@/hooks/useWallet";
-import { fmtAmount, isValidAmount } from "@/lib/format";
+import { fmtAmount, isValidAmount, normalizeAmount } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
-import { findStrictSendRoute } from "@/lib/swap";
+import { findStrictReceiveRoute, findStrictSendRoute } from "@/lib/swap";
 import { networkFeeXlm } from "@/lib/api";
 import {
   applySlippage,
+  applySlippageCeiling,
   compareStellarAmounts,
   fractionOfStellarAmount,
 } from "@/lib/stellar-domain";
@@ -22,7 +23,8 @@ import {
   guardCurrentSwapQuote,
   spendableAssetBalance,
   swapRequestKey,
-  type StrictSendBoundSwapQuote,
+  type BoundSwapQuote,
+  type SwapExecutionMode,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
@@ -43,14 +45,16 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
   const [destKey, setDestKey] = useState(() =>
     prefill ? merchantAssetKey(prefill.destinationAsset) : "",
   );
-  const [amount, setAmount] = useState(prefill?.amount ?? "");
+  const [payAmount, setPayAmount] = useState(prefill?.amount ?? "");
+  const [receiveAmount, setReceiveAmount] = useState("");
+  const [amountSide, setAmountSide] = useState<"pay" | "receive">("pay");
   const [slippage, setSlippage] = useState<number>(
     prefill ? prefill.maxSlippageBps / 100 : 0.5,
   );
   const [showSettings, setShowSettings] = useState(false);
   const [invertRate, setInvertRate] = useState(false);
   const [stage, setStage] = useState<"form" | "review">("form");
-  const [route, setRoute] = useState<StrictSendBoundSwapQuote | null>(null);
+  const [route, setRoute] = useState<BoundSwapQuote | null>(null);
   const [routingKey, setRoutingKey] = useState<string | null>(null);
   const [noRouteKey, setNoRouteKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,11 +81,13 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     : sendAsset
       ? spendableAssetBalance(sendAsset)
       : "0";
+  const quoteMode: SwapExecutionMode = amountSide === "pay" ? "strict-send" : "strict-receive";
+  const exactAmount = amountSide === "pay" ? payAmount : receiveAmount;
   const valid =
-    isValidAmount(amount) &&
+    isValidAmount(exactAmount) &&
     sendAsset !== null &&
     destAsset !== null &&
-    compareStellarAmounts(amount, sendAvailable) <= 0 &&
+    (quoteMode === "strict-receive" || compareStellarAmounts(exactAmount, sendAvailable) <= 0) &&
     sendAsset.key !== destAsset?.key &&
     (!prefill ||
       (prefill.network === network && prefill.sourceAccount === activeAccount?.publicKey));
@@ -92,14 +98,19 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           network,
           sendAssetKey: sendAsset.key,
           destinationAssetKey: destAsset.key,
-          mode: "strict-send",
-          exactAmount: amount,
+          mode: quoteMode,
+          exactAmount,
           slippage: String(slippage),
         })
       : null;
   const currentQuote = guardCurrentSwapQuote(route, routeKey);
   const routing = routeKey !== null && routingKey === routeKey;
   const noRoute = routeKey !== null && noRouteKey === routeKey;
+  const quotedSpendLimit = currentQuote?.mode === "strict-receive"
+    ? currentQuote.sendMaximum
+    : currentQuote?.sendAmount ?? null;
+  const quoteExceedsBalance = quotedSpendLimit !== null
+    && compareStellarAmounts(quotedSpendLimit, sendAvailable) > 0;
 
   useEffect(() => {
     let alive = true;
@@ -109,7 +120,8 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
       if (trackedSubmissionStatus === "confirmed") {
         triggerHaptic("success");
         playSwapSound();
-        setAmount("");
+        setPayAmount("");
+        setReceiveAmount("");
         setRoute(null);
         setStage("form");
         void refresh();
@@ -133,7 +145,8 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     }
 
     const quotedRequestKey = routeKey;
-    const quotedSendAmount = amount;
+    const quotedMode = quoteMode;
+    const quotedExactAmount = exactAmount;
     const quotedSlippage = String(slippage);
     const quotedSendAssetKey = sendAsset.key;
     const quotedDestinationAssetKey = destAsset.key;
@@ -143,29 +156,49 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
       setNoRouteKey(null);
       setError(null);
       try {
-        const found = await findStrictSendRoute({
-          network,
-          sendCode: sendAsset.code,
-          sendIssuer: sendAsset.issuer,
-          sendAmount: quotedSendAmount,
-          destCode: destAsset.code,
-          destIssuer: destAsset.issuer,
-        });
+        const found = quotedMode === "strict-send"
+          ? await findStrictSendRoute({
+              network,
+              sendCode: sendAsset.code,
+              sendIssuer: sendAsset.issuer,
+              sendAmount: quotedExactAmount,
+              destCode: destAsset.code,
+              destIssuer: destAsset.issuer,
+            })
+          : await findStrictReceiveRoute({
+              network,
+              sendCode: sendAsset.code,
+              sendIssuer: sendAsset.issuer,
+              destinationAmount: quotedExactAmount,
+              destCode: destAsset.code,
+              destIssuer: destAsset.issuer,
+            });
 
         if (!alive) return;
         if (found) {
-          const minVal = applySlippage(found.destinationAmount, quotedSlippage);
-          setRoute(bindSwapQuote({
-            mode: "strict-send",
-            requestKey: quotedRequestKey,
-            sendAssetKey: quotedSendAssetKey,
-            destinationAssetKey: quotedDestinationAssetKey,
-            destinationAmount: found.destinationAmount,
-            destinationMinimum: minVal,
-            intermediates: found.intermediates,
-            sendAmount: quotedSendAmount,
-            slippage: quotedSlippage,
-          }));
+          setRoute("destinationAmount" in found
+            ? bindSwapQuote({
+                mode: "strict-send",
+                requestKey: quotedRequestKey,
+                sendAssetKey: quotedSendAssetKey,
+                destinationAssetKey: quotedDestinationAssetKey,
+                destinationAmount: found.destinationAmount,
+                destinationMinimum: applySlippage(found.destinationAmount, quotedSlippage),
+                intermediates: found.intermediates,
+                sendAmount: quotedExactAmount,
+                slippage: quotedSlippage,
+              })
+            : bindSwapQuote({
+                mode: "strict-receive",
+                requestKey: quotedRequestKey,
+                sendAssetKey: quotedSendAssetKey,
+                destinationAssetKey: quotedDestinationAssetKey,
+                destinationAmount: quotedExactAmount,
+                sendAmount: found.sourceAmount,
+                sendMaximum: applySlippageCeiling(found.sourceAmount, quotedSlippage),
+                intermediates: found.intermediates,
+                slippage: quotedSlippage,
+              }));
           setNoRouteKey(null);
         } else {
           setRoute(null);
@@ -186,7 +219,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
       alive = false;
       clearTimeout(timer);
     };
-  }, [routeKey, sendAsset, destAsset, amount, slippage, valid, network]);
+  }, [routeKey, sendAsset, destAsset, exactAmount, quoteMode, slippage, valid, network]);
 
   function flipAssets() {
     triggerHaptic("medium");
@@ -195,14 +228,23 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     if (!prevDest) return;
     setSendKey(prevDest);
     setDestKey(prevSend);
-    setAmount("");
+    setPayAmount("");
+    setReceiveAmount("");
+    setAmountSide("pay");
     setRoute(null);
     setError(null);
   }
 
-  function handleAmountChange(val: string) {
+  function handleAmountChange(side: "pay" | "receive", val: string) {
     const clean = val.replace(/,/g, ".");
-    setAmount(clean);
+    setAmountSide(side);
+    if (side === "pay") {
+      setPayAmount(clean);
+      setReceiveAmount("");
+    } else {
+      setReceiveAmount(clean);
+      setPayAmount("");
+    }
     setRoute(null);
     setError(null);
   }
@@ -214,16 +256,26 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     setBusy(true);
     setError(null);
     try {
-      const result = await swap({
-        mode: "strict-send",
+      const common = {
         sendCode: sendAsset.code,
         sendIssuer: sendAsset.issuer,
-        sendAmount: submissionQuote.sendAmount,
         destCode: destAsset.code,
         destIssuer: destAsset.issuer,
-        destMin: submissionQuote.destinationMinimum,
         intermediates: [...submissionQuote.intermediates],
-      });
+      };
+      const result = submissionQuote.mode === "strict-receive"
+        ? await swap({
+            ...common,
+            mode: "strict-receive",
+            sendMax: submissionQuote.sendMaximum,
+            destinationAmount: submissionQuote.destinationAmount,
+          })
+        : await swap({
+            ...common,
+            mode: "strict-send",
+            sendAmount: submissionQuote.sendAmount,
+            destMin: submissionQuote.destinationMinimum,
+          });
       setPendingSubmission(result);
       triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
@@ -244,21 +296,36 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
     currentQuote && parseFloat(currentQuote.destinationAmount) > 0
       ? (quotedSendAmountNum / parseFloat(currentQuote.destinationAmount)).toFixed(6)
       : null;
+  const displayedPayAmount = amountSide === "pay"
+    ? payAmount
+    : currentQuote ? normalizeAmount(currentQuote.sendAmount) : "";
+  const displayedReceiveAmount = amountSide === "receive"
+    ? receiveAmount
+    : currentQuote ? normalizeAmount(currentQuote.destinationAmount) : "";
 
   return (
     <div className="fade-up mx-auto w-full max-w-[520px] min-w-0 px-0 pb-0">
-      {/* Slim toolbar — the page title lives in the app chrome */}
-      <div className="flex items-center justify-end pb-3 pt-2">
+      {/* Compact context bar — the page title lives in the app chrome */}
+      <div className="flex min-w-0 items-center justify-between gap-3 pb-3">
+        <div className="min-w-0">
+          <p className="text-[12.5px] font-semibold text-neutral-200">Edit either amount</p>
+          <p className="text-[11px] text-neutral-500">The other side updates from the live route</p>
+        </div>
         <button
           type="button"
           onClick={() => {
             triggerHaptic("selection");
             setShowSettings((s) => !s);
           }}
-          className={`icon-btn !h-8 !w-8 ${showSettings ? "bg-white/20 text-white" : ""}`}
+          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors ${
+            showSettings
+              ? "border-[#0A84FF]/45 bg-[#0A84FF]/15 text-[#64D2FF]"
+              : "border-white/10 bg-white/[0.055] text-neutral-300 hover:bg-white/[0.1] hover:text-white"
+          }`}
           aria-label="Slippage Settings"
         >
-          <IconSliders size={16} />
+          <IconSliders size={14} />
+          <span>Slippage {slippage}%</span>
         </button>
       </div>
 
@@ -342,63 +409,49 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
 
       {/* Centered trade stack */}
       <div className="space-y-3">
-          {/* Sell card */}
-          <div className="panel-inset p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                You Pay
-              </span>
-              {sendAsset && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setAmount(sendAvailable);
-                  }}
-                  className="text-[12px] font-medium text-[#0A84FF] hover:underline"
-                >
-                  Balance: {fmtAmount(sendAsset.balance)}
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                inputMode="decimal"
-                placeholder="0.0"
-                value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
-                className="w-full bg-transparent text-[32px] font-bold text-white outline-none placeholder:text-neutral-600"
-              />
-              <AssetSelect
-                options={options}
-                value={sendKey}
-                onChange={(k) => {
-                  setSendKey(k);
-                  setRoute(null);
-                  setError(null);
-                }}
-              />
-            </div>
-            {/* Quick Percent Buttons */}
+          <SwapAmountCard
+            label="You pay"
+            amountLabel="You pay amount"
+            amount={displayedPayAmount}
+            exact={amountSide === "pay"}
+            routing={routing && amountSide === "receive"}
+            assetOptions={options}
+            assetKey={sendKey}
+            onAmountChange={(value) => handleAmountChange("pay", value)}
+            onAssetChange={(key) => {
+              setSendKey(key);
+              setRoute(null);
+              setError(null);
+            }}
+            balance={sendAsset ? `Available ${fmtAmount(sendAvailable)} ${sendAsset.code}` : null}
+            onBalanceClick={sendAsset
+              ? () => {
+                  triggerHaptic("selection");
+                  handleAmountChange("pay", sendAvailable);
+                }
+              : undefined}
+          >
             {sendAsset && (
-              <div className="flex items-center gap-1.5 pt-1">
+              <div className="grid grid-cols-4 gap-1.5 pt-1">
                 {[0.25, 0.5, 0.75, 1.0].map((pct) => (
                   <button
                     key={pct}
                     type="button"
                     onClick={() => {
                       triggerHaptic("selection");
-                      setAmount(fractionOfStellarAmount(sendAvailable, Math.round(pct * 100), 100));
+                      handleAmountChange(
+                        "pay",
+                        fractionOfStellarAmount(sendAvailable, Math.round(pct * 100), 100),
+                      );
                     }}
-                    className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                    className="min-h-9 rounded-xl bg-white/[0.06] px-1.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-white/[0.12] hover:text-white"
                   >
                     {pct === 1.0 ? "MAX" : `${pct * 100}%`}
                   </button>
                 ))}
               </div>
             )}
-          </div>
+          </SwapAmountCard>
 
           {/* Flip button — notched into the card seam */}
           <div className="relative z-10 -my-2.5 flex justify-center">
@@ -412,39 +465,31 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
             </button>
           </div>
 
-          {/* Buy card */}
-          <div className="panel-inset p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                You Receive (Estimated)
+          <SwapAmountCard
+            label="You receive"
+            amountLabel="You receive amount"
+            amount={displayedReceiveAmount}
+            exact={amountSide === "receive"}
+            routing={routing && amountSide === "pay"}
+            assetOptions={options.filter((balance) => balance.key !== sendKey)}
+            assetKey={effectiveDestKey}
+            onAmountChange={(value) => handleAmountChange("receive", value)}
+            onAssetChange={(key) => {
+              setDestKey(key);
+              setRoute(null);
+              setError(null);
+            }}
+            balance={destAsset ? `Balance ${fmtAmount(destAsset.balance)} ${destAsset.code}` : null}
+          />
+
+          {quoteExceedsBalance && quotedSpendLimit && sendAsset && (
+            <div className="flex items-start gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FFB340]">
+              <IconAlert size={16} className="mt-0.5 shrink-0" />
+              <span className="min-w-0 break-words">
+                This quote can spend up to {fmtAmount(quotedSpendLimit)} {sendAsset.code}, but only {fmtAmount(sendAvailable)} is available.
               </span>
-              {destAsset && (
-                <span className="text-[12px] text-neutral-400">
-                  Balance: {fmtAmount(destAsset.balance)}
-                </span>
-              )}
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-full text-[32px] font-bold text-white">
-                {routing ? (
-                  <span className="skeleton inline-block h-9 w-32 rounded-lg align-middle" />
-                ) : currentQuote ? (
-                  fmtAmount(currentQuote.destinationAmount)
-                ) : (
-                  <span className="text-neutral-600">0.0</span>
-                )}
-              </div>
-              <AssetSelect
-                options={options.filter((b) => b.key !== sendKey)}
-                value={effectiveDestKey}
-                onChange={(k) => {
-                  setDestKey(k);
-                  setRoute(null);
-                  setError(null);
-                }}
-              />
-            </div>
-          </div>
+          )}
 
           {error && <ErrorText message={error} />}
           {pendingSubmission && (
@@ -503,32 +548,36 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
                   triggerHaptic("selection");
                   setInvertRate((r) => !r);
                 }}
-                className="flex justify-between w-full text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 text-left text-neutral-400 transition-colors hover:text-white"
               >
                 <span>Rate (Tap to flip)</span>
-                <span className="mono text-white">
+                <span className="mono min-w-0 break-words text-right text-white">
                   {invertRate
                     ? `1 ${destAsset?.code} ≈ ${reverseExchangeRate} ${sendAsset?.code}`
                     : `1 ${sendAsset?.code} ≈ ${exchangeRate} ${destAsset?.code}`}
                 </span>
               </button>
-              <div className="flex justify-between text-neutral-400">
-                <span>Min. Received (Guarantee)</span>
-                <span className="mono text-white">
-                  {fmtAmount(currentQuote.destinationMinimum)} {destAsset?.code}
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 text-neutral-400">
+                <span>{currentQuote.mode === "strict-send" ? "Minimum received" : "Maximum paid"}</span>
+                <span className="mono min-w-0 break-words text-right text-white">
+                  {currentQuote.mode === "strict-send"
+                    ? `${fmtAmount(currentQuote.destinationMinimum)} ${destAsset?.code}`
+                    : `${fmtAmount(currentQuote.sendMaximum)} ${sendAsset?.code}`}
                 </span>
               </div>
-              <div className="flex justify-between text-neutral-400">
+              <div className="flex flex-wrap justify-between gap-2 text-neutral-400">
                 <span>Quote Source</span>
-                <span className="font-medium text-neutral-200">Horizon strict-send path</span>
+                <span className="font-medium text-neutral-200">
+                  Horizon {currentQuote.mode} path
+                </span>
               </div>
-              <div className="flex justify-between text-neutral-400">
+              <div className="flex flex-wrap justify-between gap-2 text-neutral-400">
                 <span>Estimated Network Fee</span>
                 <span className="mono text-neutral-300">{feeXlm} XLM</span>
               </div>
-              <div className="flex justify-between items-center text-neutral-400 pt-1">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pt-1 text-neutral-400">
                 <span>Route Hops</span>
-                <div className="flex items-center gap-1">
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
                   <span className="mono font-semibold text-white bg-white/10 px-2 py-0.5 rounded-md text-[11px]">
                     {sendAsset?.code}
                   </span>
@@ -593,16 +642,24 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
                   <span className="font-semibold text-white">{destAsset?.code}</span>
                 </div>
 
-                <div className="flex justify-between text-neutral-300">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 text-neutral-300">
                   <span>You Pay</span>
-                  <span className="mono font-semibold text-white">
-                    {currentQuote.sendAmount} {sendAsset?.code}
+                  <span className="mono min-w-0 break-words text-right font-semibold text-white">
+                    {fmtAmount(currentQuote.sendAmount)} {sendAsset?.code}
                   </span>
                 </div>
-                <div className="flex justify-between text-[#30D158]">
-                  <span>Guaranteed Minimum</span>
-                  <span className="mono font-semibold">
-                    {fmtAmount(currentQuote.destinationMinimum)} {destAsset?.code}
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 text-[#30D158]">
+                  <span>You Receive</span>
+                  <span className="mono min-w-0 break-words text-right font-semibold">
+                    {fmtAmount(currentQuote.destinationAmount)} {destAsset?.code}
+                  </span>
+                </div>
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 text-[12px] text-neutral-400">
+                  <span>{currentQuote.mode === "strict-send" ? "Minimum received" : "Maximum paid"}</span>
+                  <span className="mono min-w-0 break-words text-right text-neutral-200">
+                    {currentQuote.mode === "strict-send"
+                      ? `${fmtAmount(currentQuote.destinationMinimum)} ${destAsset?.code}`
+                      : `${fmtAmount(currentQuote.sendMaximum)} ${sendAsset?.code}`}
                   </span>
                 </div>
                 {!sendAsset.isNative && sendAsset.issuer && (
@@ -635,7 +692,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Button
                   variant="ghost"
                   disabled={busy}
@@ -658,7 +715,7 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           ) : (
             <Button
               className="!mt-6 w-full !h-12 text-[16px]"
-              disabled={!currentQuote || busy || routing || Boolean(pendingSubmission)}
+              disabled={!currentQuote || quoteExceedsBalance || busy || routing || Boolean(pendingSubmission)}
               onClick={() => {
                 const reviewQuote = guardCurrentSwapQuote(route, routeKey);
                 if (!reviewQuote) return;
@@ -671,6 +728,88 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           )}
       </div>
     </div>
+  );
+}
+
+function SwapAmountCard({
+  label,
+  amountLabel,
+  amount,
+  exact,
+  routing,
+  assetOptions,
+  assetKey,
+  onAmountChange,
+  onAssetChange,
+  balance,
+  onBalanceClick,
+  children,
+}: {
+  label: string;
+  amountLabel: string;
+  amount: string;
+  exact: boolean;
+  routing: boolean;
+  assetOptions: AssetBalance[];
+  assetKey: string;
+  onAmountChange: (value: string) => void;
+  onAssetChange: (key: string) => void;
+  balance: string | null;
+  onBalanceClick?: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <section
+      className={`min-w-0 space-y-2.5 rounded-[22px] border p-3.5 transition-colors sm:p-4 ${
+        exact
+          ? "border-[#0A84FF]/35 bg-[#0A84FF]/[0.07]"
+          : "border-white/[0.08] bg-white/[0.055]"
+      }`}
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-400">
+          {label}
+          <span className={`rounded-full px-1.5 py-0.5 text-[9px] tracking-normal ${
+            exact ? "bg-[#0A84FF]/15 text-[#64D2FF]" : "bg-white/[0.07] text-neutral-400"
+          }`}>
+            {exact ? "Exact" : "Quoted"}
+          </span>
+        </span>
+        {balance && (onBalanceClick ? (
+          <button
+            type="button"
+            onClick={onBalanceClick}
+            className="min-w-0 break-words text-right text-[11.5px] font-medium text-[#64D2FF] hover:underline"
+          >
+            {balance}
+          </button>
+        ) : (
+          <span className="min-w-0 break-words text-right text-[11.5px] text-neutral-400">
+            {balance}
+          </span>
+        ))}
+      </div>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
+        <input
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          aria-label={amountLabel}
+          placeholder={routing ? "Quoting…" : "0.0"}
+          value={amount}
+          onChange={(event) => onAmountChange(event.target.value)}
+          className="min-w-0 w-full bg-transparent text-[clamp(1.75rem,9vw,2.25rem)] font-bold leading-none tracking-[-0.035em] text-white outline-none placeholder:text-neutral-600 sm:text-[36px]"
+        />
+        <div className="max-w-[148px] shrink-0 sm:max-w-[180px]">
+          <AssetSelect
+            options={assetOptions}
+            value={assetKey}
+            onChange={onAssetChange}
+          />
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
