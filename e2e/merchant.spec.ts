@@ -207,7 +207,7 @@ async function raiseCryptoCharge(page: Page, keys: string[]) {
   const tip = page.getByRole("dialog", { name: /Add a tip/ });
   await tip.getByRole("button", { name: "No tip" }).click();
   const chargeDialog = page.getByRole("dialog", { name: /^Charge/ });
-  await chargeDialog.getByText("Waiting for payment", { exact: true }).waitFor();
+  await chargeDialog.getByText("Watching for payment", { exact: true }).waitFor();
   const { charge, quote } = await readVisibleChargeRequest(chargeDialog);
   return { chargeDialog, charge, quote };
 }
@@ -344,8 +344,7 @@ test(
       await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
       await setup.getByRole("button", { name: "Open the till" }).click();
       await setup.waitFor({ state: "hidden" });
-      await page.getByText("Foreground monitoring active", { exact: true }).waitFor();
-      await page.getByText(/Closing or suspending the app pauses checks/).waitFor();
+      await page.getByText("Till locked · no open shift", { exact: true }).waitFor();
       await assertMobileSurface(page, "first merchant till");
       const persistedRecord = await page.evaluate(async () => {
         const value = await new Promise<string | null>((resolve, reject) => {
@@ -392,7 +391,7 @@ test(
       await turnOff.waitFor({ state: "hidden" });
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
 
-      await page.getByRole("button", { name: "Open shift", exact: true }).click();
+      await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
       const opening = page.getByRole("dialog", { name: /Open shift/ });
       await opening.getByLabel("Opening float").fill("100");
       await opening.getByRole("button", { name: "Open shift", exact: true }).click();
@@ -424,10 +423,18 @@ test(
         true,
         "staff creation must stay unavailable until an owner PIN session is active",
       );
-      await page.getByLabel("Staff member to switch to").click();
-      await page.getByRole("option", { name: /Imported Account/ }).click();
-      await page.getByLabel("Staff PIN").fill("2468");
-      await page.getByRole("button", { name: "Switch", exact: true }).click();
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const ownerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await ownerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await ownerPin.getByRole("button", { name: "Select", exact: true }).click();
+
+      // Shared devices default to locking after every sale; this long journey
+      // selects the equally supported inactivity policy so later tasks stay under
+      // the explicitly selected operator until the test leaves the page.
+      await page.getByRole("button", { name: /Operator locking/ }).click();
+      const locking = page.getByRole("dialog", { name: "Operator locking" });
+      await locking.getByRole("button", { name: "Inactivity", exact: true }).click();
+      await locking.getByRole("button", { name: "Done", exact: true }).click();
       await addStaffButton.click();
       const addStaff = page.getByRole("dialog", { name: /Add staff/ });
       await addStaff.getByLabel("Staff name").fill("Counter Server");
@@ -435,10 +442,12 @@ test(
       await addStaff.getByLabel("Confirm new staff PIN").fill("1357");
       await addStaff.getByRole("button", { name: "Add staff", exact: true }).click();
       await addStaff.waitFor({ state: "hidden" });
-      await page.getByLabel("Staff member to switch to").click();
-      await page.getByRole("option", { name: /Counter Server/ }).click();
-      await page.getByLabel("Staff PIN").fill("1357");
-      await page.getByRole("button", { name: "Switch", exact: true }).click();
+      await page.getByRole("button", { name: "Add operator" }).click();
+      const operatorPicker = page.getByRole("dialog", { name: "Add operator" });
+      await operatorPicker.getByRole("button", { name: /Counter Server/ }).click();
+      const serverPin = page.getByRole("dialog", { name: "Counter Server" });
+      await serverPin.getByLabel("PIN for Counter Server").fill("1357");
+      await serverPin.getByRole("button", { name: "Join shift", exact: true }).click();
       await page.getByText("Counter Server", { exact: true }).first().waitFor();
       await returnToTill(page);
 
@@ -472,10 +481,10 @@ test(
 
       // Switch back to the owner; approval still signs through the unlocked vault.
       await openStaffSettings(page);
-      await page.getByLabel("Staff member to switch to").click();
-      await page.getByRole("option", { name: /Imported Account/ }).click();
-      await page.getByLabel("Staff PIN").fill("2468");
-      await page.getByRole("button", { name: "Switch", exact: true }).click();
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const approvalOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await approvalOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await approvalOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await page.getByRole("button", { name: "Approve" }).click();
       await page.getByText("Approved & confirmed", { exact: true }).waitFor({ timeout: 12_000 });
       await returnToTill(page);
@@ -487,7 +496,7 @@ test(
       await split.getByLabel("First part amount").fill("2.00");
       await split.getByRole("button", { name: "Record split" }).click();
       const splitCharge = page.getByRole("dialog", { name: /^Charge/ });
-      await splitCharge.getByText("Waiting for payment", { exact: true }).waitFor();
+      await splitCharge.getByText("Watching for payment", { exact: true }).waitFor();
       const splitState = await readVisibleChargeRequest(splitCharge);
       incoming.push(
         incomingPayment("pay1003", splitState.charge.reference, splitState.quote.amount, 100_002),

@@ -110,6 +110,7 @@ test("setup commits the complete till configuration and owner atomically", () =>
     },
   );
   assert.equal(result.activeStaffId, "staff-owner");
+  assert.deepEqual(result.onShiftStaffIds, ["staff-owner"]);
   assert.deepEqual(result.orders, original.orders);
   assert.equal(needsMerchantSetup(result.settings, result.staff), false);
   assert.equal(original.settings.enabled, false);
@@ -123,6 +124,16 @@ test("editing setup updates the owner without erasing operational records", () =
   });
   const withHistory = {
     ...initial,
+    staff: [
+      ...initial.staff,
+      {
+        ...initial.staff[0],
+        id: "staff-2",
+        name: "Bea",
+        role: "server",
+      },
+    ],
+    onShiftStaffIds: ["owner-1", "staff-2"],
     nextOrderNumber: 1234,
     adjustments: [
       {
@@ -143,12 +154,13 @@ test("editing setup updates the owner without erasing operational records", () =
     validSetup({ ownerName: "Alex", terminalName: "Back counter" }),
     { now: 200, ownerId: "ignored-new-id" },
   );
-  assert.equal(updated.staff.length, 1);
+  assert.equal(updated.staff.length, 2);
   assert.equal(updated.staff[0].id, "owner-1");
   assert.equal(updated.staff[0].name, "Alex");
   assert.equal(updated.staff[0].pinSetAt, 200);
   assert.equal(updated.nextOrderNumber, 1234);
   assert.deepEqual(updated.adjustments, withHistory.adjustments);
+  assert.deepEqual(updated.onShiftStaffIds, ["owner-1", "staff-2"]);
 });
 
 test("invalid setup is rejected before any store mutation", () => {

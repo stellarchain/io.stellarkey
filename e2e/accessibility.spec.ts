@@ -117,7 +117,6 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
   await setup.getByRole("button", { name: "Open the till" }).click();
   await expect(setup).toBeHidden();
-  await expect(page.getByRole("status", { name: "Payment monitoring status" }))
-    .toContainText("Foreground monitoring");
+  await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "merchant till", browserName);
 });

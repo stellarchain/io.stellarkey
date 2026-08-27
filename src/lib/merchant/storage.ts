@@ -544,6 +544,16 @@ function reconcileSettings(value: unknown, base: MerchantSettings): MerchantSett
       typeof value.holdAutoLockDuringCharge === "boolean"
         ? value.holdAutoLockDuringCharge
         : base.holdAutoLockDuringCharge,
+    operatorLockMode:
+      value.operatorLockMode === "after_sale" || value.operatorLockMode === "after_timeout"
+        ? value.operatorLockMode
+        : base.operatorLockMode,
+    operatorLockTimeoutMinutes:
+      value.operatorLockTimeoutMinutes === 1 ||
+      value.operatorLockTimeoutMinutes === 5 ||
+      value.operatorLockTimeoutMinutes === 15
+        ? value.operatorLockTimeoutMinutes
+        : base.operatorLockTimeoutMinutes,
     terminalName:
       typeof value.terminalName === "string" && value.terminalName.trim()
         ? value.terminalName
@@ -572,8 +582,19 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
   const terminalValue = isRecord(value.terminal) ? value.terminal : {};
   const settlementValue = isRecord(value.settlementRule) ? value.settlementRule : {};
   const staff = idRecords<MerchantStore["staff"][number]>(value.staff) ?? [];
-  const invoices = invoiceRecords(value.invoices, staff);
+  const activeStaffIds = new Set(staff.filter((member) => member.active).map((member) => member.id));
   const requestedActiveStaffId = nullableString(value.activeStaffId, null);
+  const activeStaffId = requestedActiveStaffId && activeStaffIds.has(requestedActiveStaffId)
+    ? requestedActiveStaffId
+    : null;
+  const reconciledOnShiftStaffIds = Array.isArray(value.onShiftStaffIds)
+    ? [...new Set(value.onShiftStaffIds.filter((id): id is string => typeof id === "string"))]
+        .filter((id) => activeStaffIds.has(id))
+    : base.onShiftStaffIds;
+  const onShiftStaffIds = activeStaffId && !reconciledOnShiftStaffIds.includes(activeStaffId)
+    ? [...reconciledOnShiftStaffIds, activeStaffId]
+    : reconciledOnShiftStaffIds;
+  const invoices = invoiceRecords(value.invoices, staff);
   const tillTextSize =
     value.tillTextSize === "standard" ||
     value.tillTextSize === "large" ||
@@ -606,10 +627,8 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
     unmatched: unmatchedRecords(value.unmatched),
     paymentReconciliations: reconciliationRecords(value.paymentReconciliations),
     staff,
-    activeStaffId:
-      requestedActiveStaffId && staff.some((member) => member.id === requestedActiveStaffId)
-        ? requestedActiveStaffId
-        : null,
+    activeStaffId,
+    onShiftStaffIds,
     shifts: shiftRecords(value.shifts, settings, staff),
     invoices,
     counterCodes: counterCodeRecords(value.counterCodes, staff),

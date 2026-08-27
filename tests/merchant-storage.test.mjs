@@ -121,6 +121,9 @@ test("the operational store defaults to a complete v2 schema", () => {
   assert.equal(store.version, 2);
   assert.deepEqual(store.staff, []);
   assert.equal(store.activeStaffId, null);
+  assert.deepEqual(store.onShiftStaffIds, []);
+  assert.equal(store.settings.operatorLockMode, "after_sale");
+  assert.equal(store.settings.operatorLockTimeoutMinutes, 5);
   assert.deepEqual(store.shifts, []);
   assert.deepEqual(store.invoices, []);
   assert.deepEqual(store.counterCodes, []);
@@ -136,6 +139,39 @@ test("the operational store defaults to a complete v2 schema", () => {
   assert.equal(store.terminal.name, store.settings.terminalName);
 });
 
+test("an existing current operator is migrated into the on-shift roster", () => {
+  const priorStore = {
+    ...emptyStore(),
+    activeStaffId: "staff-1",
+    staff: [
+      {
+        id: "staff-1",
+        name: "Ari",
+        role: "owner",
+        permissions: {
+          takePayment: true,
+          applyDiscount: true,
+          comp: true,
+          void: true,
+          refundCeilingMinor: null,
+          openDrawer: true,
+          seeReports: true,
+          exportRecords: true,
+        },
+        pinDigest: null,
+        pinSetAt: null,
+        active: true,
+      },
+    ],
+  };
+  delete priorStore.onShiftStaffIds;
+
+  const migrated = storage.decodeMerchantStore(priorStore);
+
+  assert.equal(migrated.activeStaffId, "staff-1");
+  assert.deepEqual(migrated.onShiftStaffIds, ["staff-1"]);
+});
+
 test("a v2 store round-trips every operational collection", () => {
   assert.equal(typeof storage.MERCHANT_LEGACY_STORAGE_KEY, "string");
   const localStorage = memoryStorage();
@@ -143,6 +179,7 @@ test("a v2 store round-trips every operational collection", () => {
     ...emptyStore(),
     settings: { ...emptyStore().settings, recordRetentionMonths: null },
     activeStaffId: "staff-1",
+    onShiftStaffIds: ["staff-1"],
     staff: [
       {
         id: "staff-1",
@@ -266,6 +303,7 @@ test("nested partial settings reconcile and malformed collections are discarded"
       charges: [],
       staff: "corrupt",
       activeStaffId: "missing-staff",
+      onShiftStaffIds: ["missing-staff", 123, "missing-staff"],
       customers: [null, { address: 123 }],
       tillTextSize: "enormous",
       nextOrderNumber: -1,
@@ -282,6 +320,7 @@ test("nested partial settings reconcile and malformed collections are discarded"
     assert.equal(recovered.catalogue.length, emptyStore().catalogue.length);
     assert.deepEqual(recovered.staff, []);
     assert.equal(recovered.activeStaffId, null);
+    assert.deepEqual(recovered.onShiftStaffIds, []);
     assert.deepEqual(recovered.customers, []);
     assert.equal(recovered.tillTextSize, "standard");
     assert.equal(recovered.nextOrderNumber, 1001);

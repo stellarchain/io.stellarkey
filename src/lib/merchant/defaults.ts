@@ -118,6 +118,8 @@ export function defaultSettings(): MerchantSettings {
     toleranceBps: 150,
     toleranceFloorMinor: 2,
     holdAutoLockDuringCharge: true,
+    operatorLockMode: "after_sale",
+    operatorLockTimeoutMinutes: 5,
     terminalName: "This device",
     recordRetentionMonths: 120,
   };
@@ -140,6 +142,7 @@ export function emptyStore(): MerchantStore {
     paymentReconciliations: [],
     staff: [],
     activeStaffId: null,
+    onShiftStaffIds: [],
     shifts: [],
     invoices: [],
     counterCodes: [],

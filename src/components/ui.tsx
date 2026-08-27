@@ -184,7 +184,10 @@ export function Modal({
         }
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        if (!panelRef.current.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        } else if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
           last.focus();
         } else if (!e.shiftKey && document.activeElement === last) {
@@ -891,21 +894,28 @@ export function SegmentedControl<T extends string>({
   value,
   options,
   onChange,
+  ariaLabel,
 }: {
   value: T;
   options: { label: string; value: T; disabled?: boolean }[];
   onChange: (val: T) => void;
+  ariaLabel?: string;
 }) {
   // 5px of padding, not 4: it puts the control at 36px, the same height as
   // `.search-field`, so the two line up wherever they sit side by side.
   return (
-    <div className="flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md">
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md"
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (
           <button
             key={opt.value}
             type="button"
+            aria-pressed={active}
             disabled={opt.disabled}
             onClick={() => {
               if (!active && !opt.disabled) {
@@ -913,7 +923,7 @@ export function SegmentedControl<T extends string>({
                 onChange(opt.value);
               }
             }}
-            className={`relative flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-all ${
+            className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-all sm:min-h-0 ${
               opt.disabled
                 ? "cursor-not-allowed text-neutral-600 opacity-60"
                 : active
