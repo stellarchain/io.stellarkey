@@ -35,7 +35,6 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
 
   const walletKeys = [
     "polaris.vault.v1",
-    "polaris.trash.v1",
     "polaris.network.v1",
     "polaris.autolock.v1",
     "polaris.contacts.v1",
@@ -213,7 +212,6 @@ test("encrypted backups reject malformed decrypted payloads before restore", asy
         network: "mainnet",
         fiatCurrency: "USD",
         autoLockMs: 900_000,
-        biometrics: false,
         privacy: false,
         sound: true,
       },
@@ -242,10 +240,8 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
 
   const targetKeys = [
     "polaris.vault.v1",
-    "polaris.trash.v1",
     "polaris.network.v1",
     "polaris.autolock.v1",
-    "polaris.biometrics.v1",
     "polaris.contacts.v1",
     "polaris.privacy.v1",
     "wallet.sound.v1",
@@ -257,10 +253,8 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
   const targetVault = JSON.parse(localStorage.getItem("polaris.vault.v1"));
   targetVault.accounts[0].label = "Keep this wallet";
   localStorage.setItem("polaris.vault.v1", JSON.stringify(targetVault));
-  localStorage.setItem("polaris.trash.v1", "recoverable-trash");
   localStorage.setItem("polaris.network.v1", "testnet");
   localStorage.setItem("polaris.autolock.v1", "1234");
-  localStorage.setItem("polaris.biometrics.v1", "1");
   localStorage.setItem("polaris.contacts.v1", "before-contacts");
   localStorage.setItem("polaris.privacy.v1", "1");
   localStorage.setItem("wallet.sound.v1", "0");

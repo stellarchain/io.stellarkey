@@ -385,7 +385,7 @@ export function Onboarding() {
 
             </div>
 
-            <p className="mt-5 text-center text-[11.5px] text-neutral-500">
+            <p className="mt-5 text-center text-[11.5px] text-neutral-400">
               Starts on Stellar Testnet · switch to Mainnet anytime
             </p>
           </div>

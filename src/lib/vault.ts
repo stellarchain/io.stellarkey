@@ -49,8 +49,6 @@ import {
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
 const AUTOLOCK_KEY = "polaris.autolock.v1";
-const BIOMETRICS_KEY = "polaris.biometrics.v1";
-const TRASH_KEY = "polaris.trash.v1";
 
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
@@ -168,11 +166,6 @@ function assertVaultCreationAllowed(): void {
   }
 }
 
-export function hasDeletedVault(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean(window.localStorage.getItem(TRASH_KEY));
-}
-
 export function wipeVault(): void {
   lockVault();
   if (typeof window !== "undefined") {
@@ -182,23 +175,6 @@ export function wipeVault(): void {
       if (key && (key.startsWith("polaris.") || key.startsWith("wallet."))) keys.push(key);
     }
     for (const key of keys) window.localStorage.removeItem(key);
-  }
-}
-
-export async function restoreDeletedVault(password: string): Promise<VaultFile> {
-  if (typeof window === "undefined") throw new Error("No window context");
-  const raw = window.localStorage.getItem(TRASH_KEY);
-  if (!raw) throw new Error("No deleted wallet backup found in trash.");
-
-  const trashVault = JSON.parse(raw) as VaultFile;
-  persist(trashVault);
-  window.localStorage.removeItem(TRASH_KEY);
-  return unlockVault(password);
-}
-
-export function permanentlyDeleteTrash(): void {
-  if (typeof window !== "undefined") {
-    window.localStorage.removeItem(TRASH_KEY);
   }
 }
 
@@ -625,9 +601,20 @@ export function hasPasskeyUnlock(storage?: PasskeyStorage): boolean {
   return Boolean(loadPasskeyRecord(storage));
 }
 
-export function removePasskeyUnlock(storage?: PasskeyStorage): void {
-  if (!storage && typeof window === "undefined") return;
-  removePasskeyRecord(storage);
+export async function removePasskeyUnlock(
+  password: string,
+  storage?: PasskeyStorage,
+): Promise<void> {
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  requireWebCrypto();
+  const verified = await masterKeyForPassword(vault, password);
+  try {
+    if (!storage && typeof window === "undefined") return;
+    removePasskeyRecord(storage);
+  } finally {
+    zeroKey(verified.masterKey);
+  }
 }
 
 export async function revealSecret(accountId: string, password: string): Promise<string> {
@@ -1155,7 +1142,6 @@ export async function exportVaultBackup(password: string): Promise<string> {
       network: loadNetworkPref(),
       fiatCurrency: window.localStorage.getItem(CURRENCY_KEY),
       autoLockMs: autoLockRaw !== null ? Number(autoLockRaw) : null,
-      biometrics: false,
       privacy: window.localStorage.getItem(PRIVACY_KEY) === "1",
       sound: window.localStorage.getItem(SOUND_KEY) !== "0",
     },
@@ -1183,10 +1169,8 @@ export async function restoreVaultBackup(
   const vault = payload.vault;
   const restoreKeys = [
     VAULT_KEY,
-    TRASH_KEY,
     NETWORK_KEY,
     AUTOLOCK_KEY,
-    BIOMETRICS_KEY,
     CONTACTS_KEY,
     PRIVACY_KEY,
     SOUND_KEY,
@@ -1202,7 +1186,6 @@ export async function restoreVaultBackup(
     : null;
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
-    [TRASH_KEY, null],
     [CONTACTS_KEY, JSON.stringify(payload.contacts)],
     [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
     [MERCHANT_STORE_KEY, merchantRepository ? null : payload.merchantStore || null],
@@ -1215,7 +1198,6 @@ export async function restoreVaultBackup(
     writes.set(NETWORK_KEY, settings.network);
     writes.set(CURRENCY_KEY, settings.fiatCurrency);
     writes.set(AUTOLOCK_KEY, settings.autoLockMs === null ? null : String(settings.autoLockMs));
-    writes.set(BIOMETRICS_KEY, null);
     writes.set(PRIVACY_KEY, settings.privacy ? "1" : "0");
     writes.set(SOUND_KEY, settings.sound ? "1" : "0");
   }

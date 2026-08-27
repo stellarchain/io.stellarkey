@@ -7,7 +7,6 @@ export interface BackupSettings {
   network: "testnet" | "mainnet";
   fiatCurrency: string | null;
   autoLockMs: number | null;
-  biometrics: boolean;
   privacy: boolean;
   sound: boolean;
 }
@@ -142,7 +141,6 @@ function isBackupSettings(value: unknown): value is BackupSettings {
     return false;
   }
   return (
-    typeof value.biometrics === "boolean" &&
     typeof value.privacy === "boolean" &&
     typeof value.sound === "boolean"
   );

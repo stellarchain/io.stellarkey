@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.E2E_PORT ?? 3187);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -15,9 +15,28 @@ export default defineConfig({
   use: {
     baseURL,
     headless: true,
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
+    contextOptions: { reducedMotion: "reduce" },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  projects: [
+    {
+      name: "desktop-chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "iphone-webkit",
+      testMatch: /accessibility\.spec\.ts/,
+      use: { ...devices["iPhone 16"] },
+    },
+    {
+      name: "ipad-webkit",
+      testMatch: /accessibility\.spec\.ts/,
+      use: { ...devices["iPad (gen 11)"] },
+    },
+  ],
   webServer: {
     command: `npm run start -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,

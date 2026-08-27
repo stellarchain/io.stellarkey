@@ -21,7 +21,9 @@ test("production CSP uses build-time hashes and supports direct decentralized se
   assert.match(connect ?? "", /https:\/\/api\.coingecko\.com/);
   assert.match(connect ?? "", /https:\/\/connect\.trezor\.io/);
   assert.match(connect ?? "", /\shttps:(?:\s|$)/);
-  assert.match(policy, /upgrade-insecure-requests/);
+  // Safari upgrades same-origin HTTP assets too, which breaks LAN testing before
+  // hydration. Production HTTPS/HSTS belongs at the static host boundary.
+  assert.doesNotMatch(policy, /upgrade-insecure-requests/);
 });
 
 test("static export and service worker enforce a hash-bound shell-only boundary", () => {

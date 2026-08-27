@@ -21,7 +21,6 @@ import {
   addHardwareAccount as addHardwareAccountVault,
   addWatchOnlyAccount,
   getArchivedAccounts,
-  hasDeletedVault,
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
   withSecretKey,
@@ -35,7 +34,6 @@ import {
   removeStoredAccount,
   restoreAccountByIndex as restoreAccountByIndexVault,
   restoreArchivedAccount as restoreArchivedAccountVault,
-  restoreDeletedVault,
   restoreVaultBackup,
   saveAutoLockPref,
   saveNetworkPref,
@@ -197,7 +195,6 @@ interface WalletContextValue {
   accounts: AccountMeta[];
   activeAccount: AccountMeta | null;
   archivedAccounts: AccountMeta[];
-  hasDeletedWalletBackup: boolean;
   balances: AssetBalance[] | null;
   minimumBalanceXlm: string | null;
   /** Bounded per-operation fee selected once for the active network. */
@@ -261,7 +258,6 @@ interface WalletContextValue {
   unlockWithPasskey: () => Promise<void>;
   lock: () => void;
   resetWallet: () => Promise<void>;
-  restoreDeletedWallet: (password: string) => Promise<void>;
   /** Replace the entire wallet from a backup file; wallet returns to locked state */
   restoreWalletFromBackup: (json: string, password?: string) => Promise<VaultRestoreResult>;
   selectAccount: (id: string) => void;
@@ -361,7 +357,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [network, setNetworkState] = useState<NetworkKey>("testnet");
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
-  const [hasDeletedWalletBackup, setHasDeletedWalletBackup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
   const [minimumBalanceXlm, setMinimumBalanceXlm] = useState<string | null>(null);
@@ -574,7 +569,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       setAutoLockMsState(loadAutoLockPref());
       setContacts(loadContacts());
-      setHasDeletedWalletBackup(hasDeletedVault());
       const vaultResult = loadVaultResult();
       if (vaultResult.kind !== "ready") {
         if (vaultResult.kind === "absent") {
@@ -1150,7 +1144,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setDataError(null);
       setClaimableBalances([]);
       setActivity([]);
-      setHasDeletedWalletBackup(false);
       return {
         account,
         revealed,
@@ -1180,7 +1173,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setDataError(null);
       setClaimableBalances([]);
       setActivity([]);
-      setHasDeletedWalletBackup(false);
       return result;
     },
     [],
@@ -1241,7 +1233,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPriceData(null);
     commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
     commitMergeReconciliations(() => []);
-    setHasDeletedWalletBackup(false);
     setVaultStorageIssue(null);
     setPhase("empty");
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
@@ -1263,17 +1254,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       coordination.close();
     };
   }, [lockVaultAndReset, phase, resetWallet, tabSenderId]);
-
-  const restoreDeletedWallet = useCallback(async (password: string) => {
-    const vault = await restoreDeletedVault(password);
-    setAccounts(vault.accounts.map(stripSecret));
-    setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
-    setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
-    setBalances(null);
-    setActivity([]);
-    setHasDeletedWalletBackup(false);
-    setPhase("unlocked");
-  }, []);
 
   const restoreWalletFromBackup = useCallback(async (json: string, password?: string): Promise<VaultRestoreResult> => {
     invalidateTrackingTasks();
@@ -1305,7 +1285,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     );
     window.sessionStorage.removeItem(PENDING_TX_STORAGE_KEY);
     clearSessionSecrets();
-    setHasDeletedWalletBackup(false);
     // Wallet is restored but LOCKED — unlock with the backup's password
     setPhase("locked");
     return result;
@@ -1989,7 +1968,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       activeAccount,
       accountBalances,
       archivedAccounts,
-      hasDeletedWalletBackup,
       balances,
       minimumBalanceXlm,
       recommendedBaseFeeStroops,
@@ -2031,7 +2009,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unlockWithPasskey,
       lock,
       resetWallet,
-      restoreDeletedWallet,
       restoreWalletFromBackup,
       selectAccount,
       addAccount,
@@ -2064,7 +2041,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       accounts,
       activeAccount,
       archivedAccounts,
-      hasDeletedWalletBackup,
       accountBalances,
       balances,
       minimumBalanceXlm,
@@ -2107,7 +2083,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       unlockWithPasskey,
       lock,
       resetWallet,
-      restoreDeletedWallet,
       restoreWalletFromBackup,
       selectAccount,
       addAccount,

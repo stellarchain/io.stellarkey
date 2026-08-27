@@ -237,7 +237,13 @@ test("an optional local passkey unwraps the v3 master key while password fallbac
   await unlockVault(password);
   assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
 
-  removePasskeyUnlock(localStorage);
+  await assert.rejects(
+    () => removePasskeyUnlock("wrong password", localStorage),
+    /incorrect password/i,
+  );
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+
+  await removePasskeyUnlock(password, localStorage);
   assert.equal(hasPasskeyUnlock(localStorage), false);
 });
 

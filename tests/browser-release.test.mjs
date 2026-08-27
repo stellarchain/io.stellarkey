@@ -15,4 +15,5 @@ test("production is deployable as immutable static files without an application 
   assert.match(headers, /Cross-Origin-Opener-Policy: same-origin-allow-popups/);
   assert.match(headers, /\/sw\.js[\s\S]*Cache-Control: no-cache, no-store, must-revalidate/);
   assert.doesNotMatch(headers, /nonce-|unsafe-eval/);
+  assert.doesNotMatch(headers, /upgrade-insecure-requests/);
 });
