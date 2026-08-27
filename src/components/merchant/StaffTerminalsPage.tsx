@@ -181,9 +181,9 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         </MerchantDisclosure>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-2">
         {/* ---------------- staff ---------------- */}
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <section aria-labelledby="on-shift-title">
             <div className="flex items-baseline justify-between px-1 pb-2">
               <div className="flex items-baseline gap-2">
@@ -240,7 +240,10 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
               </div>
 
               <div className="ios-sep">
-                <div className="scrollbar-none flex gap-2 overflow-x-auto px-3 py-3">
+                <div
+                  data-mobile-scroll="true"
+                  className="scrollbar-none flex min-w-0 gap-2 overflow-x-auto px-3 py-3"
+                >
                   {onShiftStaff.map((member) => {
                     const current = member.id === activeStaff?.id;
                     return (
@@ -261,7 +264,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                             : "border-white/[0.08] bg-white/[0.04] active:bg-white/[0.1]"
                         }`}
                       >
-                        <span className="relative">
+                        <span data-mobile-overflow="true" className="relative inline-flex">
                           <Avatar seed={member.name} size={34} />
                           {current && (
                             <span

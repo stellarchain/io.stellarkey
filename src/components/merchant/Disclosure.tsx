@@ -54,7 +54,7 @@ export function MerchantDisclosure({
           triggerHaptic("selection");
           setOpen((was) => !was);
         }}
-        className="-mx-1 flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-left text-[12.5px] font-medium text-neutral-400 transition-colors hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+        className="flex min-h-[44px] w-full min-w-0 items-center gap-1.5 rounded-lg text-left text-[12.5px] font-medium text-neutral-400 transition-colors hover:text-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
       >
         <span className="min-w-0 truncate">{label}</span>
         <IconChevronDown
