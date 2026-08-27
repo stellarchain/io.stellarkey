@@ -447,3 +447,26 @@ test("the largest valid native balance remains inside the iPhone dashboard", asy
   await page.getByRole("button", { name: /Stellar Lumens/ }).first().click();
   await expectMobileContainment(page, "320px asset detail with a maximum Stellar balance");
 });
+
+test("the completed swap receipt remains usable at the narrowest iPhone width", async ({
+  page,
+  browserName,
+}, testInfo) => {
+  test.skip(
+    browserName !== "webkit" || testInfo.project.name !== "iphone-webkit",
+    "This is the focused iPhone WebKit swap receipt gate.",
+  );
+  await page.setViewportSize({ width: 320, height: 693 });
+  await importTestWallet(page);
+  await clickPrimaryNavigation(page, "Swap");
+
+  await page.getByLabel("You receive amount").fill("2");
+  await expect(page.getByLabel("You pay amount")).toHaveValue("8");
+  await page.getByRole("button", { name: "Review Swap" }).click();
+  await page.getByRole("button", { name: "Confirm Swap" }).click();
+  await expect(page.getByRole("heading", { name: "Swap complete" })).toBeVisible();
+  await expectAccessibleSurface(page, "completed swap receipt", browserName);
+  await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap again", exact: true })).toBeVisible();
+});

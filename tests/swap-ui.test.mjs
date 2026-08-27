@@ -37,3 +37,17 @@ test("swap mobile toolbar explains dual editing and exposes the slippage value",
   assert.match(swap, /Slippage \{slippage\}%/);
   assert.match(swap, /justify-between/);
 });
+
+test("confirmed swaps become an immutable receipt instead of resetting the form", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /interface SubmittedSwap/);
+  assert.match(swap, /"status" \| "success"/);
+  assert.match(swap, /setStage\("success"\)/);
+  assert.match(swap, /Swap complete/);
+  assert.match(swap, /Transaction hash/);
+  assert.match(swap, /View activity/);
+  assert.match(swap, /Swap again/);
+  assert.match(swap, /onDone/);
+  assert.match(swap, /onViewActivity/);
+});
