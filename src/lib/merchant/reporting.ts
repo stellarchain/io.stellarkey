@@ -1,6 +1,7 @@
 import type { NetworkKey } from "../stellar";
 import { assetKey } from "./charge";
 import { distribute, linePayableMinor } from "./money";
+import { indexMerchantRecords, type MerchantRecordIndex } from "./selectors";
 import type {
   AcceptedAsset,
   ExportRecord,
@@ -115,10 +116,10 @@ function addRate(target: Record<string, Minor>, rateId: string, amount: Minor): 
   if (target[rateId] === 0) delete target[rateId];
 }
 
-function paymentForOrder(store: MerchantStore, order: Order) {
+function paymentForOrder(index: MerchantRecordIndex, order: Order) {
   for (const tender of order.tender) {
     if (tender.kind !== "crypto" || !tender.chargeId) continue;
-    const payment = store.charges.find((charge) => charge.id === tender.chargeId)?.payment;
+    const payment = index.chargesById.get(tender.chargeId)?.payment;
     if (payment) return payment;
   }
   return null;
@@ -148,10 +149,10 @@ function netAllocatedToLines(order: Order): Minor[] {
   );
 }
 
-function saleRows(store: MerchantStore, order: Order): ReportRow[] {
+function saleRows(index: MerchantRecordIndex, order: Order): ReportRow[] {
   const taxes = taxAllocatedToLines(order);
   const nets = netAllocatedToLines(order);
-  const payment = paymentForOrder(store, order);
+  const payment = paymentForOrder(index, order);
   const tender = [...new Set(order.tender.map((part) => part.kind))].join("+");
 
   return order.lines.map((line, index) => {
@@ -200,8 +201,8 @@ function refundTaxByRate(order: Order | undefined, refund: Refund): Record<strin
   );
 }
 
-function refundRow(store: MerchantStore, refund: Refund): ReportRow {
-  const order = store.orders.find((candidate) => candidate.id === refund.orderId);
+function refundRow(index: MerchantRecordIndex, refund: Refund): ReportRow {
+  const order = index.ordersById.get(refund.orderId);
   const taxByRate = refundTaxByRate(order, refund);
   const taxMinor = Object.values(taxByRate).reduce((sum, minor) => sum + minor, 0);
   const grossMinor = -refund.amountMinor;
@@ -233,10 +234,13 @@ function refundRow(store: MerchantStore, refund: Refund): ReportRow {
   };
 }
 
-export function reportRows(store: MerchantStore, range: ReportRange): ReportRow[] {
-  assertRange(range);
-  const rows = ordersInRange(store, range).flatMap((order) => saleRows(store, order));
-  rows.push(...refundsInRange(store, range).map((refund) => refundRow(store, refund)));
+function indexedReportRows(
+  index: MerchantRecordIndex,
+  orders: readonly Order[],
+  refunds: readonly Refund[],
+): ReportRow[] {
+  const rows = orders.flatMap((order) => saleRows(index, order));
+  rows.push(...refunds.map((refund) => refundRow(index, refund)));
   return rows.sort(
     (a, b) =>
       a.at - b.at ||
@@ -246,11 +250,21 @@ export function reportRows(store: MerchantStore, range: ReportRange): ReportRow[
   );
 }
 
+export function reportRows(store: MerchantStore, range: ReportRange): ReportRow[] {
+  assertRange(range);
+  return indexedReportRows(
+    indexMerchantRecords(store.orders, store.charges),
+    ordersInRange(store, range),
+    refundsInRange(store, range),
+  );
+}
+
 export function deriveReport(store: MerchantStore, range: ReportRange): MerchantReport {
   assertRange(range);
   const orders = ordersInRange(store, range);
   const refunds = refundsInRange(store, range);
-  const rows = reportRows(store, range);
+  const index = indexMerchantRecords(store.orders, store.charges);
+  const rows = indexedReportRows(index, orders, refunds);
   const taxByRate: Record<string, Minor> = {};
   for (const row of rows) {
     for (const [rateId, minor] of Object.entries(row.taxByRate)) addRate(taxByRate, rateId, minor);
@@ -263,7 +277,7 @@ export function deriveReport(store: MerchantStore, range: ReportRange): Merchant
       byTender[tender.kind] += tender.amountMinor;
       if (tender.kind !== "crypto") continue;
       const payment = tender.chargeId
-        ? store.charges.find((charge) => charge.id === tender.chargeId)?.payment
+        ? index.chargesById.get(tender.chargeId)?.payment
         : null;
       if (!payment) continue;
       const key = assetKey(payment.asset);
