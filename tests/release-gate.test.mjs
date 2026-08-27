@@ -13,6 +13,17 @@ test("the release browser matrix includes Chromium plus WebKit phone and tablet"
   assert.match(config, /devices\["iPad/);
 });
 
+test("iPhone WebKit gates payment catch-up after a mobile reload", () => {
+  const config = read("playwright.config.ts");
+  assert.match(config, /iphone-webkit[\s\S]*testMatch:[^\n]*merchant-webkit/);
+  assert.match(config, /iPhone 16[^\n]*serviceWorkers: "block"/);
+  assert.equal(existsSync(new URL("../e2e/merchant-webkit.spec.ts", import.meta.url)), true);
+  const smoke = read("e2e/merchant-webkit.spec.ts");
+  assert.match(smoke, /page\.reload/);
+  assert.match(smoke, /incoming\.push/);
+  assert.match(smoke, /Paid in full/);
+});
+
 test("CI pins third-party actions and verifies the complete static release", () => {
   const ci = read(".github/workflows/ci.yml");
   assert.match(ci, /actions\/checkout@[0-9a-f]{40}/);
