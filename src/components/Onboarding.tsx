@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
-import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
 import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
 import { markBackupVerified } from "@/lib/backup-health";
@@ -45,7 +44,7 @@ export function Onboarding() {
     resetWallet,
     restoreWalletFromBackup,
     createHardwareVault,
-  } = useWallet();
+  } = useWalletLifecycleActions();
   const [pendingBackupJson, setPendingBackupJson] = useState<string | null>(null);
   const [hwInfo, setHwInfo] = useState<{ publicKey: string; path: string; index: number } | null>(null);
   const [step, setStep] = useState<Step>("choose");
@@ -67,7 +66,13 @@ export function Onboarding() {
   // Preload + init the connect bundle when the user lands on the hardware
   // step so the device interaction can start immediately after their click.
   useEffect(() => {
-    if (step === "hardware") warmTrezorConnect();
+    if (step === "hardware") {
+      void import("@/lib/hardware")
+        .then(({ warmTrezorConnect }) => warmTrezorConnect())
+        .catch(() => {
+          // The connect button retries and reports the failure in the hardware step.
+        });
+    }
   }, [step]);
 
   const passwordValid = password.length >= 8;
@@ -101,6 +106,7 @@ export function Onboarding() {
     setBusy(true);
     setError(null);
     try {
+      const { connectTrezorDevice } = await import("@/lib/hardware");
       const info = await connectTrezorDevice(0);
       setHwInfo({ publicKey: info.publicKey, path: info.path, index: info.index });
       triggerHaptic("success");

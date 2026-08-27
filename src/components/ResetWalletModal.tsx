@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Modal, ModalHeader } from "./ui";
 
@@ -12,7 +12,7 @@ export function ResetWalletModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { resetWallet } = useWallet();
+  const { resetWallet } = useWalletLifecycleActions();
   const [error, setError] = useState<string | null>(null);
   if (!open) return null;
 

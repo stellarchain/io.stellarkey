@@ -464,6 +464,19 @@ interface MerchantContextValue {
 
 const MerchantContext = createContext<MerchantContextValue | null>(null);
 
+type MerchantShellContextValue = Pick<
+  MerchantContextValue,
+  "enabled" | "unmatched" | "charges" | "activeShift"
+>;
+
+type MerchantSettingsContextValue = Pick<
+  MerchantContextValue,
+  "enabled" | "configured" | "setEnabled" | "settings"
+>;
+
+const MerchantShellContext = createContext<MerchantShellContextValue | null>(null);
+const MerchantSettingsContext = createContext<MerchantSettingsContextValue | null>(null);
+
 /** How often the till asks Horizon while a charge is open, and while it is not. */
 const POLL_ACTIVE_MS = 4_000;
 const POLL_IDLE_MS = 30_000;
@@ -890,6 +903,15 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const settings = store.settings;
   const enabled = settings.enabled;
   const configured = !needsMerchantSetup(settings, store.staff);
+  const setEnabled = useCallback(
+    (on: boolean) =>
+      commitStore((prev) =>
+        on && needsMerchantSetup(prev.settings, prev.staff)
+          ? prev
+          : { ...prev, settings: { ...prev.settings, enabled: on } },
+      ),
+    [commitStore],
+  );
 
   const completeSetup = useCallback(
     async (input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string }) => {
@@ -2652,12 +2674,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     online,
     enabled,
     configured,
-    setEnabled: (on) =>
-      commitStore((prev) =>
-        on && needsMerchantSetup(prev.settings, prev.staff)
-          ? prev
-          : { ...prev, settings: { ...prev.settings, enabled: on } },
-      ),
+    setEnabled,
     settings,
     tillTextSize: store.tillTextSize,
     setTillTextSize: (size) => persist((prev) => ({ ...prev, tillTextSize: size })),
@@ -2857,6 +2874,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     resetStaffPin,
     runtime,
     setCounterCodeActive,
+    setEnabled,
     setLineQuantity,
     settings,
     settleCard,
@@ -2891,12 +2909,44 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     watchedLedger,
   ]);
 
-  return <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>;
+  const shellValue = useMemo<MerchantShellContextValue>(
+    () => ({
+      enabled,
+      unmatched: store.unmatched,
+      charges: store.charges,
+      activeShift,
+    }),
+    [activeShift, enabled, store.charges, store.unmatched],
+  );
+  const settingsValue = useMemo<MerchantSettingsContextValue>(
+    () => ({ enabled, configured, setEnabled, settings }),
+    [configured, enabled, setEnabled, settings],
+  );
+
+  return (
+    <MerchantShellContext.Provider value={shellValue}>
+      <MerchantSettingsContext.Provider value={settingsValue}>
+        <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>
+      </MerchantSettingsContext.Provider>
+    </MerchantShellContext.Provider>
+  );
 }
 
 export function useMerchant(): MerchantContextValue {
   const context = useContext(MerchantContext);
   if (!context) throw new Error("useMerchant must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantShell(): MerchantShellContextValue {
+  const context = useContext(MerchantShellContext);
+  if (!context) throw new Error("useMerchantShell must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantSettings(): MerchantSettingsContextValue {
+  const context = useContext(MerchantSettingsContext);
+  if (!context) throw new Error("useMerchantSettings must be used inside MerchantProvider");
   return context;
 }
 

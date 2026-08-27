@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { hasPasskeyUnlock } from "@/lib/vault";
@@ -10,7 +10,7 @@ import { Button, ErrorText, Field } from "./ui";
 import { IconFingerprint, IconTrezor, LogoMark } from "./icons";
 
 export function LockScreen() {
-  const { unlock, unlockWithPasskey } = useWallet();
+  const { unlock, unlockWithPasskey } = useWalletLifecycleActions();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<"password" | "passkey" | null>(null);
   const [error, setError] = useState<string | null>(null);
