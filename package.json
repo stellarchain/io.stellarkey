@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/generate-static-headers.mjs",
+    "build": "next build && node scripts/generate-static-headers.mjs && node scripts/generate-service-worker.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "start": "node scripts/static-server.mjs",
     "lint": "eslint",

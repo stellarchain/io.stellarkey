@@ -75,6 +75,7 @@ test("static export and service worker enforce a hash-bound shell-only boundary"
   assert.match(layout, /maximumScale:\s*1,/);
   assert.match(layout, /userScalable:\s*false,/);
   assert.match(packageJson.scripts.build, /generate-static-headers/);
+  assert.match(packageJson.scripts.build, /generate-service-worker/);
   assert.match(packageJson.scripts.start, /static-server/);
 });
 
