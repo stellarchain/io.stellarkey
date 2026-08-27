@@ -49,3 +49,10 @@ test("Add Account retains secure hardware controls without a promotional device 
     /Trezor Hardware Suite|Hardware Security Architecture|institutional-grade|100% offline|Need help setting up your Trezor/,
   );
 });
+
+test("the login screen describes hardware support without claiming the vault is hardware-backed", () => {
+  const lockScreen = read("src/components/LockScreen.tsx");
+
+  assert.match(lockScreen, /Hardware wallets supported:/);
+  assert.doesNotMatch(lockScreen, /Hardware Backed:/);
+});
