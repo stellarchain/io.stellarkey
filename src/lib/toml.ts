@@ -9,6 +9,7 @@ import { getJson } from "./api";
 const LOGO_CACHE_KEY = "wallet.asset-logos.v1";
 const ISSUER_CACHE_KEY = "wallet.issuer-details.v1";
 const ASSET_METADATA_TTL_MS = 24 * 60 * 60 * 1000;
+export const ASSET_METADATA_NEGATIVE_TTL_MS = 60 * 60 * 1000;
 
 export interface IssuerDetails {
   domain: string;
@@ -67,12 +68,29 @@ export function isAssetMetadataFresh(cachedAt: number, now = Date.now()): boolea
   );
 }
 
-function readFreshCacheValue<T>(
+type CacheLookup<T> =
+  | { hit: true; value: T }
+  | { hit: false };
+
+function readFreshCacheEntry<T>(
   storageKey: string,
   cacheKey: string,
-): T | null {
+): CacheLookup<T> {
   const cached = readCache<TimedCacheValue<T>>(storageKey)[cacheKey];
-  return cached && isAssetMetadataFresh(cached.cachedAt) ? cached.value : null;
+  if (!cached) return { hit: false };
+  const ttl = cached.value === null
+    ? ASSET_METADATA_NEGATIVE_TTL_MS
+    : ASSET_METADATA_TTL_MS;
+  const now = Date.now();
+  return Number.isFinite(cached.cachedAt) && cached.cachedAt <= now && now - cached.cachedAt < ttl
+    ? { hit: true, value: cached.value }
+    : { hit: false };
+}
+
+function cacheMetadataValue<T>(storageKey: string, cacheKey: string, value: T): void {
+  const cache = readCache<TimedCacheValue<T>>(storageKey);
+  cache[cacheKey] = { value, cachedAt: Date.now() };
+  writeCache(storageKey, cache);
 }
 
 export function assetMetadataCacheKey(
@@ -88,10 +106,11 @@ export function getCachedAssetLogo(
   issuer: string,
   horizonUrl: string,
 ): string | null {
-  return readFreshCacheValue<string>(
+  const cached = readFreshCacheEntry<string | null>(
     LOGO_CACHE_KEY,
     assetMetadataCacheKey(code, issuer, horizonUrl),
   );
+  return cached.hit ? cached.value : null;
 }
 
 /** Extract home_domain for an issuer account */
@@ -101,6 +120,13 @@ async function fetchIssuerDomain(issuer: string, horizonUrl: string): Promise<st
   );
   return data?.home_domain ?? null;
 }
+
+interface MetadataResolution {
+  details: IssuerDetails | null;
+  stable: boolean;
+}
+
+const metadataInFlight = new Map<string, Promise<MetadataResolution>>();
 
 /** Parse the exact [[CURRENCIES]] declaration for one classic asset. */
 export function extractCurrencyInfo(
@@ -194,28 +220,13 @@ export async function fetchAssetLogo(
   horizonUrl: string,
 ): Promise<string | null> {
   const key = assetMetadataCacheKey(code, issuer, horizonUrl);
-  const cached = getCachedAssetLogo(code, issuer, horizonUrl);
-  if (cached !== null) return cached;
+  const cached = readFreshCacheEntry<string | null>(LOGO_CACHE_KEY, key);
+  if (cached.hit) return cached.value;
 
-  try {
-    const domain = await fetchIssuerDomain(issuer, horizonUrl);
-    if (!domain) return null;
-
-    const res = await fetch(`https://${domain}/.well-known/stellar.toml`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const toml = await res.text();
-    const { logoUrl } = extractCurrencyInfo(toml, code, issuer);
-    if (!logoUrl) return null;
-
-    const cache = readCache<TimedCacheValue<string>>(LOGO_CACHE_KEY);
-    cache[key] = { value: logoUrl, cachedAt: Date.now() };
-    writeCache(LOGO_CACHE_KEY, cache);
-    return logoUrl;
-  } catch {
-    return null;
-  }
+  const resolution = await resolveAssetMetadata(code, issuer, horizonUrl);
+  const logoUrl = resolution.details?.logoUrl ?? null;
+  if (resolution.stable) cacheMetadataValue(LOGO_CACHE_KEY, key, logoUrl);
+  return logoUrl;
 }
 
 /**
@@ -226,37 +237,68 @@ export async function fetchIssuerDetails(
   issuer: string,
   horizonUrl: string,
 ): Promise<IssuerDetails | null> {
+  return (await resolveAssetMetadata(code, issuer, horizonUrl)).details;
+}
+
+async function resolveAssetMetadata(
+  code: string,
+  issuer: string,
+  horizonUrl: string,
+): Promise<MetadataResolution> {
   const key = assetMetadataCacheKey(code, issuer, horizonUrl);
-  const cached = readFreshCacheValue<IssuerDetails>(ISSUER_CACHE_KEY, key);
-  if (cached) return cached;
+  const cached = readFreshCacheEntry<IssuerDetails | null>(ISSUER_CACHE_KEY, key);
+  if (cached.hit) return { details: cached.value, stable: true };
+
+  const pending = metadataInFlight.get(key);
+  if (pending) return pending;
+
+  const request = (async (): Promise<MetadataResolution> => {
+    try {
+      const domain = await fetchIssuerDomain(issuer, horizonUrl);
+      if (!domain) {
+        cacheMetadataValue(ISSUER_CACHE_KEY, key, null);
+        cacheMetadataValue(LOGO_CACHE_KEY, key, null);
+        return { details: null, stable: true };
+      }
+
+      const res = await fetch(`https://${domain}/.well-known/stellar.toml`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) {
+        const stableNegative = res.status >= 400 && res.status < 500 &&
+          res.status !== 408 && res.status !== 429;
+        if (!stableNegative) throw new Error(`Temporary stellar.toml response ${res.status}.`);
+        const details: IssuerDetails = { domain, assetDeclared: false };
+        cacheMetadataValue(ISSUER_CACHE_KEY, key, details);
+        cacheMetadataValue(LOGO_CACHE_KEY, key, null);
+        return { details, stable: true };
+      }
+      const toml = await res.text();
+      const currency = extractCurrencyInfo(toml, code, issuer);
+      const org = extractOrgInfo(toml);
+
+      const details: IssuerDetails = {
+        domain,
+        assetDeclared: currency.declared,
+        orgName: org.orgName,
+        orgUrl: org.orgUrl,
+        orgDescription: org.orgDescription,
+        orgOfficialEmail: org.orgOfficialEmail,
+        logoUrl: currency.logoUrl,
+      };
+
+      cacheMetadataValue(ISSUER_CACHE_KEY, key, details);
+      cacheMetadataValue(LOGO_CACHE_KEY, key, details.logoUrl ?? null);
+      return { details, stable: true };
+    } catch {
+      return { details: null, stable: false };
+    }
+  })();
+  metadataInFlight.set(key, request);
 
   try {
-    const domain = await fetchIssuerDomain(issuer, horizonUrl);
-    if (!domain) return null;
-
-    const res = await fetch(`https://${domain}/.well-known/stellar.toml`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return { domain, assetDeclared: false };
-    const toml = await res.text();
-    const currency = extractCurrencyInfo(toml, code, issuer);
-    const org = extractOrgInfo(toml);
-
-    const details: IssuerDetails = {
-      domain,
-      assetDeclared: currency.declared,
-      orgName: org.orgName,
-      orgUrl: org.orgUrl,
-      orgDescription: org.orgDescription,
-      orgOfficialEmail: org.orgOfficialEmail,
-      logoUrl: currency.logoUrl,
-    };
-
-    const cache = readCache<TimedCacheValue<IssuerDetails>>(ISSUER_CACHE_KEY);
-    cache[key] = { value: details, cachedAt: Date.now() };
-    writeCache(ISSUER_CACHE_KEY, cache);
-    return details;
-  } catch {
-    return null;
+    return await request;
+  } finally {
+    if (metadataInFlight.get(key) === request) metadataInFlight.delete(key);
   }
 }

@@ -398,28 +398,36 @@ export function Dashboard() {
       const prices = await fetchAssetPrices(pricedAssets);
       if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
 
-      // Resolve token logos for custom assets (cached per code:issuer)
+      // Resolve custom-asset logos concurrently, then publish one React state
+      // update so a page of trustlines does not render once per TOML response.
       const customAssets = (balances ?? []).filter(
         (b): b is AssetBalance & { issuer: string } =>
           !b.isNative && b.issuer !== null && !lookupKnownAsset(b.code, b.issuer, network),
       );
-      for (const b of customAssets) {
-        const key = assetMetadataCacheKey(b.code, b.issuer, getHorizonUrl(network));
-        if (assetLogos[key]) continue;
-        const cached = getCachedAssetLogo(b.code, b.issuer, getHorizonUrl(network));
-        if (cached) {
-          setAssetLogos((prev) => ({ ...prev, [key]: cached }));
-          continue;
-        }
-        void fetchAssetLogo(b.code, b.issuer, getHorizonUrl(network)).then((url) => {
-          if (alive && url) setAssetLogos((prev) => ({ ...prev, [key]: url }));
+      const horizonUrl = getHorizonUrl(network);
+      const resolvedLogos = await Promise.all(customAssets.map(async (asset) => ({
+        key: assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl),
+        url: getCachedAssetLogo(asset.code, asset.issuer, horizonUrl) ??
+          await fetchAssetLogo(asset.code, asset.issuer, horizonUrl),
+      })));
+      if (alive) {
+        setAssetLogos((previous) => {
+          const next = { ...previous };
+          let changed = false;
+          for (const { key, url } of resolvedLogos) {
+            if (url && next[key] !== url) {
+              next[key] = url;
+              changed = true;
+            }
+          }
+          return changed ? next : previous;
         });
       }
     })();
     return () => {
       alive = false;
     };
-  }, [network, balances, valuationBalances, assetLogos]);
+  }, [network, balances, valuationBalances]);
 
   // PWA install prompt capture
   useEffect(() => {
