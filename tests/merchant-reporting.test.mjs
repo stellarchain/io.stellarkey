@@ -293,3 +293,11 @@ test("tax record editing stays out of the records hub", () => {
   assert.match(sheets, /id="export-from"/);
   assert.match(sheets, /recordRetentionMonths/);
 });
+
+test("report joins use prebuilt record indexes instead of repeated linear searches", () => {
+  const reporting = source("src/lib/merchant/reporting.ts");
+  assert.match(reporting, /chargesById/);
+  assert.match(reporting, /ordersById/);
+  assert.doesNotMatch(reporting, /store\.charges\.find/);
+  assert.doesNotMatch(reporting, /store\.orders\.find/);
+});

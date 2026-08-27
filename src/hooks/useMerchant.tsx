@@ -158,6 +158,11 @@ import {
 } from "@/lib/merchant/settlement";
 import { BROWSER_PERIPHERALS, merchantRuntimeState } from "@/lib/merchant/runtime";
 import {
+  expireAwaitingCharges,
+  indexMerchantRecords,
+  nextAwaitingChargeExpiry,
+} from "@/lib/merchant/selectors";
+import {
   fetchIncomingPayments,
   merchantCursorKey,
   merchantWatchDestinations,
@@ -247,33 +252,6 @@ export interface TodaySummary {
   byHour: { hour: number; orders: number; takingsMinor: Minor }[];
   topItems: { name: string; units: number; revenueMinor: Minor }[];
   assetMix: { asset: AcceptedAsset; takingsMinor: Minor; share: number }[];
-}
-
-/**
- * What today is measured against. A figure on its own is trivia: nobody can
- * tell a good day from a quiet one without something to hold it beside.
- *
- * Every field is derived from the same settled orders `today` is built from —
- * same network scoping, same `paidAt` filter — so nothing on Insights can
- * disagree with the figure above it. The store keeps 400 days, so the history
- * is genuinely there to be counted rather than estimated.
- */
-export interface InsightsHistory {
-  /** The same weekday a week ago. Null when the shop has no orders that day. */
-  sameDayLastWeek: { takingsMinor: Minor; orderCount: number } | null;
-  /** Takings up to the same clock time on that day, for a like-for-like read. */
-  sameDayLastWeekToDate: { takingsMinor: Minor; orderCount: number } | null;
-  /**
-   * Oldest first, one entry per calendar day, days with no trade included.
-   * `toDateMinor` is the same day cut at this hour of the clock, so a fortnight
-   * ending in a day that is still filling can be plotted like with like instead
-   * of setting a part day against thirteen whole ones.
-   */
-  last14Days: { at: number; takingsMinor: Minor; orderCount: number; toDateMinor: Minor }[];
-  /** Mean takings per hour across the last four occurrences of this weekday. */
-  typicalByHour: { hour: number; takingsMinor: Minor }[];
-  /** Hours of the trading day already elapsed, so a partial day reads as partial. */
-  hoursElapsed: number;
 }
 
 export type MerchantRefundOutcome =
@@ -474,7 +452,6 @@ interface MerchantContextValue {
   pollNow: () => Promise<void>;
 
   today: TodaySummary;
-  history: InsightsHistory;
   orderFor: (chargeId: string) => Order | null;
 }
 
@@ -498,11 +475,6 @@ const POLL_ACTIVE_MS = 4_000;
 const POLL_IDLE_MS = 30_000;
 const WATCHER_LEASE_MS = 25_000;
 
-/** The span of the trend line on Insights, and the weeks a typical day averages. */
-const TREND_DAYS = 14;
-const TYPICAL_WEEKS = 4;
-const HOUR_MS = 60 * 60 * 1000;
-
 function uid(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${randomHex(12)}`;
 }
@@ -514,29 +486,8 @@ function startOfDay(at: number): number {
   return d.getTime();
 }
 
-/**
- * Calendar arithmetic, not 24-hour arithmetic. Across a clock change a day is
- * 23 or 25 hours long, and "the same weekday last week" has to come back the
- * same weekday however many hours sat in between.
- */
-function shiftDays(dayStart: number, days: number): number {
-  const d = new Date(dayStart);
-  d.setDate(d.getDate() + days);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function startOfToday(now = Date.now()): number {
   return startOfDay(now);
-}
-
-/**
- * Midnight this morning and how far the clock has got past it, read once so the
- * two can never come from different instants.
- */
-function todayWindow(now = Date.now()): { start: number; elapsedMs: number } {
-  const start = startOfDay(now);
-  return { start, elapsedMs: now - start };
 }
 
 export function MerchantProvider({ children }: { children: React.ReactNode }) {
@@ -2120,20 +2071,33 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   /** Expire anything past its window so the UI never shows a dead countdown. */
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => {
-      const now = Date.now();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
       const current = storeRef.current;
-      const stale = current.charges.some((c) => c.status === "awaiting" && now >= c.expiresAt);
-      if (!stale) return;
-      void persist({
-          ...current,
-          charges: current.charges.map((c) =>
-            c.status === "awaiting" && now >= c.expiresAt ? { ...c, status: "expired" as const } : c,
-          ),
+      const nextExpiry = nextAwaitingChargeExpiry(current.charges);
+      if (nextExpiry === null) return;
+      const delay = Math.min(Math.max(0, nextExpiry - Date.now()), 2_147_483_647);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        const latest = storeRef.current;
+        const charges = expireAwaitingCharges(latest.charges, Date.now());
+        if (charges === latest.charges) {
+          schedule();
+          return;
+        }
+        void persist({
+          ...latest,
+          charges,
         });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [enabled, persist]);
+      }, delay);
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [enabled, persist, store.charges]);
 
   /* ---------------- the watcher ---------------- */
 
@@ -2663,6 +2627,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------------- derived ---------------- */
 
+  const recordIndex = useMemo(
+    () => indexMerchantRecords(store.orders, store.charges),
+    [store.charges, store.orders],
+  );
+
   const today = useMemo<TodaySummary>(() => {
     const from = startOfToday(reportingNow);
     const paid = store.orders.filter(
@@ -2702,7 +2671,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
     const mix = new Map<string, { asset: AcceptedAsset; takingsMinor: Minor }>();
     for (const order of paid) {
-      const charge = store.charges.find((c) => c.orderId === order.id && c.payment);
+      const charge = recordIndex.paymentChargeByOrderId.get(order.id);
       const asset = charge?.payment?.asset;
       if (!asset) continue;
       const key = assetKey(asset);
@@ -2732,98 +2701,11 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         }))
         .sort((a, b) => b.takingsMinor - a.takingsMinor),
     };
-  }, [network, reportingNow, store.charges, store.orders, store.refunds]);
-
-  /**
-   * The same ledger of settled orders, read backwards. It recomputes on exactly
-   * the inputs `today` does, so the two are always a matched pair: a comparison
-   * built from a different moment than the figure it qualifies would be worse
-   * than no comparison at all.
-   */
-  const history = useMemo<InsightsHistory>(() => {
-    const { start: todayStart, elapsedMs } = todayWindow(reportingNow);
-
-    const paid = store.orders.filter(
-      (o) => o.network === network && o.paidAt !== null,
-    );
-
-    // One pass over the retained orders: totals per calendar day, the same
-    // totals cut off at this hour of the clock, and takings per hour per day.
-    const days = new Map<number, { takingsMinor: Minor; orderCount: number }>();
-    const toClock = new Map<number, { takingsMinor: Minor; orderCount: number }>();
-    const hours = new Map<number, Map<number, Minor>>();
-
-    for (const order of paid) {
-      const at = order.paidAt as number;
-      const dayStart = startOfDay(at);
-      const total = order.totals.totalMinor;
-
-      const day = days.get(dayStart) ?? { takingsMinor: 0, orderCount: 0 };
-      day.takingsMinor += total;
-      day.orderCount += 1;
-      days.set(dayStart, day);
-
-      if (at - dayStart < elapsedMs) {
-        const sofar = toClock.get(dayStart) ?? { takingsMinor: 0, orderCount: 0 };
-        sofar.takingsMinor += total;
-        sofar.orderCount += 1;
-        toClock.set(dayStart, sofar);
-      }
-
-      const perHour = hours.get(dayStart) ?? new Map<number, Minor>();
-      const hour = new Date(at).getHours();
-      perHour.set(hour, (perHour.get(hour) ?? 0) + total);
-      hours.set(dayStart, perHour);
-    }
-
-    const lastWeekStart = shiftDays(todayStart, -7);
-    const lastWeek = days.get(lastWeekStart) ?? null;
-
-    const last14Days = Array.from({ length: TREND_DAYS }, (_, i) => {
-      const dayStart = shiftDays(todayStart, i - (TREND_DAYS - 1));
-      const day = days.get(dayStart);
-      return {
-        at: dayStart,
-        takingsMinor: day?.takingsMinor ?? 0,
-        orderCount: day?.orderCount ?? 0,
-        // The same one-pass `toClock` totals the lead's comparison is drawn
-        // from, kept for every day rather than for last week alone.
-        toDateMinor: toClock.get(dayStart)?.takingsMinor ?? 0,
-      };
-    });
-
-    // Averaged over the same weekdays that actually traded, not over four flat:
-    // a shop a fortnight old has two Mondays, and dividing them by four would
-    // draw a typical day at half its height for today to beat.
-    const weekdays = Array.from({ length: TYPICAL_WEEKS }, (_, i) =>
-      shiftDays(todayStart, -7 * (i + 1)),
-    ).filter((dayStart) => days.has(dayStart));
-
-    const typicalTotals = new Map<number, Minor>();
-    for (const dayStart of weekdays) {
-      for (const [hour, minor] of hours.get(dayStart) ?? []) {
-        typicalTotals.set(hour, (typicalTotals.get(hour) ?? 0) + minor);
-      }
-    }
-
-    return {
-      sameDayLastWeek: lastWeek ? { ...lastWeek } : null,
-      // Paired with the full day deliberately: a day that traded but had taken
-      // nothing by this hour is a real zero, not a missing figure.
-      sameDayLastWeekToDate: lastWeek
-        ? { ...(toClock.get(lastWeekStart) ?? { takingsMinor: 0, orderCount: 0 }) }
-        : null,
-      last14Days,
-      typicalByHour: [...typicalTotals.entries()]
-        .map(([hour, minor]) => ({ hour, takingsMinor: Math.round(minor / weekdays.length) }))
-        .sort((a, b) => a.hour - b.hour),
-      hoursElapsed: elapsedMs / HOUR_MS,
-    };
-  }, [network, reportingNow, store.orders]);
+  }, [network, recordIndex.paymentChargeByOrderId, reportingNow, store.orders, store.refunds]);
 
   const activeCharge = useMemo(
-    () => store.charges.find((c) => c.id === activeChargeId) ?? null,
-    [activeChargeId, store.charges],
+    () => (activeChargeId ? (recordIndex.chargesById.get(activeChargeId) ?? null) : null),
+    [activeChargeId, recordIndex.chargesById],
   );
 
   const runtime = useMemo(
@@ -2998,10 +2880,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     pollNow,
 
     today,
-    history,
     orderFor: (chargeId) => {
-      const charge = store.charges.find((c) => c.id === chargeId);
-      return charge ? (store.orders.find((o) => o.id === charge.orderId) ?? null) : null;
+      const charge = recordIndex.chargesById.get(chargeId);
+      return charge ? (recordIndex.ordersById.get(charge.orderId) ?? null) : null;
     },
   }), [
     activeCharge,
@@ -3036,7 +2917,6 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     exportRecoveryData,
     foreground,
     forgetCustomer,
-    history,
     invoiceBlockedReason,
     issueInvoice,
     lockStaffSession,
@@ -3049,6 +2929,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     previewReportExport,
     quotableAssets,
     ready,
+    recordIndex,
     recordManualInvoicePayment,
     redeemLoyaltyReward,
     refundOrder,

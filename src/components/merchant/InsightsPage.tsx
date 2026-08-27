@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
+import { LIVE_MINUTE_MS, useLiveNow } from "@/hooks/useLiveNow";
 import { useWallet } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import type { FiatCurrency } from "@/lib/format";
 import { assetKey, isNative } from "@/lib/merchant/charge";
 import { fmtMinor } from "@/lib/merchant/money";
+import { deriveInsightsHistory, startOfDay } from "@/lib/merchant/insights";
 import type { AcceptedAsset, Minor } from "@/lib/merchant/types";
 import { Sparkline } from "../Sparkline";
 import { IOSBackButton } from "../ui";
@@ -117,18 +119,17 @@ function FindingLine({ parts }: { parts: Part[] }) {
 }
 
 export function InsightsPage({ onBack }: { onBack?: () => void }) {
-  const { ready, today, history, orders, refunds, settings } = useMerchant();
+  const { ready, today, orders, refunds, settings } = useMerchant();
   const { network } = useWallet();
+  const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const currency = settings.currency;
 
   const summary = today;
-  const past = history;
-
-  const dayStart = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }, []);
+  const past = useMemo(
+    () => deriveInsightsHistory(orders, { network, now: reportingNow }),
+    [network, orders, reportingNow],
+  );
+  const dayStart = startOfDay(reportingNow);
 
   // The same slice `today` is built from, so the tax breakdown always adds up
   // to the tax figure the summary reports.
