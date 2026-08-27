@@ -173,6 +173,9 @@ test("the largest valid native balance remains inside the iPhone dashboard", asy
   await page.setViewportSize({ width: 320, height: 693 });
 
   await importTestWallet(page);
-  await expect(page.getByText("922,337,203,685.4775807", { exact: true })).toBeVisible();
-  await expectMobileContainment(page, "dashboard with a maximum Stellar balance");
+  await expect(page.locator(".balance-display-value")).toHaveText("922,337,203,685.4775807");
+  for (const width of [320, 393]) {
+    await page.setViewportSize({ width, height: width === 320 ? 693 : 852 });
+    await expectMobileContainment(page, `${width}px dashboard with a maximum Stellar balance`);
+  }
 });
