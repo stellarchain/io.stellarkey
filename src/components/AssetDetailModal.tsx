@@ -27,9 +27,13 @@ import { IconExternal, IconTrash } from "./icons";
 
 export function AssetDetailModal({
   asset,
+  favorite,
+  onToggleFavorite,
   onClose,
 }: {
   asset: AssetBalance | null;
+  favorite: boolean;
+  onToggleFavorite: (key: string) => void;
   onClose: () => void;
 }) {
   const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, fiatRates, minimumBalanceXlm, recommendedBaseFeeStroops, submissionStatus } = useWallet();
@@ -213,6 +217,44 @@ export function AssetDetailModal({
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          aria-pressed={favorite}
+          aria-label={
+            favorite
+              ? `Remove ${asset.code} from favorites`
+              : `Mark ${asset.code} as favorite`
+          }
+          onClick={() => onToggleFavorite(asset.key)}
+          className={`row-hover mt-5 flex min-h-14 w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-colors ${
+            favorite
+              ? "border-[#FFD60A]/25 bg-[#FFD60A]/10"
+              : "border-white/[0.08] bg-white/[0.04]"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[19px] ${
+              favorite ? "bg-[#FFD60A]/15 text-[#FFD60A]" : "bg-white/[0.07] text-neutral-400"
+            }`}
+          >
+            {favorite ? "★" : "☆"}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15.5px] font-medium text-white">Favorite asset</span>
+            <span className="block text-[12px] leading-tight text-neutral-400">
+              Favorites appear first on Home
+            </span>
+          </span>
+          <span
+            className={`text-[14px] font-medium ${
+              favorite ? "text-[#FFD60A]" : "text-neutral-400"
+            }`}
+          >
+            {favorite ? "On" : "Off"}
+          </span>
+        </button>
 
         {/* Liability-aware balance availability for every asset. */}
         {balanceSummary && (

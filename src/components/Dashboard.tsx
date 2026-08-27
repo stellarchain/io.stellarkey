@@ -2095,37 +2095,18 @@ export function Dashboard() {
                     {filteredAssets?.map((asset, i) => {
                       const known = lookupKnownAsset(asset.code, asset.issuer, network);
                       const hue = assetHue(asset.key);
-                      const isPinned = pinnedAssets.includes(asset.key);
                       return (
-                        <div
+                        <button
                           key={asset.key}
-                          className={`group row-hover flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left ${
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            setDetailAsset(asset);
+                          }}
+                          className={`row-hover flex w-full min-w-0 items-center gap-3.5 px-4 py-3.5 text-left ${
                             i > 0 ? "ios-sep" : ""
                           }`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => togglePinAsset(asset.key)}
-                            aria-pressed={isPinned}
-                            aria-label={isPinned ? `Remove ${asset.code} from favorites` : `Mark ${asset.code} as favorite`}
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[18px] transition-colors ${
-                              isPinned
-                                ? "text-[#FFD60A]"
-                                : "text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-200"
-                            }`}
-                            title={isPinned ? `Remove ${asset.code} from favorites` : `Mark ${asset.code} as favorite`}
-                          >
-                            {isPinned ? "★" : "☆"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic("selection");
-                              setDetailAsset(asset);
-                            }}
-                            className="flex-1 min-w-0 flex items-center gap-3.5 text-left py-1"
-                          >
                             {(() => {
                               const logoUrl =
                                 !asset.isNative && asset.issuer
@@ -2212,8 +2193,7 @@ export function Dashboard() {
                               )}
                             </span>
                             <Chevron />
-                          </button>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -2581,6 +2561,8 @@ export function Dashboard() {
       <AssetDetailModal
         key={`${network}:${detailAsset?.key ?? "closed"}`}
         asset={detailAsset}
+        favorite={detailAsset ? pinnedAssets.includes(detailAsset.key) : false}
+        onToggleFavorite={togglePinAsset}
         onClose={() => setDetailAsset(null)}
       />
       <TxDetailModal key={txDetail?.hash ?? "closed"} item={txDetail} onClose={() => setTxDetail(null)} />
