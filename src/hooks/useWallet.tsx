@@ -44,6 +44,7 @@ import {
   saveNetworkPref,
   setActiveStoredAccount,
   unlockVault,
+  unlockVaultWithPasskey,
   updateAccountLabel,
   wipeVault,
   clearSessionSecrets,
@@ -225,6 +226,7 @@ interface WalletContextValue {
   revealRecoveryPhrase: (password: string) => Promise<string>;
   completeSetup: () => void;
   unlock: (password: string) => Promise<void>;
+  unlockWithPasskey: () => Promise<void>;
   lock: () => void;
   resetWallet: () => Promise<void>;
   restoreDeletedWallet: (password: string) => Promise<void>;
@@ -1103,8 +1105,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("unlocked");
   }, []);
 
-  const unlock = useCallback(async (password: string) => {
-    const vault = await unlockVault(password);
+  const installUnlockedVault = useCallback((vault: Awaited<ReturnType<typeof unlockVault>>) => {
     setAccounts(vault.accounts.map(stripSecret));
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
@@ -1115,6 +1116,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setPhase("unlocked");
   }, []);
+
+  const unlock = useCallback(async (password: string) => {
+    installUnlockedVault(await unlockVault(password));
+  }, [installUnlockedVault]);
+
+  const unlockWithPasskey = useCallback(async () => {
+    installUnlockedVault(await unlockVaultWithPasskey());
+  }, [installUnlockedVault]);
 
   const lock = useCallback(() => {
     lockVaultAndReset();
@@ -1915,6 +1924,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       revealRecoveryPhrase,
       completeSetup,
       unlock,
+      unlockWithPasskey,
       lock,
       resetWallet,
       restoreDeletedWallet,
@@ -1990,6 +2000,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       revealRecoveryPhrase,
       completeSetup,
       unlock,
+      unlockWithPasskey,
       lock,
       resetWallet,
       restoreDeletedWallet,

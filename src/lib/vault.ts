@@ -36,6 +36,15 @@ import {
   wrapVaultMasterKey,
   zeroKey,
 } from "./vault-keys";
+import {
+  PASSKEY_RECORD_KEY,
+  loadPasskeyRecord,
+  registerPasskeyMasterKey,
+  removePasskeyRecord,
+  unwrapPasskeyMasterKey,
+  type PasskeyDependencies,
+  type PasskeyStorage,
+} from "./passkey-prf";
 
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
@@ -110,21 +119,6 @@ export function saveAutoLockPref(ms: number): void {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(AUTOLOCK_KEY, String(ms));
   }
-}
-
-export function loadBiometricsPref(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(BIOMETRICS_KEY) === "1";
-}
-
-export function saveBiometricsPref(enabled: boolean): void {
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(BIOMETRICS_KEY, enabled ? "1" : "0");
-  }
-}
-
-export function canUseBiometrics(): boolean {
-  return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
 }
 
 export function loadVaultResult(): StorageLoadResult<VaultFile> {
@@ -580,6 +574,60 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   } finally {
     zeroKey(unlocked.masterKey);
   }
+}
+
+/**
+ * Add an origin-bound, device-local WebAuthn PRF wrapper around the existing
+ * vault master key. The password is still required for recovery and exports.
+ */
+export async function enablePasskeyUnlock(
+  password: string,
+  dependencies?: PasskeyDependencies,
+): Promise<void> {
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  requireWebCrypto();
+  const unlocked = await masterKeyForPassword(vault, password);
+  try {
+    await migratePrivateTxNotes(password, unlocked.masterKey);
+    await registerPasskeyMasterKey(unlocked.masterKey, dependencies);
+  } finally {
+    zeroKey(unlocked.masterKey);
+  }
+}
+
+/** Unlock v3 vault state with the locally registered platform passkey. */
+export async function unlockVaultWithPasskey(
+  dependencies?: PasskeyDependencies,
+): Promise<VaultFile> {
+  const vault = readVault();
+  if (!vault || vault.accounts.length === 0) {
+    throw new Error("No wallet found. Please create or import one.");
+  }
+  if (!isVaultV3(vault)) {
+    throw new Error("Unlock with your password once before enabling a passkey.");
+  }
+  requireWebCrypto();
+  lockVault();
+  const masterKey = await unwrapPasskeyMasterKey(undefined, dependencies);
+  try {
+    // AES-GCM authentication of wrappedMerchantKey proves that the passkey
+    // unwrapped the exact master key belonging to this vault.
+    await establishVaultSession(masterKey, vault);
+    return vault;
+  } finally {
+    zeroKey(masterKey);
+  }
+}
+
+export function hasPasskeyUnlock(storage?: PasskeyStorage): boolean {
+  if (!storage && typeof window === "undefined") return false;
+  return Boolean(loadPasskeyRecord(storage));
+}
+
+export function removePasskeyUnlock(storage?: PasskeyStorage): void {
+  if (!storage && typeof window === "undefined") return;
+  removePasskeyRecord(storage);
 }
 
 export async function revealSecret(accountId: string, password: string): Promise<string> {
@@ -1145,6 +1193,7 @@ export async function restoreVaultBackup(
     CURRENCY_KEY,
     TX_NOTES_KEY,
     MERCHANT_STORE_KEY,
+    PASSKEY_RECORD_KEY,
   ];
   const before = new Map(restoreKeys.map((key) => [key, window.localStorage.getItem(key)]));
   const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
@@ -1158,6 +1207,9 @@ export async function restoreVaultBackup(
     [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
     [MERCHANT_STORE_KEY, merchantRepository ? null : payload.merchantStore || null],
   ]);
+  // A passkey wraps one exact vault master key and is never portable in a
+  // backup, so replacing the vault must revoke the previous local wrapper.
+  writes.set(PASSKEY_RECORD_KEY, null);
   if (payload.settings) {
     const settings = payload.settings;
     writes.set(NETWORK_KEY, settings.network);

@@ -48,7 +48,19 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   const failures = observePageFailures(page);
   await importTestWallet(page);
 
+  await page.evaluate(() => {
+    localStorage.setItem("wallet.passkey-prf.v1", JSON.stringify({
+      version: 1,
+      credentialId: "AQ",
+      prfSalt: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      wrappedMasterKey: { iv: "local-test-iv", ciphertext: "local-test-ciphertext" },
+      createdAt: new Date().toISOString(),
+    }));
+  });
+
   await page.getByRole("button", { name: "Lock Wallet" }).click();
+  await expect(page.getByRole("button", { name: "Unlock with Face ID / Touch ID" })).toBeVisible();
+  await expect(page.getByPlaceholder("Enter password")).toBeVisible();
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
   await expect(page.getByText("Total Portfolio", { exact: true })).toBeVisible();
