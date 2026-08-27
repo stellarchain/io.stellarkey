@@ -4,7 +4,6 @@ import { useRef, useState } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import {
-  exportKeystoreUnlocked,
   exportVaultBackup,
   hasMnemonic,
   inspectVaultBackup,
@@ -69,16 +68,17 @@ function WizardInner({ onClose }: { onClose: () => void }) {
   const [restoreInfo, setRestoreInfo] = useState<VaultBackupInfo | null>(null);
   const [restorePw, setRestorePw] = useState("");
   const [paperOpen, setPaperOpen] = useState(false);
+  const [preparedBackup, setPreparedBackup] = useState<string | null>(null);
   const [backupHealth, setBackupHealth] = useState(() => loadBackupHealth());
 
   const hasPhrase = hasMnemonic();
-  const canReveal = activeAccount !== null && !activeAccount.watchOnly;
-  const usesPassword = method !== "file";
+  const canReveal = activeAccount !== null && !activeAccount.watchOnly && !activeAccount.hardware;
 
   function handleClose() {
     // Wipe sensitive state on close
     setRevealed(null);
     setPassword("");
+    setPreparedBackup(null);
     onClose();
   }
 
@@ -87,7 +87,10 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     setError(null);
     if (step === "method" || step === "restore-pick") setStep("choose");
     else if (step === "password") setStep("method");
-    else if (step === "secure") setStep(usesPassword ? "password" : "method");
+    else if (step === "secure") {
+      setPreparedBackup(null);
+      setStep("password");
+    }
     else if (step === "restore-password") setStep("restore-pick");
     else if (step === "restore-confirm") setStep("restore-password");
   }
@@ -96,7 +99,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     triggerHaptic("selection");
     setMethod(m);
     setError(null);
-    setStep(m === "file" ? "secure" : "password");
+    setStep("password");
   }
 
   async function handleVerify() {
@@ -104,6 +107,13 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
+      if (method === "file") {
+        setPreparedBackup(await exportVaultBackup(password));
+        setPassword("");
+        triggerHaptic("success");
+        setStep("secure");
+        return;
+      }
       let material: string;
       if (method === "phrase" || (method === "paper" && hasPhrase)) {
         material = await revealRecoveryPhrase(password);
@@ -135,9 +145,10 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
+      if (!preparedBackup) throw new Error("Verify your password to prepare a fresh backup.");
       download(
         `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
-        await exportVaultBackup(),
+        preparedBackup,
       );
       setBackupHealth(markBackupExported());
       triggerHaptic("success");
@@ -148,22 +159,6 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function handleDownloadKeystore() {
-    if (!activeAccount) return;
-    const json = await exportKeystoreUnlocked(activeAccount.id);
-    if (!json) {
-      triggerHaptic("error");
-      toast("Keystore unavailable for this account type", "error");
-      return;
-    }
-    download(
-      `wallet-${activeAccount.label.toLowerCase().replace(/\s+/g, "-")}-keystore.json`,
-      json,
-    );
-    triggerHaptic("success");
-    toast("Encrypted keystore downloaded", "success");
   }
 
   function handleRestoreFile(file: File) {
@@ -234,7 +229,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
       : step === "password"
         ? { current: 2, total: usesPasswordTotal() }
         : step === "secure"
-          ? { current: method === "file" ? 2 : 3, total: usesPasswordTotal() }
+          ? { current: 3, total: usesPasswordTotal() }
           : step === "done"
             ? { current: usesPasswordTotal(), total: usesPasswordTotal() }
             : step === "restore-pick"
@@ -443,8 +438,9 @@ function WizardInner({ onClose }: { onClose: () => void }) {
           {step === "password" && (
             <div>
               <Notice tone="warn">
-                Your {method === "secret" ? "secret key" : "recovery phrase"} is about to be
-                decrypted on this device. Make sure no one is watching your screen.
+                {method === "file"
+                  ? "Enter your current password so the backup is verified and encrypted at the moment it is created."
+                  : `Your ${method === "secret" ? "secret key" : "recovery phrase"} is about to be decrypted on this device. Make sure no one is watching your screen.`}
               </Notice>
               <div className="mt-4">
                 <input
@@ -468,7 +464,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               <WizardFooter
                 backLabel="Back"
                 onBack={goBack}
-                nextLabel="Verify & Reveal"
+                nextLabel={method === "file" ? "Verify & Continue" : "Verify & Reveal"}
                 loading={busy}
                 nextDisabled={!password || busy}
                 onNext={() => void handleVerify()}
@@ -509,15 +505,6 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                     >
                       <IconDownload size={15} /> Download Encrypted Backup
                     </Button>
-                    {canReveal && (
-                      <button
-                        type="button"
-                        onClick={() => void handleDownloadKeystore()}
-                        className="mt-2.5 w-full text-center text-[12px] font-medium text-neutral-500 transition-colors hover:text-[#0A84FF]"
-                      >
-                        Or download a keystore for {activeAccount?.label ?? "this account"} only
-                      </button>
-                    )}
                   </div>
                 </>
               )}
@@ -805,6 +792,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
           kind={hasPhrase ? "mnemonic" : "secret"}
           path={activeAccount.path}
           accountId={activeAccount.id}
+          password={password}
           networkLabel={NETWORKS[network].label}
         />
       )}

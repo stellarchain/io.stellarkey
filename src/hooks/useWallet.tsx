@@ -27,7 +27,7 @@ import {
   hasDeletedVault,
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
-  getSecretKey,
+  withSecretKey,
   initializeVault,
   initializeHardwareVault,
   loadAutoLockPref,
@@ -130,6 +130,16 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
     publicKey: acc.publicKey,
     path: acc.path ?? "m/44'/148'/0'",
   };
+}
+
+function withSigningSecret<T>(
+  account: AccountMeta,
+  hardwareSigner: HardwareSigner | undefined,
+  operation: (secretKey: string | undefined) => T | Promise<T>,
+): Promise<T> {
+  return hardwareSigner
+    ? Promise.resolve(operation(undefined))
+    : withSecretKey(account.id, operation);
 }
 
 const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v1";
@@ -1536,8 +1546,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("This is a watch-only account — switch to a signing account to send.");
       }
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Payment",
         undefined,
         (onPrepared) => api.sendPayment({
@@ -1549,7 +1558,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1569,8 +1578,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Batch Payment",
         undefined,
         (onPrepared) => api.sendBatchPayments({
@@ -1582,7 +1590,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1591,8 +1599,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (balanceId: string) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
         (onPrepared) => api.claimClaimableBalance({
@@ -1604,7 +1611,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1613,8 +1620,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (destination: string) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Account merge",
         { kind: "reconcile_account_merge" },
         (onPrepared) => api.mergeAccount({
@@ -1626,7 +1632,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1635,8 +1641,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (params: { code: string; issuer: string; add: boolean }) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
         undefined,
         (onPrepared) => api.changeTrust({
@@ -1648,7 +1653,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1657,8 +1662,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (assets: Array<{ code: string; issuer: string }>) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await runTrackedBroadcast(
+      const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         `${assets.length} trustlines`,
         undefined,
         (onPrepared) => api.changeTrustBatch({
@@ -1670,7 +1674,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (outcome) => outcome,
-      );
+      ));
       return result;
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
@@ -1688,8 +1692,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Swap",
         undefined,
         (onPrepared) => swapLib.swapStrictSend({
@@ -1701,7 +1704,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
-      );
+      ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
@@ -1719,8 +1722,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Watch-only accounts cannot sign transactions.");
       }
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      const result = await runTrackedBroadcast(
+      const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Multi-sig update",
         undefined,
         (onPrepared) => msig.applyMultisigConfig({
@@ -1733,7 +1735,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (outcome) => outcome.submission,
-      );
+      ));
       if (!result.submission) {
         toast("Configuration signed — additional approval required", "info");
       }
@@ -1748,8 +1750,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Watch-only accounts cannot sign transactions.");
     }
     const hw = hardwareSignerFor(activeAccount);
-    const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-    const result = await runTrackedBroadcast(
+    const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
       "Multi-sig disabled",
       undefined,
       (onPrepared) => msig.disableMultisig({
@@ -1761,7 +1762,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         onPrepared,
       }),
       (outcome) => outcome.submission,
-    );
+    ));
     if (!result.submission) {
       toast("Disable request signed — additional approval required", "info");
     }
@@ -1779,15 +1780,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return msig.prepareCosignPayment({
+      return withSigningSecret(activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
         network,
         sourcePublicKey: activeAccount.publicKey,
         secretKey,
         hardwareSigner: hw,
         ...params,
         feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
-      });
+      }));
     },
     [activeAccount, network, recommendedBaseFeeStroops],
   );
@@ -1796,8 +1796,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (xdr: string, confirmedNetwork: NetworkKey | null) => {
       if (!activeAccount) throw new Error("No active account");
       const hw = hardwareSignerFor(activeAccount);
-      const secretKey = hw ? undefined : getSecretKey(activeAccount.id);
-      return runTrackedBroadcast(
+      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Co-signed transaction",
         undefined,
         (onPrepared) => msig.cosignTransaction({
@@ -1810,7 +1809,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (outcome) => outcome.submission,
-      );
+      ));
     },
     [activeAccount, network, runTrackedBroadcast],
   );

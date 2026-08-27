@@ -1,5 +1,5 @@
 import { StrKey } from "@stellar/stellar-sdk";
-import type { EncryptedPayload } from "./crypto";
+import type { EncryptedPayload, RawKeyEncryptedPayload } from "./crypto";
 import type { StoredAccount, VaultFile } from "./types";
 import { isEncryptedMerchantEnvelope } from "./merchant/crypto";
 
@@ -36,7 +36,16 @@ export function isEncryptedPayloadValue(value: unknown): value is EncryptedPaylo
   );
 }
 
-function isStoredAccount(value: unknown): value is StoredAccount {
+export function isRawKeyEncryptedPayloadValue(value: unknown): value is RawKeyEncryptedPayload {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.iv === "string" && value.iv.length > 0 &&
+    typeof value.ciphertext === "string" && value.ciphertext.length > 0 &&
+    value.salt === undefined
+  );
+}
+
+function isStoredAccount(value: unknown, vaultVersion: VaultFile["version"]): value is StoredAccount {
   if (!isRecord(value)) return false;
   if (typeof value.id !== "string" || !value.id) return false;
   if (typeof value.label !== "string") return false;
@@ -52,7 +61,12 @@ function isStoredAccount(value: unknown): value is StoredAccount {
     return false;
   }
   if (value.path !== undefined && typeof value.path !== "string") return false;
-  if (value.secret !== undefined && !isEncryptedPayloadValue(value.secret)) return false;
+  if (
+    value.secret !== undefined &&
+    !(vaultVersion === 3
+      ? isRawKeyEncryptedPayloadValue(value.secret)
+      : isEncryptedPayloadValue(value.secret))
+  ) return false;
   if (value.watchOnly !== undefined && typeof value.watchOnly !== "boolean") return false;
   if (value.hardware !== undefined && value.hardware !== "ledger" && value.hardware !== "trezor") {
     return false;
@@ -61,11 +75,20 @@ function isStoredAccount(value: unknown): value is StoredAccount {
 }
 
 export function decodeVaultFile(value: unknown): VaultFile | null {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) return null;
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)) {
+    return null;
+  }
   if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
-  if (!value.accounts.every(isStoredAccount)) return null;
+  if (!value.accounts.every((account) => isStoredAccount(account, value.version as VaultFile["version"]))) {
+    return null;
+  }
   if (value.archivedAccounts !== undefined) {
-    if (!Array.isArray(value.archivedAccounts) || !value.archivedAccounts.every(isStoredAccount)) {
+    if (
+      !Array.isArray(value.archivedAccounts) ||
+      !value.archivedAccounts.every((account) =>
+        isStoredAccount(account, value.version as VaultFile["version"])
+      )
+    ) {
       return null;
     }
   }
@@ -76,8 +99,19 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
   ) {
     return null;
   }
-  if (value.mnemonic !== undefined && !isEncryptedPayloadValue(value.mnemonic)) return null;
+  if (
+    value.mnemonic !== undefined &&
+    !(value.version === 3
+      ? isRawKeyEncryptedPayloadValue(value.mnemonic)
+      : isEncryptedPayloadValue(value.mnemonic))
+  ) return null;
   if (value.passwordCheck !== undefined && !isEncryptedPayloadValue(value.passwordCheck)) return null;
+  if (value.version === 3 && !isEncryptedPayloadValue(value.wrappedMasterKey)) return null;
+  if (value.version === 3 && !isRawKeyEncryptedPayloadValue(value.wrappedMerchantKey)) {
+    return null;
+  }
+  if (value.version !== 3 && value.wrappedMasterKey !== undefined) return null;
+  if (value.version !== 3 && value.wrappedMerchantKey !== undefined) return null;
   return value as unknown as VaultFile;
 }
 
@@ -116,6 +150,9 @@ function isBackupSettings(value: unknown): value is BackupSettings {
 
 function isTxNotes(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
+  if (value.version === 3 && "crypto" in value) {
+    return isRawKeyEncryptedPayloadValue(value.crypto);
+  }
   if (value.version === 2 && "crypto" in value) {
     return isEncryptedPayloadValue(value.crypto);
   }

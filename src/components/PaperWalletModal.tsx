@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
-import { exportKeystoreUnlocked, exportVaultBackup } from "@/lib/vault";
+import { exportKeystoreWithPassword, exportVaultBackup } from "@/lib/vault";
 import { openPaperWalletPrint } from "@/lib/paperwallet";
 import { markBackupExported } from "@/lib/backup-health";
 import { useToast } from "./Toast";
@@ -19,6 +19,7 @@ export function PaperWalletModal({
   kind,
   path,
   accountId,
+  password,
   networkLabel,
 }: {
   open: boolean;
@@ -30,6 +31,8 @@ export function PaperWalletModal({
   path?: string;
   /** Enables the encrypted keystore export for secret-key certificates. */
   accountId?: string;
+  /** Verified at the parent password gate and used only for this export action. */
+  password: string;
   networkLabel?: string;
 }) {
   const [pubQr, setPubQr] = useState<string | null>(null);
@@ -89,7 +92,7 @@ export function PaperWalletModal({
       let filename: string;
       if (kind === "secret") {
         if (!accountId) return;
-        const keystore = await exportKeystoreUnlocked(accountId);
+        const keystore = await exportKeystoreWithPassword(accountId, password);
         if (!keystore) {
           triggerHaptic("error");
           toast("Encrypted export unavailable for this account type", "error");
@@ -98,7 +101,7 @@ export function PaperWalletModal({
         json = keystore;
         filename = `wallet-${accountLabel.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
       } else {
-        json = await exportVaultBackup();
+        json = await exportVaultBackup(password);
         filename = `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`;
       }
       const blob = new Blob([json], { type: "application/json" });
