@@ -12,7 +12,7 @@ The root page contains summaries and disclosure rows only. Rates, report export,
 
 ## Interaction model
 
-A single sheet state ensures only one modal task can be active. Export configuration owns format, date range, basis, preview, and download. Retention owns the local retention preference. The encrypted archive sheet explains its scope before download. Rates and export history are read-only detail sheets. Compliance is a short informational sheet. Sheets close before another destination opens, preserve the shared modal focus behavior, and retain 44-point touch targets.
+A single sheet state ensures only one modal task can be active. Period selection uses a concise list sheet rather than an inline form. Export configuration owns format, date range, basis, preview, and download. Retention owns the local retention preference. The encrypted archive sheet explains its scope before download. Rates and export history are read-only detail sheets. Compliance is a short informational sheet. Sheets close before another destination opens, preserve the shared modal focus behavior, and retain 44-point touch targets.
 
 The page keeps visible empty states for missing periods, missing tax rows, and an empty export history. Values use tabular figures. Destructive or irreversible claims are avoided: exports are described as local evidence files, unavailable formats remain disabled, and the app continues to state that it is bookkeeping support rather than tax advice or certified invoicing software.
 

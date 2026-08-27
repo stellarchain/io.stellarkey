@@ -40,7 +40,7 @@ git commit -m "test: define iOS tax records hub"
 
 **Step 1: Implement the root hierarchy**
 
-Add `TaxRecordsSheet = "rates" | "export" | "archive" | "retention" | "history" | "compliance"`, `activeSheet`, and one `openSheet()` helper. Render the period selector and current figures in a primary summary surface. Render grouped `SettingsRow` actions with visible current values and `opensDialog` semantics. Use a one-column phone layout and `lg:grid-cols-2` iPad/desktop layout.
+Add `TaxRecordsSheet = "period" | "rates" | "export" | "archive" | "retention" | "history" | "compliance"`, `activeSheet`, and one `openSheet()` helper. Render the selected period as a disclosure row beside the current figures in a primary summary surface. Render grouped `SettingsRow` actions with visible current values and `opensDialog` semantics. Use a one-column phone layout and `lg:grid-cols-2` iPad/desktop layout.
 
 **Step 2: Keep root interactions read-focused**
 
@@ -77,7 +77,7 @@ Expected: FAIL until the new named journey and sheet interaction exist.
 
 **Step 3: Implement sheet content**
 
-Use one shared `Modal`. Export owns format, dates, basis, preview, and export actions. Retention owns its selector and explanation. Archive has a scoped explanation and download action. Rates and history use grouped read-only rows with clear empty states. Compliance contains the concise product-boundary disclosure.
+Use one shared `Modal`. Period selection owns the available period list. Export owns format, dates, basis, preview, and export actions. Retention owns its selector and explanation. Archive has a scoped explanation and download action. Rates and history use grouped read-only rows with clear empty states. Compliance contains the concise product-boundary disclosure.
 
 **Step 4: Run focused source and browser tests**
 
