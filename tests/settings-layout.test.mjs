@@ -20,17 +20,55 @@ test("local-device signer badges sit below their addresses", () => {
   );
 });
 
-test("merchant settings use the wallet's responsive category grid", () => {
+test("merchant settings use an iOS-style summary hierarchy with focused edit sheets", () => {
   const merchantSettings = read("src/components/merchant/MerchantSettings.tsx");
+  const rootStart = merchantSettings.indexOf('data-merchant-settings-root="true"');
+  const sheetsStart = merchantSettings.indexOf('data-merchant-settings-sheets="true"');
+
+  assert.notEqual(rootStart, -1);
+  assert.notEqual(sheetsStart, -1);
+  assert.ok(rootStart < sheetsStart);
+
+  const settingsRoot = merchantSettings.slice(rootStart, sheetsStart);
 
   assert.match(
-    merchantSettings,
+    settingsRoot,
     /className="grid grid-cols-1 items-start gap-6 md:grid-cols-2"/,
   );
   assert.equal(
-    merchantSettings.match(/data-merchant-settings-column=/g)?.length ?? 0,
+    settingsRoot.match(/data-merchant-settings-column=/g)?.length ?? 0,
     2,
   );
-  assert.match(merchantSettings, /data-merchant-settings-column="payments"/);
-  assert.match(merchantSettings, /data-merchant-settings-column="operations"/);
+  assert.doesNotMatch(
+    settingsRoot,
+    /<(?:TextRow|ChoiceRow|DraftInput|Select|SegmentedControl|Toggle)\b/,
+  );
+
+  for (const label of [
+    "Business details",
+    "Payment setup",
+    "Accepted assets",
+    "Tax",
+    "Tax rates",
+    "Tips",
+    "Settlement rules",
+    "This device",
+  ]) {
+    assert.match(settingsRoot, new RegExp(`label="${label}"`));
+  }
+
+  for (const label of ["Tax records", "Staff & terminals", "Peripherals"]) {
+    assert.match(settingsRoot, new RegExp(`label="${label}"`));
+  }
+
+  assert.match(merchantSettings, /type MerchantSettingsSheet\s*=/);
+  assert.match(merchantSettings, /const \[activeSheet, setActiveSheet\]/);
+  assert.match(merchantSettings, /activeSheet === "rates"/);
+  assert.match(merchantSettings, /title="Tax rates"/);
+  assert.match(merchantSettings, /data-merchant-settings-sheet="rates"[\s\S]*settings\.taxRates\.map/);
+  assert.match(merchantSettings, /title="Turn off Merchant Mode\?"/);
+  assert.match(
+    merchantSettings,
+    /title="Turn off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
+  );
 });
