@@ -395,11 +395,17 @@ test(
 
       // Staff is a local till role. Add a server and switch with its real PIN.
       await openStaffSettings(page);
+      const addStaffButton = page.getByRole("button", { name: "Add staff" });
+      assert.equal(
+        await addStaffButton.isDisabled(),
+        true,
+        "staff creation must stay unavailable until an owner PIN session is active",
+      );
       await page.getByLabel("Staff member to switch to").click();
       await page.getByRole("option", { name: /Imported Account/ }).click();
       await page.getByLabel("Staff PIN").fill("2468");
       await page.getByRole("button", { name: "Switch", exact: true }).click();
-      await page.getByRole("button", { name: "Add staff" }).click();
+      await addStaffButton.click();
       const addStaff = page.getByRole("dialog", { name: /Add staff/ });
       await addStaff.getByLabel("Staff name").fill("Counter Server");
       await addStaff.getByLabel("New staff PIN", { exact: true }).fill("1357");

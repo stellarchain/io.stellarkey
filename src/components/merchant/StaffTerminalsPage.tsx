@@ -234,7 +234,8 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
               </h2>
               <button
                 type="button"
-                className="text-[12px] font-semibold text-[#0A84FF] hover:text-[#64D2FF]"
+                className="text-[12px] font-semibold text-[#0A84FF] hover:text-[#64D2FF] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={activeStaff?.role !== "owner" || switching}
                 onClick={() => setAdding(true)}
               >
                 Add staff
