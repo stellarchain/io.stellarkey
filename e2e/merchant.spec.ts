@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { Networks, TransactionBuilder } from "@stellar/stellar-sdk";
 import {
   chromium,
@@ -246,6 +247,21 @@ async function returnToTill(page: Page) {
   await page.getByText(/Shift 1 · Front counter/).waitFor();
 }
 
+async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
+  return page.evaluate(async () => new Promise<string | null>((resolve, reject) => {
+    const open = indexedDB.open("wallet.local.v1", 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const request = open.result
+        .transaction("encrypted-records", "readonly")
+        .objectStore("encrypted-records")
+        .get("merchant.primary.v1");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result?.value ?? null);
+    };
+  }));
+}
+
 test.describe.configure({ timeout: 120_000 });
 
 test(
@@ -329,7 +345,7 @@ test(
       await page.getByPlaceholder("Enter password").fill(password);
       await page.getByPlaceholder("Repeat password").fill(password);
       await page.getByRole("button", { name: "Unlock & Import" }).click();
-      await page.getByText("Total Portfolio", { exact: true }).waitFor();
+      await page.getByText("Your Assets", { exact: true }).waitFor();
 
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByRole("switch", { name: "Merchant Mode" }).click();
@@ -617,6 +633,50 @@ test(
       await blindCount.getByRole("button", { name: "Commit count & issue Z" }).click();
       await page.getByRole("dialog", { name: "Z-report 1" }).getByText(/Z-1 issued · shift closed/).waitFor();
       await assertMobileSurface(page, "closed shift report");
+
+      // A full encrypted backup must preserve the exact IndexedDB merchant archive,
+      // survive a complete wallet-owned storage wipe, and restore the operational UI.
+      await page.getByRole("dialog", { name: "Z-report 1" }).getByRole("button", { name: "Done" }).click();
+      const archiveBeforeBackup = await readIndexedMerchantArchive(page);
+      assert.ok(archiveBeforeBackup, "merchant history must exist in IndexedDB before backup");
+
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("button", { name: /Backup & Recovery/ }).click();
+      await page.getByRole("dialog", { name: /Backup & Recovery/ }).getByRole("button", { name: "Back Up Wallet" }).click();
+      await page.getByRole("button", { name: /Encrypted Backup File/ }).click();
+      await page.getByPlaceholder("Wallet Password").fill(password);
+      await page.getByRole("button", { name: "Verify & Continue" }).click();
+      const backupDownload = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Download Encrypted Backup" }).click();
+      const backupPath = await (await backupDownload).path();
+      assert.ok(backupPath, "browser backup download must produce a readable file");
+      const backupJson = await readFile(backupPath);
+      await page.getByRole("button", { name: "Done" }).click();
+
+      await page.getByRole("button", { name: "Reset Wallet" }).click();
+      const reset = page.getByRole("dialog", { name: "Erase & Reset Wallet?" });
+      await reset.getByRole("button", { name: "Erase Everything" }).click();
+      await page.getByRole("heading", { name: "Own your keys. Own your money." }).waitFor();
+      assert.equal(await readIndexedMerchantArchive(page), null);
+
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "wallet-backup.json",
+        mimeType: "application/json",
+        buffer: backupJson,
+      });
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByRole("button", { name: "Decrypt & Restore" }).click();
+      await page.getByRole("button", { name: "Unlock Vault" }).waitFor();
+      await page.getByPlaceholder("Enter password").fill(password);
+      await page.getByRole("button", { name: "Unlock Vault" }).click();
+      await page.getByText("Your Assets", { exact: true }).waitFor();
+
+      const restoredArchive = await readIndexedMerchantArchive(page);
+      assert.equal(restoredArchive, archiveBeforeBackup);
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+      await page.getByRole("button", { name: "Orders", exact: true }).click();
+      await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();
 
       assert.deepEqual(pageErrors, [], `Unhandled page errors:\n${pageErrors.join("\n")}`);
       assert.deepEqual(consoleErrors, [], `Console errors:\n${consoleErrors.join("\n")}`);

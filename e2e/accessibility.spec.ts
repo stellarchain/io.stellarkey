@@ -73,7 +73,7 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expectAccessibleSurface(page, "onboarding", browserName);
 
   await importTestWallet(page);
-  await expect(page.getByText("Total Portfolio", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "dashboard", browserName);
 
   await clickLockWallet(page);
