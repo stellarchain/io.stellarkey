@@ -323,8 +323,12 @@ export function OrderDetailModal({
     () => charges.filter((c) => c.orderId === orderId),
     [charges, orderId],
   );
-  const settled = useMemo(
+  const paymentCharge = useMemo(
     () => orderCharges.find((c) => c.payment !== null) ?? null,
+    [orderCharges],
+  );
+  const settled = useMemo(
+    () => orderCharges.find((c) => c.status === "paid" && c.payment !== null) ?? null,
     [orderCharges],
   );
   /** The charge a customer could still pay right now, if this order has one. */
@@ -357,7 +361,7 @@ export function OrderDetailModal({
   const totals = order.totals;
   const view = orderView(order, charges);
   const explorer = NETWORKS[order.network];
-  const payment = settled?.payment ?? null;
+  const payment = paymentCharge?.payment ?? null;
   const stockExceptions = order.stockExceptions ?? [];
 
   // Derived from the order's own figures rather than today's settings, so an
@@ -373,8 +377,11 @@ export function OrderDetailModal({
     .filter(refundReservesFunds)
     .reduce((sum, refund) => sum + refund.amountMinor, 0);
   const pendingRefundMinor = reservedRefundMinor - refundedMinor;
-  const remainingMinor: Minor = Math.max(0, totals.totalMinor - reservedRefundMinor);
-  const canRefund = payment !== null && remainingMinor > 0;
+  const refundableSaleMinor = settled?.status === "paid"
+    ? Math.min(totals.totalMinor, settled.amountMinor)
+    : 0;
+  const remainingMinor: Minor = Math.max(0, refundableSaleMinor - reservedRefundMinor);
+  const canRefund = settled?.status === "paid" && payment !== null && remainingMinor > 0;
 
   let requestedMinor = 0;
   let amountError: string | null = null;
@@ -559,8 +566,8 @@ export function OrderDetailModal({
           <div className="pb-2.5">
             <Notice tone="warn">
               {view === "underpaid"
-                ? "Less arrived than this charge asked for, so the order is still open. Take the difference, or refund what came in."
-                : "More arrived than this charge asked for. The surplus can be sent back from here."}
+                ? "Less arrived than this charge asked for, so the order is still open. Review this receipt before taking the difference or returning it."
+                : "More arrived than this charge asked for. Review the receipt separately before returning any funds."}
             </Notice>
           </div>
         )}
@@ -691,7 +698,7 @@ export function OrderDetailModal({
 
         {/* ---------------- refund action ---------------- */}
 
-        {payment && (
+        {settled?.status === "paid" && payment && (
           <div className="pt-5">
             {!canRefund ? (
               <p className="text-center text-[12.5px] text-neutral-500">

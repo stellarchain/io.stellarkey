@@ -21,6 +21,9 @@ import {
 
 const PIN_DIGEST =
   "pbkdf2-sha256$v1$600000$AAECAwQFBgcICQoLDA0ODw==$AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+const PAYMENT_ID = "payment-settled";
+const TILL = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const PAYER = "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL";
 
 function member(id, role, overrides = {}) {
   return {
@@ -43,6 +46,41 @@ function staffedStore() {
     settings: { ...emptyStore().settings, enabled: true },
     staff: [owner, server],
     activeStaffId: owner.id,
+  };
+}
+
+function withSettledPayment(store, order) {
+  const payment = {
+    id: PAYMENT_ID,
+    transactionHash: "c".repeat(64),
+    ledger: 123,
+    from: PAYER,
+    destination: TILL,
+    amount: "10.0000000",
+    asset: { code: "XLM", issuer: null },
+    memo: "M1204",
+    createdAt: new Date(1_000).toISOString(),
+    lane: "memo",
+  };
+  return {
+    ...store,
+    orders: [order],
+    charges: [
+      {
+        id: "charge-settled",
+        orderId: order.id,
+        reference: "M1204",
+        network: "testnet",
+        destination: TILL,
+        amountMinor: order.totals.totalMinor,
+        currency: "EUR",
+        quotes: [],
+        status: "paid",
+        createdAt: 1,
+        expiresAt: 10_000,
+        payment,
+      },
+    ],
   };
 }
 
@@ -147,7 +185,7 @@ test("over-ceiling refunds become immutable pending requests", () => {
     status: "paid",
     totals: { totalMinor: 5_000 },
   };
-  const withOrder = { ...store, orders: [order] };
+  const withOrder = withSettledPayment(store, order);
   const { store: requested, request } = createRefundRequest(withOrder, {
     id: "request-1",
     orderId: order.id,
@@ -206,7 +244,10 @@ test("an over-ceiling duplicate-payment refund requests approval without reservi
     resolution: null,
   };
   const requested = createPaymentRefundRequest(
-    { ...store, orders: [order], paymentReconciliations: [reconciliation] },
+    {
+      ...withSettledPayment(store, order),
+      paymentReconciliations: [reconciliation],
+    },
     {
       id: "request-duplicate",
       paymentId: reconciliation.id,
@@ -226,7 +267,7 @@ test("a qualified reviewer can decline or record a signed refund result", () => 
   const store = staffedStore();
   const order = { id: "order-1", number: 1204, status: "paid", totals: { totalMinor: 5_000 } };
   const { store: pending } = createRefundRequest(
-    { ...store, orders: [order] },
+    withSettledPayment(store, order),
     {
       id: "request-1",
       orderId: order.id,
@@ -268,12 +309,12 @@ test("a qualified reviewer can decline or record a signed refund result", () => 
     id: "refund-1",
     orderId: order.id,
     kind: "order",
-    sourcePaymentId: null,
+    sourcePaymentId: PAYMENT_ID,
     network: "testnet",
     amountMinor: 2_500,
     asset: { code: "XLM", issuer: null },
     amount: "1.0000000",
-    destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    destination: PAYER,
     reason: "other",
     note: null,
     transactionHash: "a".repeat(64),
