@@ -1245,8 +1245,8 @@ function StepTill({
             className="input mono mt-2.5 text-base sm:text-[13.5px]"
           />
           <Hint>
-            A PIN unlocks the till, never a signature. It is checked while the vault is locked, so
-            it is kept as a salted digest outside the vault and can never move money on its own.
+            A PIN authorises till actions, never a signature. Only a salted digest is kept inside
+            encrypted merchant storage, and the wallet must be unlocked before the till can use it.
           </Hint>
         </div>
       </Block>

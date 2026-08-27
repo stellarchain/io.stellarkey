@@ -140,6 +140,15 @@ test("persisted merchant record identifiers use Web Crypto randomness", () => {
   assert.doesNotMatch(charge, /Math\.random/);
 });
 
+test("merchant PIN disclosures match the encrypted unlocked-storage boundary", () => {
+  const setup = source("src/components/merchant/SetupWizard.tsx");
+  const staff = source("src/components/merchant/StaffTerminalsPage.tsx");
+  for (const disclosure of [setup, staff]) {
+    assert.match(disclosure, /encrypted merchant storage/i);
+    assert.doesNotMatch(disclosure, /checked while the vault is locked|outside the vault/i);
+  }
+});
+
 test("customer display exit verifies a real staff PIN and does not show an amountless payment QR", () => {
   const display = source("src/components/merchant/CustomerDisplay.tsx");
   const hook = source("src/hooks/useMerchant.tsx");
