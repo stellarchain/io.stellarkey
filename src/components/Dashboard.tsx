@@ -727,6 +727,12 @@ export function Dashboard() {
     ? allPortfolio.completeness === "partial"
     : balances === null && Boolean(dataError);
   const heroReady = portfolioView === "all" ? allPortfolioReady : balances !== null;
+  const heroDisplayAmount = privacyMode ? "••••••" : fmtAmount(heroXlm ?? "0.0000000");
+  const heroBalanceDensity = heroDisplayAmount.length >= 18
+    ? "long"
+    : heroDisplayAmount.length >= 13
+      ? "medium"
+      : "compact";
 
   // Fiat value of an activity item's amount at current prices (null when unpriced)
   function activityFiat(item: ActivityItem): number | null {
@@ -1118,7 +1124,7 @@ export function Dashboard() {
   );
 
   return (
-    <div className="app-safe-dashboard relative z-10 min-h-screen md:flex md:h-screen md:overflow-hidden">
+    <div className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden">
       {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
@@ -1756,12 +1762,12 @@ export function Dashboard() {
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
         <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
-            <div className="flex h-[44px] items-center justify-between">
+            <div className="flex h-[44px] min-w-0 items-center justify-between gap-1">
               <AccountMenu
                 onAddAccount={() => setAddAccountOpen(true)}
                 onManageAccounts={() => openSettings("accounts")}
               />
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-0.5">
                 <button
                   type="button"
                   className="icon-btn !h-11 !w-11"
@@ -1988,7 +1994,7 @@ export function Dashboard() {
                 )}
 
                 {/* Hero Total Balance */}
-                <section className="panel fade-up flex flex-col items-center p-6 text-center">
+                <section className="panel fade-up flex flex-col items-center p-4 text-center sm:p-6">
                   {accounts.length > 1 && (
                 <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
                   {(
@@ -2018,18 +2024,19 @@ export function Dashboard() {
               <p className="text-[13px] font-semibold text-neutral-400">
                 {portfolioView === "all" ? "XLM across all accounts" : "Native balance"}
               </p>
-                  <h2 className="mt-1.5 text-[44px] sm:text-[54px] font-bold leading-none tracking-tight text-white">
+                  <h2
+                    className="balance-display mt-1.5 text-white"
+                    data-density={heroBalanceDensity}
+                  >
                     {heroUnavailable ? (
                       <span className="text-[18px] font-semibold text-neutral-400">Portfolio incomplete</span>
                     ) : heroLoading ? (
                       <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
-                    ) : privacyMode ? (
-                      "••••••"
                     ) : (
-                      fmtAmount(heroXlm ?? "0.0000000")
+                      <span className="balance-display-value">{heroDisplayAmount}</span>
                     )}
                     {!privacyMode && heroReady && (
-                      <span className="mono text-[22px] sm:text-[24px] font-normal text-neutral-400 ml-2">XLM</span>
+                      <span className="balance-display-unit">XLM</span>
                     )}
                   </h2>
                   <div className="mt-2 flex min-h-[24px] items-center justify-center">
@@ -2096,7 +2103,7 @@ export function Dashboard() {
                   )}
 
                   {/* Primary Actions — iOS-style circular quick actions */}
-                  <div className="mt-8 flex w-full max-w-[360px] items-start justify-between px-4">
+                  <div className="mt-8 grid w-full max-w-[360px] grid-cols-4 gap-2">
                     <ActionButton
                       icon={<IconSend size={21} />}
                       label="Send"
@@ -2145,9 +2152,14 @@ export function Dashboard() {
 
                 {/* Assets List with Sparklines */}
                 <section className="fade-up">
-                  <div className="flex items-center justify-between px-1 pb-2.5">
-                    <h2 className="text-[16px] font-bold text-white tracking-tight">Your Assets</h2>
-                    <div className="flex items-center gap-3">
+                  <div
+                    data-mobile-asset-toolbar
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1 pb-2.5"
+                  >
+                    <h2 className="order-1 mr-auto text-[16px] font-bold tracking-tight text-white sm:order-none">
+                      Your Assets
+                    </h2>
+                    <div className="order-3 flex w-full items-center justify-end gap-3 sm:order-none sm:w-auto">
                       <button
                         type="button"
                         onClick={() => {
@@ -2170,17 +2182,17 @@ export function Dashboard() {
                       >
                         Multi-Send
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setAddAssetOpen(true);
-                        }}
-                        className="text-[13px] font-semibold text-[#0A84FF] hover:underline"
-                      >
-                        + Add Asset
-                      </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setAddAssetOpen(true);
+                      }}
+                      className="order-2 text-[13px] font-semibold text-[#0A84FF] hover:underline sm:order-none"
+                    >
+                      + Add Asset
+                    </button>
                   </div>
                   <div className="list-group">
                     {balances === null &&
@@ -2291,12 +2303,12 @@ export function Dashboard() {
                             </div>
                             )}
 
-                            <span className="text-right">
-                              <span className="mono block text-[15.5px] font-medium leading-tight text-white">
+                            <span className="min-w-0 max-w-[48%] text-right">
+                              <span className="mono block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]">
                                 {privacyMode ? "••••••" : fmtAmount(asset.balance)}
                               </span>
                               {asset.isNative && !privacyMode && xlmPriceUsd !== null && (
-                                <span className="block text-[12px] leading-tight text-neutral-400">
+                                <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">
                                   {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency, fiatRates)}
                                 </span>
                               )}
@@ -2871,10 +2883,10 @@ function ActionButton({
         playTapSound();
         onClick();
       }}
-      className="group flex w-[68px] flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
+      className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
       <span
-        className={`flex h-[60px] w-[60px] items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[90ms] ${
+        className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[90ms] ${
           primary
             ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
             : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
@@ -2989,6 +3001,7 @@ function AccountMenu({
   return (
     <Dropdown
       align="left"
+      className={compact ? "shrink-0" : "min-w-0 flex-1"}
       trigger={(_, triggerProps) =>
         compact ? (
           <button
@@ -3007,7 +3020,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="flex min-h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
+            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
           >
             <Avatar seed={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">

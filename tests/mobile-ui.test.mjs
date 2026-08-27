@@ -110,6 +110,35 @@ test("five-tab mobile bar is viewport-safe at every supported iPhone width", () 
   }
 });
 
+test("dashboard balances and controls adapt to the narrowest supported iPhone", () => {
+  const css = read("src/app/globals.css");
+  const dashboard = read("src/components/Dashboard.tsx");
+
+  assert.match(css, /\.balance-display\s*\{[\s\S]*?max-width:\s*100%;/);
+  assert.match(css, /\.balance-display-value\s*\{[\s\S]*?font-size:\s*clamp\(/);
+  assert.match(
+    css,
+    /\.balance-display\[data-density="long"\][\s\S]*?\.balance-display-value\s*\{[\s\S]*?font-size:\s*clamp\(/,
+  );
+  assert.match(dashboard, /data-density=\{heroBalanceDensity\}/);
+  assert.match(dashboard, /className="balance-display-value"/);
+  assert.match(
+    dashboard,
+    /className="mt-8 grid w-full max-w-\[360px\] grid-cols-4 gap-2"/,
+  );
+  assert.match(
+    dashboard,
+    /className="group flex w-full min-w-0 flex-col items-center gap-2/,
+  );
+  assert.match(
+    dashboard,
+    /aria-label=\{`Open account menu for \$\{activeAccount\.label\}`\}[\s\S]*?className="flex min-h-11 min-w-0 flex-1/,
+  );
+  assert.match(dashboard, /data-mobile-asset-toolbar/);
+  assert.match(dashboard, /className="min-w-0 max-w-\[48%\] text-right"/);
+  assert.match(dashboard, /className="mono block break-words/);
+});
+
 test("popover geometry stays inside a reduced visual viewport", async () => {
   const popover = await import("../src/lib/popover.ts");
   assert.equal(typeof popover.calculatePopoverPosition, "function");

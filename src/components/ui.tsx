@@ -641,10 +641,12 @@ export function Dropdown({
   trigger,
   children,
   align = "right",
+  className = "",
 }: {
   trigger: (open: boolean, props: DropdownTriggerProps) => React.ReactNode;
   children: (close: () => void) => React.ReactNode;
   align?: "left" | "right";
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [restoreFocus, setRestoreFocus] = useState(false);
@@ -719,7 +721,7 @@ export function Dropdown({
   };
 
   return (
-    <div className="inline-block text-left">
+    <div className={`inline-block max-w-full min-w-0 text-left ${className}`}>
       {trigger(open, triggerProps)}
       {open &&
         pos &&
