@@ -25,6 +25,16 @@ import { fetchAssetPrices, estimatePortfolioUsd, getUnitPrice, type AssetPrices 
 import { playTapSound } from "@/lib/sounds";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { pendingTransactionPresentation } from "@/lib/submission";
+import {
+  getInstallHandoff,
+  readIosDevice,
+  readStandaloneDisplay,
+  type InstallHandoffAction,
+} from "@/lib/install-handoff";
+import {
+  BACKUP_HEALTH_CHANGED_EVENT,
+  loadBackupHealth,
+} from "@/lib/backup-health";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
@@ -287,6 +297,9 @@ export function Dashboard() {
   const [claimingAll, setClaimingAll] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installEnvironment, setInstallEnvironment] = useState({ ios: false, standalone: false });
+  const [backupExported, setBackupExported] = useState(false);
+  const [installDialog, setInstallDialog] = useState<InstallHandoffAction | null>(null);
   const [pullY, setPullY] = useState(0);
   const [refreshingPull, setRefreshingPull] = useState(false);
   const touchStartY = useRef<number | null>(null);
@@ -402,9 +415,40 @@ export function Dashboard() {
     return () => window.removeEventListener("beforeinstallprompt", onInstallPrompt);
   }, []);
 
+  useEffect(() => {
+    const displayMode = window.matchMedia("(display-mode: standalone)");
+    const updateEnvironment = () => {
+      setInstallEnvironment({ ios: readIosDevice(), standalone: readStandaloneDisplay() });
+    };
+    const updateBackupHealth = () => {
+      setBackupExported(Boolean(loadBackupHealth()?.lastExportedAt));
+    };
+    updateEnvironment();
+    updateBackupHealth();
+    displayMode.addEventListener?.("change", updateEnvironment);
+    window.addEventListener(BACKUP_HEALTH_CHANGED_EVENT, updateBackupHealth);
+    window.addEventListener("storage", updateBackupHealth);
+    return () => {
+      displayMode.removeEventListener?.("change", updateEnvironment);
+      window.removeEventListener(BACKUP_HEALTH_CHANGED_EVENT, updateBackupHealth);
+      window.removeEventListener("storage", updateBackupHealth);
+    };
+  }, []);
+
+  const installHandoff = getInstallHandoff({
+    standalone: installEnvironment.standalone,
+    ios: installEnvironment.ios,
+    nativePromptAvailable: Boolean(installEvt),
+    backupExported,
+  });
+
   function handleInstallApp() {
-    if (!installEvt) return;
     triggerHaptic("selection");
+    if (installHandoff.action === "backup-first" || installHandoff.action === "ios-guide") {
+      setInstallDialog(installHandoff.action);
+      return;
+    }
+    if (!installEvt || installHandoff.action !== "native-prompt") return;
     void installEvt.prompt();
     setInstallEvt(null);
   }
@@ -1709,7 +1753,14 @@ export function Dashboard() {
               key={settingsKey}
               initialSub={settingsSub}
               merchantOnly={mode === "merchant"}
-              installAvailable={Boolean(installEvt)}
+              installAvailable={installHandoff.available}
+              installDescription={
+                installHandoff.action === "backup-first"
+                  ? "Encrypted backup required first"
+                  : installHandoff.action === "ios-guide"
+                    ? "Add to your iPhone Home Screen"
+                    : "Add Wallet to this device"
+              }
               onInstallApp={handleInstallApp}
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
               onOpenMultisigStudio={() => setMultisigOpen(true)}
@@ -2550,6 +2601,48 @@ export function Dashboard() {
       />
       <AddAccountModal open={addAccountOpen} onClose={() => setAddAccountOpen(false)} />
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
+      <Modal open={installDialog !== null} onClose={() => setInstallDialog(null)}>
+        <ModalHeader
+          title={installDialog === "backup-first" ? "Back up before installing" : "Add to Home Screen"}
+          subtitle="Keep your self-custodial wallet recoverable"
+          onClose={() => setInstallDialog(null)}
+        />
+        {installDialog === "backup-first" ? (
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.08] p-4">
+              <p className="text-[13px] font-semibold text-white">Export an encrypted backup first</p>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-300">
+                iOS can give a Home Screen app its own local storage. Your browser wallet may
+                therefore look empty after installation. A current encrypted backup is the safe
+                handoff between them.
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => {
+                setInstallDialog(null);
+                setBackupWizardOpen(true);
+              }}
+            >
+              Open Backup
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4 p-4 sm:p-6">
+            <ol className="space-y-3 text-[13px] leading-relaxed text-neutral-200">
+              <li><span className="mr-2 font-semibold text-[#0A84FF]">1.</span>Tap the Share button in Safari.</li>
+              <li><span className="mr-2 font-semibold text-[#0A84FF]">2.</span>Choose <strong className="text-white">Add to Home Screen</strong>.</li>
+              <li><span className="mr-2 font-semibold text-[#0A84FF]">3.</span>Open Wallet from its new icon. If it starts empty, restore the encrypted backup you just exported.</li>
+            </ol>
+            <div className="rounded-2xl border border-[#30D158]/20 bg-[#30D158]/[0.07] p-3 text-[12px] leading-relaxed text-neutral-300">
+              Backup ready. It remains encrypted by your wallet password and never leaves this device unless you move it.
+            </div>
+            <Button variant="ghost" className="w-full" onClick={() => setInstallDialog(null)}>
+              Done
+            </Button>
+          </div>
+        )}
+      </Modal>
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
       <SetupWizard
         open={setupWizardOpen}

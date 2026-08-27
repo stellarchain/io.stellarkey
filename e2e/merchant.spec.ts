@@ -499,6 +499,20 @@ test(
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByText("Install App", { exact: true }).click();
+      await page.getByRole("heading", { name: "Back up before installing" }).waitFor();
+      await page.getByRole("button", { name: "Close" }).click();
+      await page.evaluate(() => {
+        localStorage.setItem(
+          "wallet.backup-health.v1",
+          JSON.stringify({
+            version: 1,
+            lastExportedAt: new Date().toISOString(),
+            lastVerifiedAt: null,
+          }),
+        );
+        window.dispatchEvent(new Event("wallet:backup-health-changed"));
+      });
+      await page.getByText("Install App", { exact: true }).click();
       assert.equal(
         await page.evaluate(
           () => (window as Window & { __merchantInstallPrompted?: boolean }).__merchantInstallPrompted,

@@ -7,6 +7,10 @@ import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
 import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
 import { markBackupVerified } from "@/lib/backup-health";
+import {
+  readStandaloneDisplay,
+  shouldPrioritizeStandaloneRestore,
+} from "@/lib/install-handoff";
 import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
 import {
   IconAlert,
@@ -58,6 +62,7 @@ export function Onboarding() {
   const [wordBank, setWordBank] = useState<string[]>([]);
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
   const [verifyFailed, setVerifyFailed] = useState(false);
+  const [standaloneLaunch] = useState(readStandaloneDisplay);
 
   // Preload + init the connect bundle when the user lands on the hardware
   // step so the device interaction can start immediately after their click.
@@ -246,6 +251,35 @@ export function Onboarding() {
   /* CHOOSE — the landing                                                */
   /* ------------------------------------------------------------------ */
   if (step === "choose") {
+    const prioritizeRestore = shouldPrioritizeStandaloneRestore({
+      standalone: standaloneLaunch,
+      walletExists: false,
+    });
+    const restorePath = (
+      <label className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
+          <IconRefresh size={16} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-white">
+            Restore From Backup
+          </span>
+          <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
+            Encrypted wallet-backup .json file
+          </span>
+        </span>
+        <input
+          type="file"
+          accept="application/json,.json,application/octet-stream"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleRestoreBackupFile(f);
+            e.target.value = "";
+          }}
+        />
+      </label>
+    );
     return (
       <div className="relative z-10 min-h-screen w-full overflow-hidden">
         <Ambient />
@@ -303,10 +337,20 @@ export function Onboarding() {
           {/* Action card */}
           <div className="mx-auto w-full max-w-[440px]">
             <div className="rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
+              {prioritizeRestore && (
+                <div role="status" className="mb-4 rounded-2xl border border-[#0A84FF]/25 bg-[#0A84FF]/[0.08] p-4">
+                  <p className="text-[13px] font-semibold text-white">Restore your encrypted backup first</p>
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
+                    This Home Screen app has its own local storage. Your Safari wallet is still
+                    on this device; restore its encrypted backup here to continue safely.
+                  </p>
+                </div>
+              )}
               <p className="px-1 pb-4 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
-                Get started
+                {prioritizeRestore ? "Continue your wallet" : "Get started"}
               </p>
               <div className="space-y-2.5">
+                {prioritizeRestore && restorePath}
                 <OnboardPath
                   icon={<IconPlus size={17} />}
                   tint="#0A84FF"
@@ -329,29 +373,7 @@ export function Onboarding() {
                   sub="Pair directly — no recovery phrase needed"
                   onClick={() => go("hardware", "hardware")}
                 />
-                <label className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
-                    <IconRefresh size={16} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-semibold text-white">
-                      Restore From Backup
-                    </span>
-                    <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
-                      Encrypted wallet-backup .json file
-                    </span>
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/json,.json,application/octet-stream"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void handleRestoreBackupFile(f);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
+                {!prioritizeRestore && restorePath}
                 {error && <ErrorText message={error} />}
               </div>
 

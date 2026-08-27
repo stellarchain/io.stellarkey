@@ -116,6 +116,20 @@ test("the mobile wallet header begins directly below the iOS safe area", () => {
   );
 });
 
+test("iOS installation protects local wallet recovery across storage containers", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const onboarding = read("src/components/Onboarding.tsx");
+
+  assert.match(dashboard, /getInstallHandoff/);
+  assert.match(dashboard, /loadBackupHealth/);
+  assert.match(dashboard, /Back up before installing/);
+  assert.match(dashboard, /Add to Home Screen/);
+  assert.match(dashboard, /setBackupWizardOpen\(true\)/);
+  assert.match(onboarding, /shouldPrioritizeStandaloneRestore/);
+  assert.match(onboarding, /Home Screen app has its own local storage/);
+  assert.match(onboarding, /Restore your encrypted backup first/);
+});
+
 test("asset favorites are discoverable directly in the dashboard list", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   const assetDetail = read("src/components/AssetDetailModal.tsx");

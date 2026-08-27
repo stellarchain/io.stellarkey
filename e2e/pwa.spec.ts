@@ -42,3 +42,16 @@ test("installed shell cold-launches offline without caching wallet or network da
   expect(await coldPage.evaluate(() => localStorage.length)).toBe(0);
   await context.setOffline(false);
 });
+
+test("an empty iOS Home Screen launch explains the local-storage handoff and leads with restore", async ({ context }) => {
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", { configurable: true, value: true });
+  });
+  const page = await context.newPage();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("Restore your encrypted backup first", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Home Screen app has its own local storage/)).toBeVisible();
+  const paths = page.locator("label, button").filter({ hasText: /Restore From Backup|Create New Wallet/ });
+  await expect(paths.first()).toContainText("Restore From Backup");
+});
