@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "next build && node scripts/generate-static-headers.mjs",
+    "start": "node scripts/static-server.mjs",
     "lint": "eslint",
     "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
