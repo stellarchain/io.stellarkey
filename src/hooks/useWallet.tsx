@@ -55,6 +55,10 @@ import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import type { HardwareSigner } from "@/lib/hardware";
 import type { NetworkKey } from "@/lib/stellar";
+import {
+  portfolioSnapshotKey,
+  type AccountPortfolioSnapshot,
+} from "@/lib/portfolio";
 import { getHorizonUrl, STELLAR_ENDPOINTS_CHANGED_EVENT } from "@/lib/stellar-endpoints";
 import type { StellarMemoInput } from "@/lib/stellar-domain";
 import { describeResourceFailures, settleResourceMap } from "@/lib/wallet-refresh";
@@ -202,6 +206,8 @@ interface WalletContextValue {
   dataError: string | null;
   /** Native XLM balance per publicKey — kept warm so the sidebar never flashes zero */
   accountBalances: Record<string, number>;
+  /** Complete network-bound asset reads for truthful multi-account aggregation. */
+  accountPortfolioSnapshots: Record<string, AccountPortfolioSnapshot>;
   claimableBalances: ClaimableBalanceItem[];
   activity: ActivityItem[];
   activityCursor: string | null;
@@ -370,6 +376,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const feeSelectionGeneration = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
+  const [accountPortfolioSnapshots, setAccountPortfolioSnapshots] = useState<
+    Record<string, AccountPortfolioSnapshot>
+  >({});
   // Session-scoped cache so switching accounts shows last-known data instantly (no zero flash)
   const snapshotCache = useRef<
     Map<string, {
@@ -381,6 +390,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   >(new Map());
   const refreshGeneration = useRef(0);
   const accountBalanceGeneration = useRef(0);
+  const accountBalancesRef = useRef<() => Promise<void>>(async () => undefined);
   const [claimableBalances, setClaimableBalances] = useState<ClaimableBalanceItem[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [activityCursor, setActivityCursor] = useState<string | null>(null);
@@ -599,6 +609,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const request = accountRefreshLane.begin();
     const generation = ++refreshGeneration.current;
     const cacheKey = `${network}:${endpointRevision}:${activeAccount.publicKey}`;
+    const portfolioKey = portfolioSnapshotKey(network, activeAccount.publicKey);
+    setAccountPortfolioSnapshots((previous) => {
+      const existing = previous[portfolioKey];
+      return {
+        ...previous,
+        [portfolioKey]: {
+          publicKey: activeAccount.publicKey,
+          network,
+          status: existing?.status === "ready" ? "ready" : "loading",
+          balances: existing?.balances ?? null,
+          updatedAt: existing?.updatedAt ?? null,
+          error: null,
+        },
+      };
+    });
     setDataLoading(true);
     setDataError(null);
     try {
@@ -630,7 +655,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             resources.baseReserve.value,
           )
         : null;
-      if (resources.accountSnapshot.ok) setBalances(resources.accountSnapshot.value.balances);
+      if (resources.accountSnapshot.ok) {
+        const nextBalances = resources.accountSnapshot.value.balances;
+        setBalances(nextBalances);
+        setAccountPortfolioSnapshots((previous) => ({
+          ...previous,
+          [portfolioKey]: {
+            publicKey: activeAccount.publicKey,
+            network,
+            status: "ready",
+            balances: nextBalances,
+            updatedAt: Date.now(),
+            error: null,
+          },
+        }));
+      } else {
+        const accountSnapshotError = resources.accountSnapshot.error.message;
+        setAccountPortfolioSnapshots((previous) => ({
+          ...previous,
+          [portfolioKey]: {
+            publicKey: activeAccount.publicKey,
+            network,
+            status: "unavailable",
+            balances: previous[portfolioKey]?.balances ?? null,
+            updatedAt: previous[portfolioKey]?.updatedAt ?? null,
+            error: accountSnapshotError,
+          },
+        }));
+      }
       if (minimumBalance !== null) setMinimumBalanceXlm(minimumBalance);
       if (resources.claimableBalances.ok) setClaimableBalances(resources.claimableBalances.value);
       // Merge the fresh first page into any already-loaded history instead of
@@ -665,7 +717,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setDataError(describeResourceFailures(resources));
     } catch (error) {
       if (generation === refreshGeneration.current && request.isCurrent()) {
-        setDataError(error instanceof Error ? error.message : "Unable to refresh wallet data.");
+        const message = error instanceof Error ? error.message : "Unable to refresh wallet data.";
+        setDataError(message);
+        setAccountPortfolioSnapshots((previous) => ({
+          ...previous,
+          [portfolioKey]: {
+            publicKey: activeAccount.publicKey,
+            network,
+            status: "unavailable",
+            balances: previous[portfolioKey]?.balances ?? null,
+            updatedAt: previous[portfolioKey]?.updatedAt ?? null,
+            error: message,
+          },
+        }));
       }
     } finally {
       if (generation === refreshGeneration.current && request.isCurrent()) setDataLoading(false);
@@ -704,7 +768,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [activeAccount, marketRefreshLane, priceRange]);
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshAccountData(), refreshMarketData()]);
+    await Promise.all([
+      refreshAccountData(),
+      refreshMarketData(),
+      accountBalancesRef.current(),
+    ]);
   }, [refreshAccountData, refreshMarketData]);
 
   const accountRefreshRef = useRef(refreshAccountData);
@@ -716,9 +784,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     activityRef.current = activity;
   }, [activity]);
 
-  // Keep a fresh XLM balance for every account in the vault — the sidebar
-  // and the aggregate portfolio read this map, so it must cover all
-  // accounts, not just ones visited this session.
+  // Keep a complete asset snapshot for every other account. Native balances
+  // remain projected separately for the compact account switcher.
   const refreshAccountBalances = useCallback(async () => {
     const backgroundAccounts = accounts.filter(
       (account) => account.publicKey !== activeAccount?.publicKey,
@@ -726,30 +793,99 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (backgroundAccounts.length === 0) return;
     const generation = ++accountBalanceGeneration.current;
     const startedEndpointRevision = endpointRevision;
-    const api = await loadWalletApi();
+    setAccountPortfolioSnapshots((previous) => {
+      const next = { ...previous };
+      for (const account of backgroundAccounts) {
+        const key = portfolioSnapshotKey(network, account.publicKey);
+        const existing = previous[key];
+        if (existing?.status === "ready") continue;
+        next[key] = {
+          publicKey: account.publicKey,
+          network,
+          status: "loading",
+          balances: existing?.balances ?? null,
+          updatedAt: existing?.updatedAt ?? null,
+          error: null,
+        };
+      }
+      return next;
+    });
+    let api: WalletApi;
+    try {
+      api = await loadWalletApi();
+    } catch (error) {
+      if (
+        generation !== accountBalanceGeneration.current ||
+        startedEndpointRevision !== endpointRevisionRef.current
+      ) return;
+      const message = error instanceof Error ? error.message : "Account data unavailable.";
+      setAccountPortfolioSnapshots((previous) => {
+        const next = { ...previous };
+        for (const account of backgroundAccounts) {
+          const key = portfolioSnapshotKey(network, account.publicKey);
+          next[key] = {
+            publicKey: account.publicKey,
+            network,
+            status: "unavailable",
+            balances: previous[key]?.balances ?? null,
+            updatedAt: previous[key]?.updatedAt ?? null,
+            error: message,
+          };
+        }
+        return next;
+      });
+      return;
+    }
     const results = await Promise.allSettled(
-      backgroundAccounts.map(async (acct) => ({
-        key: acct.publicKey,
-        bal: await api.fetchNativeBalance(acct.publicKey, network),
+      backgroundAccounts.map(async (account) => ({
+        publicKey: account.publicKey,
+        snapshot: await api.fetchAccountSnapshot(account.publicKey, network),
       })),
     );
     if (
       generation !== accountBalanceGeneration.current ||
       startedEndpointRevision !== endpointRevisionRef.current
     ) return;
-    setAccountBalances((prev) => {
-      const next = { ...prev };
-      for (const r of results) {
-        // Record 0 for unfunded wallets too; only skip true network failures (null)
-        if (r.status === "fulfilled" && r.value.bal !== null) {
-          next[r.value.key] = r.value.bal;
+    const observedAt = Date.now();
+    setAccountPortfolioSnapshots((previous) => {
+      const next = { ...previous };
+      results.forEach((result, index) => {
+        const publicKey = backgroundAccounts[index].publicKey;
+        const key = portfolioSnapshotKey(network, publicKey);
+        if (result.status === "fulfilled") {
+          next[key] = {
+            publicKey,
+            network,
+            status: "ready",
+            balances: result.value.snapshot.balances,
+            updatedAt: observedAt,
+            error: null,
+          };
+        } else {
+          next[key] = {
+            publicKey,
+            network,
+            status: "unavailable",
+            balances: previous[key]?.balances ?? null,
+            updatedAt: previous[key]?.updatedAt ?? null,
+            error: result.reason instanceof Error ? result.reason.message : "Account data unavailable.",
+          };
+        }
+      });
+      return next;
+    });
+    setAccountBalances((previous) => {
+      const next = { ...previous };
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          const native = result.value.snapshot.balances.find((balance) => balance.isNative);
+          next[result.value.publicKey] = native ? Number(native.balance) : 0;
         }
       }
       return next;
     });
   }, [accounts, activeAccount?.publicKey, endpointRevision, network]);
 
-  const accountBalancesRef = useRef(refreshAccountBalances);
   useEffect(() => {
     accountBalancesRef.current = refreshAccountBalances;
   }, [refreshAccountBalances]);
@@ -766,6 +902,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     walletRefreshEnabled,
     WALLET_MARKET_POLL_MS,
     "market",
+  );
+  useVisibleWalletRefresh(
+    refreshAccountBalances,
+    walletRefreshEnabled && accounts.length > 1,
+    WALLET_ACCOUNT_POLL_MS,
+    `${network}:${endpointRevision}:portfolio`,
   );
 
   useEffect(
@@ -815,6 +957,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     lockVault();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
+    setAccountPortfolioSnapshots({});
     setPhase("locked");
     setDataLoading(false);
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
@@ -1228,6 +1371,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setMinimumBalanceXlm(null);
     setDataError(null);
     setAccountBalances({});
+    setAccountPortfolioSnapshots({});
     snapshotCache.current.clear();
     setActivity([]);
     setPriceData(null);
@@ -1571,6 +1715,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setMinimumBalanceXlm(null);
     setDataError(null);
     setAccountBalances({});
+    setAccountPortfolioSnapshots({});
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
@@ -1967,6 +2112,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       accounts,
       activeAccount,
       accountBalances,
+      accountPortfolioSnapshots,
       archivedAccounts,
       balances,
       minimumBalanceXlm,
@@ -2042,6 +2188,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       activeAccount,
       archivedAccounts,
       accountBalances,
+      accountPortfolioSnapshots,
       balances,
       minimumBalanceXlm,
       recommendedBaseFeeStroops,

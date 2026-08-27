@@ -26,7 +26,8 @@ import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
-import { fetchAssetPrices, estimatePortfolioUsd, getUnitPrice, type AssetPrices } from "@/lib/prices";
+import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
+import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
 import { playTapSound } from "@/lib/sounds";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { pendingTransactionPresentation } from "@/lib/submission";
@@ -213,6 +214,7 @@ export function Dashboard() {
     pendingTxs,
     retryPendingTransaction,
     accountBalances,
+    accountPortfolioSnapshots,
     claimableBalances,
     claimAirdrop,
     activity,
@@ -373,21 +375,31 @@ export function Dashboard() {
     return () => document.removeEventListener("visibilitychange", onVisChange);
   }, []);
 
+  const valuationBalances = useMemo(() => {
+    const exactAssets = new Map<string, AssetBalance>();
+    for (const balance of balances ?? []) exactAssets.set(balance.key, balance);
+    for (const snapshot of Object.values(accountPortfolioSnapshots)) {
+      if (snapshot.network !== network || snapshot.status !== "ready") continue;
+      for (const balance of snapshot.balances ?? []) exactAssets.set(balance.key, balance);
+    }
+    return [...exactAssets.values()];
+  }, [accountPortfolioSnapshots, balances, network]);
+
   // Testnet tokens have no monetary value, even when they reuse a production code.
   useEffect(() => {
-    if (network !== "mainnet" || !balances || balances.length === 0) {
+    if (network !== "mainnet" || valuationBalances.length === 0) {
       return;
     }
     let alive = true;
     void (async () => {
-      const pricedAssets = balances
+      const pricedAssets = valuationBalances
         .filter((b) => !b.isNative && b.issuer !== null && parseFloat(b.balance) > 0)
         .map((b) => ({ code: b.code, issuer: b.issuer, network }));
       const prices = await fetchAssetPrices(pricedAssets);
       if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
 
       // Resolve token logos for custom assets (cached per code:issuer)
-      const customAssets = balances.filter(
+      const customAssets = (balances ?? []).filter(
         (b): b is AssetBalance & { issuer: string } =>
           !b.isNative && b.issuer !== null && !lookupKnownAsset(b.code, b.issuer, network),
       );
@@ -407,7 +419,7 @@ export function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [network, balances, assetLogos]);
+  }, [network, balances, valuationBalances, assetLogos]);
 
   // PWA install prompt capture
   useEffect(() => {
@@ -626,24 +638,65 @@ export function Dashboard() {
   }, [view, activityCursor, loadingMore]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
-  // Only verified mainnet asset identities participate in portfolio valuation.
-  const usdValue =
-    network === "mainnet" && balances !== null && xlmPriceUsd !== null
-      ? estimatePortfolioUsd(balances, xlmPriceUsd, assetPrices, network)
-      : null;
+  const activePortfolio = useMemo(() => {
+    if (!activeAccount) {
+      return aggregatePortfolio({
+        accounts: [],
+        snapshots: {},
+        network,
+        xlmPriceUsd,
+        assetPrices,
+      });
+    }
+    const key = portfolioSnapshotKey(network, activeAccount.publicKey);
+    const snapshots = balances === null
+      ? accountPortfolioSnapshots
+      : {
+          ...accountPortfolioSnapshots,
+          [key]: {
+            publicKey: activeAccount.publicKey,
+            network,
+            status: "ready" as const,
+            balances,
+            updatedAt: accountPortfolioSnapshots[key]?.updatedAt ?? null,
+            error: null,
+          },
+        };
+    return aggregatePortfolio({
+      accounts: [activeAccount.publicKey],
+      snapshots,
+      network,
+      xlmPriceUsd,
+      assetPrices,
+    });
+  }, [accountPortfolioSnapshots, activeAccount, assetPrices, balances, network, xlmPriceUsd]);
+  const usdValue = activePortfolio.totalUsd;
 
-  // Aggregated net worth across every account in the wallet
-  const totalAllXlm = useMemo(
-    () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
-    [accountBalances],
+  const allPortfolio = useMemo(
+    () => aggregatePortfolio({
+      accounts: accounts.map((account) => account.publicKey),
+      snapshots: accountPortfolioSnapshots,
+      network,
+      xlmPriceUsd,
+      assetPrices,
+    }),
+    [accountPortfolioSnapshots, accounts, assetPrices, network, xlmPriceUsd],
   );
-  const totalAllUsd =
-    network === "mainnet" && xlmPriceUsd !== null ? totalAllXlm * xlmPriceUsd : null;
-  const heroXlm = portfolioView === "all" ? totalAllXlm : parseFloat(xlm?.balance ?? "0");
+  const allPortfolioReady = allPortfolio.completeness === "complete";
+  const heroXlm = portfolioView === "all"
+    ? allPortfolio.nativeBalance
+    : xlm?.balance ?? "0.0000000";
   const heroUsd =
     portfolioView === "all"
-      ? totalAllUsd
+      ? allPortfolio.totalUsd
       : usdValue;
+  const heroLoading = portfolioView === "all"
+    ? allPortfolio.completeness === "loading"
+    : balances === null && !dataError;
+  const heroUnavailable = portfolioView === "all"
+    ? allPortfolio.completeness === "partial"
+    : balances === null && Boolean(dataError);
+  const heroReady = portfolioView === "all" ? allPortfolioReady : balances !== null;
 
   // Fiat value of an activity item's amount at current prices (null when unpriced)
   function activityFiat(item: ActivityItem): number | null {
@@ -765,8 +818,17 @@ export function Dashboard() {
 
   // Allocation distribution calculation
   const allocationShares = useMemo(() => {
-    if (network !== "mainnet" || !balances || balances.length === 0) return [];
-    const valued = balances.flatMap((balance) => {
+    const hasIncompleteValuation = portfolioView === "all"
+      ? allPortfolio.unpricedAssets.length > 0
+      : activePortfolio.unpricedAssets.length > 0;
+    if (hasIncompleteValuation) return [];
+    const allocationBalances = portfolioView === "all"
+      ? allPortfolioReady
+        ? allPortfolio.assets
+        : []
+      : balances ?? [];
+    if (network !== "mainnet" || allocationBalances.length === 0) return [];
+    const valued = allocationBalances.flatMap((balance) => {
       const unit = getUnitPrice(
         balance.code,
         balance.issuer,
@@ -791,7 +853,7 @@ export function Dashboard() {
         color: known?.color ?? (b.isNative ? "#0A84FF" : `hsl(${assetHue(b.key)}, 70%, 50%)`),
       };
     });
-  }, [assetPrices, balances, network, xlmPriceUsd]);
+  }, [activePortfolio.unpricedAssets.length, allPortfolio.assets, allPortfolio.unpricedAssets.length, allPortfolioReady, assetPrices, balances, network, portfolioView, xlmPriceUsd]);
 
   async function handleFund() {
     if (!activeAccount) return;
@@ -1923,32 +1985,48 @@ export function Dashboard() {
                   ))}
                 </div>
               )}
-              <p className="text-[13px] font-semibold text-neutral-400">Total Portfolio</p>
+              <p className="text-[13px] font-semibold text-neutral-400">
+                {portfolioView === "all" ? "XLM across all accounts" : "Native balance"}
+              </p>
                   <h2 className="mt-1.5 text-[44px] sm:text-[54px] font-bold leading-none tracking-tight text-white">
-                    {balances === null && dataError ? (
-                      <span className="text-[18px] font-semibold text-neutral-400">Balance unavailable</span>
-                    ) : balances === null ? (
+                    {heroUnavailable ? (
+                      <span className="text-[18px] font-semibold text-neutral-400">Portfolio incomplete</span>
+                    ) : heroLoading ? (
                       <span className="skeleton inline-block h-[48px] w-60 rounded-2xl align-middle" />
                     ) : privacyMode ? (
                       "••••••"
                     ) : (
-                      fmtAmount(heroXlm)
+                      fmtAmount(heroXlm ?? "0.0000000")
                     )}
-                    {!privacyMode && balances !== null && (
+                    {!privacyMode && heroReady && (
                       <span className="mono text-[22px] sm:text-[24px] font-normal text-neutral-400 ml-2">XLM</span>
                     )}
                   </h2>
                   <div className="mt-2 flex min-h-[24px] items-center justify-center">
                     {privacyMode ? (
                       <p className="text-[13px] text-neutral-500">Balances hidden</p>
-                    ) : usdValue !== null ? (
+                    ) : portfolioView === "all" && allPortfolio.completeness === "partial" ? (
+                      <p className="text-[13px] text-amber-300">
+                        {allPortfolio.unavailableAccounts.length} account{allPortfolio.unavailableAccounts.length === 1 ? "" : "s"} unavailable · refresh to retry
+                      </p>
+                    ) : portfolioView === "all" && allPortfolio.completeness === "loading" ? (
+                      <p className="text-[13px] text-neutral-500">Checking every account…</p>
+                    ) : portfolioView === "all" && allPortfolio.unpricedAssets.length > 0 ? (
+                      <p className="text-[13px] text-amber-300">
+                        Total unavailable · {allPortfolio.unpricedAssets.length} asset{allPortfolio.unpricedAssets.length === 1 ? " has" : "s have"} no verified price
+                      </p>
+                    ) : portfolioView === "active" && activePortfolio.unpricedAssets.length > 0 ? (
+                      <p className="text-[13px] text-amber-300">
+                        Total unavailable · {activePortfolio.unpricedAssets.length} asset{activePortfolio.unpricedAssets.length === 1 ? " has" : "s have"} no verified price
+                      </p>
+                    ) : heroUsd !== null ? (
                       <button
                         type="button"
                         onClick={cycleFiatCurrency}
                         className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
                         title="Click to cycle currency"
                       >
-                        <span>≈ {fmtFiat(heroUsd ?? 0, fiatCurrency, fiatRates)}</span>
+                        <span>{portfolioView === "all" ? "Total portfolio " : "≈ "}{fmtFiat(heroUsd, fiatCurrency, fiatRates)}</span>
                         <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
                           {fiatCurrency}
                         </span>
