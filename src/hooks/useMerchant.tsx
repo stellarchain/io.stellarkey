@@ -542,6 +542,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const [foreground, setForeground] = useState(true);
   const [staffSessionId, setStaffSessionId] = useState<string | null>(null);
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const storeRef = useRef(store);
@@ -2070,9 +2071,24 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         releaseWatcherLease(window.localStorage, activeWatcherLeaseKey, writerId);
       }
     };
+    let wasVisible = document.visibilityState === "visible";
+    const handleVisibility = () => {
+      const visible = document.visibilityState === "visible";
+      setForeground(visible);
+      if (!visible) {
+        release();
+      } else if (!wasVisible) {
+        void pollRef.current();
+      }
+      wasVisible = visible;
+    };
     window.addEventListener("pagehide", release);
+    document.addEventListener("visibilitychange", handleVisibility);
+    const initialVisibilityCheck = setTimeout(handleVisibility, 0);
     return () => {
+      clearTimeout(initialVisibilityCheck);
       window.removeEventListener("pagehide", release);
+      document.removeEventListener("visibilitychange", handleVisibility);
       release();
     };
   }, [activeWatcherLeaseKey, writerId]);
@@ -2141,7 +2157,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   }, [pollNow]);
 
   useEffect(() => {
-    if (!enabled || !online || !settings.receivingPublicKey) return;
+    if (!enabled || !online || !foreground || !settings.receivingPublicKey) return;
     let alive = true;
     void (async () => {
       await Promise.resolve();
@@ -2154,7 +2170,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       alive = false;
       clearInterval(interval);
     };
-  }, [enabled, hasLiveCharge, hasLiveInvoice, network, online, settings.receivingPublicKey]);
+  }, [enabled, foreground, hasLiveCharge, hasLiveInvoice, network, online, settings.receivingPublicKey]);
 
   /* ---------------- tray ---------------- */
 
@@ -2614,13 +2630,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     () =>
       merchantRuntimeState({
         online,
+        foreground,
         vaultPhase: phase,
         watchError,
         charges: store.charges,
         network,
         now: reportingNow,
       }),
-    [network, online, phase, reportingNow, store.charges, watchError],
+    [foreground, network, online, phase, reportingNow, store.charges, watchError],
   );
 
   const value = useMemo<MerchantContextValue>(() => ({
@@ -2775,7 +2792,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     approveRefundRequest,
     declineRefundRequest,
 
-    watching: online && enabled && Boolean(settings.receivingPublicKey),
+    watching: foreground && online && enabled && Boolean(settings.receivingPublicKey),
     watchedLedger,
     watchError,
     queuedChargeCount: runtime.queuedChargeCount,
@@ -2818,6 +2835,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     enabled,
     exportEncryptedArchive,
     exportRecoveryData,
+    foreground,
     forgetCustomer,
     history,
     invoiceBlockedReason,

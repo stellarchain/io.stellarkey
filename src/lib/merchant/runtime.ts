@@ -51,6 +51,7 @@ export const BROWSER_PERIPHERALS: readonly Peripheral[] = [
 
 export interface MerchantRuntimeInput {
   online: boolean;
+  foreground: boolean;
   vaultPhase: string;
   watchError: string | null;
   charges: Charge[];
@@ -60,6 +61,7 @@ export interface MerchantRuntimeInput {
 
 export interface MerchantRuntimeState {
   connection: "online" | "offline" | "watch_error";
+  monitoring: "foreground" | "paused";
   vaultLocked: boolean;
   queuedChargeCount: number;
   expiredChargeCount: number;
@@ -81,6 +83,7 @@ export function merchantRuntimeState(input: MerchantRuntimeInput): MerchantRunti
 
   return {
     connection: !input.online ? "offline" : input.watchError ? "watch_error" : "online",
+    monitoring: input.foreground && input.online ? "foreground" : "paused",
     vaultLocked: input.vaultPhase === "locked",
     queuedChargeCount,
     expiredChargeCount,

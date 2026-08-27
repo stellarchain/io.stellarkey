@@ -36,6 +36,7 @@ test("runtime state separates queued and expired work on the active network", as
   const now = 2_000_000;
   const state = merchantRuntimeState({
     online: false,
+    foreground: false,
     vaultPhase: "locked",
     watchError: "Horizon timed out",
     network: "mainnet",
@@ -51,12 +52,14 @@ test("runtime state separates queued and expired work on the active network", as
   assert.equal(state.queuedChargeCount, 1);
   assert.equal(state.expiredChargeCount, 1);
   assert.equal(state.vaultLocked, true);
+  assert.equal(state.monitoring, "paused");
 });
 
 test("watcher errors only describe an outage while the browser is online", async () => {
   const { merchantRuntimeState } = await domain();
   const base = {
     vaultPhase: "unlocked",
+    foreground: true,
     network: "mainnet",
     now: 1,
     charges: [],
@@ -68,6 +71,10 @@ test("watcher errors only describe an outage while the browser is online", async
   assert.equal(
     merchantRuntimeState({ ...base, online: true, watchError: null }).connection,
     "online",
+  );
+  assert.equal(
+    merchantRuntimeState({ ...base, online: true, watchError: null }).monitoring,
+    "foreground",
   );
 });
 
@@ -106,6 +113,10 @@ test("production merchant surfaces use live runtime state and no specimen route"
   assert.match(hook, /setTillTextSize/);
   assert.match(page, /OfflineBanner/);
   assert.match(page, /HorizonOutageNotice/);
+  assert.match(page, /ForegroundMonitoringStatus/);
+  assert.match(hook, /visibilitychange/);
+  assert.match(hook, /document\.visibilityState === "visible"/);
+  assert.match(hook, /releaseWatcherLease/);
   assert.match(page, /phase === "locked"/);
   assert.doesNotMatch(settings, /OfflineStatesGallery|"states"/);
   assert.doesNotMatch(merchantSettings, /MOCK_PERIPHERALS|MOCK_STAFF|MOCK_TERMINAL|States & offline/);
