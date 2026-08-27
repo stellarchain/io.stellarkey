@@ -142,3 +142,11 @@ test("merchant provider schedules exact expiry and Insights owns historical anal
   assert.match(insights, /deriveInsightsHistory/);
   assert.match(insights, /useLiveNow\(LIVE_MINUTE_MS\)/);
 });
+
+test("the live-hour marker hides its label before it overlaps the chart ceiling", () => {
+  const insights = source("src/components/merchant/InsightsPage.tsx");
+  assert.match(
+    insights,
+    /nowX - 26 > padL \+ fmtMinor\(ceiling, currency\)\.length \* 6\.2 \+ 6/,
+  );
+});
