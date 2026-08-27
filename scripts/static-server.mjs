@@ -44,8 +44,11 @@ function parseHeaderRules(raw) {
   return rules;
 }
 
-const headerRules = parseHeaderRules(await readFile(path.join(outputRoot, "_headers"), "utf8"));
-function headersFor(urlPath) {
+const headersPath = path.join(outputRoot, "_headers");
+async function headersFor(urlPath) {
+  // A local production build replaces both index.html and its CSP hashes. Read
+  // them as one live release boundary instead of retaining hashes from startup.
+  const headerRules = parseHeaderRules(await readFile(headersPath, "utf8"));
   const headers = {};
   for (const rule of headerRules) {
     if (rule.pattern === "/*" || rule.pattern === urlPath) Object.assign(headers, rule.headers);
@@ -83,7 +86,7 @@ const server = createServer(async (request, response) => {
     response.end("Not found");
     return;
   }
-  const headers = headersFor(url.pathname);
+  const headers = await headersFor(url.pathname);
   headers["Content-Type"] = mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream";
   response.writeHead(200, headers);
   if (request.method === "HEAD") response.end();
