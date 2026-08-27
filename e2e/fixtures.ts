@@ -29,7 +29,7 @@ function json(route: Route, body: unknown, status = 200) {
   });
 }
 
-function accountBody(publicKey: string) {
+function accountBody(publicKey: string, nativeBalance = "1000.0000000") {
   return {
     id: publicKey,
     account_id: publicKey,
@@ -42,7 +42,7 @@ function accountBody(publicKey: string) {
     balances: [
       {
         asset_type: "native",
-        balance: "1000.0000000",
+        balance: nativeBalance,
         selling_liabilities: "0.0000000",
       },
       {
@@ -88,6 +88,7 @@ export async function installNetworkFixtures(
   options: {
     incoming?: HorizonPayment[];
     acceptedTransactions?: Set<string>;
+    nativeBalance?: string;
   } = {},
 ): Promise<void> {
   const incoming = options.incoming ?? [];
@@ -170,7 +171,7 @@ export async function installNetworkFixtures(
 
     const accountMatch = pathname.match(/^\/accounts\/([^/]+)$/);
     if (accountMatch) {
-      await json(route, accountBody(accountMatch[1]));
+      await json(route, accountBody(accountMatch[1], options.nativeBalance));
       return;
     }
 
