@@ -22,6 +22,8 @@ test("local-device signer badges sit below their addresses", () => {
 
 test("merchant settings use an iOS-style summary hierarchy with focused edit sheets", () => {
   const merchantSettings = read("src/components/merchant/MerchantSettings.tsx");
+  const merchantSheets = read("src/components/merchant/MerchantSettingsSheets.tsx");
+  const completeSettings = `${merchantSettings}\n${merchantSheets}`;
   const rootStart = merchantSettings.indexOf('data-merchant-settings-root="true"');
   const sheetsStart = merchantSettings.indexOf('data-merchant-settings-sheets="true"');
 
@@ -61,11 +63,11 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
     assert.match(settingsRoot, new RegExp(`label="${label}"`));
   }
 
-  assert.match(merchantSettings, /type MerchantSettingsSheet\s*=/);
+  assert.match(completeSettings, /type MerchantSettingsSheet\s*=/);
   assert.match(merchantSettings, /const \[activeSheet, setActiveSheet\]/);
-  assert.match(merchantSettings, /activeSheet === "rates"/);
-  assert.match(merchantSettings, /title="Tax rates"/);
-  assert.match(merchantSettings, /data-merchant-settings-sheet="rates"[\s\S]*settings\.taxRates\.map/);
+  assert.match(merchantSheets, /activeSheet === "rates"/);
+  assert.match(merchantSheets, /title="Tax rates"/);
+  assert.match(merchantSheets, /sheet="rates"[\s\S]*settings\.taxRates\.map/);
   assert.match(merchantSettings, /title="Turn off Merchant Mode\?"/);
   assert.match(
     merchantSettings,
