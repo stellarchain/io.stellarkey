@@ -250,7 +250,6 @@ export function SettingsPage({
   const [confirmReset, setConfirmReset] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [addAccountMode, setAddAccountMode] = useState<"generate" | "hardware">("generate");
-  const [addAccountDevice, setAddAccountDevice] = useState<"ledger" | "trezor">("trezor");
   const hasMnemonicVault = hasMnemonicAlias();
   const [horizonDraft, setHorizonDraft] = useState(() => getHorizonUrl(network));
   const [rpcDraft, setRpcDraft] = useState(() => getRpcUrl(network) ?? "");
@@ -1533,7 +1532,6 @@ export function SettingsPage({
                 onClick={() => {
                   triggerHaptic("selection");
                   setAddAccountMode("hardware");
-                  setAddAccountDevice("trezor");
                   setShowAddAccount(true);
                 }}
               >
@@ -1879,7 +1877,6 @@ export function SettingsPage({
       <AddAccountModal
         open={showAddAccount}
         initialMode={addAccountMode}
-        initialDevice={addAccountDevice}
         onClose={() => {
           setShowAddAccount(false);
           setAddAccountMode("generate");
