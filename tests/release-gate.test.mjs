@@ -46,7 +46,12 @@ test("the toolchain and dependency lifecycle approvals are explicit", () => {
 });
 
 test("browser verification is runner-owned instead of ad-hoc", () => {
-  const scripts = readdirSync(new URL("../scripts/", import.meta.url)).sort();
+  const scripts = readdirSync(new URL("../scripts/", import.meta.url), {
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
+    .map((entry) => entry.name)
+    .sort();
   assert.deepEqual(scripts, [
     "check-bundle-budget.mjs",
     "generate-service-worker.mjs",
