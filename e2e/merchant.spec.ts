@@ -255,9 +255,34 @@ async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
       const request = open.result
         .transaction("encrypted-records", "readonly")
         .objectStore("encrypted-records")
-        .get("merchant.primary.v1");
+        .getAll();
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result?.value ?? null);
+      request.onsuccess = () => {
+        const stored = request.result as Array<{ key: string; value: string }>;
+        const metaKey = "merchant.records.v1:meta";
+        const metaRaw = stored.find((record) => record.key === metaKey)?.value ?? null;
+        if (!metaRaw) {
+          resolve(stored.find((record) => record.key === "merchant.primary.v1")?.value ?? null);
+          return;
+        }
+        const meta = JSON.parse(metaRaw) as {
+          revision: number;
+          writerId: string | null;
+          updatedAt: number;
+        };
+        const records = stored
+          .filter((record) =>
+            record.key === metaKey || record.key.startsWith("merchant.records.v1:data:"))
+          .sort((left, right) => left.key.localeCompare(right.key));
+        resolve(JSON.stringify({
+          kind: "polaris-merchant-record-archive",
+          version: 1,
+          revision: meta.revision,
+          writerId: meta.writerId,
+          updatedAt: meta.updatedAt,
+          records: Object.fromEntries(records.map((record) => [record.key, record.value])),
+        }));
+      };
     };
   }));
 }
@@ -362,26 +387,12 @@ test(
       await setup.waitFor({ state: "hidden" });
       await page.getByText("Till locked · no open shift", { exact: true }).waitFor();
       await assertMobileSurface(page, "first merchant till");
-      const persistedRecord = await page.evaluate(async () => {
-        const value = await new Promise<string | null>((resolve, reject) => {
-          const open = indexedDB.open("wallet.local.v1", 1);
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const request = open.result
-              .transaction("encrypted-records", "readonly")
-              .objectStore("encrypted-records")
-              .get("merchant.primary.v1");
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result?.value ?? null);
-          };
-        });
-        return {
-          value,
-          legacy: localStorage.getItem("wallet.merchant.v2"),
-        };
-      });
+      const persistedRecord = {
+        value: await readIndexedMerchantArchive(page),
+        legacy: await page.evaluate(() => localStorage.getItem("wallet.merchant.v2")),
+      };
       assert.equal(persistedRecord.legacy, null);
-      assert.match(persistedRecord.value ?? "", /polaris-merchant-store/);
+      assert.match(persistedRecord.value ?? "", /polaris-merchant-record-archive/);
       assert.doesNotMatch(persistedRecord.value ?? "", /North Star Coffee/);
 
       // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,

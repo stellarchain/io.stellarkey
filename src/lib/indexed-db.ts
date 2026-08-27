@@ -5,13 +5,27 @@ export interface RecordDriverCompareResult {
 
 export interface EncryptedRecordDriver {
   read(key: string): Promise<string | null>;
+  readPrefix(prefix: string): Promise<Map<string, string>>;
   putVerified(key: string, value: string): Promise<string>;
+  putManyVerified(entries: ReadonlyMap<string, string>): Promise<void>;
   compareAndSet(
     key: string,
     expectedRevision: number | null,
     value: string,
   ): Promise<RecordDriverCompareResult>;
+  compareAndSetMany(
+    key: string,
+    expectedRevision: number | null,
+    entries: ReadonlyMap<string, string>,
+    removeKeys?: readonly string[],
+  ): Promise<RecordDriverCompareResult>;
+  replacePrefixVerified(
+    prefix: string,
+    entries: ReadonlyMap<string, string>,
+    removeKeys?: readonly string[],
+  ): Promise<void>;
   remove(key: string): Promise<void>;
+  removePrefix(prefix: string): Promise<void>;
 }
 
 interface StoredRecord {
@@ -101,6 +115,21 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     return record?.value ?? null;
   }
 
+  async readPrefix(prefix: string): Promise<Map<string, string>> {
+    const database = await this.database();
+    const transaction = openTransaction(database, "readonly");
+    const completed = transactionResult(transaction);
+    const stored = await requestResult(
+      transaction.objectStore(STORE_NAME).getAll() as IDBRequest<StoredRecord[]>,
+    );
+    await completed;
+    return new Map(
+      stored
+        .filter((record) => record.key.startsWith(prefix))
+        .map((record) => [record.key, record.value]),
+    );
+  }
+
   async putVerified(key: string, value: string): Promise<string> {
     const database = await this.database();
     const transaction = openTransaction(database, "readwrite");
@@ -114,6 +143,25 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     }
     await completed;
     return stored.value;
+  }
+
+  async putManyVerified(entries: ReadonlyMap<string, string>): Promise<void> {
+    if (entries.size === 0) return;
+    const database = await this.database();
+    const transaction = openTransaction(database, "readwrite");
+    const completed = transactionResult(transaction);
+    const records = transaction.objectStore(STORE_NAME);
+    for (const [key, value] of entries) {
+      await requestResult(records.put({ key, value }));
+    }
+    for (const [key, value] of entries) {
+      const stored = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
+      if (stored?.value !== value) {
+        transaction.abort();
+        throw new Error(`IndexedDB did not retain encrypted record ${key}.`);
+      }
+    }
+    await completed;
   }
 
   async compareAndSet(
@@ -141,11 +189,86 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     return { ok: true, current: stored.value };
   }
 
+  async compareAndSetMany(
+    key: string,
+    expectedRevision: number | null,
+    entries: ReadonlyMap<string, string>,
+    removeKeys: readonly string[] = [],
+  ): Promise<RecordDriverCompareResult> {
+    const database = await this.database();
+    const transaction = openTransaction(database, "readwrite");
+    const completed = transactionResult(transaction);
+    const records = transaction.objectStore(STORE_NAME);
+    const existing = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
+    const current = existing?.value ?? null;
+    if (revisionOf(current) !== expectedRevision) {
+      await completed;
+      return { ok: false, current };
+    }
+    for (const removeKey of new Set(removeKeys)) {
+      if (!entries.has(removeKey)) await requestResult(records.delete(removeKey));
+    }
+    for (const [entryKey, value] of entries) {
+      await requestResult(records.put({ key: entryKey, value }));
+    }
+    for (const [entryKey, value] of entries) {
+      const stored = await requestResult(
+        records.get(entryKey) as IDBRequest<StoredRecord | undefined>,
+      );
+      if (stored?.value !== value) {
+        transaction.abort();
+        throw new Error(`IndexedDB did not retain encrypted record ${entryKey}.`);
+      }
+    }
+    await completed;
+    return { ok: true, current: entries.get(key) ?? null };
+  }
+
+  async replacePrefixVerified(
+    prefix: string,
+    entries: ReadonlyMap<string, string>,
+    removeKeys: readonly string[] = [],
+  ): Promise<void> {
+    const database = await this.database();
+    const transaction = openTransaction(database, "readwrite");
+    const completed = transactionResult(transaction);
+    const records = transaction.objectStore(STORE_NAME);
+    const existing = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
+    for (const record of existing) {
+      if (record.key.startsWith(prefix)) await requestResult(records.delete(record.key));
+    }
+    for (const key of removeKeys) await requestResult(records.delete(key));
+    for (const [key, value] of entries) await requestResult(records.put({ key, value }));
+    const retained = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
+    const actual = new Map(
+      retained
+        .filter((record) => record.key.startsWith(prefix))
+        .map((record) => [record.key, record.value]),
+    );
+    const expectedPrefix = new Map(
+      [...entries].filter(([key]) => key.startsWith(prefix)),
+    );
+    if (
+      actual.size !== expectedPrefix.size ||
+      [...expectedPrefix].some(([key, value]) => actual.get(key) !== value) ||
+      [...entries].some(([key, value]) =>
+        retained.find((record) => record.key === key)?.value !== value)
+    ) {
+      transaction.abort();
+      throw new Error("IndexedDB did not retain the complete encrypted record set.");
+    }
+    await completed;
+  }
+
   async remove(key: string): Promise<void> {
     const database = await this.database();
     const transaction = openTransaction(database, "readwrite");
     const completed = transactionResult(transaction);
     await requestResult(transaction.objectStore(STORE_NAME).delete(key));
     await completed;
+  }
+
+  async removePrefix(prefix: string): Promise<void> {
+    await this.replacePrefixVerified(prefix, new Map());
   }
 }
