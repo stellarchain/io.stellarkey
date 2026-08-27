@@ -12,6 +12,7 @@ import {
 } from "./charge";
 import type { ObservedPayment } from "./match";
 import { minorForAssetAmount, unitPriceE6 } from "./money";
+import { parsePaymentCreatedAt } from "./payment-time";
 import type {
   AcceptedAsset,
   CounterCode,
@@ -372,12 +373,18 @@ export function reconcileCounterPayments(
 
   for (const payment of input.payments) {
     if (claimedIds.has(payment.id)) continue;
+    const paymentAt = parsePaymentCreatedAt(payment.createdAt);
+    if (paymentAt === null) {
+      unclaimed.push(payment);
+      continue;
+    }
     const codeIndex = payment.memo
       ? counterCodes.findIndex(
           (code) =>
             code.memoPrefix === payment.memo &&
             code.network === input.network &&
-            counterCodeAvailability(code, now) === "active",
+            paymentAt >= code.createdAt &&
+            counterCodeAvailability(code, paymentAt) === "active",
         )
       : -1;
     if (codeIndex < 0) {

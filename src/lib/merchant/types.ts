@@ -294,6 +294,7 @@ export type PaymentReconciliationOutcome =
   | "ambiguous"
   | "wrong_asset"
   | "outside_band"
+  | "invalid_time"
   | "unmatched";
 
 export type PaymentResolutionKind = "attached" | "dismissed" | "refund_submitted";

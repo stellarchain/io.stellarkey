@@ -369,7 +369,8 @@ function paymentOutcome(value: unknown): MerchantStore["paymentReconciliations"]
     value === "duplicate" ||
     value === "ambiguous" ||
     value === "wrong_asset" ||
-    value === "outside_band"
+    value === "outside_band" ||
+    value === "invalid_time"
     ? value
     : "unmatched";
 }

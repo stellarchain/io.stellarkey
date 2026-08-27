@@ -12,6 +12,7 @@ import {
 } from "./charge";
 import type { ObservedPayment } from "./match";
 import { assetAmountFor, minorForAssetAmount, orderTotals } from "./money";
+import { parsePaymentCreatedAt } from "./payment-time";
 import type {
   AcceptedAsset,
   Invoice,
@@ -361,11 +362,6 @@ export function invoicePayUri(
   });
 }
 
-function paymentTime(payment: ObservedPayment, fallback: number): number {
-  const parsed = Date.parse(payment.createdAt);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 export function reconcileInvoicePayments(
   store: MerchantStore,
   input: ReconcileInvoicePaymentsInput,
@@ -377,6 +373,11 @@ export function reconcileInvoicePayments(
 
   for (const payment of input.payments) {
     if (claimedIds.has(payment.id)) continue;
+    const paymentAt = parsePaymentCreatedAt(payment.createdAt);
+    if (paymentAt === null) {
+      unclaimed.push(payment);
+      continue;
+    }
     const invoiceIndex = payment.memo
       ? invoices.findIndex(
           (invoice) =>
@@ -413,7 +414,7 @@ export function reconcileInvoicePayments(
       amount: payment.amount,
       transactionHash: payment.transactionHash,
       from: payment.from,
-      observedAt: paymentTime(payment, now),
+      observedAt: paymentAt,
       recordedById: null,
       recordedBy: null,
       note: null,

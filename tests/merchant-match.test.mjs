@@ -72,7 +72,7 @@ function payment(over = {}) {
     amount: "27.3300000",
     asset: USDC_ASSET,
     memo: null,
-    createdAt: "2026-08-24T18:14:31Z",
+    createdAt: new Date(NOW + 1_000).toISOString(),
     ...over,
   };
 }
@@ -129,7 +129,7 @@ test("a split charge quotes only its exact outstanding remainder", () => {
 
 test("the memo lane names a charge outright", () => {
   const c = charge(1042, 2733);
-  const out = matchPayment(payment({ memo: "MC1042" }), [c], settings(), NOW);
+  const out = matchPayment(payment({ memo: "MC1042" }), [c], settings());
   assert.equal(out.lane, "memo");
   assert.equal(out.charge.id, "chg_1042");
   assert.equal(out.verdict, "exact");
@@ -138,19 +138,19 @@ test("the memo lane names a charge outright", () => {
 
 test("the memo lane still names short and over payments", () => {
   const c = charge(1042, 2733);
-  const short = matchPayment(payment({ memo: "MC1042", amount: "22.8000000" }), [c], settings(), NOW);
+  const short = matchPayment(payment({ memo: "MC1042", amount: "22.8000000" }), [c], settings());
   assert.equal(short.lane, "memo");
   assert.equal(short.verdict, "short");
   assert.equal(chargeStatusFor(short.verdict), "underpaid");
 
-  const over = matchPayment(payment({ memo: "MC1042", amount: "30.0000000" }), [c], settings(), NOW);
+  const over = matchPayment(payment({ memo: "MC1042", amount: "30.0000000" }), [c], settings());
   assert.equal(over.verdict, "over");
   assert.equal(chargeStatusFor(over.verdict), "overpaid");
 });
 
 test("a second payment on a settled reference is a duplicate, never a match", () => {
   const paid = charge(1042, 2733, { status: "paid" });
-  const out = matchPayment(payment({ memo: "MC1042" }), [paid], settings(), NOW);
+  const out = matchPayment(payment({ memo: "MC1042" }), [paid], settings());
   assert.equal(out.lane, "duplicate");
   assert.equal(out.charge.id, "chg_1042");
 });
@@ -164,7 +164,7 @@ test("exact stroops beat the band, so a one-stroop salt still resolves", () => {
       q.asset.code === "USDC" ? { ...q, amount: "27.3300001" } : q,
     ),
   };
-  const out = matchPayment(payment({ amount: "27.3300001" }), [a, b], settings(), NOW);
+  const out = matchPayment(payment({ amount: "27.3300001" }), [a, b], settings());
   assert.equal(out.lane, "amount");
   assert.equal(out.charge.id, "chg_1043");
   assert.equal(out.needsConfirmation, true);
@@ -174,14 +174,14 @@ test("exact stroops beat the band, so a one-stroop salt still resolves", () => {
 test("two identical live charges are an ambiguity, not a guess", () => {
   const a = charge(1042, 400);
   const b = charge(1043, 400);
-  const out = matchPayment(payment({ amount: "4.0000000" }), [a, b], settings(), NOW);
+  const out = matchPayment(payment({ amount: "4.0000000" }), [a, b], settings());
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "ambiguous");
 });
 
 test("a memo-less payment inside the band asks a person before it is filed", () => {
   const c = charge(1042, 2733);
-  const out = matchPayment(payment({ amount: "27.3400000" }), [c], settings(), NOW);
+  const out = matchPayment(payment({ amount: "27.3400000" }), [c], settings());
   assert.equal(out.lane, "amount");
   assert.equal(out.verdict, "inside");
   assert.equal(out.needsConfirmation, true);
@@ -189,7 +189,7 @@ test("a memo-less payment inside the band asks a person before it is filed", () 
 
 test("a memo-less payment outside the band goes to the tray", () => {
   const c = charge(1042, 2733);
-  const short = matchPayment(payment({ amount: "22.8000000" }), [c], settings(), NOW);
+  const short = matchPayment(payment({ amount: "22.8000000" }), [c], settings());
   assert.equal(short.lane, "unmatched");
   assert.equal(short.reason, "outside_band");
 });
@@ -197,18 +197,22 @@ test("a memo-less payment outside the band goes to the tray", () => {
 test("an expired charge stops being a candidate", () => {
   const c = charge(1042, 2733);
   const after = c.expiresAt + 1000;
-  const out = matchPayment(payment({ amount: "27.3300000" }), [c], settings(), after);
+  const latePayment = payment({
+    amount: "27.3300000",
+    createdAt: new Date(after).toISOString(),
+  });
+  const out = matchPayment(latePayment, [c], settings());
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "expired");
   // The memo lane still resolves it, so a late payer is not stranded.
-  const named = matchPayment(payment({ memo: "MC1042" }), [c], settings(), after);
+  const named = matchPayment({ ...latePayment, memo: "MC1042" }, [c], settings());
   assert.equal(named.lane, "memo");
   assert.equal(named.late, true);
 });
 
 test("an asset the charge does not quote cannot match", () => {
   const usdcOnly = charge(1042, 2733, {}, [{ asset: USDC_ASSET, currencyPerUnit: 1 }]);
-  const out = matchPayment(payment({ asset: NATIVE, amount: "107.9383887" }), [usdcOnly], settings(), NOW);
+  const out = matchPayment(payment({ asset: NATIVE, amount: "107.9383887" }), [usdcOnly], settings());
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "wrong_asset");
 });
@@ -220,7 +224,6 @@ test("asset matching requires the exact issuer even when the code is the same", 
     payment({ asset: { code: "USDC", issuer: otherIssuer } }),
     [usdcOnly],
     settings(),
-    NOW,
   );
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "wrong_asset");
