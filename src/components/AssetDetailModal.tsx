@@ -158,6 +158,12 @@ export function AssetDetailModal({
   const known = lookupKnownAsset(asset.code, asset.issuer, network);
   const sacContractId = deriveSacContractId(asset, NETWORKS[network].networkPassphrase);
   const balance = parseFloat(asset.balance);
+  const displayBalance = privacyMode ? "••••••" : fmtAmount(asset.balance);
+  const balanceDensity = displayBalance.length >= 18
+    ? "long"
+    : displayBalance.length >= 13
+      ? "medium"
+      : "compact";
 
   async function handleRemove() {
     if (!asset || !asset.issuer || pendingSubmission) return;
@@ -207,9 +213,12 @@ export function AssetDetailModal({
               {asset.code.slice(0, 3)}
             </span>
           )}
-          <p className="display-h mt-4 text-[32px] font-light text-white">
-            {privacyMode ? "••••••" : fmtAmount(asset.balance)}{" "}
-            <span className="mono text-[18px] text-neutral-400 font-normal">{asset.code}</span>
+          <p
+            className="balance-display mt-4 text-white"
+            data-density={balanceDensity}
+          >
+            <span className="balance-display-value">{displayBalance}</span>
+            <span className="balance-display-unit">{asset.code}</span>
           </p>
           {known?.description && (
             <p className="mt-1.5 text-center text-[12px] text-neutral-400 max-w-xs">
@@ -266,24 +275,24 @@ export function AssetDetailModal({
             </div>
             <div className="space-y-1.5">
               {asset.isNative && (
-                <div className="flex justify-between text-neutral-300">
+                <div className="flex items-start justify-between gap-3 text-neutral-300">
                   <span>Live Minimum Balance</span>
-                  <span className="mono">
+                  <span className="mono min-w-0 max-w-[60%] break-words text-right">
                     {balanceSummary.minimumBalance === null
                       ? "Loading…"
                       : `${fmtAmount(balanceSummary.minimumBalance)} XLM`}
                   </span>
                 </div>
               )}
-              <div className="flex justify-between text-neutral-300">
+              <div className="flex items-start justify-between gap-3 text-neutral-300">
                 <span>Selling Liabilities</span>
-                <span className="mono">
+                <span className="mono min-w-0 max-w-[60%] break-words text-right">
                   {fmtAmount(balanceSummary.sellingLiabilities)} {asset.code}
                 </span>
               </div>
-              <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
+              <div className="flex flex-col gap-1 border-t border-white/10 pt-1.5 font-semibold text-white sm:flex-row sm:justify-between sm:gap-3">
                 <span>Spendable Balance</span>
-                <span className="mono text-[#30D158]">
+                <span className="mono break-words text-right text-[#30D158]">
                   {fmtAmount(balanceSummary.spendable)} {asset.code}
                 </span>
               </div>

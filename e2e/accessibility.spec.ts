@@ -26,6 +26,7 @@ async function expectAccessibleSurface(
   expect(scrollWidth, `${label} must not overflow horizontally`).toBeLessThanOrEqual(clientWidth);
   expect(viewport).toContain("maximum-scale=1");
   expect(viewport).toContain("user-scalable=no");
+  if (clientWidth < 768) await expectMobileContainment(page, label);
 
   const disabledRules = ["meta-viewport"];
   if (browserName === "webkit") {
@@ -58,9 +59,12 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
     };
 
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      if (element.classList.contains("sr-only")) continue;
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) continue;
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > innerHeight) continue;
       const style = getComputedStyle(element);
+      if (style.pointerEvents === "none" && !element.textContent?.trim()) continue;
       if (style.position === "fixed" || style.position === "sticky") {
         if (rect.left < -1 || rect.right > viewportWidth + 1) escaped.push(describe(element));
       }
@@ -68,10 +72,15 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
         element.dataset.mobileScroll === "true" ||
         style.overflowX === "auto" ||
         style.overflowX === "scroll";
-      const intentionallyTruncated = style.textOverflow === "ellipsis";
+      const intentionallyTruncated =
+        style.textOverflow === "ellipsis" || element.dataset.mobileTruncate === "true";
+      const containsIntentionalOverflow = element.querySelector(
+        '[data-mobile-scroll="true"], [data-mobile-truncate="true"]',
+      );
       if (
         !allowsHorizontalScroll &&
         !intentionallyTruncated &&
+        !containsIntentionalOverflow &&
         element.clientWidth > 0 &&
         element.scrollWidth > element.clientWidth + 1
       ) {
@@ -103,7 +112,23 @@ async function clickLockWallet(page: Page): Promise<void> {
   await page.getByRole("menuitem", { name: "Lock Wallet" }).click();
 }
 
+async function visitSettingsSubpage(
+  page: Page,
+  rowName: RegExp,
+  heading: string,
+  browserName: string,
+): Promise<void> {
+  await page.getByRole("button", { name: rowName }).click();
+  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  await expectAccessibleSurface(page, `${heading} settings`, browserName);
+  await page.getByRole("button", { name: "Back to Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Recovery", exact: true })).toBeVisible();
+}
+
 test("critical wallet and merchant screens remain operable and accessible", async ({ page, browserName }) => {
+  if ((page.viewportSize()?.width ?? 1024) < 768) {
+    await page.setViewportSize({ width: 320, height: 693 });
+  }
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -115,6 +140,37 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await importTestWallet(page);
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "dashboard", browserName);
+
+  for (const destination of ["Activity", "Swap", "Contacts"] as const) {
+    await clickPrimaryNavigation(page, destination);
+    await expect(page.getByRole("heading", { name: destination, exact: true })).toBeVisible();
+    await expectAccessibleSurface(page, destination.toLowerCase(), browserName);
+  }
+  await clickPrimaryNavigation(page, "Home");
+
+  await page.getByRole("button", { name: "Receive", exact: true }).click();
+  const receive = page.getByRole("dialog", { name: "Receive Funds" });
+  await expect(receive).toBeVisible();
+  await expectAccessibleSurface(page, "receive sheet", browserName);
+  await receive.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: /Stellar Lumens/ }).first().click();
+  const asset = page.getByRole("dialog", { name: /^XLM/ });
+  await expect(asset).toBeVisible();
+  await expectAccessibleSurface(page, "asset detail sheet", browserName);
+  await asset.getByRole("button", { name: "Close", exact: true }).first().click();
+
+  await page.locator("[data-mobile-asset-toolbar]").getByRole("button", { name: "+ Add Asset" }).click();
+  const addAsset = page.getByRole("dialog", { name: "Add Assets" });
+  await expect(addAsset).toBeVisible();
+  await expectAccessibleSurface(page, "add assets sheet", browserName);
+  await addAsset.getByRole("button", { name: "Close" }).click();
+
+  await page.locator("[data-mobile-asset-toolbar]").getByRole("button", { name: "Multi-Send" }).click();
+  const multiSend = page.getByRole("dialog", { name: "Multi-Send Disperse" });
+  await expect(multiSend).toBeVisible();
+  await expectAccessibleSurface(page, "multi-send sheet", browserName);
+  await multiSend.getByRole("button", { name: "Close" }).click();
 
   await clickLockWallet(page);
   await expect(page.getByRole("heading", { name: "Wallet", exact: true })).toBeVisible();
@@ -141,6 +197,50 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   }
   await expect(page.getByText("Security & Backup", { exact: true })).toHaveCount(0);
   await expectAccessibleSurface(page, "settings", browserName);
+
+  await page.getByRole("button", { name: /Backup & Recovery/ }).click();
+  const backup = page.getByRole("dialog", { name: "Backup & Recovery" });
+  await expect(backup).toBeVisible();
+  await expectAccessibleSurface(page, "backup and recovery sheet", browserName);
+  await backup.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: /Multi-Sig Studio/ }).click();
+  const multisig = page.getByRole("dialog", { name: "Multi-Sig Studio" });
+  await expect(multisig).toBeVisible();
+  await expectAccessibleSurface(page, "multi-signature sheet", browserName);
+  await multisig.getByRole("button", { name: "Close" }).click();
+
+  for (const [row, heading] of [
+    [/Auto-Lock Timer/, "Auto-Lock Timer"],
+    [/Hardware Wallets/, "Hardware Wallets"],
+    [/Local XDR Signer/, "Local XDR Signer"],
+    [/Primary Display Currency/, "Display Currency"],
+    [/Network Testnet/, "Network"],
+  ] as const) {
+    await visitSettingsSubpage(page, row, heading, browserName);
+  }
+
+  await page.getByRole("button", { name: /G Imported Account/ }).click();
+  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
+  await expectAccessibleSurface(page, "accounts settings", browserName);
+  await page.getByRole("button", { name: /Add Account/ }).click();
+  const addAccount = page.getByRole("dialog", { name: "Add Account" });
+  await expect(addAccount).toBeVisible();
+  await expectAccessibleSurface(page, "add account sheet", browserName);
+  await addAccount.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Rename" }).click();
+  const rename = page.getByRole("dialog", { name: "Rename Account" });
+  await expect(rename).toBeVisible();
+  await expectAccessibleSurface(page, "rename account sheet", browserName);
+  await rename.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Back to Settings" }).click();
+
+  await page.getByRole("button", { name: /Reset Wallet/ }).click();
+  const reset = page.getByRole("dialog", { name: /Erase & Reset Wallet/ });
+  await expect(reset).toBeVisible();
+  await expectAccessibleSurface(page, "reset wallet sheet", browserName);
+  await reset.getByRole("button", { name: "Close" }).click();
 
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
   const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
@@ -178,4 +278,7 @@ test("the largest valid native balance remains inside the iPhone dashboard", asy
     await page.setViewportSize({ width, height: width === 320 ? 693 : 852 });
     await expectMobileContainment(page, `${width}px dashboard with a maximum Stellar balance`);
   }
+  await page.setViewportSize({ width: 320, height: 693 });
+  await page.getByRole("button", { name: /Stellar Lumens/ }).first().click();
+  await expectMobileContainment(page, "320px asset detail with a maximum Stellar balance");
 });

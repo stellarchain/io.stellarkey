@@ -335,6 +335,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                           <button
                             type="button"
                             onClick={() => handleRemoveRow(row.id)}
+                            aria-label={`Remove recipient ${idx + 1}`}
                             className="text-neutral-500 hover:text-[#FF453A] transition-colors"
                           >
                             <IconTrash size={13} />
