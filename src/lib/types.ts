@@ -1,4 +1,4 @@
-import type { EncryptedPayload } from "./crypto";
+import type { EncryptedPayload, RawKeyEncryptedPayload } from "./crypto";
 import type { NetworkKey } from "./stellar";
 
 export interface StoredAccount {
@@ -10,8 +10,8 @@ export interface StoredAccount {
   /** v2: derived from the vault mnemonic at this SLIP-0010 index */
   index?: number;
   path?: string;
-  /** v1 legacy: individually encrypted secret key */
-  secret?: EncryptedPayload;
+  /** v1 legacy password payload, or v3 master-key payload for imported secrets. */
+  secret?: EncryptedPayload | RawKeyEncryptedPayload;
   /** Track-only: no secret key exists for this account */
   watchOnly?: boolean;
   /** Hardware wallet backing (Ledger or Trezor) */
@@ -19,11 +19,15 @@ export interface StoredAccount {
 }
 
 export interface VaultFile {
-  version: 1 | 2;
-  mnemonic?: EncryptedPayload;
+  version: 1 | 2 | 3;
+  /** v3: a random vault master key wrapped by the password-derived key. */
+  wrappedMasterKey?: EncryptedPayload;
+  /** v3: merchant storage authority wrapped by the same random master key. */
+  wrappedMerchantKey?: RawKeyEncryptedPayload;
+  mnemonic?: EncryptedPayload | RawKeyEncryptedPayload;
   /**
-   * Password canary for vaults holding no secret key material (hardware /
-   * watch-only): lets unlock verify the password even with nothing to decrypt.
+   * Legacy password canary for v1 hardware/watch-only vaults. v3 verifies by
+   * authenticating the wrapped master key instead.
    */
   passwordCheck?: EncryptedPayload;
   accounts: StoredAccount[];
@@ -43,7 +47,7 @@ export interface AccountMeta {
   hardware?: "ledger" | "trezor";
 }
 
-export type { NetworkKey, EncryptedPayload };
+export type { NetworkKey, EncryptedPayload, RawKeyEncryptedPayload };
 
 export interface AssetBalance {
   key: string;

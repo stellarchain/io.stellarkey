@@ -185,7 +185,7 @@ test("full encrypted backups round-trip the encrypted merchant archive", async (
   assert.equal(saveMerchantStore(store, getMerchantEncryptionKey()), true);
   const originalMerchant = localStorage.getItem(MERCHANT_STORAGE_KEY);
 
-  const backup = await exportVaultBackup();
+  const backup = await exportVaultBackup(password);
   localStorage.removeItem(MERCHANT_STORAGE_KEY);
   await restoreVaultBackup(backup, password);
 
@@ -236,7 +236,7 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
   const password = "correct horse battery staple";
   await initializeVault(password, { secret: Keypair.random().secret() });
   localStorage.setItem("polaris.contacts.v1", "[]");
-  const backup = await exportVaultBackup();
+  const backup = await exportVaultBackup(password);
 
   const targetKeys = [
     "polaris.vault.v1",

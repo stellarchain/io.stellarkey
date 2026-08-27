@@ -601,6 +601,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
             : "Merchant storage could not be opened on this device.",
         );
         return;
+      } finally {
+        key.fill(0);
       }
       if (result.kind === "ready") {
         const newer = newerMerchantStore(storeRef.current, result.value);
@@ -656,6 +658,8 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           setReady(true);
         }
         return;
+      } finally {
+        key.fill(0);
       }
       if (!alive) return;
       const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
@@ -758,56 +762,60 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           throw new MerchantStorageError("recovery_required");
         }
         const key = readMerchantKey();
-        let persistedResult;
         try {
-          persistedResult = await repositoryRef.current.load(key);
-        } catch {
-          throw new MerchantStorageError("write_failed");
-        }
-        if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
-          storageIssueRef.current = persistedResult;
-          setStorageIssue(persistedResult);
-          throw new MerchantStorageError("recovery_required");
-        }
-        const updated = typeof update === "function" ? update(current) : update;
-        if (updated === current) return;
-        const candidate = pruneMerchantStore(updated);
-        let coordinated: MerchantStore;
-        try {
-          coordinated = prepareMerchantCommit({
-            current,
-            candidate,
-            persisted: persistedResult.kind === "ready" ? persistedResult.value : null,
-            writerId,
-          });
-        } catch (error) {
-          if (!(error instanceof MerchantRevisionConflictError)) throw error;
-          if (persistedResult.kind === "ready") {
-            const newer = newerMerchantStore(current, persistedResult.value);
-            if (newer) installLoadedStore(newer);
-          } else if (current.revision > 0) {
-            installLoadedStore(emptyStore());
+          let persistedResult;
+          try {
+            persistedResult = await repositoryRef.current.load(key);
+          } catch {
+            throw new MerchantStorageError("write_failed");
           }
-          throw new MerchantStorageError("conflict");
-        }
-        let committed: MerchantStore;
-        try {
-          committed = await repositoryRef.current.commit(
-            coordinated,
-            key,
-            persistedResult.kind === "ready" ? persistedResult.value.revision : null,
-          );
-        } catch (error) {
-          if (error instanceof MerchantRepositoryConflictError) {
-            await reloadExternalStore(false);
+          if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
+            storageIssueRef.current = persistedResult;
+            setStorageIssue(persistedResult);
+            throw new MerchantStorageError("recovery_required");
+          }
+          const updated = typeof update === "function" ? update(current) : update;
+          if (updated === current) return;
+          const candidate = pruneMerchantStore(updated);
+          let coordinated: MerchantStore;
+          try {
+            coordinated = prepareMerchantCommit({
+              current,
+              candidate,
+              persisted: persistedResult.kind === "ready" ? persistedResult.value : null,
+              writerId,
+            });
+          } catch (error) {
+            if (!(error instanceof MerchantRevisionConflictError)) throw error;
+            if (persistedResult.kind === "ready") {
+              const newer = newerMerchantStore(current, persistedResult.value);
+              if (newer) installLoadedStore(newer);
+            } else if (current.revision > 0) {
+              installLoadedStore(emptyStore());
+            }
             throw new MerchantStorageError("conflict");
           }
-          throw new MerchantStorageError("write_failed");
+          let committed: MerchantStore;
+          try {
+            committed = await repositoryRef.current.commit(
+              coordinated,
+              key,
+              persistedResult.kind === "ready" ? persistedResult.value.revision : null,
+            );
+          } catch (error) {
+            if (error instanceof MerchantRepositoryConflictError) {
+              await reloadExternalStore(false);
+              throw new MerchantStorageError("conflict");
+            }
+            throw new MerchantStorageError("write_failed");
+          }
+          storeRef.current = committed;
+          setStore(committed);
+          revisionChannelRef.current?.postRevision(committed);
+          setStorageError(null);
+        } finally {
+          key.fill(0);
         }
-        storeRef.current = committed;
-        setStore(committed);
-        revisionChannelRef.current?.postRevision(committed);
-        setStorageError(null);
       }).catch((error: unknown) => {
         if (isMerchantStorageError(error)) setStorageError(error.message);
         throw error;
