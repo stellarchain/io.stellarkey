@@ -928,7 +928,7 @@ export function SegmentedControl<T extends string>({
             }}
             className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-all sm:min-h-0 ${
               opt.disabled
-                ? "cursor-not-allowed text-neutral-600 opacity-60"
+                ? "cursor-not-allowed text-neutral-400"
                 : active
                 ? "bg-white/[0.18] text-white shadow-sm font-semibold"
                 : "text-neutral-400 hover:text-white"
@@ -966,7 +966,7 @@ export function Button({
     variant === "primary"
       ? "btn-primary"
       : variant === "danger"
-        ? "bg-[#FF453A] text-white hover:bg-[#FF3B30] shadow-sm"
+        ? "bg-[#D70015] text-white hover:bg-[#B60012] shadow-sm"
         : variant === "secondary"
           ? "bg-white/[0.08] text-white hover:bg-white/[0.14] border border-white/10"
           : "btn-ghost";

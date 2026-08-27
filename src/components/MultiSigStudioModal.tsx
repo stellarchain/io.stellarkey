@@ -554,7 +554,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                             </span>
                           )}
                         </div>
-                        <span className="mono shrink-0 rounded-lg bg-[#0A84FF]/15 px-2 py-0.5 text-[11px] font-bold text-[#0A84FF]">
+                        <span className="mono shrink-0 rounded-lg bg-[#0A84FF]/15 px-2 py-0.5 text-[11px] font-bold text-[#64D2FF]">
                           w{s.weight}
                         </span>
                       </div>

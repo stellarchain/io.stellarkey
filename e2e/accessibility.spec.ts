@@ -121,7 +121,7 @@ async function clickPrimaryNavigation(page: Page, name: string): Promise<void> {
     await tabs.getByRole("button", { name, exact: true }).click();
     return;
   }
-  await page.getByRole("button", { name, exact: true }).click();
+  await page.getByRole("button", { name: name === "Swap" ? "DEX Swap" : name, exact: true }).click();
 }
 
 async function clickLockWallet(page: Page): Promise<void> {
@@ -132,6 +132,19 @@ async function clickLockWallet(page: Page): Promise<void> {
   }
   await page.getByRole("button", { name: /Open account menu for/ }).click();
   await page.getByRole("menuitem", { name: "Lock Wallet" }).click();
+}
+
+async function clickMerchantSection(page: Page, name: string): Promise<void> {
+  const mobileNav = page.getByRole("navigation", { name: "Merchant sections" });
+  if (await mobileNav.isVisible().catch(() => false)) {
+    if (name === "Counter codes") {
+      await page.getByRole("button", { name, exact: true }).click();
+      return;
+    }
+    await mobileNav.getByRole("button", { name, exact: true }).click();
+    return;
+  }
+  await page.getByRole("button", { name: name === "Till" ? "Point of Sale" : name, exact: true }).click();
 }
 
 async function visitSettingsSubpage(
@@ -165,7 +178,14 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
 
   for (const destination of ["Activity", "Swap", "Contacts"] as const) {
     await clickPrimaryNavigation(page, destination);
-    await expect(page.getByRole("heading", { name: destination, exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: destination === "Swap" && (page.viewportSize()?.width ?? 0) >= 768
+          ? "In-App DEX Swap"
+          : destination,
+        exact: true,
+      }),
+    ).toBeVisible();
     await expectAccessibleSurface(page, destination.toLowerCase(), browserName);
   }
   await clickPrimaryNavigation(page, "Home");
@@ -242,7 +262,7 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
     await visitSettingsSubpage(page, row, heading, browserName);
   }
 
-  await page.getByRole("button", { name: /G Imported Account/ }).click();
+  await page.getByRole("button", { name: /G Imported Account/ }).last().click();
   await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "accounts settings", browserName);
   await page.getByRole("button", { name: /Add Account/ }).click();
@@ -284,46 +304,53 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
 
   const merchantNav = page.getByRole("navigation", { name: "Merchant sections" });
   for (const destination of ["Orders", "Catalogue", "Invoices", "Customers", "Insights"] as const) {
-    await merchantNav.getByRole("button", { name: destination, exact: true }).click();
-    await expect(
-      merchantNav.getByRole("button", { name: destination, exact: true }),
-    ).toHaveAttribute("aria-current", "page");
+    await clickMerchantSection(page, destination);
+    if (await merchantNav.isVisible().catch(() => false)) {
+      await expect(
+        merchantNav.getByRole("button", { name: destination, exact: true }),
+      ).toHaveAttribute("aria-current", "page");
+    }
     await expectAccessibleSurface(page, `merchant ${destination.toLowerCase()}`, browserName);
   }
 
-  await merchantNav.getByRole("button", { name: "Invoices", exact: true }).click();
-  await page.getByRole("button", { name: "Counter codes", exact: true }).click();
+  await clickMerchantSection(page, "Invoices");
+  await clickMerchantSection(page, "Counter codes");
   await expectAccessibleSurface(page, "merchant counter codes", browserName);
 
-  await merchantNav.getByRole("button", { name: "Till", exact: true }).click();
+  await clickMerchantSection(page, "Till");
   await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
   const shift = page.getByRole("dialog", { name: /Open shift/ });
   await expect(shift).toBeVisible();
   await expectAccessibleSurface(page, "open shift sheet", browserName);
   await shift.getByRole("button", { name: "Close", exact: true }).click();
 
-  await merchantNav.getByRole("button", { name: "Catalogue", exact: true }).click();
+  await clickMerchantSection(page, "Catalogue");
   await page.getByRole("button", { name: "New item", exact: true }).click();
   const item = page.getByRole("dialog", { name: "New item" });
   await expect(item).toBeVisible();
   await expectAccessibleSurface(page, "new catalogue item sheet", browserName);
   await item.getByRole("button", { name: "Close", exact: true }).click();
 
-  await merchantNav.getByRole("button", { name: "Invoices", exact: true }).click();
+  await clickMerchantSection(page, "Invoices");
   await page.getByRole("button", { name: "New invoice", exact: true }).first().click();
   const invoice = page.getByRole("dialog", { name: "New invoice" });
   await expect(invoice).toBeVisible();
   await expectAccessibleSurface(page, "new invoice sheet", browserName);
   await invoice.getByRole("button", { name: "Close", exact: true }).click();
 
-  await page.getByRole("button", { name: "Counter codes", exact: true }).click();
+  await clickMerchantSection(page, "Counter codes");
   await page.getByRole("button", { name: "New code", exact: true }).first().click();
   const counterCode = page.getByRole("dialog", { name: "New counter code" });
   await expect(counterCode).toBeVisible();
   await expectAccessibleSurface(page, "new counter code sheet", browserName);
   await counterCode.getByRole("button", { name: "Close", exact: true }).click();
 
-  await page.getByRole("button", { name: "Merchant settings", exact: true }).click();
+  const merchantSettingsButton = page.getByRole("button", { name: "Merchant settings", exact: true });
+  if (await merchantSettingsButton.isVisible().catch(() => false)) {
+    await merchantSettingsButton.click();
+  } else {
+    await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+  }
   await expect(page.getByRole("heading", { name: "Merchant settings", exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "merchant settings", browserName);
 
@@ -400,8 +427,11 @@ test("the largest valid native balance remains inside the iPhone dashboard", asy
   page,
   context,
   browserName,
-}) => {
-  test.skip(browserName !== "webkit", "This is the focused iPhone WebKit containment gate.");
+}, testInfo) => {
+  test.skip(
+    browserName !== "webkit" || testInfo.project.name !== "iphone-webkit",
+    "This is the focused iPhone WebKit containment gate.",
+  );
   await context.unrouteAll({ behavior: "wait" });
   await installQuietEventSource(context);
   await installNetworkFixtures(context, { nativeBalance: "922337203685.4775807" });

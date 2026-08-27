@@ -316,7 +316,7 @@ body::after {
     background: #006edb;
   }
   .btn-primary:hover:not(:disabled) {
-    background: #2492ff;
+    background: #005fbe;
   }
 
   .btn-ghost {

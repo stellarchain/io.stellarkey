@@ -1531,7 +1531,7 @@ export function SettingsPage({
                 </p>
               </div>
               <Button
-                className="w-full !py-2.5 text-[13.5px] font-semibold !bg-[#0A84FF] text-white"
+                className="w-full !py-2.5 text-[13.5px] font-semibold"
                 onClick={() => {
                   triggerHaptic("selection");
                   setAddAccountMode("hardware");
