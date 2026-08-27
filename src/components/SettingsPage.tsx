@@ -679,12 +679,15 @@ export function SettingsPage({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-            {/* Column 1: Security & Backup */}
-            <div className="space-y-4">
-              <div>
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                  Security & Backup
-                </p>
+            {/* Column 1: Recovery, security, signing, and privacy */}
+            <div className="space-y-6">
+              <section aria-labelledby="settings-recovery-title">
+                <h2
+                  id="settings-recovery-title"
+                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  Recovery
+                </h2>
                 <div className="list-group">
                   <RowButton
                     icon={<IconShield size={16} />}
@@ -698,8 +701,62 @@ export function SettingsPage({
                       triggerHaptic("selection");
                       onOpenBackupWizard?.();
                     }}
+                  />
+                </div>
+              </section>
+
+              <section aria-labelledby="settings-device-security-title">
+                <h2
+                  id="settings-device-security-title"
+                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  Device Security
+                </h2>
+                <div className="list-group">
+                  <RowButton
+                    icon={<IconFingerprint size={16} />}
+                    tint="#5E5CE6"
+                    label="Touch ID / Face ID"
+                    value={passkeyConfigured ? "On" : passkeyAvailable ? "Off" : "Requires HTTPS"}
+                    sub={passkeyConfigured
+                      ? "Local passkey unlock on this device"
+                      : passkeyAvailable
+                        ? "Optional · password remains available"
+                        : "Open the installed app or an HTTPS address"}
+                    chevron={passkeyAvailable || passkeyConfigured}
+                    onClick={() => {
+                      if (!passkeyAvailable && !passkeyConfigured) {
+                        toast("Face ID / Touch ID requires HTTPS and a compatible browser", "info");
+                        return;
+                      }
+                      setPasskeyError(null);
+                      setPasskeyPassword("");
+                      setPasskeyDialog(passkeyConfigured ? "remove" : "enable");
+                    }}
+                  />
+                  <RowButton
+                    icon={<IconLock size={16} />}
+                    tint="#64D2FF"
+                    label="Auto-Lock Timer"
+                    value={autoLockLabel}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("autolock");
+                    }}
                     sep
                   />
+                </div>
+              </section>
+
+              <section aria-labelledby="settings-signing-security-title">
+                <h2
+                  id="settings-signing-security-title"
+                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  Signing Security
+                </h2>
+                <div className="list-group">
                   <RowButton
                     icon={<IconShield size={16} />}
                     tint="#0A84FF"
@@ -710,7 +767,6 @@ export function SettingsPage({
                       triggerHaptic("selection");
                       onOpenMultisigStudio?.();
                     }}
-                    sep
                   />
                   <RowButton
                     icon={<IconShield size={16} />}
@@ -737,49 +793,17 @@ export function SettingsPage({
                     }}
                     sep
                   />
-                  <RowButton
-                    icon={<IconFingerprint size={16} />}
-                    tint="#5E5CE6"
-                    label="Touch ID / Face ID"
-                    value={passkeyConfigured ? "On" : passkeyAvailable ? "Off" : "Requires HTTPS"}
-                    sub={passkeyConfigured
-                      ? "Local passkey unlock on this device"
-                      : passkeyAvailable
-                        ? "Optional · password remains available"
-                        : "Open the installed app or an HTTPS address"}
-                    chevron={passkeyAvailable || passkeyConfigured}
-                    onClick={() => {
-                      if (!passkeyAvailable && !passkeyConfigured) {
-                        toast("Face ID / Touch ID requires HTTPS and a compatible browser", "info");
-                        return;
-                      }
-                      setPasskeyError(null);
-                      setPasskeyPassword("");
-                      setPasskeyDialog(passkeyConfigured ? "remove" : "enable");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconLock size={16} />}
-                    tint="#64D2FF"
-                    label="Auto-Lock Timer"
-                    value={autoLockLabel}
-                    chevron
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSub("autolock");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconRefresh size={16} />}
-                    tint="#FF9F0A"
-                    label="Audio & Haptic Feedback"
-                    as="div"
-                    sep
-                  >
-                    <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
-                  </RowButton>
+                </div>
+              </section>
+
+              <section aria-labelledby="settings-privacy-feedback-title">
+                <h2
+                  id="settings-privacy-feedback-title"
+                  className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400"
+                >
+                  Privacy &amp; Feedback
+                </h2>
+                <div className="list-group">
                   <RowButton
                     as="div"
                     icon={<IconShield size={16} />}
@@ -788,8 +812,17 @@ export function SettingsPage({
                   >
                     <Toggle on={privacyMode} onChange={togglePrivacy} />
                   </RowButton>
+                  <RowButton
+                    as="div"
+                    icon={<IconRefresh size={16} />}
+                    tint="#FF9F0A"
+                    label="Audio & Haptic Feedback"
+                    sep
+                  >
+                    <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
+                  </RowButton>
                 </div>
-              </div>
+              </section>
             </div>
 
             {/* Column 2: Accounts & Tools */}
