@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletContacts } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import type { Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
@@ -14,7 +14,7 @@ export function AddressBookPage({
 }: {
   onSendTo: (contact: Contact) => void;
 }) {
-  const { contacts, addContact, toggleContactFavorite } = useWallet();
+  const { contacts, addContact, toggleContactFavorite } = useWalletContacts();
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);

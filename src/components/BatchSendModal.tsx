@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletContacts,
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
@@ -38,7 +44,11 @@ export function BatchSendModal({
 }
 
 function BatchSendInner({ onClose }: { onClose: () => void }) {
-  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, sendBatch, refresh, contacts, activeAccount, submissionStatus } = useWallet();
+  const { activeAccount } = useWalletIdentity();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
+  const { contacts } = useWalletContacts();
+  const { submissionStatus } = useWalletSubmission();
+  const { sendBatch, refresh } = useWalletTransactions();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
   const [memo, setMemo] = useState("");

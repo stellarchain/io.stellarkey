@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity } from "@/hooks/useWallet";
 import { hasMnemonic, isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -35,7 +35,7 @@ function AddAccountInner({
   onClose: () => void;
   initialMode?: Mode;
 }) {
-  const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWallet();
+  const { accounts, addAccount, addWatchOnly, addHardwareAccount } = useWalletIdentity();
   // Deriving needs the vault mnemonic — hardware/secret vaults don't have one
   const [hasMnemonicVault] = useState(() => hasMnemonic());
   const [mode, setMode] = useState<Mode>(

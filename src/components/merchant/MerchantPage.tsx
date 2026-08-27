@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletPhase } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Notice, SegmentedControl } from "../ui";
@@ -150,7 +150,7 @@ export function MerchantPage({
     activeCharge,
     closeCharge,
   } = useMerchant();
-  const { phase } = useWallet();
+  const { phase } = useWalletPhase();
 
   // Uncontrolled by default so the page works on its own; the shell passes both
   // props so the sidebar's shift row opens this very sheet.

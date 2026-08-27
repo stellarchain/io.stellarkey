@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletMarket,
+  useWalletPreferences,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { getHorizonUrl } from "@/lib/stellar-endpoints";
 import { lookupKnownAsset } from "@/lib/assets";
@@ -36,7 +43,12 @@ export function AssetDetailModal({
   onToggleFavorite: (key: string) => void;
   onClose: () => void;
 }) {
-  const { network, trustAsset, refresh, privacyMode, xlmPriceUsd, fiatCurrency, fiatRates, minimumBalanceXlm, recommendedBaseFeeStroops, submissionStatus } = useWallet();
+  const { network } = useWalletIdentity();
+  const { minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
+  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { privacyMode, fiatCurrency } = useWalletPreferences();
+  const { submissionStatus } = useWalletSubmission();
+  const { trustAsset, refresh } = useWalletTransactions();
   const horizonUrl = getHorizonUrl(network);
   const metadataIdentity = asset && !asset.isNative && asset.issuer
     ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)

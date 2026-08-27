@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
@@ -22,7 +27,10 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
 }
 
 function AddAssetInner({ onClose }: { onClose: () => void }) {
-  const { trustAssets, refresh, balances, network, activeAccount, recommendedBaseFeeStroops, submissionStatus } = useWallet();
+  const { network, activeAccount } = useWalletIdentity();
+  const { balances, recommendedBaseFeeStroops } = useWalletLedger();
+  const { submissionStatus } = useWalletSubmission();
+  const { trustAssets, refresh } = useWalletTransactions();
   const [search, setSearch] = useState("");
   const [code, setCode] = useState("");
   const [issuer, setIssuer] = useState("");

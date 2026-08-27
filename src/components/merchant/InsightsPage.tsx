@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { LIVE_MINUTE_MS, useLiveNow } from "@/hooks/useLiveNow";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import type { FiatCurrency } from "@/lib/format";
 import { assetKey, isNative } from "@/lib/merchant/charge";
@@ -120,7 +120,7 @@ function FindingLine({ parts }: { parts: Part[] }) {
 
 export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const { ready, today, orders, refunds, settings } = useMerchant();
-  const { network } = useWallet();
+  const { network } = useWalletIdentity();
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const currency = settings.currency;
 

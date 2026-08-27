@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { fmtAmount, isValidAmount } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { findStrictSendRoute } from "@/lib/swap";
@@ -28,7 +33,10 @@ import { Button, ErrorText, HashValue, Select } from "./ui";
 import { IconAlert, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
 
 export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | null }) {
-  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, swap, network, refresh, activeAccount, submissionStatus } = useWallet();
+  const { network, activeAccount } = useWalletIdentity();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
+  const { submissionStatus } = useWalletSubmission();
+  const { swap, refresh } = useWalletTransactions();
   const [sendKey, setSendKey] = useState(() =>
     prefill ? merchantAssetKey(prefill.sourceAsset) : "native",
   );

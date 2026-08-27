@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletContacts } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { validateContact, type Contact } from "@/lib/contacts";
 import { triggerHaptic } from "@/lib/haptics";
@@ -30,7 +30,7 @@ function EditContactInner({
   contact: Contact | null;
   onClose: () => void;
 }) {
-  const { contacts, addContact, removeContact } = useWallet();
+  const { contacts, addContact, removeContact } = useWalletContacts();
   const { toast } = useToast();
   const [name, setName] = useState(contact?.name ?? "");
   const [address, setAddress] = useState(contact?.address ?? "");

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletActivity,
+  useWalletIdentity,
+  useWalletLedger,
+} from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { fetchFeeStats, type FeeStats } from "@/lib/api";
 import { getHorizonUrl, testHorizonEndpoint } from "@/lib/stellar-endpoints";
@@ -16,7 +20,9 @@ export function NetworkStatsModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { network, activity, minimumBalanceXlm } = useWallet();
+  const { network } = useWalletIdentity();
+  const { activity } = useWalletActivity();
+  const { minimumBalanceXlm } = useWalletLedger();
   const [feeStats, setFeeStats] = useState<FeeStats | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);

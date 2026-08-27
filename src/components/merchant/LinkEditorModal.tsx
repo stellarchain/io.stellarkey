@@ -14,7 +14,7 @@ import type {
   Minor,
 } from "@/lib/merchant/types";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity } from "@/hooks/useWallet";
 import { useToast } from "../Toast";
 import {
   Button,
@@ -100,7 +100,7 @@ export function CodeEditorModal({
 }
 
 function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () => void }) {
-  const { network } = useWallet();
+  const { network } = useWalletIdentity();
   const {
     counterCodeBlockedReason,
     counterCodePayUriFor,

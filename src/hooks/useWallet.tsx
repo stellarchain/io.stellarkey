@@ -337,6 +337,100 @@ interface WalletContextValue {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
+type WalletIdentityContextValue = Pick<
+  WalletContextValue,
+  | "network"
+  | "accounts"
+  | "activeAccount"
+  | "archivedAccounts"
+  | "revealRecoveryPhrase"
+  | "lock"
+  | "selectAccount"
+  | "addAccount"
+  | "addWatchOnly"
+  | "addHardwareAccount"
+  | "removeAccount"
+  | "renameAccount"
+  | "restoreArchivedAccount"
+  | "restoreAccountByIndex"
+  | "switchNetwork"
+>;
+
+type WalletLedgerContextValue = Pick<
+  WalletContextValue,
+  | "balances"
+  | "minimumBalanceXlm"
+  | "recommendedBaseFeeStroops"
+  | "dataError"
+  | "accountBalances"
+  | "accountPortfolioSnapshots"
+  | "claimableBalances"
+  | "dataLoading"
+  | "unfunded"
+>;
+
+type WalletActivityContextValue = Pick<
+  WalletContextValue,
+  "activity" | "activityCursor" | "loadingMore" | "loadMoreActivity"
+>;
+
+type WalletSubmissionContextValue = Pick<
+  WalletContextValue,
+  | "pendingTxs"
+  | "retryPendingTransaction"
+  | "mergeReconciliations"
+  | "retryMergeReconciliation"
+  | "submissionStatus"
+  | "envelopeSubmissionStatus"
+>;
+
+type WalletMarketContextValue = Pick<
+  WalletContextValue,
+  "xlmPriceUsd" | "priceData" | "priceRange" | "changePriceRange" | "priceLoading" | "fiatRates"
+>;
+
+type WalletPreferencesContextValue = Pick<
+  WalletContextValue,
+  | "privacyMode"
+  | "togglePrivacy"
+  | "fiatCurrency"
+  | "cycleFiatCurrency"
+  | "changeFiatCurrency"
+  | "autoLockMs"
+  | "changeAutoLockMs"
+>;
+
+type WalletContactsContextValue = Pick<
+  WalletContextValue,
+  "contacts" | "addContact" | "removeContact" | "toggleContactFavorite"
+>;
+
+type WalletTransactionsContextValue = Pick<
+  WalletContextValue,
+  | "refresh"
+  | "send"
+  | "sendBatch"
+  | "claimAirdrop"
+  | "mergeAccount"
+  | "trustAsset"
+  | "trustAssets"
+  | "swap"
+  | "applyMultisigConfig"
+  | "disableMultisig"
+  | "prepareCosignPayment"
+  | "cosignTransaction"
+  | "fundFromFriendbot"
+>;
+
+const WalletIdentityContext = createContext<WalletIdentityContextValue | null>(null);
+const WalletLedgerContext = createContext<WalletLedgerContextValue | null>(null);
+const WalletActivityContext = createContext<WalletActivityContextValue | null>(null);
+const WalletSubmissionContext = createContext<WalletSubmissionContextValue | null>(null);
+const WalletMarketContext = createContext<WalletMarketContextValue | null>(null);
+const WalletPreferencesContext = createContext<WalletPreferencesContextValue | null>(null);
+const WalletContactsContext = createContext<WalletContactsContextValue | null>(null);
+const WalletTransactionsContext = createContext<WalletTransactionsContextValue | null>(null);
+
 interface WalletPhaseContextValue {
   phase: Phase;
   vaultStorageIssue: StorageIssue | null;
@@ -2282,10 +2376,162 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
+  const identityValue = useMemo<WalletIdentityContextValue>(() => ({
+    network,
+    accounts,
+    activeAccount,
+    archivedAccounts,
+    revealRecoveryPhrase,
+    lock,
+    selectAccount,
+    addAccount,
+    addWatchOnly,
+    addHardwareAccount,
+    removeAccount,
+    renameAccount,
+    restoreArchivedAccount,
+    restoreAccountByIndex,
+    switchNetwork,
+  }), [
+    accounts,
+    activeAccount,
+    addAccount,
+    addHardwareAccount,
+    addWatchOnly,
+    archivedAccounts,
+    lock,
+    network,
+    removeAccount,
+    renameAccount,
+    restoreAccountByIndex,
+    restoreArchivedAccount,
+    revealRecoveryPhrase,
+    selectAccount,
+    switchNetwork,
+  ]);
+  const ledgerValue = useMemo<WalletLedgerContextValue>(() => ({
+    balances,
+    minimumBalanceXlm,
+    recommendedBaseFeeStroops,
+    dataError,
+    accountBalances,
+    accountPortfolioSnapshots,
+    claimableBalances,
+    dataLoading,
+    unfunded,
+  }), [
+    accountBalances,
+    accountPortfolioSnapshots,
+    balances,
+    claimableBalances,
+    dataError,
+    dataLoading,
+    minimumBalanceXlm,
+    recommendedBaseFeeStroops,
+    unfunded,
+  ]);
+  const activityValue = useMemo<WalletActivityContextValue>(() => ({
+    activity,
+    activityCursor,
+    loadingMore,
+    loadMoreActivity,
+  }), [activity, activityCursor, loadingMore, loadMoreActivity]);
+  const submissionValue = useMemo<WalletSubmissionContextValue>(() => ({
+    pendingTxs,
+    retryPendingTransaction,
+    mergeReconciliations,
+    retryMergeReconciliation,
+    submissionStatus,
+    envelopeSubmissionStatus,
+  }), [
+    envelopeSubmissionStatus,
+    mergeReconciliations,
+    pendingTxs,
+    retryMergeReconciliation,
+    retryPendingTransaction,
+    submissionStatus,
+  ]);
+  const marketValue = useMemo<WalletMarketContextValue>(() => ({
+    xlmPriceUsd,
+    priceData,
+    priceRange,
+    changePriceRange,
+    priceLoading,
+    fiatRates,
+  }), [changePriceRange, fiatRates, priceData, priceLoading, priceRange, xlmPriceUsd]);
+  const preferencesValue = useMemo<WalletPreferencesContextValue>(() => ({
+    privacyMode,
+    togglePrivacy,
+    fiatCurrency,
+    cycleFiatCurrency,
+    changeFiatCurrency,
+    autoLockMs,
+    changeAutoLockMs,
+  }), [
+    autoLockMs,
+    changeAutoLockMs,
+    changeFiatCurrency,
+    cycleFiatCurrency,
+    fiatCurrency,
+    privacyMode,
+    togglePrivacy,
+  ]);
+  const contactsValue = useMemo<WalletContactsContextValue>(() => ({
+    contacts,
+    addContact,
+    removeContact,
+    toggleContactFavorite,
+  }), [addContact, contacts, removeContact, toggleContactFavorite]);
+  const transactionsValue = useMemo<WalletTransactionsContextValue>(() => ({
+    refresh,
+    send,
+    sendBatch,
+    claimAirdrop,
+    mergeAccount,
+    trustAsset,
+    trustAssets,
+    swap,
+    applyMultisigConfig,
+    disableMultisig,
+    prepareCosignPayment,
+    cosignTransaction,
+    fundFromFriendbot,
+  }), [
+    applyMultisigConfig,
+    claimAirdrop,
+    cosignTransaction,
+    disableMultisig,
+    fundFromFriendbot,
+    mergeAccount,
+    prepareCosignPayment,
+    refresh,
+    send,
+    sendBatch,
+    swap,
+    trustAsset,
+    trustAssets,
+  ]);
+
   return (
     <WalletPhaseContext.Provider value={phaseValue}>
       <WalletLifecycleActionsContext.Provider value={lifecycleActions}>
-        <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+        <WalletIdentityContext.Provider value={identityValue}>
+          <WalletLedgerContext.Provider value={ledgerValue}>
+            <WalletActivityContext.Provider value={activityValue}>
+              <WalletSubmissionContext.Provider value={submissionValue}>
+                <WalletMarketContext.Provider value={marketValue}>
+                  <WalletPreferencesContext.Provider value={preferencesValue}>
+                    <WalletContactsContext.Provider value={contactsValue}>
+                      <WalletTransactionsContext.Provider value={transactionsValue}>
+                        <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+                      </WalletTransactionsContext.Provider>
+                    </WalletContactsContext.Provider>
+                  </WalletPreferencesContext.Provider>
+                </WalletMarketContext.Provider>
+              </WalletSubmissionContext.Provider>
+            </WalletActivityContext.Provider>
+          </WalletLedgerContext.Provider>
+        </WalletIdentityContext.Provider>
       </WalletLifecycleActionsContext.Provider>
     </WalletPhaseContext.Provider>
   );
@@ -2295,6 +2541,54 @@ export function useWallet(): WalletContextValue {
   const ctx = useContext(WalletContext);
   if (!ctx) throw new Error("useWallet must be used within WalletProvider");
   return ctx;
+}
+
+export function useWalletIdentity(): WalletIdentityContextValue {
+  const context = useContext(WalletIdentityContext);
+  if (!context) throw new Error("useWalletIdentity must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletLedger(): WalletLedgerContextValue {
+  const context = useContext(WalletLedgerContext);
+  if (!context) throw new Error("useWalletLedger must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletActivity(): WalletActivityContextValue {
+  const context = useContext(WalletActivityContext);
+  if (!context) throw new Error("useWalletActivity must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletSubmission(): WalletSubmissionContextValue {
+  const context = useContext(WalletSubmissionContext);
+  if (!context) throw new Error("useWalletSubmission must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletMarket(): WalletMarketContextValue {
+  const context = useContext(WalletMarketContext);
+  if (!context) throw new Error("useWalletMarket must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletPreferences(): WalletPreferencesContextValue {
+  const context = useContext(WalletPreferencesContext);
+  if (!context) throw new Error("useWalletPreferences must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletContacts(): WalletContactsContextValue {
+  const context = useContext(WalletContactsContext);
+  if (!context) throw new Error("useWalletContacts must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletTransactions(): WalletTransactionsContextValue {
+  const context = useContext(WalletTransactionsContext);
+  if (!context) throw new Error("useWalletTransactions must be used within WalletProvider");
+  return context;
 }
 
 export function useWalletPhase(): WalletPhaseContextValue {

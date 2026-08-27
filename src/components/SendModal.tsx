@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Federation } from "@stellar/stellar-sdk";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletActivity,
+  useWalletContacts,
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, validateSep7PayRequest, type PayUriPayload } from "@/lib/payuri";
@@ -74,7 +81,12 @@ function SendInner({
   onClose: () => void;
   prefill?: SendPrefill | null;
 }) {
-  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops, send, prepareCosignPayment, network, refresh, contacts, activeAccount, accounts, activity, submissionStatus } = useWallet();
+  const { network, activeAccount, accounts } = useWalletIdentity();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
+  const { contacts } = useWalletContacts();
+  const { activity } = useWalletActivity();
+  const { submissionStatus } = useWalletSubmission();
+  const { send, prepareCosignPayment, refresh } = useWalletTransactions();
   const prefillError = prefill
     ? validateSep7PayRequest(prefill, NETWORKS[network].networkPassphrase)
     : null;

@@ -1,7 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletIdentity,
+  useWalletLifecycleActions,
+} from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import {
   exportVaultBackup,
@@ -52,8 +55,8 @@ export function BackupWizardModal({
 }
 
 function WizardInner({ onClose }: { onClose: () => void }) {
-  const { activeAccount, accounts, network, revealRecoveryPhrase, restoreWalletFromBackup } =
-    useWallet();
+  const { activeAccount, accounts, network, revealRecoveryPhrase } = useWalletIdentity();
+  const { restoreWalletFromBackup } = useWalletLifecycleActions();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 

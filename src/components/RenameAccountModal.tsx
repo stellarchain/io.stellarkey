@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta } from "@/lib/types";
@@ -26,7 +26,7 @@ function RenameAccountInner({
   account: AccountMeta;
   onClose: () => void;
 }) {
-  const { renameAccount } = useWallet();
+  const { renameAccount } = useWalletIdentity();
   const { toast } = useToast();
   const [label, setLabel] = useState(account.label);
 
