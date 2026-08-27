@@ -82,7 +82,7 @@ test("a reference fits a text memo and reads like the shop", () => {
   assert.equal(referencePrefix("Meridian Coffee"), "MC");
   assert.equal(referencePrefix("Kaffe"), "KAFF");
   assert.equal(referencePrefix(""), "TILL");
-  assert.equal(orderReference("Meridian Coffee", 1042), "MC1042");
+  assert.equal(orderReference("Meridian Coffee", 1042), "MC-O-1042");
   assert.ok(orderReference("A".repeat(60), 999).length <= 28);
 });
 
@@ -94,7 +94,7 @@ test("the SEP-7 request carries the memo, the issuer and the network", () => {
   assert.equal(parsed.amount, "27.3300000");
   assert.equal(parsed.assetCode, "USDC");
   assert.equal(parsed.assetIssuer, USDC);
-  assert.equal(parsed.memo, "MC1042");
+  assert.equal(parsed.memo, "MC-O-1042");
   assert.equal(parsed.memoType, "text");
   assert.equal(parsed.networkPassphrase, "Public Global Stellar Network ; September 2015");
   // Never the three parameters this wallet refuses.
@@ -130,7 +130,7 @@ test("a split charge quotes only its exact outstanding remainder", () => {
 
 test("the memo lane names a charge outright", () => {
   const c = charge(1042, 2733);
-  const out = matchPayment(payment({ memo: "MC1042" }), [c], settings());
+  const out = matchPayment(payment({ memo: "MC-O-1042" }), [c], settings());
   assert.equal(out.lane, "memo");
   assert.equal(out.charge.id, "chg_1042");
   assert.equal(out.verdict, "exact");
@@ -139,19 +139,19 @@ test("the memo lane names a charge outright", () => {
 
 test("the memo lane still names short and over payments", () => {
   const c = charge(1042, 2733);
-  const short = matchPayment(payment({ memo: "MC1042", amount: "22.8000000" }), [c], settings());
+  const short = matchPayment(payment({ memo: "MC-O-1042", amount: "22.8000000" }), [c], settings());
   assert.equal(short.lane, "memo");
   assert.equal(short.verdict, "short");
   assert.equal(chargeStatusFor(short.verdict), "underpaid");
 
-  const over = matchPayment(payment({ memo: "MC1042", amount: "30.0000000" }), [c], settings());
+  const over = matchPayment(payment({ memo: "MC-O-1042", amount: "30.0000000" }), [c], settings());
   assert.equal(over.verdict, "over");
   assert.equal(chargeStatusFor(over.verdict), "overpaid");
 });
 
 test("a second payment on a settled reference is a duplicate, never a match", () => {
   const paid = charge(1042, 2733, { status: "paid" });
-  const out = matchPayment(payment({ memo: "MC1042" }), [paid], settings());
+  const out = matchPayment(payment({ memo: "MC-O-1042" }), [paid], settings());
   assert.equal(out.lane, "duplicate");
   assert.equal(out.charge.id, "chg_1042");
 });
@@ -206,7 +206,7 @@ test("an expired charge stops being a candidate", () => {
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "expired");
   // The memo lane still resolves it, so a late payer is not stranded.
-  const named = matchPayment({ ...latePayment, memo: "MC1042" }, [c], settings());
+  const named = matchPayment({ ...latePayment, memo: c.reference }, [c], settings());
   assert.equal(named.lane, "memo");
   assert.equal(named.late, true);
 });

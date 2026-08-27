@@ -1,5 +1,6 @@
 import { orderReference } from "./charge";
 import { lineAdjustmentMinor, lineGrossMinor, orderTotals } from "./money";
+import { assertPaymentReferenceAvailable } from "./payment-reference";
 import type {
   Adjustment,
   AdjustmentKind,
@@ -154,10 +155,12 @@ export function applyTicketAdjustment(
 export function buildOrder(store: MerchantStore, input: BuildOrderInput): Order {
   if (input.lines.length === 0) throw new Error("An order needs at least one line.");
   const number = store.nextOrderNumber;
+  const reference = orderReference(store.settings.profile.name || "Till", number);
+  assertPaymentReferenceAvailable(store, reference);
   return {
     id: input.id,
     number,
-    reference: orderReference(store.settings.profile.name || "Till", number),
+    reference,
     network: input.network,
     status: "open",
     lines: input.lines.map((line) => ({ ...line })),

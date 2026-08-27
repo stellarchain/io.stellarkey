@@ -75,7 +75,7 @@ function fixedInput(member, overrides = {}) {
     amountMinor: 1000,
     suggestedMinor: [],
     acceptedAssets: [USDC],
-    memoPrefix: "NSBAG",
+    memoPrefix: "BAG",
     staffId: null,
     expiresAt: null,
     network: "mainnet",
@@ -105,7 +105,7 @@ test("fixed codes persist an immutable publication quote and exact SEP-7 request
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
 
-  assert.equal(created.code.memoPrefix, "NSBAG");
+  assert.equal(created.code.memoPrefix, "NS-C-BAG");
   assert.equal(created.code.destination, TILL);
   assert.equal(created.code.network, "mainnet");
   assert.deepEqual(created.code.quotes, [
@@ -125,11 +125,25 @@ test("fixed codes persist an immutable publication quote and exact SEP-7 request
     amount: "10.0000000",
     assetCode: "USDC",
     assetIssuer: ISSUER,
-    memo: "NSBAG",
+    memo: "NS-C-BAG",
     memoType: "text",
     msg: "North Star · Coffee bag",
     networkPassphrase: NETWORKS.mainnet.networkPassphrase,
   });
+});
+
+test("a new counter code cannot reuse a payment reference held by another merchant record", async () => {
+  const { createCounterCode } = await counterDomain();
+  const { member, store } = merchantStore();
+  const colliding = {
+    ...store,
+    orders: [{ id: "legacy-order", reference: "NS-C-BAG" }],
+  };
+
+  assert.throws(
+    () => createCounterCode(colliding, fixedInput(member)),
+    /payment reference.*already reserved/i,
+  );
 });
 
 test("code identity and payment facts stay stable while editable metadata persists", async () => {
@@ -254,14 +268,14 @@ test("open codes price live payments and retain unpriceable ones for review", as
     amountMinor: null,
     suggestedMinor: [500, 1000],
     acceptedAssets: [USDC, XLM],
-    memoPrefix: "NSFUND",
+    memoPrefix: "FUND",
     quotes: [],
   });
   const reconciled = reconcileCounterPayments(created.store, {
     network: "mainnet",
     payments: [
-      payment("priced-payment", "2.0000000", USDC, "NSFUND"),
-      payment("review-payment", "5.0000000", XLM, "NSFUND"),
+      payment("priced-payment", "2.0000000", USDC, created.code.memoPrefix),
+      payment("review-payment", "5.0000000", XLM, created.code.memoPrefix),
     ],
     rates: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW + 2000,
@@ -295,7 +309,7 @@ test("paused and expired codes stop auto-filing while their printed request rema
 
   const expired = reconcileCounterPayments(created.store, {
     network: "mainnet",
-    payments: [payment("expired-payment", "10.0000000", USDC, "NSBAG")],
+    payments: [payment("expired-payment", "10.0000000", USDC, created.code.memoPrefix)],
     rates: [],
     now: NOW + 2000,
   });

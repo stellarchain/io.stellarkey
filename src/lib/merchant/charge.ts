@@ -2,7 +2,6 @@ import { buildSep7PayUri } from "../payuri";
 import { NETWORKS } from "../stellar";
 import type { NetworkKey } from "../stellar";
 import { randomHex } from "../crypto";
-import { memoByteLength } from "../format";
 import { assetAmountFor, unitPriceE6 } from "./money";
 import type {
   AcceptedAsset,
@@ -13,33 +12,7 @@ import type {
   Order,
 } from "./types";
 
-/** A Stellar MEMO_TEXT is 28 bytes. The reference has to fit inside one. */
-export const MAX_REFERENCE_BYTES = 28;
-
-/**
- * A short prefix from the shop's name, so a customer's wallet shows something
- * recognisable rather than a bare number. Letters and digits only — a memo is
- * bytes, and an accented shop name would eat the budget.
- */
-export function referencePrefix(shopName: string): string {
-  const initials = shopName
-    .split(/\s+/)
-    .map((word) => word.replace(/[^A-Za-z0-9]/g, ""))
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
-  if (initials.length >= 2) return initials.slice(0, 4);
-  const letters = shopName.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  return letters.slice(0, 4) || "TILL";
-}
-
-/** The memo every payment for this order must carry, e.g. "MC1042". */
-export function orderReference(shopName: string, orderNumber: number): string {
-  const reference = `${referencePrefix(shopName)}${orderNumber}`;
-  if (memoByteLength(reference) <= MAX_REFERENCE_BYTES) return reference;
-  return String(orderNumber).slice(0, MAX_REFERENCE_BYTES);
-}
+export { orderReference, referencePrefix } from "./payment-reference";
 
 export function isNative(asset: AcceptedAsset): boolean {
   return asset.code === "XLM" && !asset.issuer;

@@ -644,7 +644,7 @@ function StepShop({
             />
             <Hint>
               It heads the receipt and seeds the charge memo: orders will read{" "}
-              <span className="mono text-neutral-300">{memoPrefix}1001</span>.
+              <span className="mono text-neutral-300">{memoPrefix}-O-1001</span>.
             </Hint>
           </div>
 
@@ -1291,7 +1291,7 @@ function StepTill({
           />
           <SummaryRow label="Charges expire in" value={`${draft.chargeExpirySeconds / 60} min`} />
           <SummaryRow label="This till" value={draft.terminalName.trim() || "—"} />
-          <SummaryRow label="First order" value={`${memoPrefix}1001`} mono />
+          <SummaryRow label="First order" value={`${memoPrefix}-O-1001`} mono />
         </dl>
         <div className="mt-3">
           <Notice tone="pos">

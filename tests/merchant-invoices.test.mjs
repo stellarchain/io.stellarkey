@@ -110,7 +110,7 @@ test("draft creation mints a durable number/reference and validates invoice data
   const created = createInvoiceDraft(store, draftInput(member));
 
   assert.equal(created.invoice.number, "INV-2027-0001");
-  assert.equal(created.invoice.reference, "NSINV1");
+  assert.equal(created.invoice.reference, "NS-I-1");
   assert.equal(created.invoice.status, "draft");
   assert.equal(created.invoice.createdById, member.id);
   assert.equal(created.invoice.totals.totalMinor, 1000);
@@ -135,6 +135,20 @@ test("draft creation mints a durable number/reference and validates invoice data
         }),
       ),
     /quantity/i,
+  );
+});
+
+test("a new invoice cannot reuse a payment reference held by another merchant record", async () => {
+  const { createInvoiceDraft } = await invoiceDomain();
+  const { member, store } = merchantStore();
+  const colliding = {
+    ...store,
+    counterCodes: [{ id: "legacy-code", memoPrefix: "NS-I-1" }],
+  };
+
+  assert.throws(
+    () => createInvoiceDraft(colliding, draftInput(member)),
+    /payment reference.*already reserved/i,
   );
 });
 
