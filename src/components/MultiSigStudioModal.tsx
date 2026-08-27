@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletContacts,
+  useWalletIdentity,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { fetchAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
 import { isValidPublicAddress } from "@/lib/vault";
@@ -75,17 +80,10 @@ export function MultiSigStudioModal({
 }
 
 function StudioInner({ onClose }: { onClose: () => void }) {
-  const {
-    activeAccount,
-    network,
-    contacts,
-    applyMultisigConfig,
-    disableMultisig,
-    cosignTransaction,
-    submissionStatus,
-    envelopeSubmissionStatus,
-    pendingTxs,
-  } = useWallet();
+  const { activeAccount, network } = useWalletIdentity();
+  const { contacts } = useWalletContacts();
+  const { submissionStatus, envelopeSubmissionStatus, pendingTxs } = useWalletSubmission();
+  const { applyMultisigConfig, disableMultisig, cosignTransaction } = useWalletTransactions();
   const { toast } = useToast();
 
   const [tab, setTab] = useState<Tab>("overview");

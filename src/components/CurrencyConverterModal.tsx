@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Modal, ModalHeader, Select } from "./ui";
 import { IconSwap } from "./icons";
@@ -23,7 +23,7 @@ export function CurrencyConverterModal({
   onClose: () => void;
   onOpenSwap?: () => void;
 }) {
-  const { xlmPriceUsd, fiatRates } = useWallet();
+  const { xlmPriceUsd, fiatRates } = useWalletMarket();
   const [fromCode, setFromCode] = useState("XLM");
   const [toCode, setToCode] = useState("USD");
   const [fromAmount, setFromAmount] = useState("100");

@@ -9,7 +9,15 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useWallet } from "./useWallet";
+import {
+  useWalletContacts,
+  useWalletIdentity,
+  useWalletLedger,
+  useWalletMarket,
+  useWalletPhase,
+  useWalletSubmission,
+  useWalletTransactions,
+} from "./useWallet";
 import { randomHex } from "@/lib/crypto";
 import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
 import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
@@ -490,19 +498,13 @@ export function MerchantProvider({
   children: React.ReactNode;
   enableOnReady?: boolean;
 }) {
-  const {
-    phase,
-    network,
-    activeAccount,
-    balances,
-    minimumBalanceXlm,
-    recommendedBaseFeeStroops,
-    xlmPriceUsd,
-    fiatRates,
-    contacts,
-    send,
-    submissionStatus,
-  } = useWallet();
+  const { phase } = useWalletPhase();
+  const { network, activeAccount } = useWalletIdentity();
+  const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
+  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { contacts } = useWalletContacts();
+  const { send } = useWalletTransactions();
+  const { submissionStatus } = useWalletSubmission();
 
   const [store, setStore] = useState<MerchantStore>(() => emptyStore());
   const [ready, setReady] = useState(false);

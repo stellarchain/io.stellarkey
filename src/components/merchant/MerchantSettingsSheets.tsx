@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { fmtAmount, FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { sameAsset } from "@/lib/merchant/charge";
@@ -94,7 +94,8 @@ export function MerchantSettingsSheetContent({
     storageHealth,
     requestPersistentStorage,
   } = useMerchant();
-  const { accounts, balances } = useWallet();
+  const { accounts } = useWalletIdentity();
+  const { balances } = useWalletLedger();
   const { toast } = useToast();
 
   const symbol = FIAT_SYMBOLS[settings.currency] ?? "";

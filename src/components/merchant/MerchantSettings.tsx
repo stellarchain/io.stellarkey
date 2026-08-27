@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { triggerHaptic } from "@/lib/haptics";
 import type {
@@ -61,7 +61,7 @@ export function MerchantSettings({
     settlementHandoffs,
     storageHealth,
   } = useMerchant();
-  const { accounts } = useWallet();
+  const { accounts } = useWalletIdentity();
   const { toast } = useToast();
   const [activeSheet, setActiveSheet] = useState<MerchantSettingsSheet | null>(null);
   const [confirmTurnOff, setConfirmTurnOff] = useState(false);

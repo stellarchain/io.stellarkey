@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchBalances } from "@/lib/api";
 import { POPULAR_ASSETS } from "@/lib/assets";
 import { useMerchant } from "@/hooks/useMerchant";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity, useWalletTransactions } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -244,13 +244,8 @@ function SetupWizardInner({
   onClose: () => void;
   onComplete?: () => void;
 }) {
-  const {
-    accounts,
-    activeAccount,
-    network,
-    trustAsset,
-    refresh,
-  } = useWallet();
+  const { accounts, activeAccount, network } = useWalletIdentity();
+  const { trustAsset, refresh } = useWalletTransactions();
   const { settings, tillTextSize, completeSetup } = useMerchant();
   const { toast } = useToast();
 

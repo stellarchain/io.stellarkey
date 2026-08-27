@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity, useWalletPreferences } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { activityAmountLines, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
@@ -19,7 +19,8 @@ export function TxDetailModal({
   item: ActivityItem | null;
   onClose: () => void;
 }) {
-  const { network, privacyMode } = useWallet();
+  const { network } = useWalletIdentity();
+  const { privacyMode } = useWalletPreferences();
   const [copiedReceipt, setCopiedReceipt] = useState(false);
   const [note, setNote] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);

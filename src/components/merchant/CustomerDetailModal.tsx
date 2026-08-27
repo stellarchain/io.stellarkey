@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useMerchant } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletContacts } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { CustomerRecord, LoyaltyCard } from "@/lib/merchant/types";
@@ -142,7 +142,7 @@ function CustomerDetail({
     startLoyaltyCard,
     updateCustomerNote,
   } = useMerchant();
-  const { addContact } = useWallet();
+  const { addContact } = useWalletContacts();
   const { toast } = useToast();
 
   const [note, setNote] = useState(customer.note ?? "");

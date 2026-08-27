@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@/hooks/useWallet";
+import {
+  useWalletIdentity,
+  useWalletMarket,
+  useWalletPreferences,
+} from "@/hooks/useWallet";
 import { fmtFiat } from "@/lib/format";
 import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
 
@@ -26,7 +30,9 @@ export function FiatValue({
   className?: string;
   prefix?: string;
 }) {
-  const { network, xlmPriceUsd, fiatCurrency, fiatRates, privacyMode } = useWallet();
+  const { network } = useWalletIdentity();
+  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { fiatCurrency, privacyMode } = useWalletPreferences();
   const normalized = code.trim().toUpperCase();
   const isNative = isNativeProp ?? (!issuer && (normalized === "XLM" || normalized === "NATIVE"));
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});

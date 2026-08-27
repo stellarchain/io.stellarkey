@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { buildSep7PayUri } from "@/lib/payuri";
 import { triggerHaptic } from "@/lib/haptics";
@@ -16,7 +16,8 @@ export function ReceiveModal({ open, onClose }: { open: boolean; onClose: () => 
 }
 
 function ReceiveInner({ onClose }: { onClose: () => void }) {
-  const { activeAccount, network, balances } = useWallet();
+  const { activeAccount, network } = useWalletIdentity();
+  const { balances } = useWalletLedger();
   const [selectedAssetKey, setSelectedAssetKey] = useState("native");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
