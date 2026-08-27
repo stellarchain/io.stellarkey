@@ -50,6 +50,16 @@ test("the production graph budgets initial, unlocked, merchant, and hardware jou
     assert.ok(measurement.rawBytes <= JOURNEY_BUDGETS[journey].rawBytes);
     assert.ok(measurement.gzipBytes <= JOURNEY_BUDGETS[journey].gzipBytes);
   }
+  const unlockedSource = measurements.unlocked.sources
+    .map((source) => readFileSync(new URL(`../out/${source}`, import.meta.url), "utf8"))
+    .join("\n");
+  const merchantSource = measurements.merchant.sources
+    .map((source) => readFileSync(new URL(`../out/${source}`, import.meta.url), "utf8"))
+    .join("\n");
+  // The thin unlocked boundary must name the async export, but the provider's
+  // storage-conflict implementation belongs only to the merchant journey.
+  assert.doesNotMatch(unlockedSource, /writer_unavailable/);
+  assert.match(merchantSource, /writer_unavailable/);
   assert.doesNotThrow(() => assertJourneyJavaScriptBudgets(measurements));
 });
 

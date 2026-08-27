@@ -168,6 +168,12 @@ import {
   merchantWatchDestinations,
 } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
+import { writeMerchantBootstrapState } from "@/lib/merchant/bootstrap";
+import {
+  MerchantRuntimeDataProviders,
+  type MerchantSettingsContextValue,
+  type MerchantShellContextValue,
+} from "./useMerchantRuntime";
 import type {
   AcceptedAsset,
   Adjustment,
@@ -457,19 +463,6 @@ interface MerchantContextValue {
 
 const MerchantContext = createContext<MerchantContextValue | null>(null);
 
-type MerchantShellContextValue = Pick<
-  MerchantContextValue,
-  "enabled" | "unmatched" | "charges" | "activeShift"
->;
-
-type MerchantSettingsContextValue = Pick<
-  MerchantContextValue,
-  "enabled" | "configured" | "setEnabled" | "settings"
->;
-
-const MerchantShellContext = createContext<MerchantShellContextValue | null>(null);
-const MerchantSettingsContext = createContext<MerchantSettingsContextValue | null>(null);
-
 /** How often the till asks Horizon while a charge is open, and while it is not. */
 const POLL_ACTIVE_MS = 4_000;
 const POLL_IDLE_MS = 30_000;
@@ -490,7 +483,13 @@ function startOfToday(now = Date.now()): number {
   return startOfDay(now);
 }
 
-export function MerchantProvider({ children }: { children: React.ReactNode }) {
+export function MerchantProvider({
+  children,
+  enableOnReady = false,
+}: {
+  children: React.ReactNode;
+  enableOnReady?: boolean;
+}) {
   const {
     phase,
     network,
@@ -529,6 +528,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
   const staffSessionIdRef = useRef<string | null>(null);
   const [writerId] = useState(createMerchantWriterId);
   const merchantWriterLockRef = useRef<"pending" | "held" | "fallback">("pending");
+  const enableAttemptedRef = useRef(false);
   const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
   const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
@@ -800,6 +800,16 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
           }
           storeRef.current = committed;
           setStore(committed);
+          // Publish the non-sensitive runtime hint in the same successful
+          // handoff as the encrypted commit. Waiting for React's effect here
+          // can briefly unmount the lazy provider after first-time setup,
+          // before the enabled state reaches the boundary.
+          if (phase === "unlocked") {
+            writeMerchantBootstrapState({
+              enabled: committed.settings.enabled,
+              configured: !needsMerchantSetup(committed.settings, committed.staff),
+            });
+          }
           revisionChannelRef.current?.postRevision(committed);
           setStorageError(null);
         } finally {
@@ -812,7 +822,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       commitQueueRef.current = operation.catch(() => {});
       return operation;
     },
-    [installLoadedStore, readMerchantKey, reloadExternalStore, writerId],
+    [installLoadedStore, phase, readMerchantKey, reloadExternalStore, writerId],
   );
 
   const persist = useCallback(
@@ -887,6 +897,47 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
       ),
     [commitStore],
   );
+
+  // This sidecar contains no merchant content. It lets a disabled wallet avoid
+  // loading this operational provider on its next unlock; the encrypted store
+  // above remains the source of truth whenever the hint is absent or invalid.
+  useEffect(() => {
+    if (!ready || phase !== "unlocked") return;
+    writeMerchantBootstrapState({ enabled, configured });
+  }, [configured, enabled, phase, ready]);
+
+  // A configured disabled store can be enabled from the thin Settings shell.
+  // Web Locks may still be transferring on the first frame, so retry only that
+  // precise transient condition and leave all other storage failures visible.
+  useEffect(() => {
+    if (!enableOnReady) {
+      enableAttemptedRef.current = false;
+      return;
+    }
+    if (!ready || !configured || enabled || enableAttemptedRef.current) return;
+    enableAttemptedRef.current = true;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const enable = async (attemptsLeft: number) => {
+      try {
+        await setEnabled(true);
+      } catch (error) {
+        if (
+          !cancelled &&
+          attemptsLeft > 0 &&
+          isMerchantStorageError(error) &&
+          error.code === "writer_unavailable"
+        ) {
+          timer = setTimeout(() => void enable(attemptsLeft - 1), 50);
+        }
+      }
+    };
+    void enable(20);
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [configured, enableOnReady, enabled, ready, setEnabled]);
 
   const completeSetup = useCallback(
     async (input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string }) => {
@@ -2984,16 +3035,14 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     [activeShift, enabled, store.charges, store.unmatched],
   );
   const settingsValue = useMemo<MerchantSettingsContextValue>(
-    () => ({ enabled, configured, setEnabled, settings }),
-    [configured, enabled, setEnabled, settings],
+    () => ({ enabled, configured, setEnabled, profileName: settings.profile.name }),
+    [configured, enabled, setEnabled, settings.profile.name],
   );
 
   return (
-    <MerchantShellContext.Provider value={shellValue}>
-      <MerchantSettingsContext.Provider value={settingsValue}>
-        <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>
-      </MerchantSettingsContext.Provider>
-    </MerchantShellContext.Provider>
+    <MerchantRuntimeDataProviders shell={shellValue} settings={settingsValue}>
+      <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>
+    </MerchantRuntimeDataProviders>
   );
 }
 
@@ -3003,16 +3052,5 @@ export function useMerchant(): MerchantContextValue {
   return context;
 }
 
-export function useMerchantShell(): MerchantShellContextValue {
-  const context = useContext(MerchantShellContext);
-  if (!context) throw new Error("useMerchantShell must be used inside MerchantProvider");
-  return context;
-}
-
-export function useMerchantSettings(): MerchantSettingsContextValue {
-  const context = useContext(MerchantSettingsContext);
-  if (!context) throw new Error("useMerchantSettings must be used inside MerchantProvider");
-  return context;
-}
-
 export { sameAsset, assetKey, isNative };
+export { useMerchantSettings, useMerchantShell } from "./useMerchantRuntime";

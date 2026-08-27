@@ -26,6 +26,7 @@ import {
   type FullBackupPayload,
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
+import { writeMerchantBootstrapState } from "./merchant/bootstrap";
 import { replaceBackupStorage } from "./backup-storage";
 import {
   createVaultMasterKey,
@@ -314,6 +315,7 @@ export async function initializeVault(
         activeAccountId: account.id,
       };
       persist(vault);
+      writeMerchantBootstrapState({ enabled: false, configured: false });
       await establishVaultSession(masterKey, vault as VaultV3);
       return { account: stripSecret(account), revealed: trimmed };
     } finally {
@@ -355,6 +357,7 @@ async function createDerivedVault(
       activeAccountId: account.id,
     };
     persist(vault);
+    writeMerchantBootstrapState({ enabled: false, configured: false });
     await establishVaultSession(masterKey, vault as VaultV3);
     return { account: stripSecret(account), revealed: mnemonic };
   } finally {
@@ -407,6 +410,7 @@ export async function initializeHardwareVault(
       activeAccountId: stored.id,
     };
     persist(vault);
+    writeMerchantBootstrapState({ enabled: false, configured: false });
     await establishVaultSession(masterKey, vault as VaultV3);
     return { account: stripSecret(stored) };
   } finally {
