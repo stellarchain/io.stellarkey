@@ -52,4 +52,7 @@ test("tax records exposes the standalone encrypted operational archive", () => {
   assert.match(repository, /exportEncryptedArchive/);
   assert.match(page, /Encrypted archive/);
   assert.match(page, /exportEncryptedArchive/);
+  assert.match(page, /vault-specific merchant key/i);
+  assert.match(page, /does not restore a wallet on its own/i);
+  assert.doesNotMatch(page, /password-derived key/i);
 });
