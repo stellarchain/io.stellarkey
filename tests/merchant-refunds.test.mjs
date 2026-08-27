@@ -25,12 +25,12 @@ function refund(id, amountMinor, submissionStatus) {
     id,
     orderId: "order-1",
     kind: "order",
-    sourcePaymentId: null,
+    sourcePaymentId: "payment-settled",
     network: "testnet",
     amountMinor,
     asset: { code: "XLM", issuer: null },
     amount: "1.0000000",
-    destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    destination: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL",
     reason: "customer_request",
     note: null,
     transactionHash: createHash("sha256").update(id).digest("hex"),
@@ -39,8 +39,56 @@ function refund(id, amountMinor, submissionStatus) {
   };
 }
 
+function observedPayment(id = "payment-settled", amount = "10.0000000") {
+  return {
+    id,
+    transactionHash: createHash("sha256").update(`payment:${id}`).digest("hex"),
+    ledger: 123,
+    from: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL",
+    destination: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    amount,
+    asset: { code: "XLM", issuer: null },
+    memo: "M1001",
+    createdAt: new Date(1_000).toISOString(),
+  };
+}
+
+function paymentStore({
+  chargeStatus = "paid",
+  orderStatus = "paid",
+  payment = observedPayment(),
+} = {}) {
+  const sale = order();
+  const charge = {
+    id: "charge-1",
+    orderId: sale.id,
+    reference: "M1001",
+    network: "testnet",
+    destination: payment.destination,
+    amountMinor: sale.totals.totalMinor,
+    currency: "EUR",
+    quotes: [
+      {
+        asset: payment.asset,
+        amount: payment.amount,
+        unitPriceMinorE6: 500_000_000,
+        quotedAt: 1,
+      },
+    ],
+    status: chargeStatus,
+    createdAt: 1,
+    expiresAt: 10_000,
+    payment: { ...payment, lane: "memo" },
+  };
+  return {
+    ...emptyStore(),
+    orders: [{ ...sale, status: orderStatus }],
+    charges: [charge],
+  };
+}
+
 test("unconfirmed refund submissions reserve funds without claiming the order is refunded", () => {
-  const base = { ...emptyStore(), orders: [order()] };
+  const base = paymentStore();
   const unknown = recordRefundSubmission(base, refund("unknown", 2_000, "status_unknown"));
 
   assert.equal(refundableMinor(unknown, "order-1"), 3_000);
@@ -53,7 +101,7 @@ test("unconfirmed refund submissions reserve funds without claiming the order is
 });
 
 test("confirmation applies an order refund exactly once and terminal status cannot regress", () => {
-  const base = { ...emptyStore(), orders: [order()] };
+  const base = paymentStore();
   const pending = recordRefundSubmission(base, refund("first", 2_000, "accepted"));
   const confirmed = reconcileRefundSubmission(pending, "first", "confirmed");
 
@@ -70,7 +118,7 @@ test("confirmation applies an order refund exactly once and terminal status cann
 });
 
 test("canonically failed submissions release their reserved amount", () => {
-  const base = { ...emptyStore(), orders: [order()] };
+  const base = paymentStore();
   const pending = recordRefundSubmission(base, refund("failed", 5_000, "status_unknown"));
   const failed = reconcileRefundSubmission(pending, "failed", "failed");
 
@@ -80,7 +128,23 @@ test("canonically failed submissions release their reserved amount", () => {
 });
 
 test("refunding an unmatched payment never reduces the order's refundable sale value", () => {
-  const base = { ...emptyStore(), orders: [order()] };
+  const duplicate = observedPayment("payment-duplicate", "60.0000000");
+  const base = {
+    ...paymentStore(),
+    paymentReconciliations: [
+      {
+        id: duplicate.id,
+        network: "testnet",
+        payment: duplicate,
+        outcome: "duplicate",
+        chargeId: "charge-1",
+        orderId: "order-1",
+        amountMinor: 6_000,
+        observedAt: 2,
+        resolution: null,
+      },
+    ],
+  };
   const reversal = {
     ...refund("duplicate-payment", 6_000, "confirmed"),
     kind: "payment_reversal",
@@ -95,14 +159,80 @@ test("refunding an unmatched payment never reduces the order's refundable sale v
   assert.equal(recorded.refunds[0].sourcePaymentId, "payment-duplicate");
   assert.throws(
     () => recordRefundSubmission(recorded, { ...reversal, id: "again", transactionHash: "f".repeat(64) }),
-    /payment.*already.*refund/i,
+    /exceeds.*source payment/i,
+  );
+});
+
+test("ordinary refunds require the exact payment on a settled charge", () => {
+  for (const chargeStatus of ["underpaid", "overpaid", "expired"]) {
+    const store = paymentStore({ chargeStatus, orderStatus: "awaiting" });
+    assert.throws(
+      () =>
+        recordRefundSubmission(store, {
+          ...refund(`ordinary-${chargeStatus}`, 1_000, "confirmed"),
+          sourcePaymentId: "payment-settled",
+          amount: "2.0000000",
+        }),
+      /settled payment|paid order/i,
+    );
+  }
+
+  const duplicate = observedPayment("payment-duplicate");
+  const settled = paymentStore();
+  assert.throws(
+    () =>
+      recordRefundSubmission(settled, {
+        ...refund("ordinary-duplicate", 1_000, "confirmed"),
+        sourcePaymentId: duplicate.id,
+        amount: "2.0000000",
+      }),
+    /settled payment|source payment/i,
+  );
+});
+
+test("source-payment reversals cannot exceed the exact received asset amount", () => {
+  const source = observedPayment("payment-overpaid", "10.0000000");
+  const store = {
+    ...paymentStore({ chargeStatus: "overpaid", orderStatus: "awaiting", payment: source }),
+    paymentReconciliations: [
+      {
+        id: source.id,
+        network: "testnet",
+        payment: source,
+        outcome: "overpaid",
+        chargeId: "charge-1",
+        orderId: "order-1",
+        amountMinor: 5_000,
+        observedAt: 2,
+        resolution: null,
+      },
+    ],
+    unmatched: [
+      {
+        ...source,
+        seenAt: 2,
+        reconciliationOutcome: "overpaid",
+        candidateChargeId: "charge-1",
+      },
+    ],
+  };
+
+  assert.throws(
+    () =>
+      recordRefundSubmission(store, {
+        ...refund("too-large-source", 5_001, "accepted"),
+        kind: "payment_reversal",
+        sourcePaymentId: source.id,
+        amount: "10.0000001",
+        reason: "overpayment",
+      }),
+    /received|source payment/i,
   );
 });
 
 test("pending approval requests reserve value except for their own signed release", () => {
   const base = {
-    ...emptyStore(),
-    orders: [order()],
+    ...paymentStore(),
     refundRequests: [
       {
         id: "request-1",
@@ -130,6 +260,9 @@ test("merchant refund surfaces preserve and explain the tracked submission state
 
   assert.match(hook, /submissionStatus:\s*result\.status/);
   assert.match(hook, /reconcileRefundSubmission/);
+  assert.match(hook, /settledOrderPaymentSource\(current, orderId\)/);
+  assert.match(hook, /sourcePaymentId:\s*sourcePayment\.id/);
+  assert.match(detail, /settled\?\.status === "paid"/);
   assert.match(detail, /Status unknown[^\n]*do not retry/i);
   assert.match(detail, /Confirming/);
 });

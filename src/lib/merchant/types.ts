@@ -346,7 +346,7 @@ export interface Refund {
   id: string;
   orderId: string;
   kind: RefundKind;
-  /** Horizon payment operation being returned outside the order's sale value. */
+  /** Exact Horizon payment operation funding the outbound return; legacy order refunds may be null. */
   sourcePaymentId: string | null;
   network: NetworkKey;
   amountMinor: Minor;

@@ -72,6 +72,7 @@ import {
   recordRefundSubmission,
   reconcileRefundSubmission,
   refundReservesFunds,
+  settledOrderPaymentSource,
 } from "@/lib/merchant/refunds";
 import {
   addStaffMember,
@@ -2409,8 +2410,9 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         throw new Error("This refund needs approval from a staff member with a higher ceiling.");
       }
       const order = current.orders.find((entry) => entry.id === orderId);
-      const charge = current.charges.find((entry) => entry.orderId === orderId && entry.payment);
+      const charge = settledOrderPaymentSource(current, orderId);
       if (!order || !charge?.payment) throw new Error("This order has no settled payment to refund.");
+      const sourcePayment = charge.payment;
       if (order.network !== network) throw new Error("Switch to the order's Stellar network before refunding it.");
       if (activeAccount?.publicKey !== charge.destination) {
         throw new Error("Switch to the receiving account that took this payment before refunding it.");
@@ -2419,6 +2421,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         (refund) =>
           refund.kind === "order" &&
           refund.orderId === orderId &&
+          (refund.sourcePaymentId === sourcePayment.id || refund.sourcePaymentId === null) &&
           refundReservesFunds(refund),
       );
       const refundedMinor = priorRefunds.reduce((sum, refund) => sum + refund.amountMinor, 0);
@@ -2429,23 +2432,23 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
 
       // Calculate against cumulative refunded value so repeated partial refunds
       // return every final stroop without floating-point drift.
-      const paymentStroops = toStroops(charge.payment.amount);
+      const paymentStroops = toStroops(sourcePayment.amount);
       const priorRefundStroops = priorRefunds.reduce(
         (sum, refund) => sum + toStroops(refund.amount),
         BigInt(0),
       );
       const cumulativeMinor = refundedMinor + amountMinor;
       const cumulativeStroops =
-        (paymentStroops * BigInt(cumulativeMinor)) / BigInt(order.totals.totalMinor);
+        (paymentStroops * BigInt(cumulativeMinor)) / BigInt(charge.amountMinor);
       const refundStroops = cumulativeStroops - priorRefundStroops;
       if (refundStroops <= BigInt(0)) throw new Error("This refund is below the asset's minimum precision.");
       const amount = fromStroops(refundStroops);
 
       const result = await send({
-        destination: charge.payment.from,
+        destination: sourcePayment.from,
         amount,
-        assetCode: charge.payment.asset.code,
-        issuer: charge.payment.asset.issuer,
+        assetCode: sourcePayment.asset.code,
+        issuer: sourcePayment.asset.issuer,
         memo: { type: "text", value: `RF${order.number}` },
       });
 
@@ -2453,12 +2456,12 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
         id: uid("rfd"),
         orderId,
         kind: "order",
-        sourcePaymentId: null,
+        sourcePaymentId: sourcePayment.id,
         network: order.network,
         amountMinor,
-        asset: charge.payment.asset,
+        asset: sourcePayment.asset,
         amount,
-        destination: charge.payment.from,
+        destination: sourcePayment.from,
         reason,
         note: note?.trim() || null,
         transactionHash: result.hash,
