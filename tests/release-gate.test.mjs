@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -43,6 +43,19 @@ test("the toolchain and dependency lifecycle approvals are explicit", () => {
   assert.ok(Object.keys(pkg.allowScripts).length > 0);
   assert.equal(Object.values(pkg.allowScripts).every((approved) => approved === true), true);
   assert.equal(Object.keys(pkg.allowScripts).every((key) => /@\d/.test(key)), true);
+});
+
+test("browser verification is runner-owned instead of ad-hoc", () => {
+  const scripts = readdirSync(new URL("../scripts/", import.meta.url)).sort();
+  assert.deepEqual(scripts, [
+    "check-bundle-budget.mjs",
+    "generate-service-worker.mjs",
+    "generate-static-headers.mjs",
+    "static-server.mjs",
+  ]);
+  const pkg = JSON.parse(read("package.json"));
+  assert.equal(pkg.devDependencies.playwright, undefined);
+  assert.match(pkg.scripts["test:e2e"], /playwright test/);
 });
 
 test("manual browser, hardware, and backend-free boundaries have a release checklist", () => {
