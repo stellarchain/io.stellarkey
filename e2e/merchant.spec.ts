@@ -525,14 +525,37 @@ test(
       await code.getByRole("button", { name: "Publish code" }).click();
       await page.getByText("Retail shelf", { exact: true }).waitFor();
 
-      // Export is a real browser download with a truthful, inspectable filename.
+      // Tax records is a summary-first mobile hub. Export configuration lives in one focused
+      // sheet, the real browser download remains truthful, and closing restores the hub action.
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByText("Tax records", { exact: true }).click();
       await page.getByRole("heading", { name: "Tax records" }).waitFor();
+      await assertMobileSurface(page, "Tax records hub");
+      const exportReport = page.getByRole("button", { name: /Export report/ });
+      await exportReport.click();
+      const exportSheet = page.getByRole("dialog", { name: /Export report/ });
+      await exportSheet.waitFor();
+      await assertMobileSurface(page, "Tax records export sheet");
+      await exportSheet.getByLabel("Export format").waitFor();
+      await exportSheet.getByLabel("From").waitFor();
+      await exportSheet.getByLabel("To").waitFor();
       const downloadPromise = page.waitForEvent("download");
-      await page.getByRole("button", { name: "Export", exact: true }).click();
+      await exportSheet.getByRole("button", { name: "Export file", exact: true }).click();
       const download = await downloadPromise;
       assert.match(download.suggestedFilename(), /^merchant-.*\.csv$/);
+      await exportSheet.getByRole("button", { name: "Close" }).click();
+      await exportSheet.waitFor({ state: "hidden" });
+      const exportReportElement = await exportReport.elementHandle();
+      assert.ok(exportReportElement);
+      await page.waitForFunction(
+        (element) => document.activeElement === element,
+        exportReportElement,
+      );
+      assert.equal(
+        await exportReport.evaluate((element) => document.activeElement === element),
+        true,
+        "closing the export sheet must restore the Tax records action",
+      );
 
       // The install handoff appears only after the browser says installation is available.
       await page.evaluate(() => {
