@@ -192,3 +192,92 @@ test("full encrypted backups round-trip the encrypted merchant archive", async (
   assert.equal(localStorage.getItem(MERCHANT_STORAGE_KEY), originalMerchant);
   assert.doesNotMatch(backup, /Backup Coffee/);
 });
+
+test("encrypted backups reject malformed decrypted payloads before restore", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { encryptString } = await import("../src/lib/crypto.ts");
+  const { initializeVault, inspectVaultBackup } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+
+  const crypto = await encryptString(
+    JSON.stringify({
+      exportedAt: new Date().toISOString(),
+      vault: JSON.parse(localStorage.getItem("polaris.vault.v1")),
+      contacts: [null],
+      settings: {
+        network: "mainnet",
+        fiatCurrency: "USD",
+        autoLockMs: 900_000,
+        biometrics: false,
+        privacy: false,
+        sound: true,
+      },
+      txNotes: {},
+      merchantStore: null,
+    }),
+    password,
+  );
+  const backup = JSON.stringify({ kind: "stellar-wallet-backup", version: 2, crypto });
+
+  await assert.rejects(
+    () => inspectVaultBackup(backup, password),
+    /malformed|invalid/i,
+  );
+});
+
+test("full wallet restore rolls every storage key back when a write fails", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { exportVaultBackup, initializeVault, restoreVaultBackup } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  localStorage.setItem("polaris.contacts.v1", "[]");
+  const backup = await exportVaultBackup();
+
+  const targetKeys = [
+    "polaris.vault.v1",
+    "polaris.trash.v1",
+    "polaris.network.v1",
+    "polaris.autolock.v1",
+    "polaris.biometrics.v1",
+    "polaris.contacts.v1",
+    "polaris.privacy.v1",
+    "wallet.sound.v1",
+    "wallet.currency.v1",
+    "wallet.tx-notes.v1",
+    "wallet.merchant.v2",
+  ];
+  const targetVault = JSON.parse(localStorage.getItem("polaris.vault.v1"));
+  targetVault.accounts[0].label = "Keep this wallet";
+  localStorage.setItem("polaris.vault.v1", JSON.stringify(targetVault));
+  localStorage.setItem("polaris.trash.v1", "recoverable-trash");
+  localStorage.setItem("polaris.network.v1", "testnet");
+  localStorage.setItem("polaris.autolock.v1", "1234");
+  localStorage.setItem("polaris.biometrics.v1", "1");
+  localStorage.setItem("polaris.contacts.v1", "before-contacts");
+  localStorage.setItem("polaris.privacy.v1", "1");
+  localStorage.setItem("wallet.sound.v1", "0");
+  localStorage.setItem("wallet.currency.v1", "GBP");
+  localStorage.setItem("wallet.tx-notes.v1", "before-notes");
+  localStorage.setItem("wallet.merchant.v2", "before-merchant");
+  const before = new Map(targetKeys.map((key) => [key, localStorage.getItem(key)]));
+
+  const setItem = localStorage.setItem.bind(localStorage);
+  let injected = false;
+  localStorage.setItem = (key, value) => {
+    if (key === "wallet.tx-notes.v1" && !injected) {
+      injected = true;
+      throw new Error("quota exceeded");
+    }
+    setItem(key, value);
+  };
+
+  await assert.rejects(() => restoreVaultBackup(backup, password), /restore|quota/i);
+  for (const key of targetKeys) {
+    assert.equal(localStorage.getItem(key), before.get(key), `${key} was not rolled back`);
+  }
+});

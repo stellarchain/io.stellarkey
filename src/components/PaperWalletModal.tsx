@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { exportKeystoreUnlocked, exportVaultBackup } from "@/lib/vault";
 import { openPaperWalletPrint } from "@/lib/paperwallet";
+import { markBackupExported } from "@/lib/backup-health";
 import { useToast } from "./Toast";
 import { Button, Modal, ModalHeader } from "./ui";
 import { IconAlert, IconCheck, IconLock } from "./icons";
@@ -107,6 +108,7 @@ export function PaperWalletModal({
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      if (kind === "mnemonic") markBackupExported();
       triggerHaptic("success");
       toast(
         kind === "secret"

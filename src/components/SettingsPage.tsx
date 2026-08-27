@@ -24,6 +24,11 @@ import {
 } from "@/lib/transaction-review";
 import { assertCanAddTransactionSignature } from "@/lib/multisig";
 import { loadSoundPref, saveSoundPref } from "@/lib/sounds";
+import {
+  BACKUP_HEALTH_CHANGED_EVENT,
+  loadBackupHealth,
+  type BackupHealth,
+} from "@/lib/backup-health";
 import type { AccountMeta } from "@/lib/types";
 import {
   mergeReconciliationPresentation,
@@ -165,6 +170,14 @@ export function SettingsPage({
   const [sub, setSub] = useState<Sub>(initialSub);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
+  const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
+
+  useEffect(() => {
+    const refresh = () => setBackupHealth(loadBackupHealth());
+    refresh();
+    window.addEventListener(BACKUP_HEALTH_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(BACKUP_HEALTH_CHANGED_EVENT, refresh);
+  }, []);
 
   const [scanning, setScanning] = useState(false);
   const [fundingTestnet, setFundingTestnet] = useState(false);
@@ -589,7 +602,9 @@ export function SettingsPage({
                     icon={<IconShield size={16} />}
                     tint="#30D158"
                     label="Backup & Recovery"
-                    sub="Guided backup, phrase, keys & restore"
+                    sub={backupHealth?.lastExportedAt
+                      ? `Last encrypted backup ${new Date(backupHealth.lastExportedAt).toLocaleDateString()}`
+                      : "Backup needed · phrase, keys & restore"}
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
