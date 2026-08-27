@@ -2,6 +2,11 @@
   "name": "0x",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": ">=22.22.2 <27",
+    "npm": ">=11.19.0 <13"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/generate-static-headers.mjs",
@@ -14,7 +19,8 @@
     "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
     "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs",
     "test:e2e": "npm run build && playwright test",
-    "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts"
+    "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts --project=desktop-chromium",
+    "release:verify": "npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run check:bundle && playwright test"
   },
   "dependencies": {
     "@noble/ciphers": "^2.3.0",
@@ -26,6 +32,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -40,5 +47,14 @@
   },
   "overrides": {
     "protobufjs": "7.6.5"
+  },
+  "allowScripts": {
+    "@stellar/stellar-sdk@14.2.0": true,
+    "blake-hash@2.0.0": true,
+    "fsevents@2.3.2": true,
+    "protobufjs@7.6.5": true,
+    "tiny-secp256k1@1.1.7": true,
+    "unrs-resolver@1.12.2": true,
+    "usb@2.18.0": true
   }
 }

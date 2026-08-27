@@ -19,6 +19,8 @@ test("Settings can enable and remove the device-local passkey wrapper", () => {
   assert.match(settings, /removePasskeyUnlock/);
   assert.match(settings, /Requires HTTPS/);
   assert.match(settings, /Your password and encrypted backup remain the recovery path/);
+  assert.match(settings, /Required before removing device unlock/);
+  assert.match(vault, /masterKeyForPassword\(vault, password\)/);
 });
 
 test("wallet replacement clears passkey authority tied to the previous vault", () => {

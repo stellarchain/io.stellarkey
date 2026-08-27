@@ -12,7 +12,7 @@
   --color-line-strong: rgba(255, 255, 255, 0.32);
   --color-ink: #ffffff;
   --color-muted: rgba(235, 235, 245, 0.66);
-  --color-faint: rgba(235, 235, 245, 0.38);
+  --color-faint: rgba(235, 235, 245, 0.55);
   --color-accent: #0a84ff;
   --color-accent-2: #64d2ff;
   --color-pos: #30d158;
@@ -143,13 +143,24 @@ body::after {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
+    animation: none !important;
     transition-duration: 0.01ms !important;
   }
 }
 
 ::selection {
   background: rgba(10, 132, 255, 0.4);
+}
+
+/* iOS system blue is excellent as text on black, but white text needs a
+   slightly deeper fill to retain WCAG AA contrast at compact UI sizes. */
+.bg-\[\#0A84FF\] {
+  background-color: #006edb;
+}
+
+/* Tailwind's neutral-500 falls below AA on the wallet's raised dark panels. */
+.text-neutral-500 {
+  color: #8e8e93;
 }
 
 /* Keep every scroll surface usable while removing browser scrollbar chrome. */
@@ -255,7 +266,7 @@ body::after {
 
   .btn-primary {
     color: #ffffff;
-    background: var(--color-accent);
+    background: #006edb;
   }
   .btn-primary:hover:not(:disabled) {
     background: #2492ff;

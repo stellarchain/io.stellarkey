@@ -8,8 +8,6 @@ import {
   testPayer,
 } from "./fixtures";
 
-test.use({ viewport: { width: 1280, height: 900 } });
-
 test.beforeEach(async ({ context }) => {
   await installQuietEventSource(context);
   await installNetworkFixtures(context);

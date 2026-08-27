@@ -78,7 +78,6 @@ import {
   IconShield,
   IconTrash,
   IconWallet,
-  IconKey,
   IconTrezor,
   IconLedger,
 } from "./icons";
@@ -110,8 +109,6 @@ export type SettingsSub =
   | "autolock"
   | "merge"
   | "airsigner"
-  | "dapps"
-  | "soroban"
   | "hardware"
   | "currency"
   | "merchant"
@@ -255,8 +252,6 @@ export function SettingsPage({
   const [addAccountMode, setAddAccountMode] = useState<"generate" | "hardware">("generate");
   const [addAccountDevice, setAddAccountDevice] = useState<"ledger" | "trezor">("trezor");
   const hasMnemonicVault = hasMnemonicAlias();
-  const [pingMs, setPingMs] = useState<number | null>(null);
-  const [pinging, setPinging] = useState(false);
   const [horizonDraft, setHorizonDraft] = useState(() => getHorizonUrl(network));
   const [rpcDraft, setRpcDraft] = useState(() => getRpcUrl(network) ?? "");
   const [endpointTesting, setEndpointTesting] = useState<StellarEndpointKind | null>(null);
@@ -285,24 +280,6 @@ export function SettingsPage({
     airReviewGeneration.current += 1;
   }, [activeAccount?.publicKey, network]);
 
-  async function handlePing() {
-    setPinging(true);
-    setEndpointError(null);
-    triggerHaptic("selection");
-    try {
-      const health = await testHorizonEndpoint(network, getHorizonUrl(network));
-      setPingMs(health.latencyMs);
-      setEndpointHealth((current) => ({ ...current, horizon: health }));
-      triggerHaptic("success");
-    } catch (cause) {
-      setPingMs(null);
-      setEndpointError(cause instanceof Error ? cause.message : "Horizon health check failed.");
-      triggerHaptic("error");
-    } finally {
-      setPinging(false);
-    }
-  }
-
   async function handleTestAndSaveEndpoint(kind: StellarEndpointKind) {
     const value = kind === "horizon" ? horizonDraft : rpcDraft;
     if (!value.trim()) return;
@@ -315,7 +292,6 @@ export function SettingsPage({
       saveCustomEndpoint(network, kind, health.url);
       if (kind === "horizon") {
         setHorizonDraft(health.url);
-        setPingMs(health.latencyMs);
       } else {
         setRpcDraft(health.url);
       }
@@ -337,7 +313,6 @@ export function SettingsPage({
       setHorizonDraft(NETWORKS[network].horizonUrl);
       setRpcDraft(NETWORKS[network].rpcUrl ?? "");
       setEndpointHealth({});
-      setPingMs(null);
       triggerHaptic("success");
       toast(`${NETWORKS[network].label} endpoints reset to built-in defaults`, "info");
     } catch (cause) {
@@ -365,13 +340,23 @@ export function SettingsPage({
     }
   }
 
-  function handleRemovePasskey() {
-    removePasskeyUnlock();
-    setPasskeyConfigured(false);
-    setPasskeyDialog(null);
+  async function handleRemovePasskey() {
+    if (!passkeyPassword) return;
+    setPasskeyBusy(true);
     setPasskeyError(null);
-    triggerHaptic("success");
-    toast("Device passkey unlock removed", "info");
+    try {
+      await removePasskeyUnlock(passkeyPassword);
+      setPasskeyConfigured(false);
+      setPasskeyPassword("");
+      setPasskeyDialog(null);
+      triggerHaptic("success");
+      toast("Device passkey unlock removed", "info");
+    } catch (cause) {
+      triggerHaptic("error");
+      setPasskeyError(cause instanceof Error ? cause.message : "Passkey removal failed.");
+    } finally {
+      setPasskeyBusy(false);
+    }
   }
 
   async function handleAirReview() {
@@ -645,17 +630,13 @@ export function SettingsPage({
                       ? "Merge Account"
                       : sub === "airsigner"
                             ? "Local XDR Signer"
-                            : sub === "dapps"
-                              ? "Connected dApps"
-                              : sub === "soroban"
-                                ? "Soroban Contracts"
-                                : sub === "hardware"
-                                  ? "Hardware Wallets"
-                                  : sub === "currency"
-                                    ? "Display Currency"
-                                    : sub === "merchant"
-                                      ? "Merchant"
-                                      : "Network"}
+                            : sub === "hardware"
+                              ? "Hardware Wallets"
+                              : sub === "currency"
+                                ? "Display Currency"
+                                : sub === "merchant"
+                                  ? "Merchant"
+                                  : "Network"}
           </h1>
         </>
       )}
@@ -840,30 +821,6 @@ export function SettingsPage({
                     onClick={() => {
                       triggerHaptic("selection");
                       setSub("currency");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconKey size={16} />}
-                    tint="#FF9F0A"
-                    label="Soroban Smart Contracts Hub"
-                    value="Unavailable"
-                    chevron
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSub("soroban");
-                    }}
-                    sep
-                  />
-                  <RowButton
-                    icon={<IconWallet size={16} />}
-                    tint="#5E5CE6"
-                    label="Connected Apps & dApps"
-                    value="Unavailable"
-                    chevron
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setSub("dapps");
                     }}
                     sep
                   />
@@ -1508,30 +1465,6 @@ export function SettingsPage({
         </div>
       )}
 
-      {/* ---------- CONNECTED DAPPS ---------- */}
-      {sub === "dapps" && (
-        <div className="space-y-4">
-          <p className="text-[13px] text-neutral-300 leading-relaxed">
-            Wallet Standard dApp sessions are not implemented in this build.
-          </p>
-          <div className="panel-inset p-4 text-[12.5px] leading-relaxed text-neutral-400">
-            No sites can connect to this wallet, and the app does not claim or retain external sessions.
-          </div>
-        </div>
-      )}
-
-      {/* ---------- SOROBAN SMART CONTRACTS HUB ---------- */}
-      {sub === "soroban" && (
-        <div className="space-y-4">
-          <p className="text-[13px] text-neutral-300 leading-relaxed">
-            Soroban invocation and RPC simulation are not wired into this wallet build.
-          </p>
-          <div className="panel-inset p-4 text-[12.5px] leading-relaxed text-neutral-400">
-            A future implementation must use Stellar RPC simulation, show the exact authorization tree and resource fee, then submit the same simulated transaction. No placeholder result is shown here.
-          </div>
-        </div>
-      )}
-
       {/* ---------- HARDWARE WALLETS (LEDGER & TREZOR) ---------- */}
       {sub === "hardware" && (
         <div className="space-y-5">
@@ -1736,7 +1669,6 @@ export function SettingsPage({
               setRpcDraft(getRpcUrl(n) ?? "");
               setEndpointHealth({});
               setEndpointError(null);
-              setPingMs(null);
             }}
             options={[
               { value: "testnet", label: "Testnet" },
@@ -1750,9 +1682,9 @@ export function SettingsPage({
             </p>
             <div className="flex justify-between text-neutral-300">
               <span>Status</span>
-              <span className={`flex items-center gap-1.5 font-medium ${pingMs === null ? "text-neutral-400" : "text-[#30D158]"}`}>
-                <span className={`h-2 w-2 rounded-full ${pingMs === null ? "bg-neutral-500" : "bg-[#30D158]"}`} />
-                {pingMs === null ? "Not checked" : "Reachable"}
+              <span className={`flex items-center gap-1.5 font-medium ${endpointHealth.horizon ? "text-[#30D158]" : "text-neutral-400"}`}>
+                <span className={`h-2 w-2 rounded-full ${endpointHealth.horizon ? "bg-[#30D158]" : "bg-neutral-500"}`} />
+                {endpointHealth.horizon ? "Verified" : "Not checked"}
               </span>
             </div>
             <div className="flex justify-between text-neutral-300">
@@ -1769,19 +1701,9 @@ export function SettingsPage({
             </div>
             <div className="flex justify-between items-center text-neutral-300 pt-1">
               <span>Endpoint Latency</span>
-              <div className="flex items-center gap-2">
-                <span className="mono text-white font-semibold">
-                  {pingMs !== null ? `${pingMs}ms` : "—"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handlePing()}
-                  disabled={pinging}
-                  className="chip !py-0.5 !px-2 text-[11px] text-[#0A84FF]"
-                >
-                  {pinging ? <Spinner /> : "Test active"}
-                </button>
-              </div>
+              <span className="mono font-semibold text-white">
+                {endpointHealth.horizon ? `${endpointHealth.horizon.latencyMs}ms` : "—"}
+              </span>
             </div>
             {endpointHealth.horizon?.latestLedger !== undefined && (
               <div className="flex justify-between text-neutral-300">
@@ -1966,9 +1888,38 @@ export function SettingsPage({
               <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
                 Your password and encrypted backup remain the recovery path.
               </p>
+              <Field label="Wallet Password" hint="Required before removing device unlock">
+                <input
+                  className="input text-base sm:text-[14px]"
+                  type="password"
+                  autoComplete="current-password"
+                  value={passkeyPassword}
+                  onChange={(event) => setPasskeyPassword(event.target.value)}
+                  placeholder="Enter password"
+                  disabled={passkeyBusy}
+                />
+              </Field>
+              <ErrorText message={passkeyError ?? ""} />
               <div className="grid grid-cols-2 gap-3">
-                <Button variant="ghost" onClick={() => setPasskeyDialog(null)}>Cancel</Button>
-                <Button variant="danger" onClick={handleRemovePasskey}>Remove</Button>
+                <Button
+                  variant="ghost"
+                  disabled={passkeyBusy}
+                  onClick={() => {
+                    setPasskeyDialog(null);
+                    setPasskeyPassword("");
+                    setPasskeyError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={passkeyBusy}
+                  disabled={!passkeyPassword || passkeyBusy}
+                  onClick={() => void handleRemovePasskey()}
+                >
+                  Remove
+                </Button>
               </div>
             </>
           ) : (
