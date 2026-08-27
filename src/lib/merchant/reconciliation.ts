@@ -105,7 +105,9 @@ function reconcileOne(
 ): MerchantStore {
   if (store.paymentReconciliations.some((entry) => entry.id === payment.id)) return store;
 
-  const scoped = store.charges.filter((charge) => charge.network === network);
+  const scoped = store.charges.filter(
+    (charge) => charge.network === network && charge.destination === payment.destination,
+  );
   const outcome = matchPayment(payment, scoped, store.settings);
   let next = store;
   let charge: Charge | null = "charge" in outcome ? outcome.charge : null;
@@ -235,6 +237,9 @@ export function attachReconciledPayment(
   if (!payment || !charge) throw new Error("The payment or target charge no longer exists.");
   if (charge.network !== reconciliation.network) {
     throw new Error("A payment cannot be attached across Stellar networks.");
+  }
+  if (charge.destination !== payment.destination) {
+    throw new Error("A payment cannot be attached to another receiving account.");
   }
   if (charge.payment && charge.payment.id !== payment.id) {
     throw new Error("That charge already carries another payment.");

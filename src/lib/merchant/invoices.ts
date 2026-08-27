@@ -383,6 +383,7 @@ export function reconcileInvoicePayments(
           (invoice) =>
             invoice.reference === payment.memo &&
             invoice.network === input.network &&
+            invoice.destination === payment.destination &&
             (invoice.status === "sent" ||
               invoice.status === "partially_paid" ||
               invoice.status === "overdue"),

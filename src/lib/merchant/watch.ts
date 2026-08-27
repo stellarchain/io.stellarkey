@@ -3,6 +3,7 @@ import type { NetworkKey } from "../stellar";
 import { getHorizonJson } from "../horizon";
 import type { ObservedPayment } from "./match";
 import type { AcceptedAsset } from "./types";
+export { merchantCursorKey, merchantWatchDestinations } from "./watch-targets";
 
 /**
  * The payment watcher.
@@ -146,6 +147,7 @@ export async function fetchIncomingPayments({
       transactionHash: record.transaction_hash,
       ledger: ledger ?? 0,
       from: record.from ?? "",
+      destination: record.to,
       amount: record.amount,
       asset,
       memo: memoOf(record),

@@ -95,6 +95,7 @@ function payment(id, amount, memo) {
     transactionHash: id.padEnd(64, "a").slice(0, 64),
     ledger: 12345,
     from: PAYER,
+    destination: TILL,
     amount,
     asset: USDC,
     memo,
@@ -228,6 +229,32 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
   assert.equal(second.store.invoices[0].paidMinor, 1000);
   assert.equal(second.store.invoices[0].paidAt, NOW + 2000);
   assert.equal(second.store.invoices[0].payments.length, 2);
+});
+
+test("an invoice payment cannot file against another receiving account", async () => {
+  const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
+  const { member, store } = merchantStore();
+  const draft = createInvoiceDraft(store, draftInput(member));
+  const issued = issueInvoice(draft.store, {
+    invoiceId: draft.invoice.id,
+    actor: member,
+    network: "mainnet",
+    destination: TILL,
+    quotes: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 100,
+  });
+  const observed = {
+    ...payment("wrong-invoice-destination", "10.0000000", issued.invoice.reference),
+    destination: ISSUER,
+  };
+  const reconciled = reconcileInvoicePayments(issued.store, {
+    network: "mainnet",
+    payments: [observed],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed, [observed]);
+  assert.equal(reconciled.store.invoices[0].paidMinor, 0);
 });
 
 test("manual settlement records the exact actor and survives reload", async () => {

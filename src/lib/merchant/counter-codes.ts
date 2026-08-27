@@ -383,6 +383,7 @@ export function reconcileCounterPayments(
           (code) =>
             code.memoPrefix === payment.memo &&
             code.network === input.network &&
+            code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
             counterCodeAvailability(code, paymentAt) === "active",
         )
