@@ -140,6 +140,27 @@ test("screen awake protection is scoped to an active checkout", () => {
   assert.doesNotMatch(offlineStates, /Screen awake protection is on/);
 });
 
+test("merchant blockers offer direct recovery actions", () => {
+  const dashboard = source("src/components/Dashboard.tsx");
+  const page = source("src/components/merchant/MerchantPage.tsx");
+  const till = source("src/components/merchant/PosTerminal.tsx");
+
+  assert.match(
+    dashboard,
+    /<MerchantPage[\s\S]*?onOpenStaff=\{\(\) => openSettings\("staff"\)\}/,
+  );
+  assert.match(page, /onOpenStaff: \(\) => void;/);
+  assert.match(
+    page,
+    /chargeBlockedReason\?\.startsWith\("Choose an active staff member"\)/,
+  );
+  assert.match(page, />\s*Choose staff\s*<\/button>/);
+  assert.match(page, /<PosTerminal onOpenShift=\{\(\) => setShiftShowing\(true\)\} \/>/);
+  assert.match(till, /onOpenShift: \(\) => void;/);
+  assert.match(till, /\{!activeShift && \([\s\S]*?>\s*Open shift\s*<\/button>[\s\S]*?\)\}/);
+  assert.match(till, /min-h-11/);
+});
+
 test("merchant context value stays stable across unrelated wallet provider renders", () => {
   const hook = source("src/hooks/useMerchant.tsx");
   assert.match(hook, /const value = useMemo<MerchantContextValue>/);

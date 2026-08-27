@@ -1802,6 +1802,7 @@ export function Dashboard() {
             <MerchantPage
               sub={merchantSubForView(view)}
               onSubChange={(next) => switchTab(viewForMerchantSub(next))}
+              onOpenStaff={() => openSettings("staff")}
               shiftOpen={shiftOpen}
               onShiftOpenChange={setShiftOpen}
             />
