@@ -14,6 +14,11 @@ import {
 } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
+import {
+  loadBackupHealth,
+  markBackupExported,
+  markBackupVerified,
+} from "@/lib/backup-health";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader, Notice } from "./ui";
 import {
   IconCheck,
@@ -64,6 +69,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
   const [restoreInfo, setRestoreInfo] = useState<VaultBackupInfo | null>(null);
   const [restorePw, setRestorePw] = useState("");
   const [paperOpen, setPaperOpen] = useState(false);
+  const [backupHealth, setBackupHealth] = useState(() => loadBackupHealth());
 
   const hasPhrase = hasMnemonic();
   const canReveal = activeAccount !== null && !activeAccount.watchOnly;
@@ -133,6 +139,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
         `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
         await exportVaultBackup(),
       );
+      setBackupHealth(markBackupExported());
       triggerHaptic("success");
       setStep("done");
     } catch (e) {
@@ -188,6 +195,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     try {
       const info = await inspectVaultBackup(restoreFile, restorePw);
       if (info.accountCount === 0) throw new Error("Backup contains no accounts.");
+      setBackupHealth(markBackupVerified());
       setRestoreInfo(info);
       triggerHaptic("success");
       setStep("restore-confirm");
@@ -338,27 +346,48 @@ function WizardInner({ onClose }: { onClose: () => void }) {
         <div className="p-4 sm:p-6">
           {/* ---------- STEP: choose path ---------- */}
           {step === "choose" && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <PathCard
-                icon={<IconShield size={20} />}
-                tint="#30D158"
-                title="Back Up Wallet"
-                sub="Guided backup — file, recovery phrase, secret key or paper"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setStep("method");
-                }}
-              />
-              <PathCard
-                icon={<IconRefresh size={20} />}
-                tint="#0A84FF"
-                title="Restore From Backup"
-                sub="Recover all accounts from an encrypted backup file"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setStep("restore-pick");
-                }}
-              />
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-500">
+                    Local backup health
+                  </span>
+                  <span className={`text-[12px] font-semibold ${backupHealth?.lastExportedAt ? "text-[#30D158]" : "text-[#FF9F0A]"}`}>
+                    {backupHealth?.lastExportedAt ? "Backup recorded" : "Backup needed"}
+                  </span>
+                </div>
+                <p className="mt-1 text-[12.5px] text-neutral-400">
+                  {backupHealth?.lastExportedAt
+                    ? `Exported ${new Date(backupHealth.lastExportedAt).toLocaleString()}${
+                        backupHealth.lastVerifiedAt
+                          ? ` · verified ${new Date(backupHealth.lastVerifiedAt).toLocaleString()}`
+                          : " · not yet verified"
+                      }`
+                    : "No encrypted wallet backup has been exported on this device."}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <PathCard
+                  icon={<IconShield size={20} />}
+                  tint="#30D158"
+                  title="Back Up Wallet"
+                  sub="Guided backup — file, recovery phrase, secret key or paper"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setStep("method");
+                  }}
+                />
+                <PathCard
+                  icon={<IconRefresh size={20} />}
+                  tint="#0A84FF"
+                  title="Restore From Backup"
+                  sub="Recover all accounts from an encrypted backup file"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setStep("restore-pick");
+                  }}
+                />
+              </div>
             </div>
           )}
 

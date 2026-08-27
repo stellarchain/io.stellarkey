@@ -6,6 +6,7 @@ import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/l
 import { connectTrezorDevice, warmTrezorConnect } from "@/lib/hardware";
 import { triggerHaptic } from "@/lib/haptics";
 import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
+import { markBackupVerified } from "@/lib/backup-health";
 import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
 import {
   IconAlert,
@@ -152,6 +153,7 @@ export function Onboarding() {
       try {
         if (!pendingBackupJson) throw new Error("Choose an encrypted backup file first.");
         await restoreWalletFromBackup(pendingBackupJson, password);
+        markBackupVerified();
         triggerHaptic("success");
       } catch (e) {
         triggerHaptic("error");

@@ -16,6 +16,13 @@ import {
 import type { AccountMeta, StoredAccount, VaultFile } from "./types";
 import type { StorageLoadResult } from "./storage-load";
 import { requireWebCrypto } from "./web-crypto";
+import {
+  decodeFullBackupPayload,
+  decodeVaultFile,
+  isEncryptedPayloadValue,
+  isRecord,
+  type FullBackupPayload,
+} from "./backup-schema";
 
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
@@ -96,55 +103,6 @@ export function canUseBiometrics(): boolean {
   return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isStoredAccount(value: unknown): value is StoredAccount {
-  if (!isRecord(value)) return false;
-  if (typeof value.id !== "string" || !value.id) return false;
-  if (typeof value.label !== "string") return false;
-  if (typeof value.publicKey !== "string" || !StrKey.isValidEd25519PublicKey(value.publicKey)) {
-    return false;
-  }
-  if (typeof value.createdAt !== "number" || !Number.isFinite(value.createdAt)) return false;
-  if (value.emoji !== undefined && typeof value.emoji !== "string") return false;
-  if (
-    value.index !== undefined &&
-    (typeof value.index !== "number" || !Number.isSafeInteger(value.index) || value.index < 0)
-  ) {
-    return false;
-  }
-  if (value.path !== undefined && typeof value.path !== "string") return false;
-  if (value.secret !== undefined && !isEncryptedPayload(value.secret)) return false;
-  if (value.watchOnly !== undefined && typeof value.watchOnly !== "boolean") return false;
-  if (value.hardware !== undefined && value.hardware !== "ledger" && value.hardware !== "trezor") {
-    return false;
-  }
-  return true;
-}
-
-function decodeVault(value: unknown): VaultFile | null {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) return null;
-  if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
-  if (!value.accounts.every(isStoredAccount)) return null;
-  if (value.archivedAccounts !== undefined) {
-    if (!Array.isArray(value.archivedAccounts) || !value.archivedAccounts.every(isStoredAccount)) {
-      return null;
-    }
-  }
-  if (value.activeAccountId !== null && typeof value.activeAccountId !== "string") return null;
-  if (
-    typeof value.activeAccountId === "string" &&
-    !value.accounts.some((account) => account.id === value.activeAccountId)
-  ) {
-    return null;
-  }
-  if (value.mnemonic !== undefined && !isEncryptedPayload(value.mnemonic)) return null;
-  if (value.passwordCheck !== undefined && !isEncryptedPayload(value.passwordCheck)) return null;
-  return value as unknown as VaultFile;
-}
-
 export function loadVaultResult(): StorageLoadResult<VaultFile> {
   if (typeof window === "undefined") return { kind: "absent" };
   const raw = window.localStorage.getItem(VAULT_KEY);
@@ -159,7 +117,7 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
         message: `This wallet was created by a newer app version (${parsed.version}).`,
       };
     }
-    const vault = decodeVault(parsed);
+    const vault = decodeVaultFile(parsed);
     return vault
       ? { kind: "ready", value: vault }
       : { kind: "corrupt", raw, message: "The encrypted wallet record is incomplete or malformed." };
@@ -801,16 +759,6 @@ const CURRENCY_KEY = "wallet.currency.v1";
 const TX_NOTES_KEY = "wallet.tx-notes.v1";
 const MERCHANT_STORE_KEY = "wallet.merchant.v2";
 
-function isEncryptedPayload(value: unknown): value is EncryptedPayload {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<EncryptedPayload>;
-  return (
-    typeof candidate.salt === "string" &&
-    typeof candidate.iv === "string" &&
-    typeof candidate.ciphertext === "string"
-  );
-}
-
 interface TxNoteEnvelope {
   version: 2;
   crypto: EncryptedPayload;
@@ -819,7 +767,7 @@ interface TxNoteEnvelope {
 function isTxNoteEnvelope(value: unknown): value is TxNoteEnvelope {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<TxNoteEnvelope>;
-  return candidate.version === 2 && isEncryptedPayload(candidate.crypto);
+  return candidate.version === 2 && isEncryptedPayloadValue(candidate.crypto);
 }
 
 async function writePrivateTxNotes(
@@ -856,7 +804,7 @@ async function readPrivateTxNotes(password: string): Promise<Record<string, stri
   const notes: Record<string, string> = {};
   for (const [hash, value] of Object.entries(legacy)) {
     if (typeof value === "string") notes[hash] = value;
-    else if (isEncryptedPayload(value)) {
+    else if (isEncryptedPayloadValue(value)) {
       try {
         notes[hash] = await decryptString(value, password);
       } catch {
@@ -890,24 +838,6 @@ export async function savePrivateTxNote(
   await writePrivateTxNotes(notes, password);
 }
 
-interface BackupSettings {
-  network: "testnet" | "mainnet";
-  fiatCurrency: string | null;
-  autoLockMs: number | null;
-  biometrics: boolean;
-  privacy: boolean;
-  sound: boolean;
-}
-
-interface FullBackupPayload {
-  exportedAt: string;
-  vault: VaultFile;
-  contacts: unknown[];
-  settings?: BackupSettings;
-  txNotes: Record<string, unknown>;
-  merchantStore?: string | null;
-}
-
 export interface VaultRestoreResult {
   accountCount: number;
   hasMnemonic: boolean;
@@ -936,7 +866,7 @@ function readLocalJson(key: string): unknown {
 export function isEncryptedBackup(json: string): boolean {
   try {
     const p = JSON.parse(json) as { kind?: string; version?: number; crypto?: unknown };
-    return p.kind === BACKUP_KIND && p.version === 2 && Boolean(p.crypto);
+    return p.kind === BACKUP_KIND && p.version === 2 && isEncryptedPayloadValue(p.crypto);
   } catch {
     return false;
   }
@@ -959,7 +889,7 @@ async function decodeBackup(
   if (parsed.kind !== BACKUP_KIND) {
     throw new Error("This file is not a Wallet backup.");
   }
-  if (parsed.version !== 2 || !parsed.crypto) {
+  if (parsed.version !== 2 || !isEncryptedPayloadValue(parsed.crypto)) {
     throw new Error(
       "This backup uses the legacy plaintext format, which is no longer supported. Create a fresh encrypted backup from the source wallet.",
     );
@@ -974,8 +904,14 @@ async function decodeBackup(
   } catch {
     throw new Error("Incorrect password for this backup file.");
   }
-  const payload = JSON.parse(plaintext) as FullBackupPayload;
-  if (!payload.vault) throw new Error("Backup contains no wallet data.");
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(plaintext);
+  } catch {
+    throw new Error("The decrypted backup payload is malformed.");
+  }
+  const payload = decodeFullBackupPayload(decoded);
+  if (!payload) throw new Error("The decrypted backup payload is malformed or invalid.");
   return { payload };
 }
 
@@ -1043,36 +979,64 @@ export async function restoreVaultBackup(
 ): Promise<VaultRestoreResult> {
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
-  if (
-    (vault.version !== 1 && vault.version !== 2) ||
-    !Array.isArray(vault.accounts) ||
-    vault.accounts.length === 0
-  ) {
-    throw new Error("Backup contains no recoverable accounts.");
-  }
-  persist(vault);
-  window.localStorage.removeItem(TRASH_KEY);
-  lockVault();
-
-  // Full-wallet restore — overwrite the satellite stores too
-  window.localStorage.setItem(CONTACTS_KEY, JSON.stringify(payload.contacts ?? []));
-  window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(payload.txNotes ?? {}));
-  if (typeof payload.merchantStore === "string" && payload.merchantStore) {
-    window.localStorage.setItem(MERCHANT_STORE_KEY, payload.merchantStore);
-  } else {
-    window.localStorage.removeItem(MERCHANT_STORE_KEY);
-  }
+  const restoreKeys = [
+    VAULT_KEY,
+    TRASH_KEY,
+    NETWORK_KEY,
+    AUTOLOCK_KEY,
+    BIOMETRICS_KEY,
+    CONTACTS_KEY,
+    PRIVACY_KEY,
+    SOUND_KEY,
+    CURRENCY_KEY,
+    TX_NOTES_KEY,
+    MERCHANT_STORE_KEY,
+  ];
+  const before = new Map(restoreKeys.map((key) => [key, window.localStorage.getItem(key)]));
+  const writes = new Map<string, string | null>([
+    [VAULT_KEY, JSON.stringify(vault)],
+    [TRASH_KEY, null],
+    [CONTACTS_KEY, JSON.stringify(payload.contacts)],
+    [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
+    [MERCHANT_STORE_KEY, payload.merchantStore || null],
+  ]);
   if (payload.settings) {
-    const s = payload.settings;
-    window.localStorage.setItem(NETWORK_KEY, s.network);
-    if (s.fiatCurrency) window.localStorage.setItem(CURRENCY_KEY, s.fiatCurrency);
-    if (s.autoLockMs !== null) {
-      window.localStorage.setItem(AUTOLOCK_KEY, String(s.autoLockMs));
-    }
-    window.localStorage.removeItem(BIOMETRICS_KEY);
-    window.localStorage.setItem(PRIVACY_KEY, s.privacy ? "1" : "0");
-    window.localStorage.setItem(SOUND_KEY, s.sound ? "1" : "0");
+    const settings = payload.settings;
+    writes.set(NETWORK_KEY, settings.network);
+    writes.set(CURRENCY_KEY, settings.fiatCurrency);
+    writes.set(AUTOLOCK_KEY, settings.autoLockMs === null ? null : String(settings.autoLockMs));
+    writes.set(BIOMETRICS_KEY, null);
+    writes.set(PRIVACY_KEY, settings.privacy ? "1" : "0");
+    writes.set(SOUND_KEY, settings.sound ? "1" : "0");
   }
+
+  const write = (key: string, value: string | null) => {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+    if (window.localStorage.getItem(key) !== value) {
+      throw new Error(`Storage did not retain ${key}.`);
+    }
+  };
+
+  try {
+    for (const [key, value] of writes) write(key, value);
+  } catch (error) {
+    let rollbackFailed = false;
+    for (const [key, value] of before) {
+      try {
+        write(key, value);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    const reason = error instanceof Error ? error.message : "Browser storage failed.";
+    throw new Error(
+      rollbackFailed
+        ? `Wallet restore failed and browser storage could not be fully rolled back: ${reason}`
+        : `Wallet restore failed; the previous wallet was restored unchanged: ${reason}`,
+    );
+  }
+  lockVault();
 
   return {
     accountCount: vault.accounts.length,
