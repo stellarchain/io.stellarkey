@@ -551,7 +551,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                             className="text-[12.5px] text-neutral-200"
                           />
                           {s.key === ownKey && (
-                            <span className="mt-0.5 inline-block rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
+                            <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
                               This device
                             </span>
                           )}
@@ -696,7 +696,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                           value={ownKey}
                           className="text-[12px] text-neutral-200"
                         />
-                        <span className="mt-0.5 inline-block rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
+                        <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
                           This device
                         </span>
                       </div>
