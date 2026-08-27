@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { findStrictSendRoute } from "../src/lib/swap.ts";
+import { findStrictReceiveRoute, findStrictSendRoute } from "../src/lib/swap.ts";
 import {
   bindSwapQuote,
   guardCurrentSwapQuote,
@@ -70,6 +70,60 @@ test("unwraps Horizon HAL records and selects the best USDC to XLM route", async
   assert.equal(route?.destinationAmount, "4.9900000");
   assert.equal(route?.intermediates.length, 1);
   assert.equal(route?.intermediates[0].getCode(), "AQUA");
+});
+
+test("uses an exact destination and bounded source for a strict-receive query", async (t) => {
+  let requestedUrl;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    requestedUrl = new URL(String(url));
+    return new Response(JSON.stringify({ _embedded: { records: [] } }), { status: 200 });
+  });
+
+  await findStrictReceiveRoute({
+    network: "mainnet",
+    sendCode: "XLM",
+    destinationAmount: "10",
+    destCode: "USDC",
+    destIssuer: USDC_ISSUER,
+  });
+
+  assert.equal(requestedUrl.pathname, "/paths/strict-receive");
+  assert.equal(requestedUrl.searchParams.get("source_assets"), "native");
+  assert.equal(requestedUrl.searchParams.get("destination_asset_type"), "credit_alphanum4");
+  assert.equal(requestedUrl.searchParams.get("destination_asset_code"), "USDC");
+  assert.equal(requestedUrl.searchParams.get("destination_asset_issuer"), USDC_ISSUER);
+  assert.equal(requestedUrl.searchParams.get("destination_amount"), "10");
+});
+
+test("selects the lowest strict-receive source amount at full Stellar precision", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(
+      JSON.stringify({
+        _embedded: {
+          records: [
+            { source_amount: "1.0000001", path: [] },
+            {
+              source_amount: "1",
+              path: [{ asset_type: "native" }],
+            },
+          ],
+        },
+      }),
+      { status: 200 },
+    ),
+  );
+
+  const route = await findStrictReceiveRoute({
+    network: "mainnet",
+    sendCode: "USDC",
+    sendIssuer: USDC_ISSUER,
+    destinationAmount: "5",
+    destCode: "XLM",
+  });
+
+  assert.equal(route?.sourceAmount, "1");
+  assert.equal(route?.intermediates.length, 1);
+  assert.equal(route?.intermediates[0].isNative(), true);
 });
 
 test("keeps issued XLM distinct from the native asset", async (t) => {

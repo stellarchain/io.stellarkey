@@ -27,6 +27,11 @@ export interface SwapRoute {
   intermediates: Asset[];
 }
 
+export interface StrictReceiveSwapRoute {
+  sourceAmount: string;
+  intermediates: Asset[];
+}
+
 interface HorizonPathRecord {
   destination_amount: string;
   path: Array<{ asset_type: string; asset_code?: string; asset_issuer?: string }>;
@@ -34,6 +39,15 @@ interface HorizonPathRecord {
 
 interface HorizonPathCollection {
   _embedded?: { records?: HorizonPathRecord[] };
+}
+
+interface HorizonStrictReceivePathRecord {
+  source_amount: string;
+  path: Array<{ asset_type: string; asset_code?: string; asset_issuer?: string }>;
+}
+
+interface HorizonStrictReceivePathCollection {
+  _embedded?: { records?: HorizonStrictReceivePathRecord[] };
 }
 
 function assetQueryPrefix(prefix: string, code: string, issuer?: string | null): URLSearchParams {
@@ -94,6 +108,38 @@ export async function findStrictSendRoute(params: {
   return { destinationAmount: best.destination_amount, intermediates };
 }
 
+export async function findStrictReceiveRoute(params: {
+  network: NetworkKey;
+  sendCode: string;
+  sendIssuer?: string | null;
+  destinationAmount: string;
+  destCode: string;
+  destIssuer?: string | null;
+}): Promise<StrictReceiveSwapRoute | null> {
+  const { network, sendCode, sendIssuer, destinationAmount, destCode, destIssuer } = params;
+  if (amountToStroops(destinationAmount) <= BigInt(0)) return null;
+  if (sendCode === destCode && sendIssuer === destIssuer) return null;
+  const horizonUrl = getHorizonUrl(network);
+  const q = assetQueryPrefix("destination", destCode, destIssuer);
+  q.set("destination_amount", normalizeAmount(destinationAmount));
+  q.set("source_assets", assetIdentifier(sendCode, sendIssuer));
+
+  const data = await getHorizonJson<HorizonStrictReceivePathCollection>(
+    `${horizonUrl}/paths/strict-receive?${q.toString()}`,
+  );
+  const routes = data?._embedded?.records ?? [];
+  if (routes.length === 0) return null;
+  const best = routes.reduce((a, b) =>
+    amountToStroops(b.source_amount) < amountToStroops(a.source_amount) ? b : a,
+  );
+  const intermediates = (best.path ?? []).map((p) =>
+    p.asset_type === "native"
+      ? Asset.native()
+      : new Asset(p.asset_code!, p.asset_issuer!),
+  );
+  return { sourceAmount: best.source_amount, intermediates };
+}
+
 export async function swapStrictSend(params: {
   network: NetworkKey;
   secretKey?: string;
@@ -129,6 +175,54 @@ export async function swapStrictSend(params: {
         destination: publicKey,
         destAsset: toStellarAsset(params.destCode, params.destIssuer),
         destMin: normalizeAmount(params.destMin),
+        path: params.intermediates,
+      }),
+    )
+    .setTimeout(180)
+    .build();
+
+  try {
+    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+  } catch (err) {
+    throw new SendError(explainSubmitError(err));
+  }
+}
+
+export async function swapStrictReceive(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
+  sendCode: string;
+  sendIssuer?: string | null;
+  sendMax: string;
+  destCode: string;
+  destIssuer?: string | null;
+  destinationAmount: string;
+  intermediates: Asset[];
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network } = params;
+  const cfg = NETWORKS[network];
+  const horizonUrl = getHorizonUrl(network);
+  const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
+  const source = await getJson<{ sequence: string }>(
+    `${horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!source) throw new SendError("Your account does not exist on this network.");
+  const fee = await loadRecommendedBaseFee(network, params.feeStroops);
+
+  const tx = new TransactionBuilder(new Account(publicKey, source.sequence), {
+    fee: String(fee),
+    networkPassphrase: cfg.networkPassphrase,
+  })
+    .addOperation(
+      Operation.pathPaymentStrictReceive({
+        sendAsset: toStellarAsset(params.sendCode, params.sendIssuer),
+        sendMax: normalizeAmount(params.sendMax),
+        destination: publicKey,
+        destAsset: toStellarAsset(params.destCode, params.destIssuer),
+        destAmount: normalizeAmount(params.destinationAmount),
         path: params.intermediates,
       }),
     )

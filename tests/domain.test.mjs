@@ -27,7 +27,7 @@ import {
   sendBatchPayments,
   sendPayment,
 } from "../src/lib/api.ts";
-import { swapStrictSend } from "../src/lib/swap.ts";
+import { swapStrictReceive, swapStrictSend } from "../src/lib/swap.ts";
 import { lookupKnownAsset, POPULAR_ASSETS } from "../src/lib/assets.ts";
 import {
   fmtAmount,
@@ -197,6 +197,28 @@ test("batch transaction fee is linear in its operation count", async (t) => {
   });
 
   assert.equal(submittedTransaction(calls).fee, "200");
+});
+
+test("strict-receive swaps bind exact credit and maximum debit in XDR", async (t) => {
+  const source = Keypair.random();
+  const calls = mockPaymentHorizon(t, source.publicKey(), source.publicKey());
+
+  await swapStrictReceive({
+    network: "testnet",
+    secretKey: source.secret(),
+    sendCode: "XLM",
+    sendMax: "2.01",
+    destCode: "USD",
+    destIssuer: USDC_ISSUER,
+    destinationAmount: "1",
+    intermediates: [],
+    feeStroops: 100,
+  });
+
+  const operation = submittedTransaction(calls).operations[0];
+  assert.equal(operation.type, "pathPaymentStrictReceive");
+  assert.equal(operation.sendMax, "2.0100000");
+  assert.equal(operation.destAmount, "1.0000000");
 });
 
 test("shared dynamic fee policy selects a bounded surge fee with a safe fallback", () => {
@@ -1844,11 +1866,12 @@ test("minimum balance includes sponsorship deltas and the transaction fee", asyn
 });
 
 test("amount arithmetic stays exact at seven decimal places", async () => {
-  const { applySlippage, fractionOfStellarAmount, splitStellarAmount, sumStellarAmounts } = await import(
+  const { applySlippage, applySlippageCeiling, fractionOfStellarAmount, splitStellarAmount, sumStellarAmounts } = await import(
     "../src/lib/stellar-domain.ts"
   );
   assert.equal(sumStellarAmounts(["0.1", "0.2", "0.0000001"]), "0.3000001");
   assert.equal(applySlippage("1.0000001", "0.5"), "0.995");
+  assert.equal(applySlippageCeiling("1.0000001", "0.5"), "1.0050002");
   assert.equal(fractionOfStellarAmount("1.0000001", 1, 4), "0.25");
   assert.deepEqual(splitStellarAmount("1", 3), ["0.3333334", "0.3333333", "0.3333333"]);
 });

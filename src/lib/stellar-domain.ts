@@ -153,3 +153,16 @@ export function applySlippage(amount: string, percent: string | number): string 
   const kept = scale - tenThousandths;
   return stroopsToAmount((amountToStroops(amount) * kept) / scale);
 }
+
+export function applySlippageCeiling(amount: string, percent: string | number): string {
+  const percentText = String(percent).trim();
+  const match = /^(\d+)(?:\.(\d{1,4}))?$/.exec(percentText);
+  if (!match) throw new Error("Invalid slippage percentage.");
+  const scale = BigInt(1_000_000);
+  const tenThousandths = BigInt(match[1]) * BigInt(10_000) + BigInt((match[2] ?? "").padEnd(4, "0") || "0");
+  if (tenThousandths > scale) throw new Error("Slippage cannot exceed 100%.");
+  const numerator = amountToStroops(amount) * (scale + tenThousandths);
+  const adjusted = (numerator + scale - BigInt(1)) / scale;
+  if (adjusted > MAX_STROOPS) throw new Error("Amount exceeds Stellar's maximum value.");
+  return stroopsToAmount(adjusted);
+}
