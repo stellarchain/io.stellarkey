@@ -117,9 +117,9 @@ export function PaymentLinksPage() {
     setEditorOpen(true);
   }
 
-  function handleToggle(code: CounterCode, next: boolean) {
+  async function handleToggle(code: CounterCode, next: boolean) {
     try {
-      setCounterCodeActive(code.id, next);
+      await setCounterCodeActive(code.id, next);
       toast(
         next
           ? `${code.title} is back in reconciliation`

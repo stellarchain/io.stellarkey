@@ -23,6 +23,7 @@ import {
   isRecord,
   type FullBackupPayload,
 } from "./backup-schema";
+import { getMerchantRepository } from "./merchant/repository";
 
 const VAULT_KEY = "polaris.vault.v1";
 const NETWORK_KEY = "polaris.network.v1";
@@ -945,6 +946,10 @@ export async function exportVaultBackup(): Promise<string> {
   const contactsRaw = readLocalJson(CONTACTS_KEY);
   const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
+  const merchantStore = typeof indexedDB === "undefined"
+    ? window.localStorage.getItem(MERCHANT_STORE_KEY)
+    : await getMerchantRepository().exportEncryptedArchive()
+      ?? window.localStorage.getItem(MERCHANT_STORE_KEY);
   const payload: FullBackupPayload = {
     exportedAt: new Date().toISOString(),
     vault,
@@ -961,7 +966,7 @@ export async function exportVaultBackup(): Promise<string> {
       notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
         ? (notesRaw as Record<string, unknown>)
         : {},
-    merchantStore: window.localStorage.getItem(MERCHANT_STORE_KEY),
+    merchantStore,
   };
   const crypto = await encryptString(JSON.stringify(payload), sessionPassword);
   return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
@@ -993,12 +998,16 @@ export async function restoreVaultBackup(
     MERCHANT_STORE_KEY,
   ];
   const before = new Map(restoreKeys.map((key) => [key, window.localStorage.getItem(key)]));
+  const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
+  const previousIndexedMerchant = merchantRepository
+    ? await merchantRepository.exportEncryptedArchive()
+    : null;
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [TRASH_KEY, null],
     [CONTACTS_KEY, JSON.stringify(payload.contacts)],
     [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
-    [MERCHANT_STORE_KEY, payload.merchantStore || null],
+    [MERCHANT_STORE_KEY, merchantRepository ? null : payload.merchantStore || null],
   ]);
   if (payload.settings) {
     const settings = payload.settings;
@@ -1020,8 +1029,26 @@ export async function restoreVaultBackup(
 
   try {
     for (const [key, value] of writes) write(key, value);
+    if (merchantRepository) {
+      if (payload.merchantStore) {
+        await merchantRepository.importEncryptedArchive(payload.merchantStore);
+      } else {
+        await merchantRepository.clear();
+      }
+    }
   } catch (error) {
     let rollbackFailed = false;
+    if (merchantRepository) {
+      try {
+        if (previousIndexedMerchant) {
+          await merchantRepository.importEncryptedArchive(previousIndexedMerchant);
+        } else {
+          await merchantRepository.clear();
+        }
+      } catch {
+        rollbackFailed = true;
+      }
+    }
     for (const [key, value] of before) {
       try {
         write(key, value);

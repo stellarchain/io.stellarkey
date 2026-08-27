@@ -327,6 +327,27 @@ test(
       await setup.getByRole("button", { name: "Open the till" }).click();
       await setup.waitFor({ state: "hidden" });
       await assertMobileSurface(page, "first merchant till");
+      const persistedRecord = await page.evaluate(async () => {
+        const value = await new Promise<string | null>((resolve, reject) => {
+          const open = indexedDB.open("wallet.local.v1", 1);
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const request = open.result
+              .transaction("encrypted-records", "readonly")
+              .objectStore("encrypted-records")
+              .get("merchant.primary.v1");
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result?.value ?? null);
+          };
+        });
+        return {
+          value,
+          legacy: localStorage.getItem("wallet.merchant.v2"),
+        };
+      });
+      assert.equal(persistedRecord.legacy, null);
+      assert.match(persistedRecord.value ?? "", /polaris-merchant-store/);
+      assert.doesNotMatch(persistedRecord.value ?? "", /North Star Coffee/);
 
       await page.getByRole("button", { name: "Open shift", exact: true }).click();
       const opening = page.getByRole("dialog", { name: /Open shift/ });

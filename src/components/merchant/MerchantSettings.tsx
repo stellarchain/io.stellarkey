@@ -412,6 +412,8 @@ export function MerchantSettings({
     settlementRule,
     settlementHandoffs,
     updateSettlementRule,
+    storageHealth,
+    requestPersistentStorage,
   } = useMerchant();
   const { accounts, balances } = useWallet();
   const { toast } = useToast();
@@ -463,17 +465,13 @@ export function MerchantSettings({
   const askAt = `${String(settlementRule.sweepPromptHour ?? 21).padStart(2, "0")}:00`;
   const treasury = settlementRule.sweepDestination ?? "";
 
-  function changeSettlementRule(patch: Parameters<typeof updateSettlementRule>[0]): boolean {
-    try {
-      updateSettlementRule(patch);
-      return true;
-    } catch (error) {
+  function changeSettlementRule(patch: Parameters<typeof updateSettlementRule>[0]): void {
+    void updateSettlementRule(patch).catch((error: unknown) => {
       toast(
         error instanceof Error ? error.message : "Settlement settings could not be saved.",
         "error",
       );
-      return false;
-    }
+    });
   }
 
   const staffCount = staff.filter((member) => member.active).length;
@@ -502,11 +500,25 @@ export function MerchantSettings({
     }
   }
 
-  function handleTurnOff() {
+  async function handleTurnOff() {
     triggerHaptic("warning");
-    setEnabled(false);
-    toast("Merchant Mode turned off", "success");
-    onDisabled();
+    try {
+      await setEnabled(false);
+      toast("Merchant Mode turned off", "success");
+      onDisabled();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Merchant Mode could not be changed.", "error");
+    }
+  }
+
+  async function handlePersistentStorage() {
+    const granted = await requestPersistentStorage();
+    toast(
+      granted
+        ? "This browser granted persistent offline storage."
+        : "Storage remains best effort. Keep an encrypted wallet backup current.",
+      granted ? "success" : "info",
+    );
   }
 
   return (
@@ -845,11 +857,11 @@ export function MerchantSettings({
               value={treasury}
               onCommit={(next) => {
                 const address = next.trim().toUpperCase();
-                const saved = changeSettlementRule({
+                changeSettlementRule({
                   sweepDestination: address || null,
                   sweepPromptHour: address ? settlementRule.sweepPromptHour ?? 21 : null,
                 });
-                return saved ? address : treasury;
+                return address;
               }}
             />
           </ChoiceRow>
@@ -1209,6 +1221,17 @@ export function MerchantSettings({
             sub={`${availablePeripherals} browser capabilities available · print, scanner, display`}
             chevron={Boolean(onNavigate)}
             onClick={onNavigate && (() => onNavigate("peripherals"))}
+          />
+          <Row
+            icon={<IconShield size={16} />}
+            tint="#30D158"
+            label="Offline storage"
+            sub={storageHealth?.usageRatio !== null && storageHealth?.usageRatio !== undefined
+              ? `${Math.round(storageHealth.usageRatio * 100)}% of this browser's available storage used`
+              : "Encrypted records stay on this device"}
+            value={storageHealth?.persistence === "persistent" ? "Persistent" : "Best effort"}
+            chevron={storageHealth?.persistence === "best-effort"}
+            onClick={storageHealth?.persistence === "best-effort" ? handlePersistentStorage : undefined}
           />
         </div>
       </Section>

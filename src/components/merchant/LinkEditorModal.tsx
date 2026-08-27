@@ -199,11 +199,11 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
     triggerHaptic("light");
   }
 
-  function handleSave() {
+  async function handleSave() {
     setError("");
     try {
       const saved = code
-        ? updateCounterCode({
+        ? await updateCounterCode({
             codeId: code.id,
             title,
             suggestedMinor: code.kind === "fixed" ? [] : suggested,
@@ -211,7 +211,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
             expiresAt: expiryTimestamp(expiry),
             active,
           })
-        : createCounterCode({
+        : await createCounterCode({
             title,
             kind,
             amountMinor: kind === "fixed" ? amountMinor : null,

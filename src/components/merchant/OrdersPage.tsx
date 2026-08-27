@@ -212,9 +212,9 @@ export function OrdersPage() {
         <UnmatchedTray
           payments={unmatched}
           filable={filableCharges}
-          onAttach={(paymentId, chargeId, orderNumber) => {
+          onAttach={async (paymentId, chargeId, orderNumber) => {
             try {
-              attachPayment(paymentId, chargeId);
+              await attachPayment(paymentId, chargeId);
               triggerHaptic("success");
               toast(`Payment filed against order #${orderNumber}`, "success");
             } catch (cause) {
@@ -222,9 +222,9 @@ export function OrdersPage() {
               toast(cause instanceof Error ? cause.message : "The payment could not be filed.", "error");
             }
           }}
-          onDismiss={(paymentId) => {
+          onDismiss={async (paymentId) => {
             try {
-              dismissUnmatched(paymentId);
+              await dismissUnmatched(paymentId);
               triggerHaptic("warning");
               toast("Payment dismissed with a staff audit record");
             } catch (cause) {
