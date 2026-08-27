@@ -279,3 +279,43 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
     assert.equal(localStorage.getItem(key), before.get(key), `${key} was not rolled back`);
   }
 });
+
+test("full wallet restore rolls localStorage and IndexedDB back together", async () => {
+  const { replaceBackupStorage } = await import("../src/lib/backup-storage.ts");
+  const localStorage = new MemoryStorage();
+  localStorage.setItem("polaris.vault.v1", "vault-before");
+  localStorage.setItem("polaris.contacts.v1", "contacts-before");
+
+  const indexedArchive = {
+    value: "merchant-before",
+    failNextReplace: true,
+    async read() {
+      return this.value;
+    },
+    async replace(value) {
+      this.value = value;
+      if (this.failNextReplace) {
+        this.failNextReplace = false;
+        throw new Error("injected IndexedDB failure after mutation");
+      }
+    },
+  };
+
+  await assert.rejects(
+    () => replaceBackupStorage({
+      storage: localStorage,
+      keys: ["polaris.vault.v1", "polaris.contacts.v1"],
+      writes: new Map([
+        ["polaris.vault.v1", "vault-from-backup"],
+        ["polaris.contacts.v1", "contacts-from-backup"],
+      ]),
+      archive: indexedArchive,
+      archiveValue: "merchant-from-backup",
+    }),
+    /previous wallet was restored unchanged.*injected IndexedDB failure/i,
+  );
+
+  assert.equal(localStorage.getItem("polaris.vault.v1"), "vault-before");
+  assert.equal(localStorage.getItem("polaris.contacts.v1"), "contacts-before");
+  assert.equal(indexedArchive.value, "merchant-before");
+});

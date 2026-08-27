@@ -26,6 +26,7 @@ import {
   type FullBackupPayload,
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
+import { replaceBackupStorage } from "./backup-storage";
 import {
   createVaultMasterKey,
   decryptVaultBytes,
@@ -1179,11 +1180,7 @@ export async function restoreVaultBackup(
     MERCHANT_STORE_KEY,
     PASSKEY_RECORD_KEY,
   ];
-  const before = new Map(restoreKeys.map((key) => [key, window.localStorage.getItem(key)]));
   const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
-  const previousIndexedMerchant = merchantRepository
-    ? await merchantRepository.exportEncryptedArchive()
-    : null;
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [CONTACTS_KEY, JSON.stringify(payload.contacts)],
@@ -1201,51 +1198,21 @@ export async function restoreVaultBackup(
     writes.set(PRIVACY_KEY, settings.privacy ? "1" : "0");
     writes.set(SOUND_KEY, settings.sound ? "1" : "0");
   }
-
-  const write = (key: string, value: string | null) => {
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
-    if (window.localStorage.getItem(key) !== value) {
-      throw new Error(`Storage did not retain ${key}.`);
-    }
-  };
-
-  try {
-    for (const [key, value] of writes) write(key, value);
-    if (merchantRepository) {
-      if (payload.merchantStore) {
-        await merchantRepository.importEncryptedArchive(payload.merchantStore);
-      } else {
-        await merchantRepository.clear();
-      }
-    }
-  } catch (error) {
-    let rollbackFailed = false;
-    if (merchantRepository) {
-      try {
-        if (previousIndexedMerchant) {
-          await merchantRepository.importEncryptedArchive(previousIndexedMerchant);
-        } else {
-          await merchantRepository.clear();
+  await replaceBackupStorage({
+    storage: window.localStorage,
+    keys: restoreKeys,
+    writes,
+    archive: merchantRepository
+      ? {
+          read: () => merchantRepository.exportEncryptedArchive(),
+          replace: async (value) => {
+            if (value) await merchantRepository.importEncryptedArchive(value);
+            else await merchantRepository.clear();
+          },
         }
-      } catch {
-        rollbackFailed = true;
-      }
-    }
-    for (const [key, value] of before) {
-      try {
-        write(key, value);
-      } catch {
-        rollbackFailed = true;
-      }
-    }
-    const reason = error instanceof Error ? error.message : "Browser storage failed.";
-    throw new Error(
-      rollbackFailed
-        ? `Wallet restore failed and browser storage could not be fully rolled back: ${reason}`
-        : `Wallet restore failed; the previous wallet was restored unchanged: ${reason}`,
-    );
-  }
+      : null,
+    archiveValue: payload.merchantStore ?? null,
+  });
   lockVault();
 
   return {

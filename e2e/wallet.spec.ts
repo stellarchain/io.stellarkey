@@ -87,7 +87,7 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await expect(page.getByPlaceholder("Enter password")).toBeVisible();
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
-  await expect(page.getByText("Total Portfolio", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const send = page.getByRole("dialog", { name: "Send Payment" });

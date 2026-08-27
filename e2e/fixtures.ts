@@ -216,7 +216,7 @@ export async function importTestWallet(page: Page): Promise<void> {
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByPlaceholder("Repeat password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock & Import" }).click();
-  await expect(page.getByText("Total Portfolio", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
 }
 
 export function observePageFailures(page: Page): {
