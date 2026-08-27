@@ -30,7 +30,6 @@ test("screens use the shared Trezor-style address presentation", () => {
   ];
   const combined = files.map(read).join("\n");
   const send = read("src/components/SendModal.tsx");
-  const trezor = read("src/components/TrezorModal.tsx");
   const addAccount = read("src/components/AddAccountModal.tsx");
   const addressBook = read("src/components/AddressBookPage.tsx");
   const multisig = read("src/components/MultiSigStudioModal.tsx");
@@ -42,8 +41,7 @@ test("screens use the shared Trezor-style address presentation", () => {
   }
   assert.doesNotMatch(send, /addr\.slice\(0,/);
   assert.match(send, /formatTrezorAddress\(addr\)/);
-  assert.match(trezor, /<HashValue[\s\S]*?full[\s\S]*?value=\{connectedInfo\.publicKey\}/);
-  assert.match(addAccount, /<HashValue[\s\S]*?full[\s\S]*?value=\{hardwareKey\}/);
+  assert.match(addAccount, /<HashValue[\s\S]*?full[\s\S]*?value=\{connectedInfo\.publicKey\}/);
   assert.doesNotMatch(`${addressBook}\n${multisig}`, /head=\{6\}|tail=\{6\}/);
   assert.match(settings, /<HashValue[\s\S]*?full[\s\S]*?value=\{airReview\.source\}/);
   assert.match(
