@@ -58,7 +58,7 @@ function notFoundResponse() {
 }
 
 test("Horizon timeout covers waiting for response headers", async (t) => {
-  assert.equal(getHorizonJson.length, 3, "expected a testable bounded request timeout");
+  assert.equal(getHorizonJson.length, 4, "expected testable timeout and retry policy seams");
   t.mock.method(globalThis, "fetch", async (_url, init) =>
     new Promise((_resolve, reject) => {
       init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });

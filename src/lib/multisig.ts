@@ -25,7 +25,8 @@ import {
   submitSignedTx,
   SendError,
 } from "./api";
-import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
+import { NETWORKS, type NetworkKey } from "./stellar";
+import { getHorizonUrl } from "./stellar-endpoints";
 import { normalizeAmount } from "./format";
 import { isValidPublicAddress } from "./vault";
 import { signHardwareTx, type HardwareSigner } from "./hardware";

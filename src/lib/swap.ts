@@ -6,7 +6,8 @@ import {
   Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
-import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
+import { NETWORKS, type NetworkKey } from "./stellar";
+import { getHorizonUrl } from "./stellar-endpoints";
 import { normalizeAmount } from "./format";
 import {
   getJson,

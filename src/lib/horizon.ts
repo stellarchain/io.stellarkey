@@ -13,15 +13,38 @@ export class HorizonRequestError extends Error {
   readonly kind: HorizonErrorKind;
   readonly status: number | null;
   readonly body: unknown;
+  readonly retryAfterMs: number | null;
 
-  constructor(message: string, options: { kind: HorizonErrorKind; status?: number; body?: unknown }) {
+  constructor(message: string, options: {
+    kind: HorizonErrorKind;
+    status?: number;
+    body?: unknown;
+    retryAfterMs?: number | null;
+  }) {
     super(message);
     this.name = "HorizonRequestError";
     this.kind = options.kind;
     this.status = options.status ?? null;
     this.body = options.body;
+    this.retryAfterMs = options.retryAfterMs ?? null;
   }
 }
+
+export interface HorizonReadPolicy {
+  /** Total attempts, including the first request. Ignored for non-read methods. */
+  maxReadAttempts?: number;
+  /** Test seam; production uses an abort-aware timer. */
+  sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  /** Test seam for deterministic bounded jitter. */
+  random?: () => number;
+  /** Test seam for HTTP-date Retry-After parsing. */
+  now?: () => number;
+}
+
+const DEFAULT_READ_ATTEMPTS = 3;
+const MAX_READ_ATTEMPTS = 3;
+const MAX_RETRY_AFTER_MS = 5_000;
+const BASE_RETRY_DELAY_MS = 250;
 
 function kindForStatus(status: number): HorizonErrorKind {
   if (status === 404) return "not_found";
@@ -80,10 +103,101 @@ async function readJsonBody(response: Response, signal: AbortSignal): Promise<un
   }
 }
 
+function retryAfterMilliseconds(value: string | null, now: () => number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, Math.ceil(Number(trimmed) * 1_000)));
+  }
+  const date = Date.parse(trimmed);
+  if (!Number.isFinite(date)) return null;
+  return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, date - now()));
+}
+
+function retryableReadError(error: HorizonRequestError): boolean {
+  return error.kind === "rate_limited" || error.kind === "server" || error.kind === "network";
+}
+
+function isIdempotentRead(init?: RequestInit): boolean {
+  const method = (init?.method ?? "GET").toUpperCase();
+  return method === "GET" || method === "HEAD";
+}
+
+function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error("Horizon request was aborted."));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function requestHorizonJsonOnce<T>(
+  url: string,
+  init: RequestInit | undefined,
+  signal: AbortSignal,
+  now: () => number,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, signal });
+  } catch (error) {
+    throw new HorizonRequestError(
+      `Unable to reach Horizon: ${error instanceof Error ? error.message : "network request failed"}`,
+      { kind: "network" },
+    );
+  }
+  let body: unknown = null;
+  let parseError: unknown = null;
+
+  try {
+    body = await readJsonBody(response, signal);
+  } catch (error) {
+    parseError = error;
+    if (response.ok && error instanceof HorizonRequestError) throw error;
+    // Once Horizon has returned an explicit HTTP error, the transport
+    // outcome is no longer ambiguous. Preserve that status even when the
+    // optional error body stalls or the caller stops waiting for it.
+    if (signal.aborted && response.ok) {
+      throw new HorizonRequestError(
+        `Unable to reach Horizon: ${error instanceof Error ? error.message : "request aborted"}`,
+        { kind: "network" },
+      );
+    }
+  }
+
+  if (!response.ok) {
+    const detail = errorDetail(body);
+    throw new HorizonRequestError(
+      `Horizon request failed (${response.status})${detail ? `: ${detail}` : ""}`,
+      {
+        kind: kindForStatus(response.status),
+        status: response.status,
+        body,
+        retryAfterMs: retryAfterMilliseconds(response.headers.get("Retry-After"), now),
+      },
+    );
+  }
+  if (parseError) {
+    throw new HorizonRequestError("Horizon returned a malformed JSON response.", {
+      kind: "unknown",
+      status: response.status,
+    });
+  }
+  return body as T;
+}
+
 export async function getHorizonJson<T>(
   url: string,
   init?: RequestInit,
   timeoutMs?: number,
+  policy?: HorizonReadPolicy,
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -97,36 +211,34 @@ export async function getHorizonJson<T>(
   if (callerSignal?.aborted) abortFromCaller();
   else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
 
+  const read = isIdempotentRead(init);
+  const attempts = read
+    ? Math.max(1, Math.min(MAX_READ_ATTEMPTS, policy?.maxReadAttempts ?? DEFAULT_READ_ATTEMPTS))
+    : 1;
+  const random = policy?.random ?? Math.random;
+  const now = policy?.now ?? Date.now;
+  const sleep = policy?.sleep ?? defaultSleep;
+
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    let body: unknown = null;
-    let parseError: unknown = null;
-
-    try {
-      body = await readJsonBody(response, controller.signal);
-    } catch (error) {
-      parseError = error;
-      if (response.ok && error instanceof HorizonRequestError) throw error;
-      // Once Horizon has returned an explicit HTTP error, the transport
-      // outcome is no longer ambiguous. Preserve that status even when the
-      // optional error body stalls or the caller stops waiting for it.
-      if (controller.signal.aborted && response.ok) throw error;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await requestHorizonJsonOnce<T>(url, init, controller.signal, now);
+      } catch (error) {
+        if (
+          !(error instanceof HorizonRequestError) ||
+          !retryableReadError(error) ||
+          attempt >= attempts ||
+          controller.signal.aborted ||
+          callerSignal?.aborted
+        ) {
+          throw error;
+        }
+        const exponential = BASE_RETRY_DELAY_MS * (2 ** (attempt - 1));
+        const jittered = Math.round(exponential * (1 + Math.max(0, Math.min(1, random()))));
+        await sleep(error.retryAfterMs ?? jittered, controller.signal);
+      }
     }
-
-    if (!response.ok) {
-      const detail = errorDetail(body);
-      throw new HorizonRequestError(
-        `Horizon request failed (${response.status})${detail ? `: ${detail}` : ""}`,
-        { kind: kindForStatus(response.status), status: response.status, body },
-      );
-    }
-    if (parseError) {
-      throw new HorizonRequestError("Horizon returned a malformed JSON response.", {
-        kind: "unknown",
-        status: response.status,
-      });
-    }
-    return body as T;
+    throw new Error("Horizon request exhausted its retry policy.");
   } catch (error) {
     if (error instanceof HorizonRequestError) throw error;
     throw new HorizonRequestError(

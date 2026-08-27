@@ -121,6 +121,14 @@ export async function installNetworkFixtures(
     const url = new URL(request.url());
     const pathname = url.pathname;
 
+    if (pathname === "/") {
+      await json(route, {
+        network_passphrase: Networks.TESTNET,
+        history_latest_ledger: 100_000,
+      });
+      return;
+    }
+
     if (request.method() === "POST" && pathname === "/transactions") {
       const xdr = new URLSearchParams(request.postData() ?? "").get("tx");
       if (!xdr) throw new Error("Horizon submission must contain an envelope.");
@@ -182,6 +190,20 @@ export async function installNetworkFixtures(
     }
 
     await json(route, { _embedded: { records: [] } });
+  });
+
+  await context.route("https://soroban-testnet.stellar.org/**", async (route) => {
+    const request = route.request();
+    const body = JSON.parse(request.postData() ?? "{}") as { id?: unknown; method?: unknown };
+    if (request.method() === "POST" && body.method === "getNetwork") {
+      await json(route, {
+        jsonrpc: "2.0",
+        id: body.id,
+        result: { passphrase: Networks.TESTNET, protocolVersion: 25 },
+      });
+      return;
+    }
+    await json(route, { jsonrpc: "2.0", id: body.id, error: { message: "Unsupported test method" } }, 400);
   });
 }
 

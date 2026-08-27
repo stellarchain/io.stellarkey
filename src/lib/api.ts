@@ -13,7 +13,8 @@ import {
   type FeeBumpTransaction,
 } from "@stellar/stellar-sdk";
 import type { ActivityItem, AssetBalance } from "./types";
-import { getHorizonUrl, NETWORKS, type NetworkKey } from "./stellar";
+import { NETWORKS, type NetworkKey } from "./stellar";
+import { getHorizonUrl } from "./stellar-endpoints";
 import { isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
 import { signHardwareTx, type HardwareSigner } from "./hardware";
@@ -179,10 +180,10 @@ export async function fetchNativeBalance(
   network: NetworkKey,
 ): Promise<number | null> {
   try {
-    const res = await fetch(`${getHorizonUrl(network)}/accounts/${publicKey}`);
-    if (res.status === 404) return 0;
-    if (!res.ok) return null;
-    const data = (await res.json()) as { balances?: RawBalance[] };
+    const data = await getJson<{ balances?: RawBalance[] }>(
+      `${getHorizonUrl(network)}/accounts/${publicKey}`,
+    );
+    if (!data) return 0;
     const native = data.balances?.find((b) => b.asset_type === "native");
     return native ? parseFloat(native.balance) : 0;
   } catch {
@@ -391,18 +392,6 @@ export async function fetchAccountSignerInfo(
 
   if (!data) return null;
   return parseAccountSignerInfo(data, publicKey);
-}
-
-export async function testHorizonPing(network: NetworkKey): Promise<number | null> {
-  const horizonUrl = getHorizonUrl(network);
-  const start = performance.now();
-  try {
-    const res = await fetch(`${horizonUrl}/fee_stats`, { method: "HEAD" });
-    if (!res.ok) return null;
-    return Math.round(performance.now() - start);
-  } catch {
-    return null;
-  }
 }
 
 interface RawOperation {
