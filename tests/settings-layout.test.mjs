@@ -19,3 +19,18 @@ test("local-device signer badges sit below their addresses", () => {
     /className="mt-0\.5 inline-block rounded-md bg-\[#30D158\]\/15/,
   );
 });
+
+test("merchant settings use the wallet's responsive category grid", () => {
+  const merchantSettings = read("src/components/merchant/MerchantSettings.tsx");
+
+  assert.match(
+    merchantSettings,
+    /className="grid grid-cols-1 items-start gap-6 md:grid-cols-2"/,
+  );
+  assert.equal(
+    merchantSettings.match(/data-merchant-settings-column=/g)?.length ?? 0,
+    2,
+  );
+  assert.match(merchantSettings, /data-merchant-settings-column="payments"/);
+  assert.match(merchantSettings, /data-merchant-settings-column="operations"/);
+});
