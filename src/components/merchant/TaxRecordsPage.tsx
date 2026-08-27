@@ -607,7 +607,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             <>
               <ModalHeader
                 title="Encrypted archive"
-                subtitle="A complete local operational backup"
+                subtitle="A portable encrypted merchant record set"
                 onClose={() => setActiveSheet(null)}
               />
               <SheetBody sheet="archive">
@@ -615,8 +615,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   <span className="flex items-start gap-2.5">
                     <IconLock size={15} className="mt-[1px] shrink-0 text-[#5E5CE6]" />
                     <span>
-                      The archive contains the retained merchant record encrypted with this
-                      wallet&rsquo;s password-derived key.
+                      The archive contains retained merchant records encrypted with this
+                      vault&rsquo;s vault-specific merchant key.
                     </span>
                   </span>
                 </Notice>
@@ -633,11 +633,12 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                       icon={<IconLock size={16} />}
                       tint="#5E5CE6"
                       label="Encrypted locally"
-                      sub="Readable only with the matching wallet backup and password"
+                      sub="Restorable only alongside the matching encrypted wallet backup"
                     />
                   </div>
                   <SettingsCaption>
-                    Store this file somewhere the current device is not the only copy.
+                    This file does not restore a wallet on its own. Keep a full encrypted wallet
+                    backup as the recovery copy; it already includes these merchant records.
                   </SettingsCaption>
                 </SettingsSection>
                 <Button className="w-full" onClick={() => void handleEncryptedArchive()}>

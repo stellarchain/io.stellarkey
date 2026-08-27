@@ -28,6 +28,8 @@ Merchant Mode turns one unlocked wallet and browser into a single-device point o
 
 Merchant records do not synchronize between devices and are not a cloud backup. Export the accounting records you need before resetting the app or clearing browser storage. Direct ESC/POS, Bluetooth, cash-drawer, and external-display control require a separate hardware bridge and are shown as unavailable when one is not present.
 
+Full wallet recovery accepts the fully encrypted `stellar-wallet-backup` envelope version 2; legacy plaintext version 1 exports are intentionally rejected. The standalone Tax Records merchant archive contains encrypted operational records but no wallet key material, so it cannot restore a wallet by itself. A full encrypted wallet backup includes both the vault and its matching merchant archive.
+
 See [Merchant Mode operations](docs/merchant-mode.md) for setup, daily use, offline behavior, and security boundaries.
 
 ## Asset and price safety

@@ -22,6 +22,8 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 ## Local-first and recovery checks
 
 - Export and verify an encrypted backup before installing or replacing the app. Restore it into a fresh browser profile and compare every account address.
+- Confirm new files use wallet backup envelope version 2. Legacy plaintext version 1 backups are not supported; create a fresh encrypted backup on the source device.
+- Treat the Tax Records merchant archive as a portable encrypted record set, not an independent wallet backup. Full encrypted wallet backups include the matching vault and merchant key required for recovery.
 - Confirm endpoint overrides reject HTTP, credentials, fragments, and the wrong Stellar network. Verify both Horizon and RPC reset to the built-in defaults.
 - Confirm offline cold launch exposes only the cached application shell; wallet, merchant, price, and Horizon responses must not enter the service-worker cache.
 - Confirm merchant encrypted records survive reload and that a second tab cannot overwrite a newer revision.

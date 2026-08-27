@@ -913,10 +913,10 @@ export interface KeystoreFile {
 }
 
 /* ------------------------------------------------------------------ */
-/* Full wallet backup. v2 encrypts the ENTIRE payload — vault,         */
-/* contacts, settings, tx notes — with the wallet password; only the   */
-/* envelope marker stays plaintext. Legacy v1 plaintext backups still  */
-/* restore (vault only).                                               */
+/* Full wallet backup. Envelope v2 encrypts the ENTIRE payload — vault, */
+/* contacts, settings, tx notes, and merchant archive — with the wallet */
+/* password; only the envelope marker stays plaintext. Legacy plaintext */
+/* envelope v1 files are deliberately rejected.                         */
 /* ------------------------------------------------------------------ */
 
 const BACKUP_KIND = "stellar-wallet-backup";
