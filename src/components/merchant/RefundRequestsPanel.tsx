@@ -135,7 +135,9 @@ export function RefundRequestsPanel({
                   <span className="mono text-[17px] font-semibold text-white">
                     {fmtMinor(request.amountMinor, currency)}
                   </span>
-                  <span className="mono text-[13px] text-neutral-400">#{request.orderNumber}</span>
+                  <span className="mono text-[13px] text-neutral-400">
+                    {request.invoiceNumber ?? `#${request.orderNumber}`}
+                  </span>
                   <span className="text-[11.5px] text-neutral-500">
                     {request.requestedBy} · {fmtClock(request.requestedAt)}
                   </span>

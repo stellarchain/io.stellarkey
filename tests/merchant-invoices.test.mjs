@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import { recordRefundSubmission } from "../src/lib/merchant/refunds.ts";
 import { decodeMerchantStore } from "../src/lib/merchant/storage.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 import { NETWORKS } from "../src/lib/stellar.ts";
@@ -231,6 +232,103 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
   assert.equal(second.store.invoices[0].payments.length, 2);
 });
 
+test("an invoice overpayment settles only the balance and isolates the exact surplus", async () => {
+  const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
+  const { member, store } = merchantStore();
+  const draft = createInvoiceDraft(store, draftInput(member));
+  const issued = issueInvoice(draft.store, {
+    invoiceId: draft.invoice.id,
+    actor: member,
+    network: "mainnet",
+    destination: TILL,
+    quotes: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 100,
+  });
+  const observed = payment("payment-overpaid", "12.0000000", issued.invoice.reference);
+
+  const reconciled = reconcileInvoicePayments(issued.store, {
+    network: "mainnet",
+    payments: [observed],
+    now: NOW + 2_000,
+  });
+  const invoice = reconciled.store.invoices[0];
+
+  assert.equal(invoice.status, "paid");
+  assert.equal(invoice.paidMinor, 1_000);
+  assert.deepEqual(invoice.payments[0], {
+    id: observed.id,
+    kind: "stellar",
+    network: "mainnet",
+    amountMinor: 1_000,
+    receivedMinor: 1_200,
+    overpaymentMinor: 200,
+    asset: USDC,
+    amount: "12.0000000",
+    transactionHash: observed.transactionHash,
+    from: PAYER,
+    observedAt: NOW + 1_000,
+    recordedById: null,
+    recordedBy: null,
+    note: null,
+  });
+  assert.equal(reconciled.unclaimed.length, 0);
+  assert.deepEqual(reconciled.store.paymentReconciliations[0], {
+    id: observed.id,
+    network: "mainnet",
+    payment: observed,
+    outcome: "overpaid",
+    chargeId: null,
+    orderId: null,
+    invoiceId: invoice.id,
+    amountMinor: 200,
+    reversalAmount: "2.0000000",
+    observedAt: NOW + 2_000,
+    resolution: null,
+  });
+  assert.equal(reconciled.store.unmatched[0].id, observed.id);
+  assert.equal(reconciled.store.unmatched[0].candidateInvoiceId, invoice.id);
+
+  const refund = {
+    id: "refund-invoice-surplus",
+    orderId: invoice.id,
+    invoiceId: invoice.id,
+    kind: "payment_reversal",
+    sourcePaymentId: observed.id,
+    network: "mainnet",
+    amountMinor: 200,
+    asset: USDC,
+    amount: "2.0000000",
+    destination: PAYER,
+    reason: "overpayment",
+    note: null,
+    transactionHash: "f".repeat(64),
+    submissionStatus: "accepted",
+    createdAt: NOW + 2_100,
+  };
+  assert.equal(
+    recordRefundSubmission(reconciled.store, refund).refunds[0].invoiceId,
+    invoice.id,
+  );
+  assert.throws(
+    () =>
+      recordRefundSubmission(reconciled.store, {
+        ...refund,
+        id: "refund-too-large",
+        amount: "2.0000001",
+        transactionHash: "e".repeat(64),
+      }),
+    /exceeds.*source payment/i,
+  );
+
+  const replay = reconcileInvoicePayments(reconciled.store, {
+    network: "mainnet",
+    payments: [observed],
+    now: NOW + 3_000,
+  });
+  assert.equal(replay.store.invoices[0].payments.length, 1);
+  assert.equal(replay.store.paymentReconciliations.length, 1);
+});
+
 test("an invoice payment cannot file against another receiving account", async () => {
   const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
   const { member, store } = merchantStore();
@@ -284,6 +382,8 @@ test("manual settlement records the exact actor and survives reload", async () =
     kind: "manual",
     network: "mainnet",
     amountMinor: 1000,
+    receivedMinor: 1000,
+    overpaymentMinor: 0,
     asset: null,
     amount: null,
     transactionHash: null,
@@ -363,6 +463,7 @@ test("production invoice surfaces use persisted actions and real document handof
   const list = source("src/components/merchant/InvoicesPage.tsx");
   const composer = source("src/components/merchant/InvoiceComposerModal.tsx");
   const detail = source("src/components/merchant/InvoiceDetailModal.tsx");
+  const hook = source("src/hooks/useMerchant.tsx");
 
   for (const screen of [list, composer, detail]) {
     assert.doesNotMatch(screen, /merchant\/mock|MOCK_INVOICES|MOCK_NOW/);
@@ -370,5 +471,8 @@ test("production invoice surfaces use persisted actions and real document handof
   assert.match(composer, /createInvoiceDraft|updateInvoiceDraft/);
   assert.match(detail, /issueInvoice|recordManualInvoicePayment|voidInvoice|duplicateInvoice/);
   assert.match(detail, /window\.print|mailto:|Blob/);
+  assert.match(detail, /Invoice surplus/);
+  assert.match(detail, /submitPaymentRefund/);
+  assert.match(hook, /reconciliation\.reversalAmount \?\? payment\.amount/);
   assert.doesNotMatch(detail, /statusOverride|would be closed|would be voided/);
 });

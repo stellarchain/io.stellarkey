@@ -2524,35 +2524,46 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     const order = reconciliation.orderId
       ? current.orders.find((entry) => entry.id === reconciliation.orderId) ?? null
       : null;
+    const invoice = reconciliation.invoiceId
+      ? current.invoices.find((entry) => entry.id === reconciliation.invoiceId) ?? null
+      : null;
     const charge = reconciliation.chargeId
       ? current.charges.find((entry) => entry.id === reconciliation.chargeId) ?? null
       : null;
-    if (!order || !charge) throw new Error("The payment's original order is no longer available.");
+    if ((!order || !charge) && !invoice) {
+      throw new Error("The payment's original sale or invoice is no longer available.");
+    }
     if (reconciliation.network !== network) {
       throw new Error("Switch to the payment's Stellar network before refunding it.");
     }
-    if (activeAccount?.publicKey !== charge.destination) {
+    const receivingDestination = charge?.destination ?? invoice?.destination ?? null;
+    if (activeAccount?.publicKey !== receivingDestination) {
       throw new Error("Switch to the receiving account that took this payment before refunding it.");
     }
 
     const payment = reconciliation.payment;
+    const reversalAmount = reconciliation.reversalAmount ?? payment.amount;
     const result = await send({
       destination: payment.from,
-      amount: payment.amount,
+      amount: reversalAmount,
       assetCode: payment.asset.code,
       issuer: payment.asset.issuer,
-      memo: { type: "text", value: `DP${order.number}` },
+      memo: {
+        type: "text",
+        value: order ? `DP${order.number}` : `IP${invoice?.number ?? "SURPLUS"}`,
+      },
     });
     const now = Date.now();
     const refund: Refund = {
       id: uid("rfd"),
-      orderId: order.id,
+      orderId: order?.id ?? invoice?.id ?? "",
+      invoiceId: invoice?.id ?? null,
       kind: "payment_reversal",
       sourcePaymentId: reconciliation.id,
       network: reconciliation.network,
       amountMinor,
       asset: payment.asset,
-      amount: payment.amount,
+      amount: reversalAmount,
       destination: payment.from,
       reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
       note: note?.trim() || null,
@@ -2663,6 +2674,7 @@ export function MerchantProvider({ children }: { children: React.ReactNode }) {
     const refundedMinor = store.refunds
       .filter(
         (r) =>
+          r.kind === "order" &&
           r.network === network &&
           r.createdAt >= from &&
           r.submissionStatus === "confirmed",

@@ -175,6 +175,32 @@ test("report arithmetic derives sales, refunds, discounts, tender, asset, and ta
   assert.deepEqual(report.byAsset, [{ asset: USDC, amountMinor: store.orders[0].totals.totalMinor }]);
 });
 
+test("returning an unresolved receipt never reduces recorded sales or tax", async () => {
+  const { deriveReport } = await reportingDomain();
+  const { store } = fixtureStore("inclusive");
+  const reversal = {
+    ...store.refunds[0],
+    id: "invoice-surplus-return",
+    kind: "payment_reversal",
+    sourcePaymentId: "invoice-payment-overpaid",
+    invoiceId: "invoice-1",
+    orderId: "invoice-1",
+    amountMinor: 200,
+    reason: "overpayment",
+    transactionHash: "c".repeat(64),
+  };
+  const withReversal = { ...store, refunds: [...store.refunds, reversal] };
+  const range = { network: "mainnet", from: Date.UTC(2027, 0, 1), to: FEB_1 };
+
+  const baseline = deriveReport(store, range);
+  const report = deriveReport(withReversal, range);
+
+  assert.equal(report.refundCount, baseline.refundCount);
+  assert.equal(report.refundsMinor, baseline.refundsMinor);
+  assert.equal(report.grossMinor, baseline.grossMinor);
+  assert.deepEqual(report.taxByRate, baseline.taxByRate);
+});
+
 test("inclusive and added-tax orders retain their stored exact line arithmetic", async () => {
   const { reportRows } = await reportingDomain();
   for (const mode of ["inclusive", "added"]) {

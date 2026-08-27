@@ -188,8 +188,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     invoiceBlockedReason,
     invoicePayUriFor,
     issueInvoice,
+    paymentReconciliations,
     recordManualInvoicePayment,
     settings,
+    submitPaymentRefund,
     voidInvoice,
   } = useMerchant();
   const { toast } = useToast();
@@ -200,6 +202,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const [manualNote, setManualNote] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const [actionError, setActionError] = useState("");
+  const [refundingSurplus, setRefundingSurplus] = useState(false);
   const [selectedAssetKey, setSelectedAssetKey] = useState(
     () => invoice.quotes[0] ? assetKey(invoice.quotes[0].asset) : "",
   );
@@ -214,6 +217,9 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const paidMinor = invoice.paidMinor;
   const balanceMinor = Math.max(0, invoice.totals.totalMinor - paidMinor);
   const overdueDays = daysPastDue(invoice);
+  const surplus = paymentReconciliations.find(
+    (entry) => entry.invoiceId === invoice.id && entry.outcome === "overpaid",
+  ) ?? null;
 
   const rateLabel = useMemo(() => {
     const byId = new Map(settings.taxRates.map((r) => [r.id, r]));
@@ -341,6 +347,36 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     } catch (error) {
       triggerHaptic("error");
       setActionError(error instanceof Error ? error.message : "The payment could not be recorded.");
+    }
+  }
+
+  async function handleSurplusRefund() {
+    if (!surplus || surplus.resolution || refundingSurplus) return;
+    setActionError("");
+    setRefundingSurplus(true);
+    try {
+      const outcome = await submitPaymentRefund(
+        surplus.id,
+        `Invoice surplus for ${invoice.number}`,
+      );
+      if (outcome.kind === "requested") {
+        toast(`Refund approval requested for the ${invoice.number} surplus`, "info");
+      } else if (outcome.refund.submissionStatus === "failed") {
+        setActionError("The surplus refund was rejected. No funds moved, so it remains safe to retry.");
+      } else {
+        toast(
+          outcome.refund.submissionStatus === "confirmed"
+            ? `Invoice surplus returned for ${invoice.number}`
+            : "Surplus refund submitted and tracked on Stellar",
+          outcome.refund.submissionStatus === "confirmed" ? "success" : "info",
+        );
+      }
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "The invoice surplus could not be returned.",
+      );
+    } finally {
+      setRefundingSurplus(false);
     }
   }
 
@@ -558,6 +594,32 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
                 : "VAT is added to the unit prices."}
             </p>
           </div>
+
+          {surplus && (
+            <Notice tone={surplus.resolution ? "pos" : "warn"}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-white">Invoice surplus</p>
+                  <p className="mt-1">
+                    {surplus.reversalAmount ?? surplus.payment.amount} {surplus.payment.asset.code}
+                    {surplus.resolution
+                      ? " has been resolved in the incoming-payment audit."
+                      : ` (${fmtMinor(surplus.amountMinor ?? 0, currency)}) arrived above the balance and was not counted as invoice takings.`}
+                  </p>
+                </div>
+                {!surplus.resolution && (
+                  <Button
+                    variant="secondary"
+                    className="shrink-0"
+                    loading={refundingSurplus}
+                    onClick={() => void handleSurplusRefund()}
+                  >
+                    Return surplus
+                  </Button>
+                )}
+              </div>
+            </Notice>
+          )}
 
           {invoice.note && (
             <div className="panel-inset px-4 py-3">
@@ -1226,7 +1288,9 @@ function buildTimeline(
       key: `payment-${payment.id}`,
       label:
         payment.kind === "stellar"
-          ? `${fmtMinor(payment.amountMinor, invoice.currency)} received in ${payment.asset?.code ?? "Stellar asset"}`
+          ? payment.overpaymentMinor > 0
+            ? `${fmtMinor(payment.receivedMinor, invoice.currency)} received in ${payment.asset?.code ?? "Stellar asset"}; ${fmtMinor(payment.amountMinor, invoice.currency)} applied`
+            : `${fmtMinor(payment.amountMinor, invoice.currency)} received in ${payment.asset?.code ?? "Stellar asset"}`
           : `${fmtMinor(payment.amountMinor, invoice.currency)} recorded by ${payment.recordedBy ?? "staff"}`,
       at: payment.observedAt,
       pendingText: payment.note ?? "Payment recorded",
