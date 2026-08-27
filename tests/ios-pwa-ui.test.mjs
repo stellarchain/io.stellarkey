@@ -148,7 +148,7 @@ test("asset favorites are managed from the asset detail modal, not the Home list
   assert.match(assetDetail, /aria-pressed=\{favorite\}/);
   assert.match(
     assetDetail,
-    /aria-label=\{favorite\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\}/,
+    /aria-label=\{\s*favorite\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\s*\}/,
   );
   assert.match(assetDetail, /onToggleFavorite\(asset\.key\)/);
   assert.match(assetDetail, /\{favorite \? "★" : "☆"\}/);
