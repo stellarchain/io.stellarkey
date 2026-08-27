@@ -49,9 +49,10 @@ Browser print/AirPrint, downloads, keyboard-wedge scanners, and the protected sa
 
 ## Local-data and release safety
 
-- Merchant operational data is browser-local and does not synchronize or form part of a hosted backup.
+- Merchant operational data is encrypted, committed transactionally in IndexedDB, and browser-local. It does not synchronize or form part of a hosted backup.
+- Payment monitoring is foreground-only. The open till requests Screen Wake Lock when supported and reconciles after visibility returns, but a closed or suspended browser cannot keep watching Horizon without a backend.
 - Resetting the wallet removes wallet-owned merchant storage. Export required records first.
 - Verify the network, receiving account, issuer, memo, amount, and signing-device details before authorizing a mainnet transaction.
 - Serve installed or production deployments over HTTPS. A raw LAN HTTP origin cannot provide every iOS secure-context capability.
 
-The release evidence and known dependency boundary are recorded in [Merchant SOTA verification](plans/2026-08-26-merchant-sota-verification.md).
+The merchant-specific evidence is recorded in [Merchant SOTA verification](plans/2026-08-26-merchant-sota-verification.md). The current cross-feature release boundary is recorded in [Backend-free SOTA verification](plans/2026-08-27-backend-free-sota-verification.md).

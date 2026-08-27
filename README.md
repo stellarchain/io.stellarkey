@@ -1,16 +1,26 @@
 # Stellar Wallet
 
-A self-custodial Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Vault encryption, transaction construction, and signing happen in the browser. The app talks directly to Stellar Horizon and never sends secret keys or recovery phrases to an application server.
+A self-custodial, backend-free Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Production is a static export: vault encryption, recovery, transaction construction, review, and signing happen in the browser. The app talks directly to Stellar services and never sends secret keys, recovery phrases, passkey assertions, or merchant records to an application server.
 
 ## Supported capabilities
 
 - Mainnet and testnet balances, activity, trustlines, claimable balances, payments, batch payments, account merge, and Stellar DEX strict-send swaps
 - Exact seven-decimal Stellar amount arithmetic, typed memos, live base-reserve calculation, multisig envelopes, and SEP-7 unsigned payment links
-- Password-encrypted local vaults and backups, encrypted private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
+- Password-encrypted local vaults and failure-atomic backups, encrypted private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
+- Optional origin-bound Face ID / Touch ID unlock through WebAuthn PRF, with the wallet password and encrypted backup retained as recovery paths
 - Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup
-- Local-first Merchant Mode with cash, external-card, split, and Horizon-confirmed crypto sales; staff permissions; refund approval; shifts; invoices; counter codes; customer/loyalty records; reports; and explicit treasury handoffs
+- Local-first Merchant Mode with encrypted transactional IndexedDB storage, cash, external-card, split, and Horizon-confirmed crypto sales; staff permissions; refund approval; shifts; invoices; counter codes; customer/loyalty records; reports; and explicit treasury handoffs
 
-Ledger signing is not implemented and is intentionally unavailable. The app never creates a simulated Ledger account. Biometric unlock is also unavailable until it can be backed by a real passkey or smart-account authorization flow.
+Ledger signing is not implemented and is intentionally unavailable. The app never creates a simulated Ledger account. Passkey unlock is offered only when the browser returns real WebAuthn PRF output; unsupported devices keep password unlock without a simulated biometric path.
+
+## Backend-free architecture
+
+- `npm run build` creates immutable static files in `out/`; there are no dynamic routes, application APIs, server sessions, relays, indexers, or server-side databases.
+- The encrypted wallet vault and small preferences stay in browser storage. A random vault master key is password-wrapped, sensitive records are encrypted beneath it, and software-account secrets are opened only for the scoped operation that needs them.
+- Merchant operational data is encrypted and committed transactionally in IndexedDB. It is local to the browser and does not synchronize between devices.
+- Horizon and RPC requests go directly to HTTPS endpoints selected in Settings. Endpoint identity is checked against the active Stellar network, reads are bounded, and only safe idempotent requests receive limited retries.
+- The service worker caches only the static application shell. Wallet records, merchant data, prices, and Stellar responses never enter its cache.
+- Merchant settlement monitoring is foreground-only. Visibility recovery and Screen Wake Lock improve an open till, but the app does not claim background monitoring after iOS or the browser suspends it.
 
 ## Merchant Mode
 
@@ -28,35 +38,33 @@ Portfolio values are shown only for mainnet assets with a verified price mapping
 
 ## Local development
 
-Requires Node.js 22 or later.
+Use Node.js 22.22.2+ and npm 11.19.0+ within the supported ranges in `package.json`.
 
 ```bash
-npm ci
+corepack install
+corepack npm ci
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Verification commands:
+Run the complete release gate with:
 
 ```bash
-npm test
-npm run typecheck
-npm run lint
-npm run audit:prod
-npm run build
-npm run test:e2e:merchant
+npm run release:verify
 ```
 
-The merchant browser command builds the production app and exercises a deterministic Chromium journey. CI runs the same checks on pushes and pull requests.
+That command runs type checking, the complete unit suite, lint, the production dependency audit, static export, the bundle budget, desktop Chromium journeys, and behavioral/accessibility journeys using iPhone and iPad WebKit profiles. CI runs the same release boundaries on pushes and pull requests. Physical Trezor and installed-device checks remain manual because browser emulation cannot prove them.
 
 ## Security and deployment notes
 
-- Serve the production build over HTTPS. Custom Horizon URLs should also use HTTPS.
-- Security headers are configured in `next.config.ts`, including CSP, clickjacking protection, MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect.
+- Serve `out/` over HTTPS and configure the static host to apply `out/_headers`. Passkeys, installed-PWA behavior, and cross-origin security features require a trustworthy origin. Custom Horizon and RPC URLs must use HTTPS.
+- The static header policy includes a build-hashed CSP, clickjacking protection, MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect.
 - The CSP permits outbound HTTPS because users can configure a Horizon endpoint and asset metadata/logos may live on issuer domains.
 - Reset deletes all `polaris.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
 - SEP-7 callback requests and signed/origin-domain requests are rejected until the app can execute and verify those flows fully.
 - The Trezor dependency tree has no known high or critical production advisories after the pinned `protobufjs` remediation. Remaining low-severity upstream findings are enforced below the CI failure threshold.
+
+See the [release checklist](docs/release-checklist.md) for real-device, recovery, static-host, and mainnet checks. Pinch zoom remains disabled by product requirement and is asserted by the mobile browser gate.
 
 This remains financial software: test every release with small amounts and verify addresses, asset issuers, memos, network, and transaction details on the signing device before broadcasting.
