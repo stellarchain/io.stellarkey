@@ -115,6 +115,7 @@ export function SettingsPage({
   initialSub = "root",
   merchantOnly = false,
   installAvailable = false,
+  installDescription = "Add Wallet to this device",
   onInstallApp,
   onOpenBackupWizard,
   onOpenMultisigStudio,
@@ -126,6 +127,7 @@ export function SettingsPage({
   /** Opened from Merchant Mode: Merchant settings is the root, so no back header. */
   merchantOnly?: boolean;
   installAvailable?: boolean;
+  installDescription?: string;
   onInstallApp?: () => void;
   onOpenBackupWizard?: () => void;
   onOpenMultisigStudio?: () => void;
@@ -823,7 +825,7 @@ export function SettingsPage({
                       icon={<IconDownload size={16} />}
                       tint="#0A84FF"
                       label="Install App"
-                      sub="Add Wallet to this device"
+                      sub={installDescription}
                       onClick={onInstallApp}
                     />
                   </div>

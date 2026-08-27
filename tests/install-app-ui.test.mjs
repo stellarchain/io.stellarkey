@@ -15,7 +15,7 @@ test("the install action lives in the right Settings column instead of the sideb
   assert.doesNotMatch(sidebar, /Install App|installEvt\.prompt/);
   assert.match(
     dashboard,
-    /<SettingsPage[\s\S]*?installAvailable=\{Boolean\(installEvt\)\}[\s\S]*?onInstallApp=\{handleInstallApp\}/,
+    /<SettingsPage[\s\S]*?installAvailable=\{installHandoff\.available\}[\s\S]*?onInstallApp=\{handleInstallApp\}/,
   );
   assert.match(dashboard, /function handleInstallApp\(\)[\s\S]*?installEvt\.prompt\(\)/);
   assert.match(
