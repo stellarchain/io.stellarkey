@@ -163,9 +163,12 @@ test("merchant blockers offer direct recovery actions", () => {
 
 test("merchant context value stays stable across unrelated wallet provider renders", () => {
   const hook = source("src/hooks/useMerchant.tsx");
+  const runtime = source("src/hooks/useMerchantRuntime.tsx");
   assert.match(hook, /const value = useMemo<MerchantContextValue>/);
   assert.match(hook, /const shellValue = useMemo<MerchantShellContextValue>/);
   assert.match(hook, /const settingsValue = useMemo<MerchantSettingsContextValue>/);
+  assert.match(runtime, /useMerchantShell/);
+  assert.match(runtime, /useMerchantSettings/);
   assert.match(source("src/components/Dashboard.tsx"), /useMerchantShell/);
   assert.match(source("src/components/SettingsPage.tsx"), /useMerchantSettings/);
 });

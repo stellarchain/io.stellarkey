@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet } from "@/hooks/useWallet";
-import { useMerchantSettings } from "@/hooks/useMerchant";
+import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
 import {
   enablePasskeyUnlock,
   hasPasskeyUnlock,
@@ -82,13 +82,16 @@ import {
   IconLedger,
 } from "./icons";
 import { IconStorefront } from "./merchant/icons";
-import { MerchantSettings } from "./merchant/MerchantSettings";
 import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
 
 /* Merchant operational sub-pages load only when the shop opens one. */
+const MerchantSettings = dynamic(
+  () => import("./merchant/MerchantSettings").then((m) => m.MerchantSettings),
+  { ssr: false },
+);
 const StaffTerminalsPage = dynamic(
   () => import("./merchant/StaffTerminalsPage").then((m) => m.StaffTerminalsPage),
   { ssr: false },
@@ -179,7 +182,7 @@ export function SettingsPage({
     enabled: merchantEnabled,
     configured: merchantConfigured,
     setEnabled: setMerchantEnabled,
-    settings: merchantSettings,
+    profileName: merchantProfileName,
   } = useMerchantSettings();
   const { toast } = useToast();
 
@@ -893,7 +896,7 @@ export function SettingsPage({
                       icon={<IconStorefront size={16} />}
                       tint="#30D158"
                       label="Merchant"
-                      value={merchantSettings.profile.name || "Unnamed shop"}
+                      value={merchantProfileName || "Unnamed shop"}
                       chevron
                       sep
                       onClick={() => {

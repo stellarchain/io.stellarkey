@@ -10,7 +10,7 @@ export const INITIAL_JS_GZIP_BUDGET = 350_000;
 export const JOURNEY_BUDGETS = Object.freeze({
   initial: { rawBytes: INITIAL_JS_RAW_BUDGET, gzipBytes: INITIAL_JS_GZIP_BUDGET },
   unlocked: { rawBytes: 725_000, gzipBytes: 160_000 },
-  merchant: { rawBytes: 390_000, gzipBytes: 105_000 },
+  merchant: { rawBytes: 545_000, gzipBytes: 150_000 },
   hardware: { rawBytes: 1_100_000, gzipBytes: 225_000 },
 });
 

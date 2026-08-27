@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
-import { useMerchantShell } from "@/hooks/useMerchant";
+import { useMerchantRuntime, useMerchantShell } from "@/hooks/useMerchantRuntime";
 import { NETWORKS } from "@/lib/stellar";
 import {
   getHorizonUrl,
@@ -242,12 +242,26 @@ export function Dashboard() {
     charges: merchantCharges,
     activeShift: merchantActiveShift,
   } = useMerchantShell();
+  const {
+    intent: merchantRuntimeIntent,
+    requestRuntime,
+    consumeIntent: consumeMerchantRuntimeIntent,
+    releaseRuntime,
+  } = useMerchantRuntime();
 
-  const [storedView, setView] = useState<View>("home");
+  const [storedView, setView] = useState<View>(() =>
+    merchantRuntimeIntent === "settings"
+      ? "settings"
+      : merchantRuntimeIntent === "merchant"
+        ? "merchant"
+        : "home",
+  );
   // The sidebar shows one mode's navigation at a time. Settings is global, so
   // opening it must not knock the sidebar back to the wallet's rows — which is
   // why the mode is held rather than derived from the view.
-  const [storedMode, setMode] = useState<ShellMode>("wallet");
+  const [storedMode, setMode] = useState<ShellMode>(() =>
+    merchantRuntimeIntent === "merchant" ? "merchant" : "wallet",
+  );
   // Turning Merchant Mode off leaves the shell exactly as it was before it was
   // ever turned on, without a render pass that writes state back.
   const mode: ShellMode = merchantEnabled ? storedMode : "wallet";
@@ -321,13 +335,21 @@ export function Dashboard() {
   // Mounted on the shell, not inside Settings: turning Merchant Mode on
   // re-renders the toggle's own row, and a wizard owned by that row would be
   // torn down in the same pass that asked for it.
-  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [setupWizardOpen, setSetupWizardOpen] = useState(
+    () => merchantRuntimeIntent === "setup",
+  );
   // The shift sheet lives in MerchantPage; the shell holds the flag so the
   // desktop sidebar and the command palette can open that same sheet.
   const [shiftOpen, setShiftOpen] = useState(false);
   const pendingAirdropClaim = pendingTxs.some(
     (transaction) => transaction.label === "Airdrop claim",
   );
+
+  useEffect(() => {
+    if (!merchantRuntimeIntent) return;
+    const timer = window.setTimeout(consumeMerchantRuntimeIntent, 0);
+    return () => window.clearTimeout(timer);
+  }, [consumeMerchantRuntimeIntent, merchantRuntimeIntent]);
 
   useEffect(() => {
     void (async () => {
@@ -1846,7 +1868,7 @@ export function Dashboard() {
               onInstallApp={handleInstallApp}
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
               onOpenMultisigStudio={() => setMultisigOpen(true)}
-              onOpenSetupWizard={() => setSetupWizardOpen(true)}
+              onOpenSetupWizard={() => requestRuntime("setup")}
               onOpenSwap={(intent: SettlementSwapIntent) => {
                 switchTab("swap");
                 setSwapPrefill(intent);
@@ -2724,11 +2746,16 @@ export function Dashboard() {
         )}
       </Modal>
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
-      <SetupWizard
-        open={setupWizardOpen}
-        onClose={() => setSetupWizardOpen(false)}
-        onComplete={() => switchTab("merchant")}
-      />
+      {setupWizardOpen && (
+        <SetupWizard
+          open
+          onClose={() => {
+            setSetupWizardOpen(false);
+            releaseRuntime();
+          }}
+          onComplete={() => switchTab("merchant")}
+        />
+      )}
     </div>
   );
 }

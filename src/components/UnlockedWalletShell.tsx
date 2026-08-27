@@ -1,13 +1,13 @@
 "use client";
 
-import { MerchantProvider } from "@/hooks/useMerchant";
 import { Dashboard } from "./Dashboard";
+import { MerchantRuntimeBoundary } from "./MerchantRuntimeBoundary";
 
-/** Loaded only after vault unlock so merchant operations never tax onboarding or lock-screen startup. */
+/** Merchant operations mount only for enabled, legacy, or explicitly opened tills. */
 export function UnlockedWalletShell() {
   return (
-    <MerchantProvider>
+    <MerchantRuntimeBoundary>
       <Dashboard />
-    </MerchantProvider>
+    </MerchantRuntimeBoundary>
   );
 }
