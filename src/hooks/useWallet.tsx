@@ -311,12 +311,21 @@ interface WalletContextValue {
   swap: (params: {
     sendCode: string;
     sendIssuer?: string | null;
-    sendAmount: string;
     destCode: string;
     destIssuer?: string | null;
-    destMin: string;
     intermediates: Asset[];
-  }) => Promise<SubmissionResult>;
+  } & (
+    | {
+        mode: "strict-send";
+        sendAmount: string;
+        destMin: string;
+      }
+    | {
+        mode: "strict-receive";
+        sendMax: string;
+        destinationAmount: string;
+      }
+  )) => Promise<SubmissionResult>;
   /** Apply a multi-sig signer/threshold configuration to the active account */
   applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
@@ -2008,26 +2017,56 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (params: {
       sendCode: string;
       sendIssuer?: string | null;
-      sendAmount: string;
       destCode: string;
       destIssuer?: string | null;
-      destMin: string;
       intermediates: Asset[];
-    }) => {
+    } & (
+      | {
+          mode: "strict-send";
+          sendAmount: string;
+          destMin: string;
+        }
+      | {
+          mode: "strict-receive";
+          sendMax: string;
+          destinationAmount: string;
+        }
+    )) => {
       if (!activeAccount) throw new Error("No active account");
       const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Swap",
         undefined,
-        (onPrepared) => swapLib.swapStrictSend({
-          network,
-          secretKey,
-          hardwareSigner: hw,
-          ...params,
-          feeStroops: recommendedBaseFeeStroops,
-          onPrepared,
-        }),
+        (onPrepared) => params.mode === "strict-receive"
+          ? swapLib.swapStrictReceive({
+              network,
+              secretKey,
+              hardwareSigner: hw,
+              sendCode: params.sendCode,
+              sendIssuer: params.sendIssuer,
+              sendMax: params.sendMax,
+              destCode: params.destCode,
+              destIssuer: params.destIssuer,
+              destinationAmount: params.destinationAmount,
+              intermediates: params.intermediates,
+              feeStroops: recommendedBaseFeeStroops,
+              onPrepared,
+            })
+          : swapLib.swapStrictSend({
+              network,
+              secretKey,
+              hardwareSigner: hw,
+              sendCode: params.sendCode,
+              sendIssuer: params.sendIssuer,
+              sendAmount: params.sendAmount,
+              destCode: params.destCode,
+              destIssuer: params.destIssuer,
+              destMin: params.destMin,
+              intermediates: params.intermediates,
+              feeStroops: recommendedBaseFeeStroops,
+              onPrepared,
+            }),
         (result) => result,
       ));
     },

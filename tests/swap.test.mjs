@@ -219,10 +219,12 @@ test("binds a quote to the exact immutable swap request", () => {
     network: "mainnet",
     sendAssetKey: "native",
     destinationAssetKey: `USDC:${USDC_ISSUER}`,
-    sendAmount: "10",
+    mode: "strict-send",
+    exactAmount: "10",
     slippage: "0.5",
   });
   const quote = bindSwapQuote({
+    mode: "strict-send",
     requestKey: originalKey,
     sendAssetKey: "native",
     destinationAssetKey: `USDC:${USDC_ISSUER}`,
@@ -236,7 +238,8 @@ test("binds a quote to the exact immutable swap request", () => {
     network: "mainnet",
     sendAssetKey: "native",
     destinationAssetKey: `USDC:${USDC_ISSUER}`,
-    sendAmount: "11",
+    mode: "strict-send",
+    exactAmount: "11",
     slippage: "0.5",
   });
 
@@ -247,4 +250,35 @@ test("binds a quote to the exact immutable swap request", () => {
   assert.equal(guardCurrentSwapQuote(null, originalKey), null);
   assert.equal(quote.sendAmount, "10");
   assert.equal(Object.isFrozen(quote), true);
+});
+
+test("binds strict-send and strict-receive quotes to different exact intents", () => {
+  const common = {
+    network: "mainnet",
+    sendAssetKey: "native",
+    destinationAssetKey: `USDC:${USDC_ISSUER}`,
+    exactAmount: "10",
+    slippage: "0.5",
+  };
+  const strictSendKey = swapRequestKey({ ...common, mode: "strict-send" });
+  const strictReceiveKey = swapRequestKey({ ...common, mode: "strict-receive" });
+
+  assert.notEqual(strictSendKey, strictReceiveKey);
+
+  const strictReceiveQuote = bindSwapQuote({
+    mode: "strict-receive",
+    requestKey: strictReceiveKey,
+    sendAssetKey: "native",
+    destinationAssetKey: `USDC:${USDC_ISSUER}`,
+    sendAmount: "10.1",
+    sendMaximum: "10.1505",
+    slippage: "0.5",
+    destinationAmount: "10",
+    intermediates: [],
+  });
+
+  assert.equal(strictReceiveQuote.mode, "strict-receive");
+  assert.equal(strictReceiveQuote.sendMaximum, "10.1505");
+  assert.equal(guardCurrentSwapQuote(strictReceiveQuote, strictReceiveKey), strictReceiveQuote);
+  assert.equal(guardCurrentSwapQuote(strictReceiveQuote, strictSendKey), null);
 });
