@@ -1,6 +1,5 @@
 import { StrKey } from "@stellar/stellar-sdk";
 
-import { memoByteLength } from "../format";
 import { buildSep7PayUri } from "../payuri";
 import { NETWORKS, type NetworkKey } from "../stellar";
 import {
@@ -13,6 +12,7 @@ import {
 import type { ObservedPayment } from "./match";
 import { minorForAssetAmount, unitPriceE6 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
+import { assertPaymentReferenceAvailable, counterReference } from "./payment-reference";
 import type {
   AcceptedAsset,
   CounterCode,
@@ -119,10 +119,7 @@ function validateExpiry(value: number | null, now: number): number | null {
 }
 
 function validateMemo(store: MerchantStore, value: string, excludeId?: string): string {
-  const memo = value.trim();
-  if (!/^[A-Z0-9]+$/.test(memo) || memoByteLength(memo) > 28) {
-    throw new Error("A counter-code memo needs 1 to 28 uppercase letters or numbers.");
-  }
+  const memo = counterReference(store.settings.profile.name || "Till", value);
   if (
     store.counterCodes.some(
       (code) => code.id !== excludeId && code.memoPrefix.toUpperCase() === memo.toUpperCase(),
@@ -130,6 +127,7 @@ function validateMemo(store: MerchantStore, value: string, excludeId?: string): 
   ) {
     throw new Error("That counter-code memo is already in use.");
   }
+  assertPaymentReferenceAvailable(store, memo);
   return memo;
 }
 

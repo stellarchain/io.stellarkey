@@ -6,7 +6,6 @@ import {
   assetKey,
   buildQuotes,
   isNative,
-  referencePrefix,
   sameAsset,
   type QuoteInput,
 } from "./charge";
@@ -19,6 +18,7 @@ import {
   toStroops,
 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
+import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
 import type {
   AcceptedAsset,
   Invoice,
@@ -181,7 +181,7 @@ function nextIdentity(store: MerchantStore, now: number): { number: string; refe
   const year = new Date(now).getUTCFullYear();
   return {
     number: `INV-${year}-${String(sequence).padStart(4, "0")}`,
-    reference: `${referencePrefix(store.settings.profile.name || "Till")}INV${sequence}`,
+    reference: invoiceReference(store.settings.profile.name || "Till", sequence),
   };
 }
 
@@ -240,6 +240,7 @@ export function createInvoiceDraft(
   if (!NETWORKS[input.network]) throw new Error("Choose a valid Stellar network.");
   const valid = validateDraftFields(store, input);
   const identity = nextIdentity(store, valid.now);
+  assertPaymentReferenceAvailable(store, identity.reference);
   if (
     store.invoices.some(
       (invoice) => invoice.number === identity.number || invoice.reference === identity.reference,

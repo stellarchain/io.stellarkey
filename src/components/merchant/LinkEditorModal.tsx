@@ -6,6 +6,7 @@ import { FIAT_SYMBOLS, memoByteLength } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey, isNative, referencePrefix } from "@/lib/merchant/charge";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
+import { counterReference } from "@/lib/merchant/payment-reference";
 import type {
   AcceptedAsset,
   CounterCode,
@@ -122,7 +123,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   );
   const [suggested, setSuggested] = useState<Minor[]>(code?.suggestedMinor ?? [100, 200, 500]);
   const [suggestionText, setSuggestionText] = useState("");
-  const [memoPrefix, setMemoPrefix] = useState(code?.memoPrefix ?? "");
+  const [memoPrefix, setMemoPrefix] = useState("");
   const [memoTouched, setMemoTouched] = useState(isEdit);
   const [staffId, setStaffId] = useState(code?.staffId ?? "");
   const [expiry, setExpiry] = useState(dateInput(code?.expiresAt ?? null));
@@ -147,11 +148,19 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   const [previewKey, setPreviewKey] = useState(assetKeys[0] ?? "");
   const previewAsset =
     chosenAssets.find((asset) => assetKey(asset) === previewKey) ?? chosenAssets[0] ?? null;
-  const effectiveMemo = memoTouched ? memoPrefix : referencePrefix(title || "Code");
+  const memoSuffix = memoTouched ? memoPrefix : referencePrefix(title || "Code");
+  let effectiveMemo: string | null = code?.memoPrefix ?? null;
+  if (!code) {
+    try {
+      effectiveMemo = counterReference(settings.profile.name || "Till", memoSuffix);
+    } catch {
+      effectiveMemo = null;
+    }
+  }
   const amountMinor = parseAmount(amountText);
-  const memoBytes = memoByteLength(effectiveMemo);
+  const memoBytes = memoByteLength(effectiveMemo ?? memoSuffix);
   const activeStaff = staff.filter((member) => member.active);
-  const uri = previewAsset
+  const uri = previewAsset && effectiveMemo
     ? isEdit
       ? counterCodePayUriFor(code, previewAsset)
       : counterCodePreviewUri({
@@ -217,7 +226,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
             amountMinor: kind === "fixed" ? amountMinor : null,
             suggestedMinor: kind === "fixed" ? [] : suggested,
             acceptedAssets: chosenAssets,
-            memoPrefix: effectiveMemo,
+            memoPrefix: memoSuffix,
             staffId: kind === "tip" ? staffId || null : null,
             expiresAt: expiryTimestamp(expiry),
             active,
@@ -379,10 +388,13 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
           )}
         </div>
 
-        <Field label="Memo" hint={`${memoBytes} of 28 bytes`}>
+        <Field
+          label="Memo suffix"
+          hint={effectiveMemo ? `${effectiveMemo} · ${memoBytes} of 28 bytes` : "Use uppercase letters or numbers"}
+        >
           <input
             className="input mono disabled:text-neutral-400"
-            value={effectiveMemo}
+            value={code?.memoPrefix ?? memoSuffix}
             disabled={isEdit}
             onChange={(event) => {
               setMemoTouched(true);

@@ -198,7 +198,7 @@ export interface Order {
   id: string;
   /** Human sequence, e.g. 2092. Unique per device. */
   number: number;
-  /** The memo carried by this order's charges, e.g. "MC2092". */
+  /** The immutable typed memo carried by this order's charges, e.g. "MC-O-2092". */
   reference: string;
   network: NetworkKey;
   status: OrderStatus;

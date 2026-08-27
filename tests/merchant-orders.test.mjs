@@ -97,6 +97,24 @@ test("cash settlement records the received amount and exact change", async () =>
   assert.equal(committed.store.nextOrderNumber, 1002);
 });
 
+test("a new order cannot reuse a payment reference held by another merchant record", async () => {
+  const { buildOrder } = await orderDomain();
+  const base = emptyStore();
+  const store = {
+    ...base,
+    settings: {
+      ...base.settings,
+      profile: { ...base.settings.profile, name: "North Star" },
+    },
+    invoices: [{ id: "legacy-invoice", reference: "NS-O-1001" }],
+  };
+
+  assert.throws(
+    () => buildOrder(store, orderInput()),
+    /payment reference.*already reserved/i,
+  );
+});
+
 test("external card settlement retains the other terminal's reference", async () => {
   const { buildOrder, cardTender, settleNewOrder } = await orderDomain();
   const store = emptyStore();
