@@ -50,5 +50,11 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   })).toBe(true);
 
   await merchantToggle.click();
-  await expect(merchantToggle).not.toBeChecked();
+  // Turning Merchant Mode off unloads its lazy runtime and returns Settings to
+  // the wallet overview, so the switch intentionally leaves the DOM.
+  await expect.poll(() => second.evaluate(() => {
+    const raw = localStorage.getItem("polaris.merchant-bootstrap.v1");
+    return raw ? (JSON.parse(raw) as { enabled?: unknown }).enabled : null;
+  })).toBe(false);
+  await expect(second.getByText("Your Assets", { exact: true })).toBeVisible();
 });
