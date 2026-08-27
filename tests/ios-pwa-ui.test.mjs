@@ -130,13 +130,26 @@ test("iOS installation protects local wallet recovery across storage containers"
   assert.match(onboarding, /Restore your encrypted backup first/);
 });
 
-test("asset favorites are discoverable directly in the dashboard list", () => {
+test("asset favorites are managed from the asset detail modal, not the Home list", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   const assetDetail = read("src/components/AssetDetailModal.tsx");
 
-  assert.match(dashboard, /aria-pressed=\{isPinned\}/);
-  assert.match(dashboard, /aria-label=\{isPinned\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\}/);
-  assert.match(dashboard, /\{isPinned \? "★" : "☆"\}/);
-  assert.doesNotMatch(dashboard, /text-neutral-600 opacity-0 group-hover:opacity-100/);
-  assert.doesNotMatch(assetDetail, /Mark .* as favorite|togglePinAsset|pinnedAssets/);
+  assert.doesNotMatch(dashboard, /const isPinned = pinnedAssets\.includes\(asset\.key\)/);
+  assert.doesNotMatch(dashboard, /aria-pressed=\{isPinned\}/);
+  assert.doesNotMatch(dashboard, /\{isPinned \? "★" : "☆"\}/);
+  assert.match(
+    dashboard,
+    /<AssetDetailModal[\s\S]*?favorite=\{detailAsset \? pinnedAssets\.includes\(detailAsset\.key\) : false\}/,
+  );
+  assert.match(dashboard, /onToggleFavorite=\{togglePinAsset\}/);
+
+  assert.match(assetDetail, /favorite: boolean;/);
+  assert.match(assetDetail, /onToggleFavorite: \(key: string\) => void;/);
+  assert.match(assetDetail, /aria-pressed=\{favorite\}/);
+  assert.match(
+    assetDetail,
+    /aria-label=\{favorite\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\}/,
+  );
+  assert.match(assetDetail, /onToggleFavorite\(asset\.key\)/);
+  assert.match(assetDetail, /\{favorite \? "★" : "☆"\}/);
 });
