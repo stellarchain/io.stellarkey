@@ -74,3 +74,37 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
     /title="Turn off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
   );
 });
+
+test("tax records use a summary-first iOS hub with focused task sheets", () => {
+  const taxRecords = read("src/components/merchant/TaxRecordsPage.tsx");
+  const hubStart = taxRecords.indexOf('data-tax-records-hub="true"');
+  const sheetsStart = taxRecords.indexOf('data-tax-records-sheets="true"');
+
+  assert.notEqual(hubStart, -1);
+  assert.notEqual(sheetsStart, -1);
+  assert.ok(hubStart < sheetsStart);
+
+  const hub = taxRecords.slice(hubStart, sheetsStart);
+
+  assert.match(hub, /className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2"/);
+  assert.doesNotMatch(hub, /<(?:Select|input)\b/);
+
+  for (const label of [
+    "Reporting period",
+    "Tax rates",
+    "Export report",
+    "Encrypted archive",
+    "Retention",
+    "Export history",
+    "About tax records",
+  ]) {
+    assert.match(hub, new RegExp(`label="${label}"`));
+  }
+
+  assert.match(taxRecords, /type TaxRecordsSheet\s*=/);
+  assert.match(taxRecords, /const \[activeSheet, setActiveSheet\]/);
+  assert.match(taxRecords, /activeSheet === "period"/);
+  assert.match(taxRecords, /activeSheet === "export"/);
+  assert.match(taxRecords, /activeSheet === "retention"/);
+  assert.match(taxRecords, /<Modal[\s\S]*open=\{activeSheet !== null\}/);
+});

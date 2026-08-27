@@ -252,3 +252,18 @@ test("production reports contain no sample data and download only supported file
   assert.doesNotMatch(tax, /Would build|Nothing is written to disk|Would show/);
   assert.match(hook, /deriveTaxPeriods|createReportExport/);
 });
+
+test("tax record editing stays out of the records hub", () => {
+  const tax = source("src/components/merchant/TaxRecordsPage.tsx");
+  const hubStart = tax.indexOf('data-tax-records-hub="true"');
+  const sheetsStart = tax.indexOf('data-tax-records-sheets="true"');
+  const hub = tax.slice(hubStart, sheetsStart);
+  const sheets = tax.slice(sheetsStart);
+
+  assert.notEqual(hubStart, -1);
+  assert.notEqual(sheetsStart, -1);
+  assert.doesNotMatch(hub, /ariaLabel="Export format"|id="export-from"|recordRetentionMonths/);
+  assert.match(sheets, /ariaLabel="Export format"/);
+  assert.match(sheets, /id="export-from"/);
+  assert.match(sheets, /recordRetentionMonths/);
+});
