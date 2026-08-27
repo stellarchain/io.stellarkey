@@ -165,10 +165,10 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
       <div className="mb-5 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         <MerchantDisclosure label="What a PIN is, and what it is not">
           <p>
-            A PIN is stored as a salted digest, kept{" "}
-            <strong className="text-white">outside the vault</strong> — it has to be checkable while
-            the vault is locked, which is exactly when the till is busiest. It authorises the till:
-            opening a shift, discounting a ticket, releasing a refund up to a ceiling.
+            A PIN is stored only as a salted digest inside{" "}
+            <strong className="text-white">encrypted merchant storage</strong>. After the wallet is
+            unlocked, it authorises till actions such as opening a shift, discounting a ticket, or
+            releasing a refund up to a ceiling.
           </p>
           <p>
             It can <strong className="text-white">never sign a transaction</strong>. Money leaving
@@ -560,8 +560,8 @@ function StaffEditor({
           </h3>
           <div className="panel space-y-3 p-4">
             <p className="text-[12.5px] leading-relaxed text-neutral-400">
-              A salted digest kept outside the vault. It authorises this till and nothing else: it
-              cannot sign, and it cannot move money.
+              A salted digest kept inside encrypted merchant storage. It authorises this till and
+              nothing else: it cannot sign, and it cannot move money.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <input
