@@ -113,13 +113,31 @@ test("production merchant surfaces use live runtime state and no specimen route"
   assert.match(hook, /setTillTextSize/);
   assert.match(page, /OfflineBanner/);
   assert.match(page, /HorizonOutageNotice/);
-  assert.match(page, /ForegroundMonitoringStatus/);
+  assert.doesNotMatch(page, /ForegroundMonitoringStatus/);
   assert.match(hook, /visibilitychange/);
   assert.match(hook, /document\.visibilityState === "visible"/);
   assert.match(hook, /releaseWatcherLease/);
   assert.match(page, /phase === "locked"/);
   assert.doesNotMatch(settings, /OfflineStatesGallery|"states"/);
   assert.doesNotMatch(merchantSettings, /MOCK_PERIPHERALS|MOCK_STAFF|MOCK_TERMINAL|States & offline/);
+});
+
+test("screen awake protection is scoped to an active checkout", () => {
+  const page = source("src/components/merchant/MerchantPage.tsx");
+  const checkout = source("src/components/merchant/ChargeSheet.tsx");
+  const offlineStates = source("src/components/merchant/OfflineStates.tsx");
+
+  assert.doesNotMatch(page, /useWakeLock/);
+  assert.doesNotMatch(page, /ForegroundMonitoringStatus/);
+  assert.match(checkout, /const wakeLock = useWakeLock\(awaiting\)/);
+  assert.match(checkout, /Watching for payment/);
+  assert.match(
+    checkout,
+    /wakeLock\.state === "error" \|\| wakeLock\.state === "released"/,
+  );
+  assert.match(checkout, /wakeLock\.retry/);
+  assert.doesNotMatch(offlineStates, /Foreground monitoring active/);
+  assert.doesNotMatch(offlineStates, /Screen awake protection is on/);
 });
 
 test("merchant context value stays stable across unrelated wallet provider renders", () => {
