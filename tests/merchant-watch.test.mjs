@@ -159,6 +159,33 @@ test("an exact split payment settles the remainder and replay is idempotent", ()
   assert.equal(replay.paymentReconciliations.length, 1);
 });
 
+test("a confirmed payment settles even when another sale depleted its stock", () => {
+  const initial = awaitingStore();
+  initial.catalogue[0].stockOnHand = 0;
+
+  const settled = reconcileIncomingPayments(initial, {
+    network: "mainnet",
+    payments: [payment()],
+    now: NOW,
+  });
+
+  assert.equal(settled.orders[0].status, "paid");
+  assert.equal(settled.charges[0].status, "paid");
+  assert.equal(settled.paymentReconciliations[0].outcome, "settled");
+  assert.equal(settled.catalogue[0].stockOnHand, -1);
+  assert.equal(settled.orders[0].stockAppliedAt, NOW);
+  assert.deepEqual(settled.orders[0].stockExceptions, [
+    {
+      reason: "insufficient_stock",
+      itemId: "stock-item",
+      itemName: "Stock item",
+      requested: 1,
+      available: 0,
+      recordedAt: NOW,
+    },
+  ]);
+});
+
 for (const [label, amount, outcome, chargeStatus] of [
   ["underpayment", "8.0000000", "underpaid", "underpaid"],
   ["overpayment", "12.0000000", "overpaid", "overpaid"],

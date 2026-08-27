@@ -267,6 +267,7 @@ test("loading a v1 store migrates core records to v2 before removing the legacy 
         ...legacy.orders[0],
         staffId: null,
         stockAppliedAt: legacy.orders[0].paidAt,
+        stockExceptions: [],
       },
     ]);
     assert.deepEqual(migrated.charges, legacy.charges);
@@ -353,6 +354,7 @@ test("older orders reconcile immutable staff, stock, and line-adjustment fields"
 
   assert.equal(decoded.orders[0].staffId, null);
   assert.equal(decoded.orders[0].stockAppliedAt, paidAt);
+  assert.deepEqual(decoded.orders[0].stockExceptions, []);
   assert.equal(decoded.orders[0].lines[0].adjustmentMinor, 0);
 });
 

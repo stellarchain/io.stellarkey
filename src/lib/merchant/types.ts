@@ -182,6 +182,18 @@ export type OrderStatus =
   | "partially_refunded"
   | "voided";
 
+export type InventoryExceptionReason = "insufficient_stock" | "missing_count";
+
+/** A durable stock projection issue recorded without rolling back a completed sale. */
+export interface InventoryException {
+  reason: InventoryExceptionReason;
+  itemId: string;
+  itemName: string;
+  requested: number;
+  available: number | null;
+  recordedAt: number;
+}
+
 export interface Order {
   id: string;
   /** Human sequence, e.g. 2092. Unique per device. */
@@ -202,6 +214,8 @@ export interface Order {
   paidAt: number | null;
   /** Set in the same commit as the first stock decrement. */
   stockAppliedAt: number | null;
+  /** Inventory exceptions never invalidate an irreversible payment fact. */
+  stockExceptions: InventoryException[];
   /** Set only once a payment has been matched to this order. */
   payerAddress: string | null;
   note: string | null;
