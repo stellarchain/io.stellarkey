@@ -369,6 +369,29 @@ test(
       assert.match(persistedRecord.value ?? "", /polaris-merchant-store/);
       assert.doesNotMatch(persistedRecord.value ?? "", /North Star Coffee/);
 
+      // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,
+      // and the destructive Merchant Mode action requires a separate confirmation.
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("button", { name: /Tax rates/ }).click();
+      const ratesSettings = page.getByRole("dialog", { name: /Tax rates/ });
+      await ratesSettings.waitFor();
+      await assertMobileSurface(page, "tax rate settings sheet");
+      await ratesSettings.getByRole("button", { name: "Close" }).click();
+      await ratesSettings.waitFor({ state: "hidden" });
+
+      await page.getByRole("button", { name: /Payment setup/ }).click();
+      const paymentSettings = page.getByRole("dialog", { name: /Payment setup/ });
+      await paymentSettings.waitFor();
+      await paymentSettings.getByRole("button", { name: "Close" }).click();
+      await paymentSettings.waitFor({ state: "hidden" });
+
+      await page.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
+      const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+      await turnOff.waitFor();
+      await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
+      await turnOff.waitFor({ state: "hidden" });
+      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+
       await page.getByRole("button", { name: "Open shift", exact: true }).click();
       const opening = page.getByRole("dialog", { name: /Open shift/ });
       await opening.getByLabel("Opening float").fill("100");
