@@ -522,7 +522,9 @@ export function MerchantSettings({
   }
 
   return (
-    <div className="space-y-6 pb-2">
+    <div className="pb-2">
+      <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+        <div data-merchant-settings-column="payments" className="space-y-6">
       {/* ---------- SHOP ---------- */}
       <Section title="Shop">
         <div className="list-group">
@@ -974,6 +976,9 @@ export function MerchantSettings({
         </div>
       </Section>
 
+        </div>
+        <div data-merchant-settings-column="operations" className="space-y-6">
+
       {/* ---------- TAX ---------- */}
       <Section title="Tax">
         <div className="list-group">
@@ -1253,6 +1258,9 @@ export function MerchantSettings({
           — the counter just stops appearing in the wallet.
         </Caption>
       </section>
+
+        </div>
+      </div>
 
       <p className="flex items-start gap-2 px-1 text-[12px] leading-relaxed text-neutral-500">
         <IconStorefront size={14} className="mt-[2px] shrink-0 text-[#30D158]" />
