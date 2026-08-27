@@ -144,6 +144,17 @@ test("dashboard balances and controls adapt to the narrowest supported iPhone", 
   assert.match(dashboard, /className="mono block break-words/);
 });
 
+test("merchant analytics and operator grids cannot widen the mobile document", () => {
+  const sparkline = read("src/components/Sparkline.tsx");
+  const staff = read("src/components/merchant/StaffTerminalsPage.tsx");
+  const disclosure = read("src/components/merchant/Disclosure.tsx");
+
+  assert.match(sparkline, /className="[^"]*h-auto[^"]*max-w-full/);
+  assert.match(staff, /grid-cols-\[minmax\(0,1fr\)\]/);
+  assert.match(staff, /data-mobile-scroll="true"/);
+  assert.match(disclosure, /w-full min-w-0 items-center/);
+});
+
 test("popover geometry stays inside a reduced visual viewport", async () => {
   const popover = await import("../src/lib/popover.ts");
   assert.equal(typeof popover.calculatePopoverPosition, "function");

@@ -23,11 +23,10 @@ async function expectAccessibleSurface(
     scrollWidth: document.documentElement.scrollWidth,
     viewport: document.querySelector('meta[name="viewport"]')?.getAttribute("content") ?? "",
   }));
+  if (clientWidth < 768) await expectMobileContainment(page, label);
   expect(scrollWidth, `${label} must not overflow horizontally`).toBeLessThanOrEqual(clientWidth);
   expect(viewport).toContain("maximum-scale=1");
   expect(viewport).toContain("user-scalable=no");
-  if (clientWidth < 768) await expectMobileContainment(page, label);
-
   const disabledRules = ["meta-viewport"];
   if (browserName === "webkit") {
     // axe/WebKit resolves transparent blurred backgrounds as opaque light
@@ -51,11 +50,12 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
     const escaped: string[] = [];
     const describe = (element: Element) => {
       const html = element as HTMLElement;
+      const rect = html.getBoundingClientRect();
       const name =
         html.getAttribute("aria-label") ??
         html.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) ??
         element.tagName.toLowerCase();
-      return `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(/\s+/).slice(0, 3).join(".")}` : ""} “${name}”`;
+      return `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(/\s+/).slice(0, 3).join(".")}` : ""} [${Math.round(rect.left)}…${Math.round(rect.right)}; ${html.clientWidth}/${html.scrollWidth}] “${name}”`;
     };
 
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
@@ -65,17 +65,39 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
       if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > innerHeight) continue;
       const style = getComputedStyle(element);
       if (style.pointerEvents === "none" && !element.textContent?.trim()) continue;
-      if (style.position === "fixed" || style.position === "sticky") {
-        if (rect.left < -1 || rect.right > viewportWidth + 1) escaped.push(describe(element));
-      }
       const allowsHorizontalScroll =
         element.dataset.mobileScroll === "true" ||
         style.overflowX === "auto" ||
         style.overflowX === "scroll";
+      let ancestor = element.parentElement;
+      let insideIntentionalOverflow = false;
+      while (ancestor) {
+        const ancestorStyle = getComputedStyle(ancestor);
+        if (
+          ancestor.dataset.mobileScroll === "true" ||
+          ancestor.dataset.mobileOverflow === "true" ||
+          ancestorStyle.overflowX === "auto" ||
+          ancestorStyle.overflowX === "scroll"
+        ) {
+          insideIntentionalOverflow = true;
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      if (
+        !allowsHorizontalScroll &&
+        !insideIntentionalOverflow &&
+        element.dataset.mobileOverflow !== "true" &&
+        (rect.left < -1 || rect.right > viewportWidth + 1)
+      ) {
+        escaped.push(describe(element));
+      }
       const intentionallyTruncated =
-        style.textOverflow === "ellipsis" || element.dataset.mobileTruncate === "true";
+        style.textOverflow === "ellipsis" ||
+        element.dataset.mobileTruncate === "true" ||
+        element.dataset.mobileOverflow === "true";
       const containsIntentionalOverflow = element.querySelector(
-        '[data-mobile-scroll="true"], [data-mobile-truncate="true"]',
+        '[data-mobile-scroll="true"], [data-mobile-truncate="true"], [data-mobile-overflow="true"]',
       );
       if (
         !allowsHorizontalScroll &&
@@ -259,6 +281,119 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expect(setup).toBeHidden();
   await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "merchant till", browserName);
+
+  const merchantNav = page.getByRole("navigation", { name: "Merchant sections" });
+  for (const destination of ["Orders", "Catalogue", "Invoices", "Customers", "Insights"] as const) {
+    await merchantNav.getByRole("button", { name: destination, exact: true }).click();
+    await expect(
+      merchantNav.getByRole("button", { name: destination, exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expectAccessibleSurface(page, `merchant ${destination.toLowerCase()}`, browserName);
+  }
+
+  await merchantNav.getByRole("button", { name: "Invoices", exact: true }).click();
+  await page.getByRole("button", { name: "Counter codes", exact: true }).click();
+  await expectAccessibleSurface(page, "merchant counter codes", browserName);
+
+  await merchantNav.getByRole("button", { name: "Till", exact: true }).click();
+  await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
+  const shift = page.getByRole("dialog", { name: /Open shift/ });
+  await expect(shift).toBeVisible();
+  await expectAccessibleSurface(page, "open shift sheet", browserName);
+  await shift.getByRole("button", { name: "Close", exact: true }).click();
+
+  await merchantNav.getByRole("button", { name: "Catalogue", exact: true }).click();
+  await page.getByRole("button", { name: "New item", exact: true }).click();
+  const item = page.getByRole("dialog", { name: "New item" });
+  await expect(item).toBeVisible();
+  await expectAccessibleSurface(page, "new catalogue item sheet", browserName);
+  await item.getByRole("button", { name: "Close", exact: true }).click();
+
+  await merchantNav.getByRole("button", { name: "Invoices", exact: true }).click();
+  await page.getByRole("button", { name: "New invoice", exact: true }).first().click();
+  const invoice = page.getByRole("dialog", { name: "New invoice" });
+  await expect(invoice).toBeVisible();
+  await expectAccessibleSurface(page, "new invoice sheet", browserName);
+  await invoice.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByRole("button", { name: "Counter codes", exact: true }).click();
+  await page.getByRole("button", { name: "New code", exact: true }).first().click();
+  const counterCode = page.getByRole("dialog", { name: "New counter code" });
+  await expect(counterCode).toBeVisible();
+  await expectAccessibleSurface(page, "new counter code sheet", browserName);
+  await counterCode.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByRole("button", { name: "Merchant settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Merchant settings", exact: true })).toBeVisible();
+  await expectAccessibleSurface(page, "merchant settings", browserName);
+
+  for (const [row, title] of [
+    [/^Business details/, "Business details"],
+    [/^Payment setup/, "Payment setup"],
+    [/^Accepted assets/, "Accepted assets"],
+    [/^Settlement rules/, "Settlement rules"],
+    [/^Tax Calculation/, "Tax"],
+    [/^Tax rates/, "Tax rates"],
+    [/^Tips/, "Tips"],
+    [/^This device/, "This device"],
+  ] as const) {
+    await page.getByRole("button", { name: row }).click();
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog).toBeVisible();
+    await expectAccessibleSurface(page, `${title} merchant settings sheet`, browserName);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  }
+
+  for (const [row, heading] of [
+    [/^Staff & terminals/, "Staff & this device"],
+    [/^Tax records/, "Tax records"],
+    [/^Peripherals/, "Peripherals"],
+  ] as const) {
+    await page.getByRole("button", { name: row }).click();
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expectAccessibleSurface(page, `${heading} merchant settings`, browserName);
+
+    if (heading === "Staff & this device") {
+      for (const [action, title, close] of [
+        [/^Operator locking/, "Operator locking", "Done"],
+        [/Add operator/, "Add operator", "Done"],
+        [/^Manage$/, "On this shift", "Done"],
+        [/^Add staff$/, "Add staff", "Close"],
+      ] as const) {
+        await page.getByRole("button", { name: action }).click();
+        const dialog = page.getByRole("dialog", { name: title, exact: true });
+        await expect(dialog).toBeVisible();
+        await expectAccessibleSurface(page, `${title} merchant sheet`, browserName);
+        await dialog.getByRole("button", { name: close, exact: true }).click();
+      }
+    }
+
+    if (heading === "Tax records") {
+      for (const [action, title] of [
+        [/^Reporting period/, "Reporting period"],
+        [/^Tax rates/, "Tax rates"],
+        [/^Export report/, "Export report"],
+        [/^Encrypted archive/, "Encrypted archive"],
+        [/^Retention/, "Retention"],
+        [/^Export history/, "Export history"],
+        [/^About tax records/, "About tax records"],
+      ] as const) {
+        await page.getByRole("button", { name: action }).click();
+        const dialog = page.getByRole("dialog", { name: title, exact: true });
+        await expect(dialog).toBeVisible();
+        await expectAccessibleSurface(page, `${title} tax records sheet`, browserName);
+        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      }
+    }
+
+    await page.getByRole("button", { name: "Back to Merchant settings" }).click();
+  }
+
+  await page.getByRole("button", { name: /^Turn off Merchant Mode/ }).click();
+  const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+  await expect(turnOff).toBeVisible();
+  await expectAccessibleSurface(page, "turn off Merchant Mode sheet", browserName);
+  await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
 test("the largest valid native balance remains inside the iPhone dashboard", async ({
