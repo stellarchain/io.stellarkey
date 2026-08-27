@@ -35,6 +35,7 @@ function outcomeForUnmatched(reason: UnmatchedReason): PaymentReconciliationOutc
   if (reason === "wrong_asset") return "wrong_asset";
   if (reason === "outside_band") return "outside_band";
   if (reason === "expired") return "late";
+  if (reason === "invalid_time") return "invalid_time";
   return "unmatched";
 }
 
@@ -105,7 +106,7 @@ function reconcileOne(
   if (store.paymentReconciliations.some((entry) => entry.id === payment.id)) return store;
 
   const scoped = store.charges.filter((charge) => charge.network === network);
-  const outcome = matchPayment(payment, scoped, store.settings, now);
+  const outcome = matchPayment(payment, scoped, store.settings);
   let next = store;
   let charge: Charge | null = "charge" in outcome ? outcome.charge : null;
   if (!charge && payment.memo) {

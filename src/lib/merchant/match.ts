@@ -1,5 +1,6 @@
 import { quoteFor } from "./charge";
 import { compareToBand, toStroops, toleranceStroops } from "./money";
+import { parsePaymentCreatedAt } from "./payment-time";
 import type { Charge, MatchedPayment, MerchantSettings } from "./types";
 
 /** A payment Horizon has shown us, before we know what it belongs to. */
@@ -35,7 +36,8 @@ export type UnmatchedReason =
   | "ambiguous"
   | "wrong_asset"
   | "outside_band"
-  | "expired";
+  | "expired"
+  | "invalid_time";
 
 function amountVerdict(
   payment: ObservedPayment,
@@ -73,18 +75,19 @@ export function matchPayment(
   payment: ObservedPayment,
   charges: Charge[],
   settings: MerchantSettings,
-  now = Date.now(),
 ): MatchOutcome {
   // `charges` is expected to be scoped to the active network by the caller.
+  const paymentAt = parsePaymentCreatedAt(payment.createdAt);
+  if (paymentAt === null) return { lane: "unmatched", reason: "invalid_time" };
 
   // Lane 1 — the memo names a charge outright.
   if (payment.memo) {
     const named = charges.find((c) => c.reference === payment.memo);
     if (named) {
-      const late = named.status === "expired" || (named.status === "awaiting" && now >= named.expiresAt);
       if (named.status !== "awaiting" && named.status !== "expired") {
         return { lane: "duplicate", charge: named };
       }
+      const late = paymentAt >= named.expiresAt;
       const comparison = amountVerdict(payment, named, settings);
       if (!comparison) return { lane: "unmatched", reason: "wrong_asset" };
       return { lane: "memo", charge: named, ...comparison, late };
@@ -93,14 +96,23 @@ export function matchPayment(
 
   // Lane 2 — no usable memo. Only charges still open, in the asset that arrived.
   const live = charges.filter(
-    (c) => c.status === "awaiting" && now < c.expiresAt && quoteFor(c, payment.asset),
+    (c) =>
+      (c.status === "awaiting" || c.status === "expired") &&
+      paymentAt < c.expiresAt &&
+      quoteFor(c, payment.asset),
   );
   if (live.length === 0) {
     const expiredFit = charges.some(
-      (c) => c.status === "awaiting" && now >= c.expiresAt && quoteFor(c, payment.asset),
+      (c) =>
+        (c.status === "awaiting" || c.status === "expired") &&
+        paymentAt >= c.expiresAt &&
+        quoteFor(c, payment.asset),
     );
     if (expiredFit) return { lane: "unmatched", reason: "expired" };
-    const anyAsset = charges.some((c) => c.status === "awaiting" && now < c.expiresAt);
+    const anyAsset = charges.some(
+      (c) =>
+        (c.status === "awaiting" || c.status === "expired") && paymentAt < c.expiresAt,
+    );
     return { lane: "unmatched", reason: anyAsset ? "wrong_asset" : "no_candidate" };
   }
 
@@ -144,6 +156,8 @@ export function describeUnmatched(reason: UnmatchedReason): string {
       return "The amount is outside every open charge's tolerance.";
     case "expired":
       return "The charge it would have matched has expired.";
+    case "invalid_time":
+      return "The payment has no valid ledger timestamp, so the till will not guess.";
     default:
       return "No open charge matches this payment.";
   }

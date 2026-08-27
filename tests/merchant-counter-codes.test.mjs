@@ -188,6 +188,41 @@ test("active fixed-code payments reconcile once at their publication quote", asy
   assert.equal(replay.store.counterPayments.length, 1);
 });
 
+test("a counter-code payment created before expiry files after delayed observation", async () => {
+  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { member, store } = merchantStore();
+  const created = createCounterCode(store, fixedInput(member, { expiresAt: NOW + 1_500 }));
+  const observed = payment("delayed-payment", "10.0000000", USDC, created.code.memoPrefix);
+  const settled = reconcileCounterPayments(created.store, {
+    network: "mainnet",
+    payments: [observed],
+    rates: [],
+    now: NOW + 2_000,
+  });
+
+  assert.equal(settled.unclaimed.length, 0);
+  assert.equal(settled.store.counterPayments[0].id, observed.id);
+});
+
+test("a counter-code payment with an invalid ledger timestamp stays unclaimed", async () => {
+  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { member, store } = merchantStore();
+  const created = createCounterCode(store, fixedInput(member));
+  const observed = {
+    ...payment("invalid-time", "10.0000000", USDC, created.code.memoPrefix),
+    createdAt: "not-a-timestamp",
+  };
+  const reconciled = reconcileCounterPayments(created.store, {
+    network: "mainnet",
+    payments: [observed],
+    rates: [],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed, [observed]);
+  assert.equal(reconciled.store.counterPayments.length, 0);
+});
+
 test("open codes price live payments and retain unpriceable ones for review", async () => {
   const { createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();

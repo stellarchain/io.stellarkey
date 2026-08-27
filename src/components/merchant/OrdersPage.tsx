@@ -59,6 +59,7 @@ const RECONCILIATION_LABEL: Record<PaymentReconciliationOutcome, string> = {
   ambiguous: "More than one charge fits",
   wrong_asset: "Wrong asset",
   outside_band: "Amount does not fit",
+  invalid_time: "Invalid ledger time",
   unmatched: "No matching charge",
 };
 
@@ -72,6 +73,7 @@ const RECONCILIATION_DETAIL: Record<PaymentReconciliationOutcome, string> = {
   ambiguous: "Several open charges fit exactly, so staff must choose one.",
   wrong_asset: "No open charge quotes the asset that arrived.",
   outside_band: "The amount is outside the configured tolerance for every open charge.",
+  invalid_time: "Horizon did not provide a valid ledger timestamp, so this payment needs review.",
   unmatched: "No open charge can safely claim this payment.",
 };
 

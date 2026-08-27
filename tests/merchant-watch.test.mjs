@@ -219,6 +219,45 @@ test("an exact payment after expiry is late and never auto-settles", () => {
   assert.equal(reconciled.unmatched[0].reconciliationOutcome, "late");
 });
 
+test("a payment created before expiry settles after delayed observation", () => {
+  const initial = awaitingStore({ expiresAt: NOW + 1_000 });
+  initial.charges[0].status = "expired";
+  const reconciled = reconcileIncomingPayments(initial, {
+    network: "mainnet",
+    payments: [payment({ createdAt: new Date(NOW + 500).toISOString() })],
+    now: NOW + 5_000,
+  });
+
+  assert.equal(reconciled.orders[0].status, "paid");
+  assert.equal(reconciled.charges[0].status, "paid");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "settled");
+});
+
+test("a payment created at the expiry boundary is late", () => {
+  const initial = awaitingStore({ expiresAt: NOW + 1_000 });
+  const reconciled = reconcileIncomingPayments(initial, {
+    network: "mainnet",
+    payments: [payment({ createdAt: new Date(NOW + 1_000).toISOString() })],
+    now: NOW + 5_000,
+  });
+
+  assert.equal(reconciled.orders[0].status, "awaiting");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "late");
+});
+
+test("an invalid Horizon payment timestamp is retained for review", () => {
+  const reconciled = reconcileIncomingPayments(awaitingStore(), {
+    network: "mainnet",
+    payments: [payment({ createdAt: "not-a-timestamp" })],
+    now: NOW,
+  });
+
+  assert.equal(reconciled.orders[0].status, "awaiting");
+  assert.equal(reconciled.charges[0].status, "awaiting");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "invalid_time");
+  assert.equal(reconciled.unmatched[0].reconciliationOutcome, "invalid_time");
+});
+
 test("a second payment on a paid memo is a duplicate and cannot mutate the order", () => {
   const once = reconcileIncomingPayments(awaitingStore(), {
     network: "mainnet",
