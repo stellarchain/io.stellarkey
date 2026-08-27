@@ -1893,7 +1893,12 @@ export function Dashboard() {
               }}
             />
           ) : view === "swap" ? (
-            <SwapPage key={swapPrefill?.contextId ?? "manual-swap"} prefill={swapPrefill} />
+            <SwapPage
+              key={swapPrefill?.contextId ?? "manual-swap"}
+              prefill={swapPrefill}
+              onDone={() => switchTab("home")}
+              onViewActivity={() => switchTab("activity")}
+            />
           ) : view === "contacts" ? (
             <AddressBookPage onSendTo={handleSendToContact} />
           ) : isMerchantView(view) ? (

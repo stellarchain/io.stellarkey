@@ -109,6 +109,13 @@ test("swap amount cards give mobile numbers and asset selectors separate layout 
   assert.match(swap, /break-words text-right/);
 });
 
+test("long transaction toasts stay inside the narrowest mobile viewport", () => {
+  const toast = read("src/components/Toast.tsx");
+
+  assert.match(toast, /fade-up pointer-events-auto flex min-w-0 max-w-full/);
+  assert.match(toast, /min-w-0 truncate text-\[13px\]/);
+});
+
 test("five-tab mobile bar is viewport-safe at every supported iPhone width", () => {
   const css = read("src/app/globals.css");
   assert.match(css, /\.tab-bar\s*\{[\s\S]*?width:\s*calc\(100vw - 24px\);/);

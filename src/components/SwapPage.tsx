@@ -28,13 +28,37 @@ import {
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import { playSwapSound } from "@/lib/sounds";
-import type { SubmissionResult } from "@/lib/submission";
+import type { SubmissionLifecycleStatus, SubmissionResult } from "@/lib/submission";
 import { assetKey as merchantAssetKey } from "@/lib/merchant/charge";
 import type { SettlementSwapIntent } from "@/lib/merchant/settlement";
-import { Button, ErrorText, HashValue, Select } from "./ui";
-import { IconAlert, IconLedger, IconSliders, IconSwap, IconTrezor } from "./icons";
+import { Button, ErrorText, HashValue, NetworkBadge, Select, Spinner } from "./ui";
+import {
+  IconAlert,
+  IconCheck,
+  IconLedger,
+  IconSliders,
+  IconSwap,
+  IconTrezor,
+} from "./icons";
 
-export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | null }) {
+interface SubmittedSwap {
+  readonly quote: BoundSwapQuote;
+  readonly sendAsset: Readonly<Pick<AssetBalance, "code" | "issuer">>;
+  readonly destinationAsset: Readonly<Pick<AssetBalance, "code" | "issuer">>;
+  readonly submission: Readonly<SubmissionResult>;
+}
+
+interface SwapPageProps {
+  prefill?: SettlementSwapIntent | null;
+  onDone?: () => void;
+  onViewActivity?: () => void;
+}
+
+export function SwapPage({
+  prefill = null,
+  onDone,
+  onViewActivity,
+}: SwapPageProps) {
   const { network, activeAccount } = useWalletIdentity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const { submissionStatus } = useWalletSubmission();
@@ -53,13 +77,14 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
   );
   const [showSettings, setShowSettings] = useState(false);
   const [invertRate, setInvertRate] = useState(false);
-  const [stage, setStage] = useState<"form" | "review">("form");
+  const [stage, setStage] = useState<"form" | "review" | "status" | "success">("form");
   const [route, setRoute] = useState<BoundSwapQuote | null>(null);
   const [routingKey, setRoutingKey] = useState<string | null>(null);
   const [noRouteKey, setNoRouteKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
+  const [submittedSwap, setSubmittedSwap] = useState<SubmittedSwap | null>(null);
   const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
   const options = useMemo(() => balances ?? [], [balances]);
   const effectiveDestKey = destKey || options.find((b) => b.key !== sendKey)?.key || "";
@@ -120,15 +145,14 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
       if (trackedSubmissionStatus === "confirmed") {
         triggerHaptic("success");
         playSwapSound();
-        setPayAmount("");
-        setReceiveAmount("");
-        setRoute(null);
-        setStage("form");
+        setStage("success");
         void refresh();
         return;
       }
       if (trackedSubmissionStatus === "failed") {
         setPendingSubmission(null);
+        setSubmittedSwap(null);
+        setStage("form");
         setError("Swap failed on-chain. Refresh the quote and retry when ready.");
         triggerHaptic("error");
       }
@@ -276,7 +300,14 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
             sendAmount: submissionQuote.sendAmount,
             destMin: submissionQuote.destinationMinimum,
           });
+      setSubmittedSwap(Object.freeze({
+        quote: submissionQuote,
+        sendAsset: Object.freeze({ code: sendAsset.code, issuer: sendAsset.issuer }),
+        destinationAsset: Object.freeze({ code: destAsset.code, issuer: destAsset.issuer }),
+        submission: Object.freeze({ ...result }),
+      }));
       setPendingSubmission(result);
+      setStage(result.status === "confirmed" ? "success" : "status");
       triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
@@ -302,6 +333,43 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
   const displayedReceiveAmount = amountSide === "receive"
     ? receiveAmount
     : currentQuote ? normalizeAmount(currentQuote.destinationAmount) : "";
+
+  function resetSwap() {
+    setPayAmount("");
+    setReceiveAmount("");
+    setAmountSide("pay");
+    setRoute(null);
+    setRoutingKey(null);
+    setNoRouteKey(null);
+    setPendingSubmission(null);
+    setSubmittedSwap(null);
+    setError(null);
+    setStage("form");
+    window.scrollTo({ top: 0 });
+  }
+
+  if ((stage === "status" || stage === "success") && submittedSwap) {
+    return (
+      <SwapResultView
+        receipt={submittedSwap}
+        status={stage === "success" ? "confirmed" : trackedSubmissionStatus}
+        feeXlm={feeXlm}
+        onDone={() => {
+          triggerHaptic("selection");
+          if (onDone) onDone();
+          else resetSwap();
+        }}
+        onViewActivity={() => {
+          triggerHaptic("selection");
+          if (onViewActivity) onViewActivity();
+        }}
+        onSwapAgain={() => {
+          triggerHaptic("selection");
+          resetSwap();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="fade-up mx-auto w-full max-w-[520px] min-w-0 px-0 pb-0">
@@ -492,49 +560,6 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           )}
 
           {error && <ErrorText message={error} />}
-          {pendingSubmission && (
-            <div className={`rounded-2xl border p-4 ${
-              trackedSubmissionStatus === "status_unknown"
-                ? "border-[#FF9F0A]/35 bg-[#FF9F0A]/10"
-                : trackedSubmissionStatus === "confirmed"
-                  ? "border-[#30D158]/30 bg-[#30D158]/10"
-                  : "border-[#0A84FF]/30 bg-[#0A84FF]/10"
-            }`}>
-              <p className={`flex items-center gap-2 text-[13px] font-semibold ${
-                trackedSubmissionStatus === "status_unknown"
-                  ? "text-[#FF9F0A]"
-                  : trackedSubmissionStatus === "confirmed"
-                    ? "text-[#30D158]"
-                    : "text-[#0A84FF]"
-              }`}>
-                {trackedSubmissionStatus === "status_unknown" && <IconAlert size={15} />}
-                {trackedSubmissionStatus === "status_unknown"
-                  ? "Swap submission status unknown"
-                  : trackedSubmissionStatus === "confirmed"
-                    ? "Swap confirmed"
-                    : "Swap accepted — confirming"}
-              </p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
-                {trackedSubmissionStatus === "status_unknown"
-                  ? "Horizon did not confirm acceptance. Do not resubmit blindly; the wallet is polling the canonical hash."
-                  : trackedSubmissionStatus === "confirmed"
-                    ? "The swap is confirmed on-chain."
-                    : "Horizon accepted the swap and confirmation tracking continues."}
-              </p>
-              <p className="mt-2 break-all font-mono text-[10px] text-neutral-400">
-                {pendingSubmission.network} · {pendingSubmission.hash}
-              </p>
-              {trackedSubmissionStatus === "confirmed" && (
-                <Button
-                  variant="ghost"
-                  className="mt-3 w-full"
-                  onClick={() => setPendingSubmission(null)}
-                >
-                  Start Another Swap
-                </Button>
-              )}
-            </div>
-          )}
 
           {/* Route Analytics — inline once a route is found */}
           {currentQuote && (
@@ -728,6 +753,183 @@ export function SwapPage({ prefill = null }: { prefill?: SettlementSwapIntent | 
           )}
       </div>
     </div>
+  );
+}
+
+function SwapResultView({
+  receipt,
+  status,
+  feeXlm,
+  onDone,
+  onViewActivity,
+  onSwapAgain,
+}: {
+  receipt: SubmittedSwap;
+  status: SubmissionLifecycleStatus | null;
+  feeXlm: string;
+  onDone: () => void;
+  onViewActivity: () => void;
+  onSwapAgain: () => void;
+}) {
+  const { quote, sendAsset, destinationAsset, submission } = receipt;
+  const isConfirmed = status === "confirmed";
+  const isUncertain = status === "status_unknown";
+  const routeLabel = quote.intermediates.length === 0
+    ? "Direct Stellar DEX path"
+    : `${quote.intermediates.length} intermediate ${quote.intermediates.length === 1 ? "asset" : "assets"}`;
+
+  if (!isConfirmed) {
+    return (
+      <section
+        aria-live="polite"
+        className="fade-up mx-auto w-full max-w-[520px] min-w-0 overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.045] p-5 text-center sm:p-7"
+      >
+        <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full border ${
+          isUncertain
+            ? "border-[#FF9F0A]/35 bg-[#FF9F0A]/10 text-[#FFB340]"
+            : "border-[#0A84FF]/35 bg-[#0A84FF]/10 text-[#64D2FF]"
+        }`}>
+          {isUncertain ? <IconAlert size={25} /> : <Spinner size={24} />}
+        </div>
+        <p className={`mt-5 text-[11px] font-bold uppercase tracking-[0.12em] ${
+          isUncertain ? "text-[#FFB340]" : "text-[#64D2FF]"
+        }`}>
+          {isUncertain ? "Status check in progress" : "Submitted to Stellar"}
+        </p>
+        <h2 className="mt-1.5 text-[25px] font-bold tracking-[-0.025em] text-white">
+          {isUncertain ? "Checking swap status" : "Confirming your swap"}
+        </h2>
+        <p className="mx-auto mt-2 max-w-[390px] text-[13px] leading-relaxed text-neutral-400">
+          {isUncertain
+            ? "Horizon did not return a definitive submission result. Do not resubmit blindly; the wallet is checking the canonical transaction hash."
+            : "The transaction was accepted and the wallet is waiting for its on-chain confirmation."}
+        </p>
+
+        <div className="mt-6 rounded-2xl border border-white/[0.08] bg-black/20 p-4 text-left">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="text-[12px] text-neutral-400">Swap</span>
+            <span className="mono min-w-0 break-words text-right text-[13px] font-semibold text-white">
+              {fmtAmount(quote.sendAmount)} {sendAsset.code} → {fmtAmount(quote.destinationAmount)} {destinationAsset.code}
+            </span>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
+            <span className="text-[12px] text-neutral-400">Network</span>
+            <NetworkBadge network={submission.network} />
+          </div>
+          <div className="mt-3 border-t border-white/[0.07] pt-3">
+            <p className="text-[11px] text-neutral-500">Transaction hash</p>
+            <HashValue
+              full
+              value={submission.hash}
+              className="mt-1 w-full text-[10.5px] leading-relaxed text-neutral-300"
+            />
+          </div>
+        </div>
+
+        <Button variant="secondary" className="mt-5 w-full" onClick={onViewActivity}>
+          View activity
+        </Button>
+      </section>
+    );
+  }
+
+  const paidLabel = quote.mode === "strict-receive" ? "Quoted debit" : "Paid";
+  const receivedLabel = quote.mode === "strict-send" ? "Quoted credit" : "Received";
+  const protectionLabel = quote.mode === "strict-send" ? "Minimum received" : "Maximum paid";
+  const protectionValue = quote.mode === "strict-send"
+    ? `${fmtAmount(quote.destinationMinimum)} ${destinationAsset.code}`
+    : `${fmtAmount(quote.sendMaximum)} ${sendAsset.code}`;
+
+  return (
+    <section
+      aria-labelledby="swap-complete-heading"
+      className="fade-up mx-auto w-full max-w-[520px] min-w-0 overflow-hidden rounded-[28px] border border-[#30D158]/20 bg-white/[0.045] shadow-[0_24px_80px_-42px_rgba(48,209,88,0.65)]"
+    >
+      <div className="relative overflow-hidden border-b border-white/[0.08] px-5 pb-6 pt-7 text-center sm:px-7 sm:pt-8">
+        <div aria-hidden="true" className="absolute left-1/2 top-0 h-36 w-36 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#30D158]/15 blur-3xl" />
+        <div className="relative mx-auto flex h-[72px] w-[72px] items-center justify-center rounded-full border border-[#30D158]/35 bg-[#30D158]/15 text-[#30D158] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_32px_-18px_rgba(48,209,88,0.9)]">
+          <IconCheck size={34} className="stroke-[2.5]" />
+        </div>
+        <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-[#30D158]">
+          Confirmed
+        </p>
+        <h2 id="swap-complete-heading" className="mt-1 text-[28px] font-bold tracking-[-0.03em] text-white">
+          Swap complete
+        </h2>
+        <p className="mono mt-3 min-w-0 break-words text-[clamp(1.8rem,9vw,2.45rem)] font-bold leading-none tracking-[-0.04em] text-white">
+          {quote.mode === "strict-receive" ? "+" : "≈ +"}{fmtAmount(quote.destinationAmount)} {destinationAsset.code}
+        </p>
+        <p className="mt-2 text-[12.5px] text-neutral-400">
+          Confirmed on Stellar {submission.network === "mainnet" ? "Mainnet" : "Testnet"}
+        </p>
+      </div>
+
+      <div className="space-y-4 p-4 sm:p-5">
+        <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-black/20">
+          <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3.5">
+            <div className="min-w-0">
+              <p className="text-[12px] text-neutral-400">{paidLabel}</p>
+              {quote.mode === "strict-receive" && (
+                <p className="mt-0.5 text-[10.5px] text-neutral-500">Final debit may be lower</p>
+              )}
+            </div>
+            <p className="mono min-w-0 break-words text-right text-[16px] font-semibold text-[#FF6961]">
+              {quote.mode === "strict-receive" ? "≈ −" : "−"}{fmtAmount(quote.sendAmount)} {sendAsset.code}
+            </p>
+          </div>
+          <div className="flex min-w-0 items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3.5">
+            <div className="min-w-0">
+              <p className="text-[12px] text-neutral-400">{receivedLabel}</p>
+              {quote.mode === "strict-send" && (
+                <p className="mt-0.5 text-[10.5px] text-neutral-500">Final credit may be higher</p>
+              )}
+            </div>
+            <p className="mono min-w-0 break-words text-right text-[16px] font-semibold text-[#30D158]">
+              {quote.mode === "strict-send" ? "≈ +" : "+"}{fmtAmount(quote.destinationAmount)} {destinationAsset.code}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="text-[12px] text-neutral-400">Protection</span>
+            <span className="mono min-w-0 break-words text-right text-[12.5px] font-semibold text-white">
+              {protectionLabel} · {protectionValue}
+            </span>
+          </div>
+          <div className="mt-3 flex min-w-0 items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
+            <span className="text-[12px] text-neutral-400">Route</span>
+            <span className="min-w-0 break-words text-right text-[12.5px] font-medium text-neutral-200">
+              {routeLabel}
+            </span>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
+            <span className="text-[12px] text-neutral-400">Estimated network fee</span>
+            <span className="mono text-[12.5px] text-neutral-200">{feeXlm} XLM</span>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
+            <span className="text-[12px] text-neutral-400">Network</span>
+            <NetworkBadge network={submission.network} />
+          </div>
+          <div className="mt-3 border-t border-white/[0.07] pt-3">
+            <p className="text-[11px] text-neutral-500">Transaction hash</p>
+            <HashValue
+              full
+              value={submission.hash}
+              className="mt-1 w-full text-[10.5px] leading-relaxed text-neutral-300"
+            />
+          </div>
+        </div>
+
+        <Button className="w-full !h-12 text-[15px]" onClick={onDone}>
+          Done
+        </Button>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <Button variant="secondary" onClick={onViewActivity}>View activity</Button>
+          <Button variant="ghost" onClick={onSwapAgain}>Swap again</Button>
+        </div>
+      </div>
+    </section>
   );
 }
 
