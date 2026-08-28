@@ -668,7 +668,7 @@ test("pending status presentation warns against blind resubmission and exposes r
   assert.doesNotMatch(confirming.detail, /status unknown/i);
 });
 
-test("pending transaction session state restores only valid deduplicated recovery handles", () => {
+test("pending transaction state restores only valid deduplicated recovery handles", () => {
   assert.equal(typeof submission.parsePendingTransactions, "function");
   const hash = "ef".repeat(32);
   const restored = submission.parsePendingTransactions(JSON.stringify([
@@ -693,6 +693,75 @@ test("pending transaction session state restores only valid deduplicated recover
     action: { kind: "reconcile_account_merge" },
   }]);
   assert.deepEqual(submission.parsePendingTransactions("not json"), []);
+});
+
+test("pending transaction recovery survives browser close without persisting authority", () => {
+  assert.equal(typeof submission.loadDurablePendingTransactions, "function");
+  assert.equal(typeof submission.persistPendingTransactionQueue, "function");
+  assert.equal(typeof submission.clearDurablePendingTransactions, "function");
+  const durableKey = "wallet.pending-transactions.v2";
+  const legacyKey = "wallet.pending-transactions.v1";
+  const durableHash = "d1".repeat(32);
+  const legacyHash = "d2".repeat(32);
+  const durable = memoryStorage({
+    [durableKey]: JSON.stringify([{
+      hash: durableHash,
+      network: "mainnet",
+      label: "Swap",
+      status: "confirming",
+      createdAt: 10,
+    }]),
+  });
+  const legacySession = memoryStorage({
+    [legacyKey]: JSON.stringify([{
+      hash: legacyHash,
+      network: "testnet",
+      label: "Payment",
+      status: "status_unknown",
+      createdAt: 11,
+      expiresAt: 2_000_000_000,
+      xdr: "signed-envelope-must-not-persist",
+      signature: "secret-signature",
+      password: "secret-password",
+    }]),
+  });
+
+  const migrated = submission.loadDurablePendingTransactions(
+    durable,
+    durableKey,
+    legacySession,
+    legacyKey,
+  );
+  assert.deepEqual(migrated, [
+    {
+      hash: durableHash,
+      network: "mainnet",
+      label: "Swap",
+      status: "confirming",
+      createdAt: 10,
+    },
+    {
+      hash: legacyHash,
+      network: "testnet",
+      label: "Payment",
+      status: "status_unknown",
+      createdAt: 11,
+      expiresAt: 2_000_000_000,
+    },
+  ]);
+  assert.equal(legacySession.getItem(legacyKey), null);
+  assert.doesNotMatch(durable.getItem(durableKey), /xdr|signature|password|secret/i);
+
+  // A new browser session has empty sessionStorage but retains localStorage.
+  const freshSession = memoryStorage();
+  assert.deepEqual(
+    submission.loadDurablePendingTransactions(durable, durableKey, freshSession, legacyKey),
+    migrated,
+  );
+
+  submission.clearDurablePendingTransactions(durable, durableKey, freshSession, legacyKey);
+  assert.equal(durable.getItem(durableKey), null);
+  assert.equal(freshSession.getItem(legacyKey), null);
 });
 
 test("prepared tracking survives a simulated crash with its exact expiry", () => {
@@ -799,7 +868,15 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
     "utf8",
   );
   assert.match(source, /PendingTransaction/);
-  assert.match(source, /sessionStorage\.setItem/);
+  assert.match(
+    source,
+    /loadDurablePendingTransactions\([\s\S]*window\.localStorage[\s\S]*window\.sessionStorage/,
+  );
+  assert.match(source, /persistPendingTransactionQueue\(\s*window\.localStorage/);
+  assert.doesNotMatch(
+    source,
+    /window\.sessionStorage\.setItem\(\s*PENDING_TX_STORAGE_KEY/,
+  );
   assert.match(source, /trackPendingTransaction/);
   assert.match(source, /function trackSubmission|const trackSubmission/);
   assert.ok(
@@ -820,6 +897,10 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
   assert.ok(
     (source.match(/clearDurableMergeReconciliations\(/g) ?? []).length >= 2,
     "wallet reset and backup restore must clear durable merge recovery state",
+  );
+  assert.ok(
+    (source.match(/clearDurablePendingTransactions\(/g) ?? []).length >= 2,
+    "wallet reset and backup restore must clear durable transaction recovery state",
   );
   assert.ok(
     (source.match(/isTrackingTaskCurrent\(/g) ?? []).length >= 4,

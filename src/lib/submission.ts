@@ -305,6 +305,57 @@ export function parsePendingTransactions(serialized: string | null): PendingTran
   }, []);
 }
 
+type PendingTransactionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** Serialize only the authority-free recovery identity accepted by the parser. */
+export function serializePendingTransactions(records: PendingTransaction[]): string {
+  return JSON.stringify(parsePendingTransactions(JSON.stringify(records)));
+}
+
+export function persistPendingTransactionQueue(
+  storage: Pick<Storage, "setItem" | "removeItem">,
+  key: string,
+  records: PendingTransaction[],
+): PendingTransaction[] {
+  const sanitized = parsePendingTransactions(JSON.stringify(records));
+  if (sanitized.length === 0) storage.removeItem(key);
+  else storage.setItem(key, JSON.stringify(sanitized));
+  return sanitized;
+}
+
+/**
+ * Restore the durable queue and migrate the former tab-scoped value once.
+ * Legacy state is removed only after the durable write succeeds.
+ */
+export function loadDurablePendingTransactions(
+  durableStorage: PendingTransactionStorage,
+  durableKey: string,
+  legacySessionStorage: PendingTransactionStorage,
+  legacyKey: string,
+): PendingTransaction[] {
+  const durable = parsePendingTransactions(durableStorage.getItem(durableKey));
+  const legacy = parsePendingTransactions(legacySessionStorage.getItem(legacyKey));
+  const merged = legacy.reduce(upsertPendingTransaction, durable);
+  try {
+    persistPendingTransactionQueue(durableStorage, durableKey, merged);
+    legacySessionStorage.removeItem(legacyKey);
+  } catch {
+    // Keep the sanitized legacy record available to this tab and retry on the
+    // next launch. Pre-broadcast writes use the strict persistence path below.
+  }
+  return merged;
+}
+
+export function clearDurablePendingTransactions(
+  durableStorage: Pick<Storage, "removeItem">,
+  durableKey: string,
+  legacySessionStorage: Pick<Storage, "removeItem">,
+  legacyKey: string,
+): void {
+  durableStorage.removeItem(durableKey);
+  legacySessionStorage.removeItem(legacyKey);
+}
+
 function isPendingTransactionAction(value: unknown): value is PendingTransactionAction {
   if (!value || typeof value !== "object") return false;
   const action = value as Record<string, unknown>;
