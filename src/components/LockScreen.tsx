@@ -5,6 +5,7 @@ import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { hasPasskeyUnlock } from "@/lib/vault";
+import { BRAND_NAME } from "@/lib/brand";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { Button, ErrorText, Field } from "./ui";
 import { IconFingerprint, IconTrezor, LogoMark } from "./icons";
@@ -55,7 +56,7 @@ export function LockScreen() {
       <div className={`w-full ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />
-          <h1 className="display-h mt-4 text-[26px] font-bold text-white">Wallet</h1>
+          <h1 className="display-h mt-4 text-[26px] font-bold text-white">{BRAND_NAME}</h1>
           <p className="mt-1 text-[13.5px] text-neutral-400">
             {passkeyConfigured ? "Use Face ID, Touch ID, or your password" : "Enter your password to unlock your vault"}
           </p>

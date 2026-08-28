@@ -10,6 +10,7 @@
  */
 import { Asset, Keypair, StrKey, xdr, type Memo, type Transaction } from "@stellar/stellar-sdk";
 import type { StellarOperation as TrezorStellarOperation } from "@trezor/connect-web";
+import { BRAND_NAME, BRAND_ORIGIN, decodeContactAddress } from "./brand";
 
 /** stellar-sdk v17 transaction operation (discriminated union on `type`). */
 type TxOperation = Transaction["operations"][number];
@@ -74,10 +75,10 @@ function loadTrezorConnect(): Promise<TrezorConnectApi> {
         const tc = mod.default;
         await tc.init({
           manifest: {
-            email: "dev@localhost",
+            email: decodeContactAddress("support"),
             appUrl:
-              typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
-            appName: "Polaris Wallet",
+              typeof window !== "undefined" ? window.location.origin : BRAND_ORIGIN,
+            appName: BRAND_NAME,
           },
           coreMode: "popup",
           interactionTimeout: 120,

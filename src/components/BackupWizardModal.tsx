@@ -150,7 +150,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     try {
       if (!preparedBackup) throw new Error("Verify your password to prepare a fresh backup.");
       download(
-        `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        `stellarkey-backup-${new Date().toISOString().slice(0, 10)}.json`,
         preparedBackup,
       );
       setBackupHealth(markBackupExported());
@@ -648,7 +648,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                   Choose backup file
                 </span>
                 <span className="mt-1 text-[12px] text-neutral-500">
-                  wallet-backup-YYYY-MM-DD.json
+                  stellarkey-backup-YYYY-MM-DD.json
                 </span>
               </button>
               <input

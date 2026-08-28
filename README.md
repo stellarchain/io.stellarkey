@@ -1,6 +1,6 @@
-# Stellar Wallet
+# StellarKey
 
-A self-custodial, backend-free Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Production is a static export: vault encryption, recovery, transaction construction, review, and signing happen in the browser. The app talks directly to Stellar services and never sends secret keys, recovery phrases, passkey assertions, or merchant records to an application server.
+StellarKey is a self-custodial, backend-free Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Production is a static export: vault encryption, recovery, transaction construction, review, and signing happen in the browser. The app talks directly to Stellar services and never sends secret keys, recovery phrases, passkey assertions, or merchant records to an application server.
 
 ## Supported capabilities
 

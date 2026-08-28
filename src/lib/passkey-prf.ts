@@ -4,6 +4,7 @@ import {
   randomBytes,
   type RawKeyEncryptedPayload,
 } from "./crypto";
+import { BRAND_NAME } from "./brand";
 
 export const PASSKEY_RECORD_KEY = "wallet.passkey-prf.v1";
 
@@ -275,11 +276,11 @@ export async function registerPasskeyMasterKey(
     response = await dependencies.credentials.create({
       publicKey: {
         challenge: copyToArrayBuffer(randomBytes(32)),
-        rp: { name: "Wallet" },
+        rp: { name: BRAND_NAME },
         user: {
           id: copyToArrayBuffer(randomBytes(32)),
           name: "local-wallet",
-          displayName: "Wallet unlock",
+          displayName: `${BRAND_NAME} unlock`,
         },
         pubKeyCredParams: [
           { type: "public-key", alg: -7 },

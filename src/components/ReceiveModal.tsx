@@ -143,7 +143,7 @@ function ReceiveInner({ onClose }: { onClose: () => void }) {
           {qrDataUrl && (
             <a
               href={qrDataUrl}
-              download="stellar-receive-qr.png"
+              download="stellarkey-receive-qr.png"
               onClick={() => triggerHaptic("selection")}
               className="chip flex items-center gap-1.5 text-[12px]"
             >

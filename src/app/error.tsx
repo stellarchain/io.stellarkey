@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui";
+import { BRAND_NAME } from "@/lib/brand";
 
 /**
  * Global error boundary (Next.js App Router convention).
@@ -40,7 +41,7 @@ export default function Error({
           className="w-full !py-3 text-[14px]"
           onClick={() => window.location.reload()}
         >
-          Reload Wallet
+          Reload {BRAND_NAME}
         </Button>
       </div>
       <p className="mt-6 mono max-w-sm break-all text-[10.5px] leading-relaxed text-neutral-600">

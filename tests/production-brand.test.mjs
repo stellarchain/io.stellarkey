@@ -1,0 +1,92 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+
+const root = new URL("../", import.meta.url);
+const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
+
+function trackedTextFiles(relativePath) {
+  const absolute = new URL(relativePath, root);
+  if (!existsSync(absolute)) return [];
+  if (statSync(absolute).isFile()) return [absolute];
+  return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith(".")) return [];
+    return trackedTextFiles(path.posix.join(relativePath, entry.name));
+  });
+}
+
+test("one canonical StellarKey identity drives production-facing surfaces", async () => {
+  const brandUrl = new URL("src/lib/brand.ts", root);
+  assert.equal(existsSync(brandUrl), true, "the canonical brand contract must exist");
+
+  const brand = await import("../src/lib/brand.ts");
+  assert.equal(brand.BRAND_NAME, "StellarKey");
+  assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
+  assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
+  assert.equal(brand.COPYRIGHT_YEAR, 2026);
+  assert.match(brand.BRAND_DESCRIPTION, /self-custodial Stellar wallet/i);
+  assert.equal(brand.decodeContactAddress("support"), ["support", "stellarkey", "io"].join("@").replace("@io", ".io"));
+  assert.equal(brand.decodeContactAddress("security"), ["security", "stellarkey", "io"].join("@").replace("@io", ".io"));
+
+  const layout = read("src/app/layout.tsx");
+  const manifest = JSON.parse(read("src/app/manifest.webmanifest"));
+  const hardware = read("src/lib/hardware.ts");
+  const passkey = read("src/lib/passkey-prf.ts");
+  const onboarding = read("src/components/Onboarding.tsx");
+  const lock = read("src/components/LockScreen.tsx");
+  const error = read("src/app/error.tsx");
+  const packageJson = JSON.parse(read("package.json"));
+  const packageLock = JSON.parse(read("package-lock.json"));
+
+  assert.match(layout, /metadataBase:\s*new URL\(BRAND_ORIGIN\)/);
+  assert.match(layout, /applicationName:\s*BRAND_NAME/);
+  assert.match(layout, /alternates:\s*\{[\s\S]*canonical:\s*"\/"/);
+  assert.match(layout, /openGraph:/);
+  assert.match(layout, /twitter:/);
+  assert.equal(manifest.name, "StellarKey — Self-custodial Stellar wallet");
+  assert.equal(manifest.short_name, "StellarKey");
+  assert.match(manifest.description, /Keys stay encrypted on your device/);
+  assert.match(hardware, /appName:\s*BRAND_NAME/);
+  assert.match(hardware, /appUrl:[\s\S]*BRAND_ORIGIN/);
+  assert.match(hardware, /email:\s*decodeContactAddress\("support"\)/);
+  assert.match(passkey, /rp:\s*\{\s*name:\s*BRAND_NAME\s*\}/);
+  assert.match(onboarding, /\{BRAND_NAME\} · Self-custodial Stellar wallet/);
+  assert.match(lock, />\{BRAND_NAME\}<\/h1>/);
+  assert.match(error, /Reload \{BRAND_NAME\}/);
+  assert.equal(packageJson.name, "stellarkey");
+  assert.equal(packageLock.name, "stellarkey");
+  assert.equal(packageLock.packages[""].name, "stellarkey");
+  assert.match(read("README.md"), /^# StellarKey$/m);
+});
+
+test("branded exports do not change encrypted compatibility contracts", () => {
+  assert.match(read("src/components/BackupWizardModal.tsx"), /stellarkey-backup-/);
+  assert.match(read("src/components/PaperWalletModal.tsx"), /stellarkey-/);
+  assert.match(read("src/components/StorageRecoveryScreen.tsx"), /stellarkey-recovery-/);
+  assert.match(read("src/components/AddressBookPage.tsx"), /stellarkey-contacts-/);
+  assert.match(read("src/components/Dashboard.tsx"), /stellarkey-activity-/);
+  assert.match(read("src/components/ReceiveModal.tsx"), /stellarkey-receive-qr\.png/);
+
+  assert.match(read("src/lib/vault.ts"), /const BACKUP_KIND = "stellar-wallet-backup"/);
+  assert.match(read("src/lib/vault.ts"), /const VAULT_KEY = "polaris\.vault\.v1"/);
+  assert.match(read("src/lib/crypto.ts"), /polaris:\$\{context\}:v1/);
+  assert.match(read("public/sw.js"), /const CACHE_PREFIX = "polaris-shell-"/);
+});
+
+test("complete contact addresses are absent from tracked public source", () => {
+  const support = ["support", "stellarkey", "io"].join("@").replace("@io", ".io");
+  const security = ["security", "stellarkey", "io"].join("@").replace("@io", ".io");
+  const files = [
+    ...trackedTextFiles("src"),
+    ...trackedTextFiles("public"),
+    ...trackedTextFiles("docs"),
+    new URL("README.md", root),
+  ];
+
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    assert.doesNotMatch(source, new RegExp(support, "i"), `${file.pathname} exposes the support mailbox`);
+    assert.doesNotMatch(source, new RegExp(security, "i"), `${file.pathname} exposes the security mailbox`);
+  }
+});
