@@ -160,11 +160,23 @@ export function openPaperWalletPrint(doc: PaperWalletDoc): void {
   const html = buildPaperWalletHtml(doc);
   const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
   const win = window.open(url, "_blank");
+  let revoked = false;
+  const revoke = () => {
+    if (revoked) return;
+    revoked = true;
+    URL.revokeObjectURL(url);
+  };
   if (!win) {
     // Popup blocked — fall back to navigating a hidden iframe print path is
     // overkill; surface a quiet failure via console and let the user retry.
+    revoke();
     console.error("Popup blocked: allow popups to export the PDF certificate.");
+    return;
   }
-  // Revoke later — the document must finish loading first.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  // Once the same-origin blob document has loaded it retains its DOM, while
+  // revoking here prevents any other same-origin script from fetching the
+  // secret-bearing URL for an arbitrary grace period.
+  win.addEventListener("load", revoke, { once: true });
+  if (win.document.readyState === "complete") revoke();
 }
