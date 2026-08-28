@@ -1,7 +1,6 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import type { EncryptedPayload, RawKeyEncryptedPayload } from "./crypto";
 import type { StoredAccount, VaultFile } from "./types";
-import { isEncryptedMerchantEnvelope } from "./merchant/crypto";
 import { isEncryptedMerchantRecordArchive } from "./merchant/record-crypto";
 
 export interface BackupSettings {
@@ -166,10 +165,7 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
   if (typeof value.merchantStore === "string") {
     try {
       const merchantArchive: unknown = JSON.parse(value.merchantStore);
-      if (
-        !isEncryptedMerchantEnvelope(merchantArchive) &&
-        !isEncryptedMerchantRecordArchive(merchantArchive)
-      ) return null;
+      if (!isEncryptedMerchantRecordArchive(merchantArchive)) return null;
     } catch {
       return null;
     }

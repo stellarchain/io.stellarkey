@@ -10,39 +10,9 @@ import {
 } from "../src/lib/merchant/orders.ts";
 import * as storage from "../src/lib/merchant/storage.ts";
 
-const TEST_KEY = new Uint8Array(32).fill(42);
 const TILL = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
-function memoryStorage(initial = {}) {
-  const values = new Map(Object.entries(initial));
-  return {
-    getItem(key) {
-      return values.has(key) ? values.get(key) : null;
-    },
-    setItem(key, value) {
-      values.set(key, String(value));
-    },
-    removeItem(key) {
-      values.delete(key);
-    },
-    snapshot() {
-      return Object.fromEntries(values);
-    },
-  };
-}
-
-function withWindow(localStorage, fn) {
-  const prior = globalThis.window;
-  globalThis.window = { localStorage };
-  try {
-    return fn();
-  } finally {
-    if (prior === undefined) delete globalThis.window;
-    else globalThis.window = prior;
-  }
-}
-
-function legacyOrder(overrides = {}) {
+function completedOrder(overrides = {}) {
   return {
     id: "order-1",
     number: 1001,
@@ -71,11 +41,11 @@ function legacyOrder(overrides = {}) {
   };
 }
 
-function legacyStore() {
+function sampleStore() {
   const settings = emptyStore().settings;
-  const order = legacyOrder();
+  const order = completedOrder();
   return {
-    version: 1,
+    version: 2,
     settings: {
       ...settings,
       enabled: true,
@@ -145,42 +115,21 @@ test("the operational store defaults to a complete v2 schema", () => {
   assert.equal(store.terminal.name, store.settings.terminalName);
 });
 
-test("an existing current operator is migrated into the on-shift roster", () => {
-  const priorStore = {
-    ...emptyStore(),
-    activeStaffId: "staff-1",
-    staff: [
-      {
-        id: "staff-1",
-        name: "Ari",
-        role: "owner",
-        permissions: {
-          takePayment: true,
-          applyDiscount: true,
-          comp: true,
-          void: true,
-          refundCeilingMinor: null,
-          openDrawer: true,
-          seeReports: true,
-          exportRecords: true,
-        },
-        pinDigest: null,
-        pinSetAt: null,
-        active: true,
-      },
-    ],
-  };
-  delete priorStore.onShiftStaffIds;
+test("the decoder rejects POC and incomplete merchant schemas", () => {
+  assert.equal(storage.decodeMerchantStore({ ...emptyStore(), version: 1 }), null);
+  const incomplete = { ...emptyStore() };
+  delete incomplete.onShiftStaffIds;
+  assert.equal(storage.decodeMerchantStore(incomplete), null);
 
-  const migrated = storage.decodeMerchantStore(priorStore);
-
-  assert.equal(migrated.activeStaffId, "staff-1");
-  assert.deepEqual(migrated.onShiftStaffIds, ["staff-1"]);
+  const incompleteOrder = completedOrder();
+  delete incompleteOrder.staffId;
+  assert.equal(
+    storage.decodeMerchantStore({ ...emptyStore(), orders: [incompleteOrder] }),
+    null,
+  );
 });
 
-test("a v2 store round-trips every operational collection", () => {
-  assert.equal(typeof storage.MERCHANT_LEGACY_STORAGE_KEY, "string");
-  const localStorage = memoryStorage();
+test("a current store decodes every operational collection", () => {
   const store = {
     ...emptyStore(),
     settings: { ...emptyStore().settings, recordRetentionMonths: null },
@@ -252,226 +201,7 @@ test("a v2 store round-trips every operational collection", () => {
     nextInvoiceNumber: 18,
   };
 
-  withWindow(localStorage, () => {
-    assert.equal(storage.saveMerchantStore(store, TEST_KEY), true);
-    assert.deepEqual(storage.loadMerchantStore(TEST_KEY), store);
-  });
-});
-
-test("loading a v1 store migrates core records to v2 before removing the legacy key", () => {
-  assert.equal(typeof storage.MERCHANT_LEGACY_STORAGE_KEY, "string");
-  const legacy = legacyStore();
-  const localStorage = memoryStorage({
-    [storage.MERCHANT_LEGACY_STORAGE_KEY]: JSON.stringify(legacy),
-  });
-
-  withWindow(localStorage, () => {
-    const migrated = storage.loadMerchantStore(TEST_KEY);
-    assert.equal(migrated.version, 2);
-    assert.deepEqual(migrated.orders, [
-      {
-        ...legacy.orders[0],
-        staffId: null,
-        stockAppliedAt: legacy.orders[0].paidAt,
-        stockExceptions: [],
-      },
-    ]);
-    assert.deepEqual(migrated.charges, legacy.charges);
-    assert.deepEqual(migrated.cursors, { [`testnet:${TILL}`]: "123" });
-    assert.deepEqual(migrated.refunds, [
-      {
-        ...legacy.refunds[0],
-        kind: "order",
-        sourcePaymentId: null,
-        submissionStatus: "confirmed",
-      },
-    ]);
-    assert.equal(migrated.nextOrderNumber, 1002);
-    assert.equal(migrated.terminal.name, "Counter");
-
-    const values = localStorage.snapshot();
-    assert.equal(values[storage.MERCHANT_LEGACY_STORAGE_KEY], undefined);
-    assert.equal(JSON.parse(values[storage.MERCHANT_STORAGE_KEY]).version, 3);
-  });
-});
-
-test("nested partial settings reconcile and malformed collections are discarded", () => {
-  const localStorage = memoryStorage({
-    [storage.MERCHANT_STORAGE_KEY]: JSON.stringify({
-      version: 2,
-      settings: {
-        enabled: true,
-        profile: { name: "North Star" },
-        tips: { mode: "off" },
-        terminalName: "Front till",
-      },
-      catalogue: "corrupt",
-      modifierGroups: null,
-      orders: [],
-      charges: [],
-      staff: "corrupt",
-      activeStaffId: "missing-staff",
-      onShiftStaffIds: ["missing-staff", 123, "missing-staff"],
-      customers: [null, { address: 123 }],
-      tillTextSize: "enormous",
-      nextOrderNumber: -1,
-    }),
-  });
-
-  withWindow(localStorage, () => {
-    const recovered = storage.loadMerchantStore();
-    assert.equal(recovered.settings.enabled, true);
-    assert.equal(recovered.settings.profile.name, "North Star");
-    assert.deepEqual(recovered.settings.profile.addressLines, []);
-    assert.equal(recovered.settings.tips.mode, "off");
-    assert.deepEqual(recovered.settings.tips.percents, [10, 15, 20]);
-    assert.equal(recovered.catalogue.length, emptyStore().catalogue.length);
-    assert.deepEqual(recovered.staff, []);
-    assert.equal(recovered.activeStaffId, null);
-    assert.deepEqual(recovered.onShiftStaffIds, []);
-    assert.deepEqual(recovered.customers, []);
-    assert.equal(recovered.tillTextSize, "standard");
-    assert.equal(recovered.nextOrderNumber, 1001);
-    assert.equal(recovered.terminal.name, "Front till");
-  });
-});
-
-test("older orders reconcile immutable staff, stock, and line-adjustment fields", () => {
-  const paidAt = Date.now();
-  const decoded = storage.decodeMerchantStore({
-    ...emptyStore(),
-    orders: [
-      legacyOrder({
-        paidAt,
-        lines: [
-          {
-            id: "line-old",
-            itemId: null,
-            name: "Old line",
-            quantity: 1,
-            unitPriceMinor: 250,
-            modifiers: [],
-            taxRateId: "standard",
-            note: null,
-          },
-        ],
-      }),
-    ],
-  });
-
-  assert.equal(decoded.orders[0].staffId, null);
-  assert.equal(decoded.orders[0].stockAppliedAt, paidAt);
-  assert.deepEqual(decoded.orders[0].stockExceptions, []);
-  assert.equal(decoded.orders[0].lines[0].adjustmentMinor, 0);
-});
-
-test("older adjustment records reconcile stable order, line, and staff identities", () => {
-  const decoded = storage.decodeMerchantStore({
-    ...emptyStore(),
-    adjustments: [
-      {
-        id: "adjustment-old",
-        kind: "discount",
-        orderNumber: 72,
-        lineName: null,
-        amountMinor: 125,
-        reasonCode: "Loyalty",
-        staffName: "Owner",
-        at: 99,
-      },
-    ],
-  });
-
-  assert.deepEqual(decoded.adjustments[0], {
-    id: "adjustment-old",
-    kind: "discount",
-    orderId: "legacy-order-72",
-    orderNumber: 72,
-    lineId: null,
-    lineName: null,
-    amountMinor: 125,
-    reasonCode: "Loyalty",
-    staffId: "legacy-staff",
-    staffName: "Owner",
-    at: 99,
-  });
-});
-
-test("older counter codes migrate as audit-only records without redirecting shared requests", () => {
-  const decoded = storage.decodeMerchantStore({
-    ...emptyStore(),
-    counterCodes: [
-      {
-        id: "counter-legacy",
-        title: "Old poster",
-        kind: "fixed",
-        amountMinor: 500,
-        suggestedMinor: [],
-        currency: "EUR",
-        acceptedAssets: [{ code: "XLM", issuer: null }],
-        memoPrefix: "OLDPOSTER",
-        staffId: null,
-        active: true,
-        payments: 2,
-        takingsMinor: 1000,
-        createdAt: 50,
-      },
-    ],
-  });
-
-  assert.equal(decoded.counterCodes[0].destination, "");
-  assert.equal(decoded.counterCodes[0].requestMessage, "Old poster");
-  assert.equal(decoded.counterCodes[0].network, "mainnet");
-  assert.deepEqual(decoded.counterCodes[0].quotes, []);
-  assert.equal(decoded.counterCodes[0].createdBy, "Imported record");
-  assert.equal(decoded.counterCodes[0].createdById, "legacy:counter-legacy");
-});
-
-test("older payment observations inherit the immutable charge destination", () => {
-  const charge = {
-    ...legacyStore().charges[0],
-    status: "overpaid",
-  };
-  const payment = {
-    id: "payment-legacy",
-    transactionHash: "a".repeat(64),
-    ledger: 321,
-    from: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBL",
-    amount: "2.0000000",
-    asset: { code: "XLM", issuer: null },
-    memo: charge.reference,
-    createdAt: new Date(charge.createdAt).toISOString(),
-  };
-  const decoded = storage.decodeMerchantStore({
-    ...emptyStore(),
-    settings: { ...emptyStore().settings, receivingPublicKey: TILL },
-    charges: [{ ...charge, payment: { ...payment, lane: "memo" } }],
-    unmatched: [
-      {
-        ...payment,
-        seenAt: charge.createdAt,
-        reconciliationOutcome: "overpaid",
-        candidateChargeId: charge.id,
-      },
-    ],
-    paymentReconciliations: [
-      {
-        id: payment.id,
-        network: charge.network,
-        payment,
-        outcome: "overpaid",
-        chargeId: charge.id,
-        orderId: charge.orderId,
-        amountMinor: charge.amountMinor * 2,
-        observedAt: charge.createdAt,
-        resolution: null,
-      },
-    ],
-  });
-
-  assert.equal(decoded.charges[0].payment.destination, TILL);
-  assert.equal(decoded.unmatched[0].destination, TILL);
-  assert.equal(decoded.paymentReconciliations[0].payment.destination, TILL);
+  assert.deepEqual(storage.decodeMerchantStore(store), store);
 });
 
 test("a settled cash order reloads with tender, stock, and adjustment audit intact", () => {
@@ -550,120 +280,14 @@ test("a settled cash order reloads with tender, stock, and adjustment audit inta
     [adjusted.adjustment],
     now + 2,
   ).store;
-  const localStorage = memoryStorage();
-
-  withWindow(localStorage, () => {
-    assert.equal(storage.saveMerchantStore(committed, TEST_KEY), true);
-    const reloaded = storage.loadMerchantStore(TEST_KEY);
-    assert.deepEqual(reloaded.orders[0].tender, [
-      { kind: "cash", amountMinor: order.totals.totalMinor, receivedMinor: 500, changeMinor: 100 },
-    ]);
-    assert.equal(reloaded.orders[0].stockAppliedAt, now + 2);
-    assert.equal(reloaded.catalogue[0].stockOnHand, 1);
-    assert.equal(reloaded.adjustments[0].orderId, "order-live");
-    assert.equal(reloaded.adjustments[0].staffId, actor.id);
-  });
-});
-
-test("a failed v2 migration write leaves the recoverable v1 payload intact", () => {
-  const legacy = legacyStore();
-  const localStorage = memoryStorage({
-    [storage.MERCHANT_LEGACY_STORAGE_KEY]: JSON.stringify(legacy),
-  });
-  const setItem = localStorage.setItem;
-  localStorage.setItem = (key, value) => {
-    if (key === storage.MERCHANT_STORAGE_KEY) throw new Error("quota");
-    setItem.call(localStorage, key, value);
-  };
-
-  withWindow(localStorage, () => {
-    const migratedInMemory = storage.loadMerchantStore();
-    assert.equal(migratedInMemory.version, 2);
-    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), null);
-    assert.equal(
-      localStorage.getItem(storage.MERCHANT_LEGACY_STORAGE_KEY),
-      JSON.stringify(legacy),
-    );
-  });
-});
-
-test("a failed verified write restores the previous encrypted merchant archive", () => {
-  const localStorage = memoryStorage();
-
-  withWindow(localStorage, () => {
-    const original = { ...emptyStore(), revision: 1, writerId: "writer-a", updatedAt: 10 };
-    assert.equal(storage.saveMerchantStore(original, TEST_KEY), true);
-    const previousRaw = localStorage.getItem(storage.MERCHANT_STORAGE_KEY);
-    const setItem = localStorage.setItem;
-    let candidateWrites = 0;
-    localStorage.setItem = (key, value) => {
-      if (key === storage.MERCHANT_STORAGE_KEY && candidateWrites < 2) {
-        candidateWrites += 1;
-        setItem.call(localStorage, key, "{corrupted-after-write");
-        return;
-      }
-      setItem.call(localStorage, key, value);
-    };
-
-    const candidate = { ...original, revision: 2, writerId: "writer-b", updatedAt: 20 };
-    assert.equal(storage.saveMerchantStore(candidate, TEST_KEY), false);
-    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), previousRaw);
-    assert.deepEqual(storage.loadMerchantStore(TEST_KEY), original);
-  });
-});
-
-test("future versions are rejected without overwriting their data", () => {
-  const future = JSON.stringify({ version: 99, orders: [{ id: "future" }] });
-  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: future });
-
-  withWindow(localStorage, () => {
-    assert.deepEqual(storage.loadMerchantStore(), emptyStore());
-    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), future);
-  });
-});
-
-test("merchant loading exposes corrupt and future records for explicit recovery", () => {
-  const future = JSON.stringify({ version: 99, orders: [{ id: "future" }] });
-  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: future });
-
-  withWindow(localStorage, () => {
-    const futureResult = storage.loadMerchantStoreResult();
-    assert.equal(futureResult.kind, "future");
-    assert.equal(futureResult.version, 99);
-    assert.equal(futureResult.raw, future);
-
-    localStorage.setItem(storage.MERCHANT_STORAGE_KEY, "{broken");
-    const corruptResult = storage.loadMerchantStoreResult();
-    assert.equal(corruptResult.kind, "corrupt");
-    assert.equal(corruptResult.raw, "{broken");
-    assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), "{broken");
-  });
-});
-
-test("plaintext merchant data migrates losslessly to an encrypted envelope", () => {
-  const key = new Uint8Array(32).fill(9);
-  const plaintext = {
-    ...emptyStore(),
-    settings: {
-      ...emptyStore().settings,
-      profile: { ...emptyStore().settings.profile, name: "Migration Coffee" },
-    },
-  };
-  const localStorage = memoryStorage({
-    [storage.MERCHANT_STORAGE_KEY]: JSON.stringify(plaintext),
-  });
-
-  withWindow(localStorage, () => {
-    const result = storage.loadMerchantStoreResult(key);
-    assert.equal(result.kind, "ready");
-    assert.equal(result.value.settings.profile.name, "Migration Coffee");
-    const encrypted = localStorage.getItem(storage.MERCHANT_STORAGE_KEY);
-    assert.ok(encrypted);
-    assert.doesNotMatch(encrypted, /Migration Coffee/);
-    assert.equal(JSON.parse(encrypted).kind, "polaris-merchant-store");
-    assert.deepEqual(storage.loadMerchantStore(key), result.value);
-    assert.equal(storage.loadMerchantStoreResult().kind, "locked");
-  });
+  const reloaded = storage.decodeMerchantStore(committed);
+  assert.deepEqual(reloaded.orders[0].tender, [
+    { kind: "cash", amountMinor: order.totals.totalMinor, receivedMinor: 500, changeMinor: 100 },
+  ]);
+  assert.equal(reloaded.orders[0].stockAppliedAt, now + 2);
+  assert.equal(reloaded.catalogue[0].stockOnHand, 1);
+  assert.equal(reloaded.adjustments[0].orderId, "order-live");
+  assert.equal(reloaded.adjustments[0].staffId, actor.id);
 });
 
 test("pruning retains every unresolved financial record", () => {
@@ -671,13 +295,13 @@ test("pruning retains every unresolved financial record", () => {
   const store = {
     ...emptyStore(),
     orders: [
-      legacyOrder({ id: "closed", status: "paid", createdAt: old }),
-      legacyOrder({ id: "open", status: "open", createdAt: old }),
-      legacyOrder({ id: "awaiting", status: "awaiting", createdAt: old }),
+      completedOrder({ id: "closed", status: "paid", createdAt: old }),
+      completedOrder({ id: "open", status: "open", createdAt: old }),
+      completedOrder({ id: "awaiting", status: "awaiting", createdAt: old }),
     ],
     charges: [
       {
-        ...legacyStore().charges[0],
+        ...sampleStore().charges[0],
         id: "pending-charge",
         orderId: "missing-order",
         status: "awaiting",
@@ -694,7 +318,7 @@ test("pruning retains every unresolved financial record", () => {
         customerAddress: null,
         reference: "INV1",
         lines: [],
-        totals: legacyOrder().totals,
+        totals: completedOrder().totals,
         currency: "EUR",
         issuedAt: old,
         dueAt: old,
@@ -725,9 +349,9 @@ test("pruning retains every unresolved financial record", () => {
 
 test("pruning keeps the order graph behind an unresolved payment and tracked refund", () => {
   const old = Date.now() - 900 * 86_400_000;
-  const order = legacyOrder({ id: "review-order", status: "paid", createdAt: old });
+  const order = completedOrder({ id: "review-order", status: "paid", createdAt: old });
   const charge = {
-    ...legacyStore().charges[0],
+    ...sampleStore().charges[0],
     id: "review-charge",
     orderId: order.id,
     status: "paid",
@@ -848,16 +472,4 @@ test("retention removes expired customer PII but preserves unresolved provenance
   assert.equal(pruned.customers[1].note, null);
   assert.deepEqual(pruned.customers[1].sourceIds, ["unresolved-source"]);
   assert.deepEqual(pruned.customers[1].loyalty.events.map((event) => event.sourceId), ["unresolved-source"]);
-});
-
-test("clearing merchant storage removes both schema generations", () => {
-  assert.equal(typeof storage.MERCHANT_LEGACY_STORAGE_KEY, "string");
-  const localStorage = memoryStorage({
-    [storage.MERCHANT_STORAGE_KEY]: "v2",
-    [storage.MERCHANT_LEGACY_STORAGE_KEY]: "v1",
-    unrelated: "keep",
-  });
-
-  withWindow(localStorage, () => storage.clearMerchantStore());
-  assert.deepEqual(localStorage.snapshot(), { unrelated: "keep" });
 });
