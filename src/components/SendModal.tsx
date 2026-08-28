@@ -411,8 +411,8 @@ function SendInner({
   return (
     <Modal
       open
-      onClose={onClose}
-      dismissable
+      onClose={stage === "sending" ? () => undefined : onClose}
+      dismissable={stage !== "sending"}
       wide
     >
       <ModalHeader
@@ -440,7 +440,7 @@ function SendInner({
                 ? "Verify details before broadcasting"
                 : `Transfer assets on Stellar ${NETWORKS[network].label}`
         }
-        onClose={onClose}
+        onClose={stage === "sending" ? undefined : onClose}
       />
       <div className="p-4 sm:p-6">
         {stage === "done" ? (
