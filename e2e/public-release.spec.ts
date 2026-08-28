@@ -50,19 +50,19 @@ test("the install manifest and Apple metadata expose complete mobile artwork", a
 
   const manifest = await response.json();
   expect(manifest).toMatchObject({
-    id: "/",
-    start_url: "/",
+    id: "/app",
+    start_url: "/app",
     scope: "/",
     display: "standalone",
     background_color: "#000000",
     theme_color: "#000000",
   });
   expect(manifest.icons).toEqual(expect.arrayContaining([
-    expect.objectContaining({ src: "/icon-192.png?v=2", sizes: "192x192", purpose: "any" }),
-    expect.objectContaining({ src: "/icon-512.png?v=2", sizes: "512x512", purpose: "any" }),
-    expect.objectContaining({ src: "/icon-maskable-192.png?v=2", sizes: "192x192", purpose: "maskable" }),
-    expect.objectContaining({ src: "/icon-maskable-512.png?v=2", sizes: "512x512", purpose: "maskable" }),
-    expect.objectContaining({ src: "/icon-maskable-1024.png?v=2", sizes: "1024x1024", purpose: "maskable" }),
+    expect.objectContaining({ src: "/icon-192.png", sizes: "192x192", purpose: "any" }),
+    expect.objectContaining({ src: "/icon-512.png", sizes: "512x512", purpose: "any" }),
+    expect.objectContaining({ src: "/icon-maskable-192.png", sizes: "192x192", purpose: "maskable" }),
+    expect.objectContaining({ src: "/icon-maskable-512.png", sizes: "512x512", purpose: "maskable" }),
+    expect.objectContaining({ src: "/icon-maskable-1024.png", sizes: "1024x1024", purpose: "maskable" }),
   ]));
 
   for (const path of manifest.icons.map(({ src }: { src: string }) => src)) {
