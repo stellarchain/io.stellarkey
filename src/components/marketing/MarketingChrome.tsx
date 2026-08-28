@@ -7,6 +7,22 @@ import {
   SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
 import { LogoMark } from "@/components/icons";
+import {
+  DocAlert,
+  DocArrowOut,
+  DocBook,
+  DocChip,
+  DocCoin,
+  DocCompass,
+  DocEyeOff,
+  DocFile,
+  DocKey,
+  DocLock,
+  DocQuestion,
+  DocScales,
+  DocShield,
+} from "./DocIcons";
+import "./chrome.css";
 
 /*
  * Header and footer for the marketing surfaces. The landing sections are
@@ -24,20 +40,21 @@ const NAV = [
 ] as const;
 
 const PRODUCT = [
-  ["/#wallet", "The wallet"],
-  ["/#sale", "Taking a sale"],
-  ["/#till", "Records"],
-  ["/#cost", "What it costs"],
-  ["/#limits", "Limits"],
-  ["/#faq", "Questions"],
+  ["/#wallet", "The wallet", DocLock],
+  ["/#sale", "Taking a sale", DocKey],
+  ["/#till", "Records", DocFile],
+  ["/#cost", "What it costs", DocCoin],
+  ["/#limits", "Limits", DocAlert],
+  ["/#faq", "Questions", DocQuestion],
 ] as const;
 
+/* The same marks the trust-centre tabs use, so the two agree on sight. */
 const COMPANY = [
-  [PUBLIC_ROUTES.about, "About"],
-  [PUBLIC_ROUTES.security, "Security"],
-  [PUBLIC_ROUTES.support, "Support"],
-  [PUBLIC_ROUTES.privacy, "Privacy"],
-  [PUBLIC_ROUTES.terms, "Terms"],
+  [PUBLIC_ROUTES.about, "About", DocCompass],
+  [PUBLIC_ROUTES.security, "Security", DocShield],
+  [PUBLIC_ROUTES.support, "Support", DocBook],
+  [PUBLIC_ROUTES.privacy, "Privacy", DocEyeOff],
+  [PUBLIC_ROUTES.terms, "Terms", DocScales],
 ] as const;
 
 /** The mark and the name; .brand on the parent lays the two out. */
@@ -77,20 +94,34 @@ export function MarketingFooter() {
         <div>
           <h4>Product</h4>
           <ul>
-            {PRODUCT.map(([href, label]) => <li key={href}><a href={href}>{label}</a></li>)}
+            {PRODUCT.map(([href, label, Icon]) => (
+              <li key={href}>
+                <a href={href}><Icon />{label}</a>
+              </li>
+            ))}
           </ul>
         </div>
         <div>
           <h4>Company</h4>
           <ul>
-            {COMPANY.map(([href, label]) => <li key={href}><Link href={href}>{label}</Link></li>)}
-            <li><a href={SOURCE_REPOSITORY_URL}>Source</a></li>
+            {COMPANY.map(([href, label, Icon]) => (
+              <li key={href}>
+                <Link href={href}><Icon />{label}</Link>
+              </li>
+            ))}
+            <li>
+              <a href={SOURCE_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
+                <DocChip />Source
+                <span className="out" aria-hidden="true"><DocArrowOut /></span>
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            </li>
           </ul>
         </div>
       </div>
       <div className="legal">
         <span>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER} · self-custody · you hold the keys</span>
-        <span>
+        <span className="fine">
           Independent project. Not affiliated with, sponsored or endorsed by the Stellar
           Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.
         </span>
