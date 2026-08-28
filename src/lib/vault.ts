@@ -27,6 +27,7 @@ import {
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
 import { writeMerchantBootstrapState } from "./merchant/bootstrap";
+import { validateNewVaultPassword } from "./password-strength";
 import { replaceBackupStorage } from "./backup-storage";
 import {
   createVaultMasterKey,
@@ -287,9 +288,8 @@ export async function initializeVault(
   opts: InitializeOptions = {},
 ): Promise<{ account: AccountMeta; revealed: string }> {
   assertVaultCreationAllowed();
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters");
-  }
+  const passwordPolicy = validateNewVaultPassword(password);
+  if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
 
   if (opts.secret) {
     const trimmed = opts.secret.trim();
@@ -384,9 +384,8 @@ export async function initializeHardwareVault(
   if (account.device !== "trezor") {
     throw new Error("Ledger is not supported in this build. No account was imported.");
   }
-  if (password.length < 8) {
-    throw new Error("Password must be at least 8 characters");
-  }
+  const passwordPolicy = validateNewVaultPassword(password);
+  if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
   if (!isValidPublicAddress(account.publicKey)) {
     throw new Error("Invalid Stellar address read from device.");
   }

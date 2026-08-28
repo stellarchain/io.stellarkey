@@ -38,6 +38,22 @@ function passkeyDependencies(storage) {
 
 const password = "correct horse battery staple";
 
+test("new software vaults reject weak passwords at the storage boundary", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+
+  for (const candidate of ["password123", "aaaaaaaaaaaaaaaa", "Aurora!27"]) {
+    await assert.rejects(
+      () => initializeVault(candidate, { secret: source.secret() }),
+      /password|characters|predictable|common/i,
+    );
+  }
+  assert.equal(localStorage.getItem("polaris.vault.v1"), null);
+});
+
 test("new wallets persist a password-wrapped v3 master key without plaintext secrets", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
