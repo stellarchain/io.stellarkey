@@ -88,6 +88,7 @@ import type {
 import type { SendPrefill } from "./SendModal";
 import {
   APPLICATION_VERSION,
+  BRAND_NAME,
   BUILD_COMMIT,
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
@@ -1178,24 +1179,24 @@ export function Dashboard() {
                 triggerHaptic("selection");
                 setSidebarCollapsed(false);
               }}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.08] shadow-sm border border-white/10 text-white hover:bg-white/[0.14] transition-all"
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/[0.08]"
               title="Expand Sidebar"
               aria-label="Expand Sidebar"
             >
-              <LogoMark size={20} className="text-white" />
+              <LogoMark size={30} className="text-white" />
             </button>
           ) : (
             <>
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] shadow-sm border border-white/10">
-                  <LogoMark size={20} className="text-white" />
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                  <LogoMark size={30} className="text-white" />
                 </div>
                 <div className="min-w-0">
                   <h1 className="truncate text-[15.5px] font-bold tracking-tight text-white leading-tight">
-                    Wallet
+                    {BRAND_NAME}
                   </h1>
                   <p className="truncate text-[10.5px] text-neutral-400 font-medium">
-                    Stellar Self-Custody
+                    Self-Custody Wallet
                   </p>
                 </div>
               </div>
@@ -1672,11 +1673,13 @@ export function Dashboard() {
               </button>
               <div
                 aria-label="Build information"
-                className="pt-1 text-center text-[9.5px] leading-relaxed text-neutral-400"
+                className="pt-1 text-center text-[9px] text-neutral-400"
               >
-                <p>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}</p>
-                <p className="font-mono">
-                  v{APPLICATION_VERSION} · {BUILD_COMMIT === "development" ? BUILD_COMMIT : BUILD_COMMIT.slice(0, 7)}
+                <p className="whitespace-nowrap">
+                  © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
+                  <span className="font-mono">
+                    {" · "}v{APPLICATION_VERSION} · {BUILD_COMMIT === "development" ? BUILD_COMMIT : BUILD_COMMIT.slice(0, 7)}
+                  </span>
                 </p>
               </div>
             </>

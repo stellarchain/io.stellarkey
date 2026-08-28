@@ -163,6 +163,10 @@ test("the expanded wallet sidebar shows copyright and exact build identity after
   assert.match(dashboard, /APPLICATION_VERSION/);
   assert.match(dashboard, /BUILD_COMMIT/);
   assert.match(dashboard, /aria-label="Build information"/);
+  assert.match(
+    dashboard,
+    /<p className="whitespace-nowrap">[\s\S]*© \{COPYRIGHT_YEAR\} \{COPYRIGHT_OWNER\}[\s\S]*v\{APPLICATION_VERSION\} · \{BUILD_COMMIT/,
+  );
 
   const lockWallet = dashboard.indexOf("<span>Lock Wallet</span>");
   const buildInformation = dashboard.indexOf('aria-label="Build information"');

@@ -75,6 +75,16 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(read("README.md"), /^# StellarKey$/m);
 });
 
+test("the desktop sidebar presents the larger borderless StellarKey identity", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  assert.match(dashboard, /<h1[^>]*>\s*\{BRAND_NAME\}\s*<\/h1>/);
+  assert.match(dashboard, />\s*Self-Custody Wallet\s*</);
+  assert.doesNotMatch(dashboard, />\s*Wallet\s*<\/h1>/);
+  assert.doesNotMatch(dashboard, />\s*Stellar Self-Custody\s*</);
+  assert.equal(dashboard.match(/<LogoMark size=\{30\} className="text-white" \/>/g)?.length, 2);
+  assert.doesNotMatch(dashboard, /h-9 w-9[^\n]*border border-white\/10[^\n]*[\s\S]{0,120}<LogoMark/);
+});
+
 test("branded exports do not change encrypted compatibility contracts", () => {
   assert.match(read("src/components/BackupWizardModal.tsx"), /stellarkey-backup-/);
   assert.match(read("src/components/PaperWalletModal.tsx"), /stellarkey-/);
