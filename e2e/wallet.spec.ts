@@ -15,7 +15,7 @@ test.beforeEach(async ({ context }) => {
 
 test("onboarding exposes recovery and hardware paths without runtime errors", async ({ page }) => {
   const failures = observePageFailures(page);
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
 
@@ -32,7 +32,7 @@ test("onboarding exposes recovery and hardware paths without runtime errors", as
 
 test("corrupt vault data enters explicit recovery without overwriting the payload", async ({ page }) => {
   const corrupt = "{corrupt-wallet-record";
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate((raw) => localStorage.setItem("stellarkey.vault.v1", raw), corrupt);
   await page.reload({ waitUntil: "domcontentloaded" });
 

@@ -33,7 +33,7 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await setup.waitFor({ state: "hidden" });
 
   const second = await context.newPage();
-  await second.goto("/", { waitUntil: "domcontentloaded" });
+  await second.goto("/app", { waitUntil: "domcontentloaded" });
   await second.getByPlaceholder("Enter password").fill(testPassword);
   await second.getByRole("button", { name: "Unlock Vault" }).click();
   await second.getByRole("button", { name: "Settings", exact: true }).click();
