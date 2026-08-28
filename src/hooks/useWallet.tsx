@@ -70,9 +70,12 @@ import {
 } from "@/lib/tab-coordination";
 import {
   createLatestRequestLane,
+  horizonStreamPollInterval,
   useVisibleWalletRefresh,
-  WALLET_ACCOUNT_POLL_MS,
+  WALLET_BACKGROUND_POLL_MS,
   WALLET_MARKET_POLL_MS,
+  walletBackgroundStaggerMs,
+  type HorizonStreamState,
 } from "./useWalletResources";
 import {
   applyTransactionPoll,
@@ -486,6 +489,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     : DEFAULT_BASE_FEE_STROOPS;
   const feeSelectionGeneration = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [horizonStreamState, setHorizonStreamState] =
+    useState<HorizonStreamState>("connecting");
   const [accountBalances, setAccountBalances] = useState<Record<string, number>>({});
   const [accountPortfolioSnapshots, setAccountPortfolioSnapshots] = useState<
     Record<string, AccountPortfolioSnapshot>
@@ -1016,12 +1021,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     accountBalancesRef.current = refreshAccountBalances;
   }, [refreshAccountBalances]);
 
-  const walletRefreshEnabled = phase === "unlocked" && activeAccount !== null;
+  const activePublicKey = activeAccount?.publicKey ?? null;
+  const walletRefreshEnabled = phase === "unlocked" && activePublicKey !== null;
+  const accountPollIntervalMs = horizonStreamPollInterval(horizonStreamState);
+  const backgroundRefreshKey = `${network}:${endpointRevision}:portfolio:${
+    activePublicKey ?? "none"
+  }:${accounts.map((account) => account.publicKey).join(",")}`;
   useVisibleWalletRefresh(
     refreshAccountData,
     walletRefreshEnabled,
-    WALLET_ACCOUNT_POLL_MS,
-    `${network}:${endpointRevision}:${activeAccount?.publicKey ?? "none"}`,
+    accountPollIntervalMs,
+    `${network}:${endpointRevision}:${activePublicKey ?? "none"}`,
   );
   useVisibleWalletRefresh(
     refreshMarketData,
@@ -1032,8 +1042,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useVisibleWalletRefresh(
     refreshAccountBalances,
     walletRefreshEnabled && accounts.length > 1,
-    WALLET_ACCOUNT_POLL_MS,
-    `${network}:${endpointRevision}:portfolio`,
+    WALLET_BACKGROUND_POLL_MS,
+    backgroundRefreshKey,
+    walletBackgroundStaggerMs(backgroundRefreshKey),
   );
 
   useEffect(
@@ -1048,36 +1059,63 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (
       phase !== "unlocked" ||
-      !activeAccount ||
-      typeof window === "undefined" ||
-      typeof window.EventSource === "undefined"
+      !activePublicKey ||
+      typeof window === "undefined"
     ) {
       return;
     }
+    if (typeof window.EventSource === "undefined") {
+      const unavailableTimer = window.setTimeout(
+        () => setHorizonStreamState("degraded"),
+        0,
+      );
+      return () => window.clearTimeout(unavailableTimer);
+    }
     const horizonUrl = getHorizonUrl(network);
     let es: EventSource | null = null;
+    let alive = true;
+    let stateTimer: number | null = window.setTimeout(() => {
+      stateTimer = null;
+      if (alive) setHorizonStreamState("connecting");
+    }, 0);
+    const reportStreamState = (state: HorizonStreamState) => {
+      if (!alive) return;
+      if (stateTimer !== null) {
+        window.clearTimeout(stateTimer);
+        stateTimer = null;
+      }
+      setHorizonStreamState(state);
+    };
     try {
       es = new EventSource(
-        `${horizonUrl}/accounts/${activeAccount.publicKey}/operations?cursor=now`,
+        `${horizonUrl}/accounts/${activePublicKey}/operations?cursor=now`,
       );
+      es.onopen = () => {
+        reportStreamState("open");
+      };
+      es.onerror = () => {
+        reportStreamState("degraded");
+      };
       es.onmessage = () => {
+        if (!alive) return;
+        reportStreamState("open");
         triggerHaptic("success");
         void accountRefreshRef.current();
       };
     } catch {
-      // Ignore
+      if (stateTimer !== null) window.clearTimeout(stateTimer);
+      stateTimer = window.setTimeout(() => {
+        stateTimer = null;
+        reportStreamState("degraded");
+      }, 0);
     }
 
     return () => {
+      alive = false;
+      if (stateTimer !== null) window.clearTimeout(stateTimer);
       if (es) es.close();
     };
-  }, [phase, activeAccount, endpointRevision, network]);
-
-
-  useEffect(() => {
-    if (phase !== "unlocked" || accounts.length === 0) return;
-    void accountBalancesRef.current();
-  }, [phase, accounts, network]);
+  }, [phase, activePublicKey, endpointRevision, network]);
 
   const lockVaultAndReset = useCallback((notifyPeers = true) => {
     lockVault();
