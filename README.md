@@ -74,3 +74,9 @@ That command runs type checking, the complete unit suite, lint, the production d
 See the [release checklist](docs/release-checklist.md) for real-device, recovery, static-host, and mainnet checks. Pinch zoom remains disabled by product requirement and is asserted by the mobile browser gate.
 
 This remains financial software: test every release with small amounts and verify addresses, asset issuers, memos, network, and transaction details on the signing device before broadcasting.
+
+## License and third-party code
+
+Copyright © 2026 StellarKey. StellarKey's original source is licensed under `AGPL-3.0-or-later`; see [LICENSE](LICENSE). If you modify the program and make it available to users over a network, the AGPL requires you to offer those users the corresponding source under the same license.
+
+Dependencies and bundled third-party materials keep their own licenses. In particular, the optional Trezor Connect dependency is separately licensed and is not relicensed by StellarKey. Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and obtain any required distribution authorization before publishing a build that contains it. Every release includes an SBOM for the exact production dependency graph.
