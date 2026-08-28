@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
-import { encryptMerchantStore } from "../src/lib/merchant/crypto.ts";
 
 const KEY = new Uint8Array(32).fill(17);
 
@@ -129,67 +128,19 @@ class MemoryRecordDriver {
   }
 }
 
-test("merchant migration copies, verifies, then removes the localStorage envelope", async () => {
-  const storage = await import("../src/lib/merchant/storage.ts");
+test("the merchant repository ignores POC monolithic storage", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
-  const store = {
-    ...emptyStore(),
-    revision: 4,
-    writerId: "legacy-tab",
-    updatedAt: 100,
-    settings: {
-      ...emptyStore().settings,
-      profile: { ...emptyStore().settings.profile, name: "Indexed Coffee" },
-    },
-  };
-  const raw = JSON.stringify(encryptMerchantStore(store, KEY));
-  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: raw });
+  const raw = JSON.stringify({ version: 2, plaintext: "POC merchant data" });
+  const localStorage = memoryStorage({ "wallet.merchant.v2": raw });
   globalThis.window = { localStorage };
   const driver = new MemoryRecordDriver();
   const repository = new MerchantRepository(driver);
 
   const result = await repository.load(KEY);
 
-  assert.equal(result.kind, "ready");
-  assert.equal(result.value.settings.profile.name, "Indexed Coffee");
-  assert.equal(await driver.read("merchant.primary.v1"), null);
-  assert.match(await driver.read(repository.recordKey), /polaris-merchant-record/);
-  assert.ok((await driver.readPrefix(repository.dataPrefix)).size > 0);
-  assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), null);
-});
-
-test("failed IndexedDB migration preserves the recoverable localStorage source", async () => {
-  const storage = await import("../src/lib/merchant/storage.ts");
-  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
-  const store = { ...emptyStore(), revision: 1, writerId: "legacy-tab", updatedAt: 10 };
-  const raw = JSON.stringify(encryptMerchantStore(store, KEY));
-  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: raw });
-  globalThis.window = { localStorage };
-  const driver = new MemoryRecordDriver();
-  driver.failWrites = true;
-  const repository = new MerchantRepository(driver);
-
-  await assert.rejects(() => repository.load(KEY), /quota|migrat|storage/i);
-  assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), raw);
-});
-
-test("a failed staged migration switch rolls back and preserves its legacy source", async () => {
-  const storage = await import("../src/lib/merchant/storage.ts");
-  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
-  const store = { ...emptyStore(), revision: 3, writerId: "legacy-tab", updatedAt: 30 };
-  const raw = JSON.stringify(encryptMerchantStore(store, KEY));
-  const localStorage = memoryStorage({ [storage.MERCHANT_STORAGE_KEY]: raw });
-  globalThis.window = { localStorage };
-  const driver = new MemoryRecordDriver();
-  driver.failNextBatchCompare = true;
-  const repository = new MerchantRepository(driver);
-
-  await assert.rejects(() => repository.load(KEY), /switch failed/);
-
-  assert.equal(localStorage.getItem(storage.MERCHANT_STORAGE_KEY), raw);
+  assert.equal(result.kind, "absent");
+  assert.equal(localStorage.getItem("wallet.merchant.v2"), raw);
   assert.equal(await driver.read(repository.recordKey), null);
-  assert.equal((await driver.readPrefix("merchant.records.v1:stage:")).size, 0);
-  assert.equal((await driver.readPrefix("merchant.records.v1:migration:")).size, 0);
 });
 
 test("merchant repository commits revisions transactionally and rejects stale writers", async () => {
@@ -242,6 +193,7 @@ test("IndexedDB commits preserve unlimited merchant retention", async () => {
     createdAt: old,
     paidAt: old,
     stockAppliedAt: old,
+    stockExceptions: [],
     payerAddress: null,
     note: null,
   };
@@ -290,6 +242,7 @@ test("record-level commits rewrite only metadata and the changed history record"
     createdAt: index + 1,
     paidAt: index + 1,
     stockAppliedAt: index + 1,
+    stockExceptions: [],
     payerAddress: null,
     note: null,
   });
@@ -440,7 +393,7 @@ test("record archives export and restore every encrypted record without plaintex
       orderCount: 0,
       lifetimeMinor: 0,
       averageMinor: 0,
-      preferredAsset: null,
+      preferredAsset: { code: "XLM", issuer: null },
       sourceIds: [],
       loyalty: null,
       note: null,

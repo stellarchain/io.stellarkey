@@ -817,7 +817,6 @@ const PRIVACY_KEY = "polaris.privacy.v1";
 const SOUND_KEY = "wallet.sound.v1";
 const CURRENCY_KEY = "wallet.currency.v1";
 const TX_NOTES_KEY = "wallet.tx-notes.v1";
-const MERCHANT_STORE_KEY = "wallet.merchant.v2";
 
 interface PrivateContactsEnvelope {
   version: 3;
@@ -1089,10 +1088,9 @@ export async function exportVaultBackup(password: string): Promise<string> {
   let merchantStore: string | null;
   try {
     merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
-    merchantStore = typeof indexedDB === "undefined"
-      ? window.localStorage.getItem(MERCHANT_STORE_KEY)
-      : await getMerchantRepository().exportEncryptedArchive(merchantKey!)
-        ?? window.localStorage.getItem(MERCHANT_STORE_KEY);
+    merchantStore = merchantKey
+      ? await getMerchantRepository().exportEncryptedArchive(merchantKey)
+      : null;
   } finally {
     zeroKey(merchantKey);
   }
@@ -1148,15 +1146,16 @@ export async function restoreVaultBackup(
     SOUND_KEY,
     CURRENCY_KEY,
     TX_NOTES_KEY,
-    MERCHANT_STORE_KEY,
     PASSKEY_RECORD_KEY,
   ];
   const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
+  if (payload.merchantStore && !merchantRepository) {
+    throw new Error("IndexedDB is required to restore this backup's merchant records.");
+  }
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [CONTACTS_KEY, encryptedContacts],
     [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
-    [MERCHANT_STORE_KEY, merchantRepository ? null : payload.merchantStore || null],
   ]);
   // A passkey wraps one exact vault master key and is never portable in a
   // backup, so replacing the vault must revoke the previous local wrapper.
@@ -1182,7 +1181,7 @@ export async function restoreVaultBackup(
           },
         }
       : null,
-    archiveValue: payload.merchantStore ?? null,
+    archiveValue: merchantRepository ? payload.merchantStore ?? null : null,
   });
   lockVault();
 

@@ -197,40 +197,6 @@ test("wallet creation refuses to overwrite recoverable invalid data", async () =
   assert.equal(localStorage.getItem("polaris.vault.v1"), raw);
 });
 
-test("full encrypted backups round-trip the encrypted merchant archive", async () => {
-  const localStorage = new MemoryStorage();
-  globalThis.window = { localStorage };
-  const { Keypair } = await import("@stellar/stellar-sdk");
-  const { emptyStore } = await import("../src/lib/merchant/defaults.ts");
-  const { saveMerchantStore, MERCHANT_STORAGE_KEY } = await import("../src/lib/merchant/storage.ts");
-  const {
-    exportVaultBackup,
-    getMerchantEncryptionKey,
-    initializeVault,
-    restoreVaultBackup,
-  } = await import("../src/lib/vault.ts");
-  const password = "correct horse battery staple";
-  await initializeVault(password, { secret: Keypair.random().secret() });
-  const store = {
-    ...emptyStore(),
-    settings: {
-      ...emptyStore().settings,
-      profile: { ...emptyStore().settings.profile, name: "Backup Coffee" },
-    },
-  };
-  assert.equal(saveMerchantStore(store, getMerchantEncryptionKey()), true);
-  const originalMerchant = localStorage.getItem(MERCHANT_STORAGE_KEY);
-
-  const backup = await exportVaultBackup(password);
-  localStorage.removeItem(MERCHANT_STORAGE_KEY);
-  localStorage.setItem("wallet.passkey-prf.v1", "wrapper-for-replaced-vault");
-  await restoreVaultBackup(backup, password);
-
-  assert.equal(localStorage.getItem(MERCHANT_STORAGE_KEY), originalMerchant);
-  assert.equal(localStorage.getItem("wallet.passkey-prf.v1"), null);
-  assert.doesNotMatch(backup, /Backup Coffee/);
-});
-
 test("encrypted backups reject malformed decrypted payloads before restore", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

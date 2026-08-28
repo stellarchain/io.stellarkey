@@ -4,10 +4,6 @@ import {
   type EncryptedRecordDriver,
 } from "../indexed-db";
 import {
-  decryptMerchantStore,
-  isEncryptedMerchantEnvelope,
-} from "./crypto";
-import {
   decryptMerchantRecord,
   encryptMerchantRecord,
   isEncryptedMerchantRecordArchive,
@@ -17,18 +13,13 @@ import {
 } from "./record-crypto";
 import {
   decodeMerchantStore,
-  MERCHANT_LEGACY_STORAGE_KEY,
-  MERCHANT_STORAGE_KEY,
   prune,
 } from "./storage";
 import type { MerchantStore } from "./types";
 
-const LEGACY_RECORD_KEY = "merchant.primary.v1";
 const RECORD_ROOT_PREFIX = "merchant.records.v1:";
 const RECORD_META_KEY = `${RECORD_ROOT_PREFIX}meta`;
 const RECORD_DATA_PREFIX = `${RECORD_ROOT_PREFIX}data:`;
-const MIGRATION_STAGE_PREFIX = `${RECORD_ROOT_PREFIX}stage:`;
-const MIGRATION_JOURNAL_PREFIX = `${RECORD_ROOT_PREFIX}migration:`;
 
 const RECORD_COLLECTIONS = [
   "catalogue",
@@ -284,80 +275,11 @@ export class MerchantRepositoryConflictError extends Error {
 export class MerchantRepository {
   readonly recordKey = RECORD_META_KEY;
   readonly dataPrefix = RECORD_DATA_PREFIX;
-  readonly legacyRecordKey = LEGACY_RECORD_KEY;
   private readonly driver: EncryptedRecordDriver;
   private snapshot: RepositorySnapshot | null = null;
 
   constructor(driver: EncryptedRecordDriver) {
     this.driver = driver;
-  }
-
-  private decodeEncrypted(raw: string, key: Uint8Array): StorageLoadResult<MerchantStore> {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (!isEncryptedMerchantEnvelope(parsed)) {
-        return {
-          kind: "corrupt",
-          raw,
-          message: "Encrypted merchant data uses an unsupported envelope.",
-        };
-      }
-      const decoded = decodeMerchantStore(decryptMerchantStore(parsed, key));
-      if (
-        !decoded ||
-        decoded.revision !== parsed.revision ||
-        decoded.writerId !== parsed.writerId ||
-        decoded.updatedAt !== parsed.updatedAt
-      ) {
-        throw new Error("Merchant envelope metadata does not match its payload.");
-      }
-      return { kind: "ready", value: decoded };
-    } catch {
-      return {
-        kind: "corrupt",
-        raw,
-        message: "Encrypted merchant data could not be decrypted or authenticated.",
-      };
-    }
-  }
-
-  private legacySource(key: Uint8Array): StorageLoadResult<MerchantStore> & { sourceRaw?: string } {
-    if (typeof window === "undefined") return { kind: "absent" };
-    const currentRaw = window.localStorage.getItem(MERCHANT_STORAGE_KEY);
-    const legacyRaw = window.localStorage.getItem(MERCHANT_LEGACY_STORAGE_KEY);
-    const raw = currentRaw ?? legacyRaw;
-    if (raw === null) return { kind: "absent" };
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (isEncryptedMerchantEnvelope(parsed)) {
-        const decoded = this.decodeEncrypted(raw, key);
-        return decoded.kind === "ready" ? { ...decoded, sourceRaw: raw } : decoded;
-      }
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        "version" in parsed &&
-        typeof parsed.version === "number" &&
-        parsed.version > 2
-      ) {
-        return {
-          kind: "future",
-          raw,
-          version: parsed.version,
-          message: `Merchant data uses a newer schema (${parsed.version}).`,
-        };
-      }
-      const decoded = decodeMerchantStore(parsed);
-      return decoded
-        ? { kind: "ready", value: decoded, sourceRaw: raw }
-        : {
-            kind: "corrupt",
-            raw,
-            message: "Merchant data is incomplete or uses an unsupported schema.",
-          };
-    } catch {
-      return { kind: "corrupt", raw, message: "Merchant data is not valid JSON." };
-    }
   }
 
   private decodeRecordSet(
@@ -472,91 +394,13 @@ export class MerchantRepository {
     }
   }
 
-  private async discardInterruptedMigrations(): Promise<void> {
-    const stages = await this.driver.readPrefix(MIGRATION_STAGE_PREFIX);
-    const journals = await this.driver.readPrefix(MIGRATION_JOURNAL_PREFIX);
-    if (stages.size === 0 && journals.size === 0) return;
-    await this.driver.removePrefix(MIGRATION_STAGE_PREFIX);
-    await this.driver.removePrefix(MIGRATION_JOURNAL_PREFIX);
-  }
-
-  private async migrate(
-    store: MerchantStore,
-    key: Uint8Array,
-  ): Promise<StorageLoadResult<MerchantStore>> {
-    const retained = prune(store);
-    const built = buildRecordSet(retained, key, null);
-    const token = randomToken();
-    const stagePrefix = `${MIGRATION_STAGE_PREFIX}${token}:`;
-    const journalKey = `${MIGRATION_JOURNAL_PREFIX}${token}`;
-    const staged = new Map<string, string>();
-    for (const [storageKey, raw] of built.all) {
-      staged.set(`${stagePrefix}${encodeURIComponent(storageKey)}`, raw);
-    }
-    staged.set(journalKey, JSON.stringify({
-      kind: "polaris-merchant-record-migration",
-      version: 1,
-      revision: retained.revision,
-    }));
-    try {
-      await this.driver.putManyVerified(staged);
-      const verified = await this.driver.readPrefix(stagePrefix);
-      const expectedValues = [...built.all.values()].sort();
-      const actualValues = [...verified.values()].sort();
-      if (
-        verified.size !== built.all.size ||
-        expectedValues.some((raw, index) => actualValues[index] !== raw)
-      ) {
-        throw new Error("Merchant record migration staging could not be verified.");
-      }
-      const switched = await this.driver.compareAndSetMany(
-        RECORD_META_KEY,
-        null,
-        built.all,
-        [LEGACY_RECORD_KEY, journalKey, ...verified.keys()],
-      );
-      if (!switched.ok) {
-        await this.driver.replacePrefixVerified(stagePrefix, new Map(), [journalKey]);
-        const activeMeta = switched.current ?? await this.driver.read(RECORD_META_KEY);
-        if (!activeMeta) throw new MerchantRepositoryConflictError(switched.current);
-        return this.decodeRecordSet(activeMeta, await this.driver.readPrefix(RECORD_DATA_PREFIX), key);
-      }
-      this.snapshot = built.snapshot;
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(MERCHANT_STORAGE_KEY);
-        window.localStorage.removeItem(MERCHANT_LEGACY_STORAGE_KEY);
-      }
-      return { kind: "ready", value: retained };
-    } catch (error) {
-      try {
-        await this.driver.replacePrefixVerified(stagePrefix, new Map(), [journalKey]);
-      } catch {
-        // The source remains untouched; the next load also clears the journal.
-      }
-      throw error;
-    }
-  }
-
   async load(key: Uint8Array): Promise<StorageLoadResult<MerchantStore>> {
-    await this.discardInterruptedMigrations();
     const metaRaw = await this.driver.read(RECORD_META_KEY);
     if (metaRaw !== null) {
       return this.decodeRecordSet(metaRaw, await this.driver.readPrefix(RECORD_DATA_PREFIX), key);
     }
-
-    const indexedRaw = await this.driver.read(LEGACY_RECORD_KEY);
-    if (indexedRaw !== null) {
-      const source = this.decodeEncrypted(indexedRaw, key);
-      if (source.kind !== "ready") return source;
-      return this.migrate(source.value, key);
-    }
-
-    const source = this.legacySource(key);
-    if (source.kind !== "ready") {
-      if (source.kind === "absent") this.snapshot = null;
-      return source;
-    }
-    return this.migrate(source.value, key);
+    this.snapshot = null;
+    return { kind: "absent" };
   }
 
   /**
@@ -571,12 +415,7 @@ export class MerchantRepository {
       return { kind: "ready", value: this.snapshot.store };
     }
     if (metaRaw === null && this.snapshot === null) {
-      const indexedLegacyRaw = await this.driver.read(LEGACY_RECORD_KEY);
-      const hasBrowserLegacy = typeof window !== "undefined" && (
-        window.localStorage.getItem(MERCHANT_STORAGE_KEY) !== null ||
-        window.localStorage.getItem(MERCHANT_LEGACY_STORAGE_KEY) !== null
-      );
-      if (indexedLegacyRaw === null && !hasBrowserLegacy) return { kind: "absent" };
+      return { kind: "absent" };
     }
     return this.load(key);
   }
@@ -625,16 +464,8 @@ export class MerchantRepository {
   }
 
   async exportEncryptedArchive(key: Uint8Array): Promise<string | null> {
-    await this.discardInterruptedMigrations();
     const metaRaw = await this.driver.read(RECORD_META_KEY);
-    if (metaRaw === null) {
-      const legacyRaw = await this.driver.read(LEGACY_RECORD_KEY);
-      if (legacyRaw === null) return null;
-      if (this.decodeEncrypted(legacyRaw, key).kind !== "ready") {
-        throw new Error("Merchant recovery data is corrupt or could not be authenticated.");
-      }
-      return legacyRaw;
-    }
+    if (metaRaw === null) return null;
     const parsed: unknown = JSON.parse(metaRaw);
     if (!isEncryptedMerchantRecordEnvelope(parsed)) {
       throw new Error("Merchant recovery metadata is invalid.");
@@ -649,9 +480,8 @@ export class MerchantRepository {
 
   /** Capture exact ciphertext only for failure-atomic restore rollback. */
   async snapshotEncryptedArchive(): Promise<string | null> {
-    await this.discardInterruptedMigrations();
     const metaRaw = await this.driver.read(RECORD_META_KEY);
-    if (metaRaw === null) return this.driver.read(LEGACY_RECORD_KEY);
+    if (metaRaw === null) return null;
     const parsed: unknown = JSON.parse(metaRaw);
     if (!isEncryptedMerchantRecordEnvelope(parsed)) {
       throw new Error("Merchant recovery metadata is invalid.");
@@ -662,15 +492,6 @@ export class MerchantRepository {
 
   async importEncryptedArchive(raw: string): Promise<void> {
     const parsed: unknown = JSON.parse(raw);
-    if (isEncryptedMerchantEnvelope(parsed)) {
-      await this.driver.replacePrefixVerified(
-        RECORD_ROOT_PREFIX,
-        new Map([[LEGACY_RECORD_KEY, raw]]),
-        [LEGACY_RECORD_KEY],
-      );
-      this.snapshot = null;
-      return;
-    }
     if (!isEncryptedMerchantRecordArchive(parsed)) {
       throw new Error("Merchant recovery archive is invalid.");
     }
@@ -689,22 +510,18 @@ export class MerchantRepository {
     ) {
       throw new Error("Merchant recovery archive metadata does not match.");
     }
-    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, records, [LEGACY_RECORD_KEY]);
+    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, records);
     this.snapshot = null;
   }
 
   async clear(): Promise<void> {
-    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, new Map(), [LEGACY_RECORD_KEY]);
+    await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, new Map());
     this.snapshot = null;
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(MERCHANT_STORAGE_KEY);
-      window.localStorage.removeItem(MERCHANT_LEGACY_STORAGE_KEY);
-    }
   }
 }
 
 export function isSupportedEncryptedMerchantArchive(value: unknown): boolean {
-  return isEncryptedMerchantEnvelope(value) || isEncryptedMerchantRecordArchive(value);
+  return isEncryptedMerchantRecordArchive(value);
 }
 
 let repository: MerchantRepository | null = null;

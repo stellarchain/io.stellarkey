@@ -7,35 +7,9 @@ import type {
   MerchantStore,
   TipSettings,
 } from "./types";
-import type { StorageLoadResult } from "../storage-load";
 import { merchantCursorKey } from "./watch-targets";
-import {
-  decryptMerchantStore,
-  encryptMerchantStore,
-  isEncryptedMerchantEnvelope,
-} from "./crypto";
-
-/**
- * Merchant data uses the wallet prefix so the wallet reset path owns it too.
- * Version 2 keeps the original key readable only long enough to migrate it.
- */
-const KEY = "wallet.merchant.v2";
-const LEGACY_KEY = "wallet.merchant.v1";
 
 type UnknownRecord = Record<string, unknown>;
-
-interface MerchantStoreV1 {
-  version: 1;
-  settings: MerchantSettings;
-  catalogue: MerchantStore["catalogue"];
-  modifierGroups?: MerchantStore["modifierGroups"];
-  orders: MerchantStore["orders"];
-  charges: MerchantStore["charges"];
-  refunds?: MerchantStore["refunds"];
-  unmatched?: MerchantStore["unmatched"];
-  nextOrderNumber?: number;
-  cursors?: MerchantStore["cursors"];
-}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -671,16 +645,58 @@ function reconcileSettings(value: unknown, base: MerchantSettings): MerchantSett
   };
 }
 
-function isLegacyStore(value: unknown): value is MerchantStoreV1 {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.settings)) return false;
-  return (
-    Array.isArray(value.catalogue) &&
-    Array.isArray(value.orders) &&
-    Array.isArray(value.charges)
-  );
+function hasCurrentTopLevelShape(value: UnknownRecord): boolean {
+  const arrays = [
+    "catalogue",
+    "modifierGroups",
+    "orders",
+    "charges",
+    "refunds",
+    "unmatched",
+    "paymentReconciliations",
+    "staff",
+    "onShiftStaffIds",
+    "shifts",
+    "invoices",
+    "counterCodes",
+    "counterPayments",
+    "customers",
+    "adjustments",
+    "refundRequests",
+    "peripherals",
+    "exportRecords",
+  ];
+  return value.version === 2 &&
+    Number.isSafeInteger(value.revision) && (value.revision as number) >= 0 &&
+    (value.writerId === null || typeof value.writerId === "string") &&
+    isFiniteNumber(value.updatedAt) && value.updatedAt >= 0 &&
+    isRecord(value.settings) &&
+    arrays.every((field) => Array.isArray(value[field])) &&
+    (value.activeStaffId === null || typeof value.activeStaffId === "string") &&
+    isRecord(value.settlementRule) &&
+    isRecord(value.terminal) &&
+    (value.tillTextSize === "standard" || value.tillTextSize === "large" || value.tillTextSize === "xlarge") &&
+    Number.isSafeInteger(value.nextOrderNumber) && (value.nextOrderNumber as number) > 0 &&
+    Number.isSafeInteger(value.nextShiftNumber) && (value.nextShiftNumber as number) > 0 &&
+    Number.isSafeInteger(value.nextInvoiceNumber) && (value.nextInvoiceNumber as number) > 0 &&
+    isRecord(value.cursors);
 }
 
-function reconcileV2(value: UnknownRecord): MerchantStore {
+function canonicalJson(value: unknown): string {
+  const normalize = (entry: unknown): unknown => {
+    if (Array.isArray(entry)) return entry.map(normalize);
+    if (!isRecord(entry)) return entry;
+    return Object.fromEntries(
+      Object.keys(entry)
+        .filter((key) => entry[key] !== undefined)
+        .sort()
+        .map((key) => [key, normalize(entry[key])]),
+    );
+  };
+  return JSON.stringify(normalize(value));
+}
+
+function decodeCurrentStore(value: UnknownRecord): MerchantStore {
   const base = emptyStore();
   const settings = reconcileSettings(value.settings, base.settings);
   const terminalValue = isRecord(value.terminal) ? value.terminal : {};
@@ -808,172 +824,11 @@ function reconcileV2(value: UnknownRecord): MerchantStore {
   };
 }
 
-function migrateV1(store: MerchantStoreV1): MerchantStore {
-  const base = emptyStore();
-  return reconcileV2({
-    ...store,
-    version: 2,
-    settings: store.settings,
-    terminal: {
-      ...base.terminal,
-      name: store.settings.terminalName || base.settings.terminalName,
-    },
-  });
-}
-
-/** Decode supported data without mutating storage. Future versions are rejected. */
+/** Decode the current data format without mutating storage. */
 export function decodeMerchantStore(value: unknown): MerchantStore | null {
-  if (!isRecord(value)) return null;
-  if (value.version === 2) return reconcileV2(value);
-  if (isLegacyStore(value)) return migrateV1(value);
-  return null;
-}
-
-export type MerchantStoreLoadResult = StorageLoadResult<MerchantStore> | {
-  kind: "locked";
-  raw: string;
-  message: string;
-};
-
-export function loadMerchantStoreResult(key?: Uint8Array): MerchantStoreLoadResult {
-  if (typeof window === "undefined") return { kind: "absent" };
-
-  const currentRaw = window.localStorage.getItem(KEY);
-  if (currentRaw !== null) {
-    try {
-      const parsed: unknown = JSON.parse(currentRaw);
-      if (isEncryptedMerchantEnvelope(parsed)) {
-        if (!key) {
-          return {
-            kind: "locked",
-            raw: currentRaw,
-            message: "Unlock the wallet to read encrypted merchant data.",
-          };
-        }
-        try {
-          const decoded = decodeMerchantStore(decryptMerchantStore(parsed, key));
-          if (
-            !decoded ||
-            decoded.revision !== parsed.revision ||
-            decoded.writerId !== parsed.writerId ||
-            decoded.updatedAt !== parsed.updatedAt
-          ) {
-            throw new Error("Merchant envelope metadata does not match its payload.");
-          }
-          return { kind: "ready", value: decoded };
-        } catch {
-          return {
-            kind: "corrupt",
-            raw: currentRaw,
-            message: "Encrypted merchant data could not be decrypted or authenticated.",
-          };
-        }
-      }
-      if (isRecord(parsed) && typeof parsed.version === "number" && parsed.version > 2) {
-        return {
-          kind: "future",
-          raw: currentRaw,
-          version: parsed.version,
-          message: `Merchant data uses a newer schema (${parsed.version}).`,
-        };
-      }
-      const decoded = decodeMerchantStore(parsed);
-      if (decoded && key && !saveMerchantStore(decoded, key)) {
-        return {
-          kind: "corrupt",
-          raw: currentRaw,
-          message: "Merchant data could not be migrated to encrypted storage.",
-        };
-      }
-      return decoded
-        ? { kind: "ready", value: decoded }
-        : {
-            kind: "corrupt",
-            raw: currentRaw,
-            message: "Merchant data is incomplete or uses an unsupported schema.",
-          };
-    } catch {
-      return {
-        kind: "corrupt",
-        raw: currentRaw,
-        message: "Merchant data is not valid JSON.",
-      };
-    }
-  }
-
-  const legacyRaw = window.localStorage.getItem(LEGACY_KEY);
-  if (legacyRaw === null) return { kind: "absent" };
-  try {
-    const parsed: unknown = JSON.parse(legacyRaw);
-    if (!isLegacyStore(parsed)) {
-      return {
-        kind: "corrupt",
-        raw: legacyRaw,
-        message: "Legacy merchant data is incomplete or malformed.",
-      };
-    }
-    const migrated = migrateV1(parsed);
-    if (key) saveMerchantStore(migrated, key);
-    return { kind: "ready", value: migrated };
-  } catch {
-    return {
-      kind: "corrupt",
-      raw: legacyRaw,
-      message: "Legacy merchant data is not valid JSON.",
-    };
-  }
-}
-
-export function loadMerchantStore(key?: Uint8Array): MerchantStore {
-  const result = loadMerchantStoreResult(key);
-  return result.kind === "ready" ? result.value : emptyStore();
-}
-
-/** Returns false when quota or storage policy prevents a durable commit. */
-export function saveMerchantStore(store: MerchantStore, key?: Uint8Array): boolean {
-  if (typeof window === "undefined" || !key) return false;
-  let previousRaw: string | null;
-  try {
-    previousRaw = window.localStorage.getItem(KEY);
-  } catch {
-    return false;
-  }
-  const restorePrevious = () => {
-    try {
-      if (previousRaw === null) window.localStorage.removeItem(KEY);
-      else window.localStorage.setItem(KEY, previousRaw);
-    } catch {
-      // The caller still receives a failed durable commit. Storage may be
-      // unavailable entirely, so restoration is best-effort at this point.
-    }
-  };
-  const writeVerified = (value: MerchantStore) => {
-    const raw = JSON.stringify(encryptMerchantStore(value, key));
-    window.localStorage.setItem(KEY, raw);
-    const storedRaw = window.localStorage.getItem(KEY);
-    if (storedRaw !== raw) throw new Error("Merchant storage did not retain the encrypted write.");
-    const stored: unknown = JSON.parse(storedRaw);
-    if (!isEncryptedMerchantEnvelope(stored)) throw new Error("Merchant storage envelope is invalid.");
-    const verified = decryptMerchantStore(stored, key);
-    if (verified.revision !== value.revision || verified.writerId !== value.writerId) {
-      throw new Error("Merchant storage verification failed.");
-    }
-  };
-  try {
-    writeVerified(prune(store));
-    window.localStorage.removeItem(LEGACY_KEY);
-    return true;
-  } catch {
-    // Quota exhausted: retain unresolved records and retry with shorter history.
-    try {
-      writeVerified(prune(store, 30));
-      window.localStorage.removeItem(LEGACY_KEY);
-      return true;
-    } catch {
-      restorePrevious();
-      return false;
-    }
-  }
+  if (!isRecord(value) || !hasCurrentTopLevelShape(value)) return null;
+  const decoded = decodeCurrentStore(value);
+  return canonicalJson(decoded) === canonicalJson(value) ? decoded : null;
 }
 
 /** Drops resolved history beyond the configured window and retains live work. */
@@ -1094,23 +949,3 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     customers,
   };
 }
-
-export function clearMerchantStore(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(KEY);
-  window.localStorage.removeItem(LEGACY_KEY);
-}
-
-export function exportEncryptedMerchantArchive(): string | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(KEY);
-  if (!raw) return null;
-  try {
-    return isEncryptedMerchantEnvelope(JSON.parse(raw)) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-export const MERCHANT_STORAGE_KEY = KEY;
-export const MERCHANT_LEGACY_STORAGE_KEY = LEGACY_KEY;
