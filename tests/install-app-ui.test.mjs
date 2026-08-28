@@ -11,6 +11,10 @@ test("the install action lives in the right Settings column instead of the sideb
     dashboard.indexOf("Navigation & Accounts Scroll Body"),
     dashboard.indexOf("Main Content Area"),
   );
+  const settingsRightColumn = settings.slice(
+    settings.indexOf("Column 2: Accounts & Tools"),
+    settings.indexOf("ABOUT & LEGAL"),
+  );
 
   assert.doesNotMatch(sidebar, /Install App|installEvt\.prompt/);
   assert.match(
@@ -19,7 +23,7 @@ test("the install action lives in the right Settings column instead of the sideb
   );
   assert.match(dashboard, /function handleInstallApp\(\)[\s\S]*?installEvt\.prompt\(\)/);
   assert.match(
-    settings,
-    /Column 2: Accounts & Tools[\s\S]*?installAvailable && \([\s\S]*?App[\s\S]*?label="Install App"[\s\S]*?onClick=\{onInstallApp\}/,
+    settingsRightColumn,
+    /App[\s\S]*?installAvailable && \([\s\S]*?label="Install App"[\s\S]*?onClick=\{onInstallApp\}/,
   );
 });
