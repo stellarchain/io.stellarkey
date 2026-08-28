@@ -119,15 +119,12 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     const database = await this.database();
     const transaction = openTransaction(database, "readonly");
     const completed = transactionResult(transaction);
+    const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
     const stored = await requestResult(
-      transaction.objectStore(STORE_NAME).getAll() as IDBRequest<StoredRecord[]>,
+      transaction.objectStore(STORE_NAME).getAll(range) as IDBRequest<StoredRecord[]>,
     );
     await completed;
-    return new Map(
-      stored
-        .filter((record) => record.key.startsWith(prefix))
-        .map((record) => [record.key, record.value]),
-    );
+    return new Map(stored.map((record) => [record.key, record.value]));
   }
 
   async putVerified(key: string, value: string): Promise<string> {
