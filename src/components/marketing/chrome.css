@@ -1,0 +1,72 @@
+/*
+ * Header and footer, shared by the landing page and the trust-centre
+ * documents. Imported by the chrome component itself rather than by either
+ * page, so the two never drift and neither can render the chrome unstyled.
+ */
+
+/* ── footer links ───────────────────────────────────────────── */
+
+.mk .foot ul { gap: 0; }
+
+.mk .foot ul a {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .42rem 0;
+  color: var(--fg-faint);
+  transition: color .18s;
+}
+
+.mk .foot ul a .ico {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--fg-ghost);
+  transition: color .18s, transform .18s;
+}
+
+.mk .foot ul a:hover { color: var(--fg); }
+.mk .foot ul a:hover .ico { color: var(--gold); }
+
+/* the one link that leaves the site says so */
+.mk .foot ul a .out {
+  display: flex;
+  margin-left: -.15rem;
+  color: var(--fg-ghost);
+  opacity: .8;
+}
+
+/* the outbound arrow rides smaller than the link's own mark */
+.mk .foot ul a .out .ico { width: 12px; height: 12px; }
+
+.mk .foot ul a:hover .out { color: var(--fg-faint); }
+
+/* ── the bottom bar ─────────────────────────────────────────── */
+
+/*
+ * Two stacked rows rather than one wrapping flex line: the trademark notice is
+ * long enough that space-between left it stranded mid-row at most widths.
+ */
+.mk .legal {
+  display: grid;
+  gap: .55rem;
+  justify-content: stretch;
+}
+
+.mk .legal .fine { color: var(--fg-ghost); opacity: .78; max-width: 68ch; }
+
+@media (min-width: 900px) {
+  .mk .legal { grid-template-columns: auto 1fr; align-items: baseline; column-gap: 2.5rem; }
+  /* anchored right, but set left so the notice keeps a clean reading edge */
+  .mk .legal .fine { justify-self: end; text-align: left; }
+}
+
+/* ── mobile ─────────────────────────────────────────────────── */
+
+@media (max-width: 639px) {
+  /* Three link columns collapse to one, so give the groups air and let the
+     brand blurb keep its own measure. */
+  .mk .foot { gap: 2rem; }
+  .mk .foot p { max-width: none; }
+  .mk .foot ul a { padding: .5rem 0; }
+}

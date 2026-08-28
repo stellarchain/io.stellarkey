@@ -1,5 +1,7 @@
 /*
- * The line icons used across the trust-centre documents. One stroke weight,
+ * The line icons used across the trust-centre documents and the site chrome.
+ * Hand-maintained: the first sixteen were lifted from the document set, the
+ * rest were drawn to the same rules. One stroke weight,
  * one grid, currentColor throughout, so a heading, a highlight and a callout
  * can each colour the same mark differently without a second copy of it.
  */
@@ -82,4 +84,19 @@ export function DocExport() {
 
 export function DocBook() {
   return <Ico><path d="M4 5.2A1.2 1.2 0 0 1 5.2 4H10a3 3 0 0 1 3 3v13a2.4 2.4 0 0 0-2.4-2.4H5.2A1.2 1.2 0 0 1 4 16.4Z" /><path d="M20 5.2A1.2 1.2 0 0 0 18.8 4H14a3 3 0 0 0-3 3v13a2.4 2.4 0 0 1 2.4-2.4h5.4A1.2 1.2 0 0 0 20 16.4Z" /></Ico>;
+}
+
+/* Drawn for the footer, where reusing a document icon would give one mark two
+   different meanings in adjacent columns. */
+
+export function DocCoin() {
+  return <Ico><circle cx="12" cy="12" r="8.4" /><path d="M12 7.3v9.4" /><path d="M14.5 9.6a2.7 2.7 0 0 0-2.5-1.3c-1.5 0-2.8.8-2.8 2.1 0 2.7 5.4 1.5 5.4 4.1 0 1.3-1.2 2.1-2.8 2.1a2.8 2.8 0 0 1-2.6-1.4" /></Ico>;
+}
+
+export function DocQuestion() {
+  return <Ico><circle cx="12" cy="12" r="8.4" /><path d="M9.7 9.7a2.4 2.4 0 0 1 4.7.8c0 1.6-2.3 1.9-2.3 3.3" /><path d="M12 17.1h.01" /></Ico>;
+}
+
+export function DocArrowOut() {
+  return <Ico><path d="M14 4.6h5.4V10" /><path d="M19.4 4.6 11.6 12.4" /><path d="M17.4 14.2v4.2a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4V8a1.4 1.4 0 0 1 1.4-1.4h4.2" /></Ico>;
 }

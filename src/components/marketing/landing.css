@@ -14,3 +14,62 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* ── narrow screens ─────────────────────────────────────────── */
+
+@media (max-width: 639px) {
+  /* The calculator grid falls back to one implicit auto track, which sizes to
+     its widest child, so pin it or a wide child stretches the whole section. */
+  .mk .calc { grid-template-columns: minmax(0, 1fr); }
+  .mk .calc > * { min-width: 0; }
+
+  /*
+   * The table compressed until "€ 1,226" broke across two lines. Scrolling it
+   * instead would park "you lose" — the number the section exists to argue
+   * about — off the right edge, so tighten the type and gutters until all
+   * three columns fit, and stop the figures wrapping mid-value.
+   */
+  .mk .compare table { font-size: .68rem; }
+  /* values must not break mid-figure; the column labels may wrap freely */
+  .mk .compare td { white-space: nowrap; }
+  .mk .compare th,
+  .mk .compare td { padding-inline: .5rem; }
+  .mk .compare th:first-child,
+  .mk .compare td:first-child { padding-left: .8rem; }
+  .mk .compare th:last-child,
+  .mk .compare td:last-child { padding-right: .8rem; }
+
+  /*
+   * The receipt is a label/value list, not really a table: stacking each row
+   * keeps the transaction hash and ledger — the whole point of the section —
+   * on screen instead of parked off the right edge behind a scroll.
+   */
+  .mk .verify { overflow-x: visible; }
+  .mk .verify table,
+  .mk .verify tbody,
+  .mk .verify tr,
+  .mk .verify td { display: block; min-width: 0; }
+
+  .mk .verify tr {
+    padding: .8rem 1.1rem;
+    border-bottom: 1px solid var(--hair);
+  }
+
+  .mk .verify tr:last-child { border-bottom: 0; }
+
+  .mk .verify td {
+    padding: 0;
+    border-bottom: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .mk .verify td:first-child {
+    width: auto;
+    font-size: .68rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: .2rem;
+  }
+
+  .mk .verify td:last-child { text-align: left; color: var(--fg); }
+}
