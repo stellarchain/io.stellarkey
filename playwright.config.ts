@@ -40,7 +40,9 @@ export default defineConfig({
   webServer: {
     command: `npm run start -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    // A reused process may belong to another worktree and silently test an
+    // older static export. Every run must own and stop the release it checks.
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 });
