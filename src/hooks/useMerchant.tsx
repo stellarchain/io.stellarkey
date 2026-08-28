@@ -870,14 +870,18 @@ export function MerchantProvider({
     for (const refund of current.refunds) {
       if (
         !refund.transactionHash ||
-        (refund.submissionStatus !== "accepted" && refund.submissionStatus !== "status_unknown")
+        (refund.submissionStatus !== "prepared" &&
+          refund.submissionStatus !== "accepted" &&
+          refund.submissionStatus !== "status_unknown")
       ) {
         continue;
       }
       const resolved = submissionStatus({
         hash: refund.transactionHash,
         network: refund.network,
-        status: refund.submissionStatus,
+        status: refund.submissionStatus === "prepared"
+          ? "status_unknown"
+          : refund.submissionStatus,
       });
       if (resolved !== refund.submissionStatus) {
         next = reconcileRefundSubmission(next, refund.id, resolved);
@@ -2426,6 +2430,13 @@ export function MerchantProvider({
       if (!canReleaseRefund(member, amountMinor)) {
         throw new Error("This refund needs approval from a staff member with a higher ceiling.");
       }
+      const existingApprovalRefund = approvalRequestId
+        ? current.refunds.find(
+            (refund) =>
+              refund.requestId === approvalRequestId && refund.submissionStatus !== "failed",
+          )
+        : null;
+      if (existingApprovalRefund) return existingApprovalRefund;
       const order = current.orders.find((entry) => entry.id === orderId);
       const charge = settledOrderPaymentSource(current, orderId);
       if (!order || !charge?.payment) throw new Error("This order has no settled payment to refund.");
@@ -2461,19 +2472,14 @@ export function MerchantProvider({
       if (refundStroops <= BigInt(0)) throw new Error("This refund is below the asset's minimum precision.");
       const amount = fromStroops(refundStroops);
 
-      const result = await send({
-        destination: sourcePayment.from,
-        amount,
-        assetCode: sourcePayment.asset.code,
-        issuer: sourcePayment.asset.issuer,
-        memo: { type: "text", value: `RF${order.number}` },
-      });
-
-      const refund: Refund = {
-        id: uid("rfd"),
+      const refundId = uid("rfd");
+      const createdAt = Date.now();
+      const refundBase: Omit<Refund, "transactionHash" | "submissionStatus"> = {
+        id: refundId,
         orderId,
         kind: "order",
         sourcePaymentId: sourcePayment.id,
+        requestId: approvalRequestId ?? null,
         network: order.network,
         amountMinor,
         asset: sourcePayment.asset,
@@ -2481,14 +2487,37 @@ export function MerchantProvider({
         destination: sourcePayment.from,
         reason,
         note: note?.trim() || null,
+        createdAt,
+      };
+      const result = await send({
+        destination: sourcePayment.from,
+        amount,
+        assetCode: sourcePayment.asset.code,
+        issuer: sourcePayment.asset.issuer,
+        memo: { type: "text", value: `RF${order.number}` },
+        submissionJournal: {
+          onPrepared: async (prepared) => {
+            const intent: Refund = {
+              ...refundBase,
+              transactionHash: prepared.hash,
+              submissionStatus: "prepared",
+            };
+            await commitStore((latest) => recordRefundSubmission(latest, intent));
+          },
+          onRejected: async () => {
+            if (!storeRef.current.refunds.some((refund) => refund.id === refundId)) return;
+            await commitStore((latest) =>
+              reconcileRefundSubmission(latest, refundId, "failed"));
+          },
+        },
+      });
+      await commitStore((latest) =>
+        reconcileRefundSubmission(latest, refundId, result.status));
+      return {
+        ...refundBase,
         transactionHash: result.hash,
         submissionStatus: result.status,
-        createdAt: Date.now(),
       };
-
-      const latest = storeRef.current;
-      await commitStore(recordRefundSubmission(latest, refund));
-      return refund;
     },
     [activeAccount?.publicKey, commitStore, network, send, staffSessionId],
   );
@@ -2522,9 +2551,11 @@ export function MerchantProvider({
   const refundReconciledPayment = useCallback(async ({
     paymentId,
     note,
+    approvalRequestId,
   }: {
     paymentId: string;
     note?: string;
+    approvalRequestId?: string;
   }): Promise<Refund> => {
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
@@ -2538,6 +2569,13 @@ export function MerchantProvider({
     if (amountMinor === null || !canReleaseRefund(member, amountMinor)) {
       throw new Error("This payment refund needs approval from a staff member with a higher ceiling.");
     }
+    const existingApprovalRefund = approvalRequestId
+      ? current.refunds.find(
+          (refund) =>
+            refund.requestId === approvalRequestId && refund.submissionStatus !== "failed",
+        )
+      : null;
+    if (existingApprovalRefund) return existingApprovalRefund;
     const order = reconciliation.orderId
       ? current.orders.find((entry) => entry.id === reconciliation.orderId) ?? null
       : null;
@@ -2560,6 +2598,24 @@ export function MerchantProvider({
 
     const payment = reconciliation.payment;
     const reversalAmount = reconciliation.reversalAmount ?? payment.amount;
+    const refundId = uid("rfd");
+    const now = Date.now();
+    const refundBase: Omit<Refund, "transactionHash" | "submissionStatus"> = {
+      id: refundId,
+      orderId: order?.id ?? invoice?.id ?? "",
+      invoiceId: invoice?.id ?? null,
+      kind: "payment_reversal",
+      sourcePaymentId: reconciliation.id,
+      requestId: approvalRequestId ?? null,
+      network: reconciliation.network,
+      amountMinor,
+      asset: payment.asset,
+      amount: reversalAmount,
+      destination: payment.from,
+      reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
+      note: note?.trim() || null,
+      createdAt: now,
+    };
     const result = await send({
       destination: payment.from,
       amount: reversalAmount,
@@ -2569,40 +2625,36 @@ export function MerchantProvider({
         type: "text",
         value: order ? `DP${order.number}` : `IP${invoice?.number ?? "SURPLUS"}`,
       },
+      submissionJournal: {
+        onPrepared: async (prepared) => {
+          const intent: Refund = {
+            ...refundBase,
+            transactionHash: prepared.hash,
+            submissionStatus: "prepared",
+          };
+          await commitStore((latest) => recordRefundSubmission(latest, intent));
+        },
+        onRejected: async () => {
+          if (!storeRef.current.refunds.some((refund) => refund.id === refundId)) return;
+          await commitStore((latest) =>
+            reconcileRefundSubmission(latest, refundId, "failed"));
+        },
+      },
     });
-    const now = Date.now();
-    const refund: Refund = {
-      id: uid("rfd"),
-      orderId: order?.id ?? invoice?.id ?? "",
-      invoiceId: invoice?.id ?? null,
-      kind: "payment_reversal",
-      sourcePaymentId: reconciliation.id,
-      network: reconciliation.network,
-      amountMinor,
-      asset: payment.asset,
-      amount: reversalAmount,
-      destination: payment.from,
-      reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
-      note: note?.trim() || null,
+    await commitStore((latest) => {
+      const recorded = reconcileRefundSubmission(latest, refundId, result.status);
+      return markReconciledRefund(recorded, {
+        paymentId,
+        refundId,
+        actor: member as StaffMember,
+        now,
+      });
+    });
+    return {
+      ...refundBase,
       transactionHash: result.hash,
       submissionStatus: result.status,
-      createdAt: now,
     };
-    const recorded = recordRefundSubmission(storeRef.current, refund);
-    if (refund.submissionStatus === "failed") {
-      // Keep the incoming payment in review: a canonical failure proves no
-      // money moved and the operator may safely retry after correcting it.
-      await commitStore(recorded);
-      return refund;
-    }
-    const resolved = markReconciledRefund(recorded, {
-      paymentId,
-      refundId: refund.id,
-      actor: member as StaffMember,
-      now,
-    });
-    await commitStore(resolved);
-    return refund;
   }, [activeAccount?.publicKey, commitStore, network, send, staffSessionId]);
 
   const submitPaymentRefund = useCallback(async (
@@ -2649,6 +2701,7 @@ export function MerchantProvider({
       ? await refundReconciledPayment({
           paymentId: request.sourcePaymentId,
           note: request.note ?? undefined,
+          approvalRequestId: request.id,
         })
       : await refundOrder({
           orderId: request.orderId,

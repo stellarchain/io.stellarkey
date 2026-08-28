@@ -769,7 +769,7 @@ export async function submitSignedTx(
   const hash = Array.from(tx.hash(), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const form = new URLSearchParams();
   form.set("tx", tx.toXdr());
-  onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
+  await onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
 
 
   let submissionError: unknown = null;

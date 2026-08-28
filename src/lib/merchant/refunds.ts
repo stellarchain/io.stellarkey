@@ -12,6 +12,7 @@ const FINAL_SUBMISSION_STATUSES = new Set<RefundSubmissionStatus>(["confirmed", 
 
 function isSubmissionStatus(value: unknown): value is RefundSubmissionStatus {
   return (
+    value === "prepared" ||
     value === "accepted" ||
     value === "confirmed" ||
     value === "status_unknown" ||
@@ -135,7 +136,7 @@ function deriveOrder(store: MerchantStore, orderId: string): MerchantStore {
   };
 }
 
-/** Persist the signed submission before presenting any refund as complete. */
+/** Persist the signed intent before broadcast and reject every duplicate identity. */
 export function recordRefundSubmission(store: MerchantStore, refund: Refund): MerchantStore {
   const order = store.orders.find((entry) => entry.id === refund.orderId);
   if (!refund.id || store.refunds.some((entry) => entry.id === refund.id)) {

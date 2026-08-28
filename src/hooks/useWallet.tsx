@@ -296,6 +296,11 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
+    /** Durable domain journal hooks; both run inside the pre-POST boundary. */
+    submissionJournal?: {
+      onPrepared: SubmissionPreparedCallback;
+      onRejected?: SubmissionPreparedCallback;
+    };
   }) => Promise<SubmissionResult>;
   sendBatch: (params: {
     payments: Array<{
@@ -634,19 +639,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!pendingTxsHydrated) return;
+    let errorTimer: number | undefined;
     try {
       persistPendingTransactionQueue(window.localStorage, PENDING_TX_STORAGE_KEY, pendingTxs);
+      if (mergeReconciliations.length === 0) {
+        window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          MERGE_RECONCILIATION_STORAGE_KEY,
+          serializeMergeReconciliations(mergeReconciliations),
+        );
+      }
     } catch {
-      setDataError("Transaction recovery could not be updated in persistent storage.");
+      errorTimer = window.setTimeout(() => {
+        setDataError("Transaction recovery could not be updated in persistent storage.");
+      }, 0);
     }
-    if (mergeReconciliations.length === 0) {
-      window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(
-        MERGE_RECONCILIATION_STORAGE_KEY,
-        serializeMergeReconciliations(mergeReconciliations),
-      );
-    }
+    return () => {
+      if (errorTimer !== undefined) window.clearTimeout(errorTimer);
+    };
   }, [mergeReconciliations, pendingTxs, pendingTxsHydrated]);
 
   // Load the Connect bundle before a transaction click. The Trezor-hosted
@@ -1359,11 +1370,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     action: PendingTransactionAction | undefined,
     broadcast: (onPrepared: SubmissionPreparedCallback) => Promise<T>,
     submissionFromResult: (result: T) => SubmissionResult | null,
+    journal?: {
+      onPrepared: SubmissionPreparedCallback;
+      onRejected?: SubmissionPreparedCallback;
+    },
   ): Promise<T> => {
     return runPreparedBroadcast({
       broadcast,
-      prepare: (identity) => prepareSubmissionTracking(identity, label, action),
-      discard: (identity) => discardPreparedSubmission(identity, action),
+      prepare: async (identity) => {
+        prepareSubmissionTracking(identity, label, action);
+        await journal?.onPrepared(identity);
+      },
+      discard: async (identity) => {
+        discardPreparedSubmission(identity, action);
+        await journal?.onRejected?.(identity);
+      },
       finalize: (result) => {
         const submission = submissionFromResult(result);
         if (submission) trackSubmission(submission, label, action);
@@ -1891,6 +1912,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       issuer?: string | null;
       memo?: StellarMemoInput;
       feeStroops?: number;
+      submissionJournal?: {
+        onPrepared: SubmissionPreparedCallback;
+        onRejected?: SubmissionPreparedCallback;
+      };
     }) => {
       if (!activeAccount) throw new Error("No active account");
       if (activeAccount.watchOnly) {
@@ -1910,6 +1935,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           onPrepared,
         }),
         (result) => result,
+        params.submissionJournal,
       ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],

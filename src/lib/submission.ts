@@ -21,7 +21,9 @@ export interface PreparedSubmissionIdentity {
   expiresAt?: number;
 }
 
-export type SubmissionPreparedCallback = (prepared: PreparedSubmissionIdentity) => void;
+export type SubmissionPreparedCallback = (
+  prepared: PreparedSubmissionIdentity,
+) => void | Promise<void>;
 
 export async function runPreparedBroadcast<T>(options: {
   broadcast: (onPrepared: SubmissionPreparedCallback) => Promise<T>;
@@ -32,12 +34,12 @@ export async function runPreparedBroadcast<T>(options: {
   let prepared: PreparedSubmissionIdentity | null = null;
   let result: T;
   try {
-    result = await options.broadcast((identity) => {
-      options.prepare(identity);
+    result = await options.broadcast(async (identity) => {
       prepared = identity;
+      await options.prepare(identity);
     });
   } catch (error) {
-    if (prepared) options.discard(prepared);
+    if (prepared) await options.discard(prepared);
     throw error;
   }
 

@@ -100,6 +100,25 @@ test("unconfirmed refund submissions reserve funds without claiming the order is
   );
 });
 
+test("refund intent reserves funds before broadcast and reconciles without duplication", () => {
+  const base = paymentStore();
+  const intent = refund("intent", 2_000, "prepared");
+  const prepared = recordRefundSubmission(base, intent);
+
+  assert.equal(prepared.refunds.length, 1);
+  assert.equal(prepared.refunds[0].submissionStatus, "prepared");
+  assert.equal(refundableMinor(prepared, "order-1"), 3_000);
+  assert.throws(
+    () => recordRefundSubmission(prepared, intent),
+    /already recorded/i,
+  );
+
+  const accepted = reconcileRefundSubmission(prepared, intent.id, "accepted");
+  assert.equal(accepted.refunds.length, 1);
+  assert.equal(accepted.refunds[0].submissionStatus, "accepted");
+  assert.equal(accepted.orders[0].status, "paid");
+});
+
 test("confirmation applies an order refund exactly once and terminal status cannot regress", () => {
   const base = paymentStore();
   const pending = recordRefundSubmission(base, refund("first", 2_000, "accepted"));
@@ -258,7 +277,10 @@ test("merchant refund surfaces preserve and explain the tracked submission state
     "utf8",
   );
 
-  assert.match(hook, /submissionStatus:\s*result\.status/);
+  assert.match(hook, /submissionStatus:\s*"prepared"/);
+  assert.match(hook, /onPrepared:\s*async/);
+  assert.match(hook, /recordRefundSubmission/);
+  assert.match(hook, /onRejected:\s*async/);
   assert.match(hook, /reconcileRefundSubmission/);
   assert.match(hook, /settledOrderPaymentSource\(current, orderId\)/);
   assert.match(hook, /sourcePaymentId:\s*sourcePayment\.id/);
