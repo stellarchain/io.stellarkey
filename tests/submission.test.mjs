@@ -853,7 +853,7 @@ test("definite rejection removes provisional tracking and allows retry", () => {
   );
 });
 
-test("post-response finalization errors never discard the pre-submit recovery handle", async () => {
+test("post-response storage failure preserves the accepted result and recovery handle", async () => {
   assert.equal(typeof submission.runPreparedBroadcast, "function");
   const prepared = {
     hash: "7".repeat(64),
@@ -862,23 +862,25 @@ test("post-response finalization errors never discard the pre-submit recovery ha
   };
   const events = [];
 
-  await assert.rejects(
-    submission.runPreparedBroadcast({
-      broadcast: async (onPrepared) => {
-        onPrepared(prepared);
-        events.push("post-return");
-        return { status: "accepted" };
-      },
-      prepare: () => events.push("persist"),
-      discard: () => events.push("discard"),
-      finalize: () => {
-        events.push("finalize");
-        throw new Error("render state failed");
-      },
-    }),
-    /render state failed/,
-  );
-  assert.deepEqual(events, ["persist", "post-return", "finalize"]);
+  const result = await submission.runPreparedBroadcast({
+    broadcast: async (onPrepared) => {
+      await onPrepared(prepared);
+      events.push("post-return");
+      return { status: "accepted" };
+    },
+    prepare: () => events.push("persist provisional recovery"),
+    discard: () => events.push("discard"),
+    finalize: () => {
+      events.push("persist accepted status");
+      throw new Error("local storage quota exceeded");
+    },
+  });
+  assert.deepEqual(result, { status: "accepted" });
+  assert.deepEqual(events, [
+    "persist provisional recovery",
+    "post-return",
+    "persist accepted status",
+  ]);
 
   events.length = 0;
   await assert.rejects(
@@ -932,22 +934,20 @@ test("broadcast waits for durable domain intent before POST and journals definit
   ]);
 
   events.length = 0;
-  await assert.rejects(
-    submission.runPreparedBroadcast({
-      broadcast: async (onPrepared) => {
-        await onPrepared(prepared);
-        events.push("post");
-        return { status: "accepted" };
-      },
-      prepare: async () => events.push("persist-intent"),
-      discard: async () => events.push("record-rejection"),
-      finalize: () => {
-        events.push("finalize");
-        throw new Error("result persistence failed");
-      },
-    }),
-    /result persistence failed/,
-  );
+  const result = await submission.runPreparedBroadcast({
+    broadcast: async (onPrepared) => {
+      await onPrepared(prepared);
+      events.push("post");
+      return { status: "accepted" };
+    },
+    prepare: async () => events.push("persist-intent"),
+    discard: async () => events.push("record-rejection"),
+    finalize: () => {
+      events.push("finalize");
+      throw new Error("result persistence failed");
+    },
+  });
+  assert.deepEqual(result, { status: "accepted" });
   assert.deepEqual(events, ["persist-intent", "post", "finalize"]);
 });
 

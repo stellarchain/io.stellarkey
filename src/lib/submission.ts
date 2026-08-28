@@ -45,7 +45,13 @@ export async function runPreparedBroadcast<T>(options: {
 
   // Horizon has returned. From here onward a local presentation/state error
   // must never erase the durable recovery handle for a possibly accepted tx.
-  options.finalize(result);
+  try {
+    options.finalize(result);
+  } catch {
+    // The provisional record was persisted before broadcast. Keep returning
+    // Horizon's accepted result even if a best-effort local status upgrade
+    // fails (for example because storage became unavailable or full).
+  }
   return result;
 }
 
