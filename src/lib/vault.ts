@@ -1224,7 +1224,7 @@ export async function importKeystore(
   const parsed = JSON.parse(json) as KeystoreFile;
   if (
     !parsed ||
-    (parsed.format !== KEYSTORE_FORMAT && parsed.format !== "stellarkey-keystore/v1") ||
+    parsed.format !== KEYSTORE_FORMAT ||
     !parsed.crypto
   ) {
     throw new Error("Invalid Wallet keystore format");

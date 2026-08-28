@@ -155,6 +155,26 @@ test("password-sensitive exports verify the password at the point of use", async
   assert.match(await exportVaultBackup(password), /stellar-wallet-backup/);
 });
 
+test("account keystores accept only the current format marker", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    exportKeystoreWithPassword,
+    importKeystore,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const { account } = await initializeVault(password, { secret: Keypair.random().secret() });
+  const current = JSON.parse(await exportKeystoreWithPassword(account.id, password));
+  current.format = "stellarkey-keystore/v1";
+
+  await assert.rejects(
+    () => importKeystore(JSON.stringify(current), password),
+    /invalid.*keystore format/i,
+  );
+});
+
 test("an optional local passkey unwraps the v3 master key while password fallback remains", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
