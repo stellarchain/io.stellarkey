@@ -45,7 +45,7 @@ export function isRawKeyEncryptedPayloadValue(value: unknown): value is RawKeyEn
   );
 }
 
-function isStoredAccount(value: unknown, vaultVersion: VaultFile["version"]): value is StoredAccount {
+function isStoredAccount(value: unknown): value is StoredAccount {
   if (!isRecord(value)) return false;
   if (typeof value.id !== "string" || !value.id) return false;
   if (typeof value.label !== "string") return false;
@@ -63,9 +63,7 @@ function isStoredAccount(value: unknown, vaultVersion: VaultFile["version"]): va
   if (value.path !== undefined && typeof value.path !== "string") return false;
   if (
     value.secret !== undefined &&
-    !(vaultVersion === 3
-      ? isRawKeyEncryptedPayloadValue(value.secret)
-      : isEncryptedPayloadValue(value.secret))
+    !isRawKeyEncryptedPayloadValue(value.secret)
   ) return false;
   if (value.watchOnly !== undefined && typeof value.watchOnly !== "boolean") return false;
   if (value.hardware !== undefined && value.hardware !== "ledger" && value.hardware !== "trezor") {
@@ -75,19 +73,17 @@ function isStoredAccount(value: unknown, vaultVersion: VaultFile["version"]): va
 }
 
 export function decodeVaultFile(value: unknown): VaultFile | null {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)) {
+  if (!isRecord(value) || value.version !== 3) {
     return null;
   }
   if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
-  if (!value.accounts.every((account) => isStoredAccount(account, value.version as VaultFile["version"]))) {
+  if (!value.accounts.every(isStoredAccount)) {
     return null;
   }
   if (value.archivedAccounts !== undefined) {
     if (
       !Array.isArray(value.archivedAccounts) ||
-      !value.archivedAccounts.every((account) =>
-        isStoredAccount(account, value.version as VaultFile["version"])
-      )
+      !value.archivedAccounts.every(isStoredAccount)
     ) {
       return null;
     }
@@ -101,17 +97,12 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
   }
   if (
     value.mnemonic !== undefined &&
-    !(value.version === 3
-      ? isRawKeyEncryptedPayloadValue(value.mnemonic)
-      : isEncryptedPayloadValue(value.mnemonic))
+    !isRawKeyEncryptedPayloadValue(value.mnemonic)
   ) return null;
-  if (value.passwordCheck !== undefined && !isEncryptedPayloadValue(value.passwordCheck)) return null;
-  if (value.version === 3 && !isEncryptedPayloadValue(value.wrappedMasterKey)) return null;
-  if (value.version === 3 && !isRawKeyEncryptedPayloadValue(value.wrappedMerchantKey)) {
+  if (!isEncryptedPayloadValue(value.wrappedMasterKey)) return null;
+  if (!isRawKeyEncryptedPayloadValue(value.wrappedMerchantKey)) {
     return null;
   }
-  if (value.version !== 3 && value.wrappedMasterKey !== undefined) return null;
-  if (value.version !== 3 && value.wrappedMerchantKey !== undefined) return null;
   return value as unknown as VaultFile;
 }
 
@@ -149,15 +140,7 @@ function isBackupSettings(value: unknown): value is BackupSettings {
 
 function isTxNotes(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
-  if (value.version === 3 && "crypto" in value) {
-    return isRawKeyEncryptedPayloadValue(value.crypto);
-  }
-  if (value.version === 2 && "crypto" in value) {
-    return isEncryptedPayloadValue(value.crypto);
-  }
-  return Object.values(value).every(
-    (note) => typeof note === "string" || isEncryptedPayloadValue(note),
-  );
+  return value.version === 3 && isRawKeyEncryptedPayloadValue(value.crypto);
 }
 
 export function decodeFullBackupPayload(value: unknown): FullBackupPayload | null {

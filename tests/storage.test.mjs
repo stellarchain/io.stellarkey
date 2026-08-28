@@ -52,12 +52,11 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
   assert.equal(localStorage.getItem("unrelated.application"), "keep");
 });
 
-test("legacy contacts migrate to authenticated ciphertext and require an unlocked vault", async () => {
+test("POC plaintext contacts are rejected and never rewritten", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
   const { Keypair } = await import("@stellar/stellar-sdk");
   const alice = Keypair.random().publicKey();
-  const bob = Keypair.random().publicKey();
   const password = "correct horse battery staple";
   const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
   await initializeVault(password, { secret: Keypair.random().secret() });
@@ -70,19 +69,10 @@ test("legacy contacts migrate to authenticated ciphertext and require an unlocke
   const { loadContacts, saveContact } = await import("../src/lib/contacts.ts");
   await assert.rejects(() => loadContacts(), /locked/i);
 
-  await unlockVault(password);
-  assert.deepEqual(await loadContacts(), [{ name: "Alice", address: alice, favorite: false }]);
-  await saveContact({ name: "Bob", address: bob });
-  assert.equal((await loadContacts()).length, 2);
-
-  const stored = localStorage.getItem("polaris.contacts.v1");
-  assert.ok(stored);
-  assert.doesNotMatch(stored, /Alice|Bob/);
-  assert.equal(stored.includes(alice), false);
-  assert.equal(stored.includes(bob), false);
-
-  lockVault();
-  await assert.rejects(() => loadContacts(), /locked/i);
+  const raw = localStorage.getItem("polaris.contacts.v1");
+  await assert.rejects(() => unlockVault(password), /contacts.*unsupported|unsupported.*contacts/i);
+  assert.equal(localStorage.getItem("polaris.contacts.v1"), raw);
+  await assert.rejects(() => saveContact({ name: "Alice", address: alice }), /locked/i);
 });
 
 test("restored contacts are encrypted before the restored vault is exposed", async () => {
@@ -282,7 +272,6 @@ test("full wallet restore rolls every storage key back when a write fails", asyn
   const { exportVaultBackup, initializeVault, restoreVaultBackup } = await import("../src/lib/vault.ts");
   const password = "correct horse battery staple";
   await initializeVault(password, { secret: Keypair.random().secret() });
-  localStorage.setItem("polaris.contacts.v1", "[]");
   const backup = await exportVaultBackup(password);
 
   const targetKeys = [

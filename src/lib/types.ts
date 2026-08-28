@@ -7,11 +7,11 @@ export interface StoredAccount {
   emoji?: string;
   publicKey: string;
   createdAt: number;
-  /** v2: derived from the vault mnemonic at this SLIP-0010 index */
+  /** Derived from the vault mnemonic at this SLIP-0010 index. */
   index?: number;
   path?: string;
-  /** v1 legacy password payload, or v3 master-key payload for imported secrets. */
-  secret?: EncryptedPayload | RawKeyEncryptedPayload;
+  /** Master-key encrypted payload for imported secrets. */
+  secret?: RawKeyEncryptedPayload;
   /** Track-only: no secret key exists for this account */
   watchOnly?: boolean;
   /** Hardware wallet backing (Ledger or Trezor) */
@@ -19,17 +19,12 @@ export interface StoredAccount {
 }
 
 export interface VaultFile {
-  version: 1 | 2 | 3;
-  /** v3: a random vault master key wrapped by the password-derived key. */
-  wrappedMasterKey?: EncryptedPayload;
-  /** v3: merchant storage authority wrapped by the same random master key. */
-  wrappedMerchantKey?: RawKeyEncryptedPayload;
-  mnemonic?: EncryptedPayload | RawKeyEncryptedPayload;
-  /**
-   * Legacy password canary for v1 hardware/watch-only vaults. v3 verifies by
-   * authenticating the wrapped master key instead.
-   */
-  passwordCheck?: EncryptedPayload;
+  version: 3;
+  /** Random vault master key wrapped by the password-derived key. */
+  wrappedMasterKey: EncryptedPayload;
+  /** Merchant storage authority wrapped by the same random master key. */
+  wrappedMerchantKey: RawKeyEncryptedPayload;
+  mnemonic?: RawKeyEncryptedPayload;
   accounts: StoredAccount[];
   archivedAccounts?: StoredAccount[];
   activeAccountId: string | null;

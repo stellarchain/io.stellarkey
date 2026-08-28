@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Keypair } from "@stellar/stellar-sdk";
-import { deriveEncryptionKeyBytes, encryptString } from "../src/lib/crypto.ts";
-import { generateMnemonic, keypairFromMnemonicIndex, stellarAccountPath } from "../src/lib/hd.ts";
 import { zeroKey } from "../src/lib/vault-keys.ts";
 
 class MemoryStorage {
@@ -74,97 +72,31 @@ test("new wallets persist a password-wrapped v3 master key without plaintext sec
   assert.deepEqual(Object.keys(stored.accounts[0].secret).sort(), ["ciphertext", "iv"]);
 });
 
-test("legacy password-encrypted wallets migrate only after successful unlock", async () => {
+test("POC vault formats are rejected without modifying them", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
-  const { lockVault, unlockVault, withSecretKey } = await import("../src/lib/vault.ts");
+  const { loadVaultResult, lockVault, unlockVault } = await import("../src/lib/vault.ts");
   lockVault();
   const source = Keypair.random();
-  const legacy = {
-    version: 1,
-    accounts: [{
-      id: "legacy-account",
-      label: "Legacy",
-      publicKey: source.publicKey(),
-      createdAt: 1,
-      secret: await encryptString(source.secret(), password),
-    }],
-    activeAccountId: "legacy-account",
-  };
-  localStorage.setItem("polaris.vault.v1", JSON.stringify(legacy));
+  for (const version of [1, 2]) {
+    const raw = JSON.stringify({
+      version,
+      accounts: [{
+        id: `poc-${version}`,
+        label: "POC wallet",
+        publicKey: source.publicKey(),
+        createdAt: 1,
+      }],
+      activeAccountId: `poc-${version}`,
+    });
+    localStorage.setItem("polaris.vault.v1", raw);
 
-  await assert.rejects(() => unlockVault("wrong password"), /incorrect password/i);
-  assert.equal(JSON.parse(localStorage.getItem("polaris.vault.v1")).version, 1);
-
-  const unlocked = await unlockVault(password);
-  assert.equal(unlocked.version, 3);
-  assert.equal(unlocked.accounts[0].publicKey, source.publicKey());
-  assert.equal(JSON.parse(localStorage.getItem("polaris.vault.v1")).version, 3);
-  assert.equal(await withSecretKey("legacy-account", (secret) => secret), source.secret());
-});
-
-test("legacy merchant encryption authority remains usable after vault migration", async () => {
-  const localStorage = new MemoryStorage();
-  globalThis.window = { localStorage };
-  const { getMerchantEncryptionKey, lockVault, unlockVault } = await import("../src/lib/vault.ts");
-  lockVault();
-  const source = Keypair.random();
-  const encryptedSecret = await encryptString(source.secret(), password);
-  localStorage.setItem("polaris.vault.v1", JSON.stringify({
-    version: 1,
-    accounts: [{
-      id: "merchant-legacy",
-      label: "Merchant",
-      publicKey: source.publicKey(),
-      createdAt: 1,
-      secret: encryptedSecret,
-    }],
-    activeAccountId: "merchant-legacy",
-  }));
-  const legacyMerchantKey = await deriveEncryptionKeyBytes(
-    password,
-    `merchant-store:${encryptedSecret.salt}`,
-  );
-
-  await unlockVault(password);
-  const migratedMerchantKey = getMerchantEncryptionKey();
-  assert.deepEqual(migratedMerchantKey, legacyMerchantKey);
-  legacyMerchantKey.fill(0);
-  migratedMerchantKey.fill(0);
-});
-
-test("v2 mnemonic wallets migrate without changing any derived account identity", async () => {
-  const localStorage = new MemoryStorage();
-  globalThis.window = { localStorage };
-  const { lockVault, unlockVault, withSecretKey } = await import("../src/lib/vault.ts");
-  lockVault();
-  const mnemonic = await generateMnemonic();
-  const first = await keypairFromMnemonicIndex(mnemonic, 0);
-  const second = await keypairFromMnemonicIndex(mnemonic, 1);
-  localStorage.setItem("polaris.vault.v1", JSON.stringify({
-    version: 2,
-    mnemonic: await encryptString(mnemonic, password),
-    accounts: [first, second].map((keypair, index) => ({
-      id: `derived-${index}`,
-      label: `Account ${index + 1}`,
-      publicKey: keypair.publicKey(),
-      createdAt: index + 1,
-      index,
-      path: stellarAccountPath(index),
-    })),
-    activeAccountId: "derived-0",
-  }));
-
-  const unlocked = await unlockVault(password);
-  assert.equal(unlocked.version, 3);
-  assert.deepEqual(unlocked.accounts.map((account) => account.publicKey), [
-    first.publicKey(),
-    second.publicKey(),
-  ]);
-  assert.equal(
-    await withSecretKey("derived-1", (secret) => Keypair.fromSecret(secret).publicKey()),
-    second.publicKey(),
-  );
+    const result = loadVaultResult();
+    assert.equal(result.kind, "corrupt");
+    assert.match(result.message, /unsupported|current/i);
+    await assert.rejects(() => unlockVault(password), /no wallet found/i);
+    assert.equal(localStorage.getItem("polaris.vault.v1"), raw);
+  }
 });
 
 test("secret access is scoped to one async operation and lock zeroes session authority", async () => {
