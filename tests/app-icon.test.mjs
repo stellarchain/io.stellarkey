@@ -88,7 +88,7 @@ function pngPixel(path, x, y) {
 function assertMaskableSafeZone(path) {
   const { width, height, rows, bytesPerPixel } = decodePng(path);
   assert.equal(width, height, `${path} must be square`);
-  const background = [10, 132, 255];
+  const background = [0, 0, 0];
   const radius = width * 0.4;
   let logoPixels = 0;
 
@@ -134,6 +134,7 @@ test("Next serves static install metadata and an Apple icon through native app r
   assert.equal(existsSync(publicLogoUrl), true, "the supplied logo must remain available as public master artwork");
   const publicLogo = readFileSync(publicLogoUrl, "utf8");
   assert.match(publicLogo, /viewBox="0 0 64 64"/);
+  assert.match(sourceIcon, /<rect width="64" height="64" fill="#000000"\/>/);
   for (const [name, art] of [
     ["LogoMark", logo],
     ["icon.svg", sourceIcon],
@@ -198,7 +199,7 @@ test("Next serves static install metadata and an Apple icon through native app r
   ]) {
     const { width, height } = pngInfo(path);
     for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
-      assert.deepEqual(pngPixel(path, x, y), [10, 132, 255], `${path} must be full-bleed StellarKey blue`);
+      assert.deepEqual(pngPixel(path, x, y), [0, 0, 0], `${path} must be full-bleed StellarKey black`);
     }
   }
 
@@ -213,22 +214,22 @@ test("Next serves static install metadata and an Apple icon through native app r
   assert.deepEqual(
     manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),
     [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: "/icon-maskable-192.png",
+        src: "/icon-maskable-192.png?v=2",
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/icon-maskable-512.png",
+        src: "/icon-maskable-512.png?v=2",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/icon-maskable-1024.png",
+        src: "/icon-maskable-1024.png?v=2",
         sizes: "1024x1024",
         type: "image/png",
         purpose: "maskable",
