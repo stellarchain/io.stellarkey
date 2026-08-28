@@ -100,3 +100,20 @@ export function DocQuestion() {
 export function DocArrowOut() {
   return <Ico><path d="M14 4.6h5.4V10" /><path d="M19.4 4.6 11.6 12.4" /><path d="M17.4 14.2v4.2a1.4 1.4 0 0 1-1.4 1.4H5.6a1.4 1.4 0 0 1-1.4-1.4V8a1.4 1.4 0 0 1 1.4-1.4h4.2" /></Ico>;
 }
+
+/*
+ * GitHub's own mark, used to point at the repository. It is a solid glyph
+ * rather than a stroked one, so it is drawn filled and reads a little heavier
+ * than its neighbours — which suits a link that leaves for another service.
+ */
+export function DocGitHub() {
+  return (
+    <Ico>
+      <path
+        fill="currentColor"
+        stroke="none"
+        d="M12 1.3a10.7 10.7 0 0 0-3.38 20.86c.53.1.73-.23.73-.51l-.01-1.79c-2.98.65-3.6-1.42-3.6-1.42-.49-1.24-1.19-1.57-1.19-1.57-.97-.66.08-.65.08-.65 1.07.08 1.64 1.1 1.64 1.1.96 1.63 2.5 1.16 3.11.89.1-.69.37-1.16.68-1.43-2.37-.27-4.87-1.19-4.87-5.29 0-1.17.42-2.12 1.1-2.87-.11-.27-.48-1.36.1-2.83 0 0 .9-.29 2.94 1.1a10.2 10.2 0 0 1 5.35 0c2.04-1.39 2.94-1.1 2.94-1.1.58 1.47.21 2.56.1 2.83.69.75 1.1 1.7 1.1 2.87 0 4.11-2.5 5.02-4.88 5.28.38.33.72.98.72 1.98l-.01 2.93c0 .28.19.62.73.51A10.7 10.7 0 0 0 12 1.3Z"
+      />
+    </Ico>
+  );
+}
