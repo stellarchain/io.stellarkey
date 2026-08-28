@@ -247,9 +247,9 @@ interface WalletContextValue {
   autoLockMs: number;
   changeAutoLockMs: (ms: number) => void;
   contacts: Contact[];
-  addContact: (contact: Contact) => void;
-  removeContact: (address: string) => void;
-  toggleContactFavorite: (address: string) => void;
+  addContact: (contact: Contact, previousAddress?: string) => Promise<void>;
+  removeContact: (address: string) => Promise<void>;
+  toggleContactFavorite: (address: string) => Promise<void>;
 
   createWallet: (
     password: string,
@@ -710,7 +710,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setAutoLockMsState(loadAutoLockPref());
-      setContacts(loadContacts());
+      setContacts([]);
       const vaultResult = loadVaultResult();
       if (vaultResult.kind !== "ready") {
         if (vaultResult.kind === "absent") {
@@ -1123,6 +1123,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
     setAccountPortfolioSnapshots({});
+    setContacts([]);
     setPhase("locked");
     setDataLoading(false);
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
@@ -1546,7 +1547,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("unlocked");
   }, []);
 
-  const installUnlockedVault = useCallback((vault: Awaited<ReturnType<typeof unlockVault>>) => {
+  const installUnlockedVault = useCallback(async (
+    vault: Awaited<ReturnType<typeof unlockVault>>,
+  ) => {
+    const privateContacts = await loadContacts();
     setAccounts(vault.accounts.map(stripSecret));
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
@@ -1555,15 +1559,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
+    setContacts(privateContacts);
     setPhase("unlocked");
   }, []);
 
   const unlock = useCallback(async (password: string) => {
-    installUnlockedVault(await unlockVault(password));
+    await installUnlockedVault(await unlockVault(password));
   }, [installUnlockedVault]);
 
   const unlockWithPasskey = useCallback(async () => {
-    installUnlockedVault(await unlockVaultWithPasskey());
+    await installUnlockedVault(await unlockVaultWithPasskey());
   }, [installUnlockedVault]);
 
   const lock = useCallback(() => {
@@ -1597,6 +1602,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     snapshotCache.current.clear();
     setActivity([]);
     setPriceData(null);
+    setContacts([]);
     commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
     commitMergeReconciliations(() => []);
     setVaultStorageIssue(null);
@@ -1636,7 +1642,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
       setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
     }
-    setContacts(loadContacts());
+    setContacts([]);
     setBalances(null);
     setClaimableBalances([]);
     setActivity([]);
@@ -1973,14 +1979,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeAccount, activityCursor, loadingMore, network]);
 
-  const addContact = useCallback((contact: Contact) => {
-    setContacts(saveContact(contact));
+  const addContact = useCallback(async (contact: Contact, previousAddress?: string) => {
+    setContacts(await saveContact(contact, previousAddress));
   }, []);
-  const removeContact = useCallback((address: string) => {
-    setContacts(deleteContact(address));
+  const removeContact = useCallback(async (address: string) => {
+    setContacts(await deleteContact(address));
   }, []);
-  const toggleContactFavorite = useCallback((address: string) => {
-    setContacts(toggleFavoriteContact(address));
+  const toggleContactFavorite = useCallback(async (address: string) => {
+    setContacts(await toggleFavoriteContact(address));
   }, []);
 
   const send = useCallback(

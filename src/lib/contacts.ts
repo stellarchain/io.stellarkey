@@ -1,8 +1,10 @@
 "use client";
 
-import { isValidPublicAddress } from "./vault";
-
-const KEY = "polaris.contacts.v1";
+import {
+  isValidPublicAddress,
+  loadPrivateContactRecords,
+  savePrivateContactRecords,
+} from "./vault";
 
 export interface Contact {
   name: string;
@@ -20,61 +22,59 @@ function normalizeContact(value: unknown): Contact | null {
   return { name, address, favorite: candidate.favorite === true };
 }
 
-export function loadContacts(): Contact[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed)
-      ? parsed.map(normalizeContact).filter((contact): contact is Contact => contact !== null)
-      : [];
-  } catch {
-    return [];
-  }
+export async function loadContacts(): Promise<Contact[]> {
+  const records = await loadPrivateContactRecords();
+  return records
+    .map(normalizeContact)
+    .filter((contact): contact is Contact => contact !== null);
 }
 
-function persist(contacts: Contact[]): void {
-  window.localStorage.setItem(KEY, JSON.stringify(contacts));
+function sortContacts(contacts: Contact[]): Contact[] {
+  return contacts.sort((a, b) => {
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
+    return a.name.localeCompare(b.name);
+  });
 }
 
-export function saveContact(contact: Contact): Contact[] {
+let contactMutationQueue: Promise<void> = Promise.resolve();
+
+function mutateContacts(update: (contacts: Contact[]) => Contact[]): Promise<Contact[]> {
+  const mutation = contactMutationQueue.then(async () => {
+    const next = update(await loadContacts());
+    await savePrivateContactRecords(next);
+    return next;
+  });
+  contactMutationQueue = mutation.then(() => undefined, () => undefined);
+  return mutation;
+}
+
+export function saveContact(contact: Contact, previousAddress?: string): Promise<Contact[]> {
   const normalized = normalizeContact(contact);
-  if (!normalized) throw new Error("Contact has an invalid name or Stellar address.");
-  const contacts = loadContacts().filter(
-    (c) => c.address !== normalized.address,
-  );
-  const next = [...contacts, normalized].sort((a, b) => {
-    if (a.favorite && !b.favorite) return -1;
-    if (!a.favorite && b.favorite) return 1;
-    return a.name.localeCompare(b.name);
+  if (!normalized) return Promise.reject(new Error("Contact has an invalid name or Stellar address."));
+  const replacedAddress = previousAddress?.trim();
+  return mutateContacts((contacts) => {
+    const retained = contacts.filter(
+      (candidate) => candidate.address !== normalized.address && candidate.address !== replacedAddress,
+    );
+    return sortContacts([...retained, normalized]);
   });
-  persist(next);
-  return next;
 }
 
-export function toggleFavoriteContact(address: string): Contact[] {
+export function toggleFavoriteContact(address: string): Promise<Contact[]> {
   const normalizedAddress = address.trim();
-  const contacts = loadContacts();
-  const next = contacts.map((c) =>
-    c.address === normalizedAddress
-      ? { ...c, favorite: !c.favorite }
-      : c,
-  ).sort((a, b) => {
-    if (a.favorite && !b.favorite) return -1;
-    if (!a.favorite && b.favorite) return 1;
-    return a.name.localeCompare(b.name);
-  });
-  persist(next);
-  return next;
+  return mutateContacts((contacts) => sortContacts(contacts.map((contact) =>
+    contact.address === normalizedAddress
+      ? { ...contact, favorite: !contact.favorite }
+      : contact
+  )));
 }
 
-export function deleteContact(address: string): Contact[] {
+export function deleteContact(address: string): Promise<Contact[]> {
   const normalizedAddress = address.trim();
-  const next = loadContacts().filter(
-    (c) => c.address !== normalizedAddress,
-  );
-  persist(next);
-  return next;
+  return mutateContacts((contacts) => contacts.filter(
+    (contact) => contact.address !== normalizedAddress,
+  ));
 }
 
 export function validateContact(name: string, address: string): string | null {

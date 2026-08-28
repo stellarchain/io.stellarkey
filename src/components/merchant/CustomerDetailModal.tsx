@@ -189,7 +189,7 @@ function CustomerDetail({
     }
   }
 
-  function saveToContacts() {
+  async function saveToContacts() {
     const name = contactName.trim();
     if (!name) {
       triggerHaptic("error");
@@ -197,7 +197,7 @@ function CustomerDetail({
       return;
     }
     try {
-      addContact({ name, address: customer.address });
+      await addContact({ name, address: customer.address });
       triggerHaptic("success");
       toast(`${name} saved to Contacts.`, "success");
     } catch (error) {
@@ -256,7 +256,11 @@ function CustomerDetail({
             placeholder="Name this address"
             aria-label="Contact name"
           />
-          <Button variant="secondary" className="shrink-0" onClick={saveToContacts}>
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            onClick={() => void saveToContacts()}
+          >
             <IconUserPlus size={13} />
             {customer.name ? "Update" : "Save contact"}
           </Button>
