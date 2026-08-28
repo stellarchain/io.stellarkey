@@ -23,6 +23,7 @@ const mimeTypes = new Map([
   [".json", "application/json; charset=utf-8"],
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
+  [".txt", "text/plain; charset=utf-8"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
 ]);
 
@@ -45,13 +46,19 @@ function parseHeaderRules(raw) {
 }
 
 const headersPath = path.join(outputRoot, "_headers");
+function matchesHeaderRule(pattern, urlPath) {
+  if (pattern === "/*") return true;
+  if (pattern.endsWith("*")) return urlPath.startsWith(pattern.slice(0, -1));
+  return pattern === urlPath;
+}
+
 async function headersFor(urlPath) {
   // A local production build replaces both index.html and its CSP hashes. Read
   // them as one live release boundary instead of retaining hashes from startup.
   const headerRules = parseHeaderRules(await readFile(headersPath, "utf8"));
   const headers = {};
   for (const rule of headerRules) {
-    if (rule.pattern === "/*" || rule.pattern === urlPath) Object.assign(headers, rule.headers);
+    if (matchesHeaderRule(rule.pattern, urlPath)) Object.assign(headers, rule.headers);
   }
   return headers;
 }

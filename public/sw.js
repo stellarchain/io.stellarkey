@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "polaris-shell-";
 const BUILD_REVISION = "development"; // @generated-revision
-const PRECACHE_PATHS = new Set(["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/apple-touch-icon.png"]); // @generated-precache
+const PRECACHE_PATHS = new Set(["/", "/about", "/privacy", "/terms", "/security", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-icon.png", "/apple-touch-icon.png"]); // @generated-precache
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
 
 function isShellAsset(url) {
@@ -52,7 +52,12 @@ self.addEventListener("fetch", (event) => {
         // Keep the fallback bound to the assets installed with this revision.
         return await fetch(request, { cache: "no-store" });
       } catch {
-        const cached = await caches.open(CACHE_NAME).then((cache) => cache.match("/"));
+        const normalizedNavigationPath = url.pathname === "/"
+          ? "/"
+          : url.pathname.replace(/\/$/, "");
+        const cached = await caches.open(CACHE_NAME).then(async (cache) =>
+          (await cache.match(normalizedNavigationPath)) ?? cache.match("/"),
+        );
         return cached ?? Response.error();
       }
     })());

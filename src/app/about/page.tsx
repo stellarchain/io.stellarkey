@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND_DESCRIPTION, BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
+import {
+  BRAND_DESCRIPTION,
+  BRAND_NAME,
+  PUBLIC_OPEN_GRAPH_IMAGE,
+  PUBLIC_ROUTES,
+} from "@/lib/brand";
 
 const description = `How ${BRAND_NAME} keeps Stellar keys and records under your control without an application backend.`;
 
@@ -8,7 +13,12 @@ export const metadata: Metadata = {
   title: "About",
   description,
   alternates: { canonical: PUBLIC_ROUTES.about },
-  openGraph: { title: `About ${BRAND_NAME}`, description, url: PUBLIC_ROUTES.about },
+  openGraph: {
+    title: `About ${BRAND_NAME}`,
+    description,
+    url: PUBLIC_ROUTES.about,
+    images: [PUBLIC_OPEN_GRAPH_IMAGE],
+  },
 };
 
 export default function AboutPage() {

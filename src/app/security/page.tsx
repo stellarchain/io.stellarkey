@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ContactAction } from "@/components/ContactAction";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
+import { BRAND_NAME, PUBLIC_OPEN_GRAPH_IMAGE, PUBLIC_ROUTES } from "@/lib/brand";
 
 const description = `${BRAND_NAME} security model, supported disclosure scope, and responsible disclosure process.`;
 
@@ -9,7 +9,12 @@ export const metadata: Metadata = {
   title: "Security",
   description,
   alternates: { canonical: PUBLIC_ROUTES.security },
-  openGraph: { title: `${BRAND_NAME} Security`, description, url: PUBLIC_ROUTES.security },
+  openGraph: {
+    title: `${BRAND_NAME} Security`,
+    description,
+    url: PUBLIC_ROUTES.security,
+    images: [PUBLIC_OPEN_GRAPH_IMAGE],
+  },
 };
 
 export default function SecurityPage() {
