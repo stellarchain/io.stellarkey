@@ -88,6 +88,26 @@ test("long-form trust pages expose plain-language summaries and on-page navigati
   }
 });
 
+test("trust-center chrome uses one accessible icon language without replacing text labels", () => {
+  const legalPage = read("src/components/LegalPage.tsx");
+  for (const icon of [
+    "IconCompass",
+    "IconEyeOff",
+    "IconFileText",
+    "IconFingerprint",
+    "IconBook",
+    "IconCheck",
+    "IconList",
+  ]) {
+    assert.match(legalPage, new RegExp(icon), `${icon} is missing from the trust-center presentation`);
+  }
+  assert.match(legalPage, /className="legal-hero"/);
+  assert.match(legalPage, /className="legal-route-icon"/);
+  assert.match(legalPage, /className="legal-highlight-icon"/);
+  assert.match(legalPage, /aria-hidden="true"/);
+  assert.match(legalPage, />\{label\}</, "navigation icons must retain visible text labels");
+});
+
 test("public and locked surfaces share accessible legal navigation", () => {
   const footer = read("src/components/PublicFooter.tsx");
   const legalPage = read("src/components/LegalPage.tsx");
