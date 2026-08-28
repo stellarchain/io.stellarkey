@@ -49,17 +49,18 @@ class MemoryCacheStorage {
   }
 }
 
-async function installAndActivate(source, caches) {
+function evaluateWorker(source, caches, fetchImpl) {
   const listeners = new Map();
+  let skipped = 0;
   const self = {
     location: { origin: ORIGIN },
     clients: { claim: async () => undefined },
-    skipWaiting: async () => undefined,
+    skipWaiting: async () => { skipped += 1; },
     addEventListener(type, listener) {
       listeners.set(type, listener);
     },
   };
-  const fetch = async (input) => {
+  const defaultFetch = async (input) => {
     const url = new URL(normalizeRequest(input));
     const body = url.pathname === "/" ? "<!doctype html><title>Polaris</title>" : url.pathname;
     return new Response(body, { status: 200 });
@@ -67,7 +68,7 @@ async function installAndActivate(source, caches) {
   vm.runInNewContext(source, {
     self,
     caches,
-    fetch,
+    fetch: fetchImpl ?? defaultFetch,
     URL,
     Response,
     Request,
@@ -75,15 +76,20 @@ async function installAndActivate(source, caches) {
     Set,
   });
 
-  for (const type of ["install", "activate"]) {
-    let work;
-    listeners.get(type)?.({ waitUntil(promise) { work = promise; } });
-    assert.ok(work, `${type} must wait for its cache transaction`);
-    await work;
-  }
+  return {
+    listeners,
+    skipped: () => skipped,
+  };
 }
 
-test("a two-version worker upgrade atomically removes obsolete hashed chunks", async () => {
+async function dispatchExtendable(listener, extras = {}) {
+  let work;
+  listener?.({ ...extras, waitUntil(promise) { work = promise; } });
+  assert.ok(work, "event must wait for its cache transaction");
+  await work;
+}
+
+test("a worker update waits for consent and keeps the previous shell available", async () => {
   const { renderServiceWorker } = await generatorDomain();
   const template = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
   const caches = new MemoryCacheStorage();
@@ -98,7 +104,9 @@ test("a two-version worker upgrade atomically removes obsolete hashed chunks", a
     revision: "build-two",
   });
 
-  await installAndActivate(first, caches);
+  const firstWorker = evaluateWorker(first, caches);
+  await dispatchExtendable(firstWorker.listeners.get("install"));
+  await dispatchExtendable(firstWorker.listeners.get("activate"));
   assert.deepEqual(await caches.keys(), ["polaris-shell-build-one"]);
   assert.ok(
     caches.stores.get("polaris-shell-build-one").entries.has(
@@ -106,11 +114,66 @@ test("a two-version worker upgrade atomically removes obsolete hashed chunks", a
     ),
   );
 
-  await installAndActivate(second, caches);
-  assert.deepEqual(await caches.keys(), ["polaris-shell-build-two"]);
+  const secondWorker = evaluateWorker(second, caches, async (input) => {
+    const url = new URL(normalizeRequest(input));
+    if (url.pathname === "/_next/static/chunks/old-build.js") {
+      throw new TypeError("old chunk is no longer on the deployment origin");
+    }
+    return new Response(url.pathname, { status: 200 });
+  });
+  await dispatchExtendable(secondWorker.listeners.get("install"));
+  assert.equal(secondWorker.skipped(), 0, "install must not activate over a live app");
+  assert.deepEqual(await caches.keys(), [
+    "polaris-shell-build-one",
+    "polaris-shell-build-two",
+  ]);
+
+  await dispatchExtendable(secondWorker.listeners.get("activate"));
+  assert.deepEqual(await caches.keys(), [
+    "polaris-shell-build-one",
+    "polaris-shell-build-two",
+  ]);
   const liveEntries = caches.stores.get("polaris-shell-build-two").entries;
   assert.ok(liveEntries.has(`${ORIGIN}/_next/static/chunks/new-build.js`));
   assert.equal(liveEntries.has(`${ORIGIN}/_next/static/chunks/old-build.js`), false);
+
+  let responseWork;
+  secondWorker.listeners.get("fetch")?.({
+    request: new Request(`${ORIGIN}/_next/static/chunks/old-build.js`),
+    respondWith(promise) { responseWork = promise; },
+  });
+  assert.ok(responseWork, "the staged worker must handle old shell chunks");
+  const oldChunk = await responseWork;
+  assert.equal(await oldChunk.text(), "/_next/static/chunks/old-build.js");
+
+  let invalidWork;
+  secondWorker.listeners.get("message")?.({
+    data: { type: "SKIP_WAITING" },
+    source: { url: "https://attacker.example/app" },
+    waitUntil(promise) { invalidWork = promise; },
+  });
+  assert.equal(invalidWork, undefined);
+  assert.equal(secondWorker.skipped(), 0, "cross-origin messages must be ignored");
+  await dispatchExtendable(secondWorker.listeners.get("message"), {
+    data: { type: "SKIP_WAITING" },
+    source: { url: `${ORIGIN}/` },
+  });
+  assert.equal(secondWorker.skipped(), 1);
+});
+
+test("the app offers an accessible update action and reloads only after controller change", () => {
+  const source = readFileSync(
+    new URL("../src/components/ServiceWorkerRegistration.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /registration\.waiting/);
+  assert.match(source, /updatefound/);
+  assert.match(source, /controllerchange/);
+  assert.match(source, /postMessage\(\{\s*type:\s*"SKIP_WAITING"\s*\}\)/);
+  assert.match(source, /Update ready/);
+  assert.match(source, /Update and reload/);
+  assert.match(source, /role="status"/);
 });
 
 test("generated workers precache only same-origin shell resources", async () => {

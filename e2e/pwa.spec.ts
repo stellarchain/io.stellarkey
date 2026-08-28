@@ -43,6 +43,14 @@ test("installed shell cold-launches offline without caching wallet or network da
   await context.setOffline(false);
 });
 
+test("the first worker install does not show a false update prompt", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await expect(page.getByRole("status").filter({ hasText: "Update ready" })).toHaveCount(0);
+});
+
 test("an empty iOS Home Screen launch explains the local-storage handoff and leads with restore", async ({ context }) => {
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "standalone", { configurable: true, value: true });
