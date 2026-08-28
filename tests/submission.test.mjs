@@ -870,6 +870,13 @@ test("active transaction flows render status unknown without claiming success", 
   assert.match(multisig, /do not resubmit blindly/i);
 });
 
+test("the send dialog cannot be dismissed while signing or broadcasting", () => {
+  const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
+  assert.match(send, /onClose=\{stage === "sending" \? \(\) => undefined : onClose\}/);
+  assert.match(send, /dismissable=\{stage !== "sending"\}/);
+  assert.match(send, /onClose=\{stage === "sending" \? undefined : onClose\}/);
+});
+
 test("every locked transaction flow consumes shared confirmed and failed resolutions", () => {
   const componentNames = [
     "SendModal.tsx",
