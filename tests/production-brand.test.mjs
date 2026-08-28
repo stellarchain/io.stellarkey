@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import nextConfig from "../next.config.ts";
+import nextConfig, { sourceTreeIsDirty } from "../next.config.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
@@ -96,5 +99,26 @@ test("complete contact addresses are absent from tracked public source", () => {
     const source = readFileSync(file, "utf8");
     assert.doesNotMatch(source, new RegExp(support, "i"), `${file.pathname} exposes the support mailbox`);
     assert.doesNotMatch(source, new RegExp(security, "i"), `${file.pathname} exposes the security mailbox`);
+  }
+});
+
+test("release provenance rejects every nonignored untracked source input", async () => {
+  const repository = await mkdtemp(path.join(tmpdir(), "stellarkey-provenance-"));
+  const git = (...args) => execFileSync("git", args, { cwd: repository, stdio: "ignore" });
+
+  try {
+    git("init");
+    git("config", "user.email", "release-test@example.invalid");
+    git("config", "user.name", "Release Test");
+    await writeFile(path.join(repository, "README.md"), "# Clean fixture\n");
+    git("add", "README.md");
+    git("commit", "-m", "fixture");
+    assert.equal(sourceTreeIsDirty(repository), false);
+
+    await mkdir(path.join(repository, "src", "app", "surprise"), { recursive: true });
+    await writeFile(path.join(repository, "src", "app", "surprise", "page.tsx"), "export default function Page() {}\n");
+    assert.equal(sourceTreeIsDirty(repository), true);
+  } finally {
+    await rm(repository, { recursive: true, force: true });
   }
 });
