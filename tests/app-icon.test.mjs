@@ -15,7 +15,10 @@ function pngInfo(path) {
   };
 }
 
-function pngPixel(path, x, y) {
+const decodedPngs = new Map();
+
+function decodePng(path) {
+  if (decodedPngs.has(path)) return decodedPngs.get(path);
   const png = readFileSync(new URL(`../${path}`, import.meta.url));
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
@@ -23,7 +26,6 @@ function pngPixel(path, x, y) {
   const colorType = png[25];
   assert.equal(bitDepth, 8, `${path} must use 8-bit channels`);
   assert.equal(colorType, 2, `${path} must be full-bleed RGB without transparent corners`);
-  assert.ok(x >= 0 && x < width && y >= 0 && y < height);
 
   const idat = [];
   for (let offset = 8; offset < png.length;) {
@@ -71,8 +73,40 @@ function pngPixel(path, x, y) {
     offset += rowBytes;
   }
 
+  const decoded = { width, height, rows, bytesPerPixel };
+  decodedPngs.set(path, decoded);
+  return decoded;
+}
+
+function pngPixel(path, x, y) {
+  const { width, height, rows, bytesPerPixel } = decodePng(path);
+  assert.ok(x >= 0 && x < width && y >= 0 && y < height);
   const pixel = x * bytesPerPixel;
   return [...rows[y].subarray(pixel, pixel + bytesPerPixel)];
+}
+
+function assertMaskableSafeZone(path) {
+  const { width, height, rows, bytesPerPixel } = decodePng(path);
+  assert.equal(width, height, `${path} must be square`);
+  const background = [10, 132, 255];
+  const radius = width * 0.4;
+  let logoPixels = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = x * bytesPerPixel;
+      const isBackground = background.every((channel, index) => rows[y][offset + index] === channel);
+      if (isBackground) continue;
+      logoPixels += 1;
+      const distance = Math.hypot(x + 0.5 - width / 2, y + 0.5 - height / 2);
+      assert.ok(
+        distance <= radius,
+        `${path} has logo artwork outside the standard 40% maskable safe-zone radius`,
+      );
+    }
+  }
+
+  assert.ok(logoPixels > 0, `${path} must contain visible logo artwork`);
 }
 
 test("Next serves static install metadata and an Apple icon through native app routes", () => {
@@ -115,6 +149,16 @@ test("Next serves static install metadata and an Apple icon through native app r
     height: 180,
     colorType: 2,
   });
+  assert.deepEqual(pngInfo("src/app/apple-icon1.png"), {
+    width: 152,
+    height: 152,
+    colorType: 2,
+  });
+  assert.deepEqual(pngInfo("src/app/apple-icon2.png"), {
+    width: 167,
+    height: 167,
+    colorType: 2,
+  });
   assert.deepEqual(pngInfo("public/icon-192.png"), {
     width: 192,
     height: 192,
@@ -130,18 +174,40 @@ test("Next serves static install metadata and an Apple icon through native app r
     height: 512,
     colorType: 2,
   });
+  assert.deepEqual(pngInfo("public/icon-maskable-192.png"), {
+    width: 192,
+    height: 192,
+    colorType: 2,
+  });
+  assert.deepEqual(pngInfo("public/icon-maskable-1024.png"), {
+    width: 1024,
+    height: 1024,
+    colorType: 2,
+  });
 
   for (const path of [
     "src/app/apple-icon.png",
+    "src/app/apple-icon1.png",
+    "src/app/apple-icon2.png",
     "public/apple-touch-icon.png",
     "public/icon-192.png",
     "public/icon-512.png",
+    "public/icon-maskable-192.png",
     "public/icon-maskable-512.png",
+    "public/icon-maskable-1024.png",
   ]) {
     const { width, height } = pngInfo(path);
     for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
       assert.deepEqual(pngPixel(path, x, y), [10, 132, 255], `${path} must be full-bleed StellarKey blue`);
     }
+  }
+
+  for (const path of [
+    "public/icon-maskable-192.png",
+    "public/icon-maskable-512.png",
+    "public/icon-maskable-1024.png",
+  ]) {
+    assertMaskableSafeZone(path);
   }
 
   assert.deepEqual(
@@ -150,8 +216,20 @@ test("Next serves static install metadata and an Apple icon through native app r
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {
+        src: "/icon-maskable-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
         src: "/icon-maskable-512.png",
         sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: "/icon-maskable-1024.png",
+        sizes: "1024x1024",
         type: "image/png",
         purpose: "maskable",
       },

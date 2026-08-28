@@ -1,6 +1,6 @@
 const CACHE_PREFIX = "polaris-shell-";
 const BUILD_REVISION = "development"; // @generated-revision
-const PRECACHE_PATHS = new Set(["/", "/about", "/privacy", "/terms", "/security", "/support", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-icon.png", "/apple-touch-icon.png"]); // @generated-precache
+const PRECACHE_PATHS = new Set(["/", "/about", "/privacy", "/terms", "/security", "/support", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/icon-maskable-192.png", "/icon-maskable-512.png", "/icon-maskable-1024.png", "/apple-icon.png", "/apple-icon1.png", "/apple-icon2.png", "/apple-touch-icon.png"]); // @generated-precache
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
 
 function isShellAsset(url) {
