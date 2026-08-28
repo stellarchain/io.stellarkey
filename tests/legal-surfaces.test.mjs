@@ -59,6 +59,8 @@ test("public and locked surfaces share accessible legal navigation", () => {
   assert.match(footer, /PUBLIC_ROUTES\.privacy/);
   assert.match(footer, /PUBLIC_ROUTES\.terms/);
   assert.match(footer, /PUBLIC_ROUTES\.security/);
+  assert.match(footer, /PUBLIC_ROUTES\.support/);
+  assert.match(footer, /SOURCE_REPOSITORY_URL/);
   assert.match(footer, /Stellar.*trademark of the Stellar Development Foundation/i);
   assert.match(footer, /independent project/i);
   assert.match(legalPage, /<main[^>]*id="app-content"/);
@@ -79,6 +81,33 @@ test("public and locked surfaces share accessible legal navigation", () => {
   assert.match(settings, /\| "about"/);
   assert.match(settings, /label="About & Legal"/);
   assert.match(settings, /sub === "about"/);
+  for (const destination of [
+    /PUBLIC_ROUTES\.about/,
+    /PUBLIC_ROUTES\.privacy/,
+    /PUBLIC_ROUTES\.terms/,
+    /PUBLIC_ROUTES\.security/,
+    /PUBLIC_ROUTES\.support/,
+    /SOURCE_REPOSITORY_URL/,
+    /SOURCE_COMMIT_URL/,
+    /SOURCE_RELEASE_URL/,
+    /href:\s*"\/release\.json"/,
+  ]) {
+    assert.match(settings, destination);
+  }
+});
+
+test("the expanded wallet sidebar shows copyright and exact build identity after Lock Wallet", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  assert.match(dashboard, /COPYRIGHT_YEAR/);
+  assert.match(dashboard, /COPYRIGHT_OWNER/);
+  assert.match(dashboard, /APPLICATION_VERSION/);
+  assert.match(dashboard, /BUILD_COMMIT/);
+  assert.match(dashboard, /aria-label="Build information"/);
+
+  const lockWallet = dashboard.indexOf("<span>Lock Wallet</span>");
+  const buildInformation = dashboard.indexOf('aria-label="Build information"');
+  assert.notEqual(lockWallet, -1);
+  assert.ok(buildInformation > lockWallet, "build information must follow the sidebar Lock Wallet action");
 });
 
 test("the custom 404 is branded and never strands the user", () => {
