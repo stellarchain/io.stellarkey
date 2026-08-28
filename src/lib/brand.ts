@@ -1,8 +1,12 @@
 export const BRAND_NAME = "StellarKey";
 export const BRAND_ORIGIN = "https://stellarkey.io";
+export const SOURCE_REPOSITORY_URL = "https://github.com/florincm/stellarkey";
 export const APPLICATION_VERSION = "1.0.0";
 export const BUILD_COMMIT = process.env.NEXT_PUBLIC_BUILD_COMMIT ?? "development";
 export const BUILD_IS_DIRTY = process.env.NEXT_PUBLIC_BUILD_DIRTY === "true";
+export const SOURCE_COMMIT_URL = `${SOURCE_REPOSITORY_URL}/commit/${BUILD_COMMIT}`;
+export const SOURCE_RELEASE_URL =
+  `${SOURCE_REPOSITORY_URL}/releases/tag/v${APPLICATION_VERSION}`;
 export const BRAND_DESCRIPTION =
   "A self-custodial Stellar wallet. Keys are generated and encrypted in your browser and never leave your device.";
 export const COPYRIGHT_OWNER = BRAND_NAME;

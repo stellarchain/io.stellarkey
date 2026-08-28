@@ -2,6 +2,7 @@ import {
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
   PUBLIC_ROUTES,
+  SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
 
 export function PublicFooter({ compact = false }: { compact?: boolean }) {
@@ -18,6 +19,7 @@ export function PublicFooter({ compact = false }: { compact?: boolean }) {
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.terms}>Terms</a>
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.security}>Security</a>
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.support}>Support</a>
+        <a className="link min-h-11 content-center" href={SOURCE_REPOSITORY_URL}>Source</a>
       </nav>
       <p className="mt-2 text-[11.5px]">
         © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.

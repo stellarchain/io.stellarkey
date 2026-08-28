@@ -8,6 +8,8 @@ import {
   BUILD_IS_DIRTY,
   PUBLIC_OPEN_GRAPH_IMAGE,
   PUBLIC_ROUTES,
+  SOURCE_COMMIT_URL,
+  SOURCE_RELEASE_URL,
 } from "@/lib/brand";
 
 const description = `How ${BRAND_NAME} keeps Stellar keys and records under your control without an application backend.`;
@@ -75,8 +77,10 @@ export default function AboutPage() {
           {BUILD_COMMIT}
         </code>
         <p className="mt-3">
-          Compare this full 40-character SHA with the commit shown for the corresponding GitHub
-          release. The same identity is available as machine-readable JSON at {" "}
+          Compare this full 40-character SHA with the {" "}
+          <a href={SOURCE_COMMIT_URL}>published source commit</a> and its {" "}
+          <a href={SOURCE_RELEASE_URL}>corresponding GitHub release</a>. The same identity is
+          available as machine-readable JSON at {" "}
           <a href="/release.json">/release.json</a>.
           {BUILD_IS_DIRTY
             ? " This local build contains tracked changes beyond that commit and is not source-verifiable."
