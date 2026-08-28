@@ -307,7 +307,34 @@ export function parsePendingTransactions(serialized: string | null): PendingTran
   }, []);
 }
 
-type PendingTransactionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type PendingTransactionStorage = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem" | "length" | "key"
+>;
+
+export function pendingTransactionStoragePrefix(key: string): string {
+  return `${key}.record.`;
+}
+
+function pendingTransactionStorageKey(
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): string {
+  return `${pendingTransactionStoragePrefix(key)}${record.network}.${record.hash.toLowerCase()}`;
+}
+
+function pendingTransactionStorageKeys(
+  storage: Pick<Storage, "length" | "key">,
+  key: string,
+): string[] {
+  const prefix = pendingTransactionStoragePrefix(key);
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const candidate = storage.key(index);
+    if (candidate?.startsWith(prefix)) keys.push(candidate);
+  }
+  return keys;
+}
 
 /** Serialize only the authority-free recovery identity accepted by the parser. */
 export function serializePendingTransactions(records: PendingTransaction[]): string {
@@ -315,14 +342,44 @@ export function serializePendingTransactions(records: PendingTransaction[]): str
 }
 
 export function persistPendingTransactionQueue(
-  storage: Pick<Storage, "setItem" | "removeItem">,
+  storage: PendingTransactionStorage,
   key: string,
   records: PendingTransaction[],
 ): PendingTransaction[] {
   const sanitized = parsePendingTransactions(JSON.stringify(records));
-  if (sanitized.length === 0) storage.removeItem(key);
-  else storage.setItem(key, JSON.stringify(sanitized));
+  const desiredKeys = new Set(
+    sanitized.map((record) => pendingTransactionStorageKey(key, record)),
+  );
+  for (const record of sanitized) persistDurablePendingTransaction(storage, key, record);
+  for (const storedKey of pendingTransactionStorageKeys(storage, key)) {
+    if (!desiredKeys.has(storedKey)) storage.removeItem(storedKey);
+  }
+  storage.removeItem(key);
   return sanitized;
+}
+
+/** Persist one recovery identity without replacing records written by another tab. */
+export function persistDurablePendingTransaction(
+  storage: Pick<Storage, "setItem">,
+  key: string,
+  record: PendingTransaction,
+): PendingTransaction {
+  const [sanitized] = parsePendingTransactions(JSON.stringify([record]));
+  if (!sanitized) throw new Error("Pending transaction recovery record is invalid.");
+  storage.setItem(
+    pendingTransactionStorageKey(key, sanitized),
+    serializePendingTransactions([sanitized]),
+  );
+  return sanitized;
+}
+
+/** Remove only the resolved envelope, preserving recovery records from other tabs. */
+export function removeDurablePendingTransaction(
+  storage: Pick<Storage, "removeItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): void {
+  storage.removeItem(pendingTransactionStorageKey(key, record));
 }
 
 /**
@@ -335,11 +392,21 @@ export function loadDurablePendingTransactions(
   legacySessionStorage: PendingTransactionStorage,
   legacyKey: string,
 ): PendingTransaction[] {
-  const durable = parsePendingTransactions(durableStorage.getItem(durableKey));
+  const durable = pendingTransactionStorageKeys(durableStorage, durableKey).reduce(
+    (records, recordKey) =>
+      parsePendingTransactions(durableStorage.getItem(recordKey)).reduce(
+        upsertPendingTransaction,
+        records,
+      ),
+    parsePendingTransactions(durableStorage.getItem(durableKey)),
+  );
   const legacy = parsePendingTransactions(legacySessionStorage.getItem(legacyKey));
   const merged = legacy.reduce(upsertPendingTransaction, durable);
   try {
-    persistPendingTransactionQueue(durableStorage, durableKey, merged);
+    for (const record of merged) {
+      persistDurablePendingTransaction(durableStorage, durableKey, record);
+    }
+    durableStorage.removeItem(durableKey);
     legacySessionStorage.removeItem(legacyKey);
   } catch {
     // Keep the sanitized legacy record available to this tab and retry on the
@@ -349,12 +416,15 @@ export function loadDurablePendingTransactions(
 }
 
 export function clearDurablePendingTransactions(
-  durableStorage: Pick<Storage, "removeItem">,
+  durableStorage: Pick<Storage, "removeItem" | "length" | "key">,
   durableKey: string,
   legacySessionStorage: Pick<Storage, "removeItem">,
   legacyKey: string,
 ): void {
   durableStorage.removeItem(durableKey);
+  for (const recordKey of pendingTransactionStorageKeys(durableStorage, durableKey)) {
+    durableStorage.removeItem(recordKey);
+  }
   legacySessionStorage.removeItem(legacyKey);
 }
 

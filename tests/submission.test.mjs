@@ -40,6 +40,12 @@ function canonicalHash(transaction) {
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
   return {
+    get length() {
+      return values.size;
+    },
+    key(index) {
+      return [...values.keys()][index] ?? null;
+    },
     getItem(key) {
       return values.get(key) ?? null;
     },
@@ -750,7 +756,11 @@ test("pending transaction recovery survives browser close without persisting aut
     },
   ]);
   assert.equal(legacySession.getItem(legacyKey), null);
-  assert.doesNotMatch(durable.getItem(durableKey), /xdr|signature|password|secret/i);
+  assert.equal(durable.getItem(durableKey), null, "the aggregate key is migrated away");
+  assert.doesNotMatch(
+    [...durable.values.values()].join("\n"),
+    /xdr|signature|password|secret/i,
+  );
 
   // A new browser session has empty sessionStorage but retains localStorage.
   const freshSession = memoryStorage();
@@ -782,6 +792,38 @@ test("prepared tracking survives a simulated crash with its exact expiry", () =>
   ]));
   assert.equal("expiresAt" in sanitized[0], false);
   assert.equal("expiresAt" in sanitized[1], false);
+});
+
+test("different tabs persist pending recovery records without replacing each other", () => {
+  assert.equal(typeof submission.persistDurablePendingTransaction, "function");
+  assert.equal(typeof submission.removeDurablePendingTransaction, "function");
+  const durable = memoryStorage();
+  const first = submission.pendingTransactionFromPrepared(
+    { hash: "a1".repeat(32), network: "mainnet", expiresAt: 2_000_000_000 },
+    "Payment",
+    undefined,
+    10,
+  );
+  const second = submission.pendingTransactionFromPrepared(
+    { hash: "b2".repeat(32), network: "testnet", expiresAt: 2_000_000_100 },
+    "Swap",
+    undefined,
+    11,
+  );
+
+  // These writes model two tabs that hydrated before either transaction began.
+  submission.persistDurablePendingTransaction(durable, "pending", first);
+  submission.persistDurablePendingTransaction(durable, "pending", second);
+  assert.deepEqual(
+    submission.loadDurablePendingTransactions(durable, "pending", memoryStorage(), "legacy"),
+    [first, second],
+  );
+
+  submission.removeDurablePendingTransaction(durable, "pending", first);
+  assert.deepEqual(
+    submission.loadDurablePendingTransactions(durable, "pending", memoryStorage(), "legacy"),
+    [second],
+  );
 });
 
 test("definite rejection removes provisional tracking and allows retry", () => {
@@ -927,7 +969,9 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
     source,
     /loadDurablePendingTransactions\([\s\S]*window\.localStorage[\s\S]*window\.sessionStorage/,
   );
-  assert.match(source, /persistPendingTransactionQueue\(\s*window\.localStorage/);
+  assert.match(source, /persistDurablePendingTransaction\(\s*window\.localStorage/);
+  assert.match(source, /removeDurablePendingTransaction\(\s*window\.localStorage/);
+  assert.match(source, /event\.key\?\.startsWith\(pendingTransactionStoragePrefix/);
   assert.doesNotMatch(
     source,
     /window\.sessionStorage\.setItem\(\s*PENDING_TX_STORAGE_KEY/,
