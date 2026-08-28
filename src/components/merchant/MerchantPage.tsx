@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantReporting,
+  useMerchantStatus,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import { useWalletPhase } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
@@ -138,18 +144,16 @@ export function MerchantPage({
     resetRecoveryData,
     online,
     enabled,
-    settings,
-    today,
-    activeShift,
     chargeBlockedReason,
-    unmatched,
     watchError,
     queuedChargeCount,
     expiredChargeCount,
     pollNow,
-    activeCharge,
-    closeCharge,
-  } = useMerchant();
+  } = useMerchantStatus();
+  const { settings } = useMerchantConfiguration();
+  const { today } = useMerchantReporting();
+  const { activeShift } = useMerchantTill();
+  const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
   const { phase } = useWalletPhase();
 
   // Uncontrolled by default so the page works on its own; the shell passes both

@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantStaff,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor, toMinor } from "@/lib/merchant/money";
@@ -158,15 +162,9 @@ export function ShiftSheet({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 function ShiftBody({ onClose }: { onClose: () => void }) {
-  const {
-    settings,
-    activeStaff,
-    activeShift,
-    shiftReport,
-    shiftBlockers,
-    openShift,
-    closeShift,
-  } = useMerchant();
+  const { settings } = useMerchantConfiguration();
+  const { activeStaff } = useMerchantStaff();
+  const { activeShift, shiftReport, shiftBlockers, openShift, closeShift } = useMerchantTill();
   const { toast } = useToast();
   const currency = settings.currency;
   const [step, setStep] = useState<Step>(activeShift ? "overview" : "count");

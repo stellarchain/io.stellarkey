@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -43,7 +43,8 @@ function sortBy(key: SortKey) {
 }
 
 export function CustomersPage() {
-  const { customers, settings } = useMerchant();
+  const { customers } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");

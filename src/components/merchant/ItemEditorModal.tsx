@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
@@ -62,7 +62,8 @@ export function ItemEditorModal({
 }
 
 function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: () => void }) {
-  const { catalogue, modifierGroups, settings, upsertItem, removeItem } = useMerchant();
+  const { catalogue, modifierGroups, upsertItem, removeItem } = useMerchantTill();
+  const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
   const isEdit = item !== null;
   const priceId = useId();

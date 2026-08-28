@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey } from "@/lib/merchant/charge";
 import { invoiceStatusAt } from "@/lib/merchant/invoices";
@@ -190,10 +190,10 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     issueInvoice,
     paymentReconciliations,
     recordManualInvoicePayment,
-    settings,
     submitPaymentRefund,
     voidInvoice,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
 
   const [confirmingPayment, setConfirmingPayment] = useState(false);

@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+} from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import { canReleaseRefund } from "@/lib/merchant/permissions";
@@ -36,15 +40,15 @@ export function RefundRequestsPanel({
 }: {
   className?: string;
 }) {
+  const { settings } = useMerchantConfiguration();
   const {
-    settings,
     staff,
     activeStaff,
-    refunds,
     refundRequests: requests,
     approveRefundRequest,
     declineRefundRequest,
-  } = useMerchant();
+  } = useMerchantStaff();
+  const { refunds } = useMerchantRecords();
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

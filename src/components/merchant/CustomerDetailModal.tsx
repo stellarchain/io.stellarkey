@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { useWalletContacts } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
@@ -138,10 +138,10 @@ function CustomerDetail({
     customerHistory,
     forgetCustomer,
     redeemLoyaltyReward,
-    settings,
     startLoyaltyCard,
     updateCustomerNote,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { addContact } = useWalletContacts();
   const { toast } = useToast();
 

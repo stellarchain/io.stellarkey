@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant, type MerchantTenderOutcome } from "@/hooks/useMerchant";
+import {
+  useMerchantStaff,
+  useMerchantTill,
+  type MerchantTenderOutcome,
+} from "@/hooks/useMerchant";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
@@ -146,7 +150,8 @@ function CashTenderSheetInner({
   onSettled: (outcome: MerchantTenderOutcome) => void;
 }) {
   const { toast } = useToast();
-  const { activeStaff, terminal, settleCash, settleCard, startSplitCharge } = useMerchant();
+  const { activeStaff, terminal } = useMerchantStaff();
+  const { settleCash, settleCard, startSplitCharge } = useMerchantTill();
 
   const [choice, setChoice] = useState<TenderChoice>("cash");
   const [receivedMinor, setReceivedMinor] = useState<Minor>(0);

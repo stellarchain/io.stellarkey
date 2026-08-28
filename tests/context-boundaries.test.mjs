@@ -46,6 +46,56 @@ test("merchant screens never subscribe to the compatibility-wide wallet context"
   }
 });
 
+test("merchant state is partitioned into stable business domains", () => {
+  const merchant = source("src/hooks/useMerchant.tsx");
+  for (const context of [
+    "MerchantStatusContext",
+    "MerchantConfigurationContext",
+    "MerchantStaffContext",
+    "MerchantTillContext",
+    "MerchantRecordsContext",
+    "MerchantReportingContext",
+  ]) {
+    assert.match(merchant, new RegExp(`const ${context} = createContext`));
+  }
+  for (const hook of [
+    "useMerchantStatus",
+    "useMerchantConfiguration",
+    "useMerchantStaff",
+    "useMerchantTill",
+    "useMerchantRecords",
+    "useMerchantReporting",
+  ]) {
+    assert.match(merchant, new RegExp(`export function ${hook}\\(`));
+  }
+});
+
+test("merchant screens avoid the compatibility-wide subscription", () => {
+  const directory = new URL("../src/components/merchant/", import.meta.url);
+  for (const name of readdirSync(directory).filter((entry) => entry.endsWith(".tsx"))) {
+    assert.doesNotMatch(source(`src/components/merchant/${name}`), /\buseMerchant\s*\(/, name);
+  }
+});
+
+test("merchant domain subscriptions exclude unrelated high-frequency state", () => {
+  const merchant = source("src/hooks/useMerchant.tsx");
+  const configuration = merchant.match(
+    /const configurationValue = useMemo<MerchantConfigurationValue>\(([\s\S]*?)\n  \);/,
+  )?.[1];
+  const reporting = merchant.match(
+    /const reportingValue = useMemo<MerchantReportingValue>\(([\s\S]*?)\n  \);/,
+  )?.[1];
+  const till = merchant.match(
+    /const tillValue = useMemo<MerchantTillValue>\(([\s\S]*?)\n  \);/,
+  )?.[1];
+  assert.ok(configuration, "configuration context value is memoized");
+  assert.ok(reporting, "reporting context value is memoized");
+  assert.ok(till, "till context value is memoized");
+  assert.doesNotMatch(configuration, /\breportingNow\b|\btoday\b|\bticket\b/);
+  assert.doesNotMatch(reporting, /\bticket\b/);
+  assert.doesNotMatch(till, /\breportingNow\b|\btoday\b/);
+});
+
 test("leaf wallet consumers avoid the compatibility-wide subscription", () => {
   assert.doesNotMatch(source("src/components/FiatValue.tsx"), /\buseWallet\(\)/);
   assert.doesNotMatch(source("src/components/CurrencyConverterModal.tsx"), /\buseWallet\(\)/);

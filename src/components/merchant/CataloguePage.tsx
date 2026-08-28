@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
@@ -36,7 +36,8 @@ function initialsOf(name: string): string {
 }
 
 export function CataloguePage({ onBack }: { onBack?: () => void }) {
-  const { catalogue, settings } = useMerchant();
+  const { catalogue } = useMerchantTill();
+  const { settings } = useMerchantConfiguration();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [inactiveOnly, setInactiveOnly] = useState(false);

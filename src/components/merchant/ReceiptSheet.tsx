@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import {
   distribute,
   fmtMinor,
@@ -384,7 +384,8 @@ function ReceiptSheetInner({
   order: Order;
   transactionHash: string | null;
 }) {
-  const { customers, settings, peripherals } = useMerchant();
+  const { customers } = useMerchantRecords();
+  const { settings, peripherals } = useMerchantConfiguration();
   const { toast } = useToast();
 
   const [channel, setChannel] = useState<ReceiptChannel>("screen");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor, lineGrossMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
@@ -305,10 +305,10 @@ export function OrderDetailModal({
   const {
     charges,
     refunds,
-    settings,
     submitRefund: submitMerchantRefund,
     openCharge,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
 
   const orderId = order?.id ?? null;
