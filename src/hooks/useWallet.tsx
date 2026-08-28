@@ -76,17 +76,19 @@ import {
 } from "./useWalletResources";
 import {
   applyTransactionPoll,
+  clearDurablePendingTransactions,
   clearDurableMergeReconciliations,
   createMergeReconciliation,
   isTrackingTaskCurrent,
+  loadDurablePendingTransactions,
   loadDurableMergeReconciliations,
   mergeReconciliationPresentation,
-  parsePendingTransactions,
   pendingTransactionFromSubmission,
   pendingTransactionFromPrepared,
   pendingTransactionPresentation,
   persistMergeReconciliation,
   persistMergeReconciliationQueue,
+  persistPendingTransactionQueue,
   reconcileMergeRecovery,
   removeTrackedTransaction,
   resolutionForExpiredLookup,
@@ -177,7 +179,8 @@ function withSigningSecret<T>(
     : withSecretKey(account.id, operation);
 }
 
-const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v1";
+const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v2";
+const LEGACY_PENDING_TX_SESSION_KEY = "wallet.pending-transactions.v1";
 const MERGE_RECONCILIATION_STORAGE_KEY = "wallet.merge-reconciliations.v2";
 const LEGACY_MERGE_RECONCILIATION_SESSION_KEY = "wallet.merge-reconciliations.v1";
 const TRANSACTION_POLL_MS = 15_000;
@@ -608,7 +611,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!alive) return;
       commitTransactionTracking((current) => ({
         ...current,
-        pending: parsePendingTransactions(window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY)),
+        pending: loadDurablePendingTransactions(
+          window.localStorage,
+          PENDING_TX_STORAGE_KEY,
+          window.sessionStorage,
+          LEGACY_PENDING_TX_SESSION_KEY,
+        ),
       }));
       const restoredMerges = loadDurableMergeReconciliations(
           window.localStorage,
@@ -626,7 +634,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!pendingTxsHydrated) return;
-    window.sessionStorage.setItem(PENDING_TX_STORAGE_KEY, JSON.stringify(pendingTxs));
+    try {
+      persistPendingTransactionQueue(window.localStorage, PENDING_TX_STORAGE_KEY, pendingTxs);
+    } catch {
+      setDataError("Transaction recovery could not be updated in persistent storage.");
+    }
     if (mergeReconciliations.length === 0) {
       window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
     } else {
@@ -1220,7 +1232,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const provisional = pendingTransactionFromPrepared(prepared, label, action);
     const nextTracking = trackPendingTransaction(current, provisional);
-    const previousPending = window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY);
+    const previousPending = window.localStorage.getItem(PENDING_TX_STORAGE_KEY);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
       : null;
@@ -1239,12 +1251,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           reconciliation,
         );
       }
-      window.sessionStorage.setItem(
+      persistPendingTransactionQueue(
+        window.localStorage,
         PENDING_TX_STORAGE_KEY,
-        JSON.stringify(nextTracking.pending),
+        nextTracking.pending,
       );
     } catch (error) {
-      restoreStorageValue(window.sessionStorage, PENDING_TX_STORAGE_KEY, previousPending);
+      restoreStorageValue(window.localStorage, PENDING_TX_STORAGE_KEY, previousPending);
       if (reconciliation) {
         restoreStorageValue(
           window.localStorage,
@@ -1272,15 +1285,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ? mergeReconciliationsRef.current.filter((record) =>
           transactionIdentity(record) !== identity)
       : mergeReconciliationsRef.current;
-    const previousPending = window.sessionStorage.getItem(PENDING_TX_STORAGE_KEY);
+    const previousPending = window.localStorage.getItem(PENDING_TX_STORAGE_KEY);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
       : null;
 
     try {
-      window.sessionStorage.setItem(
+      persistPendingTransactionQueue(
+        window.localStorage,
         PENDING_TX_STORAGE_KEY,
-        JSON.stringify(nextTracking.pending),
+        nextTracking.pending,
       );
       if (action?.kind === "reconcile_account_merge") {
         if (nextMerges.length === 0) {
@@ -1293,7 +1307,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (error) {
-      restoreStorageValue(window.sessionStorage, PENDING_TX_STORAGE_KEY, previousPending);
+      restoreStorageValue(window.localStorage, PENDING_TX_STORAGE_KEY, previousPending);
       if (action?.kind === "reconcile_account_merge") {
         restoreStorageValue(
           window.localStorage,
@@ -1466,7 +1480,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.sessionStorage,
       LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
     );
-    window.sessionStorage.removeItem(PENDING_TX_STORAGE_KEY);
+    clearDurablePendingTransactions(
+      window.localStorage,
+      PENDING_TX_STORAGE_KEY,
+      window.sessionStorage,
+      LEGACY_PENDING_TX_SESSION_KEY,
+    );
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -1530,7 +1549,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.sessionStorage,
       LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
     );
-    window.sessionStorage.removeItem(PENDING_TX_STORAGE_KEY);
+    clearDurablePendingTransactions(
+      window.localStorage,
+      PENDING_TX_STORAGE_KEY,
+      window.sessionStorage,
+      LEGACY_PENDING_TX_SESSION_KEY,
+    );
     clearSessionSecrets();
     // Wallet is restored but LOCKED — unlock with the backup's password
     setPhase("locked");
