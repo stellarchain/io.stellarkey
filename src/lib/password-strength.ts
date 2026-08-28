@@ -7,6 +7,11 @@ export interface PasswordStrength {
   feedback: string;
 }
 
+export interface NewVaultPasswordValidation {
+  valid: boolean;
+  message: string | null;
+}
+
 const COMMON_PASSWORDS = new Set([
   "12345678",
   "admin123",
@@ -58,13 +63,13 @@ export function estimatePasswordStrength(password: string): PasswordStrength {
     return result(0, "Not rated", "#636366", "Use 12+ characters or four unrelated words.");
   }
 
-  if (password.length < 8) {
-    return result(1, "Weak", "#FF453A", "Use at least 8 characters.");
-  }
-
   const normalized = password.toLowerCase();
   if (COMMON_PASSWORDS.has(normalized)) {
     return result(1, "Weak", "#FF453A", "Avoid common passwords and wallet-related terms.");
+  }
+
+  if (password.length < 12) {
+    return result(1, "Weak", "#FF453A", "Use at least 12 characters.");
   }
 
   if (hasPredictablePattern(password)) {
@@ -93,4 +98,15 @@ export function estimatePasswordStrength(password: string): PasswordStrength {
   }
 
   return result(1, "Weak", "#FF453A", "Add length and make it less predictable.");
+}
+
+export function validateNewVaultPassword(password: string): NewVaultPasswordValidation {
+  const strength = estimatePasswordStrength(password);
+  if (password.length < 12) {
+    return { valid: false, message: "Password must be at least 12 characters." };
+  }
+  if (strength.score <= 1) {
+    return { valid: false, message: strength.feedback };
+  }
+  return { valid: true, message: null };
 }

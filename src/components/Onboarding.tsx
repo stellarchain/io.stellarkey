@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
-import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
+import {
+  estimatePasswordStrength,
+  validateNewVaultPassword,
+  type PasswordStrength,
+} from "@/lib/password-strength";
 import { markBackupVerified } from "@/lib/backup-health";
 import { BRAND_NAME } from "@/lib/brand";
 import {
@@ -77,7 +81,8 @@ export function Onboarding() {
     }
   }, [step]);
 
-  const passwordValid = password.length >= 8;
+  const passwordPolicy = validateNewVaultPassword(password);
+  const passwordValid = passwordPolicy.valid;
   const passwordsMatch = password === confirmPassword;
   const passwordStrength = estimatePasswordStrength(password);
 
@@ -125,7 +130,7 @@ export function Onboarding() {
 
     if (mode === "hardware") {
       if (!passwordValid) {
-        setError("Password must be at least 8 characters.");
+        setError(passwordPolicy.message ?? "Choose a stronger password.");
         triggerHaptic("warning");
         return;
       }
@@ -178,7 +183,7 @@ export function Onboarding() {
     }
 
     if (!passwordValid) {
-      setError("Password must be at least 8 characters.");
+      setError(passwordPolicy.message ?? "Choose a stronger password.");
       triggerHaptic("warning");
       return;
     }
@@ -519,7 +524,7 @@ export function Onboarding() {
         )}
         <Field
           label="Vault Password"
-          hint={mode === "restore" ? undefined : "Minimum 8 characters"}
+          hint={mode === "restore" ? undefined : "12+ characters; avoid common or predictable passwords"}
         >
           <input
             className="input text-base sm:text-[14px]"
