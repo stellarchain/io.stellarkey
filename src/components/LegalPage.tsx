@@ -8,6 +8,7 @@ const navigation = [
   ["privacy", "Privacy", PUBLIC_ROUTES.privacy],
   ["terms", "Terms", PUBLIC_ROUTES.terms],
   ["security", "Security", PUBLIC_ROUTES.security],
+  ["support", "Support", PUBLIC_ROUTES.support],
 ] as const;
 
 export type LegalRoute = (typeof navigation)[number][0];
@@ -55,7 +56,7 @@ export function LegalPage({
 
         <nav
           aria-label="Legal navigation"
-          className="mt-9 grid grid-cols-2 gap-2 rounded-2xl bg-white/[0.05] p-1.5 sm:inline-grid sm:grid-cols-4"
+          className="mt-9 grid grid-cols-2 gap-2 rounded-2xl bg-white/[0.05] p-1.5 sm:inline-grid sm:grid-cols-5"
         >
           {navigation.map(([id, label, href]) => (
             <a

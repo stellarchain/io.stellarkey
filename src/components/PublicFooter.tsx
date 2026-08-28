@@ -17,6 +17,7 @@ export function PublicFooter({ compact = false }: { compact?: boolean }) {
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.privacy}>Privacy</a>
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.terms}>Terms</a>
         <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.security}>Security</a>
+        <a className="link min-h-11 content-center" href={PUBLIC_ROUTES.support}>Support</a>
       </nav>
       <p className="mt-2 text-[11.5px]">
         © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.

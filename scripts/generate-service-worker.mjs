@@ -15,6 +15,7 @@ export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
   "/privacy",
   "/terms",
   "/security",
+  "/support",
 ]);
 
 export const BASE_SHELL_PATHS = Object.freeze([
@@ -23,6 +24,7 @@ export const BASE_SHELL_PATHS = Object.freeze([
   "/icon.svg",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-maskable-512.png",
   "/apple-icon.png",
   "/apple-touch-icon.png",
 ]);

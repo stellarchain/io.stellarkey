@@ -60,7 +60,7 @@ Run the complete release gate with:
 npm run release:verify
 ```
 
-That command runs type checking, the complete unit suite, lint, the production dependency audit, static export, the bundle budget, desktop Chromium journeys, and behavioral/accessibility journeys using iPhone and iPad WebKit profiles. CI runs the same release boundaries on pushes and pull requests. Physical Trezor and installed-device checks remain manual because browser emulation cannot prove them.
+That command runs type checking, the complete unit suite, lint, the production dependency audit, static export, the bundle budget, desktop Chromium journeys, and public/mobile/accessibility journeys using iPhone and iPad WebKit profiles. CI runs the same release boundaries on pushes and pull requests. Physical Trezor and installed-device checks remain manual because browser emulation cannot prove them.
 
 ## Security and deployment notes
 
