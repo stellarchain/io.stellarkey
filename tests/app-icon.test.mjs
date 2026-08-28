@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { inflateSync } from "node:zlib";
 
 const readText = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -14,9 +15,71 @@ function pngInfo(path) {
   };
 }
 
+function pngPixel(path, x, y) {
+  const png = readFileSync(new URL(`../${path}`, import.meta.url));
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const bitDepth = png[24];
+  const colorType = png[25];
+  assert.equal(bitDepth, 8, `${path} must use 8-bit channels`);
+  assert.equal(colorType, 2, `${path} must be full-bleed RGB without transparent corners`);
+  assert.ok(x >= 0 && x < width && y >= 0 && y < height);
+
+  const idat = [];
+  for (let offset = 8; offset < png.length;) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString("ascii", offset + 4, offset + 8);
+    if (type === "IDAT") idat.push(png.subarray(offset + 8, offset + 8 + length));
+    offset += 12 + length;
+  }
+
+  const bytesPerPixel = 3;
+  const rowBytes = width * bytesPerPixel;
+  const raw = inflateSync(Buffer.concat(idat));
+  const rows = Array.from({ length: height }, () => Buffer.alloc(rowBytes));
+  let offset = 0;
+  const paeth = (a, b, c) => {
+    const estimate = a + b - c;
+    const distanceA = Math.abs(estimate - a);
+    const distanceB = Math.abs(estimate - b);
+    const distanceC = Math.abs(estimate - c);
+    return distanceA <= distanceB && distanceA <= distanceC ? a : distanceB <= distanceC ? b : c;
+  };
+
+  for (let row = 0; row < height; row += 1) {
+    const filter = raw[offset];
+    offset += 1;
+    for (let column = 0; column < rowBytes; column += 1) {
+      const encoded = raw[offset + column];
+      const left = column >= bytesPerPixel ? rows[row][column - bytesPerPixel] : 0;
+      const above = row > 0 ? rows[row - 1][column] : 0;
+      const upperLeft = row > 0 && column >= bytesPerPixel
+        ? rows[row - 1][column - bytesPerPixel]
+        : 0;
+      const predictor = filter === 0
+        ? 0
+        : filter === 1
+          ? left
+          : filter === 2
+            ? above
+            : filter === 3
+              ? Math.floor((left + above) / 2)
+              : paeth(left, above, upperLeft);
+      assert.ok(filter >= 0 && filter <= 4, `${path} uses unsupported PNG filter ${filter}`);
+      rows[row][column] = (encoded + predictor) & 0xff;
+    }
+    offset += rowBytes;
+  }
+
+  const pixel = x * bytesPerPixel;
+  return [...rows[y].subarray(pixel, pixel + bytesPerPixel)];
+}
+
 test("Next serves static install metadata and an Apple icon through native app routes", () => {
   const logo = readText("src/components/icons.tsx");
   const sourceIcon = readText("src/app/icon.svg");
+  const publicLogoUrl = new URL("../public/stellarkey-logo.svg", import.meta.url);
+  const paperWallet = readText("src/lib/paperwallet.ts");
   const layout = readText("src/app/layout.tsx");
   const nativeManifestUrl = new URL("../src/app/manifest.webmanifest", import.meta.url);
 
@@ -29,10 +92,23 @@ test("Next serves static install metadata and an Apple icon through native app r
   );
   const manifest = JSON.parse(readFileSync(nativeManifestUrl, "utf8"));
 
-  // This distinctive wallet-pocket path anchors every generated icon to LogoMark artwork.
-  const walletPocket = "M7 25C7 22.7909 8.79086 21 11 21H23";
-  assert.match(logo, new RegExp(walletPocket));
-  assert.match(sourceIcon, new RegExp(walletPocket));
+  // The official Stellar glyph and the shackle over it anchor every generated
+  // icon to LogoMark artwork. The glyph must appear unmodified: it is used
+  // under Stellar's mark, so a redrawn or simplified copy is a defect.
+  const stellarGlyph = "M12.003 1.716c-1.37 0-2.7.27-3.948.78";
+  const shackle = "V6.227a11.83 11.83 0 0 1 23.66 0";
+  assert.equal(existsSync(publicLogoUrl), true, "the supplied logo must remain available as public master artwork");
+  const publicLogo = readFileSync(publicLogoUrl, "utf8");
+  assert.match(publicLogo, /viewBox="0 0 64 64"/);
+  for (const [name, art] of [
+    ["LogoMark", logo],
+    ["icon.svg", sourceIcon],
+    ["stellarkey-logo.svg", publicLogo],
+    ["paper wallet", paperWallet],
+  ]) {
+    assert.match(art, new RegExp(stellarGlyph.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name} must carry the official Stellar glyph`);
+    assert.match(art, new RegExp(shackle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name} must carry the lock shackle`);
+  }
 
   assert.deepEqual(pngInfo("src/app/apple-icon.png"), {
     width: 180,
@@ -54,6 +130,19 @@ test("Next serves static install metadata and an Apple icon through native app r
     height: 512,
     colorType: 2,
   });
+
+  for (const path of [
+    "src/app/apple-icon.png",
+    "public/apple-touch-icon.png",
+    "public/icon-192.png",
+    "public/icon-512.png",
+    "public/icon-maskable-512.png",
+  ]) {
+    const { width, height } = pngInfo(path);
+    for (const [x, y] of [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]]) {
+      assert.deepEqual(pngPixel(path, x, y), [10, 132, 255], `${path} must be full-bleed StellarKey blue`);
+    }
+  }
 
   assert.deepEqual(
     manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),

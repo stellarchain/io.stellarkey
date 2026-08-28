@@ -1,5 +1,7 @@
 "use client";
 
+import { BRAND_NAME } from "./brand";
+
 /**
  * Bespoke print document for the cold-storage paper wallet.
  *
@@ -59,7 +61,7 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Stellar Paper Wallet — ${label}</title>
+<title>${BRAND_NAME} Paper Wallet — ${label}</title>
 <style>
   @page { size: A4 landscape; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -71,8 +73,8 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
 
   header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 0.35mm solid #101012; padding-bottom: 4.5mm; }
   .brand { display: flex; align-items: center; gap: 4.5mm; }
-  .mark { width: 11.5mm; height: 11.5mm; border: 0.5mm solid #101012; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-  .mark svg { width: 6.5mm; height: 6.5mm; }
+  .mark { width: 13mm; height: 13mm; display: flex; align-items: center; justify-content: center; }
+  .mark svg { width: 13mm; height: 13mm; }
   h1 { font-size: 6.2mm; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
   .sub { margin-top: 1.4mm; font-size: 2.8mm; font-weight: 600; letter-spacing: 0.34em; text-transform: uppercase; color: #6b6b70; }
   .meta { text-align: right; font-size: 2.8mm; line-height: 1.75; color: #55555a; }
@@ -102,10 +104,10 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
       <header>
         <div class="brand">
           <span class="mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#101012" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg>
+            <svg viewBox="0 0 64 64" aria-label="${BRAND_NAME}" role="img"><g fill="none" stroke="#101012" transform="translate(1.486 9.343) scale(0.9535)"><path d="M20.17 13.832V6.227a11.83 11.83 0 0 1 23.66 0V13.832" stroke-width="2.4" stroke-linecap="butt" stroke-linejoin="round" fill="none"/><circle cx="32" cy="32" r="21.125" stroke-width="2.4" fill="none"/><path transform="translate(17.6 17.6) scale(1.2)" d="M12.003 1.716c-1.37 0-2.7.27-3.948.78A10.18 10.18 0 0 0 2.66 7.901a10.136 10.136 0 0 0-.797 3.954c0 .258.01.516.027.775a1.942 1.942 0 0 1-1.055 1.88L0 14.934v1.902l2.463-1.26.072-.032v.005l.77-.39.758-.385.066-.039 14.807-7.56 1.666-.847 3.392-1.732V2.694L17.792 5.86 3.744 13.025l-.104.055-.017-.115a8.286 8.286 0 0 1-.071-1.105c0-2.255.88-4.377 2.474-5.977a8.462 8.462 0 0 1 2.71-1.82 8.513 8.513 0 0 1 3.2-.654h.067a8.41 8.41 0 0 1 4.09 1.055l1.628-.83.126-.066a10.11 10.11 0 0 0-5.845-1.853zM24 7.143 5.047 16.808l-1.666.847L0 19.382v1.902l3.282-1.671 2.91-1.485 14.058-7.153.105-.055.016.115c.05.369.072.743.072 1.11 0 2.255-.88 4.383-2.475 5.978a8.461 8.461 0 0 1-2.71 1.82 8.305 8.305 0 0 1-3.2.654h-.06c-1.441 0-2.86-.369-4.102-1.061l-.066.033-1.683.857c.594.418 1.232.776 1.903 1.062a10.11 10.11 0 0 0 3.947.797 10.09 10.09 0 0 0 7.17-2.975 10.136 10.136 0 0 0 2.969-7.18c0-.259-.005-.523-.027-.781a1.942 1.942 0 0 1 1.055-1.88L24 9.044z" fill="#101012" stroke="none"/></g></svg>
           </span>
           <div>
-            <h1>Wallet Certificate</h1>
+            <h1>${BRAND_NAME} Certificate</h1>
             <p class="sub">Stellar ${escapeHtml(doc.networkLabel ?? "Network")} · Cold Storage</p>
           </div>
         </div>
