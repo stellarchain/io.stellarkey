@@ -173,21 +173,105 @@ body::after {
   outline: 4px solid rgba(10, 132, 255, 0.45);
 }
 
-.legal-prose {
+.legal-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 72% 28rem at 50% -10rem, rgba(10, 132, 255, 0.17), transparent 72%),
+    #000000;
+}
+
+.legal-shell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black, transparent 32rem);
+}
+
+.legal-header {
+  position: relative;
+  z-index: 2;
+}
+
+.legal-hero {
+  display: grid;
+  max-width: 48rem;
+  align-items: start;
+  gap: 1.25rem;
+}
+
+.legal-route-icon {
+  display: flex;
+  width: 54px;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(100, 210, 255, 0.22);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(10, 132, 255, 0.2), rgba(10, 132, 255, 0.07));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.09);
+  color: #64d2ff;
+}
+
+.legal-nav-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: #8e8e93;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+[aria-label="Legal navigation"] a {
+  gap: 0.5rem;
+}
+
+[aria-label="Legal navigation"] a:hover .legal-nav-icon {
+  transform: translateY(-1px);
   color: #d1d1d6;
-  font-size: 15px;
-  line-height: 1.75;
-  text-wrap: pretty;
+}
+
+[aria-label="Legal navigation"] a[aria-current="page"] .legal-nav-icon {
+  color: #64d2ff;
+}
+
+.legal-nav-label {
+  min-width: 0;
 }
 
 .legal-highlights {
-  border-left: 3px solid #0a84ff;
-  background: rgba(10, 132, 255, 0.08);
-  padding: 1.25rem 1.35rem;
+  overflow: hidden;
+  border: 1px solid rgba(100, 210, 255, 0.16);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 0 0, rgba(10, 132, 255, 0.16), transparent 48%),
+    rgba(22, 22, 24, 0.86);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.055);
+  padding: 1.2rem 1.25rem 1.3rem;
 }
 
-.legal-highlights > p,
-.legal-contents > p {
+.legal-block-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.legal-block-heading > span {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #006edb;
+  color: #ffffff;
+}
+
+.legal-block-heading > p {
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
@@ -197,27 +281,35 @@ body::after {
 
 .legal-highlights ul {
   display: grid;
-  gap: 0.65rem;
-  margin-top: 0.85rem;
+  gap: 0;
+  margin-top: 1rem;
   color: #e5e5ea;
   font-size: 14px;
   line-height: 1.55;
 }
 
 .legal-highlights li {
-  position: relative;
-  padding-left: 1rem;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.6rem;
 }
 
-.legal-highlights li::before {
-  position: absolute;
-  top: 0.58em;
-  left: 0;
-  width: 5px;
-  height: 5px;
+.legal-highlights li + li {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.legal-highlight-icon {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
-  background: #64d2ff;
-  content: "";
+  background: rgba(10, 132, 255, 0.13);
+  color: #64d2ff;
 }
 
 .legal-contents {
@@ -229,8 +321,8 @@ body::after {
 .legal-contents ol {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.4rem 1rem;
-  margin-top: 0.8rem;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.85rem;
 }
 
 .legal-contents a {
@@ -238,16 +330,23 @@ body::after {
   min-height: 44px;
   align-items: center;
   gap: 0.65rem;
-  border-radius: 10px;
+  border-radius: 11px;
+  padding: 0.25rem 0.5rem;
   color: #d1d1d6;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
   text-decoration: none;
+  transition: background-color 180ms ease, color 180ms ease;
 }
 
 .legal-contents a:hover {
+  background: rgba(255, 255, 255, 0.055);
   color: #ffffff;
+}
+
+.legal-contents a:active {
+  transform: translateY(1px);
 }
 
 .legal-contents a:focus-visible {
@@ -255,12 +354,44 @@ body::after {
   outline-offset: 2px;
 }
 
-.legal-contents a span {
+.legal-section-number {
+  display: flex;
+  width: 27px;
+  height: 27px;
   flex: 0 0 auto;
-  color: #8e8e93;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.065);
+  color: #a7a7ac;
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.legal-section-label {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.legal-link-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  transform: rotate(-90deg);
+  color: #636366;
+  transition: color 180ms ease, transform 180ms ease;
+}
+
+.legal-contents a:hover .legal-link-chevron {
+  transform: translateX(2px) rotate(-90deg);
+  color: #64d2ff;
+}
+
+.legal-prose {
+  color: #d1d1d6;
+  font-size: 15px;
+  line-height: 1.75;
+  text-wrap: pretty;
 }
 
 .legal-prose section + section {
@@ -270,11 +401,24 @@ body::after {
 }
 
 .legal-prose h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   color: #ffffff;
   font-size: 20px;
   font-weight: 650;
   letter-spacing: -0.018em;
   line-height: 1.2;
+}
+
+.legal-prose h2::before {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 2px solid #0a84ff;
+  border-radius: 3px;
+  content: "";
+  transform: rotate(45deg);
 }
 
 .legal-prose section[id] {
@@ -352,6 +496,36 @@ body::after {
 @media (max-width: 639px) {
   .legal-contents ol {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 640px) {
+  .legal-hero {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .legal-route-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 20px;
+  }
+
+  .legal-highlights {
+    padding: 1.35rem 1.4rem 1.45rem;
+  }
+
+  .legal-highlights ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .legal-highlights li + li {
+    margin-top: 0;
+    margin-left: 1rem;
+    padding-top: 0;
+    padding-left: 1rem;
+    border-top: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
   }
 }
 
