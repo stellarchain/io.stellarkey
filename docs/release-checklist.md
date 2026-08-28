@@ -33,4 +33,4 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 
 ## Accepted dependency boundary
 
-`@trezor/connect-web@9.7.3` is the current published package and brings ten low-severity `elliptic` findings through its Bitcoin-support dependency tree. npm reports no fixed Trezor release. High and critical production advisories remain release-blocking; re-evaluate this exception whenever Trezor publishes an update.
+`@trezor/connect-web@9.7.3` is the current stable package and brings ten low-severity `elliptic` findings through its Bitcoin/UTXO-support dependency tree, not StellarKey's Stellar signing implementation. The package is optional and lazy-loaded only after a Trezor action. npm reports no fixed stable Trezor release. High and critical production advisories remain release-blocking; re-evaluate this exception whenever Trezor publishes an update.

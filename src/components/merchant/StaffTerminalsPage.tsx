@@ -1043,6 +1043,11 @@ function StaffEditor({
               A salted digest kept inside encrypted merchant storage. It authorises this till and
               nothing else: it cannot sign, and it cannot move money.
             </p>
+            <p className="text-[12px] leading-relaxed text-neutral-500">
+              Five failures pause attempts for 30 seconds in this open app window. Reloading or
+              closing resets that client-side limit, so treat it as a local till deterrent rather
+              than high-security authentication.
+            </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <input
                 type="password"

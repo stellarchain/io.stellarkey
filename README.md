@@ -9,7 +9,7 @@ StellarKey is a self-custodial, backend-free Stellar wallet built with Next.js 1
 
 - Mainnet and testnet balances, activity, trustlines, claimable balances, payments, batch payments, account merge, and Stellar DEX strict-send swaps
 - Exact seven-decimal Stellar amount arithmetic, typed memos, live base-reserve calculation, multisig envelopes, and SEP-7 unsigned payment links
-- Password-encrypted local vaults and failure-atomic backups, encrypted private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
+- Password-encrypted local vaults and failure-atomic backups, encrypted contacts and private transaction notes, watch-only accounts, inactivity auto-lock, and complete local reset
 - Optional origin-bound Face ID / Touch ID unlock through WebAuthn PRF, with the wallet password and encrypted backup retained as recovery paths
 - Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup
 - Local-first Merchant Mode with encrypted transactional IndexedDB storage, cash, external-card, split, and Horizon-confirmed crypto sales; staff permissions; refund approval; shifts; invoices; counter codes; customer/loyalty records; reports; and explicit treasury handoffs
@@ -72,7 +72,7 @@ That command runs type checking, the complete unit suite, lint, the production d
 - The CSP permits outbound HTTPS because users can configure a Horizon endpoint and asset metadata/logos may live on issuer domains.
 - Reset deletes all `polaris.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
 - SEP-7 callback requests and signed/origin-domain requests are rejected until the app can execute and verify those flows fully.
-- The Trezor dependency tree has no known high or critical production advisories after the pinned `protobufjs` remediation. Remaining low-severity upstream findings are enforced below the CI failure threshold.
+- Trezor is optional and lazy-loaded only after a hardware-wallet action. `@trezor/connect-web@9.7.3` currently brings ten low-severity `elliptic` advisories through its Bitcoin/UTXO support graph, not StellarKey's Stellar signing implementation; npm offers no fixed stable release. High and critical production advisories remain release-blocking.
 
 See the [release checklist](docs/release-checklist.md) for real-device, recovery, static-host, and mainnet checks. Pinch zoom remains disabled by product requirement and is asserted by the mobile browser gate.
 
