@@ -2,16 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { AccountMeta, NetworkKey } from "@/lib/types";
-import {
-  IconCheck,
-  IconKey,
-  IconReceive,
-  IconSend,
-  IconShield,
-  IconSwap,
-  IconTrezor,
-  IconUsers,
-} from "./icons";
+import { IconCheck, IconKey, IconReceive, IconShield } from "./icons";
 import { Button, CopyButton, HashValue, NetworkBadge } from "./ui";
 
 /*
@@ -19,8 +10,8 @@ import { Button, CopyButton, HashValue, NetworkBadge } from "./ui";
  *
  * Deliberately short on words: a new holder needs to know the wallet is
  * theirs, that it is empty, and what the one next step is. Everything else is
- * carried by layout rather than prose — the steps are a strip rather than
- * paragraphs, and the capabilities are labels rather than descriptions.
+ * carried by layout rather than prose: the steps are a strip rather than
+ * paragraphs.
  */
 
 type Step = { label: string; done: boolean };
@@ -51,15 +42,6 @@ function StepStrip({ steps }: { steps: Step[] }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function Tile({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <li className="panel-inset flex flex-col gap-2.5 px-4 py-4">
-      <span aria-hidden="true" className="text-[#0A84FF]">{icon}</span>
-      <span className="text-[13px] font-semibold leading-snug text-neutral-200">{label}</span>
-    </li>
   );
 }
 
@@ -173,16 +155,6 @@ export function WelcomeHome({
             </Button>
           </section>
         )}
-
-        <section className="panel px-5 py-5">
-          <h2 className="section-title">Once funded</h2>
-          <ul className="mt-3.5 grid grid-cols-2 gap-2.5">
-            <Tile icon={<IconSend size={18} />} label="Send & receive" />
-            <Tile icon={<IconSwap size={18} />} label="Swap on the DEX" />
-            <Tile icon={<IconUsers size={18} />} label="Take payments" />
-            <Tile icon={<IconTrezor size={18} />} label="Sign with Trezor" />
-          </ul>
-        </section>
 
         {children}
       </div>
