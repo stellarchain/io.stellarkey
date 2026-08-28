@@ -52,21 +52,68 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
   assert.equal(localStorage.getItem("unrelated.application"), "keep");
 });
 
-test("corrupt contact records cannot crash address comparisons", async () => {
+test("legacy contacts migrate to authenticated ciphertext and require an unlocked vault", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
   const { Keypair } = await import("@stellar/stellar-sdk");
   const alice = Keypair.random().publicKey();
   const bob = Keypair.random().publicKey();
+  const password = "correct horse battery staple";
+  const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  lockVault();
   localStorage.setItem(
     "polaris.contacts.v1",
     JSON.stringify([null, {}, { name: "Alice", address: alice }, { name: 7, address: null }]),
   );
 
   const { loadContacts, saveContact } = await import("../src/lib/contacts.ts");
-  assert.deepEqual(loadContacts(), [{ name: "Alice", address: alice, favorite: false }]);
-  assert.doesNotThrow(() => saveContact({ name: "Bob", address: bob }));
-  assert.equal(loadContacts().length, 2);
+  await assert.rejects(() => loadContacts(), /locked/i);
+
+  await unlockVault(password);
+  assert.deepEqual(await loadContacts(), [{ name: "Alice", address: alice, favorite: false }]);
+  await saveContact({ name: "Bob", address: bob });
+  assert.equal((await loadContacts()).length, 2);
+
+  const stored = localStorage.getItem("polaris.contacts.v1");
+  assert.ok(stored);
+  assert.doesNotMatch(stored, /Alice|Bob/);
+  assert.equal(stored.includes(alice), false);
+  assert.equal(stored.includes(bob), false);
+
+  lockVault();
+  await assert.rejects(() => loadContacts(), /locked/i);
+});
+
+test("restored contacts are encrypted before the restored vault is exposed", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const password = "correct horse battery staple";
+  const contact = { name: "Private Payee", address: Keypair.random().publicKey() };
+  const {
+    exportVaultBackup,
+    initializeVault,
+    lockVault,
+    restoreVaultBackup,
+    unlockVault,
+  } = await import("../src/lib/vault.ts");
+  const { loadContacts, saveContact } = await import("../src/lib/contacts.ts");
+
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await saveContact(contact);
+  const backup = await exportVaultBackup(password);
+  await restoreVaultBackup(backup, password);
+
+  const stored = localStorage.getItem("polaris.contacts.v1");
+  assert.ok(stored);
+  assert.doesNotMatch(stored, /Private Payee/);
+  assert.equal(stored.includes(contact.address), false);
+  await assert.rejects(() => loadContacts(), /locked/i);
+
+  await unlockVault(password);
+  assert.deepEqual(await loadContacts(), [{ ...contact, favorite: false }]);
+  lockVault();
 });
 
 test("private transaction notes are encrypted at rest and require an unlocked vault", async () => {

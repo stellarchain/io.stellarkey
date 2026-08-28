@@ -316,6 +316,7 @@ export async function initializeVault(
       };
       persist(vault);
       writeMerchantBootstrapState({ enabled: false, configured: false });
+      await migratePrivateContacts(password, masterKey);
       await establishVaultSession(masterKey, vault as VaultV3);
       return { account: stripSecret(account), revealed: trimmed };
     } finally {
@@ -358,6 +359,7 @@ async function createDerivedVault(
     };
     persist(vault);
     writeMerchantBootstrapState({ enabled: false, configured: false });
+    await migratePrivateContacts(password, masterKey);
     await establishVaultSession(masterKey, vault as VaultV3);
     return { account: stripSecret(account), revealed: mnemonic };
   } finally {
@@ -410,6 +412,7 @@ export async function initializeHardwareVault(
     };
     persist(vault);
     writeMerchantBootstrapState({ enabled: false, configured: false });
+    await migratePrivateContacts(password, masterKey);
     await establishVaultSession(masterKey, vault as VaultV3);
     return { account: stripSecret(stored) };
   } finally {
@@ -548,6 +551,7 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   lockVault();
   const unlocked = await masterKeyForPassword(vault, password);
   try {
+    await migratePrivateContacts(password, unlocked.masterKey);
     await migratePrivateTxNotes(password, unlocked.masterKey);
     await establishVaultSession(unlocked.masterKey, unlocked.vault);
     return unlocked.vault;
@@ -569,6 +573,7 @@ export async function enablePasskeyUnlock(
   requireWebCrypto();
   const unlocked = await masterKeyForPassword(vault, password);
   try {
+    await migratePrivateContacts(password, unlocked.masterKey);
     await migratePrivateTxNotes(password, unlocked.masterKey);
     await registerPasskeyMasterKey(unlocked.masterKey, dependencies);
   } finally {
@@ -593,6 +598,7 @@ export async function unlockVaultWithPasskey(
   try {
     // AES-GCM authentication of wrappedMerchantKey proves that the passkey
     // unwrapped the exact master key belonging to this vault.
+    await migratePrivateContacts(null, masterKey);
     await establishVaultSession(masterKey, vault);
     return vault;
   } finally {
@@ -926,6 +932,131 @@ const CURRENCY_KEY = "wallet.currency.v1";
 const TX_NOTES_KEY = "wallet.tx-notes.v1";
 const MERCHANT_STORE_KEY = "wallet.merchant.v2";
 
+interface PrivateContactsEnvelope {
+  version: 3;
+  crypto: RawKeyEncryptedPayload;
+}
+
+interface PasswordContactsEnvelope {
+  version: 2;
+  crypto: EncryptedPayload;
+}
+
+type PrivateContactRecord = FullBackupPayload["contacts"][number];
+
+function isPrivateContactsEnvelope(value: unknown): value is PrivateContactsEnvelope {
+  if (!isRecord(value)) return false;
+  return value.version === 3 && isRawKeyEncryptedPayloadValue(value.crypto);
+}
+
+function isPasswordContactsEnvelope(value: unknown): value is PasswordContactsEnvelope {
+  if (!isRecord(value)) return false;
+  return value.version === 2 && isEncryptedPayloadValue(value.crypto);
+}
+
+function normalizePrivateContact(value: unknown): PrivateContactRecord | null {
+  if (!isRecord(value) || typeof value.name !== "string" || typeof value.address !== "string") {
+    return null;
+  }
+  const name = value.name.trim();
+  const address = value.address.trim();
+  if (!name || !isValidPublicAddress(address)) return null;
+  return { name, address, favorite: value.favorite === true };
+}
+
+function normalizePrivateContacts(value: unknown): PrivateContactRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(normalizePrivateContact)
+    .filter((contact): contact is PrivateContactRecord => contact !== null);
+}
+
+function decodeAuthenticatedContacts(plaintext: string): PrivateContactRecord[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(plaintext);
+  } catch {
+    throw new Error("Encrypted contacts are malformed.");
+  }
+  if (!Array.isArray(parsed)) throw new Error("Encrypted contacts are malformed.");
+  const contacts = normalizePrivateContacts(parsed);
+  if (contacts.length !== parsed.length) throw new Error("Encrypted contacts are malformed.");
+  return contacts;
+}
+
+async function encodePrivateContacts(
+  contacts: PrivateContactRecord[],
+  masterKey: Uint8Array,
+): Promise<string> {
+  const normalized = normalizePrivateContacts(contacts);
+  if (normalized.length !== contacts.length) throw new Error("Contacts contain an invalid record.");
+  const envelope: PrivateContactsEnvelope = {
+    version: 3,
+    crypto: await encryptVaultString(JSON.stringify(normalized), masterKey),
+  };
+  return JSON.stringify(envelope);
+}
+
+async function writePrivateContacts(
+  contacts: PrivateContactRecord[],
+  masterKey: Uint8Array,
+): Promise<void> {
+  const serialized = await encodePrivateContacts(contacts, masterKey);
+  window.localStorage.setItem(CONTACTS_KEY, serialized);
+  if (window.localStorage.getItem(CONTACTS_KEY) !== serialized) {
+    throw new Error("Browser storage did not retain the encrypted contacts.");
+  }
+}
+
+async function readPrivateContacts(masterKey: Uint8Array): Promise<PrivateContactRecord[]> {
+  const stored = readLocalJson(CONTACTS_KEY);
+  if (stored === null) return [];
+  if (!isPrivateContactsEnvelope(stored)) {
+    throw new Error("Private contacts require vault migration.");
+  }
+  try {
+    return decodeAuthenticatedContacts(await decryptVaultString(stored.crypto, masterKey));
+  } catch (error) {
+    if (error instanceof Error && error.message === "Encrypted contacts are malformed.") throw error;
+    throw new Error("Private contacts could not be decrypted.");
+  }
+}
+
+async function migratePrivateContacts(
+  password: string | null,
+  masterKey: Uint8Array,
+): Promise<PrivateContactRecord[]> {
+  const stored = readLocalJson(CONTACTS_KEY);
+  if (isPrivateContactsEnvelope(stored)) return readPrivateContacts(masterKey);
+
+  let contacts: PrivateContactRecord[];
+  if (isPasswordContactsEnvelope(stored)) {
+    if (!password) throw new Error("Unlock with your password once to migrate private contacts.");
+    try {
+      contacts = decodeAuthenticatedContacts(await decryptString(stored.crypto, password));
+    } catch {
+      throw new Error("Private contacts could not be migrated.");
+    }
+  } else {
+    // One-time migration from the legacy plaintext array. Invalid legacy rows
+    // were historically ignored by the address book and remain ignored here.
+    contacts = normalizePrivateContacts(stored);
+  }
+
+  await writePrivateContacts(contacts, masterKey);
+  return readPrivateContacts(masterKey);
+}
+
+export async function loadPrivateContactRecords(): Promise<PrivateContactRecord[]> {
+  return readPrivateContacts(requireSessionMasterKey());
+}
+
+export async function savePrivateContactRecords(
+  contacts: PrivateContactRecord[],
+): Promise<void> {
+  await writePrivateContacts(contacts, requireSessionMasterKey());
+}
+
 interface TxNoteEnvelope {
   version: 3;
   crypto: RawKeyEncryptedPayload;
@@ -1127,11 +1258,15 @@ export async function exportVaultBackup(password: string): Promise<string> {
   const storedVault = readVault();
   if (!storedVault) throw new Error("No wallet to back up.");
   const verified = await masterKeyForPassword(storedVault, password);
-  zeroKey(verified.masterKey);
+  let contacts: PrivateContactRecord[];
+  try {
+    contacts = await migratePrivateContacts(password, verified.masterKey);
+  } finally {
+    zeroKey(verified.masterKey);
+  }
   const vault = readVault();
   if (!vault) throw new Error("No wallet to back up.");
 
-  const contactsRaw = readLocalJson(CONTACTS_KEY);
   const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
   let merchantKey: Uint8Array | null = null;
@@ -1148,7 +1283,7 @@ export async function exportVaultBackup(password: string): Promise<string> {
   const payload: FullBackupPayload = {
     exportedAt: new Date().toISOString(),
     vault,
-    contacts: Array.isArray(contactsRaw) ? contactsRaw : [],
+    contacts,
     settings: {
       network: loadNetworkPref(),
       fiatCurrency: window.localStorage.getItem(CURRENCY_KEY),
@@ -1178,6 +1313,24 @@ export async function restoreVaultBackup(
 ): Promise<VaultRestoreResult> {
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
+  let encryptedContacts: string;
+  if (isVaultV3(vault)) {
+    let masterKey: Uint8Array | null = null;
+    try {
+      masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password as string);
+      encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    } catch {
+      throw new Error("The backup password does not unlock its encrypted wallet data.");
+    } finally {
+      zeroKey(masterKey);
+    }
+  } else {
+    const legacyEnvelope: PasswordContactsEnvelope = {
+      version: 2,
+      crypto: await encryptString(JSON.stringify(payload.contacts), password as string),
+    };
+    encryptedContacts = JSON.stringify(legacyEnvelope);
+  }
   const restoreKeys = [
     VAULT_KEY,
     NETWORK_KEY,
@@ -1193,7 +1346,7 @@ export async function restoreVaultBackup(
   const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
-    [CONTACTS_KEY, JSON.stringify(payload.contacts)],
+    [CONTACTS_KEY, encryptedContacts],
     [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
     [MERCHANT_STORE_KEY, merchantRepository ? null : payload.merchantStore || null],
   ]);

@@ -35,9 +35,10 @@ function EditContactInner({
   const [name, setName] = useState(contact?.name ?? "");
   const [address, setAddress] = useState(contact?.address ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const isEdit = contact !== null;
 
-  function handleSave() {
+  async function handleSave() {
     const trimmedName = name.trim();
     const trimmedAddr = address.trim();
     const err = validateContact(trimmedName, trimmedAddr);
@@ -54,19 +55,39 @@ function EditContactInner({
       setError("That address is already saved.");
       return;
     }
-    if (isEdit) removeContact(contact.address);
-    addContact({ name: trimmedName, address: trimmedAddr, favorite: contact?.favorite });
-    triggerHaptic("success");
-    toast(isEdit ? "Contact updated" : "Contact saved", "success");
-    onClose();
+    setBusy(true);
+    setError(null);
+    try {
+      await addContact(
+        { name: trimmedName, address: trimmedAddr, favorite: contact?.favorite },
+        contact?.address,
+      );
+      triggerHaptic("success");
+      toast(isEdit ? "Contact updated" : "Contact saved", "success");
+      onClose();
+    } catch (saveError) {
+      triggerHaptic("error");
+      setError(saveError instanceof Error ? saveError.message : "Contact could not be saved.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!contact) return;
-    removeContact(contact.address);
-    triggerHaptic("success");
-    toast("Contact deleted", "info");
-    onClose();
+    setBusy(true);
+    setError(null);
+    try {
+      await removeContact(contact.address);
+      triggerHaptic("success");
+      toast("Contact deleted", "info");
+      onClose();
+    } catch (deleteError) {
+      triggerHaptic("error");
+      setError(deleteError instanceof Error ? deleteError.message : "Contact could not be deleted.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -90,7 +111,7 @@ function EditContactInner({
             maxLength={24}
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleSave();
+              if (e.key === "Enter") void handleSave();
             }}
           />
         </Field>
@@ -103,7 +124,7 @@ function EditContactInner({
             spellCheck={false}
             autoComplete="off"
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleSave();
+              if (e.key === "Enter") void handleSave();
             }}
           />
         </Field>
@@ -112,12 +133,15 @@ function EditContactInner({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>{isEdit ? "Save Changes" : "Save Contact"}</Button>
+          <Button onClick={() => void handleSave()} disabled={busy}>
+            {busy ? "Saving…" : isEdit ? "Save Changes" : "Save Contact"}
+          </Button>
         </div>
         {isEdit && (
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => void handleDelete()}
+            disabled={busy}
             className="w-full rounded-xl border border-[#FF453A]/25 bg-[#FF453A]/10 py-2.5 text-[13.5px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/15"
           >
             Delete Contact

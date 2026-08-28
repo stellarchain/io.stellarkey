@@ -72,14 +72,16 @@ export function AddressBookPage({
       const text = await file.text();
       const list = JSON.parse(text) as Contact[];
       if (!Array.isArray(list)) throw new Error("Invalid contacts file format.");
+      const knownAddresses = new Set(contacts.map((contact) => contact.address));
       let imported = 0;
       for (const c of list) {
         if (
           c.name &&
           c.address &&
-          !contacts.some((existing) => existing.address === c.address)
+          !knownAddresses.has(c.address)
         ) {
-          addContact(c);
+          await addContact(c);
+          knownAddresses.add(c.address);
           imported++;
         }
       }
@@ -88,6 +90,16 @@ export function AddressBookPage({
     } catch {
       triggerHaptic("error");
       toast("Failed to parse contacts JSON", "error");
+    }
+  }
+
+  async function handleToggleFavorite(address: string) {
+    try {
+      await toggleContactFavorite(address);
+      triggerHaptic("selection");
+    } catch (error) {
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "Favorite could not be updated.", "error");
     }
   }
 
@@ -150,7 +162,7 @@ export function AddressBookPage({
                     contact={c}
                     sep={i > 0}
                     onSend={() => onSendTo(c)}
-                    onToggleFavorite={() => toggleContactFavorite(c.address)}
+                    onToggleFavorite={() => void handleToggleFavorite(c.address)}
                     onOpen={() => openEditor(c)}
                   />
                 ))}
@@ -171,7 +183,7 @@ export function AddressBookPage({
                     contact={c}
                     sep={i > 0}
                     onSend={() => onSendTo(c)}
-                    onToggleFavorite={() => toggleContactFavorite(c.address)}
+                    onToggleFavorite={() => void handleToggleFavorite(c.address)}
                     onOpen={() => openEditor(c)}
                   />
                 ))}

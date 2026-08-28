@@ -15,7 +15,7 @@
 
 ### Task 2: Encrypted contacts
 
-- Add an optional encrypted contacts payload to vault v3 and its decoder.
+- Add an authenticated contacts envelope protected by the vault v3 master key.
 - Migrate `polaris.contacts.v1` after master-key recovery, persist encrypted data first, then remove plaintext.
 - Make contact storage APIs asynchronous and available only while unlocked.
 - Preserve encrypted backup/restore behavior and add locked-state, ciphertext, and migration tests.
