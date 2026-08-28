@@ -216,7 +216,7 @@ export async function installNetworkFixtures(
 }
 
 export async function importTestWallet(page: Page): Promise<void> {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Import Existing Wallet" }).click();

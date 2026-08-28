@@ -360,7 +360,7 @@ test(
       });
       page.on("pageerror", (error) => pageErrors.push(error.message));
 
-      await page.goto(origin, { waitUntil: "domcontentloaded" });
+      await page.goto(`${origin}/app`, { waitUntil: "domcontentloaded" });
       await page.evaluate(() => localStorage.clear());
       await page.reload({ waitUntil: "domcontentloaded" });
 

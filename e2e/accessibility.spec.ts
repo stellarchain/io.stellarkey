@@ -212,7 +212,7 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   if ((page.viewportSize()?.width ?? 1024) < 768) {
     await page.setViewportSize({ width: 320, height: 693 });
   }
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "domcontentloaded" });
 

@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test";
 import { installNetworkFixtures, installQuietEventSource } from "./fixtures";
 
 const routes = [
-  { path: "/", heading: "Own your keys. Own your money.", title: "StellarKey — Self-custodial Stellar wallet" },
-  { path: "/about", heading: "About StellarKey", title: "About — StellarKey" },
-  { path: "/privacy", heading: "Your data stays close", title: "Privacy — StellarKey" },
-  { path: "/terms", heading: "You remain in control", title: "Terms — StellarKey" },
-  { path: "/security", heading: "Protect the recovery path", title: "Security — StellarKey" },
-  { path: "/support", heading: "Support without custody", title: "Support — StellarKey" },
+  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey — a Stellar wallet with a card machine in it" },
+  { path: "/about", heading: "About StellarKey", title: "About StellarKey — StellarKey" },
+  { path: "/privacy", heading: "Your data stays close", title: "Your data stays close — StellarKey" },
+  { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
+  { path: "/security", heading: "Protect the recovery path", title: "Protect the recovery path — StellarKey" },
+  { path: "/support", heading: "Support without custody", title: "Support without custody — StellarKey" },
 ] as const;
 
 test.beforeEach(async ({ context }) => {
