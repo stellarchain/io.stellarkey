@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { BRAND_NAME } from "../src/lib/brand";
 import {
   importTestWallet,
   installNetworkFixtures,
@@ -221,7 +222,7 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await multiSend.getByRole("button", { name: "Close" }).click();
 
   await clickLockWallet(page);
-  await expect(page.getByRole("heading", { name: "Wallet", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: BRAND_NAME, exact: true })).toBeVisible();
   await expect(page.getByPlaceholder("Enter password")).toBeVisible();
   await expectAccessibleSurface(page, "lock screen", browserName);
   await page.getByPlaceholder("Enter password").fill(testPassword);
