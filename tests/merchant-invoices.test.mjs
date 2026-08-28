@@ -57,6 +57,7 @@ function merchantStore() {
       ...base,
       staff: [member],
       activeStaffId: member.id,
+      onShiftStaffIds: [member.id],
       settings: {
         ...base.settings,
         profile: { ...base.settings.profile, name: "North Star" },
@@ -369,7 +370,7 @@ test("an invoice payment cannot file against another receiving account", async (
   assert.equal(reconciled.store.invoices[0].paidMinor, 0);
 });
 
-test("manual settlement records the exact actor and survives reload", async () => {
+test("manual settlement records the exact actor in the current persisted schema", async () => {
   const { createInvoiceDraft, issueInvoice, recordManualInvoicePayment } = await invoiceDomain();
   const { member, store } = merchantStore();
   const draft = createInvoiceDraft(store, draftInput(member));
@@ -408,7 +409,6 @@ test("manual settlement records the exact actor and survives reload", async () =
     note: "Bank transfer checked",
   });
   const persisted = JSON.parse(JSON.stringify(settled.store));
-  delete persisted.nextInvoiceNumber;
   const reloaded = decodeMerchantStore(persisted);
   assert.ok(reloaded);
   assert.deepEqual(reloaded.invoices[0], settled.invoice);

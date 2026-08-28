@@ -402,7 +402,7 @@ test("record archives export and restore every encrypted record without plaintex
   await source.commit(store, KEY, null);
   const archive = await source.exportEncryptedArchive(KEY);
 
-  assert.match(archive, /polaris-merchant-record-archive/);
+  assert.match(archive, /stellarkey-merchant-record-archive/);
   assert.doesNotMatch(archive, /Private Coffee/);
   assert.doesNotMatch(archive, /Private Customer/);
   assert.doesNotMatch(archive, /GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF/);
