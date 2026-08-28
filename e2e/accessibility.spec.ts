@@ -187,6 +187,12 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
       }),
     ).toBeVisible();
     await expectAccessibleSurface(page, destination.toLowerCase(), browserName);
+    if (destination === "Swap") {
+      await page.getByRole("button", { name: "Slippage Settings" }).click();
+      await expect(page.getByRole("group", { name: "Slippage presets" })).toBeVisible();
+      await expectAccessibleSurface(page, "swap slippage settings", browserName);
+      await page.getByRole("button", { name: "Slippage Settings" }).click();
+    }
   }
   await clickPrimaryNavigation(page, "Home");
 

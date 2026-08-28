@@ -109,9 +109,16 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await page.getByRole("button", { name: "Review Swap" }).click();
   await expect(page.getByText("Review Swap Details & Routing", { exact: true })).toBeVisible();
   await expect(page.getByText("Maximum paid", { exact: true }).last()).toBeVisible();
+  await receiveAmount.fill("3");
+  await expect(page.getByRole("button", { name: "Review Swap" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm Swap" })).toBeHidden();
+  await receiveAmount.fill("2");
+  await expect(payAmount).toHaveValue("8");
+  await page.getByRole("button", { name: "Review Swap" }).click();
   await page.getByRole("button", { name: "Confirm Swap" }).click();
   await expect(page.getByRole("heading", { name: "Swap complete" })).toBeVisible();
   await expect(page.getByText("Transaction hash", { exact: true })).toBeVisible();
+  await expect(page.getByText("Receive asset issuer", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "View activity", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Swap again", exact: true })).toBeVisible();

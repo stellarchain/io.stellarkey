@@ -37,6 +37,22 @@ export interface StrictReceiveBoundSwapQuote extends BoundSwapQuoteBase {
 
 export type BoundSwapQuote = StrictSendBoundSwapQuote | StrictReceiveBoundSwapQuote;
 
+export interface SwapReceiptAssetIdentity {
+  readonly key: string;
+  readonly code: string;
+  readonly issuer: string | null;
+}
+
+export function swapReceiptAssetIdentity(
+  asset: Pick<AssetBalance, "code" | "issuer">,
+): SwapReceiptAssetIdentity {
+  return Object.freeze({
+    key: asset.issuer ? `${asset.code}:${asset.issuer}` : "native",
+    code: asset.code,
+    issuer: asset.issuer,
+  });
+}
+
 export function swapRequestKey(request: SwapRequestIdentity): string {
   return JSON.stringify([
     request.network,

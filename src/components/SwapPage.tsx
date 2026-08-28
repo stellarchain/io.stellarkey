@@ -22,8 +22,10 @@ import {
   bindSwapQuote,
   guardCurrentSwapQuote,
   spendableAssetBalance,
+  swapReceiptAssetIdentity,
   swapRequestKey,
   type BoundSwapQuote,
+  type SwapReceiptAssetIdentity,
   type SwapExecutionMode,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
@@ -43,8 +45,8 @@ import {
 
 interface SubmittedSwap {
   readonly quote: BoundSwapQuote;
-  readonly sendAsset: Readonly<Pick<AssetBalance, "code" | "issuer">>;
-  readonly destinationAsset: Readonly<Pick<AssetBalance, "code" | "issuer">>;
+  readonly sendAsset: SwapReceiptAssetIdentity;
+  readonly destinationAsset: SwapReceiptAssetIdentity;
   readonly submission: Readonly<SubmissionResult>;
 }
 
@@ -81,6 +83,7 @@ export function SwapPage({
   const [route, setRoute] = useState<BoundSwapQuote | null>(null);
   const [routingKey, setRoutingKey] = useState<string | null>(null);
   const [noRouteKey, setNoRouteKey] = useState<string | null>(null);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
@@ -152,8 +155,11 @@ export function SwapPage({
       if (trackedSubmissionStatus === "failed") {
         setPendingSubmission(null);
         setSubmittedSwap(null);
+        setRoute(null);
+        setNoRouteKey(null);
+        setQuoteAttempt((attempt) => attempt + 1);
         setStage("form");
-        setError("Swap failed on-chain. Refresh the quote and retry when ready.");
+        setError("Swap failed on-chain. The wallet is refreshing the quote before you retry.");
         triggerHaptic("error");
       }
     })();
@@ -178,7 +184,6 @@ export function SwapPage({
     const timer = setTimeout(async () => {
       setRoutingKey(quotedRequestKey);
       setNoRouteKey(null);
-      setError(null);
       try {
         const found = quotedMode === "strict-send"
           ? await findStrictSendRoute({
@@ -224,6 +229,7 @@ export function SwapPage({
                 slippage: quotedSlippage,
               }));
           setNoRouteKey(null);
+          setError(null);
         } else {
           setRoute(null);
           setNoRouteKey(quotedRequestKey);
@@ -243,7 +249,14 @@ export function SwapPage({
       alive = false;
       clearTimeout(timer);
     };
-  }, [routeKey, sendAsset, destAsset, exactAmount, quoteMode, slippage, valid, network]);
+  }, [routeKey, sendAsset, destAsset, exactAmount, quoteMode, slippage, valid, network, quoteAttempt]);
+
+  function invalidateQuoteForEdit() {
+    setRoute(null);
+    setNoRouteKey(null);
+    setError(null);
+    setStage((current) => current === "review" ? "form" : current);
+  }
 
   function flipAssets() {
     triggerHaptic("medium");
@@ -255,8 +268,7 @@ export function SwapPage({
     setPayAmount("");
     setReceiveAmount("");
     setAmountSide("pay");
-    setRoute(null);
-    setError(null);
+    invalidateQuoteForEdit();
   }
 
   function handleAmountChange(side: "pay" | "receive", val: string) {
@@ -269,8 +281,7 @@ export function SwapPage({
       setReceiveAmount(clean);
       setPayAmount("");
     }
-    setRoute(null);
-    setError(null);
+    invalidateQuoteForEdit();
   }
 
   async function handleSwap() {
@@ -302,8 +313,8 @@ export function SwapPage({
           });
       setSubmittedSwap(Object.freeze({
         quote: submissionQuote,
-        sendAsset: Object.freeze({ code: sendAsset.code, issuer: sendAsset.issuer }),
-        destinationAsset: Object.freeze({ code: destAsset.code, issuer: destAsset.issuer }),
+        sendAsset: swapReceiptAssetIdentity(sendAsset),
+        destinationAsset: swapReceiptAssetIdentity(destAsset),
         submission: Object.freeze({ ...result }),
       }));
       setPendingSubmission(result);
@@ -311,7 +322,11 @@ export function SwapPage({
       triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
     } catch (e) {
       triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Swap failed.");
+      setRoute(null);
+      setNoRouteKey(null);
+      setStage("form");
+      setQuoteAttempt((attempt) => attempt + 1);
+      setError(e instanceof Error ? e.message : "Swap failed. Refreshing the quote before retry.");
     } finally {
       setBusy(false);
     }
@@ -419,16 +434,16 @@ export function SwapPage({
             <span className="text-[13px] font-semibold text-white">Slippage Tolerance</span>
             <span className="text-[12px] font-medium text-[#0A84FF]">{slippage}%</span>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div role="group" aria-label="Slippage presets" className="grid grid-cols-4 gap-2">
             {[0.1, 0.5, 1.0, 3.0].map((val) => (
               <button
                 key={val}
                 type="button"
+                aria-pressed={slippage === val}
                 onClick={() => {
                   triggerHaptic("selection");
                   setSlippage(val);
-                  setRoute(null);
-                  setError(null);
+                  invalidateQuoteForEdit();
                 }}
                 className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
                   slippage === val
@@ -441,10 +456,14 @@ export function SwapPage({
             ))}
           </div>
           <div className="flex items-center justify-between gap-2 pt-1">
-            <span className="text-[11.5px] text-neutral-400">Custom:</span>
+            <label htmlFor="swap-custom-slippage" className="text-[11.5px] text-neutral-400">
+              Custom:
+            </label>
             <div className="flex items-center gap-1">
               <input
+                id="swap-custom-slippage"
                 type="number"
+                aria-label="Custom slippage percentage"
                 step="0.1"
                 min="0.05"
                 max="10"
@@ -454,8 +473,7 @@ export function SwapPage({
                   const val = parseFloat(e.target.value);
                   if (!Number.isNaN(val) && val > 0 && val <= 20) {
                     setSlippage(val);
-                    setRoute(null);
-                    setError(null);
+                    invalidateQuoteForEdit();
                   }
                 }}
                 className="input mono !h-11 !w-20 text-center text-base md:!h-7 sm:text-[12px]"
@@ -480,6 +498,7 @@ export function SwapPage({
           <SwapAmountCard
             label="You pay"
             amountLabel="You pay amount"
+            assetLabel="You pay asset"
             amount={displayedPayAmount}
             exact={amountSide === "pay"}
             routing={routing && amountSide === "receive"}
@@ -488,8 +507,10 @@ export function SwapPage({
             onAmountChange={(value) => handleAmountChange("pay", value)}
             onAssetChange={(key) => {
               setSendKey(key);
-              setRoute(null);
-              setError(null);
+              if (key === effectiveDestKey) {
+                setDestKey(options.find((balance) => balance.key !== key)?.key ?? "");
+              }
+              invalidateQuoteForEdit();
             }}
             balance={sendAsset ? `Available ${fmtAmount(sendAvailable)} ${sendAsset.code}` : null}
             onBalanceClick={sendAsset
@@ -536,6 +557,7 @@ export function SwapPage({
           <SwapAmountCard
             label="You receive"
             amountLabel="You receive amount"
+            assetLabel="You receive asset"
             amount={displayedReceiveAmount}
             exact={amountSide === "receive"}
             routing={routing && amountSide === "pay"}
@@ -544,8 +566,7 @@ export function SwapPage({
             onAmountChange={(value) => handleAmountChange("receive", value)}
             onAssetChange={(key) => {
               setDestKey(key);
-              setRoute(null);
-              setError(null);
+              invalidateQuoteForEdit();
             }}
             balance={destAsset ? `Balance ${fmtAmount(destAsset.balance)} ${destAsset.code}` : null}
           />
@@ -812,6 +833,8 @@ function SwapResultView({
               {fmtAmount(quote.sendAmount)} {sendAsset.code} → {fmtAmount(quote.destinationAmount)} {destinationAsset.code}
             </span>
           </div>
+          <ReceiptAssetIssuer label="Pay asset issuer" asset={sendAsset} />
+          <ReceiptAssetIssuer label="Receive asset issuer" asset={destinationAsset} />
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <span className="text-[12px] text-neutral-400">Network</span>
             <NetworkBadge network={submission.network} />
@@ -890,6 +913,13 @@ function SwapResultView({
           </div>
         </div>
 
+        {(sendAsset.issuer || destinationAsset.issuer) && (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] px-4">
+            <ReceiptAssetIssuer label="Pay asset issuer" asset={sendAsset} />
+            <ReceiptAssetIssuer label="Receive asset issuer" asset={destinationAsset} />
+          </div>
+        )}
+
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <span className="text-[12px] text-neutral-400">Protection</span>
@@ -933,9 +963,30 @@ function SwapResultView({
   );
 }
 
+function ReceiptAssetIssuer({
+  label,
+  asset,
+}: {
+  label: string;
+  asset: SwapReceiptAssetIdentity;
+}) {
+  if (!asset.issuer) return null;
+  return (
+    <div className="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.07] py-3 first:border-t-0">
+      <span className="shrink-0 text-[11px] text-neutral-500">{label}</span>
+      <HashValue
+        full
+        value={asset.issuer}
+        className="min-w-0 justify-end text-right text-[10.5px] leading-relaxed text-neutral-300"
+      />
+    </div>
+  );
+}
+
 function SwapAmountCard({
   label,
   amountLabel,
+  assetLabel,
   amount,
   exact,
   routing,
@@ -949,6 +1000,7 @@ function SwapAmountCard({
 }: {
   label: string;
   amountLabel: string;
+  assetLabel: string;
   amount: string;
   exact: boolean;
   routing: boolean;
@@ -1006,6 +1058,7 @@ function SwapAmountCard({
           <AssetSelect
             options={assetOptions}
             value={assetKey}
+            ariaLabel={assetLabel}
             onChange={onAssetChange}
           />
         </div>
@@ -1018,10 +1071,12 @@ function SwapAmountCard({
 function AssetSelect({
   options,
   value,
+  ariaLabel,
   onChange,
 }: {
   options: AssetBalance[];
   value: string;
+  ariaLabel: string;
   onChange: (key: string) => void;
 }) {
   return (
@@ -1029,7 +1084,7 @@ function AssetSelect({
       size="sm"
       value={value}
       onChange={onChange}
-      ariaLabel="Asset"
+      ariaLabel={ariaLabel}
       preserveOptionLabels
       panelMinWidth={280}
       className="mono !rounded-2xl !py-2 !pl-3 !pr-2 text-[14px]"
