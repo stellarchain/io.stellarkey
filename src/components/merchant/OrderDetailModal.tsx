@@ -193,6 +193,7 @@ function fmtWhen(ts: number): string {
 }
 
 const REFUND_SUBMISSION_LABEL: Record<RefundSubmissionStatus, string> = {
+  prepared: "Prepared — awaiting network result",
   confirmed: "Confirmed",
   accepted: "Confirming",
   status_unknown: "Status unknown — do not retry",

@@ -366,6 +366,9 @@ export function decideRefundRequest(
     const orderRefundMatches = request.sourcePaymentId === null && refund.kind === "order";
     if (
       (!paymentRefundMatches && !orderRefundMatches) ||
+      (refund.requestId !== undefined &&
+        refund.requestId !== null &&
+        refund.requestId !== request.id) ||
       refund.orderId !== request.orderId ||
       refund.amountMinor !== request.amountMinor ||
       refund.reason !== request.reason

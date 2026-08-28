@@ -339,6 +339,7 @@ export type RefundReason =
 
 /** Canonical-hash lifecycle for the outbound Stellar payment behind a refund. */
 export type RefundSubmissionStatus =
+  | "prepared"
   | "accepted"
   | "confirmed"
   | "status_unknown"
@@ -354,6 +355,8 @@ export interface Refund {
   kind: RefundKind;
   /** Exact Horizon payment operation funding the outbound return; legacy order refunds may be null. */
   sourcePaymentId: string | null;
+  /** Approval request that authorized this submission, when one exists. */
+  requestId?: string | null;
   network: NetworkKey;
   amountMinor: Minor;
   asset: AcceptedAsset;

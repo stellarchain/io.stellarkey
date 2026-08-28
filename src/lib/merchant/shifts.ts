@@ -188,7 +188,9 @@ export function unresolvedShiftFlows(
   for (const refund of store.refunds) {
     if (
       refund.network === shift.network &&
-      (refund.submissionStatus === "accepted" || refund.submissionStatus === "status_unknown") &&
+      (refund.submissionStatus === "prepared" ||
+        refund.submissionStatus === "accepted" ||
+        refund.submissionStatus === "status_unknown") &&
       inWindow(refund.createdAt, shift, until)
     ) {
       flows.push({ kind: "refund", id: refund.id, label: "A submitted refund is not final yet." });

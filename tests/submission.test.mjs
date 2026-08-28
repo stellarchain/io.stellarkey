@@ -854,6 +854,61 @@ test("post-response finalization errors never discard the pre-submit recovery ha
   assert.deepEqual(events, ["persist", "discard"]);
 });
 
+test("broadcast waits for durable domain intent before POST and journals definite rejection", async () => {
+  const prepared = {
+    hash: "8".repeat(64),
+    network: "testnet",
+    expiresAt: 1_800_000_000,
+  };
+  const events = [];
+
+  await assert.rejects(
+    submission.runPreparedBroadcast({
+      broadcast: async (onPrepared) => {
+        events.push("signed");
+        await onPrepared(prepared);
+        events.push("post");
+        throw new Error("definite rejection");
+      },
+      prepare: async () => {
+        await Promise.resolve();
+        events.push("persist-intent");
+      },
+      discard: async () => {
+        await Promise.resolve();
+        events.push("record-rejection");
+      },
+      finalize: () => events.push("finalize"),
+    }),
+    /definite rejection/,
+  );
+  assert.deepEqual(events, [
+    "signed",
+    "persist-intent",
+    "post",
+    "record-rejection",
+  ]);
+
+  events.length = 0;
+  await assert.rejects(
+    submission.runPreparedBroadcast({
+      broadcast: async (onPrepared) => {
+        await onPrepared(prepared);
+        events.push("post");
+        return { status: "accepted" };
+      },
+      prepare: async () => events.push("persist-intent"),
+      discard: async () => events.push("record-rejection"),
+      finalize: () => {
+        events.push("finalize");
+        throw new Error("result persistence failed");
+      },
+    }),
+    /result persistence failed/,
+  );
+  assert.deepEqual(events, ["persist-intent", "post", "finalize"]);
+});
+
 test("expired pending envelopes unlock only after authoritative not-found", () => {
   assert.equal(typeof submission.resolutionForExpiredLookup, "function");
   assert.equal(submission.resolutionForExpiredLookup("confirmed"), true);

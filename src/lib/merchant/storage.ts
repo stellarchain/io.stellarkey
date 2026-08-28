@@ -495,9 +495,11 @@ function refundRecords(value: unknown): MerchantStore["refunds"] {
     ...refund,
     kind: refund.kind === "payment_reversal" ? "payment_reversal" as const : "order" as const,
     sourcePaymentId: nullableString(refund.sourcePaymentId, null),
+    ...(typeof refund.requestId === "string" ? { requestId: refund.requestId } : {}),
     // Refunds written before outbound lifecycle tracking were presented as
     // completed, so preserve that historical meaning during the v1/v2 read.
     submissionStatus:
+      refund.submissionStatus === "prepared" ||
       refund.submissionStatus === "accepted" ||
       refund.submissionStatus === "confirmed" ||
       refund.submissionStatus === "status_unknown" ||
@@ -995,7 +997,11 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     if (record.invoiceId) protectedInvoiceIds.add(record.invoiceId);
   }
   for (const refund of store.refunds) {
-    if (refund.submissionStatus === "accepted" || refund.submissionStatus === "status_unknown") {
+    if (
+      refund.submissionStatus === "prepared" ||
+      refund.submissionStatus === "accepted" ||
+      refund.submissionStatus === "status_unknown"
+    ) {
       protectedOrderIds.add(refund.orderId);
       if (refund.invoiceId) protectedInvoiceIds.add(refund.invoiceId);
     }
@@ -1065,6 +1071,7 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
         (refund.invoiceId !== undefined &&
           refund.invoiceId !== null &&
           keptInvoiceIds.has(refund.invoiceId)) ||
+        refund.submissionStatus === "prepared" ||
         refund.submissionStatus === "accepted" ||
         refund.submissionStatus === "status_unknown",
     ),
