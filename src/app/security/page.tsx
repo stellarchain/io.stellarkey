@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { ContactAction } from "@/components/ContactAction";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND_NAME, PUBLIC_OPEN_GRAPH_IMAGE, PUBLIC_ROUTES } from "@/lib/brand";
+import {
+  APPLICATION_VERSION,
+  BRAND_NAME,
+  BUILD_COMMIT,
+  PUBLIC_OPEN_GRAPH_IMAGE,
+  PUBLIC_ROUTES,
+} from "@/lib/brand";
 
 const description = `${BRAND_NAME} security model, supported disclosure scope, and responsible disclosure process.`;
 
@@ -43,6 +49,15 @@ export default function SecurityPage() {
           release or commit, browser and operating-system version, expected behavior, observed
           behavior, and the smallest safe reproduction. We will acknowledge and triage credible
           reports, but cannot promise a reward or response deadline unless a separate program says so.
+        </p>
+      </section>
+
+      <section>
+        <h2>Supported release</h2>
+        <p>
+          Security fixes target the latest published build, currently {BRAND_NAME} release
+          {" "}{APPLICATION_VERSION}, commit {BUILD_COMMIT}. Confirm an issue against that release
+          when practical and name any older affected release in your report.
         </p>
       </section>
 

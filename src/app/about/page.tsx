@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { LegalPage } from "@/components/LegalPage";
 import {
+  APPLICATION_VERSION,
   BRAND_DESCRIPTION,
   BRAND_NAME,
+  BUILD_COMMIT,
+  BUILD_IS_DIRTY,
   PUBLIC_OPEN_GRAPH_IMAGE,
   PUBLIC_ROUTES,
 } from "@/lib/brand";
@@ -57,6 +60,28 @@ export default function AboutPage() {
           <li>Trezor address verification and on-device Stellar transaction signing.</li>
           <li>Local-first merchant tools whose operational records remain on this device.</li>
         </ul>
+      </section>
+
+      <section>
+        <h2>Current release</h2>
+        <p>
+          You are reading the trust center for {BRAND_NAME} release {APPLICATION_VERSION}. The
+          release identifier also appears in Security so reports can name the affected build.
+        </p>
+        <p className="mt-4 text-[12px] font-semibold uppercase tracking-wider text-neutral-500">
+          Full build commit
+        </p>
+        <code className="mt-2 block break-all rounded-xl bg-white/[0.06] px-4 py-3 text-[12px] text-neutral-200">
+          {BUILD_COMMIT}
+        </code>
+        <p className="mt-3">
+          Compare this full 40-character SHA with the commit shown for the corresponding GitHub
+          release. The same identity is available as machine-readable JSON at {" "}
+          <a href="/release.json">/release.json</a>.
+          {BUILD_IS_DIRTY
+            ? " This local build contains tracked changes beyond that commit and is not source-verifiable."
+            : " A clean match verifies that the deployed files were built from that source revision."}
+        </p>
       </section>
 
       <section>

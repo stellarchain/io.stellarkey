@@ -32,6 +32,10 @@ Full wallet recovery accepts the fully encrypted `stellar-wallet-backup` envelop
 
 See [Merchant Mode operations](docs/merchant-mode.md) for setup, daily use, offline behavior, and security boundaries.
 
+## Verify a deployed release
+
+StellarKey starts at release `1.0.0`. Every build embeds the full 40-character Git commit SHA in the public About page and in `/release.json`. Compare that value with the commit attached to the corresponding GitHub release, or run `git rev-parse HEAD` in a checked-out copy. The release manifest also reports whether tracked source changes were present during the build; only a manifest with `"sourceTree": "clean"` and `"verifiable": true` represents the exact named commit.
+
 ## Asset and price safety
 
 Credit assets are identified by the complete `(network, code, issuer)` tuple. A matching code alone is never treated as verified or assigned a price. The built-in directory currently contains Circle USDC on mainnet/testnet and EURC on testnet only; custom assets always expose their issuer.

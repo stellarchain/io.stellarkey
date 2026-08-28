@@ -26,6 +26,10 @@ const mimeTypes = new Map([
   [".txt", "text/plain; charset=utf-8"],
   [".webmanifest", "application/manifest+json; charset=utf-8"],
 ]);
+const exactMimeTypes = new Map([
+  ["/opengraph-image", "image/png"],
+  ["/twitter-image", "image/png"],
+]);
 
 function parseHeaderRules(raw) {
   const rules = [];
@@ -85,19 +89,46 @@ async function resolveFile(urlPath) {
   return null;
 }
 
-const server = createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-  const filePath = await resolveFile(url.pathname);
-  if (!filePath) {
-    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Not found");
-    return;
-  }
-  const headers = await headersFor(url.pathname);
-  headers["Content-Type"] = mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream";
-  response.writeHead(200, headers);
+function contentTypeFor(urlPath, filePath) {
+  return exactMimeTypes.get(urlPath) ?? mimeTypes.get(path.extname(filePath)) ?? "application/octet-stream";
+}
+
+async function serveFile({ request, response, filePath, urlPath, status = 200 }) {
+  const headers = await headersFor(urlPath);
+  headers["Content-Type"] = contentTypeFor(urlPath, filePath);
+  response.writeHead(status, headers);
   if (request.method === "HEAD") response.end();
   else createReadStream(filePath).pipe(response);
+}
+
+const server = createServer(async (request, response) => {
+  const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+  if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
+    const canonicalPath = url.pathname.replace(/\/+$/, "");
+    if (await resolveFile(canonicalPath)) {
+      response.writeHead(308, {
+        ...(await headersFor(canonicalPath)),
+        Location: `${canonicalPath}${url.search}`,
+      });
+      response.end();
+      return;
+    }
+  }
+
+  const filePath = await resolveFile(url.pathname);
+  if (!filePath) {
+    const notFoundPath = await resolveFile("/404.html");
+    if (notFoundPath) {
+      await serveFile({ request, response, filePath: notFoundPath, urlPath: "/404.html", status: 404 });
+      return;
+    }
+    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    if (request.method === "HEAD") response.end();
+    else response.end("Not found");
+    return;
+  }
+  await serveFile({ request, response, filePath, urlPath: url.pathname });
 });
 
 server.listen(port, hostname, () => {

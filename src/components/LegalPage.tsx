@@ -48,7 +48,9 @@ export function LegalPage({
           <p className="eyebrow">{eyebrow}</p>
           <h1 className="display-h mt-3 text-[36px] text-white sm:text-[52px]">{title}</h1>
           <p className="mt-5 max-w-[65ch] text-[16px] leading-7 text-neutral-300">{summary}</p>
-          <p className="mt-4 text-[12px] text-neutral-500">Effective 28 August 2026 · Version 1.0</p>
+          <p className="mt-4 text-[12px] text-neutral-500">
+            Effective 28 August 2026 · Legal text version 1.0
+          </p>
         </div>
 
         <nav

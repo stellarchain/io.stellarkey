@@ -39,6 +39,9 @@
 /sitemap.xml
   Cache-Control: no-cache, must-revalidate
 
+/release.json
+  Cache-Control: no-cache, must-revalidate
+
 /.well-known/security.txt
   Cache-Control: no-cache, must-revalidate
 

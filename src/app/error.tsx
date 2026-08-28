@@ -22,7 +22,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 text-center">
+    <main id="app-content" className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 text-center">
       <span className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[#FF453A]/30 bg-[#FF453A]/10 text-2xl text-[#FF453A]">
         ⚠️
       </span>
@@ -49,6 +49,6 @@ export default function Error({
         {error.digest ? `Ref: ${error.digest}` : error.message}
       </p>
       <PublicFooter compact />
-    </div>
+    </main>
   );
 }
