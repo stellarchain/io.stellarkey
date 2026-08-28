@@ -50,4 +50,24 @@ test("confirmed swaps become an immutable receipt instead of resetting the form"
   assert.match(swap, /Swap again/);
   assert.match(swap, /onDone/);
   assert.match(swap, /onViewActivity/);
+  assert.match(swap, /Pay asset issuer/);
+  assert.match(swap, /Receive asset issuer/);
+});
+
+test("editing a reviewed swap invalidates review and failed submissions actively requote", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /function invalidateQuoteForEdit/);
+  assert.match(swap, /setStage\(\(current\) => current === "review" \? "form" : current\)/);
+  assert.match(swap, /setQuoteAttempt\(\(attempt\) => attempt \+ 1\)/);
+  assert.match(swap, /\[routeKey,[\s\S]*?quoteAttempt[\s\S]*?\]/);
+});
+
+test("swap settings expose distinct asset and slippage control identities", () => {
+  const swap = read("src/components/SwapPage.tsx");
+
+  assert.match(swap, /assetLabel="You pay asset"/);
+  assert.match(swap, /assetLabel="You receive asset"/);
+  assert.match(swap, /aria-pressed=\{slippage === val\}/);
+  assert.match(swap, /aria-label="Custom slippage percentage"/);
 });

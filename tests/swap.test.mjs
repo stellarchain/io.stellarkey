@@ -6,6 +6,7 @@ import {
   bindSwapQuote,
   guardCurrentSwapQuote,
   isCurrentSwapQuote,
+  swapReceiptAssetIdentity,
   swapRequestKey,
 } from "../src/lib/transaction-intent.ts";
 
@@ -281,4 +282,15 @@ test("binds strict-send and strict-receive quotes to different exact intents", (
   assert.equal(strictReceiveQuote.sendMaximum, "10.1505");
   assert.equal(guardCurrentSwapQuote(strictReceiveQuote, strictReceiveKey), strictReceiveQuote);
   assert.equal(guardCurrentSwapQuote(strictReceiveQuote, strictSendKey), null);
+});
+
+test("receipt asset identities distinguish the same code from different issuers", () => {
+  const first = swapReceiptAssetIdentity({ code: "USDC", issuer: USDC_ISSUER });
+  const secondIssuer = "GDQOE23G6I3K6BIJFHUQFOW42CHSC6QJ3BKWH6SHDNR3OX35OZPAUU4S";
+  const second = swapReceiptAssetIdentity({ code: "USDC", issuer: secondIssuer });
+
+  assert.equal(first.code, second.code);
+  assert.notEqual(first.key, second.key);
+  assert.equal(first.issuer, USDC_ISSUER);
+  assert.equal(second.issuer, secondIssuer);
 });
