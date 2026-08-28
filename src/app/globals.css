@@ -82,6 +82,7 @@
 
 html {
   background: #000000;
+  overflow-x: clip;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -91,7 +92,7 @@ body {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-tap-highlight-color: transparent;
   touch-action: pan-x pan-y;
 }
@@ -197,6 +198,11 @@ body::after {
 .legal-prose ul {
   max-width: 65ch;
   margin-top: 0.85rem;
+}
+
+.legal-prose p,
+.legal-prose li {
+  overflow-wrap: anywhere;
 }
 
 .legal-prose ul {

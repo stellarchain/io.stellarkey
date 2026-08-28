@@ -161,6 +161,33 @@ async function visitSettingsSubpage(
   await expect(page.getByRole("heading", { name: "Recovery", exact: true })).toBeVisible();
 }
 
+test("ambient backgrounds never widen the narrowest iPhone viewport", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "iphone-webkit", "WebKit mobile regression");
+  await page.setViewportSize({ width: 320, height: 693 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/security", { waitUntil: "domcontentloaded" });
+
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth, "ambient backgrounds must not create horizontal page overflow").toBe(
+    dimensions.clientWidth,
+  );
+
+  const supportedRelease = page
+    .getByRole("heading", { name: "Supported release", exact: true })
+    .locator("..")
+    .locator("p");
+  const releaseText = await supportedRelease.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(releaseText.scrollWidth, "the verification hash must wrap without clipping").toBeLessThanOrEqual(
+    releaseText.clientWidth,
+  );
+});
+
 test("critical wallet and merchant screens remain operable and accessible", async ({ page, browserName }) => {
   if ((page.viewportSize()?.width ?? 1024) < 768) {
     await page.setViewportSize({ width: 320, height: 693 });
