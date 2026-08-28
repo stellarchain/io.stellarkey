@@ -1,0 +1,88 @@
+/*
+ * The parts of the trust-centre pages the landing sheet does not already
+ * describe: the row that moves between documents, the build stamp, and the
+ * wrappers that keep an icon a flex item rather than a stray inline box.
+ * Scoped under .mk like the rest of the marketing layer.
+ */
+
+.mk .doc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: 2.25rem;
+}
+
+.mk .doc-tabs a {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 2.4rem;
+  padding: 0 .95rem;
+  border: 1px solid var(--hair);
+  border-radius: 2rem;
+  font-size: .82rem;
+  color: var(--fg-faint);
+  transition: color .18s, border-color .18s, background .18s;
+}
+
+.mk .doc-tabs a:hover { color: var(--fg); border-color: var(--hair-2, var(--hair)); }
+
+.mk .doc-tabs a[aria-current="page"] {
+  color: var(--canvas);
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.mk .doc-tabs .ico { width: 15px; height: 15px; flex: none; }
+.mk .doc-tabs a[aria-current="page"] .ico { color: var(--canvas); }
+
+/* icon wrappers: the sizing rules below still reach the .ico inside them */
+.mk .legal-route-icon,
+.mk .legal-highlight-icon,
+.mk .legal-nav-icon { display: flex; flex: none; }
+.mk .legal-highlight-icon { color: var(--jade); margin-top: .15rem; }
+.mk .legal-route-icon { color: var(--gold); }
+
+.mk .doc-stamp {
+  margin: 1.4rem 0 0;
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-ghost);
+}
+
+.mk .commit {
+  display: block;
+  margin: .7rem 0 1rem;
+  padding: .85rem 1.1rem;
+  border: 1px solid var(--hair);
+  border-radius: .6rem;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--fg-dim);
+  word-break: break-all;
+}
+
+.mk .prose a:not(.btn) { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.mk .prose a:not(.btn):hover { color: var(--fg); }
+
+/*
+ * Below the two-column breakpoint the grid falls back to one implicit `auto`
+ * track, which sizes to its widest content: the fee table's own min-width then
+ * stretches the whole document past the viewport instead of scrolling inside
+ * its own container. Pin the single track so the children shrink and the
+ * table keeps its private scroll.
+ */
+@media (max-width: 899px) {
+  .mk .doc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.mk .doc-grid > * { min-width: 0; }
+
+/* long unbroken tokens — a 40-character commit, a URL — must not push a line
+   past the column */
+.mk .prose p,
+.mk .prose li,
+.mk .deflist dd { overflow-wrap: anywhere; }

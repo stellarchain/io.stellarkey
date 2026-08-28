@@ -11,6 +11,7 @@ const BUILD_ORIGIN = "https://polaris.invalid";
 
 export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
   "/",
+  "/app",
   "/about",
   "/privacy",
   "/terms",

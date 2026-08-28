@@ -1,0 +1,6 @@
+[77401073ms] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+    at <anonymous>:2:35
+    at <anonymous>:3:7
+[77402215ms] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+    at <anonymous>:2:35
+    at <anonymous>:3:7

@@ -1,0 +1,11 @@
+import { chromium } from "playwright";
+import { readFileSync } from "node:fs";
+const M = JSON.parse(readFileSync("/tmp/promo/medallions.json", "utf8"));
+const k = process.argv[2];
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 460, height: 460 }, deviceScaleFactor: 2 });
+await p.setContent(`<body style="margin:0;background:#000;display:grid;place-items:center;height:100vh">${M[k].replace("<svg", '<svg width="380" height="380"')}</body>`);
+await p.waitForTimeout(300);
+await p.screenshot({ path: `/tmp/promo/one-${k}.png` });
+await b.close();
+console.log("rendered", k);

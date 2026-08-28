@@ -6,6 +6,16 @@ import { gzipSync } from "node:zlib";
 export const INITIAL_JS_RAW_BUDGET = 1_350_000;
 export const INITIAL_JS_GZIP_BUDGET = 350_000;
 
+/* The landing page is the public entry; the wallet shell lives at /app. Each
+   is budgeted against the route that actually serves it. */
+/* Ten of the landing's eleven chunks are the framework baseline it shares
+   with the wallet; only one is its own. The budget is sized for that, so a
+   marketing dependency creeping in shows up as a failure. */
+export const LANDING_JS_RAW_BUDGET = 700_000;
+export const LANDING_JS_GZIP_BUDGET = 215_000;
+const WALLET_ENTRY = "app.html";
+const LANDING_ENTRY = "index.html";
+
 /** Incremental bytes needed to enter each named journey. */
 export const JOURNEY_BUDGETS = Object.freeze({
   initial: { rawBytes: INITIAL_JS_RAW_BUDGET, gzipBytes: INITIAL_JS_GZIP_BUDGET },
@@ -22,8 +32,8 @@ function outputSource(source) {
   throw new Error(`Unsupported JavaScript resource in build graph: ${source}`);
 }
 
-function initialSources(root) {
-  const indexPath = resolve(root, "index.html");
+function entrySources(root, entry) {
+  const indexPath = resolve(root, entry);
   if (!existsSync(indexPath)) {
     throw new Error(`Static output is missing at ${indexPath}. Run npm run build first.`);
   }
@@ -31,7 +41,7 @@ function initialSources(root) {
   const sources = [...new Set(
     [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((match) => outputSource(match[1])),
   )];
-  if (sources.length === 0) throw new Error("Static index contains no JavaScript chunks.");
+  if (sources.length === 0) throw new Error(`${entry} contains no JavaScript chunks.`);
   return sources;
 }
 
@@ -49,7 +59,26 @@ function measureSources(root, sources) {
 
 export function measureInitialJavaScript(outputDirectory = "out") {
   const root = resolve(outputDirectory);
-  return measureSources(root, initialSources(root));
+  return measureSources(root, entrySources(root, WALLET_ENTRY));
+}
+
+export function measureLandingJavaScript(outputDirectory = "out") {
+  const root = resolve(outputDirectory);
+  return measureSources(root, entrySources(root, LANDING_ENTRY));
+}
+
+export function assertLandingJavaScriptBudget(measurement) {
+  const failures = [];
+  if (measurement.rawBytes > LANDING_JS_RAW_BUDGET) {
+    failures.push(`${measurement.rawBytes} raw bytes exceeds ${LANDING_JS_RAW_BUDGET}`);
+  }
+  if (measurement.gzipBytes > LANDING_JS_GZIP_BUDGET) {
+    failures.push(`${measurement.gzipBytes} gzip bytes exceeds ${LANDING_JS_GZIP_BUDGET}`);
+  }
+  if (failures.length > 0) {
+    throw new Error(`Landing JavaScript budget exceeded: ${failures.join("; ")}`);
+  }
+  return measurement;
 }
 
 export function assertInitialJavaScriptBudget(measurement) {
@@ -146,12 +175,12 @@ function without(sources, excluded) {
 
 export function measureJourneyJavaScript(outputDirectory = "out", buildDirectory = ".next") {
   const root = resolve(outputDirectory);
-  const initial = new Set(initialSources(root));
+  const initial = new Set(entrySources(root, WALLET_ENTRY));
   const contents = chunkContents(root);
   const mappings = asyncChunkMap(contents);
   const loadableManifestPath = resolve(
     buildDirectory,
-    "server/app/page/react-loadable-manifest.json",
+    "server/app/app/page/react-loadable-manifest.json",
   );
   if (!existsSync(loadableManifestPath)) {
     throw new Error(`Next loadable manifest is missing at ${loadableManifestPath}. Run npm run build first.`);
@@ -210,6 +239,10 @@ export function assertJourneyJavaScriptBudgets(measurements, budgets = JOURNEY_B
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const measurements = measureJourneyJavaScript(process.argv[2] ?? "out", process.argv[3] ?? ".next");
   assertJourneyJavaScriptBudgets(measurements);
+  const landing = assertLandingJavaScriptBudget(measureLandingJavaScript(process.argv[2] ?? "out"));
+  console.log(
+    `Landing JavaScript: ${landing.rawBytes} raw bytes, ${landing.gzipBytes} gzip bytes across ${landing.chunkCount} chunks.`,
+  );
   for (const [journey, measurement] of Object.entries(measurements)) {
     console.log(
       `${journey[0].toUpperCase()}${journey.slice(1)} JavaScript: ${measurement.rawBytes} raw bytes, ${measurement.gzipBytes} gzip bytes across ${measurement.chunkCount} chunks.`,

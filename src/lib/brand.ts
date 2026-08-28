@@ -19,7 +19,9 @@ export const PUBLIC_OPEN_GRAPH_IMAGE = Object.freeze({
 });
 
 export const PUBLIC_ROUTES = Object.freeze({
+  /** The public landing page. The wallet itself lives at `app`. */
   home: "/",
+  app: "/app",
   about: "/about",
   privacy: "/privacy",
   terms: "/terms",

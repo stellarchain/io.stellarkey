@@ -1,9 +1,9 @@
 {
-  "id": "/",
+  "id": "/app",
   "name": "StellarKey — Self-custodial Stellar wallet",
   "short_name": "StellarKey",
   "description": "A self-custodial Stellar wallet. Keys stay encrypted on your device.",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -46,19 +46,19 @@
     {
       "name": "Send Payment",
       "short_name": "Send",
-      "url": "/?action=send",
+      "url": "/app?action=send",
       "description": "Open a new payment"
     },
     {
       "name": "Receive Funds",
       "short_name": "Receive",
-      "url": "/?action=receive",
+      "url": "/app?action=receive",
       "description": "Show your address QR"
     },
     {
       "name": "Swap Assets",
       "short_name": "Swap",
-      "url": "/?action=swap",
+      "url": "/app?action=swap",
       "description": "DEX swap between assets"
     }
   ]

@@ -236,7 +236,9 @@ test("Next serves static install metadata and an Apple icon through native app r
       },
     ],
   );
-  assert.equal(manifest.id, "/");
+  assert.equal(manifest.id, "/app");
+  assert.equal(manifest.start_url, "/app");
+  // scope stays at the origin so the trust-centre pages open inside the app
   assert.equal(manifest.scope, "/");
   assert.doesNotMatch(layout, /manifest:\s*"\/manifest\.json"/);
   assert.doesNotMatch(layout, /icons:\s*\{/);

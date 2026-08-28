@@ -1,38 +1,66 @@
 import type { Metadata } from "next";
-import { ContactAction } from "@/components/ContactAction";
 import { LegalPage } from "@/components/LegalPage";
+import { ContactAction } from "@/components/ContactAction";
 import {
   APPLICATION_VERSION,
-  BRAND_NAME,
   BUILD_COMMIT,
   PUBLIC_OPEN_GRAPH_IMAGE,
   PUBLIC_ROUTES,
-  SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
+import {
+  DocAlert,
+  DocBook,
+  DocCheck,
+  DocChip,
+  DocClock,
+  DocCycle,
+  DocExport,
+  DocFile,
+  DocFingerprint,
+  DocGlobe,
+  DocKey,
+  DocLock,
+  DocScales,
+  DocShield,
+} from "@/components/marketing/DocIcons";
 
-const description = `${BRAND_NAME} security model, supported disclosure scope, and responsible disclosure process.`;
+const description =
+  "The threat model, the cryptography, the browser hardening, and how to report a vulnerability.";
+
+const highlights = [
+  "Wallet secrets and merchant records are encrypted locally; StellarKey has no server-side key store or recovery operator.",
+  "Every signature still depends on a trustworthy device, browser, origin, build, and review by the person authorizing it.",
+  "Security maintenance is ongoing and the source is public, but no software (including StellarKey) can guarantee absolute security.",
+] as const;
 
 const sections = [
-  { id: "principles", label: "Security principles" },
-  { id: "threat-model", label: "Threat model and limits" },
-  { id: "vault", label: "Vault and local data" },
-  { id: "signing", label: "Signing and transaction safety" },
-  { id: "passkeys", label: "Passkeys and hardware wallets" },
-  { id: "web-security", label: "Web and release security" },
-  { id: "maintenance", label: "Ongoing security maintenance" },
-  { id: "disclosure", label: "Responsible disclosure" },
-  { id: "supported-release", label: "Supported release" },
-  { id: "report", label: "Report securely" },
+  { id: "security-principles", label: "Security principles" },
+  { id: "security-threat-model", label: "Threat model and limits" },
+  { id: "security-vault", label: "Vault and local data" },
+  { id: "security-signing", label: "Signing and transaction safety" },
+  { id: "security-passkeys", label: "Passkeys and hardware wallets" },
+  { id: "security-web-security", label: "Web and release security" },
+  { id: "security-maintenance", label: "Ongoing security maintenance" },
+  { id: "security-disclosure", label: "Responsible disclosure" },
+  { id: "security-supported-release", label: "Supported release" },
+  { id: "security-report", label: "Report securely" },
+  { id: "security-spec", label: "What is actually protecting you" },
+  { id: "security-leaves", label: "Everything that leaves" },
+  { id: "security-stored", label: "What is kept here" },
+  { id: "security-browser", label: "How the page is locked down" },
+  { id: "security-threat", label: "What it does not protect" },
+  { id: "security-checklist", label: "Five things worth doing" },
 ] as const;
 
 export const metadata: Metadata = {
-  title: "Security",
+  title: "Protect the recovery path",
   description,
   alternates: { canonical: PUBLIC_ROUTES.security },
   openGraph: {
-    title: `${BRAND_NAME} Security`,
-    description,
+    type: "article",
     url: PUBLIC_ROUTES.security,
+    title: "Protect the recovery path",
+    description,
     images: [PUBLIC_OPEN_GRAPH_IMAGE],
   },
 };
@@ -41,206 +69,66 @@ export default function SecurityPage() {
   return (
     <LegalPage
       current="security"
-      eyebrow="Security and disclosure"
+      eyebrow="security // and disclosure"
       title="Protect the recovery path"
       summary="StellarKey reduces custody risk by keeping keys local, but browser origins, extensions, devices, dependencies, and the services you connect remain part of the trust boundary."
-      highlights={[
-        "Wallet secrets and merchant records are encrypted locally; StellarKey has no server-side key store or recovery operator.",
-        "Every signature still depends on a trustworthy device, browser, origin, build, and review by the person authorizing it.",
-        "Security maintenance is ongoing and the source is public, but no software—including StellarKey—can guarantee absolute security.",
-      ]}
+      highlights={highlights}
       sections={sections}
     >
-      <section id="principles">
-        <h2>Security principles</h2>
-        <ul>
-          <li><strong>Minimize custody:</strong> do not build an application backend that can receive keys.</li>
-          <li><strong>Encrypt by default:</strong> keep sensitive local records encrypted at rest.</li>
-          <li><strong>Make authority visible:</strong> show the full transaction before signing.</li>
-          <li><strong>Fail closed:</strong> reject malformed storage, unsupported signing paths, unsafe callbacks, and network mismatches.</li>
-          <li><strong>Keep recovery independent:</strong> a password and tested backup remain available when optional passkey unlock is used.</li>
-          <li><strong>Make releases inspectable:</strong> publish source identity, checksums, dependency inventory, and disclosure instructions.</li>
-        </ul>
-      </section>
+        <section id="security-principles"><h2><DocShield />Security principles</h2><ul className="prose-list"><li>Minimize custody: do not build an application backend that can receive keys.</li><li>Encrypt by default: keep sensitive local records encrypted at rest.</li><li>Make authority visible: show the full transaction before signing.</li><li>Fail closed: reject malformed storage, unsupported signing paths, unsafe callbacks, and network mismatches.</li><li>Keep recovery independent: a password and tested backup remain available when optional passkey unlock is used.</li><li>Make releases inspectable: publish source identity, checksums, dependency inventory, and disclosure instructions.</li></ul></section>
 
-      <section id="threat-model">
-        <h2>Threat model and limits</h2>
-        <p>
-          The local encryption model is designed to reduce exposure when someone reads a locked
-          browser profile, exported encrypted backup, or encrypted merchant database without the
-          unlock material. Transaction review, endpoint validation, and strict parsing are designed
-          to reduce mistakes and unsafe data crossing a trust boundary. Browser security headers are
-          designed to reduce injection, framing, and unnecessary device access.
-        </p>
-        <p>
-          These controls cannot protect an already-unlocked wallet on a compromised device; a
-          malicious browser, extension, operating system, keyboard, clipboard, screen recorder, DNS
-          response, hosting origin, dependency, or release artifact; phishing on a lookalike origin;
-          a weak or exposed password; a compromised recovery backup; coerced device verification; or
-          an unsafe transaction the user approves. They also cannot control Stellar consensus,
-          Horizon or RPC operators, asset issuers, market-data services, Trezor infrastructure, or
-          counterparties.
-        </p>
-        <p>
-          No design review, automated test suite, encryption algorithm, hardware wallet, passkey, or
-          open-source process removes every vulnerability. StellarKey cannot guarantee absolute
-          security. Use a dedicated, maintained device where practical, keep recovery material
-          offline, verify the exact origin and release, and test new workflows with small amounts.
-        </p>
-      </section>
+        <section id="security-threat-model"><h2><DocAlert />Threat model and limits</h2><p>The local encryption model is designed to reduce exposure when someone reads a locked browser profile, exported encrypted backup, or encrypted merchant database without the unlock material. Transaction review, endpoint validation, and strict parsing are designed to reduce mistakes and unsafe data crossing a trust boundary. Browser security headers are designed to reduce injection, framing, and unnecessary device access.</p><p>These controls cannot protect an already-unlocked wallet on a compromised device; a malicious browser, extension, operating system, keyboard, clipboard, screen recorder, DNS response, hosting origin, dependency, or release artifact; phishing on a lookalike origin; a weak or exposed password; a compromised recovery backup; coerced device verification; or an unsafe transaction the user approves. They also cannot control Stellar consensus, Horizon or RPC operators, asset issuers, market-data services, Trezor infrastructure, or counterparties.</p><p>No design review, automated test suite, encryption algorithm, hardware wallet, passkey, or open-source process removes every vulnerability. StellarKey cannot guarantee absolute security. Use a dedicated, maintained device where practical, keep recovery material offline, verify the exact origin and release, and test new workflows with small amounts.</p></section>
 
-      <section id="vault">
-        <h2>Vault and local data</h2>
-        <p>
-          A new wallet uses a random 256-bit master key. The browser derives a wrapping key from the
-          wallet password using PBKDF2-HMAC-SHA-256 with a unique random salt and 600,000 iterations,
-          then protects the master key with authenticated AES-GCM encryption. Recovery phrases,
-          imported signing keys, and private notes are encrypted with the master key. Merchant data
-          uses a separate random encryption key wrapped by that master key and is committed
-          transactionally in IndexedDB.
-        </p>
-        <p>
-          AES-GCM detects an incorrect key or modified ciphertext; it does not make a weak password
-          strong or protect plaintext after a successful unlock. Signing secrets are opened only for
-          the scoped action that needs them, and in-memory byte buffers are cleared where the platform
-          allows. JavaScript and browser memory management cannot guarantee that every temporary copy
-          is immediately or forensically erased.
-        </p>
-        <p>
-          Locking removes the active vault and merchant keys from application state. Auto-lock reduces
-          an unattended session window but is not a substitute for locking the device. Full backups
-          use the encrypted version 2 envelope; legacy plaintext wallet imports are rejected. A
-          backup is useful only if it is stored safely and has been tested.
-        </p>
-      </section>
+        <section id="security-vault"><h2><DocLock />Vault and local data</h2><p>A new wallet uses a random 256-bit master key. The browser derives a wrapping key from the wallet password using PBKDF2-HMAC-SHA-256 with a unique random salt and 600,000 iterations, then protects the master key with authenticated AES-GCM encryption. Recovery phrases, imported signing keys, and private notes are encrypted with the master key. Merchant data uses a separate random encryption key wrapped by that master key and is committed transactionally in IndexedDB.</p><p>AES-GCM detects an incorrect key or modified ciphertext; it does not make a weak password strong or protect plaintext after a successful unlock. Signing secrets are opened only for the scoped action that needs them, and in-memory byte buffers are cleared where the platform allows. JavaScript and browser memory management cannot guarantee that every temporary copy is immediately or forensically erased.</p><p>Locking removes the active vault and merchant keys from application state. Auto-lock reduces an unattended session window but is not a substitute for locking the device. Full backups use the encrypted version 2 envelope; legacy plaintext wallet imports are rejected. A backup is useful only if it is stored safely and has been tested.</p></section>
 
-      <section id="signing">
-        <h2>Signing and transaction safety</h2>
-        <p>
-          StellarKey validates addresses, network identity, amounts, assets, issuers, and supported
-          operations before constructing a transaction. The review surface shows the complete
-          operation list, source, destination, asset identity, amount, memo, fee, and network before
-          a software or hardware signer is invoked. Processing controls prevent accidental duplicate
-          submission while a request is active.
-        </p>
-        <p>
-          After broadcast, the app exposes the transaction hash and tracks a pending transaction to a
-          confirmed success or failure where possible. Merchant crypto charges additionally match the
-          destination, network, asset, amount, memo, and confirmation state reported by Horizon.
-          Temporary endpoint failure remains possible, so an interface status is not a substitute for
-          checking the authoritative ledger before releasing high-value goods or treating a payment
-          as final.
-        </p>
-      </section>
+        <section id="security-signing"><h2><DocCheck />Signing and transaction safety</h2><p>StellarKey validates addresses, network identity, amounts, assets, issuers, and supported operations before constructing a transaction. The review surface shows the complete operation list, source, destination, asset identity, amount, memo, fee, and network before a software or hardware signer is invoked. Processing controls prevent accidental duplicate submission while a request is active.</p><p>After broadcast, the app exposes the transaction hash and tracks a pending transaction to a confirmed success or failure where possible. Merchant crypto charges additionally match the destination, network, asset, amount, memo, and confirmation state reported by Horizon. Temporary endpoint failure remains possible, so an interface status is not a substitute for checking the authoritative ledger before releasing high-value goods or treating a payment as final.</p></section>
 
-      <section id="passkeys">
-        <h2>Passkeys and hardware wallets</h2>
-        <h3>Passkey unlock</h3>
-        <p>
-          On a compatible HTTPS origin, WebAuthn PRF derives an origin-bound secret after the platform
-          authenticator requires user verification. StellarKey uses that result to unwrap the
-          existing local vault master key. It does not receive a biometric template, export the
-          authenticator&apos;s private key, replace Stellar signing authority, or turn the wallet into a
-          passkey smart account. The local passkey wrapper is not included in backups, so retain the
-          wallet password and recovery material.
-        </p>
-        <h3>Trezor</h3>
-        <p>
-          When Trezor is selected, StellarKey sends the supported transaction description through the
-          official Trezor Connect flow and asks the device to sign. Confirm the address and every
-          transaction detail on the hardware display; a compromised browser can still try to present
-          an unsafe request. StellarKey never asks for the Trezor recovery phrase. Trezor Connect and
-          its services are an optional, separately licensed external dependency.
-        </p>
-      </section>
+        <section id="security-passkeys"><h2><DocFingerprint />Passkeys and hardware wallets</h2><p>Passkey unlock</p><p>On a compatible HTTPS origin, WebAuthn PRF derives an origin-bound secret after the platform authenticator requires user verification. StellarKey uses that result to unwrap the existing local vault master key. It does not receive a biometric template, export the authenticator’s private key, replace Stellar signing authority, or turn the wallet into a passkey smart account. The local passkey wrapper is not included in backups, so retain the wallet password and recovery material.</p><p>Trezor</p><p>When Trezor is selected, StellarKey sends the supported transaction description through the official Trezor Connect flow and asks the device to sign. Confirm the address and every transaction detail on the hardware display; a compromised browser can still try to present an unsafe request. StellarKey never asks for the Trezor recovery phrase. Trezor Connect and its services are an optional, separately licensed external dependency.</p></section>
 
-      <section id="web-security">
-        <h2>Web and release security</h2>
-        <p>
-          Production must be served over HTTPS. The generated host policy applies a build-specific
-          Content Security Policy, blocks framing and MIME sniffing, restricts browser permissions,
-          separates the origin, and permits cross-origin popups needed by Trezor. The app has no
-          dynamic API routes, server sessions, analytics script, advertising script, or cloud
-          database. Its service worker caches only the versioned static application shell.
-        </p>
-        <p>
-          Every production build exposes the full source commit and a machine-readable release
-          manifest. Published releases are expected to include artifact checksums and a CycloneDX
-          software bill of materials. Compare those records with the
-          {" "}<a href={SOURCE_REPOSITORY_URL}>public source</a>. A matching identifier improves
-          traceability but cannot alone prove that the host, build environment, or device is safe.
-        </p>
-      </section>
+        <section id="security-web-security"><h2><DocGlobe />Web and release security</h2><p>Production must be served over HTTPS. The generated host policy applies a build-specific Content Security Policy, blocks framing and MIME sniffing, restricts browser permissions, separates the origin, and permits cross-origin popups needed by Trezor. The app has no dynamic API routes, server sessions, analytics script, advertising script, or cloud database. Its service worker caches only the versioned static application shell.</p><p>Every production build exposes the full source commit and a machine-readable release manifest. Published releases are expected to include artifact checksums and a CycloneDX software bill of materials. Compare those records with the public source. A matching identifier improves traceability but cannot alone prove that the host, build environment, or device is safe.</p></section>
 
-      <section id="maintenance">
-        <h2>Ongoing security maintenance</h2>
-        <p>
-          Security is treated as an ongoing engineering process, not a one-time claim. Maintainers
-          review security-sensitive changes and dependencies as part of release work; run type,
-          unit, integration, browser, accessibility, static-export, dependency-audit, and bundle
-          checks; keep unsafe or incomplete flows disabled; and investigate credible vulnerability
-          reports. Release checks cover desktop Chromium plus iPhone and iPad WebKit profiles, while
-          physical Trezor and installed-device behavior remain manual release checks.
-        </p>
-        <p>
-          The process is informed by secure-development and verification practices such as NIST&apos;s
-          {" "}<a href="https://csrc.nist.gov/pubs/sp/800/218/final">Secure Software Development
-          Framework</a> and OWASP&apos;s
-          {" "}<a href="https://owasp.org/www-project-application-security-verification-standard/">
-          Application Security Verification Standard</a>. This is a statement of direction—not a
-          claim of NIST or OWASP certification,
-          formal compliance, independent audit, penetration-test coverage, or freedom from defects.
-          Public source enables independent inspection, but publication alone is not an audit.
-        </p>
-      </section>
+        <section id="security-maintenance"><h2><DocCycle />Ongoing security maintenance</h2><p>Security is treated as an ongoing engineering process, not a one-time claim. Maintainers review security-sensitive changes and dependencies as part of release work; run type, unit, integration, browser, accessibility, static-export, dependency-audit, and bundle checks; keep unsafe or incomplete flows disabled; and investigate credible vulnerability reports. Release checks cover desktop Chromium plus iPhone and iPad WebKit profiles, while physical Trezor and installed-device behavior remain manual release checks.</p><p>The process is informed by secure-development and verification practices such as NIST’s Secure Software Development Framework and OWASP’s Application Security Verification Standard. This is a statement of direction, not a claim of NIST or OWASP certification, formal compliance, independent audit, penetration-test coverage, or freedom from defects. Public source enables independent inspection, but publication alone is not an audit.</p></section>
 
-      <section id="disclosure">
-        <h2>Responsible disclosure</h2>
-        <p>
-          Report a reproducible issue privately before publishing details. Include the affected route,
-          release or commit, browser and operating-system version, expected behavior, observed
-          behavior, and the smallest safe reproduction. We will acknowledge and triage credible
-          reports, but cannot promise a reward or response deadline unless a separate program says so.
-        </p>
-        <p>
-          Good-faith testing must use accounts and data you own or are explicitly authorized to use,
-          avoid privacy violations and disruption, stop if sensitive data is encountered, and allow a
-          reasonable opportunity to investigate before disclosure. This policy does not authorize
-          testing Stellar infrastructure, hosting providers, Trezor services, asset issuers, or any
-          other third party. The machine-readable disclosure contact is published at
-          {" "}<a href="/.well-known/security.txt">/.well-known/security.txt</a> in the format defined
-          for security.txt.
-        </p>
-      </section>
+        <section id="security-disclosure"><h2><DocFile />Responsible disclosure</h2><p>Report a reproducible issue privately before publishing details. Include the affected route, release or commit, browser and operating-system version, expected behavior, observed behavior, and the smallest safe reproduction. We will acknowledge and triage credible reports, but cannot promise a reward or response deadline unless a separate program says so.</p><p>Good-faith testing must use accounts and data you own or are explicitly authorized to use, avoid privacy violations and disruption, stop if sensitive data is encountered, and allow a reasonable opportunity to investigate before disclosure. This policy does not authorize testing Stellar infrastructure, hosting providers, Trezor services, asset issuers, or any other third party. The machine-readable disclosure contact is published at /.well-known/security.txt in the format defined for security.txt.</p></section>
 
-      <section id="supported-release">
-        <h2>Supported release</h2>
-        <p>
-          Security fixes target the latest published build, currently {BRAND_NAME} release
-          {" "}{APPLICATION_VERSION}, commit {BUILD_COMMIT}. Confirm an issue against that release
-          when practical and name any older affected release in your report.
-        </p>
-        <p>
-          Older builds should be treated as unsupported unless a release notice explicitly says
-          otherwise. A support label does not guarantee that an undiscovered vulnerability is absent
-          or that a fix will be available on a particular schedule.
-        </p>
-      </section>
+        <section id="security-supported-release"><h2><DocChip />Supported release</h2><p>Security fixes target the latest published build, currently StellarKey release {APPLICATION_VERSION}, commit {BUILD_COMMIT}. Confirm an issue against that release when practical and name any older affected release in your report.</p><p>Older builds should be treated as unsupported unless a release notice explicitly says otherwise. A support label does not guarantee that an undiscovered vulnerability is absent or that a fix will be available on a particular schedule.</p></section>
 
-      <section id="report">
-        <h2>Report securely</h2>
-        <p>
-          Never include a recovery phrase, secret key, wallet password, passkey output, decrypted or
-          encrypted wallet backup, merchant archive, customer record, or real unredacted transaction
-          data in a report. Use a fresh testnet wallet and redact public addresses when they are not
-          essential to the reproduction.
-        </p>
-        <p>
-          The button below constructs the dedicated security contact only after you activate it, which
-          keeps the complete address out of static page markup and deters basic harvesting.
-        </p>
-        <ContactAction channel="security">Email the security team</ContactAction>
-      </section>
+        <section id="security-report"><h2><DocKey />Report securely</h2><p>Never include a recovery phrase, secret key, wallet password, passkey output, decrypted or encrypted wallet backup, merchant archive, customer record, or real unredacted transaction data in a report. Use a fresh testnet wallet and redact public addresses when they are not essential to the reproduction.</p><p>The button below constructs the dedicated security contact only after you activate it, which keeps the complete address out of static page markup and deters basic harvesting.</p><p><ContactAction channel="security">Email the security team</ContactAction></p></section>
+
+        <section id="security-spec"><h2><DocChip />What is actually protecting you</h2>
+        <p>These are not marketing numbers. Each one is read straight out of the source, and you can check them yourself in the files named beside each figure.</p>
+        <div className="spec"><div><DocChip /><b>Vault cipher</b><span>AES-256-GCM</span></div><div><DocKey /><b>Key derivation</b><span>PBKDF2-SHA-256, 600,000 iterations</span></div><div><DocLock /><b>Merchant records</b><span>XChaCha20-Poly1305, 24-byte nonce</span></div><div><DocClock /><b>Auto-lock</b><span>15 minutes idle, adjustable</span></div><div><DocFingerprint /><b>Staff PIN</b><span>5 wrong tries, then a 30 second lockout</span></div><div><DocExport /><b>Hardware signing</b><span>Trezor, key never enters the browser</span></div></div>
+        </section>
+
+        <section id="security-leaves"><h2><DocGlobe />Everything that leaves this device</h2>
+        <p>This is the whole list. Four addresses, and what each one is told. There is no fifth, because there is no server of ours to talk to.</p>
+        <div className="tbl"><table><thead><tr><th>goes to</th><th>what for</th><th>what it learns</th></tr></thead>
+        <tbody><tr><td className="g">horizon.stellar.org</td><td>Reading your balance and history, submitting signed transactions</td><td>Your public address. Never your key.</td></tr><tr><td className="g">api.coingecko.com</td><td>The XLM price, so amounts can be shown in your currency</td><td>Nothing about you. Just an asset code.</td></tr><tr><td className="g">connect.trezor.io</td><td>Only if you choose to sign with a hardware wallet</td><td>The unsigned transaction, for you to approve on the device.</td></tr><tr><td className="g">stellarchain.io</td><td>Only when you click through to view a transaction</td><td>The transaction hash you clicked.</td></tr></tbody></table></div>
+        <p className="note"><DocAlert />No analytics. No error reporting. No fonts, scripts or images fetched from anyone else. If you watch this app in your browser’s network tab, that list is what you will see.</p>
+        </section>
+
+        <section id="security-stored"><h2><DocLock />What is kept here, and how to remove it</h2>
+        <p>All of it lives in this browser, on this device. Reset Wallet in Settings deletes every one of these keys, and once it is gone we cannot help you get it back, because we never had it.</p>
+        <div className="spec"><div><DocLock /><b>Your vault</b><span>Encrypted with your password. Holds the signing key.</span></div><div><DocFile /><b>Merchant records</b><span>Orders, catalogue, customers, shifts. Encrypted.</span></div><div><DocBook /><b>Contacts</b><span>Names you have saved against addresses.</span></div><div><DocCycle /><b>Preferences</b><span>Network, currency, auto-lock, privacy mode.</span></div></div>
+        </section>
+
+        <section id="security-browser"><h2><DocShield />How the page itself is locked down</h2>
+        <p>A wallet in a browser is only as safe as the page it runs in. These headers ship with every response, and you can read them in the response yourself.</p>
+        <dl className="deflist"><div><dt>Content-Security-Policy</dt><dd>Scripts run only from this origin, and only ones whose hash was built in. Nothing can be injected from elsewhere.</dd></div><div><dt>frame-ancestors: none</dt><dd>The app cannot be put inside someone else’s page and used to trick you.</dd></div><div><dt>Permissions-Policy</dt><dd>Camera, microphone, location and the payment API are switched off at the browser level.</dd></div><div><dt>Strict-Transport-Security</dt><dd>A year of enforced HTTPS, so the app cannot be served to you over a plain connection.</dd></div><div><dt>X-Content-Type-Options</dt><dd>The browser will not second-guess a file’s type, which closes off a whole class of trickery.</dd></div><div><dt>Referrer-Policy</dt><dd>Links out do not carry the page you came from.</dd></div></dl>
+        </section>
+
+        <section id="security-threat"><h2><DocScales />What this protects you from, and what it does not</h2>
+        <p>Anyone who only tells you the first half is selling something. Both halves are true and you should read the second one twice.</p>
+        <div className="two">
+        <div className="col ok"><h3><DocCheck />It protects you from</h3><ul><li>Somebody taking your money, because nobody but you can sign for it</li><li>A company freezing your account, because there is no account</li><li>A database of your customers leaking, because it never left your device</li><li>Us reading your balance, your notes or your books</li><li>A fee appearing later, because there is no billing relationship</li></ul></div>
+        <div className="col no"><h3><DocAlert />It cannot protect you from</h3><ul><li>A stolen unlocked device, or a password written on the machine</li><li>Malware on the computer you are using, or a hostile browser extension</li><li>You approving a transaction you did not read properly</li><li>Losing your recovery phrase, which nobody can give back to you</li><li>A mistake in this software, which is why the source is public</li></ul></div>
+        </div>
+        </section>
+
+        <section id="security-checklist"><h2><DocCheck />Five things worth doing today</h2>
+        <p>Self-custody puts the work on you. It is not much work, and it is all front-loaded.</p>
+        <ol className="check"><li><b>Write the recovery phrase on paper</b><span>Not in a photo, not in a password manager you also unlock on this device.</span></li><li><b>Test it before you rely on it</b><span>Restore into a second browser and confirm the address matches. Ten minutes now.</span></li><li><b>Export an encrypted backup</b><span>Your records live in this browser. If it is cleared they are gone, and the phrase does not bring them back.</span></li><li><b>Keep the lock short if you trade in public</b><span>A till on a counter is a device strangers stand next to.</span></li><li><b>Check the address before every first payment</b><span>The wallet flags an address you have never sent to. Read that flag.</span></li></ol>
+        </section>
     </LegalPage>
   );
 }
