@@ -3,6 +3,11 @@ export interface RecordDriverCompareResult {
   current: string | null;
 }
 
+export interface RecordDriverExpectedPrefix {
+  prefix: string;
+  entries: ReadonlyMap<string, string>;
+}
+
 export interface EncryptedRecordDriver {
   read(key: string): Promise<string | null>;
   readPrefix(prefix: string): Promise<Map<string, string>>;
@@ -18,6 +23,7 @@ export interface EncryptedRecordDriver {
     expectedRevision: number | null,
     entries: ReadonlyMap<string, string>,
     removeKeys?: readonly string[],
+    expectedPrefix?: RecordDriverExpectedPrefix,
   ): Promise<RecordDriverCompareResult>;
   replacePrefixVerified(
     prefix: string,
@@ -191,6 +197,7 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     expectedRevision: number | null,
     entries: ReadonlyMap<string, string>,
     removeKeys: readonly string[] = [],
+    expectedPrefix?: RecordDriverExpectedPrefix,
   ): Promise<RecordDriverCompareResult> {
     const database = await this.database();
     const transaction = openTransaction(database, "readwrite");
@@ -201,6 +208,23 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     if (revisionOf(current) !== expectedRevision) {
       await completed;
       return { ok: false, current };
+    }
+    if (expectedPrefix) {
+      const range = IDBKeyRange.bound(
+        expectedPrefix.prefix,
+        `${expectedPrefix.prefix}\uffff`,
+      );
+      const storedPrefix = await requestResult(
+        records.getAll(range) as IDBRequest<StoredRecord[]>,
+      );
+      const actual = new Map(storedPrefix.map((record) => [record.key, record.value]));
+      if (
+        actual.size !== expectedPrefix.entries.size ||
+        [...expectedPrefix.entries].some(([entryKey, value]) => actual.get(entryKey) !== value)
+      ) {
+        await completed;
+        return { ok: false, current };
+      }
     }
     for (const removeKey of new Set(removeKeys)) {
       if (!entries.has(removeKey)) await requestResult(records.delete(removeKey));

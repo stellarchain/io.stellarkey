@@ -601,6 +601,14 @@ export class MerchantRepository {
       expectedRevision,
       built.puts,
       built.removeKeys,
+      this.snapshot
+        ? {
+            prefix: RECORD_DATA_PREFIX,
+            entries: new Map(
+              [...this.snapshot.records].map(([storageKey, state]) => [storageKey, state.raw]),
+            ),
+          }
+        : undefined,
     );
     if (!result.ok) throw new MerchantRepositoryConflictError(result.current);
     if (result.current === null) throw new Error("IndexedDB did not return committed merchant metadata.");
@@ -616,7 +624,31 @@ export class MerchantRepository {
     return retained;
   }
 
-  async exportEncryptedArchive(): Promise<string | null> {
+  async exportEncryptedArchive(key: Uint8Array): Promise<string | null> {
+    await this.discardInterruptedMigrations();
+    const metaRaw = await this.driver.read(RECORD_META_KEY);
+    if (metaRaw === null) {
+      const legacyRaw = await this.driver.read(LEGACY_RECORD_KEY);
+      if (legacyRaw === null) return null;
+      if (this.decodeEncrypted(legacyRaw, key).kind !== "ready") {
+        throw new Error("Merchant recovery data is corrupt or could not be authenticated.");
+      }
+      return legacyRaw;
+    }
+    const parsed: unknown = JSON.parse(metaRaw);
+    if (!isEncryptedMerchantRecordEnvelope(parsed)) {
+      throw new Error("Merchant recovery metadata is invalid.");
+    }
+    const dataRecords = await this.driver.readPrefix(RECORD_DATA_PREFIX);
+    const decoded = this.decodeRecordSet(metaRaw, dataRecords, key);
+    if (decoded.kind !== "ready") {
+      throw new Error("Merchant recovery data is corrupt or could not be authenticated.");
+    }
+    return archiveRaw(parsed, new Map([[RECORD_META_KEY, metaRaw], ...dataRecords]));
+  }
+
+  /** Capture exact ciphertext only for failure-atomic restore rollback. */
+  async snapshotEncryptedArchive(): Promise<string | null> {
     await this.discardInterruptedMigrations();
     const metaRaw = await this.driver.read(RECORD_META_KEY);
     if (metaRaw === null) return this.driver.read(LEGACY_RECORD_KEY);
@@ -624,11 +656,8 @@ export class MerchantRepository {
     if (!isEncryptedMerchantRecordEnvelope(parsed)) {
       throw new Error("Merchant recovery metadata is invalid.");
     }
-    const records = new Map<string, string>([
-      [RECORD_META_KEY, metaRaw],
-      ...await this.driver.readPrefix(RECORD_DATA_PREFIX),
-    ]);
-    return archiveRaw(parsed, records);
+    const dataRecords = await this.driver.readPrefix(RECORD_DATA_PREFIX);
+    return archiveRaw(parsed, new Map([[RECORD_META_KEY, metaRaw], ...dataRecords]));
   }
 
   async importEncryptedArchive(raw: string): Promise<void> {
