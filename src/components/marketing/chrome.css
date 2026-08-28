@@ -80,16 +80,21 @@
  * to emit second.
  */
 
-/* Mid widths: the brand takes its own row so three link groups still get
-   room to breathe rather than being squeezed beside it. */
-@media (min-width: 640px) and (max-width: 1039px) {
-  .mk footer .foot { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Mid widths: the brand takes its own row so the link groups are not squeezed
+   beside it. Two-up first, then four-up once there is room for the headings. */
+@media (min-width: 640px) and (max-width: 819px) {
+  .mk footer .foot { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mk footer .foot > :first-child { grid-column: 1 / -1; }
 }
 
-@media (min-width: 1040px) {
+@media (min-width: 820px) and (max-width: 1179px) {
+  .mk footer .foot { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .mk footer .foot > :first-child { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1180px) {
   .mk footer .foot {
-    grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.35fr) repeat(4, minmax(0, 1fr));
     column-gap: 2rem;
   }
 }
