@@ -76,7 +76,7 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
 
   await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
   const opening = page.getByRole("dialog", { name: /Open shift/ });
-  await opening.getByLabel("Opening float").fill("0");
+  await expect(opening.getByLabel("Opening float")).toHaveValue("0");
   await opening.getByRole("button", { name: "Open shift", exact: true }).click();
   await expect(page.getByText(/Shift 1 · Front counter/)).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
