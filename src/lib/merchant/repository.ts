@@ -247,7 +247,7 @@ function archiveRaw(
   records: ReadonlyMap<string, string>,
 ): string {
   const archive: EncryptedMerchantRecordArchive = {
-    kind: "polaris-merchant-record-archive",
+    kind: "stellarkey-merchant-record-archive",
     version: 1,
     revision: meta.revision,
     writerId: meta.writerId,
@@ -293,7 +293,7 @@ export class MerchantRepository {
       if (!isEncryptedMerchantRecordEnvelope(parsedMeta)) {
         if (
           isRecord(parsedMeta) &&
-          parsedMeta.kind === "polaris-merchant-record" &&
+          parsedMeta.kind === "stellarkey-merchant-record" &&
           typeof parsedMeta.version === "number" &&
           parsedMeta.version > 1
         ) {

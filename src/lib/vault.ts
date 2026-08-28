@@ -48,9 +48,9 @@ import {
   type PasskeyStorage,
 } from "./passkey-prf";
 
-const VAULT_KEY = "polaris.vault.v1";
-const NETWORK_KEY = "polaris.network.v1";
-const AUTOLOCK_KEY = "polaris.autolock.v1";
+const VAULT_KEY = "stellarkey.vault.v1";
+const NETWORK_KEY = "stellarkey.network.v1";
+const AUTOLOCK_KEY = "stellarkey.autolock.v1";
 
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
@@ -167,7 +167,7 @@ export function wipeVault(): void {
     const keys: string[] = [];
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
-      if (key && (key.startsWith("polaris.") || key.startsWith("wallet."))) keys.push(key);
+      if (key && (key.startsWith("stellarkey.") || key.startsWith("wallet."))) keys.push(key);
     }
     for (const key of keys) window.localStorage.removeItem(key);
   }
@@ -812,8 +812,8 @@ export interface KeystoreFile {
 /* ------------------------------------------------------------------ */
 
 const BACKUP_KIND = "stellar-wallet-backup";
-const CONTACTS_KEY = "polaris.contacts.v1";
-const PRIVACY_KEY = "polaris.privacy.v1";
+const CONTACTS_KEY = "stellarkey.contacts.v1";
+const PRIVACY_KEY = "stellarkey.privacy.v1";
 const SOUND_KEY = "wallet.sound.v1";
 const CURRENCY_KEY = "wallet.currency.v1";
 const TX_NOTES_KEY = "wallet.tx-notes.v1";
@@ -1224,7 +1224,7 @@ export async function importKeystore(
   const parsed = JSON.parse(json) as KeystoreFile;
   if (
     !parsed ||
-    (parsed.format !== KEYSTORE_FORMAT && parsed.format !== "polaris-keystore/v1") ||
+    (parsed.format !== KEYSTORE_FORMAT && parsed.format !== "stellarkey-keystore/v1") ||
     !parsed.crypto
   ) {
     throw new Error("Invalid Wallet keystore format");

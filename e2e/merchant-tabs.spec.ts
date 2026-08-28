@@ -46,14 +46,14 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await page.close();
   await expect.poll(() => second.evaluate(async () => {
     const state = await navigator.locks.query();
-    return state.held?.some((lock) => lock.name === "polaris.merchant.writer.v1") ?? false;
+    return state.held?.some((lock) => lock.name === "stellarkey.merchant.writer.v1") ?? false;
   })).toBe(true);
 
   await merchantToggle.click();
   // Turning Merchant Mode off unloads its lazy runtime and returns Settings to
   // the wallet overview, so the switch intentionally leaves the DOM.
   await expect.poll(() => second.evaluate(() => {
-    const raw = localStorage.getItem("polaris.merchant-bootstrap.v1");
+    const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
     return raw ? (JSON.parse(raw) as { enabled?: unknown }).enabled : null;
   })).toBe(false);
   await expect(second.getByText("Your Assets", { exact: true })).toBeVisible();

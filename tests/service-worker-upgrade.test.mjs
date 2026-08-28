@@ -62,7 +62,7 @@ function evaluateWorker(source, caches, fetchImpl) {
   };
   const defaultFetch = async (input) => {
     const url = new URL(normalizeRequest(input));
-    const body = url.pathname === "/" ? "<!doctype html><title>Polaris</title>" : url.pathname;
+    const body = url.pathname === "/" ? "<!doctype html><title>StellarKey</title>" : url.pathname;
     return new Response(body, { status: 200 });
   };
   vm.runInNewContext(source, {
@@ -107,9 +107,9 @@ test("a worker update waits for consent and keeps the previous shell available",
   const firstWorker = evaluateWorker(first, caches);
   await dispatchExtendable(firstWorker.listeners.get("install"));
   await dispatchExtendable(firstWorker.listeners.get("activate"));
-  assert.deepEqual(await caches.keys(), ["polaris-shell-build-one"]);
+  assert.deepEqual(await caches.keys(), ["stellarkey-shell-build-one"]);
   assert.ok(
-    caches.stores.get("polaris-shell-build-one").entries.has(
+    caches.stores.get("stellarkey-shell-build-one").entries.has(
       `${ORIGIN}/_next/static/chunks/old-build.js`,
     ),
   );
@@ -124,16 +124,16 @@ test("a worker update waits for consent and keeps the previous shell available",
   await dispatchExtendable(secondWorker.listeners.get("install"));
   assert.equal(secondWorker.skipped(), 0, "install must not activate over a live app");
   assert.deepEqual(await caches.keys(), [
-    "polaris-shell-build-one",
-    "polaris-shell-build-two",
+    "stellarkey-shell-build-one",
+    "stellarkey-shell-build-two",
   ]);
 
   await dispatchExtendable(secondWorker.listeners.get("activate"));
   assert.deepEqual(await caches.keys(), [
-    "polaris-shell-build-one",
-    "polaris-shell-build-two",
+    "stellarkey-shell-build-one",
+    "stellarkey-shell-build-two",
   ]);
-  const liveEntries = caches.stores.get("polaris-shell-build-two").entries;
+  const liveEntries = caches.stores.get("stellarkey-shell-build-two").entries;
   assert.ok(liveEntries.has(`${ORIGIN}/_next/static/chunks/new-build.js`));
   assert.equal(liveEntries.has(`${ORIGIN}/_next/static/chunks/old-build.js`), false);
 

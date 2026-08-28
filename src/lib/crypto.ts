@@ -71,7 +71,7 @@ export async function deriveEncryptionKeyBytes(
   const bits = await provider.subtle.deriveBits(
     {
       name: "PBKDF2",
-      salt: te.encode(`polaris:${context}:v1`) as unknown as ArrayBuffer,
+      salt: te.encode(`stellarkey:${context}:v1`) as unknown as ArrayBuffer,
       iterations: KDF_ITERATIONS,
       hash: "SHA-256",
     },

@@ -275,7 +275,7 @@ async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
             record.key === metaKey || record.key.startsWith("merchant.records.v1:data:"))
           .sort((left, right) => left.key.localeCompare(right.key));
         resolve(JSON.stringify({
-          kind: "polaris-merchant-record-archive",
+          kind: "stellarkey-merchant-record-archive",
           version: 1,
           revision: meta.revision,
           writerId: meta.writerId,
@@ -392,7 +392,7 @@ test(
         legacy: await page.evaluate(() => localStorage.getItem("wallet.merchant.v2")),
       };
       assert.equal(persistedRecord.legacy, null);
-      assert.match(persistedRecord.value ?? "", /polaris-merchant-record-archive/);
+      assert.match(persistedRecord.value ?? "", /stellarkey-merchant-record-archive/);
       assert.doesNotMatch(persistedRecord.value ?? "", /North Star Coffee/);
 
       // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,

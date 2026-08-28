@@ -686,7 +686,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!alive) return;
       const net = loadNetworkPref();
       setNetworkState(net);
-      setPrivacyMode(window.localStorage.getItem("polaris.privacy.v1") === "1");
+      setPrivacyMode(window.localStorage.getItem("stellarkey.privacy.v1") === "1");
       const storedFiat = window.localStorage.getItem("wallet.currency.v1") as FiatCurrency;
       if (storedFiat && FIAT_LIST.includes(storedFiat)) {
         setFiatCurrencyState(storedFiat);
@@ -2343,7 +2343,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const togglePrivacy = useCallback(() => {
     setPrivacyMode((prev) => {
-      window.localStorage.setItem("polaris.privacy.v1", prev ? "0" : "1");
+      window.localStorage.setItem("stellarkey.privacy.v1", prev ? "0" : "1");
       return !prev;
     });
   }, []);

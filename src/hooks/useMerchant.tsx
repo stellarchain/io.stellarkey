@@ -846,7 +846,7 @@ export function MerchantProvider({
     let releaseLock: (() => void) | null = null;
     merchantWriterLockRef.current = "pending";
     void navigator.locks.request(
-      "polaris.merchant.writer.v1",
+      "stellarkey.merchant.writer.v1",
       { mode: "exclusive", signal: controller.signal },
       async () => {
         if (controller.signal.aborted) return;

@@ -99,5 +99,5 @@ test("the merchant provider reloads revisions and leases Horizon polling", () =>
   assert.match(hook, /window\.addEventListener\("pagehide", release\)/);
   assert.match(hook, /navigator\.locks\.request/);
   assert.match(hook, /merchantWriterLockRef/);
-  assert.match(hook, /polaris\.merchant\.writer\.v1/);
+  assert.match(hook, /stellarkey\.merchant\.writer\.v1/);
 });

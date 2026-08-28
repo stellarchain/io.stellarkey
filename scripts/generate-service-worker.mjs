@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outputRoot = path.join(projectRoot, "out");
 const templatePath = path.join(projectRoot, "public", "sw.js");
-const BUILD_ORIGIN = "https://polaris.invalid";
+const BUILD_ORIGIN = "https://stellarkey.invalid";
 
 export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
   "/",

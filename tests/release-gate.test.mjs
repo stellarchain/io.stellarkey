@@ -1,8 +1,23 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+test("tracked release text uses only the StellarKey namespace", () => {
+  const oldNamespace = ["pola", "ris"].join("");
+  const textExtensions = /\.(?:css|html|js|json|md|mjs|ts|tsx|txt|webmanifest|ya?ml)$/i;
+  const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+    .split("\0")
+    .filter((file) => file && textExtensions.test(file));
+  const offenders = files.filter((file) =>
+    readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
+      .toLowerCase()
+      .includes(oldNamespace),
+  );
+  assert.deepEqual(offenders, []);
+});
 
 test("the release browser matrix includes Chromium plus WebKit phone and tablet", () => {
   const config = read("playwright.config.ts");

@@ -98,9 +98,9 @@ test("branded exports do not change encrypted compatibility contracts", () => {
   assert.match(read("src/components/ReceiveModal.tsx"), /stellarkey-receive-qr\.png/);
 
   assert.match(read("src/lib/vault.ts"), /const BACKUP_KIND = "stellar-wallet-backup"/);
-  assert.match(read("src/lib/vault.ts"), /const VAULT_KEY = "polaris\.vault\.v1"/);
-  assert.match(read("src/lib/crypto.ts"), /polaris:\$\{context\}:v1/);
-  assert.match(read("public/sw.js"), /const CACHE_PREFIX = "polaris-shell-"/);
+  assert.match(read("src/lib/vault.ts"), /const VAULT_KEY = "stellarkey\.vault\.v1"/);
+  assert.match(read("src/lib/crypto.ts"), /stellarkey:\$\{context\}:v1/);
+  assert.match(read("public/sw.js"), /const CACHE_PREFIX = "stellarkey-shell-"/);
 });
 
 test("complete contact addresses are absent from tracked public source", () => {
