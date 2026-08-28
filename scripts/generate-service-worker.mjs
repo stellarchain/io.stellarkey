@@ -24,8 +24,12 @@ export const BASE_SHELL_PATHS = Object.freeze([
   "/icon.svg",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-maskable-192.png",
   "/icon-maskable-512.png",
+  "/icon-maskable-1024.png",
   "/apple-icon.png",
+  "/apple-icon1.png",
+  "/apple-icon2.png",
   "/apple-touch-icon.png",
 ]);
 

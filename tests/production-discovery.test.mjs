@@ -26,6 +26,8 @@ test("public release journeys run in every supported browser profile", () => {
   }
   assert.match(source, /width:\s*320/);
   assert.match(source, /icon-maskable-512\.png/);
+  assert.match(source, /icon-maskable-1024\.png/);
+  assert.match(source, /apple-touch-icon/);
   assert.match(source, /definitely-not-a-stellarkey-route/);
   assert.match(config, /iphone-webkit[\s\S]*public-release/);
   assert.match(config, /ipad-webkit[\s\S]*public-release/);

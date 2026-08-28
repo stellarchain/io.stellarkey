@@ -43,7 +43,7 @@ test("security and support contacts are user-activated and absent from static ma
   }
 });
 
-test("the install manifest exposes any-purpose and safe-zone maskable artwork", async ({ request }) => {
+test("the install manifest and Apple metadata expose complete mobile artwork", async ({ page, request }) => {
   const response = await request.get("/manifest.webmanifest");
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toContain("application/manifest+json");
@@ -58,13 +58,24 @@ test("the install manifest exposes any-purpose and safe-zone maskable artwork", 
     theme_color: "#000000",
   });
   expect(manifest.icons).toEqual(expect.arrayContaining([
+    expect.objectContaining({ src: "/icon-192.png", sizes: "192x192", purpose: "any" }),
     expect.objectContaining({ src: "/icon-512.png", sizes: "512x512", purpose: "any" }),
+    expect.objectContaining({ src: "/icon-maskable-192.png", sizes: "192x192", purpose: "maskable" }),
     expect.objectContaining({ src: "/icon-maskable-512.png", sizes: "512x512", purpose: "maskable" }),
+    expect.objectContaining({ src: "/icon-maskable-1024.png", sizes: "1024x1024", purpose: "maskable" }),
   ]));
 
-  const icon = await request.get("/icon-maskable-512.png");
-  expect(icon.status()).toBe(200);
-  expect(icon.headers()["content-type"]).toContain("image/png");
+  for (const path of manifest.icons.map(({ src }: { src: string }) => src)) {
+    const icon = await request.get(path);
+    expect(icon.status(), `${path} must be served`).toBe(200);
+    expect(icon.headers()["content-type"]).toContain("image/png");
+  }
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const appleSizes = await page.locator('link[rel="apple-touch-icon"]').evaluateAll((links) =>
+    links.map((link) => link.getAttribute("sizes")).sort(),
+  );
+  expect(appleSizes).toEqual(["152x152", "167x167", "180x180"]);
 });
 
 test("unknown routes return a branded, non-indexable 404", async ({ page }) => {
