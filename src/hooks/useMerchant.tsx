@@ -756,7 +756,7 @@ export function MerchantProvider({
         try {
           let persistedResult;
           try {
-            persistedResult = await repositoryRef.current.load(key);
+            persistedResult = await repositoryRef.current.loadCommitBasis(key);
           } catch {
             throw new MerchantStorageError("write_failed");
           }

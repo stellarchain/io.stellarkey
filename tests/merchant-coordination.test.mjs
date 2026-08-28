@@ -85,6 +85,9 @@ test("the merchant provider reloads revisions and leases Horizon polling", () =>
   assert.match(hook, /openMerchantRevisionChannel/);
   assert.match(hook, /getMerchantRepository/);
   assert.match(hook, /repositoryRef\.current\.commit/);
+  const commitStore = hook.slice(hook.indexOf("const commitStore"), hook.indexOf("const persist"));
+  assert.match(commitStore, /repositoryRef\.current\.loadCommitBasis\(key\)/);
+  assert.doesNotMatch(commitStore, /repositoryRef\.current\.load\(key\)/);
   assert.match(hook, /requestedRevision/);
   assert.doesNotMatch(hook, /window\.addEventListener\("storage"/);
   assert.match(hook, /prepareMerchantCommit/);

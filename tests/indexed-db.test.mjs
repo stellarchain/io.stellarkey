@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
@@ -25,9 +26,13 @@ class MemoryRecordDriver {
   records = new Map();
   failWrites = false;
   failNextBatchCompare = false;
+  readCalls = 0;
+  readPrefixCalls = 0;
+  readPrefixes = [];
   lastBatch = { puts: 0, removes: 0, bytes: 0 };
 
   async read(key) {
+    this.readCalls += 1;
     return this.records.get(key) ?? null;
   }
 
@@ -38,6 +43,8 @@ class MemoryRecordDriver {
   }
 
   async readPrefix(prefix) {
+    this.readPrefixCalls += 1;
+    this.readPrefixes.push(prefix);
     return new Map([...this.records].filter(([key]) => key.startsWith(prefix)));
   }
 
@@ -300,6 +307,59 @@ test("record-level commits rewrite only metadata and the changed history record"
   assert.equal(loaded.kind, "ready");
   assert.equal(loaded.value.orders[1_500].note, "Changed once");
   assert.equal(loaded.value.orders.length, 2_000);
+});
+
+test("ordinary local commits reuse the authenticated snapshot without loading retained history", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const first = { ...emptyStore(), revision: 1, writerId: "tab-a", updatedAt: 10 };
+  const committed = await repository.commit(first, KEY, null);
+  driver.readCalls = 0;
+  driver.readPrefixCalls = 0;
+  driver.readPrefixes = [];
+
+  const basis = await repository.loadCommitBasis(KEY);
+
+  assert.equal(basis.kind, "ready");
+  assert.equal(basis.value, committed);
+  assert.equal(driver.readCalls, 1, "the metadata record should be checked once");
+  assert.equal(driver.readPrefixCalls, 0, "retained history must not be loaded for a local write");
+});
+
+test("an external revision forces a complete authenticated repository reload", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const local = new MerchantRepository(driver);
+  const external = new MerchantRepository(driver);
+  const first = { ...emptyStore(), revision: 1, writerId: "tab-a", updatedAt: 10 };
+  await local.commit(first, KEY, null);
+  assert.equal((await external.load(KEY)).kind, "ready");
+  await external.commit({ ...first, revision: 2, writerId: "tab-b", updatedAt: 20 }, KEY, 1);
+  driver.readCalls = 0;
+  driver.readPrefixCalls = 0;
+  driver.readPrefixes = [];
+
+  const basis = await local.loadCommitBasis(KEY);
+
+  assert.equal(basis.kind, "ready");
+  assert.equal(basis.value.revision, 2);
+  assert.equal(
+    driver.readPrefixes.filter((prefix) => prefix === local.dataPrefix).length,
+    1,
+    "external state must reload and authenticate every retained record",
+  );
+});
+
+test("IndexedDB prefix reads use a bounded key range instead of scanning the store", () => {
+  const source = readFileSync(new URL("../src/lib/indexed-db.ts", import.meta.url), "utf8");
+  const method = source.slice(source.indexOf("async readPrefix"), source.indexOf("async putVerified"));
+
+  assert.match(method, /IDBKeyRange\.bound\(prefix, `\$\{prefix\}\\uffff`\)/);
+  assert.match(method, /getAll\(range\)/);
+  assert.doesNotMatch(method, /getAll\(\)/);
 });
 
 test("record archives export and restore every encrypted record without plaintext", async () => {

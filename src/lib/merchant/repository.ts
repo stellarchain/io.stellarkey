@@ -552,8 +552,33 @@ export class MerchantRepository {
     }
 
     const source = this.legacySource(key);
-    if (source.kind !== "ready") return source;
+    if (source.kind !== "ready") {
+      if (source.kind === "absent") this.snapshot = null;
+      return source;
+    }
     return this.migrate(source.value, key);
+  }
+
+  /**
+   * Resolve the persisted basis for a local commit without decrypting the full
+   * retained history when the metadata bytes still match our authenticated
+   * snapshot. Any external write or same-revision corruption changes those
+   * bytes and falls back to the complete fail-closed load path.
+   */
+  async loadCommitBasis(key: Uint8Array): Promise<StorageLoadResult<MerchantStore>> {
+    const metaRaw = await this.driver.read(RECORD_META_KEY);
+    if (this.snapshot && metaRaw === this.snapshot.metaRaw) {
+      return { kind: "ready", value: this.snapshot.store };
+    }
+    if (metaRaw === null && this.snapshot === null) {
+      const indexedLegacyRaw = await this.driver.read(LEGACY_RECORD_KEY);
+      const hasBrowserLegacy = typeof window !== "undefined" && (
+        window.localStorage.getItem(MERCHANT_STORAGE_KEY) !== null ||
+        window.localStorage.getItem(MERCHANT_LEGACY_STORAGE_KEY) !== null
+      );
+      if (indexedLegacyRaw === null && !hasBrowserLegacy) return { kind: "absent" };
+    }
+    return this.load(key);
   }
 
   async commit(
