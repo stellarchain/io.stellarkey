@@ -48,6 +48,7 @@ import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
 import { FiatValue } from "./FiatValue";
 import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner } from "./ui";
+import { WelcomeHome } from "./WelcomeHome";
 import {
   IconArrowDownLeft,
   IconAlert,
@@ -232,6 +233,7 @@ export function Dashboard() {
     xlmPriceUsd,
     priceData,
     unfunded,
+    minimumBalanceXlm,
     privacyMode,
     togglePrivacy,
     fiatCurrency,
@@ -1926,17 +1928,19 @@ export function Dashboard() {
               onShiftOpenChange={setShiftOpen}
             />
           ) : view === "home" && unfunded ? (
-            <>
-              <UnfundedCard
-                network={network}
-                fundBusy={fundBusy}
-                fundError={fundError}
-                onFund={() => void handleFund()}
-              />
-              <div className="mt-5 max-w-[560px] mx-auto">
-                <PriceCard />
-              </div>
-            </>
+            <WelcomeHome
+              account={activeAccount}
+              network={network}
+              reserveXlm={minimumBalanceXlm}
+              fundBusy={fundBusy}
+              fundError={fundError}
+              backedUp={backupExported}
+              onFund={() => void handleFund()}
+              onBackup={() => setBackupWizardOpen(true)}
+              onReceive={() => setReceiveOpen(true)}
+            >
+              <PriceCard />
+            </WelcomeHome>
           ) : view === "home" ? (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Column: Hero Portfolio & Assets */}
@@ -3138,44 +3142,6 @@ function AccountMenu({
         </div>
       )}
     </Dropdown>
-  );
-}
-
-function UnfundedCard({
-  network,
-  fundBusy,
-  fundError,
-  onFund,
-}: {
-  network: NetworkKey;
-  fundBusy: boolean;
-  fundError: string | null;
-  onFund: () => void;
-}) {
-  return (
-    <section className="fade-up flex flex-col items-center px-6 py-12 text-center panel max-w-xl mx-auto">
-      <span className="gold-bubble h-[76px] w-[76px] shadow-xl">
-        <IconWallet size={32} />
-      </span>
-      <h2 className="display-h mt-6 text-[28px] text-white font-bold">Activate your account</h2>
-      <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-300">
-        Stellar accounts must meet the network&apos;s current minimum balance to exist on-chain.{" "}
-        {network === "testnet"
-          ? "On testnet, Friendbot will fund your account with 10,000 free test XLM instantly."
-          : "On mainnet, transfer enough XLM from an existing wallet to cover the live reserve and transaction fees."}
-      </p>
-      {network === "testnet" && (
-        <Button
-          className="mt-8 w-full max-w-[360px] !py-3.5 text-[15px] font-semibold"
-          loading={fundBusy}
-          disabled={fundBusy}
-          onClick={onFund}
-        >
-          Claim 10,000 Test XLM (Friendbot)
-        </Button>
-      )}
-      {fundError && <p className="mt-4 max-w-md text-xs text-[#FF453A]">{fundError}</p>}
-    </section>
   );
 }
 
