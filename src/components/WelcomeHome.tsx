@@ -2,46 +2,48 @@
 
 import type { ReactNode } from "react";
 import type { AccountMeta, NetworkKey } from "@/lib/types";
-import { IconCheck, IconKey, IconReceive, IconShield } from "./icons";
+import { IconKey, IconShield } from "./icons";
 import { Button, CopyButton, HashValue, NetworkBadge } from "./ui";
 
 /*
- * The first screen after unlocking a wallet that has no funds yet.
+ * The first screen after unlocking a wallet that holds nothing yet.
  *
- * Deliberately short on words: a new holder needs to know the wallet is
- * theirs, that it is empty, and what the one next step is. Everything else is
- * carried by layout rather than prose: the steps are a strip rather than
- * paragraphs.
+ * Built to the first-use empty-state pattern rather than as a dashboard with
+ * the data missing: a heading naming the outcome, one sentence on how to get
+ * there, exactly one primary action, and a dimmed preview of the populated
+ * screen underneath. The preview is the part that does the work — it shows
+ * what this space becomes instead of leaving a void where the assets go, and
+ * it is decorative, so it is hidden from assistive tech.
  */
 
-type Step = { label: string; done: boolean };
-
-function StepStrip({ steps }: { steps: Step[] }) {
+/** A dimmed sketch of the assets list this screen turns into once funded. */
+function AssetPreview() {
   return (
-    <ol
-      className="mt-7 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-1.5"
-      aria-label="Setup progress"
-    >
-      {steps.map((step, index) => (
-        <li key={step.label} className="flex min-w-0 items-center gap-2 sm:flex-1">
-          <span
-            aria-hidden="true"
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-              step.done ? "bg-[#30D158] text-black" : "bg-white/[0.10] text-neutral-400"
-            }`}
-          >
-            {step.done ? <IconCheck size={11} /> : index + 1}
+    <div aria-hidden="true" className="mt-7 select-none">
+      <p className="section-title px-1 pb-2">Your assets</p>
+      <div className="panel-inset divide-y divide-white/[0.05] opacity-45">
+        <div className="flex items-center gap-3.5 px-4 py-3.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF]/25 text-[11px] font-bold text-[#7FBEFF]">
+            XLM
           </span>
-          <span
-            className={`text-[12.5px] font-medium sm:truncate ${
-              step.done ? "text-neutral-400" : "text-white"
-            }`}
-          >
-            {step.label}
-          </span>
-        </li>
-      ))}
-    </ol>
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold text-neutral-300">Lumens</p>
+            <p className="text-[12px] text-neutral-500">Stellar native asset</p>
+          </div>
+          <p className="text-[14px] font-semibold tabular-nums text-neutral-400">0.00</p>
+        </div>
+        {[0, 1].map((row) => (
+          <div key={row} className="flex items-center gap-3.5 px-4 py-3.5">
+            <span className="h-9 w-9 shrink-0 rounded-full bg-white/[0.06]" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <span className="block h-2.5 w-24 rounded-full bg-white/[0.06]" />
+              <span className="block h-2 w-16 rounded-full bg-white/[0.04]" />
+            </div>
+            <span className="h-2.5 w-12 rounded-full bg-white/[0.06]" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -77,31 +79,53 @@ export function WelcomeHome({
       <section className="panel relative overflow-hidden px-6 py-8 sm:px-9 sm:py-10 lg:col-span-7">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -left-20 -top-24 h-72 w-[26rem] rounded-full bg-[#0A84FF]/20 blur-[80px]"
+          className="pointer-events-none absolute -left-24 -top-28 h-72 w-[28rem] rounded-full bg-[#0A84FF]/20 blur-[90px]"
         />
         <div className="relative">
           <NetworkBadge network={network} />
 
-          <h1 className="display-h mt-5 text-[34px] text-white sm:text-[42px]">
-            Your wallet is ready.
+          <h1 className="display-h mt-5 text-[32px] text-white sm:text-[40px]">
+            Your lumens land here.
           </h1>
-          <p className="mt-3 text-[15px] text-neutral-400">
-            {/* naming the reserve helps on mainnet, where the holder covers it
-                themselves; on testnet Friendbot covers it and the number is noise */}
+          <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-400">
             {testnet
-              ? "Claim some test lumens to bring it on-chain."
+              ? "Claim some test lumens and the account goes live on Stellar."
               : reserveXlm
-                ? `Add ${reserveXlm} XLM to bring it on-chain.`
-                : "Add XLM to bring it on-chain."}
+                ? `Send at least ${reserveXlm} XLM to the address below and the account goes live on Stellar.`
+                : "Send XLM to the address below and the account goes live on Stellar."}
           </p>
 
-          <p className="display-h mt-8 text-[52px] text-white sm:text-[64px]">
-            0<span className="text-neutral-700">.00</span>
-            <span className="ml-2 text-[24px] font-semibold text-neutral-500">XLM</span>
-          </p>
+          {/* One primary action. Showing the address is the quiet way through
+              for anyone funding from elsewhere, so it stays a link. */}
+          <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
+            {testnet ? (
+              <Button
+                className="!px-6 !py-3.5 text-[15px] font-semibold"
+                loading={fundBusy}
+                disabled={fundBusy}
+                onClick={onFund}
+              >
+                Claim 10,000 test XLM
+              </Button>
+            ) : (
+              <Button className="!px-6 !py-3.5 text-[15px] font-semibold" onClick={onReceive}>
+                Show my address
+              </Button>
+            )}
+            {testnet && (
+              <button
+                type="button"
+                onClick={onReceive}
+                className="link text-[14px] font-medium"
+              >
+                or receive from elsewhere
+              </button>
+            )}
+          </div>
+          {fundError && <p className="mt-4 text-[13px] text-[#FF453A]">{fundError}</p>}
 
           {account && (
-            <div className="panel-inset mt-5 flex items-center gap-2 px-3.5 py-2.5">
+            <div className="panel-inset mt-6 flex items-center gap-2 px-3.5 py-2.5">
               <IconKey size={14} className="shrink-0 text-neutral-500" />
               <HashValue value={account.publicKey} head={8} tail={6} className="min-w-0 flex-1 text-[13px]" />
               {/* HashValue copies on click too; the chip is here for discoverability */}
@@ -109,34 +133,7 @@ export function WelcomeHome({
             </div>
           )}
 
-          <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
-            {testnet && (
-              <Button
-                className="!py-3.5 text-[15px] font-semibold sm:flex-1"
-                loading={fundBusy}
-                disabled={fundBusy}
-                onClick={onFund}
-              >
-                Claim 10,000 test XLM
-              </Button>
-            )}
-            <Button
-              variant={testnet ? "secondary" : "primary"}
-              className="!py-3.5 text-[15px] font-semibold sm:flex-1"
-              onClick={onReceive}
-            >
-              <IconReceive size={16} /> Show address
-            </Button>
-          </div>
-          {fundError && <p className="mt-4 text-[13px] text-[#FF453A]">{fundError}</p>}
-
-          <StepStrip
-            steps={[
-              { label: "Wallet created", done: true },
-              { label: "Back up phrase", done: backedUp },
-              { label: "Add XLM", done: false },
-            ]}
-          />
+          <AssetPreview />
         </div>
       </section>
 
