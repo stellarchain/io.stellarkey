@@ -152,6 +152,66 @@ body::after {
   background: rgba(10, 132, 255, 0.4);
 }
 
+.skip-link {
+  position: fixed;
+  top: calc(var(--app-safe-area-top) + 8px);
+  left: 12px;
+  z-index: 100;
+  transform: translateY(-180%);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #000000;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 650;
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 4px solid rgba(10, 132, 255, 0.45);
+}
+
+.legal-prose {
+  color: #d1d1d6;
+  font-size: 15px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.legal-prose section + section {
+  margin-top: 2.5rem;
+  padding-top: 2.5rem;
+  border-top: 0.5px solid rgba(84, 84, 88, 0.65);
+}
+
+.legal-prose h2 {
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+}
+
+.legal-prose p,
+.legal-prose ul {
+  max-width: 65ch;
+  margin-top: 0.85rem;
+}
+
+.legal-prose ul {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.legal-prose li + li {
+  margin-top: 0.5rem;
+}
+
+.legal-prose .btn {
+  margin-top: 1rem;
+}
+
 /* iOS system blue is excellent as text on black, but white text needs a
    slightly deeper fill to retain WCAG AA contrast at compact UI sizes. */
 .bg-\[\#0A84FF\] {

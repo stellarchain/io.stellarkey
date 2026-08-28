@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui";
+import { PublicFooter } from "@/components/PublicFooter";
 import { BRAND_NAME } from "@/lib/brand";
 
 /**
@@ -47,6 +48,7 @@ export default function Error({
       <p className="mt-6 mono max-w-sm break-all text-[10.5px] leading-relaxed text-neutral-600">
         {error.digest ? `Ref: ${error.digest}` : error.message}
       </p>
+      <PublicFooter compact />
     </div>
   );
 }
