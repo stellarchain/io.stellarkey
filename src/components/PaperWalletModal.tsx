@@ -99,10 +99,10 @@ export function PaperWalletModal({
           return;
         }
         json = keystore;
-        filename = `wallet-${accountLabel.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
+        filename = `stellarkey-${accountLabel.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
       } else {
         json = await exportVaultBackup(password);
-        filename = `wallet-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        filename = `stellarkey-backup-${new Date().toISOString().slice(0, 10)}.json`;
       }
       const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);

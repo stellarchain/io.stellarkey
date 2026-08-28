@@ -132,7 +132,7 @@ export function SettingsPage({
   initialSub = "root",
   merchantOnly = false,
   installAvailable = false,
-  installDescription = "Add Wallet to this device",
+  installDescription = "Add StellarKey to this device",
   onInstallApp,
   onOpenBackupWizard,
   onOpenMultisigStudio,

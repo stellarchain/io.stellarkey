@@ -6,6 +6,7 @@ import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/l
 import { triggerHaptic } from "@/lib/haptics";
 import { estimatePasswordStrength, type PasswordStrength } from "@/lib/password-strength";
 import { markBackupVerified } from "@/lib/backup-health";
+import { BRAND_NAME } from "@/lib/brand";
 import {
   readStandaloneDisplay,
   shouldPrioritizeStandaloneRestore,
@@ -293,7 +294,7 @@ export function Onboarding() {
           {/* Brand / pitch column */}
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <LogoMark size={56} />
-            <p className="eyebrow mt-7">Self-Custodial Stellar Wallet</p>
+            <p className="eyebrow mt-7">{BRAND_NAME} · Self-custodial Stellar wallet</p>
             <h1 className="display-h mt-4 text-[42px] font-bold leading-[1.04] tracking-tight text-white sm:text-[56px]">
               Own your keys.
               <br />

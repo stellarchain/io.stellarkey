@@ -6,7 +6,7 @@ Rebrand the backend-free wallet as **StellarKey**, make `https://stellarkey.io` 
 
 ## Product identity
 
-The user-facing product name is `StellarKey`; the production domain is `stellarkey.io`; the copyright owner is `StellarKey`; and the public support and security contacts are `support@stellarkey.io` and `security@stellarkey.io`. A small shared brand module will own these values so application metadata, the PWA manifest, Trezor Connect, legal notices, documentation, and visible UI cannot drift apart.
+The user-facing product name is `StellarKey`; the production domain is `stellarkey.io`; the copyright owner is `StellarKey`; and dedicated support and security mailboxes live on the production domain. A small shared brand module will own these values in encoded form so application metadata, the PWA manifest, Trezor Connect, legal notices, documentation, and visible UI cannot drift apart or expose complete addresses to basic source scrapers.
 
 The private npm package will be renamed from `0x` to `stellarkey`. Existing browser storage namespaces such as `polaris.*` and `wallet.*` will not be renamed because changing them would strand existing encrypted vaults, preferences, and merchant records.
 
@@ -52,4 +52,3 @@ Implementation is test-driven. The first failing tests will require:
 - preservation of existing storage namespaces and security policy.
 
 The final gate will run type checking, all unit tests, lint, the production dependency audit, static export, CSP and service-worker generation, bundle budgets, desktop Chromium journeys, and iPhone/iPad WebKit accessibility journeys. The built `out/` directory will also be inspected for canonical URLs, raw contact leakage, well-known resources, and correct content types.
-

@@ -934,7 +934,7 @@ export function Dashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `wallet-activity-${network}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `stellarkey-activity-${network}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     triggerHaptic("success");
@@ -1869,7 +1869,7 @@ export function Dashboard() {
                   ? "Encrypted backup required first"
                   : installHandoff.action === "ios-guide"
                     ? "Add to your iPhone Home Screen"
-                    : "Add Wallet to this device"
+                    : "Add StellarKey to this device"
               }
               onInstallApp={handleInstallApp}
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
@@ -2751,7 +2751,7 @@ export function Dashboard() {
             <ol className="space-y-3 text-[13px] leading-relaxed text-neutral-200">
               <li><span className="mr-2 font-semibold text-[#0A84FF]">1.</span>Tap the Share button in Safari.</li>
               <li><span className="mr-2 font-semibold text-[#0A84FF]">2.</span>Choose <strong className="text-white">Add to Home Screen</strong>.</li>
-              <li><span className="mr-2 font-semibold text-[#0A84FF]">3.</span>Open Wallet from its new icon. If it starts empty, restore the encrypted backup you just exported.</li>
+              <li><span className="mr-2 font-semibold text-[#0A84FF]">3.</span>Open StellarKey from its new icon. If it starts empty, restore the encrypted backup you just exported.</li>
             </ol>
             <div className="rounded-2xl border border-[#30D158]/20 bg-[#30D158]/[0.07] p-3 text-[12px] leading-relaxed text-neutral-300">
               Backup ready. It remains encrypted by your wallet password and never leaves this device unless you move it.

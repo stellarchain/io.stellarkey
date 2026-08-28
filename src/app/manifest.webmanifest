@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Wallet — Stellar",
-  "short_name": "Wallet",
+  "name": "StellarKey — Self-custodial Stellar wallet",
+  "short_name": "StellarKey",
   "description": "A self-custodial Stellar wallet. Keys stay encrypted on your device.",
   "start_url": "/",
   "scope": "/",
