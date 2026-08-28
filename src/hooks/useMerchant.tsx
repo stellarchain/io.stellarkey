@@ -986,10 +986,14 @@ export function MerchantProvider({
   );
 
   const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
-  const exportEncryptedArchive = useCallback(
-    () => repositoryRef.current.exportEncryptedArchive(),
-    [],
-  );
+  const exportEncryptedArchive = useCallback(async () => {
+    const key = readMerchantKey();
+    try {
+      return await repositoryRef.current.exportEncryptedArchive(key);
+    } finally {
+      key.fill(0);
+    }
+  }, [readMerchantKey]);
   const resetRecoveryData = useCallback(async () => {
     try {
       await repositoryRef.current.clear();

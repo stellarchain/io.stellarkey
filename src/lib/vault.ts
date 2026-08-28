@@ -1134,10 +1134,17 @@ export async function exportVaultBackup(password: string): Promise<string> {
   const contactsRaw = readLocalJson(CONTACTS_KEY);
   const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
-  const merchantStore = typeof indexedDB === "undefined"
-    ? window.localStorage.getItem(MERCHANT_STORE_KEY)
-    : await getMerchantRepository().exportEncryptedArchive()
-      ?? window.localStorage.getItem(MERCHANT_STORE_KEY);
+  let merchantKey: Uint8Array | null = null;
+  let merchantStore: string | null;
+  try {
+    merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
+    merchantStore = typeof indexedDB === "undefined"
+      ? window.localStorage.getItem(MERCHANT_STORE_KEY)
+      : await getMerchantRepository().exportEncryptedArchive(merchantKey!)
+        ?? window.localStorage.getItem(MERCHANT_STORE_KEY);
+  } finally {
+    zeroKey(merchantKey);
+  }
   const payload: FullBackupPayload = {
     exportedAt: new Date().toISOString(),
     vault,
@@ -1207,7 +1214,7 @@ export async function restoreVaultBackup(
     writes,
     archive: merchantRepository
       ? {
-          read: () => merchantRepository.exportEncryptedArchive(),
+          read: () => merchantRepository.snapshotEncryptedArchive(),
           replace: async (value) => {
             if (value) await merchantRepository.importEncryptedArchive(value);
             else await merchantRepository.clear();

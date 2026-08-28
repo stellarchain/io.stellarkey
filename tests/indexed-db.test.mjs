@@ -64,7 +64,7 @@ class MemoryRecordDriver {
     }
   }
 
-  async compareAndSetMany(key, expectedRevision, entries, removeKeys = []) {
+  async compareAndSetMany(key, expectedRevision, entries, removeKeys = [], expectedPrefix) {
     if (this.failWrites) throw new Error("quota exceeded");
     if (this.failNextBatchCompare) {
       this.failNextBatchCompare = false;
@@ -73,6 +73,17 @@ class MemoryRecordDriver {
     const current = this.records.get(key) ?? null;
     const currentRevision = current === null ? null : JSON.parse(current).revision;
     if (currentRevision !== expectedRevision) return { ok: false, current };
+    if (expectedPrefix) {
+      const actual = new Map(
+        [...this.records].filter(([entryKey]) => entryKey.startsWith(expectedPrefix.prefix)),
+      );
+      if (
+        actual.size !== expectedPrefix.entries.size ||
+        [...expectedPrefix.entries].some(([entryKey, value]) => actual.get(entryKey) !== value)
+      ) {
+        return { ok: false, current };
+      }
+    }
     const before = new Map(this.records);
     try {
       for (const removeKey of removeKeys) this.records.delete(removeKey);
@@ -353,6 +364,50 @@ test("an external revision forces a complete authenticated repository reload", a
   );
 });
 
+test("an atomic local commit rejects same-revision encrypted row tampering", async () => {
+  const {
+    MerchantRepository,
+    MerchantRepositoryConflictError,
+  } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const first = {
+    ...emptyStore(),
+    revision: 1,
+    writerId: "tab-a",
+    updatedAt: 10,
+    catalogue: [{ ...emptyStore().catalogue[0], name: "Authenticated item" }],
+  };
+  const committed = await repository.commit(first, KEY, null);
+  const [rowKey, raw] = [...await driver.readPrefix(repository.dataPrefix)][0];
+  driver.records.set(rowKey, `${raw.slice(0, -1)}!`);
+
+  assert.equal((await repository.loadCommitBasis(KEY)).kind, "ready");
+  await assert.rejects(
+    repository.commit({ ...committed, revision: 2, updatedAt: 20 }, KEY, 1),
+    MerchantRepositoryConflictError,
+  );
+  assert.equal(JSON.parse(driver.records.get(repository.recordKey)).revision, 1);
+});
+
+test("encrypted archive export authenticates every retained merchant row", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  await repository.commit({
+    ...emptyStore(),
+    revision: 1,
+    writerId: "tab-a",
+    updatedAt: 10,
+  }, KEY, null);
+  const [rowKey, raw] = [...await driver.readPrefix(repository.dataPrefix)][0];
+  driver.records.set(rowKey, `${raw.slice(0, -1)}!`);
+
+  await assert.rejects(repository.exportEncryptedArchive(KEY), /authenticated|corrupt/i);
+});
+
 test("IndexedDB prefix reads use a bounded key range instead of scanning the store", () => {
   const source = readFileSync(new URL("../src/lib/indexed-db.ts", import.meta.url), "utf8");
   const method = source.slice(source.indexOf("async readPrefix"), source.indexOf("async putVerified"));
@@ -392,7 +447,7 @@ test("record archives export and restore every encrypted record without plaintex
     }],
   };
   await source.commit(store, KEY, null);
-  const archive = await source.exportEncryptedArchive();
+  const archive = await source.exportEncryptedArchive(KEY);
 
   assert.match(archive, /polaris-merchant-record-archive/);
   assert.doesNotMatch(archive, /Private Coffee/);
