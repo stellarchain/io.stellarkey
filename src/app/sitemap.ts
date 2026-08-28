@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: PUBLIC_ROUTES.privacy, priority: 0.5 },
     { path: PUBLIC_ROUTES.terms, priority: 0.5 },
     { path: PUBLIC_ROUTES.security, priority: 0.6 },
+    { path: PUBLIC_ROUTES.support, priority: 0.6 },
   ].map(({ path, priority }) => ({
     url: new URL(path, BRAND_ORIGIN).href,
     lastModified: LAST_MODIFIED,

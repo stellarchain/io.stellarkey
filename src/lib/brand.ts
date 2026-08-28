@@ -20,6 +20,7 @@ export const PUBLIC_ROUTES = Object.freeze({
   privacy: "/privacy",
   terms: "/terms",
   security: "/security",
+  support: "/support",
 } as const);
 
 const CONTACT_CODEPOINTS = Object.freeze({

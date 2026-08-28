@@ -13,7 +13,23 @@ import { join } from "node:path";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const expectedRoutes = ["/", "/about", "/privacy", "/terms", "/security"];
+const expectedRoutes = ["/", "/about", "/privacy", "/terms", "/security", "/support"];
+
+test("public release journeys run in every supported browser profile", () => {
+  const journey = "e2e/public-release.spec.ts";
+  assert.equal(existsSync(new URL(`../${journey}`, import.meta.url)), true);
+  const source = read(journey);
+  const config = read("playwright.config.ts");
+
+  for (const route of expectedRoutes) {
+    assert.equal(source.includes(`path: "${route}"`), true, `${route} is not covered`);
+  }
+  assert.match(source, /width:\s*320/);
+  assert.match(source, /icon-maskable-512\.png/);
+  assert.match(source, /definitely-not-a-stellarkey-route/);
+  assert.match(config, /iphone-webkit[\s\S]*public-release/);
+  assert.match(config, /ipad-webkit[\s\S]*public-release/);
+});
 
 test("robots and sitemap publish the canonical StellarKey routes", () => {
   for (const file of ["src/app/robots.ts", "src/app/sitemap.ts"]) {

@@ -28,12 +28,12 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      testMatch: /(?:accessibility|merchant-webkit)\.spec\.ts/,
+      testMatch: /(?:accessibility|merchant-webkit|public-release)\.spec\.ts/,
       use: { ...devices["iPhone 16"], serviceWorkers: "block" },
     },
     {
       name: "ipad-webkit",
-      testMatch: /accessibility\.spec\.ts/,
+      testMatch: /(?:accessibility|public-release)\.spec\.ts/,
       use: { ...devices["iPad (gen 11)"] },
     },
   ],

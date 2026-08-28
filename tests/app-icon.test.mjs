@@ -49,12 +49,23 @@ test("Next serves static install metadata and an Apple icon through native app r
     height: 512,
     colorType: 2,
   });
+  assert.deepEqual(pngInfo("public/icon-maskable-512.png"), {
+    width: 512,
+    height: 512,
+    colorType: 2,
+  });
 
   assert.deepEqual(
     manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),
     [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
     ],
   );
   assert.equal(manifest.id, "/");

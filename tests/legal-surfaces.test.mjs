@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-const routes = ["about", "privacy", "terms", "security"];
+const routes = ["about", "privacy", "terms", "security", "support"];
 
 test("StellarKey exposes complete directly linkable trust-center routes", () => {
   for (const route of routes) {
@@ -20,6 +20,7 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   const privacy = read("src/app/privacy/page.tsx");
   const terms = read("src/app/terms/page.tsx");
   const security = read("src/app/security/page.tsx");
+  const support = read("src/app/support/page.tsx");
 
   assert.match(about, /backend-free/i);
   assert.match(about, /APPLICATION_VERSION/);
@@ -43,6 +44,8 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   assert.match(security, /never include/i);
   assert.match(security, /recovery phrase|secret key/i);
   assert.match(security, /ContactAction/);
+  assert.match(support, /ContactAction/);
+  assert.match(support, /cannot recover|cannot reverse/i);
 });
 
 test("public and locked surfaces share accessible legal navigation", () => {
@@ -80,6 +83,9 @@ test("public and locked surfaces share accessible legal navigation", () => {
 
 test("the custom 404 is branded and never strands the user", () => {
   const source = read("src/app/not-found.tsx");
+  assert.match(source, /export const metadata:\s*Metadata/);
+  assert.match(source, /title:\s*"Page not found"/);
+  assert.match(source, /index:\s*false/);
   assert.match(source, /Page not found/);
   assert.match(source, /BRAND_NAME/);
   assert.match(source, /href=\{PUBLIC_ROUTES\.home\}/);

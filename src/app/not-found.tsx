@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { PublicFooter } from "@/components/PublicFooter";
 import { LogoMark } from "@/components/icons";
 import { BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
+
+export const metadata: Metadata = {
+  title: "Page not found",
+  description: `The requested page is not part of this ${BRAND_NAME} release.`,
+  robots: { index: false, follow: false },
+};
 
 export default function NotFound() {
   return (
