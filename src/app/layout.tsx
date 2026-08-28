@@ -1,6 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
-import { BRAND_DESCRIPTION, BRAND_NAME, BRAND_ORIGIN } from "@/lib/brand";
+import {
+  BRAND_DESCRIPTION,
+  BRAND_NAME,
+  BRAND_ORIGIN,
+  SOURCE_REPOSITORY_URL,
+} from "@/lib/brand";
 import "./globals.css";
 
 const defaultTitle = `${BRAND_NAME} — Self-custodial Stellar wallet`;
@@ -10,6 +15,8 @@ const applicationJsonLd = {
   name: BRAND_NAME,
   url: BRAND_ORIGIN,
   description: BRAND_DESCRIPTION,
+  codeRepository: SOURCE_REPOSITORY_URL,
+  license: "https://www.gnu.org/licenses/agpl-3.0.html",
   "applicationCategory": "FinanceApplication",
   operatingSystem: "Any modern browser",
   offers: {

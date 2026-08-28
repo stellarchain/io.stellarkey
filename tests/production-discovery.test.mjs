@@ -74,6 +74,10 @@ test("the static release publishes a commit-verifiable release manifest", () => 
   assert.match(read("public/_headers"), /\/release\.json[\s\S]*Cache-Control: no-cache/);
   assert.match(source, /release-files\.json/);
   assert.match(source, /SHA-256/i);
+  assert.match(source, /sourceRepository:\s*SOURCE_REPOSITORY_URL/);
+  assert.match(source, /sourceCommit:\s*SOURCE_COMMIT_URL/);
+  assert.match(source, /releasePage:\s*SOURCE_RELEASE_URL/);
+  assert.match(source, /license:\s*"AGPL-3\.0-or-later"/);
 });
 
 test("release preflight rejects dirty trees and mismatched supplied commits", async () => {

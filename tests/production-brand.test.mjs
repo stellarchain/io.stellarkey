@@ -27,6 +27,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   const brand = await import("../src/lib/brand.ts");
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
+  assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/florincm/stellarkey");
   assert.equal(brand.APPLICATION_VERSION, "1.0.0");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
@@ -51,6 +52,9 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(layout, /alternates:\s*\{[\s\S]*canonical:\s*"\/"/);
   assert.match(layout, /openGraph:/);
   assert.match(layout, /twitter:/);
+  assert.match(layout, /codeRepository:\s*SOURCE_REPOSITORY_URL/);
+  assert.match(read("src/components/PublicFooter.tsx"), /SOURCE_REPOSITORY_URL/);
+  assert.match(read("src/app/about/page.tsx"), /SOURCE_COMMIT_URL/);
   assert.equal(manifest.name, "StellarKey — Self-custodial Stellar wallet");
   assert.equal(manifest.short_name, "StellarKey");
   assert.match(manifest.description, /Keys stay encrypted on your device/);
