@@ -27,7 +27,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   const brand = await import("../src/lib/brand.ts");
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
-  assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/florincm/stellarkey");
+  assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/stellarchain/io.stellarkey");
   assert.equal(brand.APPLICATION_VERSION, "1.0.0");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
