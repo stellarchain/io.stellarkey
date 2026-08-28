@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const fullCommitPattern = /^[0-9a-f]{40}$/;
 
-function gitOutput(args: string[]): string {
+function gitOutput(args: string[], cwd = projectRoot): string {
   return execFileSync("git", args, {
-    cwd: projectRoot,
+    cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
   }).trim();
@@ -30,12 +30,12 @@ function resolveBuildCommit(): string {
   return commit;
 }
 
-function trackedSourceIsDirty(): boolean {
-  return gitOutput(["status", "--porcelain", "--untracked-files=no"]) !== "";
+export function sourceTreeIsDirty(cwd = projectRoot): boolean {
+  return gitOutput(["status", "--porcelain", "--untracked-files=all"], cwd) !== "";
 }
 
 const buildCommit = resolveBuildCommit();
-const buildDirty = trackedSourceIsDirty();
+const buildDirty = sourceTreeIsDirty();
 
 const nextConfig: NextConfig = {
   output: "export",
