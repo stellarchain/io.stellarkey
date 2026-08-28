@@ -40,7 +40,7 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   assert.match(privacy, /retention and deletion/i);
   assert.match(privacy, /public blockchain/i);
   assert.match(privacy, /does not make blockchain data private/i);
-  assert.match(terms, /self-custodial/i);
+  assert.match(terms, /self-custod(y|ial)/i);
   assert.match(terms, /irreversible/i);
   assert.match(terms, /recovery phrase/i);
   assert.match(terms, /asset issuer/i);
@@ -91,17 +91,17 @@ test("long-form trust pages expose plain-language summaries and on-page navigati
 test("trust-center chrome uses one accessible icon language without replacing text labels", () => {
   const legalPage = read("src/components/LegalPage.tsx");
   for (const icon of [
-    "IconCompass",
-    "IconEyeOff",
-    "IconFileText",
-    "IconFingerprint",
-    "IconBook",
-    "IconCheck",
-    "IconList",
+    "DocCompass",
+    "DocEyeOff",
+    "DocScales",
+    "DocShield",
+    "DocBook",
+    "DocCheck",
+    "DocFile",
   ]) {
     assert.match(legalPage, new RegExp(icon), `${icon} is missing from the trust-center presentation`);
   }
-  assert.match(legalPage, /className="legal-hero"/);
+  assert.match(legalPage, /className="[^"]*\blegal-hero\b/);
   assert.match(legalPage, /className="legal-route-icon"/);
   assert.match(legalPage, /className="legal-highlight-icon"/);
   assert.match(legalPage, /aria-hidden="true"/);
@@ -138,6 +138,7 @@ test("public and locked surfaces share accessible legal navigation", () => {
   assert.match(read("src/app/error.tsx"), /<main[^>]*id="app-content"/);
   assert.match(read("src/app/layout.tsx"), /href="#app-content"/);
   assert.match(read("src/app/page.tsx"), /id="app-content"/);
+  assert.match(read("src/app/app/page.tsx"), /id="app-content"/);
   assert.match(settings, /\| "about"/);
   assert.match(settings, /label="About & Legal"/);
   assert.match(settings, /sub === "about"/);

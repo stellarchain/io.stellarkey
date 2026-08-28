@@ -8,11 +8,15 @@ import test from "node:test";
 import {
   assertJourneyJavaScriptBudgets,
   assertInitialJavaScriptBudget,
+  assertLandingJavaScriptBudget,
   INITIAL_JS_GZIP_BUDGET,
   INITIAL_JS_RAW_BUDGET,
   JOURNEY_BUDGETS,
+  LANDING_JS_GZIP_BUDGET,
+  LANDING_JS_RAW_BUDGET,
   measureJourneyJavaScript,
   measureInitialJavaScript,
+  measureLandingJavaScript,
 } from "../scripts/check-bundle-budget.mjs";
 
 test("the static entry route stays inside an explicit JavaScript budget", () => {
@@ -23,9 +27,17 @@ test("the static entry route stays inside an explicit JavaScript budget", () => 
   assert.ok(measurement.gzipBytes <= INITIAL_JS_GZIP_BUDGET);
 });
 
+test("the public landing page stays inside its own JavaScript budget", () => {
+  const measurement = measureLandingJavaScript();
+  assert.ok(measurement.chunkCount > 0);
+  assert.doesNotThrow(() => assertLandingJavaScriptBudget(measurement));
+  assert.ok(measurement.rawBytes <= LANDING_JS_RAW_BUDGET);
+  assert.ok(measurement.gzipBytes <= LANDING_JS_GZIP_BUDGET);
+});
+
 test("release scripts and lazy boundaries keep optional domains out of startup", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  const page = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/app/app/page.tsx", import.meta.url), "utf8");
   const walletApp = readFileSync(new URL("../src/components/WalletApp.tsx", import.meta.url), "utf8");
   const onboarding = readFileSync(new URL("../src/components/Onboarding.tsx", import.meta.url), "utf8");
   const walletHook = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
@@ -67,12 +79,12 @@ test("an oversized dynamic merchant chunk fails its named journey budget", async
   const fixture = await mkdtemp(path.join(tmpdir(), "polaris-bundle-budget-"));
   const output = path.join(fixture, "out");
   const chunks = path.join(output, "_next", "static", "chunks");
-  const buildPage = path.join(fixture, ".next", "server", "app", "page");
+  const buildPage = path.join(fixture, ".next", "server", "app", "app", "page");
   try {
     await mkdir(chunks, { recursive: true });
     await mkdir(buildPage, { recursive: true });
     await writeFile(
-      path.join(output, "index.html"),
+      path.join(output, "app.html"),
       '<script src="/_next/static/chunks/initial.js"></script>',
     );
     await writeFile(

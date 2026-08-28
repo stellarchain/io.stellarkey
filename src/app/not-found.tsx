@@ -20,9 +20,14 @@ export default function NotFound() {
           This address is not part of the current StellarKey release. Your local vault has not been
           changed.
         </p>
-        <a className="btn btn-primary mt-7 min-h-11" href={PUBLIC_ROUTES.home}>
-          Return to StellarKey
-        </a>
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+          <a className="btn btn-primary min-h-11" href={PUBLIC_ROUTES.home}>
+            Back to the home page
+          </a>
+          <a className="btn btn-ghost min-h-11" href={PUBLIC_ROUTES.app}>
+            Open the wallet
+          </a>
+        </div>
       </main>
       <PublicFooter compact />
     </div>

@@ -1,0 +1,16 @@
+/*
+ * Hand-written companion to the generated marketing sheet, for corrections the
+ * artifact did not cover. Loaded after marketing.css, so equal-specificity
+ * rules here win.
+ */
+
+/*
+ * The fee comparison is a five-row table of monospace figures: on a phone it
+ * is wider than the viewport. The artifact clipped it with overflow:hidden,
+ * which silently removed the "you lose" column — the one number the section
+ * exists to show. Let it scroll instead; the radius still clips.
+ */
+.mk .compare {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
