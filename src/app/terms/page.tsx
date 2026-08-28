@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ContactAction } from "@/components/ContactAction";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
+import { BRAND_NAME, PUBLIC_OPEN_GRAPH_IMAGE, PUBLIC_ROUTES } from "@/lib/brand";
 
 const description = `Terms for using ${BRAND_NAME} self-custodial wallet and local-first merchant software.`;
 
@@ -9,7 +9,12 @@ export const metadata: Metadata = {
   title: "Terms",
   description,
   alternates: { canonical: PUBLIC_ROUTES.terms },
-  openGraph: { title: `${BRAND_NAME} Terms`, description, url: PUBLIC_ROUTES.terms },
+  openGraph: {
+    title: `${BRAND_NAME} Terms`,
+    description,
+    url: PUBLIC_ROUTES.terms,
+    images: [PUBLIC_OPEN_GRAPH_IMAGE],
+  },
 };
 
 export default function TermsPage() {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ContactAction } from "@/components/ContactAction";
 import { LegalPage } from "@/components/LegalPage";
-import { BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
+import { BRAND_NAME, PUBLIC_OPEN_GRAPH_IMAGE, PUBLIC_ROUTES } from "@/lib/brand";
 
 const description = `${BRAND_NAME}'s plain-language privacy notice for local wallet data and direct third-party network requests.`;
 
@@ -9,7 +9,12 @@ export const metadata: Metadata = {
   title: "Privacy",
   description,
   alternates: { canonical: PUBLIC_ROUTES.privacy },
-  openGraph: { title: `${BRAND_NAME} Privacy`, description, url: PUBLIC_ROUTES.privacy },
+  openGraph: {
+    title: `${BRAND_NAME} Privacy`,
+    description,
+    url: PUBLIC_ROUTES.privacy,
+    images: [PUBLIC_OPEN_GRAPH_IMAGE],
+  },
 };
 
 export default function PrivacyPage() {

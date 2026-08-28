@@ -1,0 +1,5 @@
+Contact: https://stellarkey.io/security/
+Expires: 2027-08-28T23:59:59Z
+Preferred-Languages: en
+Canonical: https://stellarkey.io/.well-known/security.txt
+Policy: https://stellarkey.io/security/

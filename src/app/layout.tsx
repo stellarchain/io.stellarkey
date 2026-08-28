@@ -4,6 +4,21 @@ import { BRAND_DESCRIPTION, BRAND_NAME, BRAND_ORIGIN } from "@/lib/brand";
 import "./globals.css";
 
 const defaultTitle = `${BRAND_NAME} — Self-custodial Stellar wallet`;
+const applicationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: BRAND_NAME,
+  url: BRAND_ORIGIN,
+  description: BRAND_DESCRIPTION,
+  "applicationCategory": "FinanceApplication",
+  operatingSystem: "Any modern browser",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+const serializedApplicationJsonLd = JSON.stringify(applicationJsonLd).replace(/</g, "\\u003c");
 
 export const metadata: Metadata = {
   metadataBase: new URL(BRAND_ORIGIN),
@@ -50,6 +65,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="h-full antialiased">
       <body className="flex min-h-full flex-col">
         <a className="skip-link" href="#app-content">Skip to content</a>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializedApplicationJsonLd }}
+        />
         {children}
         <ServiceWorkerRegistration />
       </body>
