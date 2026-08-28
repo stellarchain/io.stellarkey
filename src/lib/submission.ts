@@ -388,50 +388,29 @@ export function removeDurablePendingTransaction(
   storage.removeItem(pendingTransactionStorageKey(key, record));
 }
 
-/**
- * Restore the durable queue and migrate the former tab-scoped value once.
- * Legacy state is removed only after the durable write succeeds.
- */
+/** Restore the current per-transaction durable recovery queue. */
 export function loadDurablePendingTransactions(
   durableStorage: PendingTransactionStorage,
   durableKey: string,
-  legacySessionStorage: PendingTransactionStorage,
-  legacyKey: string,
 ): PendingTransaction[] {
-  const durable = pendingTransactionStorageKeys(durableStorage, durableKey).reduce(
+  return pendingTransactionStorageKeys(durableStorage, durableKey).reduce(
     (records, recordKey) =>
       parsePendingTransactions(durableStorage.getItem(recordKey)).reduce(
         upsertPendingTransaction,
         records,
       ),
-    parsePendingTransactions(durableStorage.getItem(durableKey)),
+    [] as PendingTransaction[],
   );
-  const legacy = parsePendingTransactions(legacySessionStorage.getItem(legacyKey));
-  const merged = legacy.reduce(upsertPendingTransaction, durable);
-  try {
-    for (const record of merged) {
-      persistDurablePendingTransaction(durableStorage, durableKey, record);
-    }
-    durableStorage.removeItem(durableKey);
-    legacySessionStorage.removeItem(legacyKey);
-  } catch {
-    // Keep the sanitized legacy record available to this tab and retry on the
-    // next launch. Pre-broadcast writes use the strict persistence path below.
-  }
-  return merged;
 }
 
 export function clearDurablePendingTransactions(
   durableStorage: Pick<Storage, "removeItem" | "length" | "key">,
   durableKey: string,
-  legacySessionStorage: Pick<Storage, "removeItem">,
-  legacyKey: string,
 ): void {
   durableStorage.removeItem(durableKey);
   for (const recordKey of pendingTransactionStorageKeys(durableStorage, durableKey)) {
     durableStorage.removeItem(recordKey);
   }
-  legacySessionStorage.removeItem(legacyKey);
 }
 
 function isPendingTransactionAction(value: unknown): value is PendingTransactionAction {
@@ -757,36 +736,25 @@ export function persistMergeRecoveryForSubmission(
   return record;
 }
 
-/**
- * Restores authority-free merge recovery handles from durable storage. A
- * previous sessionStorage version is sanitized, merged once, then removed.
- */
+/** Restore authority-free merge recovery handles from current durable storage. */
 export function loadDurableMergeReconciliations(
   durableStorage: MergeStorage,
   durableKey: string,
-  legacySessionStorage: MergeStorage,
-  legacyKey: string,
 ): MergeReconciliation[] {
-  const durable = parseMergeReconciliations(durableStorage.getItem(durableKey));
-  const legacy = parseMergeReconciliations(legacySessionStorage.getItem(legacyKey));
-  const merged = legacy.reduce(upsertMergeReconciliation, durable);
-  if (merged.length > 0) {
-    durableStorage.setItem(durableKey, serializeMergeReconciliations(merged));
+  const records = parseMergeReconciliations(durableStorage.getItem(durableKey));
+  if (records.length > 0) {
+    durableStorage.setItem(durableKey, serializeMergeReconciliations(records));
   } else {
     durableStorage.removeItem(durableKey);
   }
-  legacySessionStorage.removeItem(legacyKey);
-  return merged;
+  return records;
 }
 
 export function clearDurableMergeReconciliations(
   durableStorage: Pick<Storage, "removeItem">,
   durableKey: string,
-  legacySessionStorage: Pick<Storage, "removeItem">,
-  legacyKey: string,
 ): void {
   durableStorage.removeItem(durableKey);
-  legacySessionStorage.removeItem(legacyKey);
 }
 
 export function parseMergeReconciliations(serialized: string | null): MergeReconciliation[] {
