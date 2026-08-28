@@ -89,10 +89,12 @@ import {
   pendingTransactionFromSubmission,
   pendingTransactionFromPrepared,
   pendingTransactionPresentation,
+  pendingTransactionStoragePrefix,
+  persistDurablePendingTransaction,
   persistMergeReconciliation,
   persistMergeReconciliationQueue,
-  persistPendingTransactionQueue,
   reconcileMergeRecovery,
+  removeDurablePendingTransaction,
   removeTrackedTransaction,
   resolutionForExpiredLookup,
   runPreparedBroadcast,
@@ -646,7 +648,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!pendingTxsHydrated) return;
     let errorTimer: number | undefined;
     try {
-      persistPendingTransactionQueue(window.localStorage, PENDING_TX_STORAGE_KEY, pendingTxs);
       if (mergeReconciliations.length === 0) {
         window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
       } else {
@@ -663,7 +664,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (errorTimer !== undefined) window.clearTimeout(errorTimer);
     };
-  }, [mergeReconciliations, pendingTxs, pendingTxsHydrated]);
+  }, [mergeReconciliations, pendingTxsHydrated]);
 
   // Load the Connect bundle before a transaction click. The Trezor-hosted
   // popup must be opened while browser user activation is still available,
@@ -1220,6 +1221,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         mergeReconciliationTimers.current.delete(identity);
         commitMergeReconciliations(() => nextMerges);
       }
+      removeDurablePendingTransaction(
+        window.localStorage,
+        PENDING_TX_STORAGE_KEY,
+        transaction,
+      );
       commitTransactionTracking((current) =>
         applyTransactionPoll(current, transaction, outcome, resolvedAt).tracking);
       const failedMessage = expiredLookup === "not_found"
@@ -1254,6 +1260,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     pollPendingRef.current = pollPending;
   }, [pollPending]);
 
+  useEffect(() => {
+    if (!pendingTxsHydrated) return;
+    const refreshPendingTransactions = (event: StorageEvent) => {
+      if (
+        event.key !== PENDING_TX_STORAGE_KEY &&
+        !event.key?.startsWith(pendingTransactionStoragePrefix(PENDING_TX_STORAGE_KEY))
+      ) {
+        return;
+      }
+      const restored = loadDurablePendingTransactions(
+        window.localStorage,
+        PENDING_TX_STORAGE_KEY,
+        window.sessionStorage,
+        LEGACY_PENDING_TX_SESSION_KEY,
+      );
+      const previousIdentities = new Set(
+        transactionTrackingRef.current.pending.map(transactionIdentity),
+      );
+      commitTransactionTracking((current) => ({ ...current, pending: restored }));
+      for (const transaction of restored) {
+        if (!previousIdentities.has(transactionIdentity(transaction))) {
+          void pollPendingRef.current(transaction);
+        }
+      }
+    };
+    window.addEventListener("storage", refreshPendingTransactions);
+    return () => window.removeEventListener("storage", refreshPendingTransactions);
+  }, [commitTransactionTracking, pendingTxsHydrated]);
+
   const restoredPendingStarted = useRef(false);
   useEffect(() => {
     if (!pendingTxsHydrated || restoredPendingStarted.current) return;
@@ -1281,7 +1316,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     const provisional = pendingTransactionFromPrepared(prepared, label, action);
     const nextTracking = trackPendingTransaction(current, provisional);
-    const previousPending = window.localStorage.getItem(PENDING_TX_STORAGE_KEY);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
       : null;
@@ -1300,13 +1334,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           reconciliation,
         );
       }
-      persistPendingTransactionQueue(
+      persistDurablePendingTransaction(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
-        nextTracking.pending,
+        provisional,
       );
     } catch (error) {
-      restoreStorageValue(window.localStorage, PENDING_TX_STORAGE_KEY, previousPending);
       if (reconciliation) {
         restoreStorageValue(
           window.localStorage,
@@ -1334,17 +1367,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ? mergeReconciliationsRef.current.filter((record) =>
           transactionIdentity(record) !== identity)
       : mergeReconciliationsRef.current;
-    const previousPending = window.localStorage.getItem(PENDING_TX_STORAGE_KEY);
+    const previousPending = transactionTrackingRef.current.pending.find((record) =>
+      transactionIdentity(record) === identity);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
       : null;
 
     try {
-      persistPendingTransactionQueue(
-        window.localStorage,
-        PENDING_TX_STORAGE_KEY,
-        nextTracking.pending,
-      );
+      removeDurablePendingTransaction(window.localStorage, PENDING_TX_STORAGE_KEY, prepared);
       if (action?.kind === "reconcile_account_merge") {
         if (nextMerges.length === 0) {
           window.localStorage.removeItem(MERGE_RECONCILIATION_STORAGE_KEY);
@@ -1356,7 +1386,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (error) {
-      restoreStorageValue(window.localStorage, PENDING_TX_STORAGE_KEY, previousPending);
+      if (previousPending) {
+        try {
+          persistDurablePendingTransaction(
+            window.localStorage,
+            PENDING_TX_STORAGE_KEY,
+            previousPending,
+          );
+        } catch {
+          // The original storage error remains authoritative.
+        }
+      }
       if (action?.kind === "reconcile_account_merge") {
         restoreStorageValue(
           window.localStorage,
@@ -1397,6 +1437,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void accountRefreshRef.current();
       return;
     }
+    persistDurablePendingTransaction(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
     commitTransactionTracking((current) => trackPendingTransaction(current, pending));
     const presentation = pendingTransactionPresentation(pending);
     toast(presentation.detail, "info");
