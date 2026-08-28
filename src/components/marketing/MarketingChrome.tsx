@@ -33,7 +33,7 @@ import "./chrome.css";
 
 const NAV = [
   ["/#wallet", "Wallet"],
-  ["/#till", "Till"],
+  ["/#till", "Merchant"],
   ["/#cost", "Cost"],
   ["/#limits", "Limits"],
   ["/#faq", "FAQ"],
