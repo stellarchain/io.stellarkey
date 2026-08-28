@@ -1,5 +1,5 @@
-export const MERCHANT_BOOTSTRAP_STORAGE_KEY = "polaris.merchant-bootstrap.v1";
-export const MERCHANT_BOOTSTRAP_CHANGED_EVENT = "polaris:merchant-bootstrap-changed";
+export const MERCHANT_BOOTSTRAP_STORAGE_KEY = "stellarkey.merchant-bootstrap.v1";
+export const MERCHANT_BOOTSTRAP_CHANGED_EVENT = "stellarkey:merchant-bootstrap-changed";
 
 export interface MerchantBootstrapState {
   version: 1;

@@ -26,7 +26,7 @@ The offline signer becomes a transaction-review signer: it decodes the envelope 
 
 Modals use a stack so only the topmost dialog handles Escape and focus restoration. Dropdown triggers are real buttons supplied by the caller, not wrapper controls around buttons. Segmented controls expose selected state. Large modals mount only while open, which preserves Next.js dynamic-import code splitting.
 
-Product identity is normalized to “Stellar Wallet” while legacy `polaris.*` storage keys remain unchanged for compatibility. Trezor Connect receives the canonical application name, origin, and a documented support contact. Security documentation states the web-origin/XSS, extension, Horizon, metadata, hardware-popup, weak-password, and supply-chain trust boundaries.
+Product identity is normalized to “Stellar Wallet” while legacy `stellarkey.*` storage keys remain unchanged for compatibility. Trezor Connect receives the canonical application name, origin, and a documented support contact. Security documentation states the web-origin/XSS, extension, Horizon, metadata, hardware-popup, weak-password, and supply-chain trust boundaries.
 
 ## Testing and delivery
 

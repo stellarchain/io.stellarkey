@@ -1,6 +1,6 @@
 import type { MerchantStore } from "./types";
 
-const WATCHER_LEASE_PREFIX = "polaris.merchant.watcher-lease.v1";
+const WATCHER_LEASE_PREFIX = "stellarkey.merchant.watcher-lease.v1";
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -120,7 +120,7 @@ export function openMerchantRevisionChannel(
     return { postRevision: () => {}, close: () => {} };
   }
   try {
-    const channel = new window.BroadcastChannel("polaris.merchant.revisions.v1");
+    const channel = new window.BroadcastChannel("stellarkey.merchant.revisions.v1");
     channel.addEventListener("message", onRevision);
     return {
       postRevision: (store) => {

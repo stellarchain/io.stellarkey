@@ -49,7 +49,7 @@ test("new software vaults reject weak passwords at the storage boundary", async 
       /password|characters|predictable|common/i,
     );
   }
-  assert.equal(localStorage.getItem("polaris.vault.v1"), null);
+  assert.equal(localStorage.getItem("stellarkey.vault.v1"), null);
 });
 
 test("new wallets persist a password-wrapped v3 master key without plaintext secrets", async () => {
@@ -60,7 +60,7 @@ test("new wallets persist a password-wrapped v3 master key without plaintext sec
   const source = Keypair.random();
 
   const result = await initializeVault(password, { secret: source.secret() });
-  const stored = JSON.parse(localStorage.getItem("polaris.vault.v1"));
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
 
   assert.equal(stored.version, 3);
   assert.ok(stored.wrappedMasterKey?.salt);
@@ -89,13 +89,13 @@ test("POC vault formats are rejected without modifying them", async () => {
       }],
       activeAccountId: `poc-${version}`,
     });
-    localStorage.setItem("polaris.vault.v1", raw);
+    localStorage.setItem("stellarkey.vault.v1", raw);
 
     const result = loadVaultResult();
     assert.equal(result.kind, "corrupt");
     assert.match(result.message, /unsupported|current/i);
     await assert.rejects(() => unlockVault(password), /no wallet found/i);
-    assert.equal(localStorage.getItem("polaris.vault.v1"), raw);
+    assert.equal(localStorage.getItem("stellarkey.vault.v1"), raw);
   }
 });
 
@@ -127,11 +127,11 @@ test("encrypted account payloads stay bound to their public identities", async (
   const second = Keypair.random();
   const initialized = await initializeVault(password, { secret: first.secret() });
   const added = await addStoredAccount({ secret: second.secret() });
-  const stored = JSON.parse(localStorage.getItem("polaris.vault.v1"));
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
   const firstStored = stored.accounts.find((account) => account.id === initialized.account.id);
   const secondStored = stored.accounts.find((account) => account.id === added.id);
   [firstStored.secret, secondStored.secret] = [secondStored.secret, firstStored.secret];
-  localStorage.setItem("polaris.vault.v1", JSON.stringify(stored));
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
 
   await assert.rejects(
     () => withSecretKey(initialized.account.id, () => null),

@@ -23,9 +23,9 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 const p = ctx.pages()[0] ?? (await ctx.newPage());
 const cachedVault = existsSync("/tmp/promo/vault.json") ? readFileSync("/tmp/promo/vault.json", "utf8") : null;
 await ctx.addInitScript(([v, cached]) => {
-  if (cached) localStorage.setItem("polaris.vault.v1", cached);
-  else if (!localStorage.getItem("polaris.vault.v1")) localStorage.setItem("polaris.vault.v1", v);
-  localStorage.setItem("polaris.network.v1", "testnet");
+  if (cached) localStorage.setItem("stellarkey.vault.v1", cached);
+  else if (!localStorage.getItem("stellarkey.vault.v1")) localStorage.setItem("stellarkey.vault.v1", v);
+  localStorage.setItem("stellarkey.network.v1", "testnet");
 }, [vault, cachedVault]);
 await p.goto(BASE, { waitUntil: "domcontentloaded" });
 const pw = p.locator('input[type="password"]').first();

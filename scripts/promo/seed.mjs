@@ -72,9 +72,9 @@ export async function open(chromium, { video = null, viewport = { width: 1440, h
   await ctx.addInitScript(([v, cached]) => {
     // A cached vault is the migrated one and is restored as-is; without it,
     // seed the freshly minted vault and let the app migrate it once.
-    if (cached) localStorage.setItem("polaris.vault.v1", cached);
-    else if (!localStorage.getItem("polaris.vault.v1")) localStorage.setItem("polaris.vault.v1", v);
-    localStorage.setItem("polaris.network.v1", "testnet");
+    if (cached) localStorage.setItem("stellarkey.vault.v1", cached);
+    else if (!localStorage.getItem("stellarkey.vault.v1")) localStorage.setItem("stellarkey.vault.v1", v);
+    localStorage.setItem("stellarkey.network.v1", "testnet");
   }, [vault, stored]);
   await p.goto(BASE, { waitUntil: "domcontentloaded" });
 
@@ -104,7 +104,7 @@ export async function open(chromium, { video = null, viewport = { width: 1440, h
 
 /** Persist the migrated vault so the merchant key survives the next run. */
 export async function keepVault(p) {
-  const v = await p.evaluate(() => localStorage.getItem("polaris.vault.v1"));
+  const v = await p.evaluate(() => localStorage.getItem("stellarkey.vault.v1"));
   if (!v) return;
   const isV3 = (() => { try { return JSON.parse(v).version === 3; } catch { return false; } })();
   if (isV3) writeFileSync(VAULT_CACHE, v);

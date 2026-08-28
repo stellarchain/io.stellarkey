@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Remove the audited custody, transaction-correctness, interoperability, reliability, accessibility, performance, security-header, test, and documentation defects from the current Polaris wallet working tree.
+**Goal:** Remove the audited custody, transaction-correctness, interoperability, reliability, accessibility, performance, security-header, test, and documentation defects from the current StellarKey wallet working tree.
 
 **Architecture:** Introduce small pure domain modules for exact Stellar amounts, canonical asset identity, typed memos, reserve calculations, and Horizon failures. Keep transaction construction shared across direct and multisig flows, disable unsupported security/device claims, and make client state commits network/account scoped. Add behavior-first Node tests around each domain boundary before changing production code.
 

@@ -33,12 +33,12 @@ test("onboarding exposes recovery and hardware paths without runtime errors", as
 test("corrupt vault data enters explicit recovery without overwriting the payload", async ({ page }) => {
   const corrupt = "{corrupt-wallet-record";
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.evaluate((raw) => localStorage.setItem("polaris.vault.v1", raw), corrupt);
+  await page.evaluate((raw) => localStorage.setItem("stellarkey.vault.v1", raw), corrupt);
   await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "Wallet data needs recovery" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Export recovery data" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("polaris.vault.v1")))
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("stellarkey.vault.v1")))
     .toBe(corrupt);
 });
 

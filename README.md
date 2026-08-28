@@ -70,7 +70,7 @@ That command runs type checking, the complete unit suite, lint, the production d
 - Serve `out/` over HTTPS and configure the static host to apply `out/_headers`. Passkeys, installed-PWA behavior, and cross-origin security features require a trustworthy origin. Custom Horizon and RPC URLs must use HTTPS.
 - The static header policy includes a build-hashed CSP, clickjacking protection, MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect.
 - The CSP permits outbound HTTPS because users can configure a Horizon endpoint and asset metadata/logos may live on issuer domains.
-- Reset deletes all `polaris.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
+- Reset deletes all `stellarkey.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
 - SEP-7 callback requests and signed/origin-domain requests are rejected until the app can execute and verify those flows fully.
 - Trezor is optional and lazy-loaded only after a hardware-wallet action. `@trezor/connect-web@9.7.3` currently brings ten low-severity `elliptic` advisories through its Bitcoin/UTXO support graph, not StellarKey's Stellar signing implementation; npm offers no fixed stable release. High and critical production advisories remain release-blocking.
 

@@ -4,8 +4,8 @@ const { vault } = await seed();
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
 await ctx.addInitScript(([v]) => {
-  localStorage.setItem("polaris.vault.v1", v);
-  localStorage.setItem("polaris.network.v1", "testnet");
+  localStorage.setItem("stellarkey.vault.v1", v);
+  localStorage.setItem("stellarkey.network.v1", "testnet");
 }, [vault]);
 const p = await ctx.newPage();
 await p.goto("http://localhost:3003", { waitUntil: "domcontentloaded" });

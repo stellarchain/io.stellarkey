@@ -4,8 +4,8 @@ const { vault } = await account();
 const ctx = await chromium.launchPersistentContext(PROFILE, { viewport: { width: 1440, height: 900 } });
 const p = ctx.pages()[0] ?? (await ctx.newPage());
 await ctx.addInitScript(([v]) => {
-  if (!localStorage.getItem("polaris.vault.v1")) localStorage.setItem("polaris.vault.v1", v);
-  localStorage.setItem("polaris.network.v1", "testnet");
+  if (!localStorage.getItem("stellarkey.vault.v1")) localStorage.setItem("stellarkey.vault.v1", v);
+  localStorage.setItem("stellarkey.network.v1", "testnet");
 }, [vault]);
 await p.goto(BASE, { waitUntil: "domcontentloaded" });
 await p.waitForTimeout(4000);

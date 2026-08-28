@@ -12,9 +12,9 @@ const ctx = await chromium.launchPersistentContext(PROFILE, {
 });
 const p = ctx.pages()[0] ?? (await ctx.newPage());
 await ctx.addInitScript(([v, c]) => {
-  if (c) localStorage.setItem("polaris.vault.v1", c);
-  else if (!localStorage.getItem("polaris.vault.v1")) localStorage.setItem("polaris.vault.v1", v);
-  localStorage.setItem("polaris.network.v1", "testnet");
+  if (c) localStorage.setItem("stellarkey.vault.v1", c);
+  else if (!localStorage.getItem("stellarkey.vault.v1")) localStorage.setItem("stellarkey.vault.v1", v);
+  localStorage.setItem("stellarkey.network.v1", "testnet");
 }, [vault, cached]);
 await p.goto(BASE, { waitUntil: "domcontentloaded" });
 const pw = p.locator('input[type="password"]').first();

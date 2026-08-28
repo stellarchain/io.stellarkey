@@ -33,7 +33,7 @@
 - Modify: `README.md`
 
 **Steps:**
-1. Write a failing source-contract test requiring `StellarKey`, `https://stellarkey.io`, copyright year 2026, title/description/application metadata, PWA naming, Trezor name and production fallback origin, passkey relying-party name, branded public UI, branded export filenames, and unchanged `polaris.*`/`wallet.*` compatibility identifiers.
+1. Write a failing source-contract test requiring `StellarKey`, `https://stellarkey.io`, copyright year 2026, title/description/application metadata, PWA naming, Trezor name and production fallback origin, passkey relying-party name, branded public UI, branded export filenames, and unchanged `stellarkey.*`/`wallet.*` compatibility identifiers.
 2. Run `node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/production-brand.test.mjs` and confirm failure because the brand module and identity do not exist.
 3. Add a dependency-free brand module with `BRAND_NAME`, `BRAND_ORIGIN`, `BRAND_DESCRIPTION`, `COPYRIGHT_OWNER`, `COPYRIGHT_YEAR`, route constants, and numeric contact-codepoint records. Do not store complete contact addresses as strings.
 4. Update metadata, manifest, hardware/passkey identity, product-specific UI labels, package name, README, and user download filenames. Keep generic wallet nouns where they describe the wallet function and retain every storage key, backup envelope kind, crypto salt, cache prefix, and legacy parser identifier.

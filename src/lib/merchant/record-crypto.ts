@@ -2,9 +2,9 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 
 const te = new TextEncoder();
 const td = new TextDecoder();
-const RECORD_KIND = "polaris-merchant-record";
+const RECORD_KIND = "stellarkey-merchant-record";
 const RECORD_VERSION = 1;
-const ARCHIVE_KIND = "polaris-merchant-record-archive";
+const ARCHIVE_KIND = "stellarkey-merchant-record-archive";
 const ARCHIVE_VERSION = 1;
 
 export interface EncryptedMerchantRecordEnvelope {

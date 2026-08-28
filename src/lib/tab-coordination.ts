@@ -11,8 +11,8 @@ export interface WalletCoordination {
   close(): void;
 }
 
-const CHANNEL_NAME = "polaris.wallet.coordination.v1";
-const STORAGE_SIGNAL_KEY = "polaris.wallet.coordination-signal.v1";
+const CHANNEL_NAME = "stellarkey.wallet.coordination.v1";
+const STORAGE_SIGNAL_KEY = "stellarkey.wallet.coordination-signal.v1";
 
 export function createTabSenderId(): string {
   return globalThis.crypto?.randomUUID?.()

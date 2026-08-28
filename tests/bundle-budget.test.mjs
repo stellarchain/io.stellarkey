@@ -76,7 +76,7 @@ test("the production graph budgets initial, unlocked, merchant, and hardware jou
 });
 
 test("an oversized dynamic merchant chunk fails its named journey budget", async () => {
-  const fixture = await mkdtemp(path.join(tmpdir(), "polaris-bundle-budget-"));
+  const fixture = await mkdtemp(path.join(tmpdir(), "stellarkey-bundle-budget-"));
   const output = path.join(fixture, "out");
   const chunks = path.join(output, "_next", "static", "chunks");
   const buildPage = path.join(fixture, ".next", "server", "app", "app", "page");

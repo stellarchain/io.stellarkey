@@ -8,7 +8,7 @@ Rebrand the backend-free wallet as **StellarKey**, make `https://stellarkey.io` 
 
 The user-facing product name is `StellarKey`; the production domain is `stellarkey.io`; the copyright owner is `StellarKey`; and dedicated support and security mailboxes live on the production domain. A small shared brand module will own these values in encoded form so application metadata, the PWA manifest, Trezor Connect, legal notices, documentation, and visible UI cannot drift apart or expose complete addresses to basic source scrapers.
 
-The private npm package will be renamed from `0x` to `stellarkey`. Existing browser storage namespaces such as `polaris.*` and `wallet.*` will not be renamed because changing them would strand existing encrypted vaults, preferences, and merchant records.
+The private npm package will be renamed from `0x` to `stellarkey`. Existing browser storage namespaces such as `stellarkey.*` and `wallet.*` will not be renamed because changing them would strand existing encrypted vaults, preferences, and merchant records.
 
 Next.js metadata will use the production origin, a descriptive StellarKey title, canonical URLs, Open Graph and Twitter sharing data, application naming, and Apple web-app naming. The existing logo remains the application icon. The web app manifest will retain the root start URL and scope while adopting the StellarKey identity and production-quality install metadata. Trezor Connect will identify the application as StellarKey and use the production origin and support contact.
 

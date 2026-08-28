@@ -51,7 +51,7 @@
 - Verify: `src/components/LockScreen.tsx`
 
 1. Confirm all visible application identity is sourced from or exactly matches `StellarKey`.
-2. Preserve `polaris.*` storage and cryptographic compatibility identifiers.
+2. Preserve `stellarkey.*` storage and cryptographic compatibility identifiers.
 3. Run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
 4. Inspect the generated icon images and key application screens.
 5. Stage only the logo, branding test, generated icons, and this plan; commit as one branding feature.

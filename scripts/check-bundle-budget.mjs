@@ -25,7 +25,7 @@ export const JOURNEY_BUDGETS = Object.freeze({
 });
 
 function outputSource(source) {
-  const pathname = new URL(source, "https://polaris.invalid").pathname;
+  const pathname = new URL(source, "https://stellarkey.invalid").pathname;
   if (pathname.startsWith("/_next/")) return pathname.slice(1);
   if (pathname.startsWith("/static/")) return `_next${pathname}`;
   if (source.startsWith("static/")) return `_next/${source}`;

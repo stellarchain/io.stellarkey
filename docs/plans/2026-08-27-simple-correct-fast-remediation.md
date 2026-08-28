@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Remove every actionable audit finding while preserving Polaris as a backend-free, local-first Stellar wallet and merchant terminal.
+**Goal:** Remove every actionable audit finding while preserving StellarKey as a backend-free, local-first Stellar wallet and merchant terminal.
 
 **Architecture:** Treat Horizon observations as immutable external facts and persist them independently from fallible business projections such as inventory. Keep every money-moving state transition idempotent and keyed by the exact network, destination, operation, asset, and memo. Land low-risk bounded changes first, then use characterization tests to make the larger persistence and context refactors safe.
 

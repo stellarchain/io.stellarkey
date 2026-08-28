@@ -80,7 +80,7 @@ test("static export and service worker enforce a hash-bound shell-only boundary"
 });
 
 test("the static server reloads generated security headers after a hot build", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "polaris-static-server-"));
+  const root = await mkdtemp(path.join(tmpdir(), "stellarkey-static-server-"));
   const scriptDirectory = path.join(root, "scripts");
   const outputDirectory = path.join(root, "out");
   const serverPath = path.join(scriptDirectory, "static-server.mjs");
