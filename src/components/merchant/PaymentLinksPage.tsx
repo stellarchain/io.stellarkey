@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
@@ -80,12 +85,10 @@ export function PaymentLinksPage() {
   const {
     counterCodes: codes,
     counterPayments,
-    pollNow,
     setCounterCodeActive,
-    settings,
-    watchError,
-    watching,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
+  const { pollNow, watchError, watching } = useMerchantStatus();
   const { toast } = useToast();
 
   const [filter, setFilter] = useState<CodeFilter>("all");
@@ -279,7 +282,9 @@ function CodeRow({
   onEdit: () => void;
   onPoster: () => void;
 }) {
-  const { counterCodePayUriFor, settings, staff: staffRoster } = useMerchant();
+  const { counterCodePayUriFor } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
+  const { staff: staffRoster } = useMerchantStaff();
   const { toast } = useToast();
   const meta = CODE_KIND_META[code.kind];
   const staff = staffRoster.find((member) => member.id === code.staffId) ?? null;

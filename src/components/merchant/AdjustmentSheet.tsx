@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import {
   fmtMinor,
   lineAdjustmentMinor,
@@ -115,17 +120,10 @@ function AdjustmentSheetInner({
   lineId: string | null;
   onOrderFinalized?: (order: Order) => void;
 }) {
-  const {
-    settings,
-    ticket,
-    activeStaff,
-    staff,
-    adjustments,
-    nextOrderNumber,
-    applyAdjustment,
-    compLine,
-    voidLine,
-  } = useMerchant();
+  const { settings } = useMerchantConfiguration();
+  const { activeStaff, staff } = useMerchantStaff();
+  const { adjustments } = useMerchantRecords();
+  const { ticket, nextOrderNumber, applyAdjustment, compLine, voidLine } = useMerchantTill();
   const { toast } = useToast();
   const { lines, discountMinor, tipMinor } = ticket;
   const { currency, taxRates, taxMode } = settings;

@@ -13,7 +13,12 @@ import type {
   CounterCodeKind,
   Minor,
 } from "@/lib/merchant/types";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { useToast } from "../Toast";
 import {
@@ -106,11 +111,11 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
     counterCodePayUriFor,
     counterCodePreviewUri,
     createCounterCode,
-    quotableAssets,
-    settings,
-    staff,
     updateCounterCode,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { quotableAssets } = useMerchantStatus();
+  const { settings } = useMerchantConfiguration();
+  const { staff } = useMerchantStaff();
   const { toast } = useToast();
   const isEdit = code !== null;
 

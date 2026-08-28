@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { LIVE_SECOND_MS, useLiveNow } from "@/hooks/useLiveNow";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { assetKey, quoteFor, secondsRemaining } from "@/lib/merchant/charge";
@@ -54,15 +58,9 @@ export function ChargeSheet({ charge, onClose }: { charge: Charge | null; onClos
 }
 
 function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => void }) {
-  const {
-    settings,
-    payUriFor,
-    voidCharge,
-    watchedLedger,
-    watchError,
-    pollNow,
-    orderFor,
-  } = useMerchant();
+  const { settings } = useMerchantConfiguration();
+  const { payUriFor, voidCharge, orderFor } = useMerchantRecords();
+  const { watchedLedger, watchError, pollNow } = useMerchantStatus();
   const { toast } = useToast();
 
   const [selectedKey, setSelectedKey] = useState(() => assetKey(charge.quotes[0].asset));

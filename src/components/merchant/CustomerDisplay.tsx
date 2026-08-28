@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantStaff } from "@/hooks/useMerchant";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
@@ -51,7 +51,8 @@ function CustomerDisplayInner({
   currency: FiatCurrency;
   reference: string;
 }) {
-  const { settings, unlockCustomerDisplay } = useMerchant();
+  const { settings } = useMerchantConfiguration();
+  const { unlockCustomerDisplay } = useMerchantStaff();
   const { toast } = useToast();
   const [flipped, setFlipped] = useState(false);
   const [exiting, setExiting] = useState(false);

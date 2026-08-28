@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStatus,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import { orderReference } from "@/lib/merchant/charge";
 import { fmtMinor, lineGrossMinor } from "@/lib/merchant/money";
 import { findScannedCatalogueItem } from "@/lib/merchant/runtime";
@@ -534,9 +539,8 @@ export function PosTerminal({
 }: {
   onOpenShift: () => void;
 }) {
+  const { settings, tillTextSize } = useMerchantConfiguration();
   const {
-    settings,
-    tillTextSize,
     catalogue,
     modifierGroups,
     ticket,
@@ -549,12 +553,11 @@ export function PosTerminal({
     clearTicket,
     activeShift,
     paymentBlockedReason,
-    chargeBlockedReason,
     createChargeFromTicket,
-    orders,
-    charges,
     nextOrderNumber,
-  } = useMerchant();
+  } = useMerchantTill();
+  const { orders, charges } = useMerchantRecords();
+  const { chargeBlockedReason } = useMerchantStatus();
   const { toast } = useToast();
 
   const [mode, setMode] = useState<TerminalMode>("keypad");

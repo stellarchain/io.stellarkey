@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { triggerHaptic } from "@/lib/haptics";
@@ -49,18 +54,11 @@ export function MerchantSettings({
   onOpenSwap?: (intent: SettlementSwapIntent) => void;
   onOpenSend?: (intent: SettlementSweepIntent) => void;
 }) {
-  const {
-    settings,
-    setEnabled,
-    orders,
-    charges,
-    staff,
-    terminal,
-    peripherals,
-    settlementRule,
-    settlementHandoffs,
-    storageHealth,
-  } = useMerchant();
+  const { settings, peripherals, settlementRule, settlementHandoffs } =
+    useMerchantConfiguration();
+  const { orders, charges } = useMerchantRecords();
+  const { staff, terminal } = useMerchantStaff();
+  const { setEnabled, storageHealth } = useMerchantStatus();
   const { accounts } = useWalletIdentity();
   const { toast } = useToast();
   const [activeSheet, setActiveSheet] = useState<MerchantSettingsSheet | null>(null);

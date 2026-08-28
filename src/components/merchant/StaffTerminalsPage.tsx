@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStaff,
+} from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import type { FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -85,22 +89,20 @@ interface StaffEdit {
 }
 
 export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
+  const { settings, updateSettings } = useMerchantConfiguration();
   const {
-    settings,
     staff: members,
     activeStaff,
     onShiftStaff,
     terminal,
-    orders,
-    charges,
     switchStaff,
     lockStaffSession,
     endStaffSession,
-    updateSettings,
     addStaff,
     updateStaff,
     resetStaffPin,
-  } = useMerchant();
+  } = useMerchantStaff();
+  const { orders, charges } = useMerchantRecords();
   const { toast } = useToast();
   const currency = settings.currency;
   const now = useLiveNow();

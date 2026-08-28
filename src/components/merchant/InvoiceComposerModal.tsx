@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { referencePrefix } from "@/lib/merchant/charge";
@@ -89,13 +93,9 @@ export function InvoiceComposerModal({
 }
 
 function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () => void }) {
-  const {
-    catalogue,
-    createInvoiceDraft,
-    nextInvoiceNumber,
-    settings,
-    updateInvoiceDraft,
-  } = useMerchant();
+  const { catalogue } = useMerchantTill();
+  const { createInvoiceDraft, nextInvoiceNumber, updateInvoiceDraft } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
   const [draftBase] = useState(() => invoice?.issuedAt ?? Date.now());
 

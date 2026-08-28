@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantReporting,
+  useMerchantStatus,
+  useMerchantTill,
+} from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { ExportRecord } from "@/lib/merchant/types";
@@ -91,16 +96,11 @@ function retentionLabel(months: number | null | undefined): string {
 }
 
 export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
-  const {
-    settings,
-    catalogue,
-    taxPeriods,
-    exportRecords,
-    updateSettings,
-    previewReportExport,
-    createReportExport,
-    exportEncryptedArchive,
-  } = useMerchant();
+  const { settings, updateSettings } = useMerchantConfiguration();
+  const { catalogue } = useMerchantTill();
+  const { taxPeriods, exportRecords, previewReportExport, createReportExport } =
+    useMerchantReporting();
+  const { exportEncryptedArchive } = useMerchantStatus();
   const { toast } = useToast();
   const currency = settings.currency;
 

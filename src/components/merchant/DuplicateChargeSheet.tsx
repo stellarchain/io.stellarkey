@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { MatchedPayment, Minor } from "@/lib/merchant/types";
@@ -54,10 +54,10 @@ export function DuplicateChargeSheet({
     charges,
     orders,
     paymentReconciliations,
-    settings,
     submitPaymentRefund,
     dismissUnmatched,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
   const [choice, setChoice] = useState<Choice>("none");
   const [note, setNote] = useState("");

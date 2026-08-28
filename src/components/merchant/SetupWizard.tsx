@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchBalances } from "@/lib/api";
 import { POPULAR_ASSETS } from "@/lib/assets";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { useWalletIdentity, useWalletTransactions } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
@@ -246,7 +249,8 @@ function SetupWizardInner({
 }) {
   const { accounts, activeAccount, network } = useWalletIdentity();
   const { trustAsset, refresh } = useWalletTransactions();
-  const { settings, tillTextSize, completeSetup } = useMerchant();
+  const { settings, tillTextSize } = useMerchantConfiguration();
+  const { completeSetup } = useMerchantStatus();
   const { toast } = useToast();
 
   const [step, setStep] = useState(1);

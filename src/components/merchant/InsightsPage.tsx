@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantReporting,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { LIVE_MINUTE_MS, useLiveNow } from "@/hooks/useLiveNow";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
@@ -119,7 +124,10 @@ function FindingLine({ parts }: { parts: Part[] }) {
 }
 
 export function InsightsPage({ onBack }: { onBack?: () => void }) {
-  const { ready, today, orders, refunds, settings } = useMerchant();
+  const { ready } = useMerchantStatus();
+  const { settings } = useMerchantConfiguration();
+  const { orders, refunds } = useMerchantRecords();
+  const { today } = useMerchantReporting();
   const { network } = useWalletIdentity();
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const currency = settings.currency;

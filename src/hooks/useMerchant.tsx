@@ -471,6 +471,153 @@ interface MerchantContextValue {
 
 const MerchantContext = createContext<MerchantContextValue | null>(null);
 
+type MerchantStatusValue = Pick<
+  MerchantContextValue,
+  | "ready"
+  | "storageIssue"
+  | "storageError"
+  | "storageHealth"
+  | "requestPersistentStorage"
+  | "exportEncryptedArchive"
+  | "exportRecoveryData"
+  | "resetRecoveryData"
+  | "online"
+  | "enabled"
+  | "configured"
+  | "setEnabled"
+  | "completeSetup"
+  | "quotableAssets"
+  | "chargeBlockedReason"
+  | "watching"
+  | "watchedLedger"
+  | "watchError"
+  | "queuedChargeCount"
+  | "expiredChargeCount"
+  | "pollNow"
+>;
+
+type MerchantConfigurationValue = Pick<
+  MerchantContextValue,
+  | "settings"
+  | "tillTextSize"
+  | "setTillTextSize"
+  | "updateSettings"
+  | "peripherals"
+  | "settlementRule"
+  | "settlementHandoffs"
+  | "updateSettlementRule"
+>;
+
+type MerchantStaffValue = Pick<
+  MerchantContextValue,
+  | "staff"
+  | "activeStaff"
+  | "onShiftStaff"
+  | "terminal"
+  | "refundRequests"
+  | "switchStaff"
+  | "lockStaffSession"
+  | "endStaffSession"
+  | "unlockCustomerDisplay"
+  | "addStaff"
+  | "updateStaff"
+  | "resetStaffPin"
+  | "approveRefundRequest"
+  | "declineRefundRequest"
+>;
+
+type MerchantTillValue = Pick<
+  MerchantContextValue,
+  | "catalogue"
+  | "modifierGroups"
+  | "upsertItem"
+  | "removeItem"
+  | "ticket"
+  | "ticketTotals"
+  | "tipOptions"
+  | "addItemToTicket"
+  | "addCustomAmount"
+  | "setLineQuantity"
+  | "removeLine"
+  | "clearTicket"
+  | "settleCash"
+  | "settleCard"
+  | "startSplitCharge"
+  | "applyAdjustment"
+  | "voidLine"
+  | "compLine"
+  | "nextOrderNumber"
+  | "shifts"
+  | "activeShift"
+  | "shiftReport"
+  | "shiftBlockers"
+  | "paymentBlockedReason"
+  | "openShift"
+  | "closeShift"
+  | "createChargeFromTicket"
+>;
+
+type MerchantRecordsValue = Pick<
+  MerchantContextValue,
+  | "orders"
+  | "charges"
+  | "refunds"
+  | "unmatched"
+  | "paymentReconciliations"
+  | "adjustments"
+  | "invoices"
+  | "nextInvoiceNumber"
+  | "invoiceBlockedReason"
+  | "createInvoiceDraft"
+  | "updateInvoiceDraft"
+  | "issueInvoice"
+  | "recordManualInvoicePayment"
+  | "voidInvoice"
+  | "duplicateInvoice"
+  | "invoicePayUriFor"
+  | "counterCodes"
+  | "counterPayments"
+  | "counterCodeBlockedReason"
+  | "createCounterCode"
+  | "updateCounterCode"
+  | "setCounterCodeActive"
+  | "counterCodePayUriFor"
+  | "counterCodePreviewUri"
+  | "customers"
+  | "customerHistory"
+  | "updateCustomerNote"
+  | "startLoyaltyCard"
+  | "redeemLoyaltyReward"
+  | "forgetCustomer"
+  | "activeCharge"
+  | "openCharge"
+  | "voidCharge"
+  | "closeCharge"
+  | "payUriFor"
+  | "attachPayment"
+  | "dismissUnmatched"
+  | "refundOrder"
+  | "submitRefund"
+  | "submitPaymentRefund"
+  | "orderFor"
+>;
+
+type MerchantReportingValue = Pick<
+  MerchantContextValue,
+  | "today"
+  | "taxPeriods"
+  | "exportRecords"
+  | "previewReportExport"
+  | "createReportExport"
+>;
+
+const MerchantStatusContext = createContext<MerchantStatusValue | null>(null);
+const MerchantConfigurationContext = createContext<MerchantConfigurationValue | null>(null);
+const MerchantStaffContext = createContext<MerchantStaffValue | null>(null);
+const MerchantTillContext = createContext<MerchantTillValue | null>(null);
+const MerchantRecordsContext = createContext<MerchantRecordsValue | null>(null);
+const MerchantReportingContext = createContext<MerchantReportingValue | null>(null);
+
 /** How often the till asks Horizon while a charge is open, and while it is not. */
 const POLL_ACTIVE_MS = 4_000;
 const POLL_IDLE_MS = 30_000;
@@ -2828,6 +2975,76 @@ export function MerchantProvider({
     [foreground, network, online, phase, reportingNow, store.charges, watchError],
   );
 
+  const setTillTextSize = useCallback(
+    (size: MerchantStore["tillTextSize"]) => persist((prev) => ({ ...prev, tillTextSize: size })),
+    [persist],
+  );
+  const updateSettings = useCallback(
+    (patch: Partial<MerchantSettings>) =>
+      persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
+    [persist],
+  );
+  const upsertItem = useCallback(
+    (item: CatalogueItem) =>
+      commitStore((prev) => ({
+        ...prev,
+        catalogue: prev.catalogue.some((candidate) => candidate.id === item.id)
+          ? prev.catalogue.map((candidate) => (candidate.id === item.id ? item : candidate))
+          : [...prev.catalogue, item],
+      })),
+    [commitStore],
+  );
+  const removeItemFromCatalogue = useCallback(
+    (id: string) =>
+      commitStore((prev) => ({
+        ...prev,
+        catalogue: prev.catalogue.filter((item) => item.id !== id),
+      })),
+    [commitStore],
+  );
+  const invoicePayUriFor = useCallback(
+    (invoice: Invoice, asset: AcceptedAsset) => {
+      try {
+        return invoicePayUri(invoice, asset, settings.profile.name);
+      } catch {
+        return null;
+      }
+    },
+    [settings.profile.name],
+  );
+  const counterCodePayUriFor = useCallback((code: CounterCode, asset: AcceptedAsset) => {
+    try {
+      return counterCodePayUri(code, asset);
+    } catch {
+      return null;
+    }
+  }, []);
+  const closeCharge = useCallback(() => setActiveChargeId(null), []);
+  const payUriFor = useCallback(
+    (charge: Charge, asset: AcceptedAsset) => {
+      const quote = quoteFor(charge, asset);
+      return quote ? chargePayUri(charge, quote, settings.profile.name) : null;
+    },
+    [settings.profile.name],
+  );
+  const orderFor = useCallback(
+    (chargeId: string) => {
+      const charge = recordIndex.chargesById.get(chargeId);
+      return charge ? (recordIndex.ordersById.get(charge.orderId) ?? null) : null;
+    },
+    [recordIndex.chargesById, recordIndex.ordersById],
+  );
+  const peripherals = useMemo<Peripheral[]>(() => [...BROWSER_PERIPHERALS], []);
+  const terminal = useMemo<TerminalDevice>(
+    () => ({
+      ...store.terminal,
+      name: settings.terminalName,
+      queuedCharges: runtime.queuedChargeCount,
+    }),
+    [runtime.queuedChargeCount, settings.terminalName, store.terminal],
+  );
+  const watching = foreground && online && enabled && Boolean(settings.receivingPublicKey);
+
   const value = useMemo<MerchantContextValue>(() => ({
     ready,
     storageIssue,
@@ -2843,19 +3060,14 @@ export function MerchantProvider({
     setEnabled,
     settings,
     tillTextSize: store.tillTextSize,
-    setTillTextSize: (size) => persist((prev) => ({ ...prev, tillTextSize: size })),
-    updateSettings: (patch) =>
-      persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
+    setTillTextSize,
+    updateSettings,
     completeSetup,
 
     staff: store.staff,
     activeStaff,
     onShiftStaff,
-    terminal: {
-      ...store.terminal,
-      name: settings.terminalName,
-      queuedCharges: runtime.queuedChargeCount,
-    },
+    terminal,
     refundRequests: store.refundRequests,
     switchStaff,
     lockStaffSession,
@@ -2867,15 +3079,8 @@ export function MerchantProvider({
 
     catalogue: store.catalogue,
     modifierGroups: store.modifierGroups,
-    upsertItem: (item) =>
-      commitStore((prev) => ({
-        ...prev,
-        catalogue: prev.catalogue.some((i) => i.id === item.id)
-          ? prev.catalogue.map((i) => (i.id === item.id ? item : i))
-          : [...prev.catalogue, item],
-      })),
-    removeItem: (id) =>
-      commitStore((prev) => ({ ...prev, catalogue: prev.catalogue.filter((i) => i.id !== id) })),
+    upsertItem,
+    removeItem: removeItemFromCatalogue,
 
     ticket,
     ticketTotals,
@@ -2899,7 +3104,7 @@ export function MerchantProvider({
     unmatched: store.unmatched,
     paymentReconciliations: store.paymentReconciliations,
     adjustments: store.adjustments,
-    peripherals: [...BROWSER_PERIPHERALS],
+    peripherals,
     nextOrderNumber: store.nextOrderNumber,
 
     invoices: store.invoices,
@@ -2911,13 +3116,7 @@ export function MerchantProvider({
     recordManualInvoicePayment,
     voidInvoice,
     duplicateInvoice,
-    invoicePayUriFor: (invoice, asset) => {
-      try {
-        return invoicePayUri(invoice, asset, settings.profile.name);
-      } catch {
-        return null;
-      }
-    },
+    invoicePayUriFor,
 
     counterCodes: store.counterCodes,
     counterPayments: store.counterPayments,
@@ -2925,13 +3124,7 @@ export function MerchantProvider({
     createCounterCode,
     updateCounterCode,
     setCounterCodeActive,
-    counterCodePayUriFor: (code, asset) => {
-      try {
-        return counterCodePayUri(code, asset);
-      } catch {
-        return null;
-      }
-    },
+    counterCodePayUriFor,
     counterCodePreviewUri,
 
     customers: store.customers,
@@ -2965,11 +3158,8 @@ export function MerchantProvider({
     openCharge: setActiveChargeId,
     createChargeFromTicket,
     voidCharge,
-    closeCharge: () => setActiveChargeId(null),
-    payUriFor: (charge, asset) => {
-      const quote = quoteFor(charge, asset);
-      return quote ? chargePayUri(charge, quote, settings.profile.name) : null;
-    },
+    closeCharge,
+    payUriFor,
     attachPayment,
     dismissUnmatched,
     refundOrder,
@@ -2978,7 +3168,7 @@ export function MerchantProvider({
     approveRefundRequest,
     declineRefundRequest,
 
-    watching: foreground && online && enabled && Boolean(settings.receivingPublicKey),
+    watching,
     watchedLedger,
     watchError,
     queuedChargeCount: runtime.queuedChargeCount,
@@ -2986,10 +3176,7 @@ export function MerchantProvider({
     pollNow,
 
     today,
-    orderFor: (chargeId) => {
-      const charge = recordIndex.chargesById.get(chargeId);
-      return charge ? (recordIndex.ordersById.get(charge.orderId) ?? null) : null;
-    },
+    orderFor,
   }), [
     activeCharge,
     activeShift,
@@ -3002,12 +3189,13 @@ export function MerchantProvider({
     attachPayment,
     chargeBlockedReason,
     clearTicket,
+    closeCharge,
     closeShift,
-    commitStore,
     compLine,
     completeSetup,
     configured,
     counterCodeBlockedReason,
+    counterCodePayUriFor,
     counterCodePreviewUri,
     createChargeFromTicket,
     createCounterCode,
@@ -3021,31 +3209,34 @@ export function MerchantProvider({
     endStaffSession,
     exportEncryptedArchive,
     exportRecoveryData,
-    foreground,
     forgetCustomer,
     invoiceBlockedReason,
+    invoicePayUriFor,
     issueInvoice,
     lockStaffSession,
     online,
     onShiftStaff,
     openShift,
+    orderFor,
+    payUriFor,
     paymentBlockedReason,
-    persist,
+    peripherals,
     pollNow,
     previewReportExport,
     quotableAssets,
     ready,
-    recordIndex,
     recordManualInvoicePayment,
     redeemLoyaltyReward,
     refundOrder,
     removeLine,
+    removeItemFromCatalogue,
     resetRecoveryData,
     requestPersistentStorage,
     resetStaffPin,
     runtime,
     setCounterCodeActive,
     setEnabled,
+    setTillTextSize,
     setLineQuantity,
     settings,
     settleCard,
@@ -3063,6 +3254,7 @@ export function MerchantProvider({
     submitRefund,
     switchStaff,
     taxPeriods,
+    terminal,
     ticket,
     ticketTotals,
     tipOptions,
@@ -3072,13 +3264,283 @@ export function MerchantProvider({
     updateCustomerNote,
     updateInvoiceDraft,
     updateSettlementRule,
+    updateSettings,
     updateStaff,
+    upsertItem,
     voidCharge,
     voidInvoice,
     voidLine,
     watchError,
     watchedLedger,
+    watching,
   ]);
+
+  const statusValue = useMemo<MerchantStatusValue>(
+    () => ({
+      ready,
+      storageIssue,
+      storageError,
+      storageHealth,
+      requestPersistentStorage,
+      exportEncryptedArchive,
+      exportRecoveryData,
+      resetRecoveryData,
+      online,
+      enabled,
+      configured,
+      setEnabled,
+      completeSetup,
+      quotableAssets,
+      chargeBlockedReason,
+      watching,
+      watchedLedger,
+      watchError,
+      queuedChargeCount: runtime.queuedChargeCount,
+      expiredChargeCount: runtime.expiredChargeCount,
+      pollNow,
+    }),
+    [
+      chargeBlockedReason,
+      completeSetup,
+      configured,
+      enabled,
+      exportEncryptedArchive,
+      exportRecoveryData,
+      online,
+      pollNow,
+      quotableAssets,
+      ready,
+      requestPersistentStorage,
+      resetRecoveryData,
+      runtime.expiredChargeCount,
+      runtime.queuedChargeCount,
+      setEnabled,
+      storageError,
+      storageHealth,
+      storageIssue,
+      watchedLedger,
+      watchError,
+      watching,
+    ],
+  );
+
+  const configurationValue = useMemo<MerchantConfigurationValue>(
+    () => ({
+      settings,
+      tillTextSize: store.tillTextSize,
+      setTillTextSize,
+      updateSettings,
+      peripherals,
+      settlementRule: store.settlementRule,
+      settlementHandoffs,
+      updateSettlementRule,
+    }),
+    [
+      peripherals,
+      setTillTextSize,
+      settings,
+      settlementHandoffs,
+      store.settlementRule,
+      store.tillTextSize,
+      updateSettings,
+      updateSettlementRule,
+    ],
+  );
+
+  const staffValue = useMemo<MerchantStaffValue>(
+    () => ({
+      staff: store.staff,
+      activeStaff,
+      onShiftStaff,
+      terminal,
+      refundRequests: store.refundRequests,
+      switchStaff,
+      lockStaffSession,
+      endStaffSession,
+      unlockCustomerDisplay,
+      addStaff,
+      updateStaff,
+      resetStaffPin,
+      approveRefundRequest,
+      declineRefundRequest,
+    }),
+    [
+      activeStaff,
+      addStaff,
+      approveRefundRequest,
+      declineRefundRequest,
+      endStaffSession,
+      lockStaffSession,
+      onShiftStaff,
+      resetStaffPin,
+      store.refundRequests,
+      store.staff,
+      switchStaff,
+      terminal,
+      unlockCustomerDisplay,
+      updateStaff,
+    ],
+  );
+
+  const tillValue = useMemo<MerchantTillValue>(
+    () => ({
+      catalogue: store.catalogue,
+      modifierGroups: store.modifierGroups,
+      upsertItem,
+      removeItem: removeItemFromCatalogue,
+      ticket,
+      ticketTotals,
+      tipOptions,
+      addItemToTicket,
+      addCustomAmount,
+      setLineQuantity,
+      removeLine,
+      clearTicket,
+      settleCash,
+      settleCard,
+      startSplitCharge,
+      applyAdjustment,
+      voidLine,
+      compLine,
+      nextOrderNumber: store.nextOrderNumber,
+      shifts: store.shifts,
+      activeShift,
+      shiftReport,
+      shiftBlockers,
+      paymentBlockedReason,
+      openShift,
+      closeShift,
+      createChargeFromTicket,
+    }),
+    [
+      activeShift,
+      addCustomAmount,
+      addItemToTicket,
+      applyAdjustment,
+      clearTicket,
+      closeShift,
+      compLine,
+      createChargeFromTicket,
+      openShift,
+      paymentBlockedReason,
+      removeItemFromCatalogue,
+      removeLine,
+      setLineQuantity,
+      settleCard,
+      settleCash,
+      shiftBlockers,
+      shiftReport,
+      startSplitCharge,
+      store.catalogue,
+      store.modifierGroups,
+      store.nextOrderNumber,
+      store.shifts,
+      ticket,
+      ticketTotals,
+      tipOptions,
+      upsertItem,
+      voidLine,
+    ],
+  );
+
+  const recordsValue = useMemo<MerchantRecordsValue>(
+    () => ({
+      orders: store.orders,
+      charges: store.charges,
+      refunds: store.refunds,
+      unmatched: store.unmatched,
+      paymentReconciliations: store.paymentReconciliations,
+      adjustments: store.adjustments,
+      invoices: store.invoices,
+      nextInvoiceNumber: store.nextInvoiceNumber,
+      invoiceBlockedReason,
+      createInvoiceDraft,
+      updateInvoiceDraft,
+      issueInvoice,
+      recordManualInvoicePayment,
+      voidInvoice,
+      duplicateInvoice,
+      invoicePayUriFor,
+      counterCodes: store.counterCodes,
+      counterPayments: store.counterPayments,
+      counterCodeBlockedReason,
+      createCounterCode,
+      updateCounterCode,
+      setCounterCodeActive,
+      counterCodePayUriFor,
+      counterCodePreviewUri,
+      customers: store.customers,
+      customerHistory,
+      updateCustomerNote,
+      startLoyaltyCard,
+      redeemLoyaltyReward,
+      forgetCustomer,
+      activeCharge,
+      openCharge: setActiveChargeId,
+      voidCharge,
+      closeCharge,
+      payUriFor,
+      attachPayment,
+      dismissUnmatched,
+      refundOrder,
+      submitRefund,
+      submitPaymentRefund,
+      orderFor,
+    }),
+    [
+      activeCharge,
+      attachPayment,
+      closeCharge,
+      counterCodeBlockedReason,
+      counterCodePayUriFor,
+      counterCodePreviewUri,
+      createCounterCode,
+      createInvoiceDraft,
+      customerHistory,
+      dismissUnmatched,
+      duplicateInvoice,
+      forgetCustomer,
+      invoiceBlockedReason,
+      invoicePayUriFor,
+      issueInvoice,
+      orderFor,
+      payUriFor,
+      recordManualInvoicePayment,
+      redeemLoyaltyReward,
+      refundOrder,
+      setCounterCodeActive,
+      startLoyaltyCard,
+      store.adjustments,
+      store.charges,
+      store.counterCodes,
+      store.counterPayments,
+      store.customers,
+      store.invoices,
+      store.nextInvoiceNumber,
+      store.orders,
+      store.paymentReconciliations,
+      store.refunds,
+      store.unmatched,
+      submitPaymentRefund,
+      submitRefund,
+      updateCounterCode,
+      updateCustomerNote,
+      updateInvoiceDraft,
+      voidCharge,
+      voidInvoice,
+    ],
+  );
+
+  const reportingValue = useMemo<MerchantReportingValue>(
+    () => ({
+      today,
+      taxPeriods,
+      exportRecords: store.exportRecords,
+      previewReportExport,
+      createReportExport,
+    }),
+    [createReportExport, previewReportExport, store.exportRecords, taxPeriods, today],
+  );
 
   const shellValue = useMemo<MerchantShellContextValue>(
     () => ({
@@ -3096,7 +3558,19 @@ export function MerchantProvider({
 
   return (
     <MerchantRuntimeDataProviders shell={shellValue} settings={settingsValue}>
-      <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>
+      <MerchantStatusContext.Provider value={statusValue}>
+        <MerchantConfigurationContext.Provider value={configurationValue}>
+          <MerchantStaffContext.Provider value={staffValue}>
+            <MerchantTillContext.Provider value={tillValue}>
+              <MerchantRecordsContext.Provider value={recordsValue}>
+                <MerchantReportingContext.Provider value={reportingValue}>
+                  <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>
+                </MerchantReportingContext.Provider>
+              </MerchantRecordsContext.Provider>
+            </MerchantTillContext.Provider>
+          </MerchantStaffContext.Provider>
+        </MerchantConfigurationContext.Provider>
+      </MerchantStatusContext.Provider>
     </MerchantRuntimeDataProviders>
   );
 }
@@ -3104,6 +3578,42 @@ export function MerchantProvider({
 export function useMerchant(): MerchantContextValue {
   const context = useContext(MerchantContext);
   if (!context) throw new Error("useMerchant must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantStatus(): MerchantStatusValue {
+  const context = useContext(MerchantStatusContext);
+  if (!context) throw new Error("useMerchantStatus must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantConfiguration(): MerchantConfigurationValue {
+  const context = useContext(MerchantConfigurationContext);
+  if (!context) throw new Error("useMerchantConfiguration must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantStaff(): MerchantStaffValue {
+  const context = useContext(MerchantStaffContext);
+  if (!context) throw new Error("useMerchantStaff must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantTill(): MerchantTillValue {
+  const context = useContext(MerchantTillContext);
+  if (!context) throw new Error("useMerchantTill must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantRecords(): MerchantRecordsValue {
+  const context = useContext(MerchantRecordsContext);
+  if (!context) throw new Error("useMerchantRecords must be used inside MerchantProvider");
+  return context;
+}
+
+export function useMerchantReporting(): MerchantReportingValue {
+  const context = useContext(MerchantReportingContext);
+  if (!context) throw new Error("useMerchantReporting must be used inside MerchantProvider");
   return context;
 }
 

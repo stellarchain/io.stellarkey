@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { invoiceStatusAt } from "@/lib/merchant/invoices";
@@ -73,7 +77,9 @@ function sortKey(invoice: Invoice): number {
 }
 
 export function InvoicesPage() {
-  const { invoices, pollNow, settings, watchError, watching } = useMerchant();
+  const { invoices } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
+  const { pollNow, watchError, watching } = useMerchantStatus();
 
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");

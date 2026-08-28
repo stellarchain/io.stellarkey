@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantStatus } from "@/hooks/useMerchant";
 import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { fmtAmount, FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
@@ -91,9 +91,8 @@ export function MerchantSettingsSheetContent({
     settlementRule,
     settlementHandoffs,
     updateSettlementRule,
-    storageHealth,
-    requestPersistentStorage,
-  } = useMerchant();
+  } = useMerchantConfiguration();
+  const { storageHealth, requestPersistentStorage } = useMerchantStatus();
   const { accounts } = useWalletIdentity();
   const { balances } = useWalletLedger();
   const { toast } = useToast();

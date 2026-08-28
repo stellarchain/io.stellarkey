@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
@@ -257,7 +257,8 @@ export function CounterPosterModal({
 }
 
 function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => void }) {
-  const { counterCodePayUriFor, settings } = useMerchant();
+  const { counterCodePayUriFor } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
 
   const [chosenKey, setChosenKey] = useState(() =>
     code.acceptedAssets.length > 0 ? assetKey(code.acceptedAssets[0]) : "",

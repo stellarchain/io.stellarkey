@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import { findScannedCatalogueItem } from "@/lib/merchant/runtime";
@@ -118,7 +118,8 @@ const TEXT_SIZE_LINE: Record<TillTextSize, string> = {
 /* ------------------------------------------------------------------ */
 
 export function PeripheralsPage({ onBack }: { onBack: () => void }) {
-  const { settings, catalogue, peripherals, tillTextSize, setTillTextSize } = useMerchant();
+  const { settings, peripherals, tillTextSize, setTillTextSize } = useMerchantConfiguration();
+  const { catalogue } = useMerchantTill();
   const { toast } = useToast();
 
   const [openRow, setOpenRow] = useState<string | null>(null);

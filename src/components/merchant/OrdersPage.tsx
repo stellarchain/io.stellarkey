@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMerchant } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantReporting,
+  useMerchantStatus,
+} from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { quoteFor } from "@/lib/merchant/charge";
@@ -147,17 +152,17 @@ function paymentTime(payment: UnmatchedPayment): number {
 }
 
 export function OrdersPage() {
+  const { ready } = useMerchantStatus();
   const {
-    ready,
     orders,
     charges,
     unmatched,
-    settings,
-    today,
     attachPayment,
     dismissUnmatched,
     openCharge,
-  } = useMerchant();
+  } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
+  const { today } = useMerchantReporting();
   const { toast } = useToast();
 
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -506,7 +511,7 @@ function UnmatchedTray({
   onDismiss: (paymentId: string) => void;
   onReviewDuplicate: (paymentId: string) => void;
 }) {
-  const { invoices, orderFor, paymentReconciliations } = useMerchant();
+  const { invoices, orderFor, paymentReconciliations } = useMerchantRecords();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [confirmingDismiss, setConfirmingDismiss] = useState<string | null>(null);
 
