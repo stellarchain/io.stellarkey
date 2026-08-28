@@ -22,6 +22,9 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   const security = read("src/app/security/page.tsx");
 
   assert.match(about, /backend-free/i);
+  assert.match(about, /APPLICATION_VERSION/);
+  assert.match(about, /BUILD_COMMIT/);
+  assert.match(about, /GitHub/i);
   assert.match(about, /not affiliated with, sponsored or endorsed/i);
   assert.match(privacy, /no analytics/i);
   assert.match(privacy, /localStorage|IndexedDB/);
@@ -34,6 +37,9 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   assert.match(terms, /asset issuer/i);
   assert.match(terms, /merchant records/i);
   assert.match(security, /responsible disclosure/i);
+  assert.match(security, /APPLICATION_VERSION/);
+  assert.match(security, /supported release/i);
+  assert.match(read("src/components/LegalPage.tsx"), /Legal text version 1\.0/);
   assert.match(security, /never include/i);
   assert.match(security, /recovery phrase|secret key/i);
   assert.match(security, /ContactAction/);
@@ -64,6 +70,7 @@ test("public and locked surfaces share accessible legal navigation", () => {
     assert.match(source, /PublicFooter/);
   }
   assert.match(read("src/app/error.tsx"), /PublicFooter/);
+  assert.match(read("src/app/error.tsx"), /<main[^>]*id="app-content"/);
   assert.match(read("src/app/layout.tsx"), /href="#app-content"/);
   assert.match(read("src/app/page.tsx"), /id="app-content"/);
   assert.match(settings, /\| "about"/);

@@ -116,3 +116,57 @@ test("the static server reloads generated security headers after a hot build", a
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("the static server serves canonical documents, social PNGs, and the branded 404", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "stellarkey-static-routes-"));
+  const scriptDirectory = path.join(root, "scripts");
+  const outputDirectory = path.join(root, "out");
+  const serverPath = path.join(scriptDirectory, "static-server.mjs");
+  let child;
+
+  try {
+    await mkdir(scriptDirectory, { recursive: true });
+    await mkdir(outputDirectory, { recursive: true });
+    await copyFile(new URL("../scripts/static-server.mjs", import.meta.url), serverPath);
+    await writeFile(path.join(outputDirectory, "index.html"), "<!doctype html><title>StellarKey</title>");
+    await writeFile(path.join(outputDirectory, "about.html"), "<!doctype html><title>About StellarKey</title>");
+    await writeFile(path.join(outputDirectory, "404.html"), "<!doctype html><title>Page not found — StellarKey</title>");
+    await writeFile(path.join(outputDirectory, "opengraph-image"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeFile(path.join(outputDirectory, "twitter-image"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeFile(path.join(outputDirectory, "_headers"), "/*\n  X-Content-Type-Options: nosniff\n");
+
+    const port = await availablePort();
+    child = spawn(process.execPath, [serverPath, "--hostname", "127.0.0.1", "--port", String(port)], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    await waitForReady(child);
+    const origin = `http://127.0.0.1:${port}`;
+
+    const about = await fetch(`${origin}/about`);
+    assert.equal(about.status, 200);
+    assert.match(about.headers.get("content-type") ?? "", /^text\/html/);
+    assert.match(await about.text(), /About StellarKey/);
+
+    const legacySlash = await fetch(`${origin}/about/`, { redirect: "manual" });
+    assert.equal(legacySlash.status, 308);
+    assert.equal(legacySlash.headers.get("location"), "/about");
+
+    for (const imagePath of ["/opengraph-image", "/twitter-image"]) {
+      const image = await fetch(`${origin}${imagePath}`);
+      assert.equal(image.status, 200);
+      assert.equal(image.headers.get("content-type"), "image/png");
+      assert.deepEqual([...new Uint8Array(await image.arrayBuffer())], [0x89, 0x50, 0x4e, 0x47]);
+    }
+
+    const missing = await fetch(`${origin}/not-a-real-route`);
+    assert.equal(missing.status, 404);
+    assert.match(missing.headers.get("content-type") ?? "", /^text\/html/);
+    assert.match(await missing.text(), /Page not found — StellarKey/);
+  } finally {
+    if (child?.exitCode === null) {
+      child.kill("SIGTERM");
+      await once(child, "exit");
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});

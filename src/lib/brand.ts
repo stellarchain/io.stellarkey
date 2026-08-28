@@ -1,5 +1,8 @@
 export const BRAND_NAME = "StellarKey";
 export const BRAND_ORIGIN = "https://stellarkey.io";
+export const APPLICATION_VERSION = "1.0.0";
+export const BUILD_COMMIT = process.env.NEXT_PUBLIC_BUILD_COMMIT ?? "development";
+export const BUILD_IS_DIRTY = process.env.NEXT_PUBLIC_BUILD_DIRTY === "true";
 export const BRAND_DESCRIPTION =
   "A self-custodial Stellar wallet. Keys are generated and encrypted in your browser and never leave your device.";
 export const COPYRIGHT_OWNER = BRAND_NAME;
@@ -13,10 +16,10 @@ export const PUBLIC_OPEN_GRAPH_IMAGE = Object.freeze({
 
 export const PUBLIC_ROUTES = Object.freeze({
   home: "/",
-  about: "/about/",
-  privacy: "/privacy/",
-  terms: "/terms/",
-  security: "/security/",
+  about: "/about",
+  privacy: "/privacy",
+  terms: "/terms",
+  security: "/security",
 } as const);
 
 const CONTACT_CODEPOINTS = Object.freeze({

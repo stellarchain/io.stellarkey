@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import nextConfig from "../next.config.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
@@ -23,6 +24,9 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   const brand = await import("../src/lib/brand.ts");
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
+  assert.equal(brand.APPLICATION_VERSION, "1.0.0");
+  assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
+  assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
   assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
   assert.equal(brand.COPYRIGHT_YEAR, 2026);
   assert.match(brand.BRAND_DESCRIPTION, /self-custodial Stellar wallet/i);
@@ -54,9 +58,13 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(onboarding, /\{BRAND_NAME\} · Self-custodial Stellar wallet/);
   assert.match(lock, />\{BRAND_NAME\}<\/h1>/);
   assert.match(error, /Reload \{BRAND_NAME\}/);
+  assert.match(error, /<main[^>]*id="app-content"/);
   assert.equal(packageJson.name, "stellarkey");
+  assert.equal(packageJson.version, "1.0.0");
   assert.equal(packageLock.name, "stellarkey");
   assert.equal(packageLock.packages[""].name, "stellarkey");
+  assert.equal(packageLock.packages[""].version, "1.0.0");
+  assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
 });
 

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const expectedRoutes = ["/", "/about/", "/privacy/", "/terms/", "/security/"];
+const expectedRoutes = ["/", "/about", "/privacy", "/terms", "/security"];
 
 test("robots and sitemap publish the canonical StellarKey routes", () => {
   for (const file of ["src/app/robots.ts", "src/app/sitemap.ts"]) {
@@ -29,12 +29,24 @@ test("security.txt uses an RFC 9116 HTTPS policy contact without exposing a mail
   const path = "public/.well-known/security.txt";
   assert.equal(existsSync(new URL(`../${path}`, import.meta.url)), true, "security.txt is missing");
   const source = read(path);
-  assert.match(source, /^Contact: https:\/\/stellarkey\.io\/security\/$/m);
+  assert.match(source, /^Contact: https:\/\/stellarkey\.io\/security$/m);
   assert.match(source, /^Canonical: https:\/\/stellarkey\.io\/\.well-known\/security\.txt$/m);
-  assert.match(source, /^Policy: https:\/\/stellarkey\.io\/security\/$/m);
+  assert.match(source, /^Policy: https:\/\/stellarkey\.io\/security$/m);
   assert.match(source, /^Preferred-Languages: en$/m);
   assert.match(source, /^Expires: 2027-08-28T23:59:59Z$/m);
   assert.doesNotMatch(source, /mailto:|@stellarkey\.io/i);
+});
+
+test("the static release publishes a commit-verifiable release manifest", () => {
+  const route = "src/app/release.json/route.ts";
+  assert.equal(existsSync(new URL(`../${route}`, import.meta.url)), true, "release manifest route is missing");
+  const source = read(route);
+  assert.match(source, /export const dynamic = "force-static"/);
+  assert.match(source, /Response\.json/);
+  assert.match(source, /APPLICATION_VERSION/);
+  assert.match(source, /BUILD_COMMIT/);
+  assert.match(read("src/app/about/page.tsx"), /BUILD_COMMIT/);
+  assert.match(read("public/_headers"), /\/release\.json[\s\S]*Cache-Control: no-cache/);
 });
 
 test("sharing metadata and structured data describe one independent finance app", () => {

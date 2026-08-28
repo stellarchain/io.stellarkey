@@ -141,4 +141,3 @@
 3. Request a code review focused on legal-copy accuracy against actual behavior, static-export compatibility, contact obfuscation, CSP completeness, cache safety, storage-key compatibility, and mobile accessibility. Address valid findings with tests first and commit separately.
 4. Use the finishing-a-development-branch workflow. With the user’s standing instruction to merge approved features to `main`, fast-forward after verification, preserve unrelated untracked files, rebuild the main checkout, and verify the merged SHA.
 5. Restart only the exact static process behind the existing HTTPS LAN proxy and smoke-test `https://192.168.0.180:3000` in a fresh 320px WebKit context.
-

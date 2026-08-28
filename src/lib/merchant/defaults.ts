@@ -5,6 +5,7 @@ import type {
   ModifierGroup,
   TaxRate,
 } from "./types";
+import { APPLICATION_VERSION } from "../brand";
 
 /** Portugal's rates, because the shop has to start somewhere. All editable. */
 export const DEFAULT_TAX_RATES: TaxRate[] = [
@@ -162,7 +163,7 @@ export function emptyStore(): MerchantStore {
     exportRecords: [],
     terminal: {
       name: settings.terminalName,
-      appVersion: "0.1.0",
+      appVersion: APPLICATION_VERSION,
       queuedCharges: 0,
     },
     tillTextSize: "standard",

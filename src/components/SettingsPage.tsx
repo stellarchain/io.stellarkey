@@ -46,8 +46,11 @@ import {
 } from "@/lib/backup-health";
 import type { AccountMeta } from "@/lib/types";
 import {
+  APPLICATION_VERSION,
   BRAND_NAME,
   BRAND_ORIGIN,
+  BUILD_COMMIT,
+  BUILD_IS_DIRTY,
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
   PUBLIC_ROUTES,
@@ -1008,7 +1011,12 @@ export function SettingsPage({
               application account, custody service, analytics, or telemetry backend.
             </p>
             <div className="mt-4 rounded-xl bg-white/[0.05] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-400">
-              <p>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.</p>
+              <p>Release {APPLICATION_VERSION}</p>
+              <p className="mt-1 break-all font-mono">Build {BUILD_COMMIT}</p>
+              {BUILD_IS_DIRTY && (
+                <p className="mt-1 text-[#FF9F0A]">Modified source tree · commit verification unavailable</p>
+              )}
+              <p className="mt-1">© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.</p>
               <p className="mt-1">Canonical release origin: {BRAND_ORIGIN}</p>
             </div>
           </section>
