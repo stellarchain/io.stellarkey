@@ -53,7 +53,7 @@
   justify-content: stretch;
 }
 
-.mk .legal .fine { color: var(--fg-ghost); opacity: .78; max-width: 68ch; }
+.mk .legal .fine { color: var(--fg-faint); max-width: 68ch; }
 
 @media (min-width: 900px) {
   .mk .legal { grid-template-columns: auto 1fr; align-items: baseline; column-gap: 2.5rem; }
