@@ -1187,10 +1187,8 @@ export function Dashboard() {
             </button>
           ) : (
             <>
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                  <LogoMark size={30} className="text-white" />
-                </div>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <LogoMark size={30} className="text-white" />
                 <div className="min-w-0">
                   <h1 className="truncate text-[15.5px] font-bold tracking-tight text-white leading-tight">
                     {BRAND_NAME}
