@@ -10,6 +10,8 @@ const LOGO_CACHE_KEY = "wallet.asset-logos.v1";
 const ISSUER_CACHE_KEY = "wallet.issuer-details.v1";
 const ASSET_METADATA_TTL_MS = 24 * 60 * 60 * 1000;
 export const ASSET_METADATA_NEGATIVE_TTL_MS = 60 * 60 * 1000;
+/** SEP-1's maximum allowed stellar.toml file size. */
+export const MAX_STELLAR_TOML_BYTES = 100 * 1024;
 
 export interface IssuerDetails {
   domain: string;
@@ -113,12 +115,73 @@ export function getCachedAssetLogo(
   return cached.hit ? cached.value : null;
 }
 
-/** Extract home_domain for an issuer account */
+/**
+ * Canonicalize an issuer-controlled Horizon home_domain.
+ *
+ * SEP-1 expects a DNS domain, not a URL. Keeping this parser deliberately
+ * narrower than URL parsing prevents userinfo and fragment strings such as
+ * `stellar.org@evil.com` and `evil.com#` from changing the actual fetch host.
+ */
+export function normalizeIssuerHomeDomain(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 253) return null;
+  if (value !== value.trim() || /\s/.test(value)) return null;
+
+  const hostname = value.toLowerCase();
+  const labels = hostname.split(".");
+  if (labels.length < 2 || labels.some((label) => (
+    label.length === 0 ||
+    label.length > 63 ||
+    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)
+  ))) return null;
+
+  // WHATWG URL parsing accepts legacy numeric IPv4 forms (for example
+  // `127.1` or `0x7f.1`) and silently rewrites them to an address literal.
+  if (new URL(`https://${hostname}/`).hostname !== hostname) return null;
+  // A stellar.toml origin must be a hostname, not an IPv4 address literal.
+  if (labels.length === 4 && labels.every((label) => /^\d+$/.test(label))) return null;
+  return hostname;
+}
+
+/** Extract a validated home_domain for an issuer account. */
 async function fetchIssuerDomain(issuer: string, horizonUrl: string): Promise<string | null> {
   const data = await getJson<{ home_domain?: string }>(
     `${horizonUrl}/accounts/${issuer}`,
   );
-  return data?.home_domain ?? null;
+  return normalizeIssuerHomeDomain(data?.home_domain);
+}
+
+async function readBoundedToml(response: Response): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_STELLAR_TOML_BYTES) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error("stellar.toml exceeds the SEP-1 100 KiB limit.");
+    }
+  }
+
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const parts: string[] = [];
+  let receivedBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > MAX_STELLAR_TOML_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("stellar.toml exceeds the SEP-1 100 KiB limit.");
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+    return parts.join("");
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 interface MetadataResolution {
@@ -273,7 +336,7 @@ async function resolveAssetMetadata(
         cacheMetadataValue(LOGO_CACHE_KEY, key, null);
         return { details, stable: true };
       }
-      const toml = await res.text();
+      const toml = await readBoundedToml(res);
       const currency = extractCurrencyInfo(toml, code, issuer);
       const org = extractOrgInfo(toml);
 

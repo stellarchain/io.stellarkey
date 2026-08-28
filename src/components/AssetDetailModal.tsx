@@ -17,6 +17,7 @@ import {
   assetMetadataCacheKey,
   fetchIssuerDetails,
   getCachedAssetLogo,
+  normalizeIssuerHomeDomain,
   selectCurrentAssetMetadata,
   type BoundAssetMetadata,
 } from "@/lib/toml";
@@ -156,6 +157,14 @@ export function AssetDetailModal({
   if (!asset) return null;
 
   const known = lookupKnownAsset(asset.code, asset.issuer, network);
+  const knownIssuerDomain = normalizeIssuerHomeDomain(known?.anchorDomain);
+  const declaredIssuerDomain = normalizeIssuerHomeDomain(issuerInfo?.domain);
+  const issuerDomain = knownIssuerDomain ?? declaredIssuerDomain;
+  const issuerDomainSignal = knownIssuerDomain
+    ? "Known asset"
+    : issuerInfo?.assetDeclared && declaredIssuerDomain
+      ? "Issuer-declared"
+      : null;
   const sacContractId = deriveSacContractId(asset, NETWORKS[network].networkPassphrase);
   const balance = parseFloat(asset.balance);
   const displayBalance = privacyMode ? "••••••" : fmtAmount(asset.balance);
@@ -306,18 +315,27 @@ export function AssetDetailModal({
               {asset.isNative ? "Native Lumens" : "Credit Alphanum"}
             </span>
           </Row>
-          {(known?.anchorDomain || issuerInfo?.domain) && (
+          {issuerDomain && (
             <Row label="Issuer Domain">
               <a
-                href={`https://${known?.anchorDomain ?? issuerInfo?.domain}`}
+                href={`https://${issuerDomain}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-[13px] text-neutral-200 font-medium hover:underline"
               >
-                <span>{known?.anchorDomain ?? issuerInfo?.domain}</span>
-                {(known || issuerInfo?.assetDeclared) && (
-                  <span className="text-[9px] rounded bg-[#30D158]/15 px-1 py-0.5 font-bold uppercase tracking-wider text-[#30D158]">
-                    Asset declared
+                <span>{issuerDomain}</span>
+                {issuerDomainSignal && (
+                  <span
+                    title={knownIssuerDomain
+                      ? "Matched StellarKey's bundled asset registry."
+                      : "Self-published by the issuer; this is not independent verification."}
+                    className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                      knownIssuerDomain
+                        ? "bg-[#30D158]/15 text-[#30D158]"
+                        : "bg-white/[0.08] text-neutral-400"
+                    }`}
+                  >
+                    {issuerDomainSignal}
                   </span>
                 )}
               </a>

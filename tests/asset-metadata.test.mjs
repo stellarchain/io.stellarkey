@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 class MemoryStorage {
@@ -101,4 +102,90 @@ test("transient TOML failures are retried instead of becoming negative cache hit
   assert.equal(await fetchAssetLogo("RETRY", issuer, horizon), null);
   assert.equal(await fetchAssetLogo("RETRY", issuer, horizon), "https://retry.example/retry.png");
   assert.equal(tomlRequests, 2);
+});
+
+test("deceptive issuer home domains are never fetched", async (t) => {
+  installStorage();
+  const deceptiveDomains = [
+    "stellar.org@evil.com",
+    "evil.com#",
+    "evil.com/path",
+    "evil.com:443",
+    "evil com",
+  ];
+  let tomlRequests = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    if (value.includes("/accounts/")) {
+      const index = Number(new URL(value).hostname.split(".")[1]);
+      return new Response(JSON.stringify({ home_domain: deceptiveDomains[index] }), { status: 200 });
+    }
+    tomlRequests += 1;
+    return new Response("", { status: 200 });
+  });
+  const { fetchIssuerDetails } = await import("../src/lib/toml.ts");
+
+  for (let index = 0; index < deceptiveDomains.length; index += 1) {
+    assert.equal(
+      await fetchIssuerDetails("BAD", issuer, `https://horizon.${index}.example`),
+      null,
+    );
+  }
+  assert.equal(tomlRequests, 0);
+});
+
+test("issuer domains are canonicalized before constructing the TOML URL", async (t) => {
+  installStorage();
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    requests.push(value);
+    if (value.includes("/accounts/")) {
+      return new Response(JSON.stringify({ home_domain: "ASSETS.Example.COM" }), { status: 200 });
+    }
+    return new Response(`[[CURRENCIES]]\ncode="CANON"\nissuer="${issuer}"`, { status: 200 });
+  });
+  const { fetchIssuerDetails } = await import("../src/lib/toml.ts");
+
+  const details = await fetchIssuerDetails("CANON", issuer, "https://canonical-horizon.example");
+  assert.equal(details?.domain, "assets.example.com");
+  assert.equal(requests[1], "https://assets.example.com/.well-known/stellar.toml");
+});
+
+test("stellar.toml responses larger than the SEP-1 limit are cancelled", async (t) => {
+  installStorage();
+  let cancelled = false;
+  const oversizedBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(64 * 1024));
+      controller.enqueue(new Uint8Array(64 * 1024));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/accounts/")) {
+      return new Response(JSON.stringify({ home_domain: "large.example" }), { status: 200 });
+    }
+    return new Response(oversizedBody, { status: 200 });
+  });
+  const { fetchIssuerDetails } = await import("../src/lib/toml.ts");
+
+  assert.equal(
+    await fetchIssuerDetails("LARGE", issuer, "https://large-horizon.example"),
+    null,
+  );
+  assert.equal(cancelled, true);
+});
+
+test("asset details distinguish curated assets from issuer self-declarations", () => {
+  const source = readFileSync(
+    new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /Known asset/);
+  assert.match(source, /Issuer-declared/);
+  assert.match(source, /not independent verification/);
+  assert.doesNotMatch(source, />\s*Asset declared\s*</);
 });

@@ -49,6 +49,7 @@ import {
   assetMetadataCacheKey,
   extractCurrencyInfo,
   isAssetMetadataFresh,
+  normalizeIssuerHomeDomain,
   selectCurrentAssetMetadata,
 } from "../src/lib/toml.ts";
 import {
@@ -1929,6 +1930,33 @@ image="https://example.com/exact.png"
   assert.deepEqual(extractCurrencyInfo(toml, "USDC", Keypair.random().publicKey()), {
     declared: false,
   });
+});
+
+test("issuer home_domain accepts only an unambiguous bare DNS hostname", () => {
+  assert.equal(normalizeIssuerHomeDomain("assets.example.com"), "assets.example.com");
+  assert.equal(normalizeIssuerHomeDomain("ASSETS.Example.COM"), "assets.example.com");
+  assert.equal(normalizeIssuerHomeDomain("xn--bcher-kva.example"), "xn--bcher-kva.example");
+
+  for (const deceptive of [
+    "stellar.org@evil.com",
+    "evil.com#",
+    "evil.com/path",
+    "evil.com?next=stellar.org",
+    "evil.com:443",
+    " evil.com",
+    "evil.com ",
+    "evil com",
+    "https://evil.com",
+    "127.0.0.1",
+    "127.1",
+    "0x7f.1",
+    "localhost",
+    "-evil.com",
+    "evil-.com",
+    "evil..com",
+  ]) {
+    assert.equal(normalizeIssuerHomeDomain(deceptive), null, deceptive);
+  }
 });
 
 test("stellar.toml metadata ignores comments and fields from later tables", () => {
