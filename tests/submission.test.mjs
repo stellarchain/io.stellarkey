@@ -701,77 +701,25 @@ test("pending transaction state restores only valid deduplicated recovery handle
   assert.deepEqual(submission.parsePendingTransactions("not json"), []);
 });
 
-test("pending transaction recovery survives browser close without persisting authority", () => {
+test("current pending recovery survives browser close without reading POC session state", () => {
   assert.equal(typeof submission.loadDurablePendingTransactions, "function");
   assert.equal(typeof submission.persistPendingTransactionQueue, "function");
   assert.equal(typeof submission.clearDurablePendingTransactions, "function");
   const durableKey = "wallet.pending-transactions.v2";
-  const legacyKey = "wallet.pending-transactions.v1";
   const durableHash = "d1".repeat(32);
-  const legacyHash = "d2".repeat(32);
-  const durable = memoryStorage({
-    [durableKey]: JSON.stringify([{
-      hash: durableHash,
-      network: "mainnet",
-      label: "Swap",
-      status: "confirming",
-      createdAt: 10,
-    }]),
-  });
-  const legacySession = memoryStorage({
-    [legacyKey]: JSON.stringify([{
-      hash: legacyHash,
-      network: "testnet",
-      label: "Payment",
-      status: "status_unknown",
-      createdAt: 11,
-      expiresAt: 2_000_000_000,
-      xdr: "signed-envelope-must-not-persist",
-      signature: "secret-signature",
-      password: "secret-password",
-    }]),
-  });
+  const durable = memoryStorage();
+  const record = {
+    hash: durableHash,
+    network: "mainnet",
+    label: "Swap",
+    status: "confirming",
+    createdAt: 10,
+  };
+  submission.persistDurablePendingTransaction(durable, durableKey, record);
 
-  const migrated = submission.loadDurablePendingTransactions(
-    durable,
-    durableKey,
-    legacySession,
-    legacyKey,
-  );
-  assert.deepEqual(migrated, [
-    {
-      hash: durableHash,
-      network: "mainnet",
-      label: "Swap",
-      status: "confirming",
-      createdAt: 10,
-    },
-    {
-      hash: legacyHash,
-      network: "testnet",
-      label: "Payment",
-      status: "status_unknown",
-      createdAt: 11,
-      expiresAt: 2_000_000_000,
-    },
-  ]);
-  assert.equal(legacySession.getItem(legacyKey), null);
-  assert.equal(durable.getItem(durableKey), null, "the aggregate key is migrated away");
-  assert.doesNotMatch(
-    [...durable.values.values()].join("\n"),
-    /xdr|signature|password|secret/i,
-  );
-
-  // A new browser session has empty sessionStorage but retains localStorage.
-  const freshSession = memoryStorage();
-  assert.deepEqual(
-    submission.loadDurablePendingTransactions(durable, durableKey, freshSession, legacyKey),
-    migrated,
-  );
-
-  submission.clearDurablePendingTransactions(durable, durableKey, freshSession, legacyKey);
+  assert.deepEqual(submission.loadDurablePendingTransactions(durable, durableKey), [record]);
+  submission.clearDurablePendingTransactions(durable, durableKey);
   assert.equal(durable.getItem(durableKey), null);
-  assert.equal(freshSession.getItem(legacyKey), null);
 });
 
 test("prepared tracking survives a simulated crash with its exact expiry", () => {
@@ -815,13 +763,13 @@ test("different tabs persist pending recovery records without replacing each oth
   submission.persistDurablePendingTransaction(durable, "pending", first);
   submission.persistDurablePendingTransaction(durable, "pending", second);
   assert.deepEqual(
-    submission.loadDurablePendingTransactions(durable, "pending", memoryStorage(), "legacy"),
+    submission.loadDurablePendingTransactions(durable, "pending"),
     [first, second],
   );
 
   submission.removeDurablePendingTransaction(durable, "pending", first);
   assert.deepEqual(
-    submission.loadDurablePendingTransactions(durable, "pending", memoryStorage(), "legacy"),
+    submission.loadDurablePendingTransactions(durable, "pending"),
     [second],
   );
 });
@@ -967,8 +915,9 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
   assert.match(source, /PendingTransaction/);
   assert.match(
     source,
-    /loadDurablePendingTransactions\([\s\S]*window\.localStorage[\s\S]*window\.sessionStorage/,
+    /loadDurablePendingTransactions\(\s*window\.localStorage,\s*PENDING_TX_STORAGE_KEY/,
   );
+  assert.doesNotMatch(source, /loadDurable(?:PendingTransactions|MergeReconciliations)\([^)]*sessionStorage/);
   assert.match(source, /persistDurablePendingTransaction\(\s*window\.localStorage/);
   assert.match(source, /removeDurablePendingTransaction\(\s*window\.localStorage/);
   assert.match(source, /event\.key\?\.startsWith\(pendingTransactionStoragePrefix/);
@@ -1358,49 +1307,25 @@ test("discarding a merge recovery is storage-first and unlocks its flow", () => 
   );
 });
 
-test("merge reconciliation survives browser close and safely migrates legacy session state", () => {
+test("current merge reconciliation survives browser close without session migration", () => {
   assert.equal(typeof submission.loadDurableMergeReconciliations, "function");
   assert.equal(typeof submission.clearDurableMergeReconciliations, "function");
   const localKey = "merge-recovery.v2";
-  const legacyKey = "merge-recovery.v1";
   const localHash = "43".repeat(32);
-  const legacyHash = "44".repeat(32);
   const local = memoryStorage({
     [localKey]: JSON.stringify([{ hash: localHash, network: "mainnet" }]),
   });
-  const oldSession = memoryStorage({
-    [legacyKey]: JSON.stringify([{
-      hash: legacyHash,
-      network: "testnet",
-      accountId: "attacker-selected-account",
-      sourcePublicKey: Keypair.random().publicKey(),
-      action: "remove_account",
-    }]),
-  });
-
-  const migrated = submission.loadDurableMergeReconciliations(
-    local,
-    localKey,
-    oldSession,
-    legacyKey,
-  );
-  assert.deepEqual(migrated, [
+  const restored = submission.loadDurableMergeReconciliations(local, localKey);
+  assert.deepEqual(restored, [
     { hash: localHash, network: "mainnet", status: "pending" },
-    { hash: legacyHash, network: "testnet", status: "pending" },
   ]);
-  assert.equal(oldSession.getItem(legacyKey), null);
-  assert.doesNotMatch(local.getItem(localKey), /accountId|sourcePublicKey|remove_account/);
-
-  // A new browser session has empty sessionStorage but retains localStorage.
-  const freshSession = memoryStorage();
   assert.deepEqual(
-    submission.loadDurableMergeReconciliations(local, localKey, freshSession, legacyKey),
-    migrated,
+    submission.loadDurableMergeReconciliations(local, localKey),
+    restored,
   );
 
-  submission.clearDurableMergeReconciliations(local, localKey, freshSession, legacyKey);
+  submission.clearDurableMergeReconciliations(local, localKey);
   assert.equal(local.getItem(localKey), null);
-  assert.equal(freshSession.getItem(legacyKey), null);
 });
 
 test("an unresolved account merge queues a durable authority-free recovery handle", () => {

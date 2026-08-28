@@ -185,9 +185,7 @@ function withSigningSecret<T>(
 }
 
 const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v2";
-const LEGACY_PENDING_TX_SESSION_KEY = "wallet.pending-transactions.v1";
 const MERGE_RECONCILIATION_STORAGE_KEY = "wallet.merge-reconciliations.v2";
-const LEGACY_MERGE_RECONCILIATION_SESSION_KEY = "wallet.merge-reconciliations.v1";
 const TRANSACTION_POLL_MS = 15_000;
 const FIAT_LIST: FiatCurrency[] = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"];
 
@@ -626,15 +624,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         pending: loadDurablePendingTransactions(
           window.localStorage,
           PENDING_TX_STORAGE_KEY,
-          window.sessionStorage,
-          LEGACY_PENDING_TX_SESSION_KEY,
         ),
       }));
       const restoredMerges = loadDurableMergeReconciliations(
           window.localStorage,
           MERGE_RECONCILIATION_STORAGE_KEY,
-          window.sessionStorage,
-          LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
         );
       commitMergeReconciliations(() => restoredMerges);
       setPendingTxsHydrated(true);
@@ -1273,8 +1267,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const restored = loadDurablePendingTransactions(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
-        window.sessionStorage,
-        LEGACY_PENDING_TX_SESSION_KEY,
       );
       const previousIdentities = new Set(
         transactionTrackingRef.current.pending.map(transactionIdentity),
@@ -1582,14 +1574,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     clearDurableMergeReconciliations(
       window.localStorage,
       MERGE_RECONCILIATION_STORAGE_KEY,
-      window.sessionStorage,
-      LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
     );
     clearDurablePendingTransactions(
       window.localStorage,
       PENDING_TX_STORAGE_KEY,
-      window.sessionStorage,
-      LEGACY_PENDING_TX_SESSION_KEY,
     );
     setAccounts([]);
     setArchivedAccounts([]);
@@ -1652,14 +1640,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     clearDurableMergeReconciliations(
       window.localStorage,
       MERGE_RECONCILIATION_STORAGE_KEY,
-      window.sessionStorage,
-      LEGACY_MERGE_RECONCILIATION_SESSION_KEY,
     );
     clearDurablePendingTransactions(
       window.localStorage,
       PENDING_TX_STORAGE_KEY,
-      window.sessionStorage,
-      LEGACY_PENDING_TX_SESSION_KEY,
     );
     clearSessionSecrets();
     // Wallet is restored but LOCKED — unlock with the backup's password
