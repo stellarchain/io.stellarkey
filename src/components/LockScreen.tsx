@@ -7,6 +7,7 @@ import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { hasPasskeyUnlock } from "@/lib/vault";
 import { BRAND_NAME } from "@/lib/brand";
 import { ResetWalletModal } from "./ResetWalletModal";
+import { PublicFooter } from "./PublicFooter";
 import { Button, ErrorText, Field } from "./ui";
 import { IconFingerprint, IconTrezor, LogoMark } from "./icons";
 
@@ -149,6 +150,7 @@ export function LockScreen() {
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
       />
+      <PublicFooter compact />
     </div>
   );
 }

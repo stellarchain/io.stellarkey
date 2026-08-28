@@ -4,10 +4,12 @@ import { WalletApp } from "@/components/WalletApp";
 
 export default function Home() {
   return (
-    <ToastProvider>
-      <WalletProvider>
-        <WalletApp />
-      </WalletProvider>
-    </ToastProvider>
+    <div id="app-content" className="min-h-full">
+      <ToastProvider>
+        <WalletProvider>
+          <WalletApp />
+        </WalletProvider>
+      </ToastProvider>
+    </div>
   );
 }

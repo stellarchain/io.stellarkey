@@ -49,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <body className="flex min-h-full flex-col">
+        <a className="skip-link" href="#app-content">Skip to content</a>
         {children}
         <ServiceWorkerRegistration />
       </body>

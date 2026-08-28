@@ -46,6 +46,13 @@ import {
 } from "@/lib/backup-health";
 import type { AccountMeta } from "@/lib/types";
 import {
+  BRAND_NAME,
+  BRAND_ORIGIN,
+  COPYRIGHT_OWNER,
+  COPYRIGHT_YEAR,
+  PUBLIC_ROUTES,
+} from "@/lib/brand";
+import {
   mergeReconciliationPresentation,
   type SubmissionResult,
 } from "@/lib/submission";
@@ -70,7 +77,9 @@ import {
 } from "./ui";
 import {
   IconCheck,
+  IconBook,
   IconDownload,
+  IconExternal,
   IconFingerprint,
   IconLock,
   IconPlus,
@@ -80,6 +89,7 @@ import {
   IconWallet,
   IconTrezor,
   IconLedger,
+  LogoMark,
 } from "./icons";
 import { IconStorefront } from "./merchant/icons";
 import type {
@@ -114,6 +124,7 @@ export type SettingsSub =
   | "airsigner"
   | "hardware"
   | "currency"
+  | "about"
   | "merchant"
   | "staff"
   | "tax"
@@ -636,7 +647,9 @@ export function SettingsPage({
                               ? "Hardware Wallets"
                               : sub === "currency"
                                 ? "Display Currency"
-                                : sub === "merchant"
+                                : sub === "about"
+                                  ? "About & Legal"
+                                  : sub === "merchant"
                                   ? "Merchant"
                                   : "Network"}
           </h1>
@@ -927,22 +940,34 @@ export function SettingsPage({
                 </div>
               </div>
 
-              {installAvailable && (
-                <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
-                    App
-                  </p>
-                  <div className="list-group">
+              <div>
+                <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
+                  App
+                </p>
+                <div className="list-group">
+                  <RowButton
+                    icon={<IconBook size={16} />}
+                    tint="#5E5CE6"
+                    label="About & Legal"
+                    sub={`${BRAND_NAME}, privacy, terms & security`}
+                    chevron
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSub("about");
+                    }}
+                  />
+                  {installAvailable && (
                     <RowButton
                       icon={<IconDownload size={16} />}
                       tint="#0A84FF"
                       label="Install App"
                       sub={installDescription}
+                      sep
                       onClick={onInstallApp}
                     />
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               <div>
                 <p className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400 px-1 pb-2">
@@ -963,6 +988,70 @@ export function SettingsPage({
             </div>
           </div>
         </>
+      )}
+
+      {/* ---------- ABOUT & LEGAL ---------- */}
+      {sub === "about" && (
+        <div className="space-y-6">
+          <section className="panel p-5 sm:p-6" aria-labelledby="stellarkey-about-title">
+            <div className="flex items-center gap-4">
+              <LogoMark size={48} />
+              <div className="min-w-0">
+                <h2 id="stellarkey-about-title" className="display-h text-[22px] text-white">
+                  {BRAND_NAME}
+                </h2>
+                <p className="mt-1 text-[12.5px] text-neutral-400">Self-custodial · backend-free · built on Stellar</p>
+              </div>
+            </div>
+            <p className="mt-5 text-[13px] leading-relaxed text-neutral-300">
+              Your encrypted vault and merchant records stay in this browser. StellarKey has no
+              application account, custody service, analytics, or telemetry backend.
+            </p>
+            <div className="mt-4 rounded-xl bg-white/[0.05] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-400">
+              <p>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.</p>
+              <p className="mt-1">Canonical release origin: {BRAND_ORIGIN}</p>
+            </div>
+          </section>
+
+          <section aria-labelledby="settings-legal-title">
+            <h2 id="settings-legal-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+              Trust Center
+            </h2>
+            <div className="list-group">
+              {[
+                { label: "About StellarKey", sub: "Architecture and independence", href: PUBLIC_ROUTES.about },
+                { label: "Privacy", sub: "Local data and network requests", href: PUBLIC_ROUTES.privacy },
+                { label: "Terms", sub: "Self-custody responsibilities", href: PUBLIC_ROUTES.terms },
+                { label: "Security", sub: "Trust model and responsible disclosure", href: PUBLIC_ROUTES.security },
+              ].map((item, index) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
+                    <IconBook size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
+                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                  </span>
+                  <IconExternal size={15} className="shrink-0 text-neutral-500" />
+                </a>
+              ))}
+            </div>
+          </section>
+
+          <Notice tone="warn">
+            Passkeys and browser storage belong to this exact web origin. Keep your password and an
+            encrypted backup before moving to {BRAND_ORIGIN}; enrol a new passkey after migration.
+          </Notice>
+
+          <p className="px-2 text-[10.5px] leading-relaxed text-neutral-500">
+            Independent software, not affiliated with, sponsored or endorsed by the Stellar
+            Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.
+          </p>
+        </div>
       )}
 
       {/* ---------- AUTO-LOCK TIMER ---------- */}

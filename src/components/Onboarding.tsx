@@ -12,6 +12,7 @@ import {
   shouldPrioritizeStandaloneRestore,
 } from "@/lib/install-handoff";
 import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
+import { PublicFooter } from "./PublicFooter";
 import {
   IconAlert,
   IconCheck,
@@ -391,6 +392,7 @@ export function Onboarding() {
             </p>
           </div>
         </div>
+        <PublicFooter compact />
       </div>
     );
   }
