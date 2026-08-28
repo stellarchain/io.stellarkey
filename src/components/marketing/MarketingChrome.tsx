@@ -11,11 +11,11 @@ import {
   DocAlert,
   DocArrowOut,
   DocBook,
-  DocChip,
   DocCoin,
   DocCompass,
   DocEyeOff,
   DocFile,
+  DocGitHub,
   DocKey,
   DocLock,
   DocQuestion,
@@ -48,11 +48,15 @@ const PRODUCT = [
   ["/#faq", "Questions", DocQuestion],
 ] as const;
 
-/* The same marks the trust-centre tabs use, so the two agree on sight. */
+/* Both groups below reuse the marks the trust-centre tabs use, so the footer
+   and the tabs agree on sight. */
 const COMPANY = [
   [PUBLIC_ROUTES.about, "About", DocCompass],
-  [PUBLIC_ROUTES.security, "Security", DocShield],
   [PUBLIC_ROUTES.support, "Support", DocBook],
+] as const;
+
+const TRUST = [
+  [PUBLIC_ROUTES.security, "Security", DocShield],
   [PUBLIC_ROUTES.privacy, "Privacy", DocEyeOff],
   [PUBLIC_ROUTES.terms, "Terms", DocScales],
 ] as const;
@@ -111,11 +115,21 @@ export function MarketingFooter() {
             ))}
             <li>
               <a href={SOURCE_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
-                <DocChip />Source
+                <DocGitHub />Source
                 <span className="out" aria-hidden="true"><DocArrowOut /></span>
                 <span className="sr-only">(opens in a new tab)</span>
               </a>
             </li>
+          </ul>
+        </div>
+        <div>
+          <h4>Trust</h4>
+          <ul>
+            {TRUST.map(([href, label, Icon]) => (
+              <li key={href}>
+                <Link href={href}><Icon />{label}</Link>
+              </li>
+            ))}
           </ul>
         </div>
       </div>

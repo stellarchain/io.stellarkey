@@ -70,3 +70,26 @@
   .mk .foot p { max-width: none; }
   .mk .foot ul a { padding: .5rem 0; }
 }
+
+/* ── the four-column grid ───────────────────────────────────── */
+
+/*
+ * marketing.css pins the footer to three columns from 820px. These rules are
+ * written one level more specific than that (`footer .foot`, not `.foot`) so
+ * they win on specificity rather than on which stylesheet the bundler happens
+ * to emit second.
+ */
+
+/* Mid widths: the brand takes its own row so three link groups still get
+   room to breathe rather than being squeezed beside it. */
+@media (min-width: 640px) and (max-width: 1039px) {
+  .mk footer .foot { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mk footer .foot > :first-child { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1040px) {
+  .mk footer .foot {
+    grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
+    column-gap: 2rem;
+  }
+}
