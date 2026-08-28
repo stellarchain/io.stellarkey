@@ -86,6 +86,12 @@ import type {
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
 import type { SendPrefill } from "./SendModal";
+import {
+  APPLICATION_VERSION,
+  BUILD_COMMIT,
+  COPYRIGHT_OWNER,
+  COPYRIGHT_YEAR,
+} from "@/lib/brand";
 
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
 const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
@@ -1664,6 +1670,15 @@ export function Dashboard() {
                 <IconLock size={13} />
                 <span>Lock Wallet</span>
               </button>
+              <div
+                aria-label="Build information"
+                className="pt-1 text-center text-[9.5px] leading-relaxed text-neutral-400"
+              >
+                <p>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}</p>
+                <p className="font-mono">
+                  v{APPLICATION_VERSION} · {BUILD_COMMIT === "development" ? BUILD_COMMIT : BUILD_COMMIT.slice(0, 7)}
+                </p>
+              </div>
             </>
           ) : (
             <div className="flex flex-col items-center gap-2">

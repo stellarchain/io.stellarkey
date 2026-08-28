@@ -54,6 +54,9 @@ import {
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
   PUBLIC_ROUTES,
+  SOURCE_COMMIT_URL,
+  SOURCE_RELEASE_URL,
+  SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
 import {
   mergeReconciliationPresentation,
@@ -1028,6 +1031,7 @@ export function SettingsPage({
             <div className="list-group">
               {[
                 { label: "About StellarKey", sub: "Architecture and independence", href: PUBLIC_ROUTES.about },
+                { label: "Support", sub: "Help, recovery limits and safe contact", href: PUBLIC_ROUTES.support },
                 { label: "Privacy", sub: "Local data and network requests", href: PUBLIC_ROUTES.privacy },
                 { label: "Terms", sub: "Self-custody responsibilities", href: PUBLIC_ROUTES.terms },
                 { label: "Security", sub: "Trust model and responsible disclosure", href: PUBLIC_ROUTES.security },
@@ -1039,6 +1043,53 @@ export function SettingsPage({
                 >
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#5E5CE6] text-white">
                     <IconBook size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
+                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                  </span>
+                  <IconExternal size={15} className="shrink-0 text-neutral-500" />
+                </a>
+              ))}
+            </div>
+          </section>
+
+          <section aria-labelledby="settings-source-title">
+            <h2 id="settings-source-title" className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
+              Open Source &amp; Verification
+            </h2>
+            <div className="list-group">
+              {[
+                {
+                  label: "Source code",
+                  sub: "AGPL-3.0-or-later on GitHub",
+                  href: SOURCE_REPOSITORY_URL,
+                },
+                {
+                  label: `Build ${BUILD_COMMIT.slice(0, 7)}`,
+                  sub: "Exact source revision for this build",
+                  href: SOURCE_COMMIT_URL,
+                },
+                {
+                  label: `Release v${APPLICATION_VERSION}`,
+                  sub: "Artifacts, SBOM and SHA-256 checksums",
+                  href: SOURCE_RELEASE_URL,
+                },
+                {
+                  label: "Release manifest",
+                  sub: "Machine-readable deployed build identity",
+                  href: "/release.json",
+                },
+              ].map((item, index) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`row-hover flex min-h-14 w-full items-center gap-3.5 px-4 py-3.5 text-left ${index > 0 ? "ios-sep" : ""}`}
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0A84FF] text-white">
+                    <IconShield size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
