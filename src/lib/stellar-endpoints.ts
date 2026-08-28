@@ -28,7 +28,6 @@ export interface EndpointTestOptions {
 export const STELLAR_ENDPOINTS_CHANGED_EVENT = "wallet:stellar-endpoints-changed";
 
 const ENDPOINT_KEY_PREFIX = "wallet.endpoint";
-const LEGACY_HORIZON_KEY_PREFIX = "wallet.horizon";
 
 function browserStorage(): EndpointStorage | null {
   return typeof window === "undefined" ? null : window.localStorage;
@@ -36,10 +35,6 @@ function browserStorage(): EndpointStorage | null {
 
 function endpointKey(network: NetworkKey, kind: StellarEndpointKind): string {
   return `${ENDPOINT_KEY_PREFIX}.${kind}.${network}.v1`;
-}
-
-function legacyHorizonKey(network: NetworkKey): string {
-  return `${LEGACY_HORIZON_KEY_PREFIX}.${network}.v1`;
 }
 
 export function normalizeStellarEndpointUrl(value: string): string {
@@ -72,8 +67,7 @@ export function loadCustomEndpoint(
   storage: EndpointStorage | null = browserStorage(),
 ): string | null {
   if (!storage) return null;
-  const stored = storage.getItem(endpointKey(network, kind)) ??
-    (kind === "horizon" ? storage.getItem(legacyHorizonKey(network)) : null);
+  const stored = storage.getItem(endpointKey(network, kind));
   if (!stored) return null;
   try {
     return normalizeStellarEndpointUrl(stored);
@@ -90,27 +84,20 @@ export function saveCustomEndpoint(
 ): void {
   if (!storage) return;
   const key = endpointKey(network, kind);
-  const legacyKey = kind === "horizon" ? legacyHorizonKey(network) : null;
   const previous = storage.getItem(key);
-  const previousLegacy = legacyKey ? storage.getItem(legacyKey) : null;
   const normalized = value === null || !value.trim()
     ? null
     : normalizeStellarEndpointUrl(value);
   try {
     if (normalized === null) storage.removeItem(key);
     else storage.setItem(key, normalized);
-    if (legacyKey) storage.removeItem(legacyKey);
-    if (storage.getItem(key) !== normalized || (legacyKey && storage.getItem(legacyKey) !== null)) {
+    if (storage.getItem(key) !== normalized) {
       throw new Error("Browser storage did not retain the endpoint preference.");
     }
   } catch (error) {
     try {
       if (previous === null) storage.removeItem(key);
       else storage.setItem(key, previous);
-      if (legacyKey) {
-        if (previousLegacy === null) storage.removeItem(legacyKey);
-        else storage.setItem(legacyKey, previousLegacy);
-      }
     } catch {
       throw new Error("Endpoint preference failed and browser storage could not be rolled back.");
     }
@@ -131,7 +118,6 @@ export function resetCustomEndpoints(
   const keys = [
     endpointKey(network, "horizon"),
     endpointKey(network, "rpc"),
-    legacyHorizonKey(network),
   ];
   const previous = new Map(keys.map((key) => [key, storage.getItem(key)]));
   try {

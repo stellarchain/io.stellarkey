@@ -47,6 +47,17 @@ test("endpoint preferences are isolated by network and service with safe fallbac
   assert.equal(loadCustomEndpoint("testnet", "rpc", storage), null);
 });
 
+test("POC Horizon preference keys are ignored and left untouched", () => {
+  const storage = new MemoryStorage();
+  storage.setItem("wallet.horizon.mainnet.v1", "https://poc.example");
+
+  assert.equal(loadCustomEndpoint("mainnet", "horizon", storage), null);
+  saveCustomEndpoint("mainnet", "horizon", "https://current.example", storage);
+  assert.equal(storage.getItem("wallet.horizon.mainnet.v1"), "https://poc.example");
+  resetCustomEndpoints("mainnet", storage);
+  assert.equal(storage.getItem("wallet.horizon.mainnet.v1"), "https://poc.example");
+});
+
 test("a failed endpoint preference write restores the previous verified URL", () => {
   const storage = new MemoryStorage();
   saveCustomEndpoint("testnet", "horizon", "https://previous.example", storage);
