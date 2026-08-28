@@ -180,6 +180,89 @@ body::after {
   text-wrap: pretty;
 }
 
+.legal-highlights {
+  border-left: 3px solid #0a84ff;
+  background: rgba(10, 132, 255, 0.08);
+  padding: 1.25rem 1.35rem;
+}
+
+.legal-highlights > p,
+.legal-contents > p {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.legal-highlights ul {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  color: #e5e5ea;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.legal-highlights li {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.legal-highlights li::before {
+  position: absolute;
+  top: 0.58em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #64d2ff;
+  content: "";
+}
+
+.legal-contents {
+  margin-top: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 0.5px solid rgba(84, 84, 88, 0.65);
+}
+
+.legal-contents ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 1rem;
+  margin-top: 0.8rem;
+}
+
+.legal-contents a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: 10px;
+  color: #d1d1d6;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.legal-contents a:hover {
+  color: #ffffff;
+}
+
+.legal-contents a:focus-visible {
+  outline: 4px solid rgba(10, 132, 255, 0.4);
+  outline-offset: 2px;
+}
+
+.legal-contents a span {
+  flex: 0 0 auto;
+  color: #8e8e93;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .legal-prose section + section {
   margin-top: 2.5rem;
   padding-top: 2.5rem;
@@ -194,8 +277,21 @@ body::after {
   line-height: 1.2;
 }
 
+.legal-prose section[id] {
+  scroll-margin-top: calc(var(--app-safe-area-top) + 2rem);
+}
+
+.legal-prose h3 {
+  margin-top: 1.5rem;
+  color: #f2f2f7;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .legal-prose p,
-.legal-prose ul {
+.legal-prose ul,
+.legal-prose ol {
   max-width: 65ch;
   margin-top: 0.85rem;
 }
@@ -205,17 +301,58 @@ body::after {
   overflow-wrap: anywhere;
 }
 
-.legal-prose ul {
+.legal-prose ul,
+.legal-prose ol {
   padding-left: 1.25rem;
+}
+
+.legal-prose ul {
   list-style: disc;
 }
 
-.legal-prose li + li {
+.legal-prose ol {
+  list-style: decimal;
+}
+
+.legal-prose li + li,
+.legal-prose li > ul,
+.legal-prose li > ol {
   margin-top: 0.5rem;
 }
 
 .legal-prose .btn {
   margin-top: 1rem;
+}
+
+.legal-prose a:not(.btn) {
+  color: #64d2ff;
+  text-decoration: underline;
+  text-decoration-color: rgba(100, 210, 255, 0.45);
+  text-underline-offset: 0.18em;
+}
+
+.legal-prose a:not(.btn):hover {
+  color: #ffffff;
+}
+
+.legal-prose strong {
+  color: #ffffff;
+  font-weight: 650;
+}
+
+.legal-prose code:not([class]) {
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.12rem 0.3rem;
+  color: #f2f2f7;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.88em;
+}
+
+@media (max-width: 639px) {
+  .legal-contents ol {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* iOS system blue is excellent as text on black, but white text needs a

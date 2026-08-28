@@ -23,6 +23,10 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   const support = read("src/app/support/page.tsx");
 
   assert.match(about, /backend-free/i);
+  assert.match(about, /how a wallet action works/i);
+  assert.match(about, /constructs an unsigned transaction/i);
+  assert.match(about, /merchant mode/i);
+  assert.match(about, /AGPL-3\.0-or-later/i);
   assert.match(about, /APPLICATION_VERSION/);
   assert.match(about, /BUILD_COMMIT/);
   assert.match(about, /GitHub/i);
@@ -32,20 +36,56 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   assert.match(privacy, /Horizon|RPC/);
   assert.match(privacy, /IP address/i);
   assert.match(privacy, /no non-essential cookies/i);
+  assert.match(privacy, /data controller|data processor/i);
+  assert.match(privacy, /retention and deletion/i);
+  assert.match(privacy, /public blockchain/i);
+  assert.match(privacy, /does not make blockchain data private/i);
   assert.match(terms, /self-custodial/i);
   assert.match(terms, /irreversible/i);
   assert.match(terms, /recovery phrase/i);
   assert.match(terms, /asset issuer/i);
   assert.match(terms, /merchant records/i);
+  assert.match(terms, /AGPL-3\.0-or-later/i);
+  assert.match(terms, /free software/i);
+  assert.match(terms, /no professional advice/i);
+  assert.match(terms, /disclaimer of warranties/i);
+  assert.match(terms, /limitation of liability/i);
+  assert.match(terms, /non-excludable rights|cannot lawfully be excluded/i);
   assert.match(security, /responsible disclosure/i);
   assert.match(security, /APPLICATION_VERSION/);
   assert.match(security, /supported release/i);
-  assert.match(read("src/components/LegalPage.tsx"), /Legal text version 1\.0/);
+  assert.match(read("src/components/LegalPage.tsx"), /Legal text version 1\.1/);
+  assert.match(security, /threat model/i);
+  assert.match(security, /AES-GCM/i);
+  assert.match(security, /PBKDF2/i);
+  assert.match(security, /600,000/i);
+  assert.match(security, /ongoing security maintenance/i);
+  assert.match(security, /NIST|OWASP/i);
+  assert.match(security, /cannot guarantee absolute\s+security/i);
+  assert.match(security, /\.well-known\/security\.txt/i);
   assert.match(security, /never include/i);
   assert.match(security, /recovery phrase|secret key/i);
   assert.match(security, /ContactAction/);
   assert.match(support, /ContactAction/);
   assert.match(support, /cannot recover|cannot reverse/i);
+  assert.match(support, /safe to include/i);
+  assert.match(support, /GitHub issue/i);
+  assert.match(support, /no guaranteed response time/i);
+});
+
+test("long-form trust pages expose plain-language summaries and on-page navigation", () => {
+  const legalPage = read("src/components/LegalPage.tsx");
+  assert.match(legalPage, /highlights:/);
+  assert.match(legalPage, /sections:/);
+  assert.match(legalPage, /aria-label="At a glance"/);
+  assert.match(legalPage, /aria-label="On this page"/);
+
+  for (const route of routes) {
+    const source = read(`src/app/${route}/page.tsx`);
+    assert.match(source, /highlights=\{/i, `${route} is missing its plain-language highlights`);
+    assert.match(source, /sections=\{/i, `${route} is missing its on-page navigation`);
+    assert.match(source, /<section id="[^"]+">/i, `${route} sections are not directly linkable`);
+  }
 });
 
 test("public and locked surfaces share accessible legal navigation", () => {

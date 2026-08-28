@@ -13,17 +13,26 @@ const navigation = [
 
 export type LegalRoute = (typeof navigation)[number][0];
 
+export interface LegalSectionLink {
+  id: string;
+  label: string;
+}
+
 export function LegalPage({
   current,
   eyebrow,
   title,
   summary,
+  highlights,
+  sections,
   children,
 }: {
   current: LegalRoute;
   eyebrow: string;
   title: string;
   summary: string;
+  highlights: readonly string[];
+  sections: readonly LegalSectionLink[];
   children: ReactNode;
 }) {
   return (
@@ -50,7 +59,7 @@ export function LegalPage({
           <h1 className="display-h mt-3 text-[36px] text-white sm:text-[52px]">{title}</h1>
           <p className="mt-5 max-w-[65ch] text-[16px] leading-7 text-neutral-300">{summary}</p>
           <p className="mt-4 text-[12px] text-neutral-500">
-            Effective 28 August 2026 · Legal text version 1.0
+            Effective 28 August 2026 · Legal text version 1.1
           </p>
         </div>
 
@@ -74,7 +83,32 @@ export function LegalPage({
           ))}
         </nav>
 
-        <article className="legal-prose mt-10 max-w-3xl">{children}</article>
+        <div className="mt-10 max-w-3xl">
+          <aside aria-label="At a glance" className="legal-highlights">
+            <p>At a glance</p>
+            <ul>
+              {highlights.map((highlight) => (
+                <li key={highlight}>{highlight}</li>
+              ))}
+            </ul>
+          </aside>
+
+          <nav aria-label="On this page" className="legal-contents">
+            <p>On this page</p>
+            <ol>
+              {sections.map((section, index) => (
+                <li key={section.id}>
+                  <a href={`#${section.id}`}>
+                    <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                    {section.label}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          <article className="legal-prose mt-12">{children}</article>
+        </div>
       </main>
 
       <PublicFooter />

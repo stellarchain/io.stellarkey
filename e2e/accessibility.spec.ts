@@ -178,7 +178,8 @@ test("ambient backgrounds never widen the narrowest iPhone viewport", async ({ p
   const supportedRelease = page
     .getByRole("heading", { name: "Supported release", exact: true })
     .locator("..")
-    .locator("p");
+    .locator("p")
+    .filter({ hasText: "commit" });
   const releaseText = await supportedRelease.evaluate((element) => ({
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
@@ -186,6 +187,25 @@ test("ambient backgrounds never widen the narrowest iPhone viewport", async ({ p
   expect(releaseText.scrollWidth, "the verification hash must wrap without clipping").toBeLessThanOrEqual(
     releaseText.clientWidth,
   );
+});
+
+test("every trust-center document is navigable and accessible", async ({ page, browserName }) => {
+  if ((page.viewportSize()?.width ?? 1024) < 768) {
+    await page.setViewportSize({ width: 320, height: 693 });
+  }
+
+  for (const path of ["/about", "/privacy", "/terms", "/security", "/support"] as const) {
+    await page.goto(path, { waitUntil: "domcontentloaded" });
+    await expect(page.locator('[aria-label="At a glance"]')).toBeVisible();
+    const contents = page.getByRole("navigation", { name: "On this page" });
+    await expect(contents).toBeVisible();
+
+    const sections = page.locator("article section[id]");
+    expect(await sections.count(), `${path} must remain a substantive long-form document`).toBeGreaterThanOrEqual(7);
+    const firstId = await sections.first().getAttribute("id");
+    expect(await contents.locator("a").first().getAttribute("href")).toBe(`#${firstId}`);
+    await expectAccessibleSurface(page, `${path} trust-center document`, browserName);
+  }
 });
 
 test("critical wallet and merchant screens remain operable and accessible", async ({ page, browserName }) => {
