@@ -39,10 +39,16 @@ const NAV = [
   ["/#faq", "FAQ"],
 ] as const;
 
+/* Six links under one heading ran twice as long as every other column. Split
+   by the question each answers: what it does, and what to know before you
+   rely on it. */
 const PRODUCT = [
   ["/#wallet", "The wallet", DocLock],
   ["/#sale", "Taking a sale", DocKey],
   ["/#till", "Records", DocFile],
+] as const;
+
+const CONSIDER = [
   ["/#cost", "What it costs", DocCoin],
   ["/#limits", "Limits", DocAlert],
   ["/#faq", "Questions", DocQuestion],
@@ -99,6 +105,16 @@ export function MarketingFooter() {
           <h4>Product</h4>
           <ul>
             {PRODUCT.map(([href, label, Icon]) => (
+              <li key={href}>
+                <a href={href}><Icon />{label}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h4>Good to know</h4>
+          <ul>
+            {CONSIDER.map(([href, label, Icon]) => (
               <li key={href}>
                 <a href={href}><Icon />{label}</a>
               </li>
