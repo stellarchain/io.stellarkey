@@ -12,6 +12,9 @@
 /
   Cache-Control: no-cache, must-revalidate
 
+/app
+  Cache-Control: no-cache, must-revalidate
+
 /about
   Cache-Control: no-cache, must-revalidate
 
@@ -46,6 +49,33 @@
   Cache-Control: no-cache, must-revalidate
 
 /.well-known/security.txt
+  Cache-Control: no-cache, must-revalidate
+
+/apple-touch-icon.png
+  Cache-Control: no-cache, must-revalidate
+
+/apple-icon1.png
+  Cache-Control: no-cache, must-revalidate
+
+/apple-icon2.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon.svg
+  Cache-Control: no-cache, must-revalidate
+
+/icon-192.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-512.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-192.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-512.png
+  Cache-Control: no-cache, must-revalidate
+
+/icon-maskable-1024.png
   Cache-Control: no-cache, must-revalidate
 
 /sw.js

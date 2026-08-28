@@ -51,6 +51,21 @@ export const metadata: Metadata = {
     title: defaultTitle,
     description: BRAND_DESCRIPTION,
   },
+  /*
+   * Declared here rather than left to the file-based icon routes: Next
+   * fingerprints those into the URL (/apple-icon.png?apple-icon.<hash>.png),
+   * and iOS is unreliable at fetching an apple-touch-icon whose URL carries a
+   * query string — Add to Home Screen then falls back to a page screenshot
+   * instead of the logo. The same files are served at these plain paths.
+   */
+  icons: {
+    icon: [{ url: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/apple-icon2.png", sizes: "167x167", type: "image/png" },
+      { url: "/apple-icon1.png", sizes: "152x152", type: "image/png" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

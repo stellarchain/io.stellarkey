@@ -135,6 +135,15 @@ test("Next serves static install metadata and an Apple icon through native app r
   const publicLogo = readFileSync(publicLogoUrl, "utf8");
   assert.match(publicLogo, /viewBox="0 0 64 64"/);
   assert.match(sourceIcon, /<rect width="64" height="64" fill="#000000"\/>/);
+  // Served standalone, so it is parsed as XML rather than forgiving HTML: an
+  // unbalanced group makes the favicon fail to load with no console error.
+  assert.equal(
+    (sourceIcon.match(/<g[\s>]/g) ?? []).length,
+    (sourceIcon.match(/<\/g>/g) ?? []).length,
+    "icon.svg has unbalanced <g> elements and will not parse",
+  );
+  assert.equal((sourceIcon.match(/<svg[\s>]/g) ?? []).length, 1);
+  assert.match(sourceIcon, /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   for (const [name, art] of [
     ["LogoMark", logo],
     ["icon.svg", sourceIcon],
@@ -203,6 +212,13 @@ test("Next serves static install metadata and an Apple icon through native app r
     }
   }
 
+  // iOS resolves the home-screen icon from the manifest when a page is added
+  // as a web app, and drops an icon whose URL carries a query string: the app
+  // then lands on the Home Screen under a generated letter tile.
+  for (const { src } of manifest.icons) {
+    assert.doesNotMatch(src, /\?/, `${src} must not carry a query string`);
+  }
+
   for (const path of [
     "public/icon-maskable-192.png",
     "public/icon-maskable-512.png",
@@ -214,22 +230,22 @@ test("Next serves static install metadata and an Apple icon through native app r
   assert.deepEqual(
     manifest.icons.map(({ src, sizes, type, purpose }) => ({ src, sizes, type, purpose })),
     [
-      { src: "/icon-192.png?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icon-512.png?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: "/icon-maskable-192.png?v=2",
+        src: "/icon-maskable-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/icon-maskable-512.png?v=2",
+        src: "/icon-maskable-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/icon-maskable-1024.png?v=2",
+        src: "/icon-maskable-1024.png",
         sizes: "1024x1024",
         type: "image/png",
         purpose: "maskable",
@@ -241,5 +257,13 @@ test("Next serves static install metadata and an Apple icon through native app r
   // scope stays at the origin so the trust-centre pages open inside the app
   assert.equal(manifest.scope, "/");
   assert.doesNotMatch(layout, /manifest:\s*"\/manifest\.json"/);
-  assert.doesNotMatch(layout, /icons:\s*\{/);
+  // iOS drops an apple-touch-icon whose URL carries a query string, and Next
+  // fingerprints its generated icon routes that way, so the links must be
+  // declared against the plain paths instead.
+  assert.match(layout, /icons:\s*\{/);
+  assert.match(layout, /url:\s*"\/apple-touch-icon\.png",\s*sizes:\s*"180x180"/);
+  for (const url of ["/icon.svg", "/apple-touch-icon.png", "/apple-icon1.png", "/apple-icon2.png"]) {
+    assert.ok(layout.includes(`url: "${url}"`), `${url} must be linked at its plain path`);
+  }
+  assert.doesNotMatch(layout, /url:\s*"[^"]*\?[^"]*"/, "icon links must not carry a query string");
 });
