@@ -7,8 +7,10 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Use Node 22.22.2+ and npm 11.19.0+ from the supported ranges in `package.json`.
 - Install exactly from `package-lock.json` with `npm ci`. Review any new dependency install-script request; approved scripts are pinned by package and version in `allowScripts`.
 - Run `npm run release:verify` from a clean checkout.
+- Create release files only from that verified `out/` directory with `node scripts/create-release-artifact.mjs`. Never rebuild during deployment.
+- Verify `SHA256SUMS`, then compare every static file with `release-files.json`. The archive, inventory, CycloneDX SBOM, and checksums must come from the same GitHub release and artifact attestation.
 - Confirm `out/index.html`, `out/_headers`, `out/sw.js`, `out/manifest.webmanifest`, and the icon files exist.
-- Deploy the contents of `out/` to an HTTPS static host that applies `out/_headers`. Do not add an application-server requirement.
+- Deploy the contents of the exact `stellarkey-<version>.tar.gz` release archive to an HTTPS static host that applies `_headers`. Do not rebuild it and do not add an application-server requirement.
 - Treat a bundle-budget, production-audit, Chromium, iPhone WebKit, or iPad WebKit failure as release-blocking.
 
 ## Manual device boundaries

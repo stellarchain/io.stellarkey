@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -47,6 +56,88 @@ test("the static release publishes a commit-verifiable release manifest", () => 
   assert.match(source, /BUILD_COMMIT/);
   assert.match(read("src/app/about/page.tsx"), /BUILD_COMMIT/);
   assert.match(read("public/_headers"), /\/release\.json[\s\S]*Cache-Control: no-cache/);
+  assert.match(source, /release-files\.json/);
+  assert.match(source, /SHA-256/i);
+});
+
+test("release preflight rejects dirty trees and mismatched supplied commits", async () => {
+  const { validateReleaseState } = await import("../scripts/assert-clean-release.mjs");
+  const head = "a".repeat(40);
+
+  assert.doesNotThrow(() => validateReleaseState({ head, status: "", expectedCommit: head }));
+  assert.throws(
+    () => validateReleaseState({ head, status: " M src/app/page.tsx", expectedCommit: head }),
+    /clean Git worktree/i,
+  );
+  assert.throws(
+    () => validateReleaseState({ head, status: "?? release-notes.txt", expectedCommit: head }),
+    /clean Git worktree/i,
+  );
+  assert.throws(
+    () => validateReleaseState({ head, status: "", expectedCommit: "b".repeat(40) }),
+    /does not match HEAD/i,
+  );
+
+  const pkg = JSON.parse(read("package.json"));
+  assert.match(pkg.scripts["release:verify"], /^node scripts\/assert-clean-release\.mjs &&/);
+});
+
+test("release artifacts inventory every static file and remain byte deterministic", async (t) => {
+  const { createReleaseBundle } = await import("../scripts/create-release-artifact.mjs");
+  const root = mkdtempSync(join(tmpdir(), "stellarkey-release-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const output = join(root, "out");
+  const artifacts = join(root, "artifacts");
+  mkdirSync(join(output, "_next", "static"), { recursive: true });
+  writeFileSync(join(output, "index.html"), "<!doctype html><title>StellarKey</title>\n");
+  writeFileSync(join(output, "_next", "static", "app.js"), "console.log('release');\n");
+  const commit = "c".repeat(40);
+  const options = {
+    outDir: output,
+    artifactsDir: artifacts,
+    version: "1.0.0",
+    commit,
+    sbom: { bomFormat: "CycloneDX", specVersion: "1.6", version: 1 },
+  };
+
+  const first = await createReleaseBundle(options);
+  const archiveOne = readFileSync(first.archivePath);
+  const manifestOne = readFileSync(first.inventoryPath);
+  const second = await createReleaseBundle(options);
+  assert.deepEqual(readFileSync(second.archivePath), archiveOne);
+  assert.deepEqual(readFileSync(second.inventoryPath), manifestOne);
+
+  const inventory = JSON.parse(manifestOne);
+  assert.equal(inventory.commit, commit);
+  assert.deepEqual(
+    inventory.files.map((entry) => entry.path),
+    ["_next/static/app.js", "index.html"],
+  );
+  for (const entry of inventory.files) {
+    assert.match(entry.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(Number.isSafeInteger(entry.size) && entry.size > 0);
+  }
+  assert.equal(
+    inventory.archive.sha256,
+    createHash("sha256").update(archiveOne).digest("hex"),
+  );
+  const sums = readFileSync(first.checksumsPath, "utf8");
+  assert.match(sums, new RegExp(`${inventory.archive.sha256}  stellarkey-1\\.0\\.0\\.tar\\.gz`));
+  assert.match(sums, /  release-files\.json$/m);
+  assert.match(sums, /  stellarkey-1\.0\.0\.cdx\.json$/m);
+});
+
+test("tag releases build once, attest, and publish the exact artifacts", () => {
+  const workflow = read(".github/workflows/release.yml");
+  assert.match(workflow, /tags:\s*\n\s*- ['"]v\*['"]/);
+  assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
+  assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
+  assert.match(workflow, /actions\/attest-build-provenance@[0-9a-f]{40}/);
+  assert.match(workflow, /npm run release:verify/);
+  assert.equal((workflow.match(/npm run build/g) ?? []).length, 0);
+  assert.match(workflow, /node scripts\/create-release-artifact\.mjs/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /release-artifacts\/\*/);
 });
 
 test("sharing metadata and structured data describe one independent finance app", () => {
