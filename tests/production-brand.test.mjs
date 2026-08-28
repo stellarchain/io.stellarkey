@@ -82,6 +82,10 @@ test("the desktop sidebar presents the larger borderless StellarKey identity", (
   assert.doesNotMatch(dashboard, />\s*Wallet\s*<\/h1>/);
   assert.doesNotMatch(dashboard, />\s*Stellar Self-Custody\s*</);
   assert.equal(dashboard.match(/<LogoMark size=\{30\} className="text-white" \/>/g)?.length, 2);
+  assert.match(
+    dashboard,
+    /<div className="flex min-w-0 items-center gap-1\.5">\s*<LogoMark size=\{30\} className="text-white" \/>/,
+  );
   assert.doesNotMatch(dashboard, /h-9 w-9[^\n]*border border-white\/10[^\n]*[\s\S]{0,120}<LogoMark/);
 });
 
