@@ -53,7 +53,9 @@ test("browser verification is runner-owned instead of ad-hoc", () => {
     .map((entry) => entry.name)
     .sort();
   assert.deepEqual(scripts, [
+    "assert-clean-release.mjs",
     "check-bundle-budget.mjs",
+    "create-release-artifact.mjs",
     "generate-service-worker.mjs",
     "generate-static-headers.mjs",
     "static-server.mjs",

@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - run: corepack install
+      - run: corepack npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+      - run: npm run release:verify
+        env:
+          NEXT_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
+      - run: node scripts/create-release-artifact.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: release-artifacts/*
+      - name: Publish exact verified files
+        run: >-
+          gh release create "$GITHUB_REF_NAME" release-artifacts/*
+          --verify-tag
+          --generate-notes
+          --title "StellarKey ${GITHUB_REF_NAME#v}"
+        env:
+          GH_TOKEN: ${{ github.token }}

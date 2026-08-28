@@ -15,7 +15,13 @@ export function GET() {
     commit: BUILD_COMMIT,
     sourceTree: BUILD_IS_DIRTY ? "modified" : "clean",
     verifiable: !BUILD_IS_DIRTY,
+    releaseArtifacts: {
+      tag: `v${APPLICATION_VERSION}`,
+      inventory: "release-files.json",
+      checksums: "SHA256SUMS",
+      digestAlgorithm: "SHA-256",
+    },
     verification:
-      "Compare this full commit SHA with the commit shown by the corresponding GitHub release.",
+      "Compare this full commit SHA and the SHA-256 release-files.json inventory with the corresponding GitHub release.",
   });
 }
