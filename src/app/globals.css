@@ -206,6 +206,12 @@ body::after {
    only applies on touch-first devices, so dense mouse/trackpad layouts keep
    their desktop rhythm. */
 @media (hover: none) and (pointer: coarse) {
+  /* iOS can restore focus to the first link when launching an installed PWA,
+     which would otherwise expose this keyboard-only control over the status bar. */
+  .skip-link {
+    display: none;
+  }
+
   :is(button, [role="button"], [role="menuitem"]) {
     min-width: 44px;
     min-height: 44px;

@@ -50,6 +50,21 @@ test("the wallet entry page shows the same release identity", async ({ page }) =
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("the skip link appears for keyboards but cannot overlay touch-first screens", async ({ page }, testInfo) => {
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  const skipLink = page.locator(".skip-link");
+
+  await skipLink.evaluate((element) => (element as HTMLElement).focus());
+
+  if (testInfo.project.name === "desktop-chromium") {
+    await expect(skipLink).toBeVisible();
+    await expect(skipLink).toBeFocused();
+  } else {
+    await expect(skipLink).toBeHidden();
+    await expect(skipLink).not.toBeFocused();
+  }
+});
+
 test("security and support contacts are user-activated and absent from static markup", async ({ page }) => {
   for (const [path, buttonName] of [
     ["/security", "Email the security team"],

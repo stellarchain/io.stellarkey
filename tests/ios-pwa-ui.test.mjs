@@ -100,6 +100,17 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(toast, /app-safe-toast/);
 });
 
+test("touch-first screens never expose the keyboard skip link", () => {
+  const css = read("src/app/globals.css");
+  const layout = read("src/app/layout.tsx");
+
+  assert.match(layout, /className="skip-link"[^>]*>Skip to content<\/a>/);
+  assert.match(
+    css,
+    /@media\s*\(hover:\s*none\)\s*and\s*\(pointer:\s*coarse\)[\s\S]*?\.skip-link\s*\{[\s\S]*?display:\s*none;/,
+  );
+});
+
 test("the mobile wallet header begins directly below the iOS safe area", () => {
   const dashboard = read("src/components/Dashboard.tsx");
 
