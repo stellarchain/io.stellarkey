@@ -20,7 +20,8 @@ test("Playwright owns the production browser-test server and release command", (
     "browser tests must never reuse a server that may expose a stale release",
   );
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
-  assert.match(ci, /npm run test:e2e/);
+  assert.match(ci, /npm run build[\s\S]*playwright test/);
+  assert.doesNotMatch(ci, /npm run test:e2e/);
   assert.doesNotMatch(ci, /test:e2e:merchant/);
 });
 

@@ -19,6 +19,9 @@ import {
   measureLandingJavaScript,
 } from "../scripts/check-bundle-budget.mjs";
 
+// These assertions intentionally run after `npm run build`; ordinary unit
+// tests must remain independent of generated `out/` and `.next/` artifacts.
+
 test("the static entry route stays inside an explicit JavaScript budget", () => {
   const measurement = measureInitialJavaScript();
   assert.ok(measurement.chunkCount > 0);
