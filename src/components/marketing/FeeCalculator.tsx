@@ -120,7 +120,7 @@ export function FeeCalculator() {
       </div>
 
       <div className="calc-disclosure">
-        <p><strong>Illustrative UK assumptions checked 29 August 2026.</strong> Provider fees can vary by card, plan, country, and volume.</p>
+        <p><strong>Illustrative UK assumptions checked 29 August 2026.</strong> Annual totals assume 365 trading days. Provider fees can vary by card, plan, country, and volume.</p>
         <p>StellarKey charges no subscription or processing fee. The sender pays Stellar network fees. Their minimum is per operation and can rise during surge pricing. Conversion, spread, reserves, tax, and off-ramp fees are excluded.</p>
         <p className="calc-sources">
           {PUBLISHED_PROCESSOR_RATES.map((rate) => (

@@ -127,6 +127,130 @@ test("the decoder rejects POC and incomplete merchant schemas", () => {
     storage.decodeMerchantStore({ ...emptyStore(), orders: [incompleteOrder] }),
     null,
   );
+
+  for (const obsoleteShape of [
+    { ...emptyStore(), shifts: [{ id: "shift-without-current-actor-fields" }] },
+    { ...emptyStore(), refunds: [{ id: "refund-without-current-lifecycle-fields" }] },
+    { ...emptyStore(), exportRecords: [{ id: "export-without-current-audit-fields" }] },
+    { ...emptyStore(), cursors: { mainnet: "123" } },
+  ]) {
+    assert.equal(storage.decodeMerchantStore(obsoleteShape), null);
+  }
+});
+
+test("the decoder rejects minimally shaped records in every merchant collection", () => {
+  const paymentShell = {
+    asset: { code: "XLM", issuer: null },
+    destination: TILL,
+  };
+  const incompleteCollections = {
+    catalogue: [{ id: "item-1" }],
+    modifierGroups: [{ id: "group-1" }],
+    orders: [{
+      id: "order-1",
+      lines: [],
+      staffId: null,
+      stockAppliedAt: null,
+      stockExceptions: [],
+    }],
+    charges: [{ id: "charge-1", payment: null }],
+    refunds: [{
+      id: "refund-1",
+      kind: "order",
+      sourcePaymentId: null,
+      submissionStatus: "confirmed",
+    }],
+    unmatched: [{
+      id: "payment-1",
+      destination: TILL,
+      reconciliationOutcome: "unmatched",
+      candidateChargeId: null,
+      candidateInvoiceId: null,
+    }],
+    paymentReconciliations: [{
+      id: "payment-1",
+      payment: paymentShell,
+      outcome: "unmatched",
+      chargeId: null,
+      orderId: null,
+      invoiceId: null,
+      amountMinor: null,
+      reversalAmount: null,
+      resolution: null,
+    }],
+    staff: [{ id: "staff-1" }],
+    shifts: [{
+      id: "shift-1",
+      openedById: "staff-1",
+      closedById: null,
+      closedBy: null,
+      terminalName: "Counter",
+      network: "testnet",
+      zReport: null,
+    }],
+    invoices: [{
+      id: "invoice-1",
+      network: "testnet",
+      destination: null,
+      quotes: [],
+      payments: [],
+      createdAt: 1,
+      updatedAt: 1,
+      createdById: "staff-1",
+      createdBy: "Owner",
+      issuedAt: null,
+      issuedById: null,
+      issuedBy: null,
+      voidedAt: null,
+      voidedById: null,
+      voidedBy: null,
+      voidReason: null,
+    }],
+    counterCodes: [{
+      id: "code-1",
+      network: "testnet",
+      destination: TILL,
+      requestMessage: "Pay StellarKey",
+      quotes: [],
+      expiresAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+      createdById: "staff-1",
+      createdBy: "Owner",
+    }],
+    counterPayments: [{
+      id: "payment-1",
+      codeId: "code-1",
+      payment: paymentShell,
+      amountMinor: null,
+      quote: null,
+      seenAt: 1,
+    }],
+    customers: [{
+      address: TILL,
+      name: null,
+      preferredAsset: { code: "XLM", issuer: null },
+      sourceIds: [],
+      loyalty: null,
+      note: null,
+    }],
+    adjustments: [{
+      id: "adjustment-1",
+      orderId: "order-1",
+      lineId: null,
+      staffId: "staff-1",
+    }],
+    refundRequests: [{ id: "request-1", sourcePaymentId: null }],
+    peripherals: [{ id: "printer-1" }],
+  };
+
+  for (const [field, records] of Object.entries(incompleteCollections)) {
+    assert.equal(
+      storage.decodeMerchantStore({ ...emptyStore(), [field]: records }),
+      null,
+      `${field} accepted an incomplete current-schema record`,
+    );
+  }
 });
 
 test("a current store decodes every operational collection", () => {
@@ -202,6 +326,65 @@ test("a current store decodes every operational collection", () => {
   };
 
   assert.deepEqual(storage.decodeMerchantStore(store), store);
+});
+
+test("a merchant can persist zero accepted assets to pause new charges", () => {
+  const store = {
+    ...emptyStore(),
+    settings: { ...emptyStore().settings, acceptedAssets: [] },
+  };
+
+  assert.equal(storage.decodeMerchantStore(store), store);
+});
+
+test("a type-valid order line may omit its optional adjustment", () => {
+  const base = emptyStore();
+  const order = buildOrder(base, {
+    id: "order-without-adjustment",
+    network: "testnet",
+    lines: [{
+      id: "line-1",
+      itemId: null,
+      name: "Keypad amount",
+      quantity: 1,
+      unitPriceMinor: 500,
+      modifiers: [],
+      taxRateId: "standard",
+      note: null,
+    }],
+    discountMinor: 0,
+    tipMinor: 0,
+    staffId: null,
+    staffName: "Owner",
+    now: 1,
+  });
+  const store = { ...base, orders: [order] };
+
+  assert.equal(storage.decodeMerchantStore(store), store);
+});
+
+test("an invoice-only payment refund request persists its zero order number", () => {
+  const request = {
+    id: "refund-request-1",
+    orderId: "invoice-1",
+    orderNumber: 0,
+    invoiceId: "invoice-1",
+    invoiceNumber: "INV-2026-0001",
+    amountMinor: 250,
+    reason: "overpayment",
+    note: null,
+    sourcePaymentId: "payment-1",
+    requestedById: "staff-1",
+    requestedBy: "Owner",
+    requestedAt: 1,
+    status: "pending",
+    reviewedById: null,
+    reviewedAt: null,
+    refundId: null,
+  };
+  const store = { ...emptyStore(), refundRequests: [request] };
+
+  assert.equal(storage.decodeMerchantStore(store), store);
 });
 
 test("a settled cash order reloads with tender, stock, and adjustment audit intact", () => {

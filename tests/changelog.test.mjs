@@ -57,7 +57,7 @@ test("the changelog parser rejects ambiguous or unsafe structure", () => {
     ["malformed date", "# Changelog\n## [1.1.0] - 2026-02-30\n### Added\n- Entry"],
     ["raw HTML", "# Changelog\n<script>alert(1)</script>\n## [Unreleased]\n### Changed\n- Entry"],
     ["unsupported category", "# Changelog\n## [Unreleased]\n### Misc\n- Entry"],
-    ["empty release", "# Changelog\n## [Unreleased]"],
+    ["empty published release", "# Changelog\n## [1.1.0] - 2026-08-29"],
   ];
 
   for (const [label, source] of invalid) {
@@ -73,14 +73,22 @@ test("the tracked changelog documents the current release", () => {
   assert.match(source, /^# Changelog$/m);
   assert.match(source, /keepachangelog\.com\/en\/1\.1\.0/i);
   assert.match(source, /semver\.org\/spec\/v2\.0\.0/i);
-  assert.deepEqual(document.releases.map(({ version }) => version), ["Unreleased", "1.1.0"]);
-  assert.ok(document.releases[0].categories.some(({ entries }) => entries.length > 0));
+  assert.deepEqual(
+    document.releases.map(({ version }) => version),
+    ["Unreleased", "1.1.0", "1.0.0"],
+  );
+  assert.deepEqual(document.releases[0].categories, []);
   assert.deepEqual(
     document.releases[1].categories.map(({ name }) => name),
     ["Added", "Changed", "Fixed", "Security", "Removed"],
   );
   assert.equal(document.releases[1].date, "2026-08-29");
   assert.ok(document.releases[1].categories.every(({ entries }) => entries.length > 0));
+  assert.equal(document.releases[2].date, "2026-08-28");
+  assert.match(
+    document.releases[2].categories.flatMap(({ entries }) => entries).join(" "),
+    /self-custody.*Trezor.*merchant/i,
+  );
 });
 
 test("all authoritative release markers agree on version 1.1.0", () => {
@@ -111,6 +119,7 @@ test("agent and contributor policies keep version history synchronized", () => {
     assert.match(policy, /package-lock\.json/);
     assert.match(policy, /APPLICATION_VERSION/);
     assert.match(policy, /SECURITY\.md/);
+    assert.match(policy, /README\.md/);
     assert.match(policy, /npm run release:verify/);
     assert.match(policy, /published entr(?:y|ies)/i);
   }

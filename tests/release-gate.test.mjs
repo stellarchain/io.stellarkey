@@ -100,6 +100,22 @@ test("obsolete promo and scaffold artifacts stay out of the release tree", () =>
   assert.equal(pkg.scripts["icons:render"], "node scripts/render-app-icons.mjs");
 });
 
+test("merchant persistence validates only the current production schema", () => {
+  const storage = read("src/lib/merchant/storage.ts");
+  const schema = read("src/lib/merchant/schema.ts");
+  const types = read("src/lib/merchant/types.ts");
+  const testingGuide = read("docs/testing.md");
+
+  assert.doesNotMatch(
+    `${storage}\n${schema}`,
+    /legacy(?:-order|-staff|-export|:)|during migration|v1\/v2 read/i,
+  );
+  assert.match(storage, /return isCurrentMerchantStore\(value\) \? value : null/);
+  assert.match(schema, /objectOf<Merchant\.MerchantStore>/);
+  assert.doesNotMatch(types, /versioned for migration/i);
+  assert.doesNotMatch(testingGuide, /storage, migrations, encryption/i);
+});
+
 test("manual browser, hardware, and backend-free boundaries have a release checklist", () => {
   assert.equal(existsSync(new URL("../docs/release-checklist.md", import.meta.url)), true);
   const checklist = read("docs/release-checklist.md");

@@ -25,7 +25,7 @@ Add a regression test before fixing a defect. Keep changes focused, preserve enc
 
 Update the `[Unreleased]` section of `CHANGELOG.md` in the same commit whenever a change affects user-visible behavior, security posture, dependencies, stored data, deployment behavior, or removes a supported surface. Use the standard Added/Changed/Deprecated/Removed/Fixed/Security categories and keep entries factual and user-facing.
 
-During release preparation, choose the next version by Semantic Versioning impact, move the accumulated entries into `[x.y.z] - YYYY-MM-DD`, and recreate a non-empty `[Unreleased]` section for future work. Update `package.json`, both root version fields in `package-lock.json`, `APPLICATION_VERSION` in `src/lib/brand.ts`, the supported series in `SECURITY.md`, and exact version tests together. Never rewrite a published entry except to correct a factual error transparently.
+During release preparation, choose the next version by Semantic Versioning impact, move the accumulated entries into `[x.y.z] - YYYY-MM-DD`, and recreate an `[Unreleased]` section for future work. Leave it empty instead of adding placeholder release notes when no later work exists. Update `package.json`, both root version fields in `package-lock.json`, `APPLICATION_VERSION` in `src/lib/brand.ts`, the current-release marker in `README.md`, the supported series in `SECURITY.md`, and exact version tests together. Never rewrite a published entry except to correct a factual error transparently.
 
 Keep one logical feature per commit and run its focused tests. Run `npm run release:verify` from a clean worktree before creating a release tag.
 

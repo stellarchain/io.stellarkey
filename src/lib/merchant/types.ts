@@ -768,7 +768,7 @@ export interface Peripheral {
 
 export type TillTextSize = "standard" | "large" | "xlarge";
 
-/** Everything Merchant Mode keeps on this device, versioned for migration. */
+/** Everything Merchant Mode keeps on this device, versioned for fail-closed schema detection. */
 export interface MerchantStore {
   version: 2;
   /** Monotonic local revision used to reject stale writes from another tab. */
