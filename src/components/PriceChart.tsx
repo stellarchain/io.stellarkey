@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { fmtUsd } from "@/lib/format";
+import { fmtFiat, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 
 export interface ChartPoint {
@@ -23,9 +23,13 @@ function timeLabel(t: number, range: string): string {
 export function PriceChart({
   points,
   range,
+  currency,
+  rates,
 }: {
   points: ChartPoint[];
   range: string;
+  currency: FiatCurrency;
+  rates: Partial<Record<FiatCurrency, number>>;
 }) {
   const W = 500;
   const H = 160;
@@ -90,7 +94,7 @@ export function PriceChart({
         {hoverPt ? (
           <div className="fade-up flex items-baseline gap-2">
             <span className="mono text-[20px] font-semibold text-white">
-              {fmtUsd(hoverPt.p)}
+              {fmtFiat(hoverPt.p, currency, rates)}
             </span>
             <span className="text-[12px] text-neutral-400">
               {timeLabel(hoverPt.t, range)}
@@ -111,10 +115,10 @@ export function PriceChart({
         ) : (
           <div className="flex items-center gap-3 text-[11.5px] text-neutral-400">
             <span>
-              Low: <strong className="mono font-semibold text-neutral-200">{fmtUsd(rawMin)}</strong>
+              Low: <strong className="mono font-semibold text-neutral-200">{fmtFiat(rawMin, currency, rates)}</strong>
             </span>
             <span>
-              High: <strong className="mono font-semibold text-neutral-200">{fmtUsd(rawMax)}</strong>
+              High: <strong className="mono font-semibold text-neutral-200">{fmtFiat(rawMax, currency, rates)}</strong>
             </span>
           </div>
         )}

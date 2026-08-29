@@ -16,7 +16,6 @@ import { parseSep7PayUri } from "@/lib/payuri";
 import {
   fmtAmount,
   fmtFiat,
-  fmtUsd,
   activityAmountLines,
   generateActivityCsv,
   timeAgo,
@@ -3240,19 +3239,10 @@ function PriceCard() {
           <p className="truncate text-[12.5px] font-semibold text-neutral-400">{headerLabel}</p>
           <div className="mt-0.5 flex flex-nowrap items-center gap-2.5">
             <span className="whitespace-nowrap text-[24px] font-bold tracking-tight text-white">
-              {mode === "portfolio" && currentValue !== null
-                ? fmtUsd(currentValue)
-                : priceData
-                  ? fmtUsd(priceData.current)
-                  : "—"}
+              {currentValue !== null
+                ? fmtFiat(currentValue, fiatCurrency, fiatRates)
+                : "—"}
             </span>
-            {mode === "portfolio"
-              ? currentValue !== null && fiatCurrency !== "USD" && (
-                  <span className="mono shrink-0 whitespace-nowrap text-[12px] text-neutral-400">
-                    ≈ {fmtFiat(currentValue, fiatCurrency, fiatRates)}
-                  </span>
-                )
-              : null}
             {changePct !== null && (
               <span
                 className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-semibold"
@@ -3270,9 +3260,19 @@ function PriceCard() {
       </div>
       <div className="mt-3">
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
-          <PriceChart points={portfolioPoints} range={priceRange} />
+          <PriceChart
+            points={portfolioPoints}
+            range={priceRange}
+            currency={fiatCurrency}
+            rates={fiatRates}
+          />
         ) : priceData && priceData.points.length > 1 ? (
-          <PriceChart points={priceData.points} range={priceRange} />
+          <PriceChart
+            points={priceData.points}
+            range={priceRange}
+            currency={fiatCurrency}
+            rates={fiatRates}
+          />
         ) : (
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}
