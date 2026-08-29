@@ -109,7 +109,10 @@ test("browser verification is runner-owned instead of ad-hoc", () => {
 });
 
 test("obsolete promo and scaffold artifacts stay out of the release tree", () => {
+  const retiredAgentPolicy = ["CLA", "UDE.md"].join("");
   for (const path of [
+    ".playwright-mcp",
+    retiredAgentPolicy,
     "scripts/promo",
     "docs/plans",
     "public/file.svg",
@@ -125,6 +128,12 @@ test("obsolete promo and scaffold artifacts stay out of the release tree", () =>
 
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.scripts["icons:render"], "node scripts/render-app-icons.mjs");
+
+  const gitignore = read(".gitignore");
+  assert.match(gitignore, /^\/\.playwright-mcp\/$/m);
+  assert.match(gitignore, /^\/blob-report\/$/m);
+  assert.match(gitignore, /^\*\.log$/m);
+  assert.match(gitignore, /^\*\.trace$/m);
 });
 
 test("merchant persistence validates only the current production schema", () => {
