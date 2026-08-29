@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-29
+
+### Added
+
+- Added selective claimable-balance review with explicit issuer details, trustline gating, exact fee preview, and one atomic transaction for only the balances the user chooses.
+- Added account- and network-scoped device-local dismissal for unwanted claimable balances, including a reversible hidden-balances list without any on-chain action or backend.
+
+### Changed
+
+- Linked XLM market values to the wallet's selected display currency instead of presenting a fixed currency independently of wallet settings.
+
+### Fixed
+
+- Corrected the encrypted backup action alignment so its icon, title, and description remain visually aligned across responsive layouts.
+
 ## [1.1.0] - 2026-08-29
 
 ### Added
