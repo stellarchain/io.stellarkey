@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 const ICON_SVG = "src/app/icon.svg";
 const BACKGROUND = "#000000";
 const FOREGROUND = "#FFFFFF";
+const FAVICON_FOREGROUND = "#000000";
 const CANVAS = 64;
 
 /** How much of the tile's width the mark spans, per family. */
@@ -102,11 +103,11 @@ for (const [out, size, transform] of TARGETS) {
 }
 await browser.close();
 
-// The favicon shares the "any" sizing so the two never drift apart.
+// The favicon shares the "any" sizing so the mark never drifts, but stays a
+// transparent black glyph instead of inheriting the launcher's black tile.
 writeFileSync(ICON_SVG,
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${CANVAS} ${CANVAS}">
-  <rect width="${CANVAS}" height="${CANVAS}" fill="${BACKGROUND}"/>
-  <g transform="${ANY}" color="${FOREGROUND}">${artwork}</g>
+  <g transform="${ANY}" color="${FAVICON_FOREGROUND}">${artwork}</g>
 </svg>
 `);
 console.log(`\nmark bbox ${box.width.toFixed(2)}x${box.height.toFixed(2)} · any ${(ANY_COVERAGE * 100).toFixed(0)}% · maskable ${(maskableCoverage * 100).toFixed(0)}%`);

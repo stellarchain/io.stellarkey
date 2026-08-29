@@ -112,6 +112,7 @@ function assertMaskableSafeZone(path) {
 test("Next serves static install metadata and an Apple icon through native app routes", () => {
   const logo = readText("src/components/icons.tsx");
   const sourceIcon = readText("src/app/icon.svg");
+  const iconRenderer = readText("scripts/render-app-icons.mjs");
   const publicLogoUrl = new URL("../public/stellarkey-logo.svg", import.meta.url);
   const paperWallet = readText("src/lib/paperwallet.ts");
   const layout = readText("src/app/layout.tsx");
@@ -134,7 +135,11 @@ test("Next serves static install metadata and an Apple icon through native app r
   assert.equal(existsSync(publicLogoUrl), true, "the supplied logo must remain available as public master artwork");
   const publicLogo = readFileSync(publicLogoUrl, "utf8");
   assert.match(publicLogo, /viewBox="0 0 64 64"/);
-  assert.match(sourceIcon, /<rect width="64" height="64" fill="#000000"\/>/);
+  assert.doesNotMatch(sourceIcon, /<rect\b/, "the browser favicon must keep a transparent canvas");
+  assert.match(sourceIcon, /color="#000000"/, "the transparent favicon mark must be black");
+  assert.doesNotMatch(sourceIcon, /#FFFFFF/, "the favicon must not retain white tile artwork");
+  assert.match(iconRenderer, /const FAVICON_FOREGROUND = "#000000"/);
+  assert.match(iconRenderer, /color="\$\{FAVICON_FOREGROUND\}"/);
   // Served standalone, so it is parsed as XML rather than forgiving HTML: an
   // unbalanced group makes the favicon fail to load with no console error.
   assert.equal(
