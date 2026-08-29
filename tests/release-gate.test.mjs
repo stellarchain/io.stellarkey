@@ -73,11 +73,31 @@ test("browser verification is runner-owned instead of ad-hoc", () => {
     "create-release-artifact.mjs",
     "generate-service-worker.mjs",
     "generate-static-headers.mjs",
+    "render-app-icons.mjs",
     "static-server.mjs",
   ]);
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.devDependencies.playwright, undefined);
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
+});
+
+test("obsolete promo and scaffold artifacts stay out of the release tree", () => {
+  for (const path of [
+    "scripts/promo",
+    "docs/plans",
+    "public/file.svg",
+    "public/globe.svg",
+    "public/next.svg",
+    "public/vercel.svg",
+    "public/window.svg",
+    "public/app-screen-verification.png",
+    "public/icon-verification.png",
+  ]) {
+    assert.equal(existsSync(new URL(`../${path}`, import.meta.url)), false, path);
+  }
+
+  const pkg = JSON.parse(read("package.json"));
+  assert.equal(pkg.scripts["icons:render"], "node scripts/render-app-icons.mjs");
 });
 
 test("manual browser, hardware, and backend-free boundaries have a release checklist", () => {

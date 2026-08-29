@@ -145,20 +145,3 @@ export function chargeStatusFor(verdict: AmountVerdict): Charge["status"] {
   if (verdict === "over") return "overpaid";
   return "paid";
 }
-
-export function describeUnmatched(reason: UnmatchedReason): string {
-  switch (reason) {
-    case "ambiguous":
-      return "More than one open charge fits this amount, so the till will not guess.";
-    case "wrong_asset":
-      return "This asset does not match any open charge.";
-    case "outside_band":
-      return "The amount is outside every open charge's tolerance.";
-    case "expired":
-      return "The charge it would have matched has expired.";
-    case "invalid_time":
-      return "The payment has no valid ledger timestamp, so the till will not guess.";
-    default:
-      return "No open charge matches this payment.";
-  }
-}

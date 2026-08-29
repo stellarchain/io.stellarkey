@@ -136,10 +136,6 @@ export function secondsRemaining(charge: Charge, now = Date.now()): number {
   return Math.max(0, Math.ceil((charge.expiresAt - now) / 1000));
 }
 
-export function isExpired(charge: Charge, now = Date.now()): boolean {
-  return charge.status === "awaiting" && now >= charge.expiresAt;
-}
-
 /** Charges still worth watching Horizon for. */
 export function liveCharges(charges: Charge[], network: NetworkKey, now = Date.now()): Charge[] {
   return charges.filter(

@@ -315,7 +315,7 @@ export function buildShiftReport(
   validTime(generatedAt);
   const shift = shiftOrThrow(store, shiftId);
   if (shift.closedAt !== null) {
-    if (!shift.zReport) throw new Error("This legacy shift does not contain an immutable Z-report.");
+    if (!shift.zReport) throw new Error("This closed shift does not contain an immutable Z-report.");
     return cloneReport(shift.zReport);
   }
   if (generatedAt < shift.openedAt) throw new Error("A report cannot predate its shift.");

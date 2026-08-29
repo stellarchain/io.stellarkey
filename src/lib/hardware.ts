@@ -34,14 +34,6 @@ export interface HardwareSigner {
   path: string;
 }
 
-export function isWebUsbSupported(): boolean {
-  return typeof navigator !== "undefined" && "usb" in navigator;
-}
-
-export function isWebHidSupported(): boolean {
-  return typeof navigator !== "undefined" && "hid" in navigator;
-}
-
 /**
  * Derives the standard Stellar BIP-44 derivation path for an account index.
  * Standard: m/44'/148'/account' (SEP-0005)

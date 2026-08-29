@@ -2,7 +2,6 @@ import {
   decryptBytes,
   decryptBytesWithKey,
   decryptStringWithKey,
-  deriveContextKeyBytes,
   encryptBytes,
   encryptBytesWithKey,
   encryptStringWithKey,
@@ -67,11 +66,4 @@ export function decryptVaultBytes(
   masterKey: Uint8Array,
 ): Promise<Uint8Array> {
   return decryptBytesWithKey(payload, masterKey);
-}
-
-export function deriveVaultContextKey(
-  masterKey: Uint8Array,
-  context: string,
-): Promise<Uint8Array> {
-  return deriveContextKeyBytes(masterKey, context);
 }

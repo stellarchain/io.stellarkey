@@ -520,10 +520,6 @@ export class MerchantRepository {
   }
 }
 
-export function isSupportedEncryptedMerchantArchive(value: unknown): boolean {
-  return isEncryptedMerchantRecordArchive(value);
-}
-
 let repository: MerchantRepository | null = null;
 
 export function getMerchantRepository(): MerchantRepository {

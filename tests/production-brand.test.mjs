@@ -99,7 +99,8 @@ test("branded exports do not change encrypted compatibility contracts", () => {
 
   assert.match(read("src/lib/vault.ts"), /const BACKUP_KIND = "stellar-wallet-backup"/);
   assert.match(read("src/lib/vault.ts"), /const VAULT_KEY = "stellarkey\.vault\.v1"/);
-  assert.match(read("src/lib/crypto.ts"), /stellarkey:\$\{context\}:v1/);
+  assert.match(read("src/lib/crypto.ts"), /const KDF_ITERATIONS = 600_000/);
+  assert.match(read("src/lib/crypto.ts"), /wallet-vault-context-v1/);
   assert.match(read("public/sw.js"), /const CACHE_PREFIX = "stellarkey-shell-"/);
 });
 

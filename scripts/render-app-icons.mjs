@@ -11,9 +11,9 @@
  *            inside a circle of radius 40% of the tile, which is a much
  *            smaller box, so this family is deliberately the smaller mark.
  *
- * Run after changing the mark:  node scripts/promo/render-app-icons.mjs
+ * Run after changing the mark:  node scripts/render-app-icons.mjs
  */
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const ICON_SVG = "src/app/icon.svg";
