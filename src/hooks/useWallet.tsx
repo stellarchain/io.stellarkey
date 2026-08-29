@@ -315,6 +315,7 @@ interface WalletContextValue {
     memo?: StellarMemoInput;
   }) => Promise<SubmissionResult>;
   claimAirdrop: (balanceId: string) => Promise<SubmissionResult>;
+  claimAirdrops: (balanceIds: string[]) => Promise<SubmissionResult>;
   mergeAccount: (destination: string) => Promise<SubmissionResult>;
   trustAsset: (params: { code: string; issuer: string; add: boolean }) => Promise<SubmissionResult>;
   /** Atomically add multiple trustlines in one transaction */
@@ -431,6 +432,7 @@ type WalletTransactionsContextValue = Pick<
   | "send"
   | "sendBatch"
   | "claimAirdrop"
+  | "claimAirdrops"
   | "mergeAccount"
   | "trustAsset"
   | "trustAssets"
@@ -2043,19 +2045,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
   );
 
-  const claimAirdrop = useCallback(
-    async (balanceId: string) => {
+  const claimAirdrops = useCallback(
+    async (balanceIds: string[]) => {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
       return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
-        (onPrepared) => api.claimClaimableBalance({
+        (onPrepared) => api.claimClaimableBalances({
           network,
           secretKey,
           hardwareSigner: hw,
-          balanceId,
+          balanceIds,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
         }),
@@ -2063,6 +2065,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+  );
+
+  const claimAirdrop = useCallback(
+    (balanceId: string) => claimAirdrops([balanceId]),
+    [claimAirdrops],
   );
 
   const mergeAccount = useCallback(
@@ -2422,6 +2429,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       send,
       sendBatch,
       claimAirdrop,
+      claimAirdrops,
       mergeAccount,
       trustAsset,
       trustAssets,
@@ -2497,6 +2505,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       send,
       sendBatch,
       claimAirdrop,
+      claimAirdrops,
       mergeAccount,
       trustAsset,
       trustAssets,
@@ -2645,6 +2654,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     send,
     sendBatch,
     claimAirdrop,
+    claimAirdrops,
     mergeAccount,
     trustAsset,
     trustAssets,
@@ -2657,6 +2667,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }), [
     applyMultisigConfig,
     claimAirdrop,
+    claimAirdrops,
     cosignTransaction,
     disableMultisig,
     fundFromFriendbot,

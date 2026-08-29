@@ -1033,13 +1033,21 @@ test("every locked transaction flow consumes shared confirmed and failed resolut
   assert.match(batch, /Batch Accepted/);
 });
 
-test("the active airdrop flow cannot immediately resubmit a pending claim", () => {
+test("the selective airdrop flow cannot immediately resubmit a pending claim", () => {
   const dashboard = readFileSync(
     new URL("../src/components/Dashboard.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(dashboard, /pendingAirdropClaim/);
-  assert.match(dashboard, /disabled=\{claimingAll \|\| pendingAirdropClaim\}/);
+  const review = readFileSync(
+    new URL("../src/components/ClaimableBalancesModal.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(dashboard, /disabled=\{pendingAirdropClaim\}/);
+  assert.match(review, /pendingAirdropClaim/);
+  assert.match(
+    review,
+    /disabled=\{[\s\S]*?pendingAirdropClaim[\s\S]*?Boolean\(pendingSubmission\)/,
+  );
 });
 
 test("asset-detail submission status is visible even without an error", () => {

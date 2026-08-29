@@ -200,6 +200,70 @@ test("batch transaction fee is linear in its operation count", async (t) => {
   assert.equal(submittedTransaction(calls).fee, "200");
 });
 
+test("selected claimable balances are claimed atomically and in selection order", async (t) => {
+  const { claimClaimableBalances } = await import("../src/lib/api.ts");
+  assert.equal(typeof claimClaimableBalances, "function");
+  const source = Keypair.random();
+  const balanceIds = [
+    `00000000${"11".repeat(32)}`,
+    `00000000${"22".repeat(32)}`,
+  ];
+  const calls = [];
+
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    calls.push({ url: stringUrl, init });
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await claimClaimableBalances({
+    network: "testnet",
+    secretKey: source.secret(),
+    balanceIds,
+    feeStroops: 100,
+  });
+
+  const transaction = submittedTransaction(calls);
+  assert.equal(transaction.fee, "200");
+  assert.deepEqual(
+    transaction.operations.map((operation) => ({
+      type: operation.type,
+      balanceId: operation.type === "claimClaimableBalance" ? operation.balanceId : null,
+    })),
+    balanceIds.map((balanceId) => ({ type: "claimClaimableBalance", balanceId })),
+  );
+});
+
+test("selected claimable balance batches reject empty and duplicate input", async () => {
+  const { claimClaimableBalances } = await import("../src/lib/api.ts");
+  assert.equal(typeof claimClaimableBalances, "function");
+  const source = Keypair.random();
+  const balanceId = `00000000${"33".repeat(32)}`;
+
+  await assert.rejects(
+    claimClaimableBalances({
+      network: "testnet",
+      secretKey: source.secret(),
+      balanceIds: [],
+    }),
+    /select at least one/i,
+  );
+  await assert.rejects(
+    claimClaimableBalances({
+      network: "testnet",
+      secretKey: source.secret(),
+      balanceIds: [balanceId, balanceId],
+    }),
+    /duplicate/i,
+  );
+});
+
 test("strict-receive swaps bind exact credit and maximum debit in XDR", async (t) => {
   const source = Keypair.random();
   const calls = mockPaymentHorizon(t, source.publicKey(), source.publicKey());

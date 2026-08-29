@@ -64,6 +64,7 @@ import {
   IconEyeOff,
   IconFileText,
   IconGear,
+  IconGift,
   IconHome,
   IconKey,
   IconList,
@@ -99,6 +100,7 @@ const AddressBookPage = dynamic(() => import("./AddressBookPage").then((m) => m.
 const BackupWizardModal = dynamic(() => import("./BackupWizardModal").then((m) => m.BackupWizardModal), { ssr: false });
 const MultiSigStudioModal = dynamic(() => import("./MultiSigStudioModal").then((m) => m.MultiSigStudioModal), { ssr: false });
 const AddAssetModal = dynamic(() => import("./AddAssetModal").then((m) => m.AddAssetModal), { ssr: false });
+const ClaimableBalancesModal = dynamic(() => import("./ClaimableBalancesModal").then((m) => m.ClaimableBalancesModal), { ssr: false });
 const AssetDetailModal = dynamic(() => import("./AssetDetailModal").then((m) => m.AssetDetailModal), { ssr: false });
 const BatchSendModal = dynamic(() => import("./BatchSendModal").then((m) => m.BatchSendModal), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((m) => m.CommandPalette), { ssr: false });
@@ -222,7 +224,6 @@ export function Dashboard() {
     accountBalances,
     accountPortfolioSnapshots,
     claimableBalances,
-    claimAirdrop,
     activity,
     activityCursor,
     dataLoading,
@@ -321,7 +322,7 @@ export function Dashboard() {
   const [scrolled, setScrolled] = useState(false);
   const [fundBusy, setFundBusy] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
-  const [claimingAll, setClaimingAll] = useState(false);
+  const [claimableBalancesOpen, setClaimableBalancesOpen] = useState(false);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installEnvironment, setInstallEnvironment] = useState({ ios: false, standalone: false });
@@ -910,26 +911,6 @@ export function Dashboard() {
       setFundError(e instanceof Error ? e.message : "Funding failed.");
     } finally {
       setFundBusy(false);
-    }
-  }
-
-  async function handleClaimAllAirdrops() {
-    if (claimableBalances.length === 0 || pendingAirdropClaim) return;
-    setClaimingAll(true);
-    triggerHaptic("selection");
-    try {
-      for (const item of claimableBalances) {
-        const result = await claimAirdrop(item.id);
-        if (result.status !== "confirmed") {
-          triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
-          return;
-        }
-      }
-      triggerHaptic("success");
-    } catch {
-      triggerHaptic("error");
-    } finally {
-      setClaimingAll(false);
     }
   }
 
@@ -1993,10 +1974,12 @@ export function Dashboard() {
                 {claimableBalances.length > 0 && (
                   <div className="fade-up flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="text-[20px] shrink-0">🎁</span>
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/15 text-[#30D158]">
+                        <IconGift size={18} />
+                      </span>
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold text-white">
-                          {claimableBalances.length} Pending Airdrop{claimableBalances.length > 1 ? "s" : ""}
+                          {claimableBalances.length} Pending Balance{claimableBalances.length > 1 ? "s" : ""}
                         </p>
                         <p className="truncate text-[11px] text-neutral-300">
                           {claimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
@@ -2006,11 +1989,10 @@ export function Dashboard() {
                     <Button
                       variant="secondary"
                       className="!h-8 !px-3 !text-[12px] shrink-0"
-                      loading={claimingAll}
-                      disabled={claimingAll || pendingAirdropClaim}
-                      onClick={() => void handleClaimAllAirdrops()}
+                      disabled={pendingAirdropClaim}
+                      onClick={() => setClaimableBalancesOpen(true)}
                     >
-                      Claim All
+                      Review
                     </Button>
                   </div>
                 )}
@@ -2701,6 +2683,16 @@ export function Dashboard() {
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
       <ReceiveModal open={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
+      {claimableBalancesOpen && (
+        <ClaimableBalancesModal
+          open
+          onClose={() => setClaimableBalancesOpen(false)}
+          onAddAsset={() => {
+            setClaimableBalancesOpen(false);
+            setAddAssetOpen(true);
+          }}
+        />
+      )}
       <AssetDetailModal
         key={`${network}:${detailAsset?.key ?? "closed"}`}
         asset={detailAsset}

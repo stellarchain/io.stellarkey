@@ -219,7 +219,35 @@ export async function claimClaimableBalance(params: {
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<SubmissionResult> {
-  const { network, secretKey, balanceId } = params;
+  const { balanceId, ...rest } = params;
+  return claimClaimableBalances({
+    ...rest,
+    balanceIds: [balanceId],
+  });
+}
+
+export async function claimClaimableBalances(params: {
+  network: NetworkKey;
+  secretKey?: string;
+  hardwareSigner?: HardwareSigner;
+  balanceIds: string[];
+  feeStroops?: number;
+  onPrepared?: SubmissionPreparedCallback;
+}): Promise<SubmissionResult> {
+  const { network, secretKey } = params;
+  if (params.balanceIds.length === 0) {
+    throw new SendError("Select at least one claimable balance.");
+  }
+  if (params.balanceIds.length > 100) {
+    throw new SendError("A Stellar transaction can contain at most 100 operations.");
+  }
+  const balanceIds = params.balanceIds.map((balanceId) => balanceId.trim().toLowerCase());
+  if (new Set(balanceIds).size !== balanceIds.length) {
+    throw new SendError("Duplicate claimable balances are not allowed.");
+  }
+  if (balanceIds.some((balanceId) => !/^00000000[0-9a-f]{64}$/.test(balanceId))) {
+    throw new SendError("One of the claimable balance IDs is invalid.");
+  }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
   const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
@@ -229,17 +257,18 @@ export async function claimClaimableBalance(params: {
   if (!source) throw new SendError("Your account does not exist on this network.");
   const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
-  const tx = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
+  const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
     fee: String(fee),
     networkPassphrase: cfg.networkPassphrase,
-  })
-    .addOperation(
+  });
+  for (const balanceId of balanceIds) {
+    builder.addOperation(
       Operation.claimClaimableBalance({
         balanceId,
       }),
-    )
-    .setTimeout(180)
-    .build();
+    );
+  }
+  const tx = builder.setTimeout(180).build();
 
   try {
     return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
