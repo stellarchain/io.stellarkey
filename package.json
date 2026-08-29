@@ -20,13 +20,14 @@
     "start": "node scripts/static-server.mjs",
     "lint": "eslint",
     "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/*.test.mjs",
+    "test:bundle": "node --no-warnings --test tests/bundle-budget.build.mjs",
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
     "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts --project=desktop-chromium",
-    "release:verify": "node scripts/assert-clean-release.mjs && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run check:bundle && playwright test"
+    "release:verify": "node scripts/assert-clean-release.mjs && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run test:bundle && npm run check:bundle && playwright test"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

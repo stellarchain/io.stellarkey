@@ -50,6 +50,24 @@ test("CI pins third-party actions and verifies the complete static release", () 
   assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
 });
 
+test("clean CI runs generated bundle assertions only after the static build", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const pkg = JSON.parse(read("package.json"));
+
+  assert.equal(existsSync(new URL("../tests/bundle-budget.test.mjs", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../tests/bundle-budget.build.mjs", import.meta.url)), true);
+  assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/);
+  assert.match(pkg.scripts["test:bundle"], /tests\/bundle-budget\.build\.mjs/);
+  assert.match(
+    pkg.scripts["release:verify"],
+    /npm test.*npm run build.*npm run test:bundle.*npm run check:bundle.*playwright test/,
+  );
+  assert.match(
+    ci,
+    /npm test[\s\S]*npm run build[\s\S]*npm run test:bundle[\s\S]*npm run check:bundle[\s\S]*playwright test/,
+  );
+});
+
 test("the toolchain and dependency lifecycle approvals are explicit", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.match(pkg.packageManager, /^npm@\d+\.\d+\.\d+$/);
