@@ -73,6 +73,8 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.equal(packageLock.packages[""].version, "1.1.0");
   assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
+  assert.match(read("README.md"), /src="\.\/public\/stellarkey-logo-white\.svg"/);
+  assert.match(read("public/stellarkey-logo-white.svg"), /(?:stroke|fill)="#fff"/i);
 });
 
 test("the desktop sidebar presents the larger borderless StellarKey identity", () => {
@@ -92,7 +94,7 @@ test("the desktop sidebar presents the larger borderless StellarKey identity", (
 test("the public README leads with the official identity and essential project paths", () => {
   const readme = read("README.md");
 
-  assert.match(readme, /<img[\s\S]*?src="\.\/public\/icon-192\.png"[\s\S]*?alt="StellarKey logo"/);
+  assert.match(readme, /<img[\s\S]*?src="\.\/public\/stellarkey-logo-white\.svg"[\s\S]*?alt="StellarKey logo"/);
   assert.match(readme, /https:\/\/stellarkey\.io/);
   assert.match(readme, /^## Security model$/m);
   assert.match(readme, /^## Quick start$/m);
