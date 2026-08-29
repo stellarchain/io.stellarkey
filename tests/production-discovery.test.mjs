@@ -162,6 +162,20 @@ test("tag releases build once, attest, and publish the exact artifacts", () => {
   assert.match(workflow, /release-artifacts\/\*/);
 });
 
+test("production deploys the exact published release archive to Cloudflare Pages", () => {
+  const workflow = read(".github/workflows/release.yml");
+  assert.match(workflow, /deploy:\s*\n\s*needs: release/);
+  assert.match(workflow, /environment:\s*\n\s*name: production\s*\n\s*url: https:\/\/stellarkey\.io/);
+  assert.match(workflow, /gh release download "\$GITHUB_REF_NAME"/);
+  assert.match(workflow, /sha256sum --check SHA256SUMS/);
+  assert.match(workflow, /tar -xzf .* --strip-components=1 -C deploy/);
+  assert.match(workflow, /cloudflare\/wrangler-action@[0-9a-f]{40}/);
+  assert.match(workflow, /wranglerVersion: "4\.[0-9.]+"/);
+  assert.match(workflow, /CLOUDFLARE_ACCOUNT_ID/);
+  assert.match(workflow, /CLOUDFLARE_API_TOKEN/);
+  assert.match(workflow, /pages deploy deploy --project-name=stellarkey --branch=main/);
+});
+
 test("sharing metadata and structured data describe one independent finance app", () => {
   const openGraph = read("src/app/opengraph-image.tsx");
   const twitter = read("src/app/twitter-image.tsx");

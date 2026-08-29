@@ -29,6 +29,19 @@ The host must apply `out/_headers` exactly, including the Content-Security-Polic
 
 Validate the apex-to-www or www-to-apex redirect, canonical metadata, `/.well-known/security.txt`, `/security`, `/support`, `/release.json`, icons, offline shell, and a real 404 response. Ensure route fallback does not return HTML with status 200 for missing assets.
 
+### Cloudflare Pages setup
+
+StellarKey uses a **Direct Upload** Pages project named `stellarkey`; do not connect Cloudflare's Git integration because the release workflow must deploy the already verified GitHub release archive without rebuilding it.
+
+1. In Cloudflare, open **Workers & Pages → Create application → Pages → Direct Upload**. Set the project name to `stellarkey`, upload any current verified `out/` directory for the one-time project creation, and leave the generated `*.pages.dev` address available as a preview origin.
+2. Open **My Profile → API Tokens → Create Token → Custom token**. Grant only **Account → Cloudflare Pages → Edit** for the account that owns the project. Copy the token once and record its rotation owner and expiry.
+3. Copy the account ID from the Cloudflare account overview.
+4. In the GitHub repository, create an environment named `production`. Protect it with required reviewers when more than one trusted maintainer is available, and restrict deployment branches/tags to protected release tags.
+5. Add environment secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Do not add them to source, workflow files, Pages variables, or local `.env` files.
+6. In the Pages project, add `stellarkey.io` as the production custom domain. Add `www.stellarkey.io` only to redirect it permanently to the apex; do not publish a second wallet origin because passkeys and browser storage are origin-bound.
+
+Pushing a signed, protected `v*` tag runs the complete release gate, publishes and attests the immutable archive on GitHub, downloads that same archive in the protected `production` job, verifies `SHA256SUMS` and the embedded commit, and deploys it with a pinned Wrangler action and CLI version. The deployment must never run from an ordinary branch push.
+
 ## 5. Promotion and smoke test
 
 Deploy the exact artifact to an isolated preview origin first. Compare its release commit and file hashes, then test unlock, backup export/restore, send review, testnet submission and reconciliation, swap quoting, merchant charge settlement, staged service-worker update, offline reopen, and reset. Use non-production secrets and small testnet amounts.

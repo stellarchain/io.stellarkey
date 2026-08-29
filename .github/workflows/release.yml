@@ -42,3 +42,39 @@ jobs:
           --title "StellarKey ${GITHUB_REF_NAME#v}"
         env:
           GH_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: https://stellarkey.io
+    steps:
+      - name: Download and verify the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="stellarkey-${version}.tar.gz"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "$archive" \
+            --pattern "stellarkey-${version}.cdx.json" \
+            --pattern "release-files.json" \
+            --pattern "SHA256SUMS"
+          sha256sum --check SHA256SUMS
+          mkdir deploy
+          tar -xzf "$archive" --strip-components=1 -C deploy
+          test "$(node -p "require('./deploy/release.json').commit")" = "$GITHUB_SHA"
+      - name: Deploy exact release to Cloudflare Pages
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.127.1"
+          command: >-
+            pages deploy deploy --project-name=stellarkey --branch=main
+            --commit-hash=${{ github.sha }} --commit-message=${{ github.ref_name }}
