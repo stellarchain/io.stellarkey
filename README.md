@@ -68,7 +68,7 @@ That command runs type checking, the complete unit suite, lint, the production d
 ## Security and deployment notes
 
 - Serve `out/` over HTTPS and configure the static host to apply `out/_headers`. Passkeys, installed-PWA behavior, and cross-origin security features require a trustworthy origin. Custom Horizon and RPC URLs must use HTTPS.
-- The static header policy includes a build-hashed CSP, clickjacking protection, MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect.
+- During `npm run build`, every exported HTML document receives its own document-scoped CSP containing the exact hashes of that document's inline bootstrap scripts. `out/_headers` supplies response-only protections such as `frame-ancestors 'none'`, plus MIME sniffing protection, a restrictive permissions policy, and popup-compatible cross-origin isolation for Trezor Connect. Apply both layers as generated; do not copy the long document policy into one oversized `_headers` line.
 - The CSP permits outbound HTTPS because users can configure a Horizon endpoint and asset metadata/logos may live on issuer domains.
 - Reset deletes all `stellarkey.*` and `wallet.*` browser storage owned by this app. Back up the recovery phrase or encrypted backup before resetting.
 - SEP-7 callback requests and signed/origin-domain requests are rejected until the app can execute and verify those flows fully.
