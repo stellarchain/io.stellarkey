@@ -187,13 +187,19 @@ test("sharing metadata and structured data describe one independent finance app"
   }
 });
 
-test("CSP hashes authorize inline scripts from every exported HTML document", async () => {
+test("each exported document carries its own hash CSP within Cloudflare header limits", async () => {
   const source = read("scripts/generate-static-headers.mjs");
   assert.match(source, /export function collectInlineScriptHashes/);
+  assert.match(source, /export function renderDocumentWithCsp/);
   assert.match(source, /export function renderStaticHeaders/);
   assert.match(source, /if \(invokedPath === import\.meta\.url\)/);
 
-  const { collectInlineScriptHashes, renderStaticHeaders } = await import(
+  const {
+    CLOUDFLARE_HEADER_LINE_LIMIT,
+    collectInlineScriptHashes,
+    renderDocumentWithCsp,
+    renderStaticHeaders,
+  } = await import(
     "../scripts/generate-static-headers.mjs"
   );
   const home = "<script>shared()</script><script>home()</script>";
@@ -202,12 +208,24 @@ test("CSP hashes authorize inline scripts from every exported HTML document", as
   const digest = (sourceText) => `sha256-${createHash("sha256").update(sourceText).digest("base64")}`;
   assert.deepEqual(hashes, [digest("home()"), digest("privacy()"), digest("shared()")].sort());
 
-  const headers = renderStaticHeaders({
-    template: "Content-Security-Policy: script-src 'self' __SCRIPT_HASHES__",
-    htmlDocuments: [home, privacy],
+  const document = renderDocumentWithCsp({
+    html: `<!doctype html><html><head><title>Home</title></head><body>${home}</body></html>`,
+    policyTemplate: "default-src 'self'; script-src 'self' __SCRIPT_HASHES__",
   });
-  for (const hash of hashes) assert.match(headers, new RegExp(hash.replace(/[+/]/g, "\\$&")));
-  assert.doesNotMatch(headers, /__SCRIPT_HASHES__/);
+  for (const hash of collectInlineScriptHashes(home)) {
+    assert.match(document, new RegExp(hash.replace(/[+/]/g, "\\$&")));
+  }
+  assert.match(document, /<head><meta http-equiv="Content-Security-Policy"/);
+  assert.doesNotMatch(document, /__SCRIPT_HASHES__/);
+
+  const headers = renderStaticHeaders({
+    template: "/*\n  Content-Security-Policy: frame-ancestors 'none'\n",
+  });
+  assert.ok(headers.split("\n").every((line) => line.length <= CLOUDFLARE_HEADER_LINE_LIMIT));
+  assert.throws(
+    () => renderStaticHeaders({ template: `/*\n  X-Test: ${"x".repeat(2_001)}` }),
+    /Cloudflare Pages.*2,000/i,
+  );
 });
 
 test("the offline shell resolves and precaches every public disclosure route", async () => {
