@@ -51,6 +51,7 @@ function validIsoDate(value: string): boolean {
 
 function validateRelease(release: MutableRelease, lineNumber: number): void {
   if (release.categories.length === 0) {
+    if (release.version === "Unreleased") return;
     fail(lineNumber, `release ${release.version} is empty`);
   }
   for (const category of release.categories) {

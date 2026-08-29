@@ -4,7 +4,7 @@ StellarKey has one deterministic release path: `npm run release:verify`. Browser
 
 ## Coverage map
 
-- `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, wallet and merchant storage, migrations, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.
+- `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, current wallet and merchant storage schemas, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.
 - `e2e/wallet.spec.ts` covers onboarding, corrupt-data recovery, endpoint preferences, unlock, send and swap review, and watch-only safety.
 - `e2e/merchant.spec.ts` covers setup, operators and shifts, cash/crypto/split settlement, reload reconciliation, refunds, invoices, counter codes, customers, reports, full IndexedDB backup/wipe/restore, offline recovery, install handoff, and mobile overflow.
 - `e2e/merchant-webkit.spec.ts` gates iPhone reload and payment catch-up.

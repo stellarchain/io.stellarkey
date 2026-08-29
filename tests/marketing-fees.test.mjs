@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -16,6 +17,11 @@ const rate = (id) => {
 
 test("annual sales use a 365-day comparison year", () => {
   assert.equal(annualSales(40), 14_600);
+  const calculator = readFileSync(
+    new URL("../src/components/marketing/FeeCalculator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(calculator, /365 trading days/i);
 });
 
 test("annual turnover stays in integer minor units", () => {

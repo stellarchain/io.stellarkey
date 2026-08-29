@@ -96,6 +96,7 @@ test("the changelog publishes the current release as semantic text", async ({ pa
   await page.goto("/changelog", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { level: 2, name: "Unreleased" })).toBeVisible();
+  await expect(page.getByText("No unreleased changes.")).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "1.1.0" })).toBeVisible();
   await expect(page.locator('time[datetime="2026-08-29"]')).toHaveText("29 August 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
@@ -134,6 +135,7 @@ test("the fee comparison is editable, sourced, and explicit about its assumption
   await expect(stellarKeyRow).toContainText("£0.00");
 
   await expect(comparison).toContainText("Illustrative UK assumptions checked 29 August 2026");
+  await expect(comparison).toContainText("365 trading days");
   await expect(comparison).toContainText("Provider fees can vary");
   await expect(comparison).toContainText("The sender pays Stellar network fees");
   await expect(comparison).toContainText("Conversion, spread, reserves, tax, and off-ramp fees are excluded");

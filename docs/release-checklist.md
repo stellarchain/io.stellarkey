@@ -9,7 +9,7 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Run `npm run release:verify` from a clean checkout.
 - Create release files only from that verified `out/` directory with `node scripts/create-release-artifact.mjs`. Never rebuild during deployment.
 - Verify `SHA256SUMS`, then compare every static file with `release-files.json`. The archive, inventory, CycloneDX SBOM, and checksums must come from the same GitHub release and artifact attestation.
-- Confirm [CHANGELOG.md](../CHANGELOG.md) has a dated entry for the package version and a fresh non-empty `[Unreleased]` section before tagging.
+- Confirm [CHANGELOG.md](../CHANGELOG.md) has a dated entry for the package version and a fresh `[Unreleased]` section before tagging; leave that section empty rather than publishing a placeholder note.
 - Confirm `out/index.html`, `out/_headers`, `out/sw.js`, `out/manifest.webmanifest`, and the icon files exist.
 - Deploy the contents of the exact `stellarkey-<version>.tar.gz` release archive to an HTTPS static host that applies `_headers`. Do not rebuild it and do not add an application-server requirement.
 - Treat a bundle-budget, production-audit, Chromium, iPhone WebKit, or iPad WebKit failure as release-blocking.

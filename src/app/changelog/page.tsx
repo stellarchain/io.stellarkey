@@ -81,14 +81,18 @@ export default function ChangelogPage() {
               <time dateTime={release.date}>{formatReleaseDate(release.date)}</time>
             )}
           </div>
-          {release.categories.map((category) => (
-            <div className="changelog-category" key={category.name}>
-              <h3>{category.name}</h3>
-              <ul className="prose-list">
-                {category.entries.map((entry) => <li key={entry}>{entry}</li>)}
-              </ul>
-            </div>
-          ))}
+          {release.categories.length === 0 ? (
+            <p className="changelog-empty">No unreleased changes.</p>
+          ) : (
+            release.categories.map((category) => (
+              <div className="changelog-category" key={category.name}>
+                <h3>{category.name}</h3>
+                <ul className="prose-list">
+                  {category.entries.map((entry) => <li key={entry}>{entry}</li>)}
+                </ul>
+              </div>
+            ))
+          )}
         </section>
       ))}
     </LegalPage>
