@@ -105,3 +105,11 @@ test("Trezor remains an explicit separately licensed production boundary", () =>
   assert.match(deployment, /Trezor.*written (?:permission|authorization)/is);
   assert.match(deployment, /production origin/i);
 });
+
+test("landing effects leave calculator rendering to React and dispose replay listeners", () => {
+  const landingClient = read("src/components/marketing/LandingClient.tsx");
+
+  assert.doesNotMatch(landingClient, /\.innerHTML\b/);
+  assert.doesNotMatch(landingClient, /["'](?:i-sales|i-ticket|o-rows|o-verdict)["']/);
+  assert.match(landingClient, /removeEventListener\("click", play\)/);
+});

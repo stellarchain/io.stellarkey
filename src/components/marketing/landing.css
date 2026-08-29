@@ -5,15 +5,60 @@
  */
 
 /*
- * The fee comparison is a five-row table of monospace figures: on a phone it
- * is wider than the viewport. The artifact clipped it with overflow:hidden,
- * which silently removed the "you lose" column — the one number the section
- * exists to show. Let it scroll instead; the radius still clips.
+ * The fee comparison is a five-row table of monospace figures. Preserve safe
+ * overflow at larger sizes; the narrow-screen rules below reshape every row so
+ * all figures remain visible without a nested scrollbar.
  */
 .mk .compare {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+.mk .slider label output {
+  color: var(--gold);
+  font-size: .95rem;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.mk .slider input {
+  min-height: 2.75rem;
+}
+
+.mk .slider input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.mk .calc-disclosure {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: .65rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--hair);
+  color: var(--fg-faint);
+  font-size: .78rem;
+  line-height: 1.55;
+}
+
+.mk .calc-disclosure p { margin: 0; }
+.mk .calc-disclosure strong { color: var(--fg-dim); font-weight: 550; }
+
+.mk .calc-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem 1rem;
+}
+
+.mk .calc-sources a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--gold) 45%, transparent);
+  text-underline-offset: .18em;
+}
+
+.mk .calc-sources a:hover { text-decoration-color: currentColor; }
 
 /* ── narrow screens ─────────────────────────────────────────── */
 
@@ -23,21 +68,48 @@
   .mk .calc { grid-template-columns: minmax(0, 1fr); }
   .mk .calc > * { min-width: 0; }
 
-  /*
-   * The table compressed until "€ 1,226" broke across two lines. Scrolling it
-   * instead would park "you lose" — the number the section exists to argue
-   * about — off the right edge, so tighten the type and gutters until all
-   * three columns fit, and stop the figures wrapping mid-value.
-   */
-  .mk .compare table { font-size: .68rem; }
-  /* values must not break mid-figure; the column labels may wrap freely */
-  .mk .compare td { white-space: nowrap; }
-  .mk .compare th,
-  .mk .compare td { padding-inline: .5rem; }
-  .mk .compare th:first-child,
-  .mk .compare td:first-child { padding-left: .8rem; }
-  .mk .compare th:last-child,
-  .mk .compare td:last-child { padding-right: .8rem; }
+  /* Keep every value visible without a nested horizontal scrollbar. */
+  .mk .compare { overflow: hidden; }
+  .mk .compare table,
+  .mk .compare tbody,
+  .mk .compare tr,
+  .mk .compare td { display: block; width: 100%; }
+
+  .mk .compare thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .mk .compare tr { padding: .75rem .85rem; border-top: 1px solid var(--hair); }
+  .mk .compare tr:first-child { border-top: 0; }
+  .mk .compare td {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .14rem 0;
+    border-top: 0;
+    text-align: right;
+    white-space: normal;
+  }
+  .mk .compare td:first-child {
+    display: block;
+    padding-bottom: .35rem;
+    color: var(--fg);
+    font-size: .78rem;
+    font-weight: 550;
+    text-align: left;
+  }
+  .mk .compare td:nth-child(2)::before { content: "Rate"; }
+  .mk .compare td:nth-child(3)::before { content: "Estimated fee"; }
+  .mk .compare td::before { color: var(--fg-ghost); }
+  .mk .compare tr.us td { background: transparent; }
+  .mk .compare tr.us { background: rgb(79 201 141/.05); }
 
   /*
    * The receipt is a label/value list, not really a table: stacking each row
