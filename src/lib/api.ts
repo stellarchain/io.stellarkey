@@ -170,27 +170,6 @@ export async function fetchMinimumNativeBalance(
 }
 
 
-/**
- * Native XLM balance for one account.
- * Returns 0 for unfunded/inactive accounts (Horizon 404),
- * and null only when the network request itself failed.
- */
-export async function fetchNativeBalance(
-  publicKey: string,
-  network: NetworkKey,
-): Promise<number | null> {
-  try {
-    const data = await getJson<{ balances?: RawBalance[] }>(
-      `${getHorizonUrl(network)}/accounts/${publicKey}`,
-    );
-    if (!data) return 0;
-    const native = data.balances?.find((b) => b.asset_type === "native");
-    return native ? parseFloat(native.balance) : 0;
-  } catch {
-    return null;
-  }
-}
-
 export interface ClaimableBalanceItem {
   id: string;
   assetCode: string;
@@ -898,17 +877,13 @@ export interface SendPaymentParams {
   assetCode: string;
   issuer?: string | null;
   memo?: StellarMemoInput;
-  /** @deprecated Use `memo` so the memo type is preserved. */
-  memoText?: string;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
-  const { network, secretKey, destination, amount, assetCode, issuer, memoText, feeStroops } = params;
-  const memo = buildStellarMemo(
-    params.memo ?? (memoText ? { type: "text", value: memoText } : null),
-  );
+  const { network, secretKey, destination, amount, assetCode, issuer, feeStroops } = params;
+  const memo = buildStellarMemo(params.memo);
 
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
@@ -977,15 +952,11 @@ export async function sendBatchPayments(params: {
     issuer?: string | null;
   }>;
   memo?: StellarMemoInput;
-  /** @deprecated Use `memo` so the memo type is preserved. */
-  memoText?: string;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<SubmissionResult> {
-  const { network, secretKey, payments, memoText } = params;
-  const memo = buildStellarMemo(
-    params.memo ?? (memoText ? { type: "text", value: memoText } : null),
-  );
+  const { network, secretKey, payments } = params;
+  const memo = buildStellarMemo(params.memo);
   if (payments.length === 0) throw new SendError("No recipients provided.");
   if (payments.length > 100) {
     throw new SendError("A Stellar transaction can contain at most 100 operations.");

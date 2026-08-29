@@ -55,4 +55,4 @@ Browser print/AirPrint, downloads, keyboard-wedge scanners, and the protected sa
 - Verify the network, receiving account, issuer, memo, amount, and signing-device details before authorizing a mainnet transaction.
 - Serve installed or production deployments over HTTPS. A raw LAN HTTP origin cannot provide every iOS secure-context capability.
 
-The merchant-specific evidence is recorded in [Merchant SOTA verification](plans/2026-08-26-merchant-sota-verification.md). The current cross-feature release boundary is recorded in [Backend-free SOTA verification](plans/2026-08-27-backend-free-sota-verification.md).
+Before release, run `npm run release:verify` and complete the current checks in [Backend-free wallet release checklist](release-checklist.md).

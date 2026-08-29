@@ -349,11 +349,11 @@ export type RefundKind = "order" | "payment_reversal";
 
 export interface Refund {
   id: string;
-  /** Sale order identity, or the owning invoice identity for legacy-compatible payment reversals. */
+  /** Sale order identity, or the owning invoice identity for payment reversals. */
   orderId: string;
   invoiceId?: string | null;
   kind: RefundKind;
-  /** Exact Horizon payment operation funding the outbound return; legacy order refunds may be null. */
+  /** Exact Horizon payment operation funding the outbound return; order refunds may be null. */
   sourcePaymentId: string | null;
   /** Approval request that authorized this submission, when one exists. */
   requestId?: string | null;

@@ -87,12 +87,6 @@ export function toStellarAsset(code: string, issuer?: string | null): Asset {
   return Asset.native();
 }
 
-export function canonicalAssetKey(code: string, issuer?: string | null): string {
-  const asset = toStellarAsset(code, issuer);
-  if (asset.isNative()) return "native";
-  return `${asset.getCode()}:${asset.getIssuer()}`;
-}
-
 export function buildStellarMemo(input?: StellarMemoInput | null): StellarSdkMemo | null {
   if (!input || input.value.trim() === "") return null;
   const value = input.value.trim();

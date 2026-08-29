@@ -345,17 +345,13 @@ export async function prepareCosignPayment(params: {
   assetCode: string;
   issuer?: string | null;
   memo?: StellarMemoInput;
-  /** @deprecated Use `memo` so the memo type is preserved. */
-  memoText?: string;
   feeStroops?: number;
   secretKey?: string;
   hardwareSigner?: HardwareSigner;
 }): Promise<{ xdr: string }> {
-  const { network, destination, amount, assetCode, issuer, memoText } = params;
+  const { network, destination, amount, assetCode, issuer } = params;
   const feeStroops = await loadRecommendedBaseFee(network, params.feeStroops);
-  const memo = buildStellarMemo(
-    params.memo ?? (memoText ? { type: "text", value: memoText } : null),
-  );
+  const memo = buildStellarMemo(params.memo);
 
   if (!isValidPublicAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
