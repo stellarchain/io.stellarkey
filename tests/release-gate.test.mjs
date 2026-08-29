@@ -50,6 +50,15 @@ test("CI pins third-party actions and verifies the complete static release", () 
   assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
 });
 
+test("CI verifies pull-request branches once and main after merge", () => {
+  const ci = read(".github/workflows/ci.yml");
+
+  assert.match(ci, /push:\s*\n\s*branches:\s*\["main"\]/);
+  assert.match(ci, /pull_request:\s*\n\s*branches:\s*\["main"\]/);
+  assert.match(ci, /concurrency:\s*\n\s*group:\s*ci-/);
+  assert.match(ci, /cancel-in-progress:\s*true/);
+});
+
 test("clean CI runs generated bundle assertions only after the static build", () => {
   const ci = read(".github/workflows/ci.yml");
   const pkg = JSON.parse(read("package.json"));
