@@ -56,6 +56,16 @@ test("Dependabot keeps incompatible toolchain majors out of routine updates", ()
   );
 });
 
+test("the supported type toolchain matches Node 22 and typescript-eslint", () => {
+  const packageJson = JSON.parse(read("package.json"));
+  const packageLock = JSON.parse(read("package-lock.json"));
+
+  assert.match(packageJson.devDependencies.typescript, /^\^6(?:\.|$)/);
+  assert.match(packageJson.devDependencies["@types/node"], /^\^22(?:\.|$)/);
+  assert.match(packageLock.packages["node_modules/typescript"].version, /^6\./);
+  assert.match(packageLock.packages["node_modules/@types/node"].version, /^22\./);
+});
+
 test("every third-party workflow action is pinned to a full commit SHA", () => {
   const workflowDirectory = new URL(".github/workflows/", root);
   const workflowFiles = readdirSync(workflowDirectory)
