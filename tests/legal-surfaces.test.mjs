@@ -4,7 +4,7 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-const routes = ["about", "privacy", "terms", "security", "support"];
+const routes = ["about", "privacy", "terms", "security", "support", "changelog"];
 
 test("StellarKey exposes complete directly linkable trust-center routes", () => {
   for (const route of routes) {
@@ -21,6 +21,7 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   const terms = read("src/app/terms/page.tsx");
   const security = read("src/app/security/page.tsx");
   const support = read("src/app/support/page.tsx");
+  const changelog = read("src/app/changelog/page.tsx");
 
   assert.match(about, /backend-free/i);
   assert.match(about, /how a wallet action works/i);
@@ -71,6 +72,9 @@ test("StellarKey exposes complete directly linkable trust-center routes", () => 
   assert.match(support, /safe to include/i);
   assert.match(support, /GitHub issue/i);
   assert.match(support, /no guaranteed response time/i);
+  assert.match(changelog, /parseChangelog/);
+  assert.match(changelog, /SOURCE_REPOSITORY_URL/);
+  assert.doesNotMatch(changelog, /dangerouslySetInnerHTML|MDX|fetch\(/);
 });
 
 test("long-form trust pages expose plain-language summaries and on-page navigation", () => {
@@ -84,7 +88,11 @@ test("long-form trust pages expose plain-language summaries and on-page navigati
     const source = read(`src/app/${route}/page.tsx`);
     assert.match(source, /highlights=\{/i, `${route} is missing its plain-language highlights`);
     assert.match(source, /sections=\{/i, `${route} is missing its on-page navigation`);
-    assert.match(source, /<section id="[^"]+">/i, `${route} sections are not directly linkable`);
+    if (route === "changelog") {
+      assert.match(source, /<section[^>]+id=\{releaseId\(release\)\}/i, "changelog sections are not directly linkable");
+    } else {
+      assert.match(source, /<section id="[^"]+">/i, `${route} sections are not directly linkable`);
+    }
   }
 });
 
@@ -96,6 +104,7 @@ test("trust-center chrome uses one accessible icon language without replacing te
     "DocScales",
     "DocShield",
     "DocBook",
+    "DocCycle",
     "DocCheck",
     "DocFile",
   ]) {
@@ -113,6 +122,8 @@ test("public and locked surfaces share accessible legal navigation", () => {
   const legalPage = read("src/components/LegalPage.tsx");
   const contact = read("src/components/ContactAction.tsx");
   const settings = read("src/components/SettingsPage.tsx");
+  const marketingChrome = read("src/components/marketing/MarketingChrome.tsx");
+  const about = read("src/app/about/page.tsx");
 
   assert.match(footer, /©.*COPYRIGHT_YEAR.*COPYRIGHT_OWNER/s);
   assert.match(footer, /PUBLIC_ROUTES\.about/);
@@ -120,11 +131,14 @@ test("public and locked surfaces share accessible legal navigation", () => {
   assert.match(footer, /PUBLIC_ROUTES\.terms/);
   assert.match(footer, /PUBLIC_ROUTES\.security/);
   assert.match(footer, /PUBLIC_ROUTES\.support/);
+  assert.match(footer, /PUBLIC_ROUTES\.changelog/);
   assert.match(footer, /SOURCE_REPOSITORY_URL/);
+  assert.match(marketingChrome, /PUBLIC_ROUTES\.changelog/);
+  assert.match(about, /PUBLIC_ROUTES\.changelog/);
   assert.match(footer, /Stellar.*trademark of the Stellar Development Foundation/i);
   assert.match(footer, /independent project/i);
   assert.match(legalPage, /<main[^>]*id="app-content"/);
-  assert.match(legalPage, /aria-label="Legal navigation"/);
+  assert.match(legalPage, /aria-label="Trust center navigation"/);
   assert.match(legalPage, /aria-current=/);
   assert.match(contact, /decodeContactAddress\(channel\)/);
   assert.match(contact, /mailto:/);
@@ -142,12 +156,14 @@ test("public and locked surfaces share accessible legal navigation", () => {
   assert.match(settings, /\| "about"/);
   assert.match(settings, /label="About & Legal"/);
   assert.match(settings, /sub === "about"/);
+  assert.match(settings, /Release notes and security fixes/);
   for (const destination of [
     /PUBLIC_ROUTES\.about/,
     /PUBLIC_ROUTES\.privacy/,
     /PUBLIC_ROUTES\.terms/,
     /PUBLIC_ROUTES\.security/,
     /PUBLIC_ROUTES\.support/,
+    /PUBLIC_ROUTES\.changelog/,
     /SOURCE_REPOSITORY_URL/,
     /SOURCE_COMMIT_URL/,
     /SOURCE_RELEASE_URL/,

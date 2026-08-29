@@ -4,6 +4,7 @@ import {
   DocBook,
   DocCheck,
   DocCompass,
+  DocCycle,
   DocEyeOff,
   DocFile,
   DocScales,
@@ -25,6 +26,7 @@ const navigation = [
   ["terms", "Terms", PUBLIC_ROUTES.terms, DocScales],
   ["security", "Security", PUBLIC_ROUTES.security, DocShield],
   ["support", "Support", PUBLIC_ROUTES.support, DocBook],
+  ["changelog", "Changelog", PUBLIC_ROUTES.changelog, DocCycle],
 ] as const;
 
 export type LegalRoute = (typeof navigation)[number][0];
@@ -41,6 +43,7 @@ export function LegalPage({
   summary,
   highlights,
   sections,
+  stamp = "Effective 28 August 2026 · Legal text version 1.1",
   children,
 }: {
   current: LegalRoute;
@@ -49,6 +52,7 @@ export function LegalPage({
   summary: string;
   highlights: readonly string[];
   sections: readonly LegalSectionLink[];
+  stamp?: string;
   children: ReactNode;
 }) {
   const RouteIcon = navigation.find(([id]) => id === current)?.[3] ?? DocFile;
@@ -69,10 +73,10 @@ export function LegalPage({
                 {title}
               </h1>
               <p className="lede">{summary}</p>
-              <p className="doc-stamp">Effective 28 August 2026 · Legal text version 1.1</p>
+              <p className="doc-stamp">{stamp}</p>
             </div>
 
-            <nav aria-label="Legal navigation" className="doc-tabs">
+            <nav aria-label="Trust center navigation" className="doc-tabs">
               {navigation.map(([id, label, href, NavIcon]) => (
                 <a key={id} href={href} aria-current={current === id ? "page" : undefined}>
                   <span className="legal-nav-icon" aria-hidden="true">

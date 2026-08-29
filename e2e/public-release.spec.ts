@@ -8,6 +8,7 @@ const routes = [
   { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
   { path: "/security", heading: "Protect the recovery path", title: "Protect the recovery path — StellarKey" },
   { path: "/support", heading: "Support without custody", title: "Support without custody — StellarKey" },
+  { path: "/changelog", heading: "Changelog", title: "Changelog — StellarKey" },
 ] as const;
 
 test.beforeEach(async ({ context }) => {
@@ -89,6 +90,19 @@ test("the landing page does not prefetch the wallet application before it is req
   await page.goto("/", { waitUntil: "networkidle" });
 
   expect(requestedPaths.filter((path) => path === "/app" || path.startsWith("/app/"))).toEqual([]);
+});
+
+test("the changelog publishes the current release as semantic text", async ({ page }) => {
+  await page.goto("/changelog", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { level: 2, name: "Unreleased" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "1.1.0" })).toBeVisible();
+  await expect(page.locator('time[datetime="2026-08-29"]')).toHaveText("29 August 2026");
+  await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
+    "href",
+    "https://github.com/stellarchain/io.stellarkey",
+  );
+  await expect(page.locator("article")).not.toContainText(/<script|<strong|<a /i);
 });
 
 test("the fee comparison is editable, sourced, and explicit about its assumptions", async ({ page }) => {

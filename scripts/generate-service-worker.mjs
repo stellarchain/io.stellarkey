@@ -17,6 +17,7 @@ export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
   "/terms",
   "/security",
   "/support",
+  "/changelog",
 ]);
 
 export const BASE_SHELL_PATHS = Object.freeze([

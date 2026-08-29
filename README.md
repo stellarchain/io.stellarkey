@@ -1,7 +1,8 @@
 # StellarKey
 
 Source releases: <https://github.com/stellarchain/io.stellarkey>. StellarKey's original source is
-licensed under `AGPL-3.0-or-later`; bundled dependencies retain their own licenses.
+licensed under `AGPL-3.0-or-later`; bundled dependencies retain their own licenses. See the
+[changelog](CHANGELOG.md) for the tracked release history.
 
 StellarKey is a self-custodial, backend-free Stellar wallet built with Next.js 16, React 19, and `@stellar/stellar-sdk` 17. Production is a static export: vault encryption, recovery, transaction construction, review, and signing happen in the browser. The app talks directly to Stellar services and never sends secret keys, recovery phrases, passkey assertions, or merchant records to an application server.
 
@@ -37,7 +38,7 @@ See [Merchant Mode operations](docs/merchant-mode.md) for setup, daily use, offl
 
 ## Verify a deployed release
 
-StellarKey starts at release `1.0.0`. Every build embeds the full 40-character Git commit SHA in the public About page and in `/release.json`. Compare that value with the commit attached to the corresponding GitHub release, or run `git rev-parse HEAD` in a checked-out copy. The release manifest also reports whether tracked source changes were present during the build; only a manifest with `"sourceTree": "clean"` and `"verifiable": true` represents the exact named commit.
+The current release is `1.1.0`. Every build embeds the full 40-character Git commit SHA in the public About page and in `/release.json`. Compare that value with the commit attached to the corresponding GitHub release, or run `git rev-parse HEAD` in a checked-out copy. The release manifest also reports whether tracked source changes were present during the build; only a manifest with `"sourceTree": "clean"` and `"verifiable": true` represents the exact named commit. Review [CHANGELOG.md](CHANGELOG.md) for human-readable changes; checksums, attestations, and the embedded commit remain the release evidence.
 
 ## Asset and price safety
 

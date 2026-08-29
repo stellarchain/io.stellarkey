@@ -13,7 +13,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-const expectedRoutes = ["/", "/about", "/privacy", "/terms", "/security", "/support"];
+const expectedRoutes = ["/", "/about", "/privacy", "/terms", "/security", "/support", "/changelog"];
 
 test("public release journeys run in every supported browser profile", () => {
   const journey = "e2e/public-release.spec.ts";
@@ -196,7 +196,7 @@ test("sharing metadata and structured data describe one independent finance app"
   assert.match(layout, /replace\(\/<\//);
   assert.match(brand, /PUBLIC_OPEN_GRAPH_IMAGE/);
   assert.match(brand, /url: "\/opengraph-image"/);
-  for (const route of ["about", "privacy", "terms", "security"]) {
+  for (const route of ["about", "privacy", "terms", "security", "support", "changelog"]) {
     assert.match(read(`src/app/${route}/page.tsx`), /images: \[PUBLIC_OPEN_GRAPH_IMAGE\]/);
   }
 });
@@ -248,6 +248,7 @@ test("the offline shell resolves and precaches every public disclosure route", a
   assert.match(source, /"\/privacy"/);
   assert.match(source, /"\/terms"/);
   assert.match(source, /"\/security"/);
+  assert.match(source, /"\/changelog"/);
   assert.match(source, /export async function resolveOutputFile/);
   const worker = read("public/sw.js");
   assert.match(worker, /normalizedNavigationPath/);
@@ -258,7 +259,7 @@ test("the offline shell resolves and precaches every public disclosure route", a
     '<script src="/_next/static/chunks/home.js"></script>',
     '<script src="/_next/static/chunks/legal.js"></script>',
   ]);
-  for (const route of ["/about", "/privacy", "/terms", "/security"]) assert.ok(paths.includes(route));
+  for (const route of ["/about", "/privacy", "/terms", "/security", "/changelog"]) assert.ok(paths.includes(route));
   assert.ok(paths.includes("/_next/static/chunks/home.js"));
   assert.ok(paths.includes("/_next/static/chunks/legal.js"));
 });
@@ -270,6 +271,7 @@ test("static host policy distinguishes mutable documents from immutable assets",
   assert.match(headers, /\/_next\/static\/\*/);
   assert.match(headers, /Cache-Control: public, max-age=31536000, immutable/);
   assert.match(headers, /\/\.well-known\/security\.txt[\s\S]*Cache-Control: no-cache/);
+  assert.match(headers, /\/changelog[\s\S]*Cache-Control: no-cache/);
   assert.match(server, /\["\.txt", "text\/plain; charset=utf-8"\]/);
   assert.match(server, /pattern\.endsWith\("\*"\)/);
 });

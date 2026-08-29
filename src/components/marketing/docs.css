@@ -68,6 +68,44 @@
 .mk .prose a:not(.btn) { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
 .mk .prose a:not(.btn):hover { color: var(--fg); }
 
+.mk .changelog-intro {
+  margin-bottom: 2.25rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--hair);
+}
+
+.mk .changelog-release-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .55rem 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.mk .prose .changelog-release-heading h2 { margin: 0; }
+
+.mk .changelog-release-heading time {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .06em;
+  color: var(--fg-ghost);
+}
+
+.mk .changelog-category + .changelog-category { margin-top: 1.35rem; }
+
+.mk .changelog-category h3 {
+  margin: 0 0 .45rem;
+  font-family: var(--mono);
+  font-size: .72rem;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.mk .changelog-category .prose-list { margin-bottom: 0; }
+
 /*
  * Below the two-column breakpoint the grid falls back to one implicit `auto`
  * track, which sizes to its widest content: the fee table's own min-width then

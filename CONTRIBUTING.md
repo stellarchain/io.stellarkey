@@ -21,6 +21,14 @@ npm run release:verify
 
 Add a regression test before fixing a defect. Keep changes focused, preserve encrypted-backup compatibility unless a migration is explicitly designed, and update operational documentation when behavior changes. The full release gate must pass before a change is released. Hardware-wallet and installed-PWA behavior must also be checked on real devices when affected.
 
+## Changelog and version policy
+
+Update the `[Unreleased]` section of `CHANGELOG.md` in the same commit whenever a change affects user-visible behavior, security posture, dependencies, stored data, deployment behavior, or removes a supported surface. Use the standard Added/Changed/Deprecated/Removed/Fixed/Security categories and keep entries factual and user-facing.
+
+During release preparation, choose the next version by Semantic Versioning impact, move the accumulated entries into `[x.y.z] - YYYY-MM-DD`, and recreate a non-empty `[Unreleased]` section for future work. Update `package.json`, both root version fields in `package-lock.json`, `APPLICATION_VERSION` in `src/lib/brand.ts`, the supported series in `SECURITY.md`, and exact version tests together. Never rewrite a published entry except to correct a factual error transparently.
+
+Keep one logical feature per commit and run its focused tests. Run `npm run release:verify` from a clean worktree before creating a release tag.
+
 ## Developer Certificate of Origin
 
 StellarKey uses the [Developer Certificate of Origin 1.1](https://developercertificate.org/) instead of a separate contributor agreement. Sign off every commit to certify that you have the right to submit the contribution under this project's license:
