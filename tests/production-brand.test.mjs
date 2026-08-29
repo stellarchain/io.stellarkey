@@ -89,6 +89,16 @@ test("the desktop sidebar presents the larger borderless StellarKey identity", (
   assert.doesNotMatch(dashboard, /h-9 w-9[^\n]*border border-white\/10[^\n]*[\s\S]{0,120}<LogoMark/);
 });
 
+test("the public README leads with the official identity and essential project paths", () => {
+  const readme = read("README.md");
+
+  assert.match(readme, /<img[\s\S]*?src="\.\/public\/icon-192\.png"[\s\S]*?alt="StellarKey logo"/);
+  assert.match(readme, /https:\/\/stellarkey\.io/);
+  assert.match(readme, /^## Security model$/m);
+  assert.match(readme, /^## Quick start$/m);
+  assert.match(readme, /^## Project documentation$/m);
+});
+
 test("branded exports do not change encrypted compatibility contracts", () => {
   assert.match(read("src/components/BackupWizardModal.tsx"), /stellarkey-backup-/);
   assert.match(read("src/components/PaperWalletModal.tsx"), /stellarkey-/);
