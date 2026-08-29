@@ -40,6 +40,12 @@ import {
   BACKUP_HEALTH_CHANGED_EVENT,
   loadBackupHealth,
 } from "@/lib/backup-health";
+import {
+  CLAIMABLE_BALANCE_DISMISSALS_KEY,
+  dismissClaimableBalance,
+  loadDismissedClaimableBalanceIds,
+  restoreClaimableBalance,
+} from "@/lib/claimable-balance-dismissals";
 import { PriceChart } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
@@ -323,6 +329,8 @@ export function Dashboard() {
   const [fundBusy, setFundBusy] = useState(false);
   const [fundError, setFundError] = useState<string | null>(null);
   const [claimableBalancesOpen, setClaimableBalancesOpen] = useState(false);
+  const [showDismissedClaimableBalances, setShowDismissedClaimableBalances] = useState(false);
+  const [claimableDismissalRevision, setClaimableDismissalRevision] = useState(0);
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installEnvironment, setInstallEnvironment] = useState({ ios: false, standalone: false });
@@ -352,6 +360,48 @@ export function Dashboard() {
   const pendingAirdropClaim = pendingTxs.some(
     (transaction) => transaction.label === "Airdrop claim",
   );
+  const activePublicKey = activeAccount?.publicKey ?? null;
+  const dismissedClaimableBalanceIds = useMemo(
+    () => {
+      void claimableDismissalRevision;
+      return activePublicKey
+        ? loadDismissedClaimableBalanceIds(window.localStorage, network, activePublicKey)
+        : [];
+    },
+    [activePublicKey, claimableDismissalRevision, network],
+  );
+  const dismissedClaimableBalanceIdSet = useMemo(
+    () => new Set(dismissedClaimableBalanceIds),
+    [dismissedClaimableBalanceIds],
+  );
+  const visibleClaimableBalances = useMemo(
+    () => claimableBalances.filter((item) => !dismissedClaimableBalanceIdSet.has(item.id)),
+    [claimableBalances, dismissedClaimableBalanceIdSet],
+  );
+  const hiddenClaimableBalanceCount =
+    claimableBalances.length - visibleClaimableBalances.length;
+
+  useEffect(() => {
+    const refreshDismissals = (event: StorageEvent) => {
+      if (event.key === CLAIMABLE_BALANCE_DISMISSALS_KEY) {
+        setClaimableDismissalRevision((revision) => revision + 1);
+      }
+    };
+    window.addEventListener("storage", refreshDismissals);
+    return () => window.removeEventListener("storage", refreshDismissals);
+  }, []);
+
+  function dismissClaimableBalanceLocally(balanceId: string) {
+    if (!activePublicKey) throw new Error("No active account.");
+    dismissClaimableBalance(window.localStorage, network, activePublicKey, balanceId);
+    setClaimableDismissalRevision((revision) => revision + 1);
+  }
+
+  function restoreClaimableBalanceLocally(balanceId: string) {
+    if (!activePublicKey) throw new Error("No active account.");
+    restoreClaimableBalance(window.localStorage, network, activePublicKey, balanceId);
+    setClaimableDismissalRevision((revision) => revision + 1);
+  }
 
   useEffect(() => {
     if (!merchantRuntimeIntent) return;
@@ -1971,7 +2021,7 @@ export function Dashboard() {
                 )}
 
                 {/* Pending Airdrops / Claimable Balances Alert Banner */}
-                {claimableBalances.length > 0 && (
+                {visibleClaimableBalances.length > 0 && (
                   <div className="fade-up flex items-center justify-between gap-3 rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 shadow-sm">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/15 text-[#30D158]">
@@ -1979,10 +2029,10 @@ export function Dashboard() {
                       </span>
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold text-white">
-                          {claimableBalances.length} Pending Balance{claimableBalances.length > 1 ? "s" : ""}
+                          {visibleClaimableBalances.length} Pending Balance{visibleClaimableBalances.length > 1 ? "s" : ""}
                         </p>
                         <p className="truncate text-[11px] text-neutral-300">
-                          {claimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
+                          {visibleClaimableBalances.map((c) => `${fmtAmount(c.amount)} ${c.assetCode}`).join(", ")}
                         </p>
                       </div>
                     </div>
@@ -1990,7 +2040,10 @@ export function Dashboard() {
                       variant="secondary"
                       className="!h-8 !px-3 !text-[12px] shrink-0"
                       disabled={pendingAirdropClaim}
-                      onClick={() => setClaimableBalancesOpen(true)}
+                      onClick={() => {
+                        setShowDismissedClaimableBalances(false);
+                        setClaimableBalancesOpen(true);
+                      }}
                     >
                       Review
                     </Button>
@@ -2164,6 +2217,21 @@ export function Dashboard() {
                       Your Assets
                     </h2>
                     <div className="order-3 flex w-full items-center justify-end gap-3 sm:order-none sm:w-auto">
+                      {hiddenClaimableBalanceCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            setShowDismissedClaimableBalances(true);
+                            setClaimableBalancesOpen(true);
+                          }}
+                          className="flex min-h-11 items-center gap-1.5 text-[12px] font-medium text-neutral-500 transition-colors hover:text-white sm:min-h-0"
+                          aria-label={`Review ${hiddenClaimableBalanceCount} hidden balance${hiddenClaimableBalanceCount === 1 ? "" : "s"}`}
+                        >
+                          <IconEyeOff size={13} />
+                          {hiddenClaimableBalanceCount} hidden
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -2686,7 +2754,11 @@ export function Dashboard() {
       {claimableBalancesOpen && (
         <ClaimableBalancesModal
           open
+          dismissedBalanceIds={dismissedClaimableBalanceIds}
+          initialShowDismissed={showDismissedClaimableBalances}
           onClose={() => setClaimableBalancesOpen(false)}
+          onDismiss={dismissClaimableBalanceLocally}
+          onRestore={restoreClaimableBalanceLocally}
           onAddAsset={() => {
             setClaimableBalancesOpen(false);
             setAddAssetOpen(true);

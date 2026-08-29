@@ -45,3 +45,16 @@ test("an immediately confirmed claim is finalized without entering tracked pendi
     /setPendingSubmission\(result\);\s*if \(result\.status === "confirmed"\)/,
   );
 });
+
+test("claimable balances can be dismissed locally and restored later", () => {
+  const dashboard = read("src/components/Dashboard.tsx");
+  const modal = read("src/components/ClaimableBalancesModal.tsx");
+
+  assert.match(dashboard, /loadDismissedClaimableBalanceIds/);
+  assert.match(dashboard, /visibleClaimableBalances/);
+  assert.match(dashboard, /hidden balance/);
+  assert.match(modal, /Dismiss .* locally/);
+  assert.match(modal, /Show dismissed/);
+  assert.match(modal, /Restore/);
+  assert.match(modal, /does not\s+decline or change it on Stellar/);
+});
