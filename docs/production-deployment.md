@@ -25,7 +25,7 @@ The source retains optional Trezor support, but `@trezor/connect-web` is separat
 
 Upload only the extracted release contents. The archive contains the exported `out/` tree; configure the host so requests resolve from that directory without rewriting immutable assets to the document shell.
 
-The host must apply `out/_headers` exactly, including the Content-Security-Policy, Cross-Origin-Opener-Policy, X-Content-Type-Options, frame restrictions, Referrer-Policy, and Permissions-Policy. Verify MIME types for JavaScript, CSS, SVG, PNG, JSON, web manifest, and service-worker responses. Serve `sw.js`, `release.json`, `manifest.webmanifest`, and HTML with revalidation; serve content-hashed static assets as immutable.
+During `npm run build`, each exported HTML document receives a long, document-scoped CSP meta policy containing the exact hashes of that document's inline bootstrap scripts. The host must also apply `out/_headers` exactly: that response layer supplies `frame-ancestors 'none'` and the remaining response-only protections, including Cross-Origin-Opener-Policy, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy. A CSP meta element cannot enforce `frame-ancestors`; do not copy the long document policy into one oversized `_headers` line. Verify MIME types for JavaScript, CSS, SVG, PNG, JSON, web manifest, and service-worker responses. Serve `sw.js`, `release.json`, `manifest.webmanifest`, and HTML with revalidation; serve content-hashed static assets as immutable.
 
 Validate the apex-to-www or www-to-apex redirect, canonical metadata, `/.well-known/security.txt`, `/security`, `/support`, `/release.json`, icons, offline shell, and a real 404 response. Ensure route fallback does not return HTML with status 200 for missing assets.
 

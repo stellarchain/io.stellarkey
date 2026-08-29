@@ -8,7 +8,11 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-import * as securityPolicy from "../src/lib/security-policy.ts";
+import {
+  collectInlineScriptHashes,
+  renderDocumentWithCsp,
+  renderStaticHeaders,
+} from "../scripts/generate-static-headers.mjs";
 import nextConfig from "../next.config.ts";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -37,23 +41,50 @@ function waitForReady(child) {
   });
 }
 
-test("production CSP uses build-time hashes and supports direct decentralized services", () => {
-  assert.equal(typeof securityPolicy.buildStaticSecurityPolicy, "function");
-  const policy = securityPolicy.buildStaticSecurityPolicy(["sha256-test-hash"]);
-  const script = policy.split("; ").find((directive) => directive.startsWith("script-src"));
-  const connect = policy.split("; ").find((directive) => directive.startsWith("connect-src"));
+test("the document and response CSP compose the shipped static security boundary", () => {
+  assert.equal(
+    existsSync(new URL("../src/lib/security-policy.ts", import.meta.url)),
+    false,
+  );
 
-  assert.match(script ?? "", /'sha256-test-hash'/);
-  assert.doesNotMatch(script ?? "", /'unsafe-inline'|'unsafe-eval'/);
-  assert.doesNotMatch(script ?? "", /'nonce-/);
-  assert.match(connect ?? "", /https:\/\/horizon\.stellar\.org/);
-  assert.match(connect ?? "", /https:\/\/horizon-testnet\.stellar\.org/);
-  assert.match(connect ?? "", /https:\/\/api\.coingecko\.com/);
-  assert.match(connect ?? "", /https:\/\/connect\.trezor\.io/);
-  assert.match(connect ?? "", /\shttps:(?:\s|$)/);
-  // Safari upgrades same-origin HTTP assets too, which breaks LAN testing before
-  // hydration. Production HTTPS/HSTS belongs at the static host boundary.
-  assert.doesNotMatch(policy, /upgrade-insecure-requests/);
+  const inlineScript = "bootstrap()";
+  const rendered = renderDocumentWithCsp({
+    html: `<!doctype html><html><head></head><body><script>${inlineScript}</script></body></html>`,
+    policyTemplate: read("scripts/static-document-csp.txt"),
+  });
+  const meta = rendered.match(/<meta\s+[^>]*data-stellarkey-csp[^>]*>/i)?.[0] ?? "";
+  const encodedPolicy = meta.match(/\bcontent="([^"]*)"/i)?.[1] ?? "";
+  const documentPolicy = encodedPolicy.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+  const [scriptHash] = collectInlineScriptHashes(`<script>${inlineScript}</script>`);
+
+  assert.ok(scriptHash);
+  assert.match(meta, /data-stellarkey-csp/);
+  assert.ok(documentPolicy.includes(`'${scriptHash}'`));
+  const scriptDirective = documentPolicy
+    .split(";")
+    .map((directive) => directive.trim())
+    .find((directive) => directive.startsWith("script-src")) ?? "";
+  assert.match(scriptDirective, /^script-src 'self'/);
+  assert.doesNotMatch(scriptDirective, /unsafe-inline|unsafe-eval|nonce-/);
+  assert.match(documentPolicy, /connect-src 'self' https: wss:\/\/\*\.trezor\.io/);
+  assert.doesNotMatch(documentPolicy, /unsafe-eval|nonce-|frame-ancestors/);
+
+  const responsePolicy = renderStaticHeaders({ template: read("public/_headers") });
+  assert.match(responsePolicy, /frame-ancestors 'none'/);
+  assert.match(responsePolicy, /object-src 'none'/);
+  assert.match(responsePolicy, /base-uri 'self'/);
+  assert.match(responsePolicy, /form-action 'self'/);
+  assert.throws(
+    () => renderDocumentWithCsp({
+      html: rendered,
+      policyTemplate: "script-src 'self' __SCRIPT_HASHES__; frame-ancestors 'none'",
+    }),
+    /frame-ancestors must be enforced by the response header/i,
+  );
+  assert.throws(
+    () => renderStaticHeaders({ template: `/*\n  X-Test: ${"x".repeat(2_001)}` }),
+    /Cloudflare Pages.*2,000/i,
+  );
 });
 
 test("static export and service worker enforce a hash-bound shell-only boundary", () => {
