@@ -44,3 +44,17 @@ test("the accessibility journey waits for asynchronous send readiness", () => {
     /const reviewTransfer = send\.getByRole\("button", \{ name: "Review Transfer" \}\);\s*await expect\(reviewTransfer\)\.toBeEnabled\(\{ timeout: 30_000 \}\);\s*await reviewTransfer\.click\(\);/,
   );
 });
+
+test("accessibility coverage uses bounded wallet and merchant scenarios", () => {
+  const accessibility = source("e2e/accessibility.spec.ts");
+
+  assert.doesNotMatch(accessibility, /critical wallet and merchant screens remain operable/);
+  for (const title of [
+    "critical wallet screens remain operable and accessible",
+    "critical wallet settings remain operable and accessible",
+    "critical merchant screens remain operable and accessible",
+    "critical merchant settings remain operable and accessible",
+  ]) {
+    assert.match(accessibility, new RegExp(`test\\("${title}"`));
+  }
+});

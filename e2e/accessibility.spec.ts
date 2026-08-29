@@ -161,6 +161,67 @@ async function visitSettingsSubpage(
   await expect(page.getByRole("heading", { name: "Recovery", exact: true })).toBeVisible();
 }
 
+async function prepareImportedWallet(
+  page: Page,
+  browserName: string,
+  auditEntrySurfaces = false,
+): Promise<void> {
+  if ((page.viewportSize()?.width ?? 1024) < 768) {
+    await page.setViewportSize({ width: 320, height: 693 });
+  }
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  if (auditEntrySurfaces) {
+    await expect(page.getByRole("heading", { name: "Own your keys. Own your money." })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Import Existing Wallet" })).toBeVisible();
+    await expectAccessibleSurface(page, "onboarding", browserName);
+  }
+
+  await importTestWallet(page);
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+  if (auditEntrySurfaces) await expectAccessibleSurface(page, "dashboard", browserName);
+}
+
+async function openWalletSettings(page: Page): Promise<void> {
+  await clickPrimaryNavigation(page, "Settings");
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+}
+
+async function enableMerchantMode(page: Page): Promise<void> {
+  await openWalletSettings(page);
+  await page.getByRole("switch", { name: "Merchant Mode" }).click();
+  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
+  await setup.getByLabel("Shop name").fill("Accessibility Coffee");
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await setup.getByRole("button", { name: "Settlement asset" }).click();
+  await page.getByRole("option", { name: /XLM/ }).click();
+  await setup.getByRole("switch", { name: "Accept USDC" }).click();
+  await expect(setup.getByText("Native — no trustline, no reserve", { exact: true })).toBeVisible();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.getByText("Step 3 of 4", { exact: false })).toBeVisible();
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
+  await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
+  await setup.getByRole("button", { name: "Open the till" }).click();
+  await expect(setup).toBeHidden();
+  await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
+}
+
+async function openMerchantSettings(page: Page): Promise<void> {
+  const merchantSettingsButton = page.getByRole("button", {
+    name: "Merchant settings",
+    exact: true,
+  });
+  if (await merchantSettingsButton.isVisible().catch(() => false)) {
+    await merchantSettingsButton.click();
+  } else {
+    await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+  }
+  await expect(page.getByRole("heading", { name: "Merchant settings", exact: true })).toBeVisible();
+}
+
 test("ambient backgrounds never widen the narrowest iPhone viewport", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "iphone-webkit", "WebKit mobile regression");
   await page.setViewportSize({ width: 320, height: 693 });
@@ -209,21 +270,8 @@ test("every trust-center document is navigable and accessible", async ({ page, b
   }
 });
 
-test("critical wallet and merchant screens remain operable and accessible", async ({ page, browserName }) => {
-  if ((page.viewportSize()?.width ?? 1024) < 768) {
-    await page.setViewportSize({ width: 320, height: 693 });
-  }
-  await page.goto("/app", { waitUntil: "domcontentloaded" });
-  await page.evaluate(() => localStorage.clear());
-  await page.reload({ waitUntil: "domcontentloaded" });
-
-  await expect(page.getByRole("heading", { name: "Own your keys. Own your money." })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Import Existing Wallet" })).toBeVisible();
-  await expectAccessibleSurface(page, "onboarding", browserName);
-
-  await importTestWallet(page);
-  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
-  await expectAccessibleSurface(page, "dashboard", browserName);
+test("critical wallet screens remain operable and accessible", async ({ page, browserName }) => {
+  await prepareImportedWallet(page, browserName, true);
 
   for (const destination of ["Activity", "Swap", "Contacts"] as const) {
     await clickPrimaryNavigation(page, destination);
@@ -288,9 +336,11 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expectAccessibleSurface(page, "send review", browserName);
   await review.getByRole("button", { name: "Back", exact: true }).click();
   await send.getByRole("button", { name: "Close" }).click();
+});
 
-  await clickPrimaryNavigation(page, "Settings");
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+test("critical wallet settings remain operable and accessible", async ({ page, browserName }) => {
+  await prepareImportedWallet(page, browserName);
+  await openWalletSettings(page);
   for (const category of ["Recovery", "Device Security", "Signing Security", "Privacy & Feedback"]) {
     await expect(page.getByRole("heading", { name: category, exact: true })).toBeVisible();
   }
@@ -340,23 +390,11 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expect(reset).toBeVisible();
   await expectAccessibleSurface(page, "reset wallet sheet", browserName);
   await reset.getByRole("button", { name: "Close" }).click();
+});
 
-  await page.getByRole("switch", { name: "Merchant Mode" }).click();
-  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-  await setup.getByLabel("Shop name").fill("Accessibility Coffee");
-  await setup.getByRole("button", { name: "Continue" }).click();
-  await setup.getByRole("button", { name: "Settlement asset" }).click();
-  await page.getByRole("option", { name: /XLM/ }).click();
-  await setup.getByRole("switch", { name: "Accept USDC" }).click();
-  await expect(setup.getByText("Native — no trustline, no reserve", { exact: true })).toBeVisible();
-  await setup.getByRole("button", { name: "Continue" }).click();
-  await expect(setup.getByText("Step 3 of 4", { exact: false })).toBeVisible();
-  await setup.getByRole("button", { name: "Continue" }).click();
-  await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("button", { name: "Open the till" }).click();
-  await expect(setup).toBeHidden();
-  await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
+test("critical merchant screens remain operable and accessible", async ({ page, browserName }) => {
+  await prepareImportedWallet(page, browserName);
+  await enableMerchantMode(page);
   await expectAccessibleSurface(page, "merchant till", browserName);
 
   const merchantNav = page.getByRole("navigation", { name: "Merchant sections" });
@@ -401,14 +439,12 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   await expect(counterCode).toBeVisible();
   await expectAccessibleSurface(page, "new counter code sheet", browserName);
   await counterCode.getByRole("button", { name: "Close", exact: true }).click();
+});
 
-  const merchantSettingsButton = page.getByRole("button", { name: "Merchant settings", exact: true });
-  if (await merchantSettingsButton.isVisible().catch(() => false)) {
-    await merchantSettingsButton.click();
-  } else {
-    await page.getByRole("button", { name: "Settings", exact: true }).first().click();
-  }
-  await expect(page.getByRole("heading", { name: "Merchant settings", exact: true })).toBeVisible();
+test("critical merchant settings remain operable and accessible", async ({ page, browserName }) => {
+  await prepareImportedWallet(page, browserName);
+  await enableMerchantMode(page);
+  await openMerchantSettings(page);
   await expectAccessibleSurface(page, "merchant settings", browserName);
 
   for (const [row, title] of [
