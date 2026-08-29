@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/stellarkey-logo-white.svg" alt="StellarKey logo" width="112" height="112">
+  <img src="./public/stellarkey-logo-readme.svg" alt="StellarKey logo" width="112" height="112">
 </p>
 
 # StellarKey
