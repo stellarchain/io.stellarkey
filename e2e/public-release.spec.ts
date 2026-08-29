@@ -28,6 +28,9 @@ for (const route of routes) {
     expect(canonical).not.toBeNull();
     expect(new URL(canonical!).origin).toBe("https://stellarkey.io");
     expect(new URL(canonical!).pathname).toBe(route.path);
+    await expect(page.locator("[data-build-identity]")).toHaveText(
+      /^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/,
+    );
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (route.path === "/") {
       const sharingAlt = await page.locator('meta[property="og:image:alt"]').getAttribute("content");
@@ -35,6 +38,17 @@ for (const route of routes) {
     }
   });
 }
+
+test("the wallet entry page shows the same release identity", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  const response = await page.goto("/app", { waitUntil: "domcontentloaded" });
+
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("[data-build-identity]")).toHaveText(
+    /^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/,
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
 
 test("security and support contacts are user-activated and absent from static markup", async ({ page }) => {
   for (const [path, buttonName] of [

@@ -3,6 +3,7 @@
 import type { StorageIssue } from "@/lib/storage-load";
 import { Button } from "./ui";
 import { IconAlert, IconDownload, LogoMark } from "./icons";
+import { BuildIdentity } from "./BuildIdentity";
 
 function downloadRawWallet(raw: string): void {
   const blob = new Blob([raw], { type: "application/json" });
@@ -49,6 +50,7 @@ export function StorageRecoveryScreen({
             Erase local data
           </Button>
         </div>
+        <BuildIdentity className="mt-6 inline-block text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
       </section>
     </main>
   );

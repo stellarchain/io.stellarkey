@@ -17,6 +17,7 @@ import {
 } from "@/lib/install-handoff";
 import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
 import { PublicFooter } from "./PublicFooter";
+import { BuildIdentity } from "./BuildIdentity";
 import {
   IconAlert,
   IconCheck,
@@ -935,6 +936,7 @@ function StepShell({
         <div className="mt-7 space-y-4 rounded-[28px] border border-white/[0.12] bg-[#121214]/95 p-6 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
           {children}
         </div>
+        <BuildIdentity className="mt-6 self-center text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
       </div>
     </div>
   );

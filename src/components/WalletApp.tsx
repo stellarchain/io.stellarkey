@@ -7,6 +7,7 @@ import { LockScreen } from "./LockScreen";
 import { Onboarding } from "./Onboarding";
 import { LogoMark } from "./icons";
 import { StorageRecoveryScreen } from "./StorageRecoveryScreen";
+import { BuildIdentity } from "./BuildIdentity";
 
 const UnlockedWalletShell = dynamic(
   () => import("./UnlockedWalletShell").then((module) => module.UnlockedWalletShell),
@@ -16,6 +17,7 @@ const UnlockedWalletShell = dynamic(
       <div role="status" aria-label="Opening wallet" className="app-safe-top flex min-h-screen flex-col items-center justify-center gap-4">
         <LogoMark size={44} />
         <span className="spinner text-accent" />
+        <BuildIdentity className="text-[10px] text-neutral-500" />
       </div>
     ),
   },
@@ -40,6 +42,7 @@ export function WalletApp() {
       <div className="app-safe-top flex min-h-screen flex-col items-center justify-center gap-4">
         <LogoMark size={44} />
         <span className="spinner text-accent" />
+        <BuildIdentity className="text-[10px] text-neutral-500" />
       </div>
     );
   }

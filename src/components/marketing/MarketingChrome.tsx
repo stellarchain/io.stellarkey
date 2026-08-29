@@ -7,6 +7,7 @@ import {
   SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
 import { LogoMark } from "@/components/icons";
+import { BuildIdentity } from "@/components/BuildIdentity";
 import {
   DocAlert,
   DocArrowOut,
@@ -152,7 +153,9 @@ export function MarketingFooter() {
         </div>
       </div>
       <div className="legal">
-        <span>© {COPYRIGHT_YEAR} {COPYRIGHT_OWNER} · self-custody · you hold the keys</span>
+        <span>
+          © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER} · <BuildIdentity /> · self-custody · you hold the keys
+        </span>
         <span className="fine">
           Independent project. Not affiliated with, sponsored or endorsed by the Stellar
           Development Foundation. “Stellar” is a trademark of the Stellar Development Foundation.

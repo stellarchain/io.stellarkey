@@ -80,6 +80,7 @@ import {
   LogoMark,
 } from "./icons";
 import { IconBars, IconReceipt, IconStorefront, IconTag } from "./merchant/icons";
+import { BuildIdentity } from "./BuildIdentity";
 import { ModeSwitcher, type ShellMode } from "./merchant/ModeSwitcher";
 import type { MerchantSub } from "./merchant/MerchantPage";
 import type {
@@ -88,9 +89,7 @@ import type {
 } from "@/lib/merchant/settlement";
 import type { SendPrefill } from "./SendModal";
 import {
-  APPLICATION_VERSION,
   BRAND_NAME,
-  BUILD_COMMIT,
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
 } from "@/lib/brand";
@@ -1677,9 +1676,8 @@ export function Dashboard() {
               >
                 <p className="whitespace-nowrap">
                   © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
-                  <span className="font-mono">
-                    {" · "}v{APPLICATION_VERSION} · {BUILD_COMMIT === "development" ? BUILD_COMMIT : BUILD_COMMIT.slice(0, 7)}
-                  </span>
+                  <span aria-hidden="true"> · </span>
+                  <BuildIdentity className="transition-colors hover:text-neutral-200" />
                 </p>
               </div>
             </>

@@ -82,6 +82,25 @@ test("the static release publishes a commit-verifiable release manifest", () => 
   assert.match(source, /license:\s*"AGPL-3\.0-or-later"/);
 });
 
+test("one shared visible build identity covers every route shell", () => {
+  const identity = read("src/components/BuildIdentity.tsx");
+
+  assert.match(identity, /APPLICATION_VERSION/);
+  assert.match(identity, /BUILD_COMMIT/);
+  assert.match(identity, /BUILD_COMMIT\.slice\(0, 7\)/);
+  assert.match(identity, /data-build-identity/);
+
+  for (const shell of [
+    "src/components/PublicFooter.tsx",
+    "src/components/marketing/MarketingChrome.tsx",
+    "src/components/Dashboard.tsx",
+    "src/components/Onboarding.tsx",
+    "src/components/StorageRecoveryScreen.tsx",
+  ]) {
+    assert.match(read(shell), /<BuildIdentity/, `${shell} must expose the release identity`);
+  }
+});
+
 test("release preflight rejects dirty trees and mismatched supplied commits", async () => {
   const { validateReleaseState } = await import("../scripts/assert-clean-release.mjs");
   const head = "a".repeat(40);

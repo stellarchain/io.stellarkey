@@ -4,6 +4,7 @@ import {
   PUBLIC_ROUTES,
   SOURCE_REPOSITORY_URL,
 } from "@/lib/brand";
+import { BuildIdentity } from "./BuildIdentity";
 
 export function PublicFooter({ compact = false }: { compact?: boolean }) {
   return (
@@ -23,7 +24,10 @@ export function PublicFooter({ compact = false }: { compact?: boolean }) {
         <a className="link min-h-11 content-center" href={SOURCE_REPOSITORY_URL}>Source</a>
       </nav>
       <p className="mt-2 text-[11.5px]">
-        © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}. All rights reserved.
+        © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
+        <span aria-hidden="true"> · </span>
+        <BuildIdentity className="transition-colors hover:text-neutral-200" />
+        . All rights reserved.
       </p>
       <p className="mx-auto mt-2 max-w-2xl text-[10.5px] leading-relaxed text-neutral-500">
         This is an independent project, not affiliated with, sponsored or endorsed by the Stellar
