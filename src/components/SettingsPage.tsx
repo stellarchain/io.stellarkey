@@ -1035,6 +1035,7 @@ export function SettingsPage({
                 { label: "Privacy", sub: "Local data and network requests", href: PUBLIC_ROUTES.privacy },
                 { label: "Terms", sub: "Self-custody responsibilities", href: PUBLIC_ROUTES.terms },
                 { label: "Security", sub: "Trust model and responsible disclosure", href: PUBLIC_ROUTES.security },
+                { label: "Changelog", sub: "Release notes and security fixes", href: PUBLIC_ROUTES.changelog },
               ].map((item, index) => (
                 <a
                   key={item.href}

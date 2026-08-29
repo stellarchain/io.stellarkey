@@ -13,6 +13,7 @@ import {
   DocBook,
   DocCoin,
   DocCompass,
+  DocCycle,
   DocEyeOff,
   DocFile,
   DocGitHub,
@@ -58,6 +59,7 @@ const CONSIDER = [
    and the tabs agree on sight. */
 const COMPANY = [
   [PUBLIC_ROUTES.about, "About", DocCompass],
+  [PUBLIC_ROUTES.changelog, "Changelog", DocCycle],
   [PUBLIC_ROUTES.support, "Support", DocBook],
 ] as const;
 

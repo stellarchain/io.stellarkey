@@ -30,6 +30,9 @@
 /support
   Cache-Control: no-cache, must-revalidate
 
+/changelog
+  Cache-Control: no-cache, must-revalidate
+
 /404.html
   Cache-Control: no-cache, must-revalidate
 
