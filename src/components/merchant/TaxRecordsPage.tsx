@@ -641,9 +641,14 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                     backup as the recovery copy; it already includes these merchant records.
                   </SettingsCaption>
                 </SettingsSection>
-                <Button className="w-full" onClick={() => void handleEncryptedArchive()}>
+                <Button
+                  className="w-full min-w-0 !px-3"
+                  onClick={() => void handleEncryptedArchive()}
+                >
                   <IconDownload size={15} />
-                  Download encrypted archive
+                  <span className="min-w-0 whitespace-normal text-center leading-tight">
+                    Download encrypted archive
+                  </span>
                 </Button>
               </SheetBody>
             </>

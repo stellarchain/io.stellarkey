@@ -98,7 +98,7 @@ export function SettingsRow({
         {typeof label === "string" ? (
           <span
             className={`block truncate text-[15.5px] font-normal leading-tight ${
-              danger ? "text-[#FF453A]" : "text-white"
+              danger ? "text-[#FF6961]" : "text-white"
             }`}
           >
             {label}

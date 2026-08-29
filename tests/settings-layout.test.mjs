@@ -7,6 +7,22 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
+function contrastRatio(foreground, background) {
+  const luminance = (hex) => {
+    const channels = hex.match(/[0-9a-f]{2}/gi).map((channel) => Number.parseInt(channel, 16) / 255);
+    const [red, green, blue] = channels.map((channel) =>
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  return (
+    (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+    (Math.min(foregroundLuminance, backgroundLuminance) + 0.05)
+  );
+}
+
 test("local-device signer badges sit below their addresses", () => {
   const multisig = read("src/components/MultiSigStudioModal.tsx");
   const separatedBadges = multisig.match(
@@ -77,6 +93,14 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
     merchantSettings,
     /title="Turn off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
   );
+
+  const controls = read("src/components/merchant/MerchantSettingsControls.tsx");
+  const dangerColor = controls.match(/danger \? "text-\[\#([0-9A-Fa-f]{6})\]"/)?.[1];
+  assert.ok(dangerColor, "merchant settings must define an explicit destructive text color");
+  assert.ok(
+    contrastRatio(dangerColor, "252527") >= 4.8,
+    `destructive settings text needs contrast headroom, received #${dangerColor}`,
+  );
 });
 
 test("tax records use a summary-first iOS hub with focused task sheets", () => {
@@ -111,4 +135,8 @@ test("tax records use a summary-first iOS hub with focused task sheets", () => {
   assert.match(taxRecords, /activeSheet === "export"/);
   assert.match(taxRecords, /activeSheet === "retention"/);
   assert.match(taxRecords, /<Modal[\s\S]*open=\{activeSheet !== null\}/);
+  assert.match(
+    taxRecords,
+    /<Button\s+className="w-full min-w-0 !px-3"[^>]*>[\s\S]*?<span className="min-w-0 whitespace-normal text-center leading-tight">\s*Download encrypted archive\s*<\/span>/,
+  );
 });
