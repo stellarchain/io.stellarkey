@@ -52,7 +52,8 @@ import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
 import { FiatValue } from "./FiatValue";
-import { Avatar, Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner } from "./ui";
+import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner } from "./ui";
+import { AccountMark } from "./AccountMark";
 import { WelcomeHome } from "./WelcomeHome";
 import {
   IconArrowDownLeft,
@@ -1569,7 +1570,7 @@ export function Dashboard() {
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <Avatar seed={acct.publicKey} size={24} />
+                          <AccountMark publicKey={acct.publicKey} size={24} />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] leading-tight font-medium text-white flex items-center gap-1.5">
                               <span>{acct.label}</span>
@@ -1618,7 +1619,7 @@ export function Dashboard() {
                       }`}
                       title={`${acct.label} - ${formatTrezorAddress(acct.publicKey)}`}
                     >
-                      <Avatar seed={acct.publicKey} size={28} />
+                      <AccountMark publicKey={acct.publicKey} size={28} />
                     </button>
                   );
                 })}
@@ -3096,7 +3097,7 @@ function AccountMenu({
             className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
             title={`${activeAccount.label} (${formatTrezorAddress(activeAccount.publicKey)})`}
           >
-            <Avatar seed={activeAccount.publicKey} size={28} />
+            <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span
               className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#18181b]"
               style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
@@ -3108,7 +3109,7 @@ function AccountMenu({
             aria-label={`Open account menu for ${activeAccount.label}`}
             className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
           >
-            <Avatar seed={activeAccount.publicKey} size={28} />
+            <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">
               <span className="block truncate text-[13.5px] font-semibold leading-tight text-white">
                 {activeAccount.label}
@@ -3143,7 +3144,7 @@ function AccountMenu({
                   close();
                 }}
               >
-                <Avatar seed={acct.publicKey} size={24} />
+                <AccountMark publicKey={acct.publicKey} size={24} />
                 <div className="min-w-0 flex-1 text-left">
                   <p className="truncate text-[13px] font-semibold leading-tight flex items-center gap-1.5">
                     <span>{acct.label}</span>
