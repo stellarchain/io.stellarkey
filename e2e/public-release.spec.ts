@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { APPLICATION_VERSION } from "../src/lib/brand";
 import { importTestWallet, installNetworkFixtures, installQuietEventSource } from "./fixtures";
 
 const routes = [
@@ -20,7 +21,9 @@ async function expectVisibleReleaseIdentity(page: Page) {
   const identity = page.locator("[data-build-identity]");
   await expect(identity).toHaveCount(1);
   await expect(identity).toBeVisible();
-  await expect(identity).toHaveText(/^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/);
+  await expect(identity).toHaveText(
+    new RegExp(`^v${APPLICATION_VERSION.replaceAll(".", "\\.")} · (?:[0-9a-f]{7}|development)$`),
+  );
   expect(
     await identity.evaluate((element) => {
       const rect = element.getBoundingClientRect();
@@ -143,11 +146,12 @@ test("the landing page does not prefetch the wallet application before it is req
 
 test("the changelog publishes the current release as semantic text", async ({ page }) => {
   await page.goto("/changelog", { waitUntil: "domcontentloaded" });
+  const currentRelease = page.locator(`#release-${APPLICATION_VERSION.replaceAll(".", "-")}`);
 
   await expect(page.getByRole("heading", { level: 2, name: "Unreleased" })).toBeVisible();
   await expect(page.getByText("No unreleased changes.")).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "1.1.0" })).toBeVisible();
-  await expect(page.locator('time[datetime="2026-08-29"]')).toHaveText("29 August 2026");
+  await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
+  await expect(currentRelease.locator('time[datetime="2026-08-29"]')).toHaveText("29 August 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
     "href",
     "https://github.com/stellarchain/io.stellarkey",
