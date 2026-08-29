@@ -6,7 +6,13 @@ import {
 } from "@/lib/brand";
 import { BuildIdentity } from "./BuildIdentity";
 
-export function PublicFooter({ compact = false }: { compact?: boolean }) {
+export function PublicFooter({
+  compact = false,
+  showBuildIdentity = true,
+}: {
+  compact?: boolean;
+  showBuildIdentity?: boolean;
+}) {
   return (
     <footer
       className={`mx-auto w-full max-w-3xl text-center text-neutral-400 ${compact ? "px-2 py-5" : "px-5 py-10"}`}
@@ -25,8 +31,12 @@ export function PublicFooter({ compact = false }: { compact?: boolean }) {
       </nav>
       <p className="mt-2 text-[11.5px]">
         © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
-        <span aria-hidden="true"> · </span>
-        <BuildIdentity className="transition-colors hover:text-neutral-200" />
+        {showBuildIdentity && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <BuildIdentity className="transition-colors hover:text-neutral-200" />
+          </>
+        )}
         . All rights reserved.
       </p>
       <p className="mx-auto mt-2 max-w-2xl text-[10.5px] leading-relaxed text-neutral-500">

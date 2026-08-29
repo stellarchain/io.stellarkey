@@ -8,6 +8,7 @@ import { hasPasskeyUnlock } from "@/lib/vault";
 import { BRAND_NAME } from "@/lib/brand";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { PublicFooter } from "./PublicFooter";
+import { BuildIdentity } from "./BuildIdentity";
 import { Button, ErrorText, Field } from "./ui";
 import { IconFingerprint, IconTrezor, LogoMark } from "./icons";
 
@@ -61,6 +62,7 @@ export function LockScreen() {
           <p className="mt-1 text-[13.5px] text-neutral-400">
             {passkeyConfigured ? "Use Face ID, Touch ID, or your password" : "Enter your password to unlock your vault"}
           </p>
+          <BuildIdentity className="mt-3 text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
         </div>
 
         <div className="panel mt-7 p-6 sm:p-8 shadow-2xl border border-white/10">
@@ -150,7 +152,7 @@ export function LockScreen() {
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
       />
-      <PublicFooter compact />
+      <PublicFooter compact showBuildIdentity={false} />
     </div>
   );
 }

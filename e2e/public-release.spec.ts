@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { installNetworkFixtures, installQuietEventSource } from "./fixtures";
+import { expect, test, type Page } from "@playwright/test";
+import { importTestWallet, installNetworkFixtures, installQuietEventSource } from "./fixtures";
 
 const routes = [
   { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a card machine in it" },
@@ -16,6 +16,20 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
+async function expectVisibleReleaseIdentity(page: Page) {
+  const identity = page.locator("[data-build-identity]");
+  await expect(identity).toHaveCount(1);
+  await expect(identity).toBeVisible();
+  await expect(identity).toHaveText(/^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/);
+  expect(
+    await identity.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.top >= 0 && rect.bottom <= window.innerHeight;
+    }),
+    "the release identity must be visible without scrolling",
+  ).toBe(true);
+}
+
 for (const route of routes) {
   test(`${route.path} is a canonical, narrow-screen-safe public document`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
@@ -28,9 +42,7 @@ for (const route of routes) {
     expect(canonical).not.toBeNull();
     expect(new URL(canonical!).origin).toBe("https://stellarkey.io");
     expect(new URL(canonical!).pathname).toBe(route.path);
-    await expect(page.locator("[data-build-identity]")).toHaveText(
-      /^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/,
-    );
+    await expectVisibleReleaseIdentity(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (route.path === "/") {
       const sharingAlt = await page.locator('meta[property="og:image:alt"]').getAttribute("content");
@@ -44,10 +56,18 @@ test("the wallet entry page shows the same release identity", async ({ page }) =
   const response = await page.goto("/app", { waitUntil: "domcontentloaded" });
 
   expect(response?.status()).toBe(200);
-  await expect(page.locator("[data-build-identity]")).toHaveText(
-    /^v1\.1\.0 · (?:[0-9a-f]{7}|development)$/,
-  );
+  await expectVisibleReleaseIdentity(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("locked authentication keeps the release identity above the fold", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await importTestWallet(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { level: 1, name: "StellarKey" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unlock Vault" })).toBeVisible();
+  await expectVisibleReleaseIdentity(page);
 });
 
 test("the skip link appears for keyboards but cannot overlay touch-first screens", async ({ page }, testInfo) => {
@@ -183,6 +203,7 @@ test("unknown routes return a branded, non-indexable 404", async ({ page }) => {
   expect(response?.status()).toBe(404);
   await expect(page).toHaveTitle("Page not found — StellarKey");
   await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  await expectVisibleReleaseIdentity(page);
   expect(await page.locator('meta[name="robots"]').evaluateAll((nodes) =>
     nodes.some((node) => /noindex/i.test(node.getAttribute("content") ?? "")),
   )).toBe(true);

@@ -302,6 +302,7 @@ export function Onboarding() {
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <LogoMark size={56} />
             <p className="eyebrow mt-7">{BRAND_NAME} · Self-custodial Stellar wallet</p>
+            <BuildIdentity className="mt-3 text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
             <h1 className="display-h mt-4 text-[42px] font-bold leading-[1.04] tracking-tight text-white sm:text-[56px]">
               Own your keys.
               <br />
@@ -398,7 +399,7 @@ export function Onboarding() {
             </p>
           </div>
         </div>
-        <PublicFooter compact />
+        <PublicFooter compact showBuildIdentity={false} />
       </div>
     );
   }

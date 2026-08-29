@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { Button } from "@/components/ui";
 import { PublicFooter } from "@/components/PublicFooter";
+import { BuildIdentity } from "@/components/BuildIdentity";
 import { BRAND_NAME } from "@/lib/brand";
 
 /**
@@ -33,6 +34,7 @@ export default function Error({
         An unexpected error occurred while rendering this view. Your keys and
         funds are safe — the encrypted vault is untouched on this device.
       </p>
+      <BuildIdentity className="mt-3 text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
       <div className="mt-7 flex w-full max-w-xs flex-col gap-3">
         <Button className="w-full !py-3.5 text-[15px] font-semibold" onClick={reset}>
           Try Again
@@ -48,7 +50,7 @@ export default function Error({
       <p className="mt-6 mono max-w-sm break-all text-[10.5px] leading-relaxed text-neutral-600">
         {error.digest ? `Ref: ${error.digest}` : error.message}
       </p>
-      <PublicFooter compact />
+      <PublicFooter compact showBuildIdentity={false} />
     </main>
   );
 }

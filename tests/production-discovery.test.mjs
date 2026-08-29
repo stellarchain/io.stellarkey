@@ -84,6 +84,10 @@ test("the static release publishes a commit-verifiable release manifest", () => 
 
 test("one shared visible build identity covers every route shell", () => {
   const identity = read("src/components/BuildIdentity.tsx");
+  const marketing = read("src/components/marketing/MarketingChrome.tsx");
+  const publicFooter = read("src/components/PublicFooter.tsx");
+  const lockScreen = read("src/components/LockScreen.tsx");
+  const onboarding = read("src/components/Onboarding.tsx");
 
   assert.match(identity, /APPLICATION_VERSION/);
   assert.match(identity, /BUILD_COMMIT/);
@@ -99,6 +103,26 @@ test("one shared visible build identity covers every route shell", () => {
   ]) {
     assert.match(read(shell), /<BuildIdentity/, `${shell} must expose the release identity`);
   }
+
+  assert.match(
+    marketing,
+    /export function MarketingHeader\(\)[\s\S]*?<BuildIdentity[\s\S]*?export function MarketingFooter/,
+    "public documents must expose the identity in their always-visible header",
+  );
+  assert.equal(
+    marketing.match(/<BuildIdentity/g)?.length,
+    1,
+    "marketing pages must not duplicate the identity in the distant footer",
+  );
+  assert.match(publicFooter, /showBuildIdentity\s*=\s*true/);
+  assert.match(publicFooter, /\{showBuildIdentity\s*&&[\s\S]*?<BuildIdentity/);
+  assert.match(lockScreen, /<BuildIdentity[\s\S]*?<PublicFooter compact showBuildIdentity=\{false\}/);
+  assert.match(
+    onboarding,
+    /\{BRAND_NAME\} · Self-custodial Stellar wallet[\s\S]*?<BuildIdentity[\s\S]*?<h1/,
+    "the first onboarding viewport must show the identity beside the product introduction",
+  );
+  assert.match(onboarding, /<PublicFooter compact showBuildIdentity=\{false\}/);
 });
 
 test("release preflight rejects dirty trees and mismatched supplied commits", async () => {

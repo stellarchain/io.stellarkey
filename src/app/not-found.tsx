@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PublicFooter } from "@/components/PublicFooter";
+import { BuildIdentity } from "@/components/BuildIdentity";
 import { LogoMark } from "@/components/icons";
 import { BRAND_NAME, PUBLIC_ROUTES } from "@/lib/brand";
 
@@ -15,6 +16,7 @@ export default function NotFound() {
       <main id="app-content" className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-6 py-16 text-center">
         <LogoMark size={56} />
         <p className="eyebrow mt-7">404 · {BRAND_NAME}</p>
+        <BuildIdentity className="mt-3 text-[10px] text-neutral-500 transition-colors hover:text-neutral-300" />
         <h1 className="display-h mt-3 text-[34px] text-white">Page not found</h1>
         <p className="mt-4 max-w-sm text-[14px] leading-relaxed text-neutral-400">
           This address is not part of the current StellarKey release. Your local vault has not been
@@ -29,7 +31,7 @@ export default function NotFound() {
           </a>
         </div>
       </main>
-      <PublicFooter compact />
+      <PublicFooter compact showBuildIdentity={false} />
     </div>
   );
 }
