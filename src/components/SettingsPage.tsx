@@ -67,7 +67,6 @@ import { RenameAccountModal } from "./RenameAccountModal";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { AddAccountModal } from "./AddAccountModal";
 import {
-  Avatar,
   Button,
   CopyButton,
   ErrorText,
@@ -81,6 +80,7 @@ import {
   Spinner,
   Toggle,
 } from "./ui";
+import { AccountMark } from "./AccountMark";
 import {
   IconCheck,
   IconBook,
@@ -855,7 +855,7 @@ export function SettingsPage({
                 <div className="list-group">
                   {activeAccount && (
                     <RowButton
-                      icon={<Avatar seed={activeAccount.publicKey} size={29} />}
+                      icon={<AccountMark publicKey={activeAccount.publicKey} size={29} />}
                       label={activeAccount.label}
                       sub={formatTrezorAddress(activeAccount.publicKey)}
                       chevron
@@ -1185,7 +1185,7 @@ export function SettingsPage({
                     selectAccount(acct.id);
                   }}
                 >
-                  <Avatar seed={acct.publicKey} size={34} />
+                  <AccountMark publicKey={acct.publicKey} size={34} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="block truncate text-[15.5px] font-semibold leading-tight text-white">
@@ -1259,7 +1259,7 @@ export function SettingsPage({
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <Avatar seed={acct.publicKey} size={30} />
+                      <AccountMark publicKey={acct.publicKey} size={30} />
                       <div className="min-w-0">
                         <p className="truncate text-[14.5px] font-semibold text-white">
                           {acct.label}
@@ -1422,7 +1422,7 @@ export function SettingsPage({
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <Avatar seed={a.publicKey} size={24} />
+                          <AccountMark publicKey={a.publicKey} size={24} />
                           <span className="truncate text-[13px] font-medium">{a.label}</span>
                         </div>
                         <span className="mono text-[11px] text-neutral-400">
