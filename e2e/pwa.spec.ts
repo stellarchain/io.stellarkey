@@ -6,15 +6,25 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
-test("document security headers use build-time hashes without weakening viewport policy", async ({ page }) => {
+test("document security policies use build-time hashes without weakening viewport policy", async ({ page }) => {
   const first = await page.goto("/", { waitUntil: "domcontentloaded" });
-  const firstPolicy = first?.headers()["content-security-policy"] ?? "";
+  const firstHeaderPolicy = first?.headers()["content-security-policy"] ?? "";
+  const firstDocumentPolicy = await page
+    .locator('meta[http-equiv="Content-Security-Policy"][data-stellarkey-csp]')
+    .getAttribute("content") ?? "";
   const second = await page.reload({ waitUntil: "domcontentloaded" });
-  const secondPolicy = second?.headers()["content-security-policy"] ?? "";
-  expect(firstPolicy).toContain("'sha256-");
-  expect(secondPolicy).toBe(firstPolicy);
-  expect(firstPolicy).not.toContain("'nonce-");
-  expect(firstPolicy).not.toContain("script-src 'self' 'unsafe-inline'");
+  const secondHeaderPolicy = second?.headers()["content-security-policy"] ?? "";
+  const secondDocumentPolicy = await page
+    .locator('meta[http-equiv="Content-Security-Policy"][data-stellarkey-csp]')
+    .getAttribute("content") ?? "";
+  expect(firstHeaderPolicy).toContain("frame-ancestors 'none'");
+  expect(secondHeaderPolicy).toBe(firstHeaderPolicy);
+  expect(firstHeaderPolicy.length).toBeLessThanOrEqual(2_000);
+  expect(firstDocumentPolicy).toContain("'sha256-");
+  expect(secondDocumentPolicy).toBe(firstDocumentPolicy);
+  expect(firstDocumentPolicy).not.toContain("'nonce-");
+  expect(firstDocumentPolicy).not.toContain("script-src 'self' 'unsafe-inline'");
+  expect(firstDocumentPolicy).not.toContain("frame-ancestors");
   expect(first?.headers()["cross-origin-opener-policy"]).toBe("same-origin-allow-popups");
   await expect.poll(() => page.evaluate(() =>
     document.querySelector('meta[name="viewport"]')?.getAttribute("content") ?? "",
