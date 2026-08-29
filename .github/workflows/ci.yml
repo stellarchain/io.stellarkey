@@ -28,4 +28,4 @@ jobs:
       - run: test -f out/index.html
       - run: npm run test:bundle
       - run: npm run check:bundle
-      - run: playwright test
+      - run: npm exec -- playwright test

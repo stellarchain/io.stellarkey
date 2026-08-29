@@ -64,7 +64,7 @@ test("clean CI runs generated bundle assertions only after the static build", ()
   );
   assert.match(
     ci,
-    /npm test[\s\S]*npm run build[\s\S]*npm run test:bundle[\s\S]*npm run check:bundle[\s\S]*playwright test/,
+    /npm test[\s\S]*npm run build[\s\S]*npm run test:bundle[\s\S]*npm run check:bundle[\s\S]*npm exec -- playwright test/,
   );
 });
 
