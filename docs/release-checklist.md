@@ -13,6 +13,7 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Deploy the contents of the exact `stellarkey-<version>.tar.gz` release archive to an HTTPS static host that applies `_headers`. Do not rebuild it and do not add an application-server requirement.
 - Treat a bundle-budget, production-audit, Chromium, iPhone WebKit, or iPad WebKit failure as release-blocking.
 - Re-check every public fee-comparison rate against its linked first-party source, update the checked date, and verify the page still distinguishes StellarKey processing fees, sender-paid network fees, and optional conversion/off-ramp costs.
+- Review and record the [repository security settings](./production-deployment.md#repository-security-settings); checked-in workflows cannot prove that GitHub dashboard protections remain enabled.
 
 ## Manual device boundaries
 

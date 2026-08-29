@@ -9,6 +9,18 @@ This runbook covers the static, backend-free StellarKey application. A productio
 - Run `sha256sum --check SHA256SUMS` in a clean directory, inspect the attestation subject, and confirm every extracted file matches `release-files.json` before upload.
 - Treat the artifact as immutable. Never patch generated JavaScript, service-worker files, headers, or metadata in place.
 
+### Repository security settings
+
+Repository configuration is part of the release boundary even though it cannot be proven by files in the source tree. Before each production release, a trusted maintainer must inspect GitHub and record that:
+
+- **Code security → CodeQL default setup** is enabled for JavaScript/TypeScript. Prefer GitHub's maintained default setup unless a documented query requirement justifies a custom workflow.
+- The dependency graph, **Dependabot alerts**, and Dependabot security updates are enabled. Weekly version-update proposals remain review-only; do not enable automatic merging.
+- **Secret scanning** and **push protection** are enabled wherever the repository plan supports them. Treat any bypass as a reviewed security event.
+- The `main` branch and `v*` release tags are protected. Require the complete CI check and review of source, workflow, and dependency changes; block force pushes and casual rule bypass.
+- The protected `production` environment is limited to release tags, contains only the least-privilege `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, and requires approval when another trusted maintainer is available.
+
+The checked-in Dependabot configuration and SHA-pinned workflows express intent; they do not prove that these dashboard controls are still active.
+
 ## 2. Trezor production gate
 
 The source retains optional Trezor support, but `@trezor/connect-web` is separately licensed. Before distributing a production bundle containing it, obtain and archive written permission or authorization for the intended public distribution, or replace it with a permissibly licensed integration. Confirm the registered Trezor production origin is exactly `https://stellarkey.io`, the popup flow works from that origin, and the current dependency license notice is shipped. This is a release blocker, not a documentation-only check.

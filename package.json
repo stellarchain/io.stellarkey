@@ -29,7 +29,7 @@
     "release:verify": "node scripts/assert-clean-release.mjs && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run check:bundle && playwright test"
   },
   "dependencies": {
-    "@noble/ciphers": "^2.3.0",
+    "@noble/ciphers": "^2.4.0",
     "@stellar/stellar-sdk": "^17.0.1",
     "@trezor/connect-web": "^9.7.3",
     "next": "16.3.3",
