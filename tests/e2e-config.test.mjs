@@ -35,3 +35,12 @@ test("wallet and merchant journeys run through Playwright fixtures", () => {
   assert.match(source("e2e/wallet.spec.ts"), /Review Transfer/);
   assert.match(source("e2e/wallet.spec.ts"), /Review Swap/);
 });
+
+test("the accessibility journey waits for asynchronous send readiness", () => {
+  const accessibility = source("e2e/accessibility.spec.ts");
+
+  assert.match(
+    accessibility,
+    /const reviewTransfer = send\.getByRole\("button", \{ name: "Review Transfer" \}\);\s*await expect\(reviewTransfer\)\.toBeEnabled\(\{ timeout: 30_000 \}\);\s*await reviewTransfer\.click\(\);/,
+  );
+});

@@ -280,7 +280,9 @@ test("critical wallet and merchant screens remain operable and accessible", asyn
   const send = page.getByRole("dialog", { name: "Send Payment" });
   await send.getByPlaceholder("0.00").fill("1");
   await send.getByPlaceholder("G... or user*domain.com").fill(testPayer);
-  await send.getByRole("button", { name: "Review Transfer" }).click();
+  const reviewTransfer = send.getByRole("button", { name: "Review Transfer" });
+  await expect(reviewTransfer).toBeEnabled({ timeout: 30_000 });
+  await reviewTransfer.click();
   const review = page.getByRole("dialog", { name: "Review Transfer" });
   await expect(review).toBeVisible();
   await expectAccessibleSurface(page, "send review", browserName);
