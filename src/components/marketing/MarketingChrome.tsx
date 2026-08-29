@@ -84,7 +84,7 @@ export function MarketingHeader() {
             <a key={href} href={href}>{label}</a>
           ))}
         </div>
-        <Link className="btn btn-gold btn-sm" href={PUBLIC_ROUTES.app}>Open the app</Link>
+        <Link className="btn btn-gold btn-sm" href={PUBLIC_ROUTES.app} prefetch={false}>Open the app</Link>
       </nav>
     </header>
   );
@@ -98,7 +98,7 @@ export function MarketingFooter() {
           <div className="brand"><Brand /></div>
           <p>
             A self-custody Stellar wallet with a point of sale in it. Runs as a static site with
-            no backend; every screenshot on this page is the real app.
+            no backend; screens on this page come from the real app.
           </p>
         </div>
         <div>

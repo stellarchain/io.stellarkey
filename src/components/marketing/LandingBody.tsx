@@ -1,13 +1,15 @@
 /*
- * The landing page markup. Static by design: the only interactive parts are
- * the two demos and the fee calculator, which live in LandingClient, so this
- * stays a server component and ships no JavaScript of its own.
+ * The landing page markup. Static by design: the demo effects live in
+ * LandingClient and the calculator is a small client leaf, so this stays a
+ * server component.
  *
  * The screenshots are pre-sized WebP crops served from a static export, where
  * next/image can only pass them through unchanged, so a plain <img> with real
  * dimensions is the lighter and more honest choice.
  */
 /* eslint-disable @next/next/no-img-element */
+import { FeeCalculator } from "./FeeCalculator";
+
 export function LandingBody() {
   return (
     <>
@@ -192,7 +194,7 @@ export function LandingBody() {
                 <div><span>vat 23 %</span><b>€ 0.90</b></div>
                 <div><span>received</span><b className="j">22.3755101 XLM</b></div>
                 <div><span>payer</span><b>GC33 RABA … 7604</b></div>
-                <div><span>processor fee</span><b className="j">€ 0.0000015</b></div>
+                <div><span>processor fee</span><b className="j">€ 0.00</b></div>
               </div>
             </div>
           </div>
@@ -203,13 +205,13 @@ export function LandingBody() {
           <li><span className="n">01 / ring up</span><h3>Build the ticket</h3><p>Keypad or product tiles, with per-line VAT, modifiers and discounts worked out on device.</p></li>
           <li><span className="n">02 / tip</span><h3>Ask, don’t assume</h3><p>The customer is offered the tip before the code appears, never added quietly after.</p></li>
           <li><span className="n">03 / charge</span><h3>Show the code</h3><p>A SEP-7 request carrying your address, the amount, and a memo unique to this order.</p></li>
-          <li><span className="n">04 / settle</span><h3>It files itself</h3><p>The till matches the memo off Horizon and marks the order paid, in about five seconds.</p></li>
+          <li><span className="n">04 / settle</span><h3>It files itself</h3><p>The till marks the order paid when the network payment is reported and matched.</p></li>
         </ol>
 
         <div className="head" style={{ marginTop: "4.5rem" }}>
           <p className="mono-label">and you can check it<span className="sep">{"//"}</span>without trusting us</p>
           <h2 className="display-sm">Every sale leaves a public receipt.</h2>
-          <p className="lede">This is a real settled order. The transaction hash is on the Stellar ledger. Open any explorer and check it yourself. No other card machine can offer that, because their record lives in their database.</p>
+          <p className="lede">This is the receipt StellarKey produces after a payment is matched. It keeps the order, exact asset amount, payer, transaction hash, memo match, and ledger together so the full on-chain identity can be checked when supplied.</p>
         </div>
         <div className="verify rv">
           <table><tbody>
@@ -222,7 +224,7 @@ export function LandingBody() {
             <tr><td>ledger</td><td>4,369,215</td></tr>
           </tbody></table>
         </div>
-        <p className="cap-line">a genuine settlement on stellar testnet, taken from the receipt screen below</p>
+        <p className="cap-line">representative testnet receipt · values are illustrative</p>
 
         <div className="row rv">
           <div>
@@ -256,33 +258,11 @@ export function LandingBody() {
       </div></section>
       <section className="band" id="cost"><div className="sheet">
         <div className="head">
-          <p className="mono-label">the arithmetic<span className="sep">{"//"}</span>published rates<span className="sep">{"//"}</span>live network fee</p>
-          <h2 className="display-sm">A card machine charges 1.75 %. Stellar charges 0.00001 XLM.</h2>
-          <p className="lede">This is not a discount. It is a different structure. There is no processor taking a percentage, because the payment goes from the customer’s account to yours. What is left is the network’s own fee, which is <strong>fixed, tiny, and the same on a €5 coffee as on a €5,000 invoice</strong>.</p>
+          <p className="mono-label">the arithmetic<span className="sep">{"//"}</span>published UK rates<span className="sep">{"//"}</span>no processing fee</p>
+          <h2 className="display-sm">Compare processing fees with published card rates.</h2>
+          <p className="lede">StellarKey charges no subscription or processing fee. Use these dated assumptions to compare that with common UK in-person card rates.</p>
         </div>
-        <div className="calc rv">
-          <div className="sliders">
-            <div className="slider">
-              <label>Sales a day <b id="o-sales">40</b></label>
-              <input type="range" id="i-sales" min="5" max="400" step="5" value="40" />
-            </div>
-            <div className="slider">
-              <label>Average ticket <b id="o-ticket">€ 4.80</b></label>
-              <input type="range" id="i-ticket" min="1" max="60" step="0.2" value="4.8" />
-            </div>
-            <p className="verdict" id="o-turnover"></p>
-          </div>
-          <div>
-            <div className="compare">
-              <table>
-                <thead><tr><th>a year of card fees</th><th>rate</th><th>you lose</th></tr></thead>
-                <tbody id="o-rows"></tbody>
-              </table>
-            </div>
-            <p className="verdict" id="o-verdict"></p>
-          </div>
-        </div>
-        <p className="cap-line">rates as published by each provider for in-person payments · stellar fee from the live network, priced at the current XLM rate</p>
+        <FeeCalculator />
       </div></section>
       <section className="band" id="till"><div className="sheet">
         <div className="head">
@@ -342,7 +322,7 @@ export function LandingBody() {
           <details><summary>What if the price moves between the code and the payment?</summary>
             <p>The charge is quoted in your currency and converted at the moment it is raised, then held for the life of the request. If the payment arrives outside a tolerance you set, the till says underpaid or overpaid explicitly rather than rounding it away, and the difference is yours to settle, in cash or with a top-up charge.</p></details>
           <details><summary>What if my customer doesn’t have a Stellar wallet?</summary>
-            <p>Then they cannot pay this way, and you take cash or a card instead. This is not a replacement for every payment method on day one; it is the one that costs you nothing when the customer does have a wallet. Be honest with yourself about your own customers before switching anything off.</p></details>
+            <p>Then they cannot pay this way, and you take cash or a card instead. This is not a replacement for every payment method on day one; it is the one with no StellarKey processing fee when the customer does have a wallet. Be honest with yourself about your own customers before switching anything off.</p></details>
           <details><summary>Where does my money actually go?</summary>
             <p>Straight to the Stellar account you nominate, which you hold the keys to. It never passes through an account we control, because there is no account we control. That is also why there is nobody to freeze it, and nobody to ask if something goes wrong.</p></details>
           <details><summary>What happens if I lose the device?</summary>
@@ -350,7 +330,7 @@ export function LandingBody() {
           <details><summary>Is this legal for my shop?</summary>
             <p>Taking payment in a digital asset, and how it is taxed, depends entirely on where you trade. The app gives you per-line VAT, VAT by rate over a period, and a transaction hash against every figure, which is what an accountant will ask for. It does not give you advice. Ask someone qualified where you trade.</p></details>
           <details><summary>What does it cost?</summary>
-            <p>Nothing to us. There is no subscription, no per-transaction fee and no account. You pay Stellar’s network fee, currently 0.00001 XLM per transaction, which at today’s rate is a small fraction of a cent. If we ever charge for something, it will be something other than your takings.</p></details>
+            <p>StellarKey charges no subscription or processing fee. The sender pays Stellar network fees, whose minimum is per operation and can rise during surge pricing. Conversion, spread, reserves, tax, and off-ramp services can add separate costs.</p></details>
         </div>
       </div></section>
       <section className="band" id="start"><div className="sheet">

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { installNetworkFixtures, installQuietEventSource } from "./fixtures";
 
 const routes = [
-  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey — a Stellar wallet with a card machine in it" },
+  { path: "/", heading: "Your keys never leave this device.", title: "StellarKey: a Stellar wallet with a card machine in it" },
   { path: "/about", heading: "About StellarKey", title: "About StellarKey — StellarKey" },
   { path: "/privacy", heading: "Your data stays close", title: "Your data stays close — StellarKey" },
   { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
@@ -28,6 +28,10 @@ for (const route of routes) {
     expect(new URL(canonical!).origin).toBe("https://stellarkey.io");
     expect(new URL(canonical!).pathname).toBe(route.path);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if (route.path === "/") {
+      const sharingAlt = await page.locator('meta[property="og:image:alt"]').getAttribute("content");
+      expect(sharingAlt).not.toMatch(/[—–]/);
+    }
   });
 }
 
@@ -76,6 +80,54 @@ test("the install manifest and Apple metadata expose complete mobile artwork", a
     links.map((link) => link.getAttribute("sizes")).sort(),
   );
   expect(appleSizes).toEqual(["152x152", "167x167", "180x180"]);
+});
+
+test("the landing page does not prefetch the wallet application before it is requested", async ({ page }) => {
+  const requestedPaths: string[] = [];
+  page.on("request", (request) => requestedPaths.push(new URL(request.url()).pathname));
+
+  await page.goto("/", { waitUntil: "networkidle" });
+
+  expect(requestedPaths.filter((path) => path === "/app" || path.startsWith("/app/"))).toEqual([]);
+});
+
+test("the fee comparison is editable, sourced, and explicit about its assumptions", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  const comparison = page.getByRole("region", { name: "Annual fee comparison" });
+  const sales = comparison.getByRole("slider", { name: "Sales a day", exact: true });
+  const ticket = comparison.getByRole("slider", { name: "Average ticket", exact: true });
+
+  const setRange = async (input: typeof sales, value: string) => {
+    await input.evaluate((element, nextValue) => {
+      const range = element as HTMLInputElement;
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      if (!valueSetter) throw new Error("Range inputs must expose a native value setter");
+      valueSetter.call(range, nextValue);
+      range.dispatchEvent(new Event("input", { bubbles: true }));
+    }, value);
+  };
+  await setRange(sales, "100");
+  await setRange(ticket, "1000");
+
+  await expect(comparison).toContainText("36,500 sales a year");
+  await expect(comparison).toContainText("£365,000");
+  for (const provider of ["Square", "PayPal Point of Sale", "SumUp", "Stripe Terminal"]) {
+    await expect(comparison.getByRole("row", { name: new RegExp(provider) })).toBeVisible();
+  }
+  const stellarKeyRow = comparison.getByRole("row", { name: /StellarKey/ });
+  await expect(stellarKeyRow).toContainText("StellarKey processing fee");
+  await expect(stellarKeyRow).toContainText("£0.00");
+
+  await expect(comparison).toContainText("Illustrative UK assumptions checked 29 August 2026");
+  await expect(comparison).toContainText("Provider fees can vary");
+  await expect(comparison).toContainText("The sender pays Stellar network fees");
+  await expect(comparison).toContainText("Conversion, spread, reserves, tax, and off-ramp fees are excluded");
+  await expect(comparison.getByRole("link", { name: "Stellar fee documentation" })).toHaveAttribute(
+    "href",
+    "https://developers.stellar.org/docs/learn/fundamentals/fees-resource-limits-metering",
+  );
+  await expect(comparison.getByText(/live network fee|current XLM rate|fixed network fee/i)).toHaveCount(0);
 });
 
 test("unknown routes return a branded, non-indexable 404", async ({ page }) => {

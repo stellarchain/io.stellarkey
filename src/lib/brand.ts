@@ -15,7 +15,7 @@ export const PUBLIC_OPEN_GRAPH_IMAGE = Object.freeze({
   url: "/opengraph-image",
   width: 1200,
   height: 630,
-  alt: `${BRAND_NAME} — self-custodial Stellar wallet`,
+  alt: `${BRAND_NAME}: self-custodial Stellar wallet`,
 });
 
 export const PUBLIC_ROUTES = Object.freeze({
