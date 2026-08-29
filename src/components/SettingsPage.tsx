@@ -2003,12 +2003,15 @@ export function SettingsPage({
             <div className="pt-2">
               <Button
                 variant="secondary"
-                className="w-full !py-3 text-[14px] flex items-center justify-center gap-2"
+                className="w-full min-w-0 !px-3 !py-3 text-[14px] flex items-center justify-center gap-2"
                 loading={fundingTestnet}
                 disabled={fundingTestnet}
                 onClick={() => void handleClaimFriendbot()}
               >
-                <IconRefresh size={15} /> Claim 10,000 Testnet XLM (Friendbot)
+                <IconRefresh size={15} />
+                <span className="min-w-0 whitespace-normal text-center leading-tight">
+                  Claim 10,000 Testnet XLM (Friendbot)
+                </span>
               </Button>
             </div>
           )}

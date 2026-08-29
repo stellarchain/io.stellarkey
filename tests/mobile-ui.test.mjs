@@ -240,6 +240,19 @@ test("network switch modal uses the shared mobile padding", () => {
   );
 });
 
+test("the Friendbot action can wrap inside the narrowest WebKit viewport", () => {
+  const settings = read("src/components/SettingsPage.tsx");
+  const friendbotAction = settings.match(
+    /\{network === "testnet"[\s\S]*?<Button[\s\S]*?handleClaimFriendbot\(\)[\s\S]*?<\/Button>/,
+  )?.[0] ?? "";
+
+  assert.match(friendbotAction, /className="[^"]*min-w-0[^"]*!px-3[^"]*"/);
+  assert.match(
+    friendbotAction,
+    /<span className="min-w-0 whitespace-normal text-center leading-tight">\s*Claim 10,000 Testnet XLM \(Friendbot\)\s*<\/span>/,
+  );
+});
+
 test("zoom-prone native form controls have no mobile-only sub-16 typography", () => {
   const failures = [];
   const unprefixedSub16 = /(?:^|\s)!?text-(?:xs|sm|\[(?:[0-9](?:\.\d+)?|1[0-5](?:\.\d+)?)px\])(?=\s|$)/;
