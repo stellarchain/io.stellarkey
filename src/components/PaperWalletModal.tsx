@@ -225,15 +225,17 @@ export function PaperWalletModal({
         </div>
         <button
           type="button"
+          data-encrypted-export-action="true"
           onClick={() => void handleEncryptedExport()}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/[0.1] bg-white/[0.04] py-2.5 text-[12.5px] font-semibold text-neutral-300 transition-colors hover:border-[#0A84FF]/40 hover:text-[#0A84FF] print:hidden"
+          className="group mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
         >
-          <IconLock size={13} />
-          <span>
-            Download encrypted file instead
-            <span className="font-normal text-neutral-500">
-              {" "}
-              · {kind === "secret" ? "keystore .json" : "vault backup .json"} · locked by your
+          <IconLock size={16} className="shrink-0 text-neutral-400" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-semibold text-neutral-200 transition-colors group-hover:text-[#0A84FF]">
+              Download encrypted file instead
+            </span>
+            <span className="mt-0.5 block text-[12px] font-normal leading-snug text-neutral-500">
+              {kind === "secret" ? "Keystore .json" : "Vault backup .json"} · locked by your
               wallet password
             </span>
           </span>

@@ -116,6 +116,22 @@ test("long transaction toasts stay inside the narrowest mobile viewport", () => 
   assert.match(toast, /min-w-0 truncate text-\[13px\]/);
 });
 
+test("paper wallet encrypted export keeps its icon, title, and description aligned", () => {
+  const paperWallet = read("src/components/PaperWalletModal.tsx");
+  const actionStart = paperWallet.indexOf('data-encrypted-export-action="true"');
+  const actionEnd = paperWallet.indexOf("</button>", actionStart);
+
+  assert.notEqual(actionStart, -1);
+  assert.notEqual(actionEnd, -1);
+
+  const action = paperWallet.slice(actionStart, actionEnd);
+  assert.match(action, /items-center[^"\n]*text-left/);
+  assert.doesNotMatch(action, /justify-center/);
+  assert.match(action, /<span className="min-w-0 flex-1">/);
+  assert.match(action, /className="block text-\[13px\] font-semibold/);
+  assert.match(action, /className="mt-0\.5 block text-\[12px\] font-normal/);
+});
+
 test("five-tab mobile bar is viewport-safe at every supported iPhone width", () => {
   const css = read("src/app/globals.css");
   assert.match(css, /\.tab-bar\s*\{[\s\S]*?width:\s*calc\(100vw - 24px\);/);
