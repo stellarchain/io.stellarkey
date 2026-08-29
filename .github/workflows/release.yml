@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.22.2
           cache: npm
@@ -31,7 +31,7 @@ jobs:
           NEXT_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
       - run: node scripts/create-release-artifact.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
       - name: Attest release artifacts
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-artifacts/*
       - name: Publish exact verified files
@@ -70,7 +70,7 @@ jobs:
           tar -xzf "$archive" --strip-components=1 -C deploy
           test "$(node -p "require('./deploy/release.json').commit")" = "$GITHUB_SHA"
       - name: Deploy exact release to Cloudflare Pages
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3.15.0
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

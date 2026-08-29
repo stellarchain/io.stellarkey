@@ -54,6 +54,31 @@ test("every third-party workflow action is pinned to a full commit SHA", () => {
   }
 });
 
+test("workflow JavaScript actions use reviewed Node 24 releases", () => {
+  const workflows = ["ci.yml", "release.yml"]
+    .map((name) => read(`.github/workflows/${name}`))
+    .join("\n");
+
+  const reviewedActions = new Map([
+    ["actions/checkout", "3d3c42e5aac5ba805825da76410c181273ba90b1"],
+    ["actions/setup-node", "820762786026740c76f36085b0efc47a31fe5020"],
+    ["actions/attest-build-provenance", "4d101475d8b20a2381f78447822ac1eab6504dd8"],
+    ["cloudflare/wrangler-action", "ebbaa1584979971c8614a24965b4405ff95890e0"],
+  ]);
+  for (const [action, reviewedSha] of reviewedActions) {
+    const references = [
+      ...workflows.matchAll(new RegExp(`${action.replace("/", "\\/")}@([0-9a-f]{40})`, "g")),
+    ].map((match) => match[1]);
+    assert.ok(references.length > 0, `${action} must remain present in release automation`);
+    assert.deepEqual(
+      [...new Set(references)],
+      [reviewedSha],
+      `${action} must use its reviewed Node 24 release`,
+    );
+  }
+  assert.doesNotMatch(workflows, /ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION/);
+});
+
 test("the production runbook covers repository-level security controls", () => {
   const deployment = read("docs/production-deployment.md");
   const checklist = read("docs/release-checklist.md");
