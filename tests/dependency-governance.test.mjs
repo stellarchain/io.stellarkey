@@ -36,6 +36,26 @@ test("Dependabot proposes bounded weekly npm and Actions maintenance", () => {
   assert.doesNotMatch(config, /automerge|auto-merge/i);
 });
 
+test("Dependabot keeps incompatible toolchain majors out of routine updates", () => {
+  const config = read(".github/dependabot.yml");
+
+  for (const dependency of ["typescript", "eslint", "@types/node"]) {
+    const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      config,
+      new RegExp(
+        `dependency-name:\\s*"${escapedDependency}"[\\s\\S]{0,120}update-types:\\s*\\["version-update:semver-major"\\]`,
+      ),
+      `${dependency} majors must wait for an explicit compatibility review`,
+    );
+  }
+  assert.doesNotMatch(
+    config,
+    /^\s*-\s*"security"\s*$/m,
+    "routine version updates must not be mislabeled as security fixes",
+  );
+});
+
 test("every third-party workflow action is pinned to a full commit SHA", () => {
   const workflowDirectory = new URL(".github/workflows/", root);
   const workflowFiles = readdirSync(workflowDirectory)
