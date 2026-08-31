@@ -15,7 +15,7 @@ import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
-import { isValidPublicAddress } from "@/lib/vault";
+import { isValidPaymentAddress, isValidPublicAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, validateSep7PayRequest, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
@@ -367,7 +367,7 @@ function SendInner({
     for (const a of activity) {
       const cp = a.counterparty;
       if (!cp || a.direction !== "out") continue;
-      if (isValidPublicAddress(cp) && !seen.has(cp)) {
+      if (isValidPaymentAddress(cp) && !seen.has(cp)) {
         seen.set(cp, new Date(a.createdAt).getTime());
       }
     }
@@ -421,7 +421,7 @@ function SendInner({
   }, [destination, isFederation]);
 
   const effectiveDestination = (isFederation && fedResolvedAddr) ? fedResolvedAddr : destination.trim();
-  const destOk = isValidPublicAddress(effectiveDestination) || stealthDestination;
+  const destOk = isValidPaymentAddress(effectiveDestination) || stealthDestination;
   const matchedContact: Contact | undefined = contacts.find(
     (c) => c.address === effectiveDestination,
   );
