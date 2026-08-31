@@ -49,9 +49,9 @@ function RenameAccountInner({
       <div className="space-y-4 p-4 sm:p-6">
         {/* Preset & Emoji Chips */}
         <div>
-          <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+          <span className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
             Preset &amp; Emoji
-          </label>
+          </span>
           <div className="flex flex-wrap items-center gap-1.5">
             {[
               { emoji: "⚡", name: "Trading" },

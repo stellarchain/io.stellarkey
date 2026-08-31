@@ -1,10 +1,11 @@
 "use client";
 
 import { triggerHaptic } from "@/lib/haptics";
+import type { ShellMode } from "@/lib/shell-mode";
 import { IconWallet } from "../icons";
-import { IconStorefront } from "./icons";
+import { IconReceiptStellar } from "./icons";
 
-export type ShellMode = "wallet" | "merchant";
+export type { ShellMode } from "@/lib/shell-mode";
 
 const OPTIONS: { value: ShellMode; label: string }[] = [
   { value: "wallet", label: "Wallet" },
@@ -50,7 +51,7 @@ export function ModeSwitcher({
             className={`flex items-center justify-center gap-1.5 ${active ? "on" : ""}`}
           >
             {option.value === "merchant" ? (
-              <IconStorefront size={14} className="shrink-0 text-[#30D158]" />
+              <IconReceiptStellar size={14} className="shrink-0 text-[#30D158]" />
             ) : (
               <IconWallet size={14} className="shrink-0" />
             )}

@@ -25,7 +25,11 @@ import {
   type FullBackupPayload,
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
-import { writeMerchantBootstrapState } from "./merchant/bootstrap";
+import {
+  MERCHANT_BOOTSTRAP_STORAGE_KEY,
+  readMerchantBootstrapState,
+  writeMerchantBootstrapState,
+} from "./merchant/bootstrap";
 import { validateNewVaultPassword } from "./password-strength";
 import { replaceBackupStorage } from "./backup-storage";
 import {
@@ -112,7 +116,16 @@ export function saveAutoLockPref(ms: number): void {
 
 export function loadVaultResult(): StorageLoadResult<VaultFile> {
   if (typeof window === "undefined") return { kind: "absent" };
-  const raw = window.localStorage.getItem(VAULT_KEY);
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(VAULT_KEY);
+  } catch {
+    return {
+      kind: "unavailable",
+      raw: "",
+      message: "Browser storage is unavailable. Allow site storage for StellarKey, then try again.",
+    };
+  }
   if (!raw) return { kind: "absent" };
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -150,13 +163,28 @@ function persist(vault: VaultFile): void {
   }
 }
 
+function replacePersistedVault(previous: VaultFile, next: VaultFile): void {
+  const previousSerialized = JSON.stringify(previous);
+  try {
+    persist(next);
+  } catch (error) {
+    try {
+      window.localStorage.setItem(VAULT_KEY, previousSerialized);
+    } catch {
+      // The original persistence error remains authoritative. The next load
+      // still validates the record before granting any vault authority.
+    }
+    throw error;
+  }
+}
+
 export function loadVault(): VaultFile | null {
   return readVault();
 }
 
 function assertVaultCreationAllowed(): void {
   const result = loadVaultResult();
-  if (result.kind === "corrupt" || result.kind === "future") {
+  if (result.kind !== "absent" && result.kind !== "ready") {
     throw new Error("Existing wallet data needs recovery before a new wallet can be created.");
   }
 }
@@ -236,6 +264,73 @@ export async function withSecretKey<T>(
   }
 }
 
+function decodePrivacyContextHex(value: string, name: string): Uint8Array {
+  if (!/^[0-9a-f]{64}$/i.test(value)) {
+    throw new Error(`${name} must be exactly 32 bytes of hexadecimal data.`);
+  }
+  return Uint8Array.from(
+    value.match(/../g) ?? [],
+    (byte) => Number.parseInt(byte, 16),
+  );
+}
+
+export async function withPrivacySessionRoot<T>(
+  accountId: string,
+  deploymentContext: {
+    protocolVersion: number;
+    networkId: string;
+    realmId: string;
+    poolContractId: string;
+    deploymentBindingHash: string;
+  },
+  operation: (sessionRoot: Uint8Array, storageKey: Uint8Array) => T | Promise<T>,
+): Promise<T> {
+  return withSecretKey(accountId, async (secret) => {
+    let rawSeed: Uint8Array | null = null;
+    let sessionRoot: Uint8Array | null = null;
+    let storageKey: Uint8Array | null = null;
+    try {
+      rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(secret));
+      const networkId = decodePrivacyContextHex(deploymentContext.networkId, "Network ID");
+      const realmId = decodePrivacyContextHex(deploymentContext.realmId, "Realm ID");
+      const deploymentBindingHash = decodePrivacyContextHex(
+        deploymentContext.deploymentBindingHash,
+        "Deployment binding hash",
+      );
+      const poolId = new Uint8Array(StrKey.decodeContract(deploymentContext.poolContractId));
+      const accountPublicKey = new Uint8Array(
+        StrKey.decodeEd25519PublicKey(Keypair.fromSecret(secret).publicKey()),
+      );
+      const { derivePrivacySessionRoot, derivePrivateStorageKey } = await import(
+        "@stellarkey/private-balance"
+      );
+      sessionRoot = derivePrivacySessionRoot(
+        rawSeed,
+        deploymentContext.protocolVersion,
+        networkId,
+        realmId,
+        poolId,
+        accountPublicKey,
+      );
+      storageKey = derivePrivateStorageKey(
+        sessionRoot,
+        deploymentBindingHash,
+      );
+      return await operation(sessionRoot, storageKey);
+    } finally {
+      if (rawSeed?.byteLength) {
+        rawSeed.fill(0);
+      }
+      if (sessionRoot?.byteLength) {
+        sessionRoot.fill(0);
+      }
+      if (storageKey?.byteLength) {
+        storageKey.fill(0);
+      }
+    }
+  });
+}
+
 function stripSecret(account: StoredAccount): AccountMeta {
   return {
     id: account.id,
@@ -252,6 +347,7 @@ export interface InitializeOptions {
   label?: string;
   mnemonic?: string;
   secret?: string;
+  requirePasswordForSigning?: boolean;
 }
 
 async function createVaultProtection(password: string): Promise<{
@@ -305,6 +401,7 @@ export async function initializeVault(
         wrappedMerchantKey: protection.wrappedMerchantKey,
         accounts: [account],
         activeAccountId: account.id,
+        requirePasswordForSigning: opts.requirePasswordForSigning ?? false,
       };
       persist(vault);
       writeMerchantBootstrapState({ enabled: false, configured: false });
@@ -322,13 +419,19 @@ export async function initializeVault(
     throw new Error("Invalid BIP-39 recovery phrase");
   }
 
-  return createDerivedVault(password, rawMnemonic, opts.label);
+  return createDerivedVault(
+    password,
+    rawMnemonic,
+    opts.label,
+    opts.requirePasswordForSigning ?? false,
+  );
 }
 
 async function createDerivedVault(
   password: string,
   mnemonic: string,
   label?: string,
+  requirePasswordForSigning = false,
 ): Promise<{ account: AccountMeta; revealed: string }> {
   const kp0 = await keypairFromMnemonicIndex(mnemonic, 0);
   const protection = await createVaultProtection(password);
@@ -349,6 +452,7 @@ async function createDerivedVault(
       mnemonic: await encryptVaultString(mnemonic, masterKey),
       accounts: [account],
       activeAccountId: account.id,
+      requirePasswordForSigning,
     };
     persist(vault);
     writeMerchantBootstrapState({ enabled: false, configured: false });
@@ -375,6 +479,7 @@ export async function initializeHardwareVault(
     device: "ledger" | "trezor";
     label?: string;
   },
+  security: { requirePasswordForSigning?: boolean } = {},
 ): Promise<{ account: AccountMeta }> {
   assertVaultCreationAllowed();
   if (account.device !== "trezor") {
@@ -403,6 +508,7 @@ export async function initializeHardwareVault(
       wrappedMerchantKey: protection.wrappedMerchantKey,
       accounts: [stored],
       activeAccountId: stored.id,
+      requirePasswordForSigning: security.requirePasswordForSigning ?? false,
     };
     persist(vault);
     writeMerchantBootstrapState({ enabled: false, configured: false });
@@ -431,6 +537,60 @@ export async function verifyVaultPassword(password: string): Promise<void> {
   if (!vault) throw new Error("No vault found");
   const unlocked = await masterKeyForPassword(vault, password);
   zeroKey(unlocked.masterKey);
+}
+
+export function isSigningPasswordRequired(): boolean {
+  return readVault()?.requirePasswordForSigning === true;
+}
+
+export async function setSigningPasswordRequired(
+  required: boolean,
+  currentPassword?: string,
+): Promise<void> {
+  requireSessionMasterKey();
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  if (vault.requirePasswordForSigning === required) return;
+
+  if (!required) {
+    if (!currentPassword) {
+      throw new Error("Enter your current password to turn off signing confirmation.");
+    }
+    const verified = await masterKeyForPassword(vault, currentPassword);
+    zeroKey(verified.masterKey);
+  }
+
+  replacePersistedVault(vault, {
+    ...vault,
+    requirePasswordForSigning: required,
+  });
+}
+
+export async function changeVaultPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  requireSessionMasterKey();
+  const passwordPolicy = validateNewVaultPassword(newPassword);
+  if (!passwordPolicy.valid) {
+    throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
+  }
+  if (currentPassword === newPassword) {
+    throw new Error("Choose a new password that is different from your current password.");
+  }
+
+  const vault = readVault();
+  if (!vault) throw new Error("No vault found");
+  const verified = await masterKeyForPassword(vault, currentPassword);
+  try {
+    const next: VaultFile = {
+      ...vault,
+      wrappedMasterKey: await wrapVaultMasterKey(verified.masterKey, newPassword),
+    };
+    replacePersistedVault(vault, next);
+  } finally {
+    zeroKey(verified.masterKey);
+  }
 }
 
 export async function unlockVault(password: string): Promise<VaultFile> {
@@ -982,6 +1142,7 @@ export interface VaultBackupInfo {
   hasMnemonic: boolean;
   hasSettings: boolean;
   hasMerchantArchive: boolean;
+  hasPrivateBalanceArchive: boolean;
   exportedAt?: string;
 }
 
@@ -1059,6 +1220,8 @@ export async function inspectVaultBackup(
     hasMnemonic: Boolean(payload.vault.mnemonic),
     hasSettings: Boolean(payload.settings),
     hasMerchantArchive: typeof payload.merchantStore === "string" && Boolean(payload.merchantStore),
+    hasPrivateBalanceArchive:
+      typeof payload.privateBalanceStore === "string" && Boolean(payload.privateBalanceStore),
     exportedAt: payload.exportedAt || undefined,
   };
 }
@@ -1084,13 +1247,21 @@ export async function exportVaultBackup(password: string): Promise<string> {
 
   const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
+  const merchantBootstrap = readMerchantBootstrapState();
   let merchantKey: Uint8Array | null = null;
   let merchantStore: string | null;
+  let privateBalanceStore: string | null = null;
   try {
     merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
     merchantStore = merchantKey
       ? await getMerchantRepository().exportEncryptedArchive(merchantKey)
       : null;
+    if (typeof indexedDB !== "undefined") {
+      const { exportPrivateBalanceBackupArchive } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      privateBalanceStore = JSON.stringify(await exportPrivateBalanceBackupArchive());
+    }
   } finally {
     zeroKey(merchantKey);
   }
@@ -1104,12 +1275,19 @@ export async function exportVaultBackup(password: string): Promise<string> {
       autoLockMs: autoLockRaw !== null ? Number(autoLockRaw) : null,
       privacy: window.localStorage.getItem(PRIVACY_KEY) === "1",
       sound: window.localStorage.getItem(SOUND_KEY) !== "0",
+      ...(merchantBootstrap ? {
+        merchantMode: {
+          enabled: merchantBootstrap.enabled,
+          configured: merchantBootstrap.configured,
+        },
+      } : {}),
     },
     txNotes:
       notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
         ? (notesRaw as Record<string, unknown>)
         : {},
     merchantStore,
+    privateBalanceStore,
   };
   const crypto = await encryptString(JSON.stringify(payload), password);
   return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
@@ -1128,12 +1306,70 @@ export async function restoreVaultBackup(
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
   let encryptedContacts: string;
+  let preparedPrivateBalanceStore: string | null = null;
   let masterKey: Uint8Array | null = null;
   try {
     masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password as string);
     encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    if (payload.privateBalanceStore) {
+      if (typeof indexedDB === "undefined") {
+        throw new Error("IndexedDB is required to restore this backup's Private Balance records.");
+      }
+      const { preparePrivateBalanceBackupArchive } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      const prepared = await preparePrivateBalanceBackupArchive({
+        archive: payload.privateBalanceStore,
+        resolveStorageKey: async context => {
+          const account = vault.accounts.find(candidate => candidate.id === context.accountId);
+          if (!account || account.watchOnly || account.hardware) {
+            throw new Error("Private Balance backup references an unsupported wallet account.");
+          }
+          let secret = "";
+          let rawSeed: Uint8Array | null = null;
+          let sessionRoot: Uint8Array | null = null;
+          try {
+            secret = await decryptAccountSecret(vault, account, masterKey as Uint8Array);
+            rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(secret));
+            const { derivePrivacySessionRoot, derivePrivateStorageKey } = await import(
+              "@stellarkey/private-balance"
+            );
+            sessionRoot = derivePrivacySessionRoot(
+              rawSeed,
+              1,
+              decodePrivacyContextHex(context.networkId, "Network ID"),
+              decodePrivacyContextHex(context.realmId, "Realm ID"),
+              decodePrivacyContextHex(context.poolId, "Pool ID"),
+              new Uint8Array(StrKey.decodeEd25519PublicKey(account.publicKey)),
+            );
+            return derivePrivateStorageKey(
+              sessionRoot,
+              decodePrivacyContextHex(
+                context.deploymentBindingHash,
+                "Deployment binding hash",
+              ),
+            );
+          } finally {
+            secret = "";
+            rawSeed?.fill(0);
+            sessionRoot?.fill(0);
+          }
+        },
+        validateContext: async (context, state) => {
+          if (
+            state.checkpoint &&
+            state.checkpoint.deploymentBindingHash !== context.deploymentBindingHash
+          ) {
+            throw new Error("Private Balance checkpoint deployment binding does not match.");
+          }
+        },
+      });
+      preparedPrivateBalanceStore = JSON.stringify(prepared);
+    } else if (typeof indexedDB !== "undefined") {
+      preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
+    }
   } catch {
-    throw new Error("The backup password does not unlock its encrypted wallet data.");
+    throw new Error("The backup could not unlock or validate its encrypted wallet data.");
   } finally {
     zeroKey(masterKey);
   }
@@ -1147,11 +1383,15 @@ export async function restoreVaultBackup(
     CURRENCY_KEY,
     TX_NOTES_KEY,
     PASSKEY_RECORD_KEY,
+    MERCHANT_BOOTSTRAP_STORAGE_KEY,
   ];
   const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
   if (payload.merchantStore && !merchantRepository) {
     throw new Error("IndexedDB is required to restore this backup's merchant records.");
   }
+  const privateBalanceArchive = typeof indexedDB === "undefined"
+    ? null
+    : await import("@/features/private-balance/runtime/backup");
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [CONTACTS_KEY, encryptedContacts],
@@ -1160,6 +1400,12 @@ export async function restoreVaultBackup(
   // A passkey wraps one exact vault master key and is never portable in a
   // backup, so replacing the vault must revoke the previous local wrapper.
   writes.set(PASSKEY_RECORD_KEY, null);
+  writes.set(
+    MERCHANT_BOOTSTRAP_STORAGE_KEY,
+    payload.settings?.merchantMode
+      ? JSON.stringify({ version: 1, ...payload.settings.merchantMode })
+      : null,
+  );
   if (payload.settings) {
     const settings = payload.settings;
     writes.set(NETWORK_KEY, settings.network);
@@ -1172,16 +1418,31 @@ export async function restoreVaultBackup(
     storage: window.localStorage,
     keys: restoreKeys,
     writes,
-    archive: merchantRepository
-      ? {
+    archives: [
+      ...(merchantRepository ? [{
+        archive: {
           read: () => merchantRepository.snapshotEncryptedArchive(),
-          replace: async (value) => {
+          replace: async (value: string | null) => {
             if (value) await merchantRepository.importEncryptedArchive(value);
             else await merchantRepository.clear();
           },
-        }
-      : null,
-    archiveValue: merchantRepository ? payload.merchantStore ?? null : null,
+        },
+        value: payload.merchantStore ?? null,
+      }] : []),
+      ...(privateBalanceArchive ? [{
+        archive: {
+          read: async () => JSON.stringify(
+            await privateBalanceArchive.exportPrivateBalanceBackupArchive(),
+          ),
+          replace: async (value: string | null) => {
+            await privateBalanceArchive.replacePrivateBalanceBackupArchive(
+              value ?? { schemaVersion: 1, records: [] },
+            );
+          },
+        },
+        value: preparedPrivateBalanceStore,
+      }] : []),
+    ],
   });
   lockVault();
 

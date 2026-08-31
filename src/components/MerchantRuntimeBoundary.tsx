@@ -1,7 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import dynamic from "next/dynamic";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { writeShellMode } from "@/lib/shell-mode";
 import {
   MERCHANT_BOOTSTRAP_CHANGED_EVENT,
   MERCHANT_BOOTSTRAP_STORAGE_KEY,
@@ -17,17 +26,8 @@ import {
   type MerchantShellContextValue,
 } from "@/hooks/useMerchantRuntime";
 
-const MerchantProvider = dynamic(
-  () => import("@/hooks/useMerchant").then((module) => module.MerchantProvider),
-  {
-    ssr: false,
-    loading: () => (
-      <div role="status" className="app-safe-top flex min-h-screen items-center justify-center gap-3 text-sm text-neutral-400">
-        <span className="spinner text-accent" />
-        Opening merchant tools…
-      </div>
-    ),
-  },
+const LazyMerchantProvider = lazy(() =>
+  import("@/hooks/useMerchant").then((module) => ({ default: module.MerchantProvider })),
 );
 
 const EMPTY_SHELL: MerchantShellContextValue = {
@@ -38,28 +38,30 @@ const EMPTY_SHELL: MerchantShellContextValue = {
 };
 
 /**
- * Keeps the normal wallet graph lean. Missing hints are treated conservatively:
- * older wallets load once, then the encrypted store publishes a validated hint.
+ * Keeps the normal wallet graph lean. The encrypted merchant runtime loads only
+ * from a validated enabled hint or an explicit user request.
  */
 export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
-  const [bootstrap, setBootstrap] = useState<MerchantBootstrapState | null>(() =>
-    readMerchantBootstrapState(),
-  );
+  const [bootstrap, setBootstrap] = useState<MerchantBootstrapState | null>(null);
   const [requested, setRequested] = useState(false);
   const [enableOnReady, setEnableOnReady] = useState(false);
+  const [runtimeMounted, setRuntimeMounted] = useState(false);
   const [intent, setIntent] = useState<MerchantRuntimeIntent | null>(null);
   const requestedRef = useRef(false);
 
   const requestRuntime = useCallback((nextIntent: MerchantRuntimeIntent) => {
+    if (nextIntent === "merchant") writeShellMode("merchant");
     requestedRef.current = true;
     setRequested(true);
     setIntent(nextIntent);
   }, []);
   const consumeIntent = useCallback(() => setIntent(null), []);
+  const markRuntimeMounted = useCallback(() => setRuntimeMounted(true), []);
   const releaseRuntime = useCallback(() => {
     requestedRef.current = false;
     setRequested(false);
     setEnableOnReady(false);
+    setRuntimeMounted(false);
     setIntent(null);
   }, []);
 
@@ -75,6 +77,7 @@ export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
       } else if (!requestedRef.current) {
         setRequested(false);
         setEnableOnReady(false);
+        setRuntimeMounted(false);
       }
     };
     const onStorage = (event: StorageEvent) => {
@@ -82,6 +85,7 @@ export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
     };
     window.addEventListener(MERCHANT_BOOTSTRAP_CHANGED_EVENT, refresh);
     window.addEventListener("storage", onStorage);
+    refresh();
     return () => {
       window.removeEventListener(MERCHANT_BOOTSTRAP_CHANGED_EVENT, refresh);
       window.removeEventListener("storage", onStorage);
@@ -99,22 +103,32 @@ export function MerchantRuntimeBoundary({ children }: { children: ReactNode }) {
     },
   }), [bootstrap?.configured, requestRuntime]);
   const control = useMemo<MerchantRuntimeControlValue>(() => ({
+    mounted: runtimeMounted,
     intent,
     requestRuntime,
     consumeIntent,
     releaseRuntime,
-  }), [consumeIntent, intent, releaseRuntime, requestRuntime]);
-  const shouldMount = bootstrap === null || bootstrap.enabled || requested;
+  }), [consumeIntent, intent, releaseRuntime, requestRuntime, runtimeMounted]);
+  const fallback = (
+    <MerchantRuntimeDataProviders shell={EMPTY_SHELL} settings={fallbackSettings}>
+      {children}
+    </MerchantRuntimeDataProviders>
+  );
+  const shouldMount = bootstrap?.enabled === true || requested;
 
   return (
     <MerchantRuntimeControlProvider value={control}>
       {shouldMount ? (
-        <MerchantProvider enableOnReady={enableOnReady}>{children}</MerchantProvider>
-      ) : (
-        <MerchantRuntimeDataProviders shell={EMPTY_SHELL} settings={fallbackSettings}>
-          {children}
-        </MerchantRuntimeDataProviders>
-      )}
+        <Suspense fallback={fallback}>
+          <LazyMerchantProvider
+            enableOnReady={enableOnReady}
+            enabledHint={bootstrap?.enabled ?? false}
+            onRuntimeMounted={markRuntimeMounted}
+          >
+            {children}
+          </LazyMerchantProvider>
+        </Suspense>
+      ) : fallback}
     </MerchantRuntimeControlProvider>
   );
 }

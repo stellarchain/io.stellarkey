@@ -214,6 +214,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         {awaiting && charge.quotes.length > 1 && (
           <div className="mx-auto w-full max-w-[320px]">
             <SegmentedControl
+              ariaLabel="Payment asset"
               value={selectedKey}
               onChange={setSelectedKey}
               options={charge.quotes.map((q) => ({

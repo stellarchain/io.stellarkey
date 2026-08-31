@@ -449,6 +449,7 @@ export function MerchantSettingsSheetContent({
               label="Tax mode"
             >
               <SegmentedControl<TaxMode>
+                ariaLabel="How tax is applied"
                 value={settings.taxMode}
                 options={[
                   { label: "Included", value: "inclusive" },
@@ -577,6 +578,7 @@ export function MerchantSettingsSheetContent({
               label="Tip prompt"
             >
               <SegmentedControl<TipMode>
+                ariaLabel="How tips are offered"
                 value={settings.tips.mode}
                 options={[
                   { label: "Off", value: "off" },

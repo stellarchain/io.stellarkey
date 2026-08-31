@@ -133,11 +133,18 @@ export async function encryptStringWithKey(
 export async function encryptBytesWithKey(
   plaintext: Uint8Array,
   keyBytes: Uint8Array,
+  additionalData?: Uint8Array,
 ): Promise<RawKeyEncryptedPayload> {
   const iv = randomBytes(12);
   const key = await importRawAesKey(keyBytes, ["encrypt"]);
   const ciphertext = await requireWebCrypto().subtle.encrypt(
-    { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
+    {
+      name: "AES-GCM",
+      iv: iv as unknown as ArrayBuffer,
+      ...(additionalData
+        ? { additionalData: additionalData as unknown as ArrayBuffer }
+        : {}),
+    },
     key,
     plaintext as unknown as ArrayBuffer,
   );
@@ -154,10 +161,17 @@ export async function decryptStringWithKey(
 export async function decryptBytesWithKey(
   payload: RawKeyEncryptedPayload,
   keyBytes: Uint8Array,
+  additionalData?: Uint8Array,
 ): Promise<Uint8Array> {
   const key = await importRawAesKey(keyBytes, ["decrypt"]);
   const plaintext = await requireWebCrypto().subtle.decrypt(
-    { name: "AES-GCM", iv: fromB64(payload.iv) as unknown as ArrayBuffer },
+    {
+      name: "AES-GCM",
+      iv: fromB64(payload.iv) as unknown as ArrayBuffer,
+      ...(additionalData
+        ? { additionalData: additionalData as unknown as ArrayBuffer }
+        : {}),
+    },
     key,
     fromB64(payload.ciphertext) as unknown as ArrayBuffer,
   );

@@ -240,8 +240,26 @@ async function openStaffSettings(page: Page) {
   await page.getByRole("heading", { name: "Staff & this device" }).waitFor();
 }
 
+async function openMerchantMode(page: Page) {
+  const merchantTab = page
+    .getByRole("navigation", { name: "Tabs" })
+    .getByRole("button", { name: "Merchant" });
+  if (await merchantTab.isVisible().catch(() => false)) {
+    await merchantTab.click();
+    return;
+  }
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  const openTill = page.getByRole("button", { name: /^Open till/ });
+  await merchantTab.or(openTill).first().waitFor({ state: "visible" });
+  if (await merchantTab.isVisible().catch(() => false)) {
+    await merchantTab.click();
+    return;
+  }
+  await openTill.click();
+}
+
 async function returnToTill(page: Page) {
-  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+  await openMerchantMode(page);
   const till = page.getByRole("button", { name: "Till", exact: true });
   if (await till.count()) await till.click();
   await page.getByText(/Shift 1 · Front counter/).waitFor();
@@ -416,7 +434,7 @@ test(
       await turnOff.waitFor();
       await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
       await turnOff.waitFor({ state: "hidden" });
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+      await openMerchantMode(page);
 
       await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
       const opening = page.getByRole("dialog", { name: /Open shift/ });
@@ -436,7 +454,7 @@ test(
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByPlaceholder("Enter password").fill(password);
       await page.getByRole("button", { name: "Unlock Vault" }).click();
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+      await openMerchantMode(page);
       await page.getByText(/Shift 1 · Front counter/).waitFor();
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();
@@ -513,6 +531,9 @@ test(
       await approvalOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
       await approvalOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await page.getByRole("button", { name: "Approve" }).click();
+      const signingApproval = page.getByRole("dialog", { name: "Confirm transaction" });
+      await signingApproval.getByLabel("Wallet Password").fill(password);
+      await signingApproval.getByRole("button", { name: "Authorize" }).click();
       await page.getByText("Approved & confirmed", { exact: true }).waitFor({ timeout: 12_000 });
       await returnToTill(page);
 
@@ -685,7 +706,7 @@ test(
 
       const restoredArchive = await readIndexedMerchantArchive(page);
       assert.equal(restoredArchive, archiveBeforeBackup);
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
+      await openMerchantMode(page);
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();
 

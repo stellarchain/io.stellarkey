@@ -34,6 +34,13 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 - Confirm merchant encrypted records survive reload and that a second tab cannot overwrite a newer revision.
 - Confirm merchant documentation describes payment monitoring as foreground-only. An open checkout may keep the screen awake; closing or suspending the browser pauses checks, and reopening and unlocking must reconcile missed payments. Do not describe this as background monitoring without adding a backend.
 
+## Private Balance beta gate
+
+- Keep the production activation gate closed while the manifest says `development` or any ceremony, audit, testnet deployment, or immutable release evidence is absent.
+- Verify the same manifest and artifact hashes across reproducible builds, ceremony records, contract deployment, independent review, browser tests, and release evidence.
+- Exercise encrypted-backup and seed-only recovery, paid archive restoration, expired archive/nullifier entries, pending-spend recovery, lock during scan/proof/submission, leader failover, exact semantic transaction review, CSP/network sentinels, and real-device accessibility.
+- Confirm every surface states the public fee payer, timing, pool activity, and deposit/withdrawal amount and endpoint boundaries. Never describe the feature as anonymous, untraceable, or guaranteed private.
+
 ## Accepted dependency boundary
 
 `@trezor/connect-web@9.7.3` is the current stable package and brings ten low-severity `elliptic` findings through its Bitcoin/UTXO-support dependency tree, not StellarKey's Stellar signing implementation. The package is optional and lazy-loaded only after a Trezor action. npm reports no fixed stable Trezor release. High and critical production advisories remain release-blocking; re-evaluate this exception whenever Trezor publishes an update.

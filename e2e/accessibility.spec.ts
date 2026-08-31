@@ -305,11 +305,11 @@ test("critical wallet screens remain operable and accessible", async ({ page, br
   await expectAccessibleSurface(page, "asset detail sheet", browserName);
   await asset.getByRole("button", { name: "Close", exact: true }).first().click();
 
-  await page.locator("[data-mobile-asset-toolbar]").getByRole("button", { name: "+ Add Asset" }).click();
-  const addAsset = page.getByRole("dialog", { name: "Add Assets" });
-  await expect(addAsset).toBeVisible();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const addAssets = page.getByRole("dialog", { name: "Add Assets" });
+  await expect(addAssets).toBeVisible();
   await expectAccessibleSurface(page, "add assets sheet", browserName);
-  await addAsset.getByRole("button", { name: "Close" }).click();
+  await addAssets.getByRole("button", { name: "Close" }).click();
 
   await page.locator("[data-mobile-asset-toolbar]").getByRole("button", { name: "Multi-Send" }).click();
   const multiSend = page.getByRole("dialog", { name: "Multi-Send Disperse" });
@@ -327,12 +327,12 @@ test("critical wallet screens remain operable and accessible", async ({ page, br
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const send = page.getByRole("dialog", { name: "Send Payment" });
   await send.getByPlaceholder("0.00").fill("1");
-  await send.getByPlaceholder("G... or user*domain.com").fill(testPayer);
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
   const reviewTransfer = send.getByRole("button", { name: "Review Transfer" });
   await expect(reviewTransfer).toBeEnabled({ timeout: 30_000 });
   await reviewTransfer.click();
-  const review = page.getByRole("dialog", { name: "Review Transfer" });
-  await expect(review).toBeVisible();
+  const review = page.getByRole("dialog", { name: "Send Payment" });
+  await expect(review.getByRole("button", { name: "Confirm Send", exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "send review", browserName);
   await review.getByRole("button", { name: "Back", exact: true }).click();
   await send.getByRole("button", { name: "Close" }).click();
@@ -369,7 +369,7 @@ test("critical wallet settings remain operable and accessible", async ({ page, b
     await visitSettingsSubpage(page, row, heading, browserName);
   }
 
-  await page.getByRole("button", { name: /G Imported Account/ }).last().click();
+  await page.getByRole("button", { name: /Imported Account/ }).last().click();
   await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
   await expectAccessibleSurface(page, "accounts settings", browserName);
   await page.getByRole("button", { name: /Add Account/ }).click();

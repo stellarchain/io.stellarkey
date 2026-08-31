@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Keypair } from "@stellar/stellar-sdk";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
 import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
 import {
   enablePasskeyUnlock,
@@ -30,6 +30,11 @@ import {
   type StellarEndpointKind,
 } from "@/lib/stellar-endpoints";
 import { stellarAccountPath } from "@/lib/hd";
+import {
+  estimatePasswordStrength,
+  validateNewVaultPassword,
+  type PasswordStrength,
+} from "@/lib/password-strength";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -87,6 +92,8 @@ import {
   IconDownload,
   IconExternal,
   IconFingerprint,
+  IconGear,
+  IconKey,
   IconLock,
   IconPlus,
   IconRefresh,
@@ -154,6 +161,7 @@ export function SettingsPage({
   onOpenBackupWizard,
   onOpenMultisigStudio,
   onOpenSetupWizard,
+  onOpenMerchant,
   onOpenSwap,
   onOpenSend,
 }: {
@@ -167,6 +175,8 @@ export function SettingsPage({
   onOpenMultisigStudio?: () => void;
   /** Offered when Merchant Mode is switched on for a shop with nothing set up. */
   onOpenSetupWizard?: () => void;
+  /** Returns directly to the operational till from Wallet-mode settings. */
+  onOpenMerchant?: () => void;
   /** The wallet's own DEX Swap, where a merchant conversion is made and signed. */
   onOpenSwap?: (intent: SettlementSwapIntent) => void;
   /** The wallet's own Send, where a merchant sweep is made and signed. */
@@ -202,6 +212,11 @@ export function SettingsPage({
     profileName: merchantProfileName,
   } = useMerchantSettings();
   const { toast } = useToast();
+  const {
+    signingPasswordRequired,
+    changeSigningPasswordRequired,
+    changeWalletPassword,
+  } = useWalletSecurity();
 
   const [sub, setSub] = useState<Sub>(initialSub);
 
@@ -213,6 +228,17 @@ export function SettingsPage({
   const [passkeyPassword, setPasskeyPassword] = useState("");
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [signingPolicyBusy, setSigningPolicyBusy] = useState(false);
+  const [disableSigningDialog, setDisableSigningDialog] = useState(false);
+  const [disableSigningPassword, setDisableSigningPassword] = useState("");
+  const [disableSigningError, setDisableSigningError] = useState<string | null>(null);
+  const [changePasswordDialog, setChangePasswordDialog] = useState(false);
+  const [currentWalletPassword, setCurrentWalletPassword] = useState("");
+  const [newWalletPassword, setNewWalletPassword] = useState("");
+  const [confirmWalletPassword, setConfirmWalletPassword] = useState("");
+  const [changePasswordBusy, setChangePasswordBusy] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+  const newWalletPasswordStrength = estimatePasswordStrength(newWalletPassword);
 
   useEffect(() => {
     const refresh = () => setBackupHealth(loadBackupHealth());
@@ -375,6 +401,77 @@ export function SettingsPage({
       setPasskeyError(cause instanceof Error ? cause.message : "Passkey removal failed.");
     } finally {
       setPasskeyBusy(false);
+    }
+  }
+
+  async function handleSigningPolicyChange(required: boolean) {
+    if (!required) {
+      setDisableSigningPassword("");
+      setDisableSigningError(null);
+      setDisableSigningDialog(true);
+      return;
+    }
+    setSigningPolicyBusy(true);
+    try {
+      await changeSigningPasswordRequired(true);
+      triggerHaptic("success");
+      toast("Password confirmation enabled for transaction signing", "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      toast(cause instanceof Error ? cause.message : "Could not update signing security.", "error");
+    } finally {
+      setSigningPolicyBusy(false);
+    }
+  }
+
+  async function handleDisableSigningPassword() {
+    if (!disableSigningPassword || signingPolicyBusy) return;
+    setSigningPolicyBusy(true);
+    setDisableSigningError(null);
+    try {
+      await changeSigningPasswordRequired(false, disableSigningPassword);
+      setDisableSigningPassword("");
+      setDisableSigningDialog(false);
+      triggerHaptic("success");
+      toast("Password confirmation disabled for transaction signing", "info");
+    } catch (cause) {
+      triggerHaptic("error");
+      setDisableSigningError(
+        cause instanceof Error ? cause.message : "Could not verify your password.",
+      );
+    } finally {
+      setSigningPolicyBusy(false);
+    }
+  }
+
+  async function handleChangeWalletPassword() {
+    if (changePasswordBusy) return;
+    const validation = validateNewVaultPassword(newWalletPassword);
+    if (!validation.valid) {
+      setChangePasswordError(validation.message ?? "Choose a stronger password.");
+      return;
+    }
+    if (newWalletPassword !== confirmWalletPassword) {
+      setChangePasswordError("New passwords do not match.");
+      return;
+    }
+    setChangePasswordBusy(true);
+    setChangePasswordError(null);
+    try {
+      await changeWalletPassword(currentWalletPassword, newWalletPassword);
+      setCurrentWalletPassword("");
+      setNewWalletPassword("");
+      setConfirmWalletPassword("");
+      setChangePasswordDialog(false);
+      triggerHaptic("success");
+      toast("Wallet password changed", "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      setChangePasswordError(
+        cause instanceof Error ? cause.message : "Could not change your wallet password.",
+      );
+    } finally {
+      setChangePasswordBusy(false);
     }
   }
 
@@ -711,6 +808,38 @@ export function SettingsPage({
                 </h2>
                 <div className="list-group">
                   <RowButton
+                    icon={<IconLock size={16} />}
+                    tint="#30D158"
+                    label="Require Password to Sign"
+                    value={signingPasswordRequired ? "On" : "Off"}
+                    sub={signingPasswordRequired
+                      ? "Fresh local verification for every transaction"
+                      : "The unlocked wallet can sign without another prompt"}
+                    as="div"
+                  >
+                    <Toggle
+                      checked={signingPasswordRequired}
+                      onChange={(checked) => void handleSigningPolicyChange(checked === true)}
+                      label="Require password before signing transactions"
+                      disabled={signingPolicyBusy}
+                    />
+                  </RowButton>
+                  <RowButton
+                    icon={<IconKey size={16} />}
+                    tint="#5E5CE6"
+                    label="Change Wallet Password"
+                    sub="Re-wrap this vault with a new password"
+                    chevron
+                    onClick={() => {
+                      setCurrentWalletPassword("");
+                      setNewWalletPassword("");
+                      setConfirmWalletPassword("");
+                      setChangePasswordError(null);
+                      setChangePasswordDialog(true);
+                    }}
+                    sep
+                  />
+                  <RowButton
                     icon={<IconShield size={16} />}
                     tint="#30D158"
                     label="Backup & Recovery"
@@ -722,6 +851,7 @@ export function SettingsPage({
                       triggerHaptic("selection");
                       onOpenBackupWizard?.();
                     }}
+                    sep
                   />
                 </div>
               </section>
@@ -911,18 +1041,29 @@ export function SettingsPage({
                     />
                   </RowButton>
                   {merchantEnabled && (
-                    <RowButton
-                      icon={<IconStorefront size={16} />}
-                      tint="#30D158"
-                      label="Merchant"
-                      value={merchantProfileName || "Unnamed shop"}
-                      chevron
-                      sep
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setSub("merchant");
-                      }}
-                    />
+                    <>
+                      <RowButton
+                        icon={<IconStorefront size={16} />}
+                        tint="#30D158"
+                        label="Open till"
+                        value={merchantProfileName || "Unnamed shop"}
+                        chevron
+                        sep
+                        onClick={onOpenMerchant}
+                      />
+                      <RowButton
+                        icon={<IconGear size={16} />}
+                        tint="#0A84FF"
+                        label="Merchant settings"
+                        sub="Payments, staff, tax, and devices"
+                        chevron
+                        sep
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setSub("merchant");
+                        }}
+                      />
+                    </>
                   )}
                 </div>
               </div>
@@ -1844,6 +1985,7 @@ export function SettingsPage({
       {sub === "network" && (
         <div className="space-y-4">
           <SegmentedControl<NetworkKey>
+            ariaLabel="Stellar network"
             value={network}
             onChange={(n) => {
               triggerHaptic("selection");
@@ -2045,6 +2187,161 @@ export function SettingsPage({
       />
 
       <Modal
+        open={disableSigningDialog}
+        onClose={() => {
+          if (signingPolicyBusy) return;
+          setDisableSigningDialog(false);
+          setDisableSigningPassword("");
+          setDisableSigningError(null);
+        }}
+        dismissable={!signingPolicyBusy}
+      >
+        <ModalHeader
+          title="Turn Off Password Confirmation?"
+          subtitle="This weakens transaction signing protection"
+          onClose={signingPolicyBusy ? undefined : () => {
+            setDisableSigningDialog(false);
+            setDisableSigningPassword("");
+            setDisableSigningError(null);
+          }}
+        />
+        <form
+          className="space-y-4 p-4 sm:p-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleDisableSigningPassword();
+          }}
+        >
+          <Notice tone="warn">
+            After this is off, anyone holding your unlocked device can approve software-wallet
+            transactions without entering the vault password again. Trezor still requires its own
+            device approval.
+          </Notice>
+          <Field label="Current Wallet Password" hint="Required to turn this protection off">
+            <input
+              className="input text-base sm:text-[14px]"
+              type="password"
+              autoComplete="current-password"
+              value={disableSigningPassword}
+              onChange={(event) => setDisableSigningPassword(event.target.value)}
+              placeholder="Enter password"
+              disabled={signingPolicyBusy}
+              autoFocus
+            />
+          </Field>
+          <ErrorText message={disableSigningError ?? ""} />
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={signingPolicyBusy}
+              onClick={() => {
+                setDisableSigningDialog(false);
+                setDisableSigningPassword("");
+                setDisableSigningError(null);
+              }}
+            >
+              Keep On
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              loading={signingPolicyBusy}
+              disabled={!disableSigningPassword || signingPolicyBusy}
+            >
+              Turn Off
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={changePasswordDialog}
+        onClose={() => {
+          if (changePasswordBusy) return;
+          setChangePasswordDialog(false);
+          setCurrentWalletPassword("");
+          setNewWalletPassword("");
+          setConfirmWalletPassword("");
+          setChangePasswordError(null);
+        }}
+        dismissable={!changePasswordBusy}
+      >
+        <ModalHeader
+          title="Change Wallet Password"
+          subtitle="Re-wrap this encrypted vault locally"
+          onClose={changePasswordBusy ? undefined : () => {
+            setChangePasswordDialog(false);
+            setCurrentWalletPassword("");
+            setNewWalletPassword("");
+            setConfirmWalletPassword("");
+            setChangePasswordError(null);
+          }}
+        />
+        <form
+          className="space-y-4 p-4 sm:p-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleChangeWalletPassword();
+          }}
+        >
+          <p className="text-[13.5px] leading-relaxed text-neutral-300">
+            Your accounts and encrypted records stay unchanged. Existing Face ID or Touch ID
+            unlock remains available because this operation keeps the same vault master key.
+          </p>
+          <Field label="Current Password">
+            <input
+              className="input text-base sm:text-[14px]"
+              type="password"
+              autoComplete="current-password"
+              value={currentWalletPassword}
+              onChange={(event) => setCurrentWalletPassword(event.target.value)}
+              placeholder="Enter current password"
+              disabled={changePasswordBusy}
+              autoFocus
+            />
+          </Field>
+          <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
+            <input
+              className="input text-base sm:text-[14px]"
+              type="password"
+              autoComplete="new-password"
+              value={newWalletPassword}
+              onChange={(event) => setNewWalletPassword(event.target.value)}
+              placeholder="Enter new password"
+              disabled={changePasswordBusy}
+            />
+          </Field>
+          <PasswordStrengthMeter strength={newWalletPasswordStrength} />
+          <Field label="Confirm New Password">
+            <input
+              className="input text-base sm:text-[14px]"
+              type="password"
+              autoComplete="new-password"
+              value={confirmWalletPassword}
+              onChange={(event) => setConfirmWalletPassword(event.target.value)}
+              placeholder="Repeat new password"
+              disabled={changePasswordBusy}
+            />
+          </Field>
+          <ErrorText message={changePasswordError ?? ""} />
+          <Button
+            className="w-full"
+            type="submit"
+            loading={changePasswordBusy}
+            disabled={
+              changePasswordBusy ||
+              !currentWalletPassword ||
+              !newWalletPassword ||
+              !confirmWalletPassword
+            }
+          >
+            Change Password
+          </Button>
+        </form>
+      </Modal>
+
+      <Modal
         open={passkeyDialog !== null}
         onClose={() => {
           if (passkeyBusy) return;
@@ -2147,6 +2444,40 @@ export function SettingsPage({
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
       />
+    </div>
+  );
+}
+
+function PasswordStrengthMeter({ strength }: { strength: PasswordStrength }) {
+  return (
+    <div
+      role="meter"
+      aria-label="New password strength"
+      aria-valuemin={0}
+      aria-valuemax={4}
+      aria-valuenow={strength.score}
+      aria-valuetext={strength.label}
+      className="space-y-2"
+    >
+      <div className="flex items-center justify-between gap-3 text-[12px]">
+        <span className="font-medium text-neutral-400">Password strength</span>
+        <span className="font-semibold" style={{ color: strength.color }}>
+          {strength.label}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5" aria-hidden>
+        {Array.from({ length: 4 }, (_, index) => (
+          <span
+            key={index}
+            className="h-1.5 rounded-full transition-colors"
+            style={{
+              backgroundColor:
+                index < strength.score ? strength.color : "rgba(255,255,255,0.1)",
+            }}
+          />
+        ))}
+      </div>
+      <p className="text-[11.5px] leading-relaxed text-neutral-400">{strength.feedback}</p>
     </div>
   );
 }

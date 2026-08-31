@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "record": {
+    "protocolVersion": 1,
+    "actionIndex": 0,
+    "ledgerSequence": 100,
+    "startingLeafIndex": 0,
+    "actionKind": 1,
+    "assetKind": 1,
+    "assetPayloadFill": 136,
+    "actionNonceFill": 17,
+    "anchorRootFill": 34,
+    "treeRootAfterFill": 51,
+    "publicValue": 1000,
+    "relayerFee": 0,
+    "depositSourceKind": 0,
+    "depositSourcePayloadFill": 170,
+    "priorRecordHashFill": 85
+  },
+  "expectedRecordHash": "27ee334fafb144b5c87cc956b0f7919a09df85d329a6e80e180140b622a462bc"
+}

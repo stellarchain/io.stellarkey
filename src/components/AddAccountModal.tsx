@@ -135,6 +135,7 @@ function AddAccountInner({
       <ModalHeader title="Add Account" subtitle={subtitle} onClose={onClose} />
       <div className="p-4 sm:p-6">
         <SegmentedControl<Mode>
+          ariaLabel="How to add this account"
           value={mode}
           onChange={setMode}
           options={[
@@ -147,9 +148,9 @@ function AddAccountInner({
 
         <div className="mt-4 space-y-4">
           <div>
-            <label className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+            <span className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
               Account Preset & Emoji
-            </label>
+            </span>
             <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { emoji: "⚡", name: "Trading" },

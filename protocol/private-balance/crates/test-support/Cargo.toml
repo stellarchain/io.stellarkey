@@ -1,0 +1,21 @@
+[package]
+name = "private-balance-test-support"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+private-balance-protocol = { path = "../protocol" }
+soroban-sdk = { version = "=27.0.6", features = ["hazmat-crypto", "testutils"] }
+soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon", tag = "v27.0.0" }
+hpke = { version = "0.14.0", features = ["aes", "x25519", "alloc", "getrandom"] }
+sha2 = "0.10.8"
+hkdf = "0.12.4"
+hex = "0.4.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8.5"
+rand_core = { version = "0.6", default-features = false }
+ark-bn254 = "=0.5.0"
+ark-ff = "=0.5.0"

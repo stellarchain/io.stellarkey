@@ -161,7 +161,7 @@ test("dashboard balances and controls adapt to the narrowest supported iPhone", 
   assert.match(dashboard, /className="balance-display-value"/);
   assert.match(
     dashboard,
-    /className="mt-8 grid w-full max-w-\[360px\] grid-cols-4 gap-2"/,
+    /privateWithdrawEntry[\s\S]*\? "max-w-\[420px\] grid-cols-5"[\s\S]*: "max-w-\[360px\] grid-cols-4"/,
   );
   assert.match(
     dashboard,
@@ -244,6 +244,10 @@ test("open popovers track and clean up visual viewport changes", () => {
   assert.match(ui, /visualViewport\?\.addEventListener\("scroll", update\);/);
   assert.match(ui, /visualViewport\?\.removeEventListener\("resize", update\);/);
   assert.match(ui, /visualViewport\?\.removeEventListener\("scroll", update\);/);
+  assert.match(
+    ui,
+    /current\?\.offsetTop === next\.offsetTop && current\.height === next\.height[\s\S]*?return current;/,
+  );
   assert.match(ui, /menu-pop fixed[^"\n]*overflow-y-auto[^"\n]*overscroll-contain/);
   assert.doesNotMatch(ui, /Math\.max\(120, Math\.min\(300/);
 });

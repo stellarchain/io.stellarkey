@@ -28,6 +28,7 @@ function memoryStorage(initial = {}) {
 test("merchant bootstrap stores only validated non-sensitive runtime flags", async () => {
   const {
     MERCHANT_BOOTSTRAP_STORAGE_KEY,
+    merchantShellEnabled,
     readMerchantBootstrapState,
     writeMerchantBootstrapState,
   } = await bootstrapDomain();
@@ -48,6 +49,10 @@ test("merchant bootstrap stores only validated non-sensitive runtime flags", asy
 
   storage.setItem(MERCHANT_BOOTSTRAP_STORAGE_KEY, JSON.stringify({ version: 1, enabled: "yes" }));
   assert.equal(readMerchantBootstrapState(storage), null);
+
+  assert.equal(merchantShellEnabled({ ready: false, encryptedEnabled: false, enabledHint: true }), true);
+  assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: true, enabledHint: false }), true);
+  assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: false, enabledHint: true }), false);
 });
 
 test("unavailable browser storage never blocks the wallet shell", async () => {
@@ -64,7 +69,7 @@ test("unavailable browser storage never blocks the wallet shell", async () => {
   );
 });
 
-test("the unlocked wallet imports only a thin dynamic merchant boundary", () => {
+test("the authenticated wallet has no second full-screen merchant loading gate", () => {
   const shell = source("src/components/UnlockedWalletShell.tsx");
   const boundary = source("src/components/MerchantRuntimeBoundary.tsx");
   const dashboard = source("src/components/Dashboard.tsx");
@@ -73,11 +78,22 @@ test("the unlocked wallet imports only a thin dynamic merchant boundary", () => 
 
   assert.doesNotMatch(shell, /from "@\/hooks\/useMerchant"/);
   assert.match(shell, /MerchantRuntimeBoundary/);
-  assert.match(boundary, /dynamic\([\s\S]*?import\("@\/hooks\/useMerchant"\)/);
+  assert.doesNotMatch(boundary, /import \{ MerchantProvider \} from "@\/hooks\/useMerchant"/);
+  assert.match(boundary, /lazy\(\(\) =>\s*import\("@\/hooks\/useMerchant"\)/s);
+  assert.match(boundary, /<Suspense fallback=\{fallback\}>/);
+  assert.match(boundary, /const fallback = \(\s*<MerchantRuntimeDataProviders/s);
+  assert.match(boundary, /const shouldMount = bootstrap\?\.enabled === true \|\| requested/);
+  assert.match(boundary, /onRuntimeMounted=/);
+  assert.doesNotMatch(boundary, /Opening merchant tools/);
+  assert.doesNotMatch(boundary, /min-h-screen/);
+  assert.match(boundary, /useState<MerchantBootstrapState \| null>\(null\)/);
+  assert.match(boundary, /window\.addEventListener\("storage", onStorage\);\s*refresh\(\);/);
   assert.match(dashboard, /from "@\/hooks\/useMerchantRuntime"/);
   assert.match(settings, /from "@\/hooks\/useMerchantRuntime"/);
   assert.match(provider, /writeMerchantBootstrapState/);
   assert.match(provider, /enableOnReady/);
+  assert.match(provider, /onRuntimeMounted/);
+  assert.match(dashboard, /if \(!merchantRuntimeIntent \|\| !merchantRuntimeMounted\) return/);
 });
 
 test("merchant setup is mounted only after its runtime is requested", () => {

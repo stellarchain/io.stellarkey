@@ -1017,6 +1017,7 @@ function StepSelling({
       <Block icon={<IconPercent size={15} />} tint="#BF5AF2" title="Tax">
         <StepLabel>Tax mode</StepLabel>
         <SegmentedControl<TaxMode>
+          ariaLabel="How tax is applied"
           value={draft.taxMode}
           options={[
             { label: "Included in price", value: "inclusive" },
@@ -1092,6 +1093,7 @@ function StepSelling({
       <Block icon={<IconStorefront size={15} />} tint="#30D158" title="Tips">
         <StepLabel>Tip prompt</StepLabel>
         <SegmentedControl<TipMode>
+          ariaLabel="How tips are offered"
           value={draft.tipMode}
           options={[
             { label: "Off", value: "off" },
@@ -1252,6 +1254,7 @@ function StepTill({
 
       <Block icon={<IconReceipt size={15} />} tint="#0A84FF" title="Till text size">
         <SegmentedControl<TillTextSize>
+          ariaLabel="Till text size"
           value={draft.textSize}
           options={(Object.keys(TEXT_SIZE_LABEL) as TillTextSize[]).map((size) => ({
             label: TEXT_SIZE_LABEL[size],

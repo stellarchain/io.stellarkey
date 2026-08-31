@@ -147,11 +147,13 @@ test("the landing page does not prefetch the wallet application before it is req
 test("the changelog publishes the current release as semantic text", async ({ page }) => {
   await page.goto("/changelog", { waitUntil: "domcontentloaded" });
   const currentRelease = page.locator(`#release-${APPLICATION_VERSION.replaceAll(".", "-")}`);
+  const unreleased = page.locator("#release-unreleased");
 
   await expect(page.getByRole("heading", { level: 2, name: "Unreleased" })).toBeVisible();
-  await expect(page.getByText("No unreleased changes.")).toBeVisible();
+  await expect(unreleased.getByRole("heading", { level: 3 })).toHaveCount(0);
+  await expect(unreleased.getByRole("listitem")).toHaveCount(0);
   await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
-  await expect(currentRelease.locator('time[datetime="2026-08-29"]')).toHaveText("29 August 2026");
+  await expect(currentRelease.locator('time[datetime="2026-08-31"]')).toHaveText("31 August 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
     "href",
     "https://github.com/stellarchain/io.stellarkey",

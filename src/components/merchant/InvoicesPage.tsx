@@ -206,7 +206,7 @@ export function InvoicesPage() {
           />
         </div>
         <div className="lg:w-[320px]">
-          <SegmentedControl<StatusFilter> value={filter} options={FILTERS} onChange={setFilter} />
+          <SegmentedControl<StatusFilter> ariaLabel="Filter invoices by status" value={filter} options={FILTERS} onChange={setFilter} />
         </div>
         <button
           type="button"

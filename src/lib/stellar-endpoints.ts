@@ -150,6 +150,15 @@ export function getHorizonUrl(
   return loadCustomEndpoint(network, "horizon", storage) ?? NETWORKS[network].horizonUrl;
 }
 
+/**
+ * Account activity deliberately uses SDF's public Horizon history service.
+ * Custom endpoints remain available for operational reads and submissions,
+ * but must not silently change the source or retention behavior of history.
+ */
+export function getAccountHistoryHorizonUrl(network: NetworkKey): string {
+  return NETWORKS[network].horizonUrl;
+}
+
 export function getRpcUrl(
   network: NetworkKey,
   storage: EndpointStorage | null = browserStorage(),

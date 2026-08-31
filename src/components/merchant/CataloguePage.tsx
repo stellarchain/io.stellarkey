@@ -139,6 +139,7 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
             </div>
             <div className="w-[132px] shrink-0">
               <SegmentedControl<ViewMode>
+                ariaLabel="Catalogue layout"
                 value={view}
                 onChange={setView}
                 options={[

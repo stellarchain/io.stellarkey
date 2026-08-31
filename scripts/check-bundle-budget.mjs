@@ -5,6 +5,17 @@ import { gzipSync } from "node:zlib";
 
 export const INITIAL_JS_RAW_BUDGET = 1_350_000;
 export const INITIAL_JS_GZIP_BUDGET = 350_000;
+export const PRIVATE_FEATURE_JS_RAW_BUDGET = 500_000;
+export const PRIVATE_FEATURE_JS_GZIP_BUDGET = 140_000;
+export const PRIVATE_WORKER_JS_RAW_BUDGET = 1_300_000;
+export const PRIVATE_ARTIFACT_GZIP_BUDGET = 13_000_000;
+export const PRIVATE_PEAK_CACHE_BUDGET = 50_000_000;
+
+const PRIVATE_ARTIFACT_PATHS = Object.freeze([
+  "protocol/private-balance/v1/circuit.wasm",
+  "protocol/private-balance/v1/circuit.zkey",
+  "protocol/private-balance/v1/verification-key.json",
+]);
 
 /* The landing page is the public entry; the wallet shell lives at /app. Each
    is budgeted against the route that actually serves it. */
@@ -19,7 +30,10 @@ const LANDING_ENTRY = "index.html";
 /** Incremental bytes needed to enter each named journey. */
 export const JOURNEY_BUDGETS = Object.freeze({
   initial: { rawBytes: INITIAL_JS_RAW_BUDGET, gzipBytes: INITIAL_JS_GZIP_BUDGET },
-  unlocked: { rawBytes: 725_000, gzipBytes: 160_000 },
+  // v1.3 integrates private-asset summaries, signing authorization, and the
+  // unified activity shell here; proving, full merchant, and hardware code
+  // remain independently lazy and budgeted below.
+  unlocked: { rawBytes: 750_000, gzipBytes: 165_000 },
   merchant: { rawBytes: 545_000, gzipBytes: 150_000 },
   hardware: { rawBytes: 1_100_000, gzipBytes: 225_000 },
 });
@@ -214,6 +228,98 @@ export function measureJourneyJavaScript(outputDirectory = "out", buildDirectory
   };
 }
 
+function sourcesContaining(contents, markers) {
+  return new Set(
+    [...contents]
+      .filter(([, content]) => markers.some((marker) => content.includes(marker)))
+      .map(([source]) => source),
+  );
+}
+
+export function measurePrivateBalanceAssets(outputDirectory = "out") {
+  const root = resolve(outputDirectory);
+  const contents = chunkContents(root);
+  const mappings = asyncChunkMap(contents);
+
+  const featureRoots = sourcesContaining(contents, [
+    "PrivateBalanceProvider",
+    "PrivateBalanceCard",
+  ]);
+  if (featureRoots.size === 0) {
+    throw new Error("Build graph did not resolve the PrivateBalanceProvider feature boundary.");
+  }
+  // These are the emitted provider/card boundaries. Do not walk every async
+  // import declared by their shared dashboard caller; those are independent
+  // wallet journeys with their own budgets below.
+  const feature = featureRoots;
+
+  const workerRoots = new Set([
+    ...[...contents.keys()].filter((source) => source.includes("turbopack-worker")),
+    ...sourcesContaining(contents, [
+      "private-balance.worker",
+      "stellarkey-private-balance",
+      "generateProof",
+    ]),
+  ]);
+  if (workerRoots.size === 0) {
+    throw new Error("Build graph did not resolve the turbopack-worker Private Balance boundary.");
+  }
+  const worker = transitiveAsyncChunks(workerRoots, contents, mappings);
+
+  let artifactRawBytes = 0;
+  let artifactGzipBytes = 0;
+  for (const artifactPath of PRIVATE_ARTIFACT_PATHS) {
+    const bytes = readFileSync(resolve(root, artifactPath));
+    artifactRawBytes += bytes.byteLength;
+    artifactGzipBytes += gzipSync(bytes, { level: 9 }).byteLength;
+  }
+
+  return {
+    feature: measureSources(root, feature),
+    worker: measureSources(root, worker),
+    artifacts: {
+      fileCount: PRIVATE_ARTIFACT_PATHS.length,
+      rawBytes: artifactRawBytes,
+      gzipBytes: artifactGzipBytes,
+      paths: [...PRIVATE_ARTIFACT_PATHS],
+    },
+    peakCacheBytes: artifactRawBytes * 2,
+  };
+}
+
+export function assertPrivateBalanceBudgets(measurement) {
+  const failures = [];
+  if (measurement.feature.rawBytes > PRIVATE_FEATURE_JS_RAW_BUDGET) {
+    failures.push(
+      `feature: ${measurement.feature.rawBytes} raw bytes exceeds ${PRIVATE_FEATURE_JS_RAW_BUDGET}`,
+    );
+  }
+  if (measurement.feature.gzipBytes > PRIVATE_FEATURE_JS_GZIP_BUDGET) {
+    failures.push(
+      `feature: ${measurement.feature.gzipBytes} gzip bytes exceeds ${PRIVATE_FEATURE_JS_GZIP_BUDGET}`,
+    );
+  }
+  if (measurement.worker.rawBytes > PRIVATE_WORKER_JS_RAW_BUDGET) {
+    failures.push(
+      `worker: ${measurement.worker.rawBytes} raw bytes exceeds ${PRIVATE_WORKER_JS_RAW_BUDGET}`,
+    );
+  }
+  if (measurement.artifacts.gzipBytes > PRIVATE_ARTIFACT_GZIP_BUDGET) {
+    failures.push(
+      `artifacts: ${measurement.artifacts.gzipBytes} gzip bytes exceeds ${PRIVATE_ARTIFACT_GZIP_BUDGET}`,
+    );
+  }
+  if (measurement.peakCacheBytes > PRIVATE_PEAK_CACHE_BUDGET) {
+    failures.push(
+      `cache: ${measurement.peakCacheBytes} bytes exceeds ${PRIVATE_PEAK_CACHE_BUDGET}`,
+    );
+  }
+  if (failures.length > 0) {
+    throw new Error(`Private Balance release budget failed: ${failures.join("; ")}.`);
+  }
+  return measurement;
+}
+
 export function assertJourneyJavaScriptBudgets(measurements, budgets = JOURNEY_BUDGETS) {
   const failures = [];
   for (const [journey, budget] of Object.entries(budgets)) {
@@ -240,6 +346,9 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const measurements = measureJourneyJavaScript(process.argv[2] ?? "out", process.argv[3] ?? ".next");
   assertJourneyJavaScriptBudgets(measurements);
   const landing = assertLandingJavaScriptBudget(measureLandingJavaScript(process.argv[2] ?? "out"));
+  const privateBalance = assertPrivateBalanceBudgets(
+    measurePrivateBalanceAssets(process.argv[2] ?? "out"),
+  );
   console.log(
     `Landing JavaScript: ${landing.rawBytes} raw bytes, ${landing.gzipBytes} gzip bytes across ${landing.chunkCount} chunks.`,
   );
@@ -248,4 +357,13 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       `${journey[0].toUpperCase()}${journey.slice(1)} JavaScript: ${measurement.rawBytes} raw bytes, ${measurement.gzipBytes} gzip bytes across ${measurement.chunkCount} chunks.`,
     );
   }
+  console.log(
+    `Private Balance feature: ${privateBalance.feature.rawBytes} raw bytes, ${privateBalance.feature.gzipBytes} gzip bytes across ${privateBalance.feature.chunkCount} chunks.`,
+  );
+  console.log(
+    `Private Balance worker: ${privateBalance.worker.rawBytes} raw bytes across ${privateBalance.worker.chunkCount} chunks.`,
+  );
+  console.log(
+    `Private Balance artifacts: ${privateBalance.artifacts.rawBytes} raw bytes, ${privateBalance.artifacts.gzipBytes} gzip bytes; ${privateBalance.peakCacheBytes} bytes at the two-version cache peak.`,
+  );
 }

@@ -33,7 +33,12 @@ test("modal sheets follow the visual viewport and preserve focus", () => {
   assert.match(ui, /const \[visualViewport, setVisualViewport\]/);
   assert.match(ui, /window\.visualViewport\?\.addEventListener\("resize", update\)/);
   assert.match(ui, /window\.visualViewport\?\.addEventListener\("scroll", update\)/);
-  assert.match(ui, /restoreFocusRef\.current\?\.focus\?\.\(\{ preventScroll: true \}\)/);
+  assert.match(ui, /const restoreTarget = restoreFocusRef\.current/);
+  assert.match(ui, /window\.requestAnimationFrame\(\(\) => \{[\s\S]*restoreTarget\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(
+    ui,
+    /function unregisterModal\(modal: HTMLElement\)[\s\S]*modal\.inert = false;[\s\S]*syncModalInertness\(\)/,
+  );
   assert.match(ui, /className="flex h-11 w-11 items-center justify-center rounded-full/);
 });
 

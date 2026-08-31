@@ -62,8 +62,14 @@ test("the production graph budgets initial, unlocked, merchant, and hardware jou
   assert.deepEqual(Object.keys(measurements), ["initial", "unlocked", "merchant", "hardware"]);
   for (const [journey, measurement] of Object.entries(measurements)) {
     assert.ok(measurement.chunkCount > 0, `${journey} must resolve at least one chunk`);
-    assert.ok(measurement.rawBytes <= JOURNEY_BUDGETS[journey].rawBytes);
-    assert.ok(measurement.gzipBytes <= JOURNEY_BUDGETS[journey].gzipBytes);
+    assert.ok(
+      measurement.rawBytes <= JOURNEY_BUDGETS[journey].rawBytes,
+      `${journey} raw bytes: ${measurement.rawBytes} > ${JOURNEY_BUDGETS[journey].rawBytes}`,
+    );
+    assert.ok(
+      measurement.gzipBytes <= JOURNEY_BUDGETS[journey].gzipBytes,
+      `${journey} gzip bytes: ${measurement.gzipBytes} > ${JOURNEY_BUDGETS[journey].gzipBytes}`,
+    );
   }
   const unlockedSource = measurements.unlocked.sources
     .map((source) => readFileSync(new URL(`../out/${source}`, import.meta.url), "utf8"))

@@ -16,7 +16,7 @@ test("production is deployable as immutable static files without an application 
   assert.match(headers, /Referrer-Policy: strict-origin-when-cross-origin/);
   assert.match(headers, /Cross-Origin-Opener-Policy: same-origin-allow-popups/);
   assert.match(headers, /\/sw\.js[\s\S]*Cache-Control: no-cache, no-store, must-revalidate/);
-  assert.doesNotMatch(headers, /nonce-|unsafe-eval/);
+  assert.doesNotMatch(headers, /nonce-|(?:^|\s)'unsafe-eval'(?:\s|;|$)/);
   assert.doesNotMatch(headers, /upgrade-insecure-requests/);
 });
 
@@ -51,6 +51,7 @@ test("installed clients revalidate every document and every home-screen icon", (
   // The home-screen icons sit at stable paths and their artwork has changed
   // before, so a new logo only reaches an installed app if the phone re-checks.
   for (const icon of [
+    "/favicon.ico",
     "/apple-touch-icon.png",
     "/apple-icon1.png",
     "/apple-icon2.png",

@@ -176,6 +176,22 @@ test("the app offers an accessible update action and reloads only after controll
   assert.match(source, /role="status"/);
 });
 
+test("development removes only stale StellarKey shell workers and shell caches", () => {
+  const source = readFileSync(
+    new URL("../src/components/ServiceWorkerRegistration.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /process\.env\.NODE_ENV !== "production"/);
+  assert.match(source, /navigator\.serviceWorker\.getRegistrations\(\)/);
+  assert.match(source, /worker\.scriptURL/);
+  assert.match(source, /registration\.unregister\(\)/);
+  assert.match(source, /name\.startsWith\(SHELL_CACHE_PREFIX\)/);
+  assert.match(source, /sessionStorage/);
+  assert.match(source, /window\.location\.reload\(\)/);
+  assert.doesNotMatch(source, /name\.startsWith\(PRIVATE_ARTIFACT_CACHE_PREFIX\)/);
+});
+
 test("generated workers precache only same-origin shell resources", async () => {
   const { discoverShellPaths } = await generatorDomain();
   const paths = discoverShellPaths(`

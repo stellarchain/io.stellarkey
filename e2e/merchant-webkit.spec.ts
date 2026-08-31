@@ -82,7 +82,15 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
   const charge = await openAwaitingCharge(page);
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
+    return raw ? JSON.parse(raw) : null;
+  })).toEqual({ version: 1, enabled: true, configured: true });
   await page.reload({ waitUntil: "domcontentloaded" });
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
+    return raw ? JSON.parse(raw) : null;
+  })).toEqual({ version: 1, enabled: true, configured: true });
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();

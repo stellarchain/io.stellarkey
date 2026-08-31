@@ -172,7 +172,7 @@ export function PaymentLinksPage() {
 
       <div className="mb-3 flex items-center gap-2.5">
         <div className="min-w-0 flex-1 sm:max-w-[288px]">
-          <SegmentedControl<CodeFilter> value={filter} options={FILTERS} onChange={setFilter} />
+          <SegmentedControl<CodeFilter> ariaLabel="Filter codes" value={filter} options={FILTERS} onChange={setFilter} />
         </div>
         <button
           type="button"

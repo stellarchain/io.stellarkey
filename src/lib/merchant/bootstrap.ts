@@ -7,6 +7,23 @@ export interface MerchantBootstrapState {
   configured: boolean;
 }
 
+/**
+ * Keep Merchant navigation stable while its encrypted store is opening. The
+ * public hint may preserve shell visibility only during hydration; once the
+ * archive has been read, its authenticated setting is authoritative.
+ */
+export function merchantShellEnabled({
+  ready,
+  encryptedEnabled,
+  enabledHint,
+}: {
+  ready: boolean;
+  encryptedEnabled: boolean;
+  enabledHint: boolean;
+}): boolean {
+  return ready ? encryptedEnabled : enabledHint;
+}
+
 interface BootstrapStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;

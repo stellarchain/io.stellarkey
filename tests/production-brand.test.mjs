@@ -28,7 +28,7 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.equal(brand.BRAND_NAME, "StellarKey");
   assert.equal(brand.BRAND_ORIGIN, "https://stellarkey.io");
   assert.equal(brand.SOURCE_REPOSITORY_URL, "https://github.com/stellarchain/io.stellarkey");
-  assert.equal(brand.APPLICATION_VERSION, "1.2.0");
+  assert.equal(brand.APPLICATION_VERSION, "1.3.0");
   assert.equal(brand.APPLICATION_VERSION, JSON.parse(read("package.json")).version);
   assert.match(nextConfig.env?.NEXT_PUBLIC_BUILD_COMMIT ?? "", /^[0-9a-f]{40}$/);
   assert.equal(brand.COPYRIGHT_OWNER, "StellarKey");
@@ -67,10 +67,10 @@ test("one canonical StellarKey identity drives production-facing surfaces", asyn
   assert.match(error, /Reload \{BRAND_NAME\}/);
   assert.match(error, /<main[^>]*id="app-content"/);
   assert.equal(packageJson.name, "stellarkey");
-  assert.equal(packageJson.version, "1.2.0");
+  assert.equal(packageJson.version, "1.3.0");
   assert.equal(packageLock.name, "stellarkey");
   assert.equal(packageLock.packages[""].name, "stellarkey");
-  assert.equal(packageLock.packages[""].version, "1.2.0");
+  assert.equal(packageLock.packages[""].version, "1.3.0");
   assert.match(read("src/lib/merchant/defaults.ts"), /appVersion: APPLICATION_VERSION/);
   assert.match(read("README.md"), /^# StellarKey$/m);
   assert.match(read("README.md"), /src="\.\/public\/stellarkey-logo-readme\.svg"/);

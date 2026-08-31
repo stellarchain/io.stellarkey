@@ -16,6 +16,15 @@ function base(size = 16) {
   };
 }
 
+/**
+ * The official Stellar symbol in a 24-unit box, used unmodified and always as
+ * a pure fill so its native line weight is preserved — the same treatment in
+ * the StellarKey lock (LogoMark), the Private Payments shield, and the
+ * merchant storefront.
+ */
+export const STELLAR_MARK_PATH =
+  "M12.003 1.716c-1.37 0-2.7.27-3.948.78A10.18 10.18 0 0 0 2.66 7.901a10.136 10.136 0 0 0-.797 3.954c0 .258.01.516.027.775a1.942 1.942 0 0 1-1.055 1.88L0 14.934v1.902l2.463-1.26.072-.032v.005l.77-.39.758-.385.066-.039 14.807-7.56 1.666-.847 3.392-1.732V2.694L17.792 5.86 3.744 13.025l-.104.055-.017-.115a8.286 8.286 0 0 1-.071-1.105c0-2.255.88-4.377 2.474-5.977a8.462 8.462 0 0 1 2.71-1.82 8.513 8.513 0 0 1 3.2-.654h.067a8.41 8.41 0 0 1 4.09 1.055l1.628-.83.126-.066a10.11 10.11 0 0 0-5.845-1.853zM24 7.143 5.047 16.808l-1.666.847L0 19.382v1.902l3.282-1.671 2.91-1.485 14.058-7.153.105-.055.016.115c.05.369.072.743.072 1.11 0 2.255-.88 4.383-2.475 5.978a8.461 8.461 0 0 1-2.71 1.82 8.305 8.305 0 0 1-3.2.654h-.06c-1.441 0-2.86-.369-4.102-1.061l-.066.033-1.683.857c.594.418 1.232.776 1.903 1.062a10.11 10.11 0 0 0 3.947.797 10.09 10.09 0 0 0 7.17-2.975 10.136 10.136 0 0 0 2.969-7.18c0-.259-.005-.523-.027-.781a1.942 1.942 0 0 1 1.055-1.88L24 9.044z";
+
 export function LogoMark({ size = 34, className = "" }: IconProps) {
   return (
     <svg
@@ -37,7 +46,7 @@ export function LogoMark({ size = 34, className = "" }: IconProps) {
         <circle cx="32" cy="32" r="21.125" strokeWidth="2.4" fill="none" />
         <path
           transform="translate(17.6 17.6) scale(1.2)"
-          d="M12.003 1.716c-1.37 0-2.7.27-3.948.78A10.18 10.18 0 0 0 2.66 7.901a10.136 10.136 0 0 0-.797 3.954c0 .258.01.516.027.775a1.942 1.942 0 0 1-1.055 1.88L0 14.934v1.902l2.463-1.26.072-.032v.005l.77-.39.758-.385.066-.039 14.807-7.56 1.666-.847 3.392-1.732V2.694L17.792 5.86 3.744 13.025l-.104.055-.017-.115a8.286 8.286 0 0 1-.071-1.105c0-2.255.88-4.377 2.474-5.977a8.462 8.462 0 0 1 2.71-1.82 8.513 8.513 0 0 1 3.2-.654h.067a8.41 8.41 0 0 1 4.09 1.055l1.628-.83.126-.066a10.11 10.11 0 0 0-5.845-1.853zM24 7.143 5.047 16.808l-1.666.847L0 19.382v1.902l3.282-1.671 2.91-1.485 14.058-7.153.105-.055.016.115c.05.369.072.743.072 1.11 0 2.255-.88 4.383-2.475 5.978a8.461 8.461 0 0 1-2.71 1.82 8.305 8.305 0 0 1-3.2.654h-.06c-1.441 0-2.86-.369-4.102-1.061l-.066.033-1.683.857c.594.418 1.232.776 1.903 1.062a10.11 10.11 0 0 0 3.947.797 10.09 10.09 0 0 0 7.17-2.975 10.136 10.136 0 0 0 2.969-7.18c0-.259-.005-.523-.027-.781a1.942 1.942 0 0 1 1.055-1.88L24 9.044z"
+          d={STELLAR_MARK_PATH}
           fill="currentColor"
           stroke="none"
         />
@@ -174,6 +183,16 @@ export function IconCalculator(p: IconProps) {
   );
 }
 
+export function IconMessageCircle(p: IconProps) {
+  return (
+    <svg {...base(p.size)} className={p.className}>
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+    </svg>
+  );
+}
+
 export function IconTrash(p: IconProps) {
   return (
     <svg {...base(p.size)} className={p.className}>
@@ -208,6 +227,26 @@ export function IconShield(p: IconProps) {
   return (
     <svg {...base(p.size)} className={p.className}>
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+/**
+ * Private Payments identity mark: the official Stellar symbol inside the
+ * house shield, with the same weight relationship as the StellarKey lock
+ * (LogoMark) — the unmodified glyph pure-filled at its native line weight
+ * (~0.86 here at scale 0.48), and the shield stroked at 1 to match it.
+ */
+export function IconShieldStellar(p: IconProps) {
+  return (
+    <svg {...base(p.size)} className={p.className}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="1" />
+      <path
+        transform="translate(6.24 4.98) scale(0.48)"
+        d={STELLAR_MARK_PATH}
+        fill="currentColor"
+        stroke="none"
+      />
     </svg>
   );
 }

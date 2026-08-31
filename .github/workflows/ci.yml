@@ -17,6 +17,33 @@ permissions:
   contents: read
 
 jobs:
+  private-gate-a:
+    name: Private Balance Gate A
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CIVER_CIRCOM: ${{ runner.temp }}/circom_civer/target/release/civer_circom
+      CIVER_SOURCE_COMMIT: af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: protocol/private-balance/circuits/package-lock.json
+      - run: corepack install
+      - run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Build pinned CIVER analyzer
+        run: |
+          git clone --no-checkout https://github.com/costa-group/circom_civer.git "$RUNNER_TEMP/circom_civer"
+          git -C "$RUNNER_TEMP/circom_civer" checkout --detach "$CIVER_SOURCE_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/circom_civer" rev-parse HEAD)" = "$CIVER_SOURCE_COMMIT"
+          cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release -p civer_circom
+      - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
+      - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
+      - run: corepack npm --prefix protocol/private-balance/circuits ci
+      - run: npm run private:gate-a
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -38,3 +65,4 @@ jobs:
       - run: npm run test:bundle
       - run: npm run check:bundle
       - run: npm exec -- playwright test
+      - run: npm run test:e2e:private-ui

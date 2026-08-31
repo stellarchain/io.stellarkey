@@ -2,13 +2,75 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const SHELL_CACHE_PREFIX = "stellarkey-shell-";
+const DEV_SW_RELOAD_KEY = "stellarkey.dev-shell-reload.v1";
+
+function isStellarKeyWorker(worker: ServiceWorker | null): boolean {
+  if (!worker) return false;
+  try {
+    const url = new URL(worker.scriptURL);
+    return url.origin === window.location.origin && url.pathname === "/sw.js";
+  } catch {
+    return false;
+  }
+}
+
+function isStellarKeyRegistration(registration: ServiceWorkerRegistration): boolean {
+  return [registration.active, registration.waiting, registration.installing].some(
+    (worker) => isStellarKeyWorker(worker),
+  );
+}
+
 export function ServiceWorkerRegistration() {
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [activationRequested, setActivationRequested] = useState(false);
   const reloadRequested = useRef(false);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    if (!("serviceWorker" in navigator)) return;
+
+    if (process.env.NODE_ENV !== "production") {
+      let cancelled = false;
+
+      const removeStaleShell = async () => {
+        const controlledByStellarKey = isStellarKeyWorker(navigator.serviceWorker.controller);
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const registrationsToRemove = registrations.filter(isStellarKeyRegistration);
+
+        await Promise.all(
+          registrationsToRemove.map((registration) => registration.unregister()),
+        );
+
+        if ("caches" in window) {
+          const names = await window.caches.keys();
+          await Promise.all(
+            names
+              .filter((name) => name.startsWith(SHELL_CACHE_PREFIX))
+              .map((name) => window.caches.delete(name)),
+          );
+        }
+
+        if (cancelled) return;
+        if (controlledByStellarKey) {
+          const alreadyReloaded = window.sessionStorage.getItem(DEV_SW_RELOAD_KEY) === "1";
+          if (!alreadyReloaded) {
+            window.sessionStorage.setItem(DEV_SW_RELOAD_KEY, "1");
+            window.location.reload();
+          }
+          return;
+        }
+
+        window.sessionStorage.removeItem(DEV_SW_RELOAD_KEY);
+      };
+
+      void removeStaleShell().catch(() => {
+        // Local preview cleanup is best-effort; normal rendering must remain available.
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }
 
     let registration: ServiceWorkerRegistration | null = null;
     let installing: ServiceWorker | null = null;

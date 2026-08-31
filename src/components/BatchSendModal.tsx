@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   useWalletContacts,
   useWalletIdentity,
@@ -51,6 +51,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   const { sendBatch, refresh } = useWalletTransactions();
   const { toast } = useToast();
   const [assetKey, setAssetKey] = useState("native");
+  const memoInputId = useId();
   const [memo, setMemo] = useState("");
   const [rows, setRows] = useState<RecipientRow[]>([
     { id: "1", destination: "", amount: "" },
@@ -247,7 +248,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
           <div className="space-y-4">
               {/* Asset picker */}
               <div>
-                <label className="field-label">Asset</label>
+                <span className="field-label">Asset</span>
                 <Select
                   value={assetKey}
                   onChange={setAssetKey}
@@ -379,8 +380,11 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
 
               {/* Memo */}
               <div>
-                <label className="field-label">Transaction Memo (Optional)</label>
+                <label className="field-label" htmlFor={memoInputId}>
+                  Transaction Memo (Optional)
+                </label>
                 <input
+                  id={memoInputId}
                   type="text"
                   placeholder="Max 28 bytes"
                   value={memo}

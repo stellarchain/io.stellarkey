@@ -3,7 +3,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { triggerHaptic } from "@/lib/haptics";
+import { MODAL_EXIT_DURATION_MS } from "@/lib/motion";
 import { calculatePopoverPosition, type PopoverPosition } from "@/lib/popover";
+import { tabIndexAfterKey } from "@/lib/tabs";
 import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
 
 /** Shared panel chrome for modal surfaces (Modal, CommandPalette). */
@@ -13,6 +15,116 @@ export const MODAL_PANEL_CLASS =
 /** Shared chrome for floating popover surfaces (Select, Dropdown). */
 const POPOVER_PANEL_CLASS =
   "menu-pop fixed z-[70] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.12] bg-[#1e1e22]/95 p-1.5 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.9)] backdrop-blur-2xl";
+
+export function Tooltip({
+  label,
+  children,
+  side = "top",
+}: {
+  label: string | null;
+  children: React.ReactElement<{ "aria-describedby"?: string }>;
+  side?: "top" | "right";
+}) {
+  const tooltipId = React.useId();
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const describedBy = [children.props["aria-describedby"], label ? tooltipId : null]
+    .filter(Boolean)
+    .join(" ") || undefined;
+  const trigger = React.cloneElement(children, { "aria-describedby": describedBy });
+
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    const tooltip = tooltipRef.current;
+    if (!anchor || !tooltip) return;
+
+    const margin = 8;
+    const gap = 8;
+    const anchorRect = anchor.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    let left: number;
+    let top: number;
+
+    if (side === "right") {
+      left = anchorRect.right + gap;
+      if (left + tooltipRect.width > window.innerWidth - margin) {
+        left = anchorRect.left - tooltipRect.width - gap;
+      }
+      top = anchorRect.top + (anchorRect.height - tooltipRect.height) / 2;
+    } else {
+      left = anchorRect.left + (anchorRect.width - tooltipRect.width) / 2;
+      top = anchorRect.top - tooltipRect.height - gap;
+    }
+
+    setPosition({
+      left: Math.min(
+        Math.max(margin, left),
+        Math.max(margin, window.innerWidth - tooltipRect.width - margin),
+      ),
+      top: Math.min(
+        Math.max(margin, top),
+        Math.max(margin, window.innerHeight - tooltipRect.height - margin),
+      ),
+    });
+  }, [side]);
+
+  useLayoutEffect(() => {
+    if (!open || !label) return;
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    window.visualViewport?.addEventListener("resize", updatePosition);
+    window.visualViewport?.addEventListener("scroll", updatePosition);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      window.visualViewport?.removeEventListener("resize", updatePosition);
+      window.visualViewport?.removeEventListener("scroll", updatePosition);
+    };
+  }, [label, open, updatePosition]);
+
+  if (!label) return trigger;
+
+  const tooltip = open && typeof document !== "undefined"
+    ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          style={{
+            position: "fixed",
+            left: position?.left ?? 0,
+            top: position?.top ?? 0,
+            visibility: position ? "visible" : "hidden",
+          }}
+          className="pointer-events-none z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[#27272b]/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
+        >
+          {label}
+        </span>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <span
+      ref={anchorRef}
+      onPointerEnter={() => setOpen(true)}
+      onPointerLeave={() => setOpen(false)}
+      onFocusCapture={() => setOpen(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+      className={side === "right"
+        ? "relative flex w-full justify-center"
+        : "relative inline-flex"}
+    >
+      {trigger}
+      {tooltip}
+    </span>
+  );
+}
 
 export function IOSBackButton({
   onClick,
@@ -53,6 +165,62 @@ let scrollLockCount = 0;
 let bodyOverflowBeforeLock = "";
 let lockedScrollOwner: HTMLElement | null = null;
 let scrollOwnerOverflowBeforeLock = "";
+const modalStack: HTMLElement[] = [];
+let inertAppSurface: HTMLElement | null = null;
+let appSurfaceInertBeforeModal = false;
+let latestPointerTarget: HTMLElement | null = null;
+
+const pointerCaptureDocument = typeof document === "undefined"
+  ? null
+  : document as Document & { __stellarkeyOverlayPointerCapture?: boolean };
+if (pointerCaptureDocument && !pointerCaptureDocument.__stellarkeyOverlayPointerCapture) {
+  pointerCaptureDocument.__stellarkeyOverlayPointerCapture = true;
+  pointerCaptureDocument.addEventListener("pointerdown", (event) => {
+    latestPointerTarget = event.target instanceof HTMLElement
+      ? event.target.closest<HTMLElement>(
+          'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        )
+      : null;
+  }, true);
+}
+
+function syncModalInertness() {
+  if (modalStack.length > 0 && !inertAppSurface) {
+    inertAppSurface = document.querySelector<HTMLElement>("[data-app-surface]");
+    if (inertAppSurface) {
+      appSurfaceInertBeforeModal = inertAppSurface.inert;
+      inertAppSurface.inert = true;
+    }
+  }
+
+  const top = modalStack.at(-1) ?? null;
+  for (const modal of modalStack) {
+    modal.inert = modal !== top;
+  }
+
+  if (modalStack.length === 0 && inertAppSurface) {
+    inertAppSurface.inert = appSurfaceInertBeforeModal;
+    inertAppSurface = null;
+    appSurfaceInertBeforeModal = false;
+  }
+}
+
+function registerModal(modal: HTMLElement) {
+  if (!modalStack.includes(modal)) modalStack.push(modal);
+  syncModalInertness();
+}
+
+function unregisterModal(modal: HTMLElement) {
+  const index = modalStack.lastIndexOf(modal);
+  if (index >= 0) modalStack.splice(index, 1);
+  modal.inert = false;
+  syncModalInertness();
+}
+
+function isTopModal(modal: HTMLElement | null): boolean {
+  return modal !== null && modalStack.at(-1) === modal;
+}
+
 function lockBodyScroll() {
   scrollLockCount += 1;
   if (scrollLockCount !== 1) return;
@@ -75,6 +243,15 @@ function unlockBodyScroll() {
   scrollOwnerOverflowBeforeLock = "";
 }
 
+/** Shares the reference-counted Modal scroll lock with full-surface takeovers. */
+export function useBodyScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    lockBodyScroll();
+    return unlockBodyScroll;
+  }, [active]);
+}
+
 export function Modal({
   open,
   onClose,
@@ -94,6 +271,7 @@ export function Modal({
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const restoreFocusFrameRef = useRef<number | null>(null);
   const [visualViewport, setVisualViewport] = useState<{
     offsetTop: number;
     height: number;
@@ -119,14 +297,23 @@ export function Modal({
     const t = window.setTimeout(() => {
       setMounted(false);
       setClosing(false);
-    }, 180);
+    }, MODAL_EXIT_DURATION_MS);
     return () => window.clearTimeout(t);
   }, [closing]);
 
   // Scroll lock + focus restore for as long as the dialog is in the tree.
   useEffect(() => {
     if (!mounted) return;
-    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    if (restoreFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(restoreFocusFrameRef.current);
+      restoreFocusFrameRef.current = null;
+    }
+    const activeElement = document.activeElement instanceof HTMLElement
+      && document.activeElement !== document.body
+      ? document.activeElement
+      : null;
+    restoreFocusRef.current = activeElement ?? latestPointerTarget ?? restoreFocusRef.current;
+    latestPointerTarget = null;
     lockBodyScroll();
     window.requestAnimationFrame(() => {
       const first = panelRef.current?.querySelector<HTMLElement>(
@@ -136,8 +323,24 @@ export function Modal({
     });
     return () => {
       unlockBodyScroll();
-      restoreFocusRef.current?.focus?.({ preventScroll: true });
+      const restoreTarget = restoreFocusRef.current;
+      // WebKit can discard a synchronous focus call while the portal and
+      // background inert state are being removed. Restore on the next paint,
+      // after the underlying surface is interactive again.
+      restoreFocusFrameRef.current = window.requestAnimationFrame(() => {
+        restoreFocusFrameRef.current = null;
+        if (restoreTarget?.isConnected) {
+          restoreTarget.focus({ preventScroll: true });
+        }
+      });
     };
+  }, [mounted]);
+
+  useLayoutEffect(() => {
+    if (!mounted || !backdropRef.current) return;
+    const modal = backdropRef.current;
+    registerModal(modal);
+    return () => unregisterModal(modal);
   }, [mounted]);
 
   // iOS keeps a separate visual viewport while the keyboard is open. Following
@@ -147,9 +350,15 @@ export function Modal({
     if (!mounted) return;
     function update() {
       const viewport = window.visualViewport;
-      setVisualViewport({
+      const next = {
         offsetTop: viewport?.offsetTop ?? 0,
         height: viewport?.height ?? window.innerHeight,
+      };
+      setVisualViewport(current => {
+        if (current?.offsetTop === next.offsetTop && current.height === next.height) {
+          return current;
+        }
+        return next;
       });
     }
     update();
@@ -166,6 +375,7 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
+      if (!isTopModal(backdropRef.current)) return;
       if (e.key === "Escape" && dismissable) {
         triggerHaptic("selection");
         onClose();
@@ -205,6 +415,8 @@ export function Modal({
   return createPortal(
     <div
       ref={backdropRef}
+      data-modal-backdrop
+      data-overlay-state={closing ? "closing" : "open"}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -229,6 +441,7 @@ export function Modal({
       <ModalLabelContext.Provider value={{ titleId, descriptionId }}>
         <div
           ref={panelRef}
+          data-modal-shell
           tabIndex={-1}
           style={
             visualViewport
@@ -253,10 +466,12 @@ export function ModalHeader({
   title,
   subtitle,
   onClose,
+  closeDisabled = false,
 }: {
   title: string;
   subtitle?: string;
   onClose?: () => void;
+  closeDisabled?: boolean;
 }) {
   const labels = React.useContext(ModalLabelContext);
   return (
@@ -272,11 +487,13 @@ export function ModalHeader({
       {onClose && (
         <button
           type="button"
+          disabled={closeDisabled}
           onClick={() => {
+            if (closeDisabled) return;
             triggerHaptic("selection");
             onClose();
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white sm:h-9 sm:w-9"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
           aria-label="Close"
         >
           <IconClose size={14} />
@@ -771,7 +988,7 @@ export function CopyButton({
       type="button"
       onClick={handleCopy}
       className={className ?? "chip"}
-      aria-label="Copy to clipboard"
+      aria-label={label ?? "Copy to clipboard"}
     >
       {copied ? (
         <>
@@ -902,7 +1119,8 @@ export function SegmentedControl<T extends string>({
   value: T;
   options: { label: string; value: T; disabled?: boolean }[];
   onChange: (val: T) => void;
-  ariaLabel?: string;
+  /** A bare role="group" has no accessible name without this label. */
+  ariaLabel: string;
 }) {
   // 5px of padding, not 4: it puts the control at 36px, the same height as
   // `.search-field`, so the two line up wherever they sit side by side.
@@ -926,7 +1144,7 @@ export function SegmentedControl<T extends string>({
                 onChange(opt.value);
               }
             }}
-            className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-all sm:min-h-0 ${
+            className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 sm:min-h-0 ${
               opt.disabled
                 ? "cursor-not-allowed text-neutral-400"
                 : active
@@ -938,6 +1156,134 @@ export function SegmentedControl<T extends string>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+export function Tabs<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  children,
+  panelBusy = false,
+  className = "",
+  tabListClassName = "",
+  panelClassName = "",
+}: {
+  value: T;
+  options: { label: string; value: T; disabled?: boolean }[];
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  children: React.ReactNode;
+  panelBusy?: boolean;
+  className?: string;
+  tabListClassName?: string;
+  panelClassName?: string;
+}) {
+  const baseId = React.useId();
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
+  const activeValue = options[activeIndex]?.value ?? value;
+
+  const activate = (index: number) => {
+    const option = options[index];
+    if (!option || option.disabled) return;
+    tabRefs.current[index]?.focus({ preventScroll: true });
+    if (option.value !== value) {
+      triggerHaptic("selection");
+      onChange(option.value);
+    }
+  };
+
+  const move = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const requested = tabIndexAfterKey(currentIndex, options.length, event.key);
+    if (requested === null) return;
+    event.preventDefault();
+
+    const direction = event.key === "ArrowLeft" || event.key === "End" ? -1 : 1;
+    let candidate = requested;
+    for (let visited = 0; visited < options.length; visited += 1) {
+      if (!options[candidate]?.disabled) {
+        activate(candidate);
+        return;
+      }
+      candidate = (candidate + direction + options.length) % options.length;
+    }
+  };
+
+  return (
+    <div data-tabs-root className={className}>
+      <div
+        role="tablist"
+        aria-label={ariaLabel}
+        aria-orientation="horizontal"
+        className={`flex items-center rounded-xl bg-white/[0.08] p-[5px] backdrop-blur-md ${tabListClassName}`}
+      >
+        {options.map((option, index) => {
+          const active = option.value === value;
+          const tabId = `${baseId}-tab-${option.value}`;
+          const panelId = `${baseId}-panel-${option.value}`;
+          return (
+            <button
+              key={option.value}
+              ref={(node) => {
+                tabRefs.current[index] = node;
+              }}
+              id={tabId}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls={panelId}
+              tabIndex={active ? 0 : -1}
+              disabled={option.disabled}
+              data-tab-value={option.value}
+              onKeyDown={(event) => move(event, index)}
+              onClick={() => activate(index)}
+              className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 sm:min-h-0 ${
+                option.disabled
+                  ? "cursor-not-allowed text-neutral-400"
+                  : active
+                    ? "bg-white/[0.18] font-semibold text-white shadow-sm"
+                    : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        id={`${baseId}-panel-${activeValue}`}
+        role="tabpanel"
+        aria-labelledby={`${baseId}-tab-${activeValue}`}
+        aria-busy={panelBusy || undefined}
+        tabIndex={0}
+        data-tab-panel={activeValue}
+        className={`outline-none ${panelClassName}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function LoadingRegion({
+  label,
+  className = "min-h-56",
+}: {
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      aria-live="polite"
+      className={`flex flex-col items-center justify-center gap-3 p-6 text-center ${className}`}
+    >
+      <Spinner />
+      <span className="text-[12px] text-neutral-400">{label}…</span>
     </div>
   );
 }
@@ -956,11 +1302,13 @@ export function Button({
   className = "",
   variant = "primary",
   loading = false,
+  loadingLabel = "Working",
   disabled = false,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
   loading?: boolean;
+  loadingLabel?: string;
 }) {
   const vClass =
     variant === "primary"
@@ -972,13 +1320,31 @@ export function Button({
           : "btn-ghost";
 
   return (
-    <button
-      {...props}
-      disabled={disabled || loading}
-      className={`btn ${vClass} ${className}`}
-    >
-      {loading ? <Spinner /> : children}
-    </button>
+    <>
+      <button
+        {...props}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
+        data-loading={loading || undefined}
+        className={`btn relative ${vClass} ${className}`}
+      >
+        <span
+          className={`inline-flex min-w-0 w-full items-center justify-center gap-2 whitespace-normal break-words text-center leading-tight ${loading ? "opacity-0" : ""}`}
+        >
+          {children}
+        </span>
+        {loading && (
+          <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center">
+            <Spinner />
+          </span>
+        )}
+      </button>
+      {loading && (
+        <span role="status" aria-label={loadingLabel} aria-live="polite" className="sr-only">
+          {loadingLabel}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -994,6 +1360,7 @@ export function Field({
   children: React.ReactNode;
 }) {
   const generatedId = React.useId();
+  const hintId = `${generatedId}-hint`;
   const errorId = `${generatedId}-error`;
   const controlId = React.isValidElement<{ id?: string }>(children)
     ? children.props.id ?? generatedId
@@ -1003,16 +1370,24 @@ export function Field({
     "aria-describedby"?: string;
     "aria-invalid"?: boolean;
   }>(children)
-    ? React.cloneElement(children, {
-        id: controlId,
-        ...(error ? { "aria-describedby": errorId, "aria-invalid": true } : {}),
-      })
+    ? React.cloneElement(children, (() => {
+        const describedBy = [
+          children.props["aria-describedby"],
+          hint ? hintId : null,
+          error ? errorId : null,
+        ].filter(Boolean).join(" ") || undefined;
+        return {
+          id: controlId,
+          "aria-describedby": describedBy,
+          ...(error ? { "aria-invalid": true } : {}),
+        };
+      })())
     : children;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <label htmlFor={controlId} className="field-label !pb-0">{label}</label>
-        {hint && <span className="text-[11px] text-neutral-400">{hint}</span>}
+        {hint && <span id={hintId} className="text-[11px] text-neutral-400">{hint}</span>}
       </div>
       {control}
       {error && <p id={errorId} role="alert" className="text-[11.5px] text-[#FF453A]">{error}</p>}

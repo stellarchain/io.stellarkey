@@ -1,6 +1,7 @@
 import type { NetworkKey } from "./stellar";
 import type { AssetBalance } from "./types";
 import type { FiatCurrency } from "./format";
+import { lookupKnownAsset } from "./assets";
 import { withAbortDeadline } from "./wallet-refresh";
 
 export interface PricedAssetIdentity {
@@ -142,4 +143,24 @@ export function getUnitPrice(
   if (isNative) return xlmUsd;
   if (!issuer) return null;
   return assetPrices[assetPriceKey(network, code, issuer)] ?? null;
+}
+
+/**
+ * Price used by the wallet preview. Mainnet remains market-priced; testnet
+ * mirrors production UX with live XLM and a $1 reference only for the exact
+ * known Circle USDC issuer. Lookalike asset codes remain unpriced.
+ */
+export function getRepresentativeUnitPrice(
+  code: string,
+  issuer: string | null | undefined,
+  network: NetworkKey,
+  isNative: boolean,
+  xlmUsd: number | null,
+  assetPrices: AssetPrices,
+): number | null {
+  if (network === "mainnet") {
+    return getUnitPrice(code, issuer, network, isNative, xlmUsd, assetPrices);
+  }
+  if (isNative) return xlmUsd;
+  return lookupKnownAsset(code, issuer, network)?.code === "USDC" ? 1 : null;
 }

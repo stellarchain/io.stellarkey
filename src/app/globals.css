@@ -22,6 +22,11 @@
 
 :root {
   --app-safe-area-top: 0px;
+  --motion-duration-fast: 120ms;
+  --motion-duration-standard: 180ms;
+  --motion-duration-emphasized: 220ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-enter: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .app-safe-top {
@@ -309,6 +314,36 @@ body::after {
     border-radius: 14px;
   }
 
+  /* The funded home view is two semantic vertical stacks on mobile. On wide
+     screens, subgrid lets their first panels share one intrinsic row, so the
+     balance and market cards align without a brittle fixed height. */
+  .dashboard-home-grid,
+  .dashboard-home-column,
+  .dashboard-home-primary {
+    min-width: 0;
+  }
+
+  @media (min-width: 64rem) {
+    .dashboard-home-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    @supports (grid-template-rows: subgrid) {
+      .dashboard-home-grid {
+        grid-template-rows: auto auto;
+      }
+
+      .dashboard-home-column {
+        display: grid;
+        grid-row: span 2;
+        grid-template-rows: subgrid;
+        gap: normal;
+      }
+    }
+  }
+
   /* ---------- Buttons ---------- */
 
   .btn {
@@ -387,7 +422,11 @@ body::after {
     height: 36px;
     border-radius: 999px;
     color: var(--color-accent);
-    transition: all 0.2s ease;
+    transition:
+      background-color var(--motion-duration-standard) var(--motion-ease-standard),
+      color var(--motion-duration-standard) var(--motion-ease-standard),
+      opacity var(--motion-duration-standard) var(--motion-ease-standard),
+      transform var(--motion-duration-standard) var(--motion-ease-enter);
     cursor: pointer;
   }
   .icon-btn:hover {
@@ -512,7 +551,9 @@ body::after {
     padding: 7px 14px;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.18s ease;
+    transition:
+      background-color var(--motion-duration-standard) var(--motion-ease-standard),
+      color var(--motion-duration-standard) var(--motion-ease-standard);
     background: rgba(118, 118, 128, 0.24);
   }
   .chip:hover {
@@ -645,19 +686,19 @@ body::after {
   /* ---------- Overlays & popovers ---------- */
 
   .modal-overlay {
-    animation: overlayIn 0.22s ease both;
+    animation: overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both;
   }
   .modal-overlay.closing {
-    animation: overlayOut 0.18s ease both;
+    animation: overlayOut var(--motion-duration-standard) var(--motion-ease-standard) both;
   }
   .modal-dialog {
-    animation: dialogIn 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: dialogIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
   }
   .modal-dialog.closing {
-    animation: dialogOut 0.16s ease both;
+    animation: dialogOut var(--motion-duration-fast) var(--motion-ease-standard) both;
   }
   .menu-pop {
-    animation: menuPop 0.18s cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: menuPop var(--motion-duration-standard) var(--motion-ease-enter) both;
     transform-origin: var(--pop-origin, top);
   }
 
@@ -704,7 +745,7 @@ body::after {
   }
 
   .fade-up {
-    animation: fadeUp 0.4s cubic-bezier(0.32, 0.72, 0, 1) both;
+    animation: fadeUp var(--motion-duration-emphasized) var(--motion-ease-enter) both;
   }
 
   .shake {
@@ -838,4 +879,94 @@ body::after {
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }
+}
+
+/* ————— Private Payments 2.0 shared motion ————— */
+
+/* Success moment: circle pops in, then the check stroke draws itself. */
+@keyframes success-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.success-circle {
+  animation: success-pop 0.24s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+@keyframes success-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.success-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: success-draw 0.3s ease-out 0.12s forwards;
+}
+/* With animations disabled the draw never runs — show the finished check. */
+@media (prefers-reduced-motion: reduce) {
+  .success-check {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* One calm flash to teach where a fresh pending payment now lives. */
+@keyframes row-pulse {
+  from {
+    background-color: rgba(10, 132, 255, 0.16);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.row-pulse {
+  animation: row-pulse 1.6s ease-out 1;
+}
+
+/* Feature-discovery pill: a light sweep, a few seconds apart. */
+@keyframes pill-sweep {
+  0%,
+  70% {
+    background-position: -160% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+.new-pill {
+  background-image: linear-gradient(
+    105deg,
+    rgba(10, 132, 255, 0.22) 40%,
+    rgba(100, 210, 255, 0.5) 50%,
+    rgba(10, 132, 255, 0.22) 60%
+  );
+  background-size: 220% 100%;
+  animation: pill-sweep 3.2s ease-in-out infinite;
+}
+
+/* First-send confetti pieces (spawned by PrivateSuccess). */
+@keyframes confetti-fall {
+  from {
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(var(--confetti-drift, 0px), 105vh, 0)
+      rotate(var(--confetti-spin, 540deg));
+    opacity: 0.9;
+  }
+}
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 90;
+  animation: confetti-fall var(--confetti-duration, 2.2s) ease-in forwards;
 }

@@ -1,3 +1,5 @@
+import { STELLAR_MARK_PATH } from "@/components/icons";
+
 interface IconProps {
   size?: number;
   className?: string;
@@ -23,6 +25,29 @@ export function IconStorefront(p: IconProps) {
       <path d="M3 8.5h18" />
       <path d="M4.8 8.5V19a2 2 0 0 0 2 2h10.4a2 2 0 0 0 2-2V8.5" />
       <path d="M9.6 21v-4.2a2.4 2.4 0 0 1 4.8 0V21" />
+    </svg>
+  );
+}
+
+/**
+ * Merchant identity mark: the official Stellar symbol on the receipt — the
+ * proof of every sale — with the container stroked at 1 to sit level with the
+ * glyph's native line, completing the brand family alongside the lock
+ * (LogoMark) and the shield (IconShieldStellar).
+ */
+export function IconReceiptStellar(p: IconProps) {
+  return (
+    <svg {...base(p.size)} className={p.className}>
+      <path
+        d="M5 20.5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v15.5L16.7 21.4 14.4 20.5 12 21.4 9.6 20.5 7.3 21.4Z"
+        strokeWidth="1"
+      />
+      <path
+        transform="translate(7.44 6.63) scale(0.38)"
+        d={STELLAR_MARK_PATH}
+        fill="currentColor"
+        stroke="none"
+      />
     </svg>
   );
 }

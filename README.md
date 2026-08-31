@@ -71,6 +71,11 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
+Private Balance protocol work is present but remains development-only and is
+not mounted in the production wallet. Its privacy limits, local storage, direct
+RPC metadata, and recovery model are documented in the
+[Private Balance security model](docs/private-balance.md).
+
 ## Backend-free architecture
 
 - `npm run build` creates immutable static files in `out/`. There are no
@@ -108,7 +113,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.2.0`. Every build embeds the full 40-character Git
+The current release is `1.3.0`. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:
@@ -198,6 +203,7 @@ disabled by product requirement and covered by the mobile release gate.
 | [Support](SUPPORT.md) | Help boundaries and recovery expectations |
 | [Contributing](CONTRIBUTING.md) | Development workflow, DCO, and review expectations |
 | [Merchant Mode operations](docs/merchant-mode.md) | Setup, daily operations, recovery, and limitations |
+| [Private Balance model](docs/private-balance.md) | Development status, privacy boundary, storage, recovery, and incident links |
 | [Testing guide](docs/testing.md) | Automated and physical-device verification |
 | [Release checklist](docs/release-checklist.md) | Security, recovery, device, and mainnet release gates |
 | [Deployment runbook](docs/production-deployment.md) | Immutable Cloudflare Pages deployment and rollback |

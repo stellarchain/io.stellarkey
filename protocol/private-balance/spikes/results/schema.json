@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gate0FeasibilityResults",
+  "type": "object",
+  "required": [
+    "passed",
+    "timestamp",
+    "measurements"
+  ],
+  "properties": {
+    "passed": { "type": "boolean" },
+    "timestamp": { "type": "string" },
+    "targetNetwork": { "type": "string" },
+    "measurements": {
+      "type": "object",
+      "properties": {
+        "proofVerificationHost": { "type": "object" },
+        "poseidon2Parity": { "type": "object" },
+        "archivePageSize": { "type": "object" },
+        "recovery10kActions": { "type": "object" }
+      }
+    }
+  }
+}
