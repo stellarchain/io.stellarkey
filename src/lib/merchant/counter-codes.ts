@@ -13,6 +13,11 @@ import type { ObservedPayment } from "./match";
 import { minorForAssetAmount, unitPriceE6 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, counterReference } from "./payment-reference";
+import {
+  createMerchantRoutingId,
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "./routing";
 import type {
   AcceptedAsset,
   CounterCode,
@@ -46,6 +51,7 @@ export interface CreateCounterCodeInput {
   destination: string;
   quotes: QuoteInput[];
   now?: number;
+  routingId?: string;
 }
 
 export interface UpdateCounterCodeInput {
@@ -231,6 +237,7 @@ export function createCounterCode(
     currency: store.settings.currency,
     acceptedAssets,
     memoPrefix,
+    routingId: input.routingId ?? createMerchantRoutingId(),
     requestMessage: `${store.settings.profile.name.trim() || "Your shop"} · ${title}`,
     network: input.network,
     destination,
@@ -299,6 +306,21 @@ export function counterCodePayUri(
   code: CounterCode,
   asset: AcceptedAsset,
 ): string {
+  return counterCodePayUriForTransport(code, asset, "muxed");
+}
+
+export function counterCodeCompatibilityPayUri(
+  code: CounterCode,
+  asset: AcceptedAsset,
+): string {
+  return counterCodePayUriForTransport(code, asset, "memo-id");
+}
+
+function counterCodePayUriForTransport(
+  code: CounterCode,
+  asset: AcceptedAsset,
+  transport: MerchantPaymentTransport,
+): string {
   const accepted = code.acceptedAssets.find((entry) => sameAsset(entry, asset));
   if (!accepted) throw new Error(`${asset.code} is not accepted by this counter code.`);
   const quote = code.kind === "fixed"
@@ -307,11 +329,11 @@ export function counterCodePayUri(
   if (code.kind === "fixed" && !quote) {
     throw new Error(`${asset.code} has no locked publication quote.`);
   }
+  const target = merchantPaymentTransport(code.destination, code.routingId, transport);
   return buildCounterCodePayUri({
-    destination: code.destination,
+    ...target,
     network: code.network,
     asset: accepted,
-    memo: code.memoPrefix,
     title: code.requestMessage,
     amount: quote?.amount ?? null,
   });
@@ -321,7 +343,8 @@ export function buildCounterCodePayUri(input: {
   destination: string;
   network: NetworkKey;
   asset: AcceptedAsset;
-  memo: string;
+  memo?: string;
+  memoType?: "text" | "id";
   title: string;
   shopName?: string;
   amount?: string | null;
@@ -332,7 +355,7 @@ export function buildCounterCodePayUri(input: {
     assetCode: isNative(input.asset) ? undefined : input.asset.code,
     assetIssuer: isNative(input.asset) ? undefined : (input.asset.issuer ?? undefined),
     memo: input.memo,
-    memoType: "text",
+    memoType: input.memo ? (input.memoType ?? "text") : undefined,
     msg: input.shopName ? `${input.shopName} · ${input.title}` : input.title,
     networkPassphrase: NETWORKS[input.network].networkPassphrase,
   });
@@ -376,10 +399,10 @@ export function reconcileCounterPayments(
       unclaimed.push(payment);
       continue;
     }
-    const codeIndex = payment.memo
+    const codeIndex = !payment.routingConflict && payment.routingId
       ? counterCodes.findIndex(
           (code) =>
-            code.memoPrefix === payment.memo &&
+            code.routingId === payment.routingId &&
             code.network === input.network &&
             code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
@@ -410,7 +433,7 @@ export function reconcileCounterPayments(
     const record: CounterPayment = {
       id: payment.id,
       codeId: code.id,
-      payment: { ...payment, asset: { ...payment.asset }, lane: "memo" },
+      payment: { ...payment, asset: { ...payment.asset }, lane: "routing" },
       amountMinor: priced.amountMinor,
       quote: priced.quote,
       seenAt: now,

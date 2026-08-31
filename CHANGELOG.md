@@ -11,11 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added Circle's official USDC and EURC token logos as bundled local verified-asset icons.
 - Added USDT0 to Verified Stellar Assets on Mainnet with its exact issuer and a bundled local logo.
+- Added Stellar muxed-address payments to Send and Multi-Send, with an explicit base-account plus `MEMO_ID` fallback for Trezor.
 
 ### Changed
 
 - Hid verified assets from Add Asset when they are unavailable on the selected network.
 - Moved the public version and build hash from beneath the header logo into the footer legal line.
+- Merchant charges, invoices, and counter codes now use immutable random payment routes; human order references remain display-only.
+- Merchant payment requests default to a muxed destination and offer a consistent Standard or Trezor-compatible request without closing the active sheet.
+
+### Security
+
+- Conflicting or malformed muxed and `MEMO_ID` routes are isolated for review instead of being matched by amount.
 
 ## [1.3.0] - 2026-08-31
 
