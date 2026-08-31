@@ -5,6 +5,7 @@ import test from "node:test";
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 import { NETWORKS } from "../src/lib/stellar.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 
 const NOW = 1_800_000_000_000;
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
@@ -80,13 +81,14 @@ function fixedInput(member, overrides = {}) {
     expiresAt: null,
     network: "mainnet",
     destination: TILL,
+    routingId: "3001",
     quotes: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW,
     ...overrides,
   };
 }
 
-function payment(id, amount, asset, memo) {
+function payment(id, amount, asset, routingId) {
   return {
     id,
     transactionHash: "a".repeat(64),
@@ -95,13 +97,19 @@ function payment(id, amount, asset, memo) {
     destination: TILL,
     amount,
     asset,
-    memo,
+    routingId,
+    routingConflict: false,
+    memo: null,
     createdAt: new Date(NOW + 1000).toISOString(),
   };
 }
 
-test("fixed codes persist an immutable publication quote and exact SEP-7 request", async () => {
-  const { counterCodePayUri, createCounterCode } = await counterDomain();
+test("fixed codes persist muxed routing and an equivalent MEMO_ID compatibility request", async () => {
+  const {
+    counterCodeCompatibilityPayUri,
+    counterCodePayUri,
+    createCounterCode,
+  } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
 
@@ -121,15 +129,19 @@ test("fixed codes persist an immutable publication quote and exact SEP-7 request
 
   const parsed = parseSep7PayUri(counterCodePayUri(created.code, USDC, "North Star"));
   assert.deepEqual(parsed, {
-    destination: TILL,
+    destination: muxedAddressForRouting(TILL, created.code.routingId),
     amount: "10.0000000",
     assetCode: "USDC",
     assetIssuer: ISSUER,
-    memo: "NS-C-BAG",
-    memoType: "text",
     msg: "North Star · Coffee bag",
     networkPassphrase: NETWORKS.mainnet.networkPassphrase,
   });
+  assert.match(parsed.destination, /^M/);
+
+  const compatibility = parseSep7PayUri(counterCodeCompatibilityPayUri(created.code, USDC));
+  assert.equal(compatibility.destination, TILL);
+  assert.equal(compatibility.memo, created.code.routingId);
+  assert.equal(compatibility.memoType, "id");
 });
 
 test("a new counter code cannot reuse a payment reference held by another merchant record", async () => {
@@ -178,7 +190,7 @@ test("active fixed-code payments reconcile once at their publication quote", asy
   const { createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
-  const observed = payment("fixed-payment", "10.0000000", USDC, created.code.memoPrefix);
+  const observed = payment("fixed-payment", "10.0000000", USDC, created.code.routingId);
   const settled = reconcileCounterPayments(created.store, {
     network: "mainnet",
     payments: [observed],
@@ -207,7 +219,7 @@ test("a counter-code payment created before expiry files after delayed observati
   const { createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member, { expiresAt: NOW + 1_500 }));
-  const observed = payment("delayed-payment", "10.0000000", USDC, created.code.memoPrefix);
+  const observed = payment("delayed-payment", "10.0000000", USDC, created.code.routingId);
   const settled = reconcileCounterPayments(created.store, {
     network: "mainnet",
     payments: [observed],
@@ -224,7 +236,7 @@ test("a counter-code payment with an invalid ledger timestamp stays unclaimed", 
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
   const observed = {
-    ...payment("invalid-time", "10.0000000", USDC, created.code.memoPrefix),
+    ...payment("invalid-time", "10.0000000", USDC, created.code.routingId),
     createdAt: "not-a-timestamp",
   };
   const reconciled = reconcileCounterPayments(created.store, {
@@ -243,7 +255,7 @@ test("a counter-code payment cannot file against another receiving account", asy
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
   const observed = {
-    ...payment("wrong-code-destination", "10.0000000", USDC, created.code.memoPrefix),
+    ...payment("wrong-code-destination", "10.0000000", USDC, created.code.routingId),
     destination: ISSUER,
   };
   const reconciled = reconcileCounterPayments(created.store, {
@@ -274,8 +286,8 @@ test("open codes price live payments and retain unpriceable ones for review", as
   const reconciled = reconcileCounterPayments(created.store, {
     network: "mainnet",
     payments: [
-      payment("priced-payment", "2.0000000", USDC, created.code.memoPrefix),
-      payment("review-payment", "5.0000000", XLM, created.code.memoPrefix),
+      payment("priced-payment", "2.0000000", USDC, created.code.routingId),
+      payment("review-payment", "5.0000000", XLM, created.code.routingId),
     ],
     rates: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW + 2000,
@@ -309,7 +321,7 @@ test("paused and expired codes stop auto-filing while their printed request rema
 
   const expired = reconcileCounterPayments(created.store, {
     network: "mainnet",
-    payments: [payment("expired-payment", "10.0000000", USDC, created.code.memoPrefix)],
+    payments: [payment("expired-payment", "10.0000000", USDC, created.code.routingId)],
     rates: [],
     now: NOW + 2000,
   });

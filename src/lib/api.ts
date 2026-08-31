@@ -15,7 +15,7 @@ import {
 import type { ActivityItem, AssetBalance } from "./types";
 import { NETWORKS, type NetworkKey } from "./stellar";
 import { getAccountHistoryHorizonUrl, getHorizonUrl } from "./stellar-endpoints";
-import { isValidPublicAddress } from "./vault";
+import { isValidPaymentAddress, isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
 import { signHardwareTx, type HardwareSigner } from "./hardware";
 import { getHorizonJson, HorizonRequestError } from "./horizon";
@@ -921,12 +921,20 @@ export interface SendPaymentParams {
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
-  const { network, secretKey, destination, amount, assetCode, issuer, feeStroops } = params;
+  const { network, secretKey, amount, assetCode, issuer, feeStroops } = params;
+  const destination = params.destination.trim();
   const memo = buildStellarMemo(params.memo);
 
-  if (!isValidPublicAddress(destination)) {
+  if (!isValidPaymentAddress(destination)) {
     throw new SendError("Destination is not a valid Stellar address.");
   }
+  const muxedDestination = StrKey.isValidMed25519PublicKey(destination);
+  if (muxedDestination && params.hardwareSigner?.device === "trezor") {
+    throw new SendError(
+      "Trezor cannot sign a classic payment to this muxed address. Ask the merchant for the hardware-compatible request, which uses the same route as a MEMO_ID.",
+    );
+  }
+  const destinationAccount = extractBaseAddress(destination);
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -936,13 +944,18 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = await getJson(`${horizonUrl}/accounts/${destination}`) !== null;
+  const destExists = await getJson(`${horizonUrl}/accounts/${destinationAccount}`) !== null;
   const paymentAsset = toStellarAsset(assetCode, issuer);
   const isNative = paymentAsset.isNative();
 
   if (!destExists && !isNative) {
     throw new SendError(
       "Destination account doesn't exist yet. New accounts must be activated with XLM.",
+    );
+  }
+  if (!destExists && muxedDestination) {
+    throw new SendError(
+      "The account behind this muxed address does not exist yet. Ask for its G-address and activate that account with XLM first.",
     );
   }
   const fee = await loadRecommendedBaseFee(network, feeStroops);
@@ -1003,16 +1016,23 @@ export async function sendBatchPayments(params: {
 
   const prepared = payments.map((payment) => {
     const destination = payment.destination.trim();
-    if (!isValidPublicAddress(destination)) {
+    if (!isValidPaymentAddress(destination)) {
       throw new SendError("One of the recipients is not a valid Stellar address.");
     }
     return {
       ...payment,
       destination,
+      destinationAccount: extractBaseAddress(destination),
+      muxedDestination: StrKey.isValidMed25519PublicKey(destination),
       amount: normalizeAmount(payment.amount),
       asset: toStellarAsset(payment.assetCode, payment.issuer),
     };
   });
+  if (params.hardwareSigner?.device === "trezor" && prepared.some((payment) => payment.muxedDestination)) {
+    throw new SendError(
+      "Trezor cannot sign classic payments to muxed addresses. Use each recipient's hardware-compatible G-address and MEMO_ID request instead.",
+    );
+  }
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -1023,7 +1043,7 @@ export async function sendBatchPayments(params: {
   if (!source) throw new SendError("Your account does not exist on this network.");
   const fee = await loadRecommendedBaseFee(network, params.feeStroops);
 
-  const uniqueDestinations = [...new Set(prepared.map((payment) => payment.destination))];
+  const uniqueDestinations = [...new Set(prepared.map((payment) => payment.destinationAccount))];
   const destinationEntries = await Promise.all(
     uniqueDestinations.map(async (destination) => [
       destination,
@@ -1039,20 +1059,25 @@ export async function sendBatchPayments(params: {
   });
 
   for (const payment of prepared) {
-    const exists = destinationExists.get(payment.destination) === true;
+    const exists = destinationExists.get(payment.destinationAccount) === true;
     if (!exists && !payment.asset.isNative()) {
       throw new SendError(
         `Destination ${payment.destination} must be activated with XLM before receiving ${payment.asset.getCode()}.`,
       );
     }
-    if (!exists && !activatedInTransaction.has(payment.destination)) {
+    if (!exists && payment.muxedDestination) {
+      throw new SendError(
+        `The account behind ${payment.destination} must be activated through its G-address first.`,
+      );
+    }
+    if (!exists && !activatedInTransaction.has(payment.destinationAccount)) {
       builder.addOperation(
         Operation.createAccount({
-          destination: payment.destination,
+          destination: payment.destinationAccount,
           startingBalance: payment.amount,
         }),
       );
-      activatedInTransaction.add(payment.destination);
+      activatedInTransaction.add(payment.destinationAccount);
     } else {
       builder.addOperation(
         Operation.payment({

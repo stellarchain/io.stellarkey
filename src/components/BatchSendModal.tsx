@@ -8,7 +8,7 @@ import {
   useWalletSubmission,
   useWalletTransactions,
 } from "@/hooks/useWallet";
-import { isValidPublicAddress } from "@/lib/vault";
+import { isValidPaymentAddress } from "@/lib/vault";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
 import { formatTrezorAddress } from "@/lib/address-display";
 import {
@@ -90,7 +90,7 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   );
 
   const validRows = rows.filter(
-    (r) => isValidPublicAddress(r.destination.trim()) && isValidAmount(r.amount),
+    (r) => isValidPaymentAddress(r.destination.trim()) && isValidAmount(r.amount),
   );
   const feeXlm = networkFeeXlm(recommendedBaseFeeStroops, validRows.length);
   const maxSendable = selectedAsset?.isNative
