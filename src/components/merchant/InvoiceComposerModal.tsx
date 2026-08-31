@@ -303,7 +303,7 @@ function Composer({ invoice, onClose }: { invoice: Invoice | null; onClose: () =
     <>
       <ModalHeader
         title={isEdit ? "Edit invoice" : "New invoice"}
-        subtitle={`${identity.number} · memo ${identity.reference}`}
+        subtitle={`${identity.number} · reference ${identity.reference}`}
         onClose={onClose}
       />
 

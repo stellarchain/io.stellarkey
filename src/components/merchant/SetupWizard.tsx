@@ -370,7 +370,7 @@ function SetupWizardInner({
 
   const problems: Record<number, string | null> = {
     1: !draft.profile.name.trim()
-      ? "The shop needs a name: it prints on every receipt and seeds every charge memo."
+      ? "The shop needs a name: it prints on every receipt and seeds every order reference."
       : null,
     2: !draft.receivingPublicKey
       ? "Choose the account every charge is addressed to."
@@ -642,7 +642,7 @@ function StepShop({
               className="input text-base sm:text-[13.5px]"
             />
             <Hint>
-              It heads the receipt and seeds the charge memo: orders will read{" "}
+              It heads the receipt and seeds the order reference: orders will read{" "}
               <span className="mono text-neutral-300">{memoPrefix}-O-1001</span>.
             </Hint>
           </div>

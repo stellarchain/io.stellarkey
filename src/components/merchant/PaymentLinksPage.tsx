@@ -243,11 +243,11 @@ export function PaymentLinksPage() {
         <MerchantDisclosure label="How counter codes work">
           <p>
             A counter code is a SEP-7 request the shop saves once and prints. The paper carries the
-            whole thing — the shop&rsquo;s own account, the asset and the memo — so any Stellar
+            whole thing — the shop&rsquo;s own account, asset and payment route — so any Stellar
             wallet reads it straight off the card, with nothing in between and nothing held.
           </p>
           <p>
-            Payments and takings are what Horizon totals for that code&rsquo;s memo. The ledger is
+            Payments and takings are what Horizon totals for that code&rsquo;s immutable route. The ledger is
             the only thing counting, and it counts what arrived rather than who looked.
           </p>
           <p>
