@@ -23,6 +23,7 @@ import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
 import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
 import {
   assetKey,
+  chargeCompatibilityPayUri,
   chargePayUri,
   createCharge,
   isNative,
@@ -126,6 +127,7 @@ import {
 import {
   createInvoiceDraft as createPersistedInvoiceDraft,
   duplicateInvoice as duplicatePersistedInvoice,
+  invoiceCompatibilityPayUri,
   invoicePayUri,
   issueInvoice as issuePersistedInvoice,
   reconcileInvoicePayments,
@@ -135,12 +137,17 @@ import {
 } from "@/lib/merchant/invoices";
 import {
   buildCounterCodePayUri,
+  counterCodeCompatibilityPayUri,
   counterCodePayUri,
   createCounterCode as createPersistedCounterCode,
   reconcileCounterPayments,
   setCounterCodeActive as setPersistedCounterCodeActive,
   updateCounterCode as updatePersistedCounterCode,
 } from "@/lib/merchant/counter-codes";
+import {
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "@/lib/merchant/routing";
 import {
   customerHistory as buildCustomerHistory,
   forgetCustomer as forgetPersistedCustomer,
@@ -257,6 +264,7 @@ export interface MerchantCounterCodeDraft {
   staffId: string | null;
   expiresAt: number | null;
   active: boolean;
+  routingId?: string;
 }
 
 export interface TodaySummary {
@@ -372,7 +380,11 @@ interface MerchantContextValue {
   }) => Promise<Invoice>;
   voidInvoice: (invoiceId: string, reason: string) => Promise<Invoice>;
   duplicateInvoice: (invoiceId: string) => Promise<Invoice>;
-  invoicePayUriFor: (invoice: Invoice, asset: AcceptedAsset) => string | null;
+  invoicePayUriFor: (
+    invoice: Invoice,
+    asset: AcceptedAsset,
+    transport?: MerchantPaymentTransport,
+  ) => string | null;
 
   counterCodes: CounterCode[];
   counterPayments: CounterPayment[];
@@ -387,12 +399,16 @@ interface MerchantContextValue {
     active: boolean;
   }) => Promise<CounterCode>;
   setCounterCodeActive: (codeId: string, active: boolean) => Promise<CounterCode>;
-  counterCodePayUriFor: (code: CounterCode, asset: AcceptedAsset) => string | null;
+  counterCodePayUriFor: (
+    code: CounterCode,
+    asset: AcceptedAsset,
+    transport?: MerchantPaymentTransport,
+  ) => string | null;
   counterCodePreviewUri: (input: {
     kind: CounterCodeKind;
     amountMinor: Minor | null;
     asset: AcceptedAsset;
-    memo: string;
+    routingId: string;
     title: string;
   }) => string | null;
 
@@ -440,7 +456,11 @@ interface MerchantContextValue {
   createChargeFromTicket: (tipMinor?: Minor) => Promise<Charge>;
   voidCharge: (id: string) => Promise<void>;
   closeCharge: () => void;
-  payUriFor: (charge: Charge, asset: AcceptedAsset) => string | null;
+  payUriFor: (
+    charge: Charge,
+    asset: AcceptedAsset,
+    transport?: MerchantPaymentTransport,
+  ) => string | null;
   /** File a tray payment against an order by hand. */
   attachPayment: (paymentId: string, chargeId: string) => Promise<void>;
   dismissUnmatched: (paymentId: string) => Promise<void>;
@@ -1944,7 +1964,7 @@ export function MerchantProvider({
     kind: CounterCodeKind;
     amountMinor: Minor | null;
     asset: AcceptedAsset;
-    memo: string;
+    routingId: string;
     title: string;
   }): string | null => {
     const destination = storeRef.current.settings.receivingPublicKey;
@@ -1955,11 +1975,11 @@ export function MerchantProvider({
       if (rate === null || input.amountMinor === null || input.amountMinor <= 0) return null;
       amount = assetAmountFor(input.amountMinor, unitPriceE6(rate));
     }
+    const target = merchantPaymentTransport(destination, input.routingId, "muxed");
     return buildCounterCodePayUri({
-      destination,
+      destination: target.destination,
       network,
       asset: input.asset,
-      memo: input.memo,
       title: input.title || "Counter code",
       shopName: storeRef.current.settings.profile.name.trim() || "Your shop",
       amount,
@@ -3018,27 +3038,49 @@ export function MerchantProvider({
     [commitStore],
   );
   const invoicePayUriFor = useCallback(
-    (invoice: Invoice, asset: AcceptedAsset) => {
+    (
+      invoice: Invoice,
+      asset: AcceptedAsset,
+      transport: MerchantPaymentTransport = "muxed",
+    ) => {
       try {
-        return invoicePayUri(invoice, asset, settings.profile.name);
+        return transport === "memo-id"
+          ? invoiceCompatibilityPayUri(invoice, asset, settings.profile.name)
+          : invoicePayUri(invoice, asset, settings.profile.name);
       } catch {
         return null;
       }
     },
     [settings.profile.name],
   );
-  const counterCodePayUriFor = useCallback((code: CounterCode, asset: AcceptedAsset) => {
-    try {
-      return counterCodePayUri(code, asset);
-    } catch {
-      return null;
-    }
-  }, []);
+  const counterCodePayUriFor = useCallback(
+    (
+      code: CounterCode,
+      asset: AcceptedAsset,
+      transport: MerchantPaymentTransport = "muxed",
+    ) => {
+      try {
+        return transport === "memo-id"
+          ? counterCodeCompatibilityPayUri(code, asset)
+          : counterCodePayUri(code, asset);
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
   const closeCharge = useCallback(() => setActiveChargeId(null), []);
   const payUriFor = useCallback(
-    (charge: Charge, asset: AcceptedAsset) => {
+    (
+      charge: Charge,
+      asset: AcceptedAsset,
+      transport: MerchantPaymentTransport = "muxed",
+    ) => {
       const quote = quoteFor(charge, asset);
-      return quote ? chargePayUri(charge, quote, settings.profile.name) : null;
+      if (!quote) return null;
+      return transport === "memo-id"
+        ? chargeCompatibilityPayUri(charge, quote, settings.profile.name)
+        : chargePayUri(charge, quote, settings.profile.name);
     },
     [settings.profile.name],
   );

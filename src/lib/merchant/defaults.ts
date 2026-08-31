@@ -129,7 +129,7 @@ export function defaultSettings(): MerchantSettings {
 export function emptyStore(): MerchantStore {
   const settings = defaultSettings();
   return {
-    version: 2,
+    version: 3,
     revision: 0,
     writerId: null,
     updatedAt: 0,
