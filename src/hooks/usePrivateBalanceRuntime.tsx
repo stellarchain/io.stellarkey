@@ -67,7 +67,7 @@ export interface PrivateBalanceRecoveryEvidence {
 }
 
 export interface PrivateBalanceDeploymentSummary {
-  manifestStatus: 'development' | 'testnet-beta' | 'production' | null;
+  manifestStatus: 'development' | 'testnet-preview' | 'testnet-beta' | 'production' | null;
   network: 'testnet' | 'mainnet' | null;
   poolContractId: string | null;
   assetContractId: string | null;
