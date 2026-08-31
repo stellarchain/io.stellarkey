@@ -24,7 +24,8 @@ test('private balance surfaces use factual privacy claims and exact amount forma
   assert.match(dashboard, /dynamic\([\s\S]*PrivateAssetDetailModal/);
   assert.match(dashboard, /requestPrivateRuntime\(\)/);
   assert.match(dashboard, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE/);
-  assert.match(status, /development|testnet-beta|production/);
+  assert.match(status, /development|testnet-preview|testnet-beta|production/);
+  assert.match(status, /Testnet preview/);
   assert.match(status, /Not recorded/);
   for (const phase of [
     'disabled',
@@ -352,6 +353,8 @@ test('private asset rows stay concise and testnet value help works on touch', ()
 
   assert.doesNotMatch(row, /Checked through ledger/);
   assert.match(row, /Ready/);
+  assert.match(row, /className="absolute bottom-0 right-0/);
+  assert.doesNotMatch(row, /-bottom-0\.5|-right-0\.5/);
   assert.match(details, /Checked through ledger/);
   assert.match(dashboard, /aria-label="About testnet private asset values"/);
   assert.match(dashboard, /setPrivateValueInfoOpen\(true\)/);

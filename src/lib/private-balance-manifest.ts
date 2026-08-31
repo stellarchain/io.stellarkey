@@ -57,7 +57,7 @@ export interface PrivateBalanceManifest {
   schemaVersion: number;
   protocolVersion: number;
   artifactVersion: string;
-  status: 'development' | 'testnet-beta' | 'production';
+  status: 'development' | 'testnet-preview' | 'testnet-beta' | 'production';
   minimumStellarProtocol: number;
   networkPassphrase: string;
   networkId: string;
@@ -228,7 +228,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
   }
   if (
     typeof obj.status !== 'string' ||
-    !['development', 'testnet-beta', 'production'].includes(obj.status)
+    !['development', 'testnet-preview', 'testnet-beta', 'production'].includes(obj.status)
   ) {
     throw new Error(`Invalid manifest status: ${String(obj.status)}`);
   }
@@ -396,9 +396,12 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
       allowedEnvironment: 'testnet',
     };
   }
-  if (parsed.status !== 'development') {
-    if (!parsed.release) throw new Error('Release provenance is required outside development.');
+  if (parsed.status !== 'development' && !parsed.release) {
+    throw new Error('Release provenance is required outside development.');
+  }
+  if (parsed.status === 'testnet-beta' || parsed.status === 'production') {
     if (
+      !parsed.release ||
       parsed.release.ceremonyTranscriptRoot === '0'.repeat(64) ||
       parsed.release.auditReports.length === 0 ||
       parsed.release.deploymentTransactions.length === 0
