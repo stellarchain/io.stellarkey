@@ -15,6 +15,16 @@ function pngInfo(path) {
   };
 }
 
+function icoInfo(path) {
+  const ico = readFileSync(new URL(`../${path}`, import.meta.url));
+  assert.deepEqual([...ico.subarray(0, 6)], [0, 0, 1, 0, 1, 0]);
+  return {
+    width: ico[6] || 256,
+    height: ico[7] || 256,
+    bitDepth: ico.readUInt16LE(12),
+  };
+}
+
 const decodedPngs = new Map();
 
 function decodePng(path) {
@@ -140,6 +150,12 @@ test("Next serves static install metadata and an Apple icon through native app r
   assert.doesNotMatch(sourceIcon, /#FFFFFF/, "the favicon must not retain white tile artwork");
   assert.match(iconRenderer, /const FAVICON_FOREGROUND = "#000000"/);
   assert.match(iconRenderer, /color="\$\{FAVICON_FOREGROUND\}"/);
+  assert.match(iconRenderer, /src\/app\/favicon\.ico/);
+  assert.deepEqual(icoInfo("src/app/favicon.ico"), {
+    width: 32,
+    height: 32,
+    bitDepth: 32,
+  });
   // Served standalone, so it is parsed as XML rather than forgiving HTML: an
   // unbalanced group makes the favicon fail to load with no console error.
   assert.equal(

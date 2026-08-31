@@ -109,7 +109,7 @@ export function CustomersPage() {
           />
         </div>
         <div className="sm:w-[264px]">
-          <SegmentedControl<SortKey> value={sort} options={SORTS} onChange={setSort} />
+          <SegmentedControl<SortKey> ariaLabel="Sort customers" value={sort} options={SORTS} onChange={setSort} />
         </div>
       </div>
 

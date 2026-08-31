@@ -36,9 +36,11 @@ export function sourceTreeIsDirty(cwd = projectRoot): boolean {
 
 const buildCommit = resolveBuildCommit();
 const buildDirty = sourceTreeIsDirty();
+const developmentAssetPrefix = "/__stellarkey-dev-v2";
 
 const nextConfig: NextConfig = {
   output: "export",
+  assetPrefix: process.env.NODE_ENV === "production" ? undefined : developmentAssetPrefix,
   env: {
     NEXT_PUBLIC_BUILD_COMMIT: buildCommit,
     NEXT_PUBLIC_BUILD_DIRTY: String(buildDirty),
@@ -47,9 +49,9 @@ const nextConfig: NextConfig = {
     sri: { algorithm: "sha256" },
   },
   // Next 16 blocks dev chunks requested through a LAN hostname unless it is
-  // explicitly trusted. Allow this private /24 so phone/tablet testing keeps
-  // working when DHCP assigns the development machine a new final octet.
-  allowedDevOrigins: ["192.168.0.*"],
+  // explicitly trusted. Allow this private /24 and the exact local HTTPS name
+  // used for phone/tablet testing without trusting arbitrary .local hosts.
+  allowedDevOrigins: ["192.168.0.*", "stellarkey.local"],
   turbopack: {
     root: projectRoot,
   },

@@ -106,6 +106,32 @@ test("restored contacts are encrypted before the restored vault is exposed", asy
   lockVault();
 });
 
+test("full wallet backup preserves the validated Merchant Mode bootstrap state", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { exportVaultBackup, initializeVault, restoreVaultBackup } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  localStorage.setItem(
+    "stellarkey.merchant-bootstrap.v1",
+    JSON.stringify({ version: 1, enabled: true, configured: true }),
+  );
+  const backup = await exportVaultBackup(password);
+  localStorage.setItem(
+    "stellarkey.merchant-bootstrap.v1",
+    JSON.stringify({ version: 1, enabled: false, configured: false }),
+  );
+
+  await restoreVaultBackup(backup, password);
+
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem("stellarkey.merchant-bootstrap.v1")),
+    { version: 1, enabled: true, configured: true },
+  );
+});
+
 test("private transaction notes are encrypted at rest and require an unlocked vault", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
@@ -170,6 +196,22 @@ test("vault loading distinguishes absent, corrupt, and future data without overw
   assert.equal(future.version, 99);
   assert.equal(future.raw, futureRaw);
   assert.equal(localStorage.getItem("stellarkey.vault.v1"), futureRaw);
+});
+
+test("vault loading reports unavailable browser storage instead of throwing", async () => {
+  globalThis.window = {
+    localStorage: {
+      getItem() {
+        throw new DOMException("Storage access was denied", "SecurityError");
+      },
+    },
+  };
+  const { loadVaultResult } = await import("../src/lib/vault.ts");
+
+  const result = loadVaultResult();
+
+  assert.equal(result.kind, "unavailable");
+  assert.match(result.message, /browser storage/i);
 });
 
 test("vault validation rejects malformed account entries before UI mapping", async () => {
@@ -320,4 +362,43 @@ test("full wallet restore rolls localStorage and IndexedDB back together", async
   assert.equal(localStorage.getItem("stellarkey.vault.v1"), "vault-before");
   assert.equal(localStorage.getItem("stellarkey.contacts.v1"), "contacts-before");
   assert.equal(indexedArchive.value, "merchant-before");
+});
+
+test("full wallet restore rolls back every asynchronous archive in reverse order", async () => {
+  const { replaceBackupStorage } = await import("../src/lib/backup-storage.ts");
+  const localStorage = new MemoryStorage();
+  localStorage.setItem("stellarkey.vault.v1", "vault-before");
+  const first = {
+    value: "first-before",
+    async read() { return this.value; },
+    async replace(value) { this.value = value; },
+  };
+  const second = {
+    value: "second-before",
+    fail: true,
+    async read() { return this.value; },
+    async replace(value) {
+      this.value = value;
+      if (this.fail) {
+        this.fail = false;
+        throw new Error("second archive failed after mutation");
+      }
+    },
+  };
+
+  await assert.rejects(
+    () => replaceBackupStorage({
+      storage: localStorage,
+      keys: ["stellarkey.vault.v1"],
+      writes: new Map([["stellarkey.vault.v1", "vault-after"]]),
+      archives: [
+        { archive: first, value: "first-after" },
+        { archive: second, value: "second-after" },
+      ],
+    }),
+    /previous wallet was restored unchanged.*second archive failed/i,
+  );
+  assert.equal(localStorage.getItem("stellarkey.vault.v1"), "vault-before");
+  assert.equal(first.value, "first-before");
+  assert.equal(second.value, "second-before");
 });

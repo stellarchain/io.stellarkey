@@ -68,6 +68,74 @@ test("network settings verify, persist, and reset direct endpoints", async ({ pa
   }))).toEqual({ horizon: null, rpc: null });
 });
 
+test("signing security requires the password to weaken policy and can rotate the vault password", async ({ page }) => {
+  await importTestWallet(page, { requirePasswordForSigning: true });
+  await expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem("stellarkey.vault.v1");
+    return raw ? JSON.parse(raw).requirePasswordForSigning : null;
+  })).toBe(true);
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const policy = page.getByRole("switch", {
+    name: "Require password before signing transactions",
+  });
+  await expect(policy).toBeChecked();
+  await policy.click();
+
+  const disable = page.getByRole("dialog", { name: "Turn Off Password Confirmation?" });
+  await disable.getByLabel("Current Wallet Password").fill("wrong password");
+  await disable.getByRole("button", { name: "Turn Off" }).click();
+  await expect(disable.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await expect(policy).toBeChecked();
+
+  await disable.getByLabel("Current Wallet Password").fill(testPassword);
+  await disable.getByRole("button", { name: "Turn Off" }).click();
+  await expect(disable).toBeHidden();
+  await expect(policy).not.toBeChecked();
+
+  await page.getByRole("button", { name: /Change Wallet Password/ }).click();
+  const change = page.getByRole("dialog", { name: "Change Wallet Password" });
+  const replacement = "Violet-Glacier-Orbit-2026!";
+  await change.getByLabel("Current Password").fill(testPassword);
+  await change.getByLabel("New Password", { exact: true }).fill(replacement);
+  await change.getByLabel("Confirm New Password").fill(replacement);
+  await change.getByRole("button", { name: "Change Password" }).click();
+  await expect(change).toBeHidden();
+
+  await page.getByRole("button", { name: "Lock Wallet" }).click();
+  await page.getByPlaceholder("Enter password").fill(testPassword);
+  await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await expect(page.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Enter password").fill(replacement);
+  await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const restoredPolicy = page.getByRole("switch", {
+    name: "Require password before signing transactions",
+  });
+  await restoredPolicy.click();
+  await expect(restoredPolicy).toBeChecked();
+  await page.getByRole("button", { name: "Home", exact: true }).click();
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+  await send.getByRole("button", { name: "Confirm Send" }).click();
+
+  const approval = page.getByRole("dialog", { name: "Confirm transaction" });
+  await expect(approval.getByText("Send payment", { exact: true })).toBeVisible();
+  await approval.getByLabel("Wallet Password").fill("wrong password");
+  await approval.getByRole("button", { name: "Authorize" }).click();
+  await expect(approval.getByText("Incorrect password.", { exact: true })).toBeVisible();
+  await approval.getByLabel("Wallet Password").fill(replacement);
+  await approval.getByRole("button", { name: "Authorize" }).click();
+  await expect(approval).toBeHidden();
+  await expect(send.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
+});
+
 test("unlock, send review, swap review, and watch-only safety stay operable", async ({ page }) => {
   const failures = observePageFailures(page);
   await importTestWallet(page);
@@ -92,9 +160,9 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const send = page.getByRole("dialog", { name: "Send Payment" });
   await send.getByPlaceholder("0.00").fill("1");
-  await send.getByPlaceholder("G... or user*domain.com").fill(testPayer);
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
   await send.getByRole("button", { name: "Review Transfer" }).click();
-  await expect(page.getByRole("dialog", { name: "Review Transfer" })).toBeVisible();
+  await expect(send.getByRole("button", { name: "Confirm Send", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("dialog", { name: "Send Payment" }).getByRole("button", { name: "Close" }).click();
 

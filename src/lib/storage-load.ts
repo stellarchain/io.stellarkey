@@ -1,5 +1,5 @@
 export interface StorageIssue {
-  kind: "corrupt" | "future";
+  kind: "corrupt" | "future" | "unavailable";
   raw: string;
   message: string;
   version?: number;

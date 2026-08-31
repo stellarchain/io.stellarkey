@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { fmtFiat, type FiatCurrency } from "@/lib/format";
+import { fmtFiat, fmtFiatMarketPrice, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 
 export interface ChartPoint {
@@ -9,15 +9,8 @@ export interface ChartPoint {
   p: number;
 }
 
-function timeLabel(t: number, range: string): string {
-  const d = new Date(t);
-  if (range === "1D") {
-    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
-  if (range === "1Y") {
-    return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-  }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+export interface PriceChartInspection extends ChartPoint {
+  changePct: number;
 }
 
 export function PriceChart({
@@ -25,11 +18,15 @@ export function PriceChart({
   range,
   currency,
   rates,
+  marketPrecision = false,
+  onInspect,
 }: {
   points: ChartPoint[];
   range: string;
   currency: FiatCurrency;
   rates: Partial<Record<FiatCurrency, number>>;
+  marketPrecision?: boolean;
+  onInspect?: (inspection: PriceChartInspection | null) => void;
 }) {
   const W = 500;
   const H = 160;
@@ -64,7 +61,9 @@ export function PriceChart({
   const stroke = up ? "#30D158" : "#FF453A";
   const hoverPt = hover !== null ? coords[hover] : null;
   const startPrice = points[0]?.p ?? 1;
-  const hoverDeltaPct = hoverPt ? ((hoverPt.p - startPrice) / startPrice) * 100 : null;
+  const formatValue = (value: number) => marketPrecision
+    ? fmtFiatMarketPrice(value, currency, rates)
+    : fmtFiat(value, currency, rates);
 
   function updateHoverPosition(clientX: number) {
     if (!svgRef.current) return;
@@ -72,9 +71,20 @@ export function PriceChart({
     const rx = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const idx = Math.min(coords.length - 1, Math.max(0, Math.round(rx * (coords.length - 1))));
     if (idx !== hover) {
+      const point = coords[idx];
       setHover(idx);
+      onInspect?.({
+        t: point.t,
+        p: point.p,
+        changePct: startPrice === 0 ? 0 : ((point.p - startPrice) / startPrice) * 100,
+      });
       triggerHaptic("selection");
     }
+  }
+
+  function clearInspection() {
+    setHover(null);
+    onInspect?.(null);
   }
 
   function onMouseMove(e: React.MouseEvent) {
@@ -89,40 +99,25 @@ export function PriceChart({
 
   return (
     <div className="relative select-none">
-      {/* Interactive Price HUD — fixed-height slot so hover never shifts layout */}
-      <div className="mb-2 flex h-[30px] items-center justify-between">
-        {hoverPt ? (
-          <div className="fade-up flex items-baseline gap-2">
-            <span className="mono text-[20px] font-semibold text-white">
-              {fmtFiat(hoverPt.p, currency, rates)}
-            </span>
-            <span className="text-[12px] text-neutral-400">
-              {timeLabel(hoverPt.t, range)}
-            </span>
-            {hoverDeltaPct !== null && (
-              <span
-                className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
-                style={{
-                  color: hoverDeltaPct >= 0 ? "#30D158" : "#FF453A",
-                  background: hoverDeltaPct >= 0 ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
-                }}
-              >
-                {hoverDeltaPct >= 0 ? "+" : ""}
-                {hoverDeltaPct.toFixed(2)}%
-              </span>
-            )}
+      <dl
+        aria-label={`${range} ${marketPrecision ? "market price" : "portfolio value"} summary`}
+        className="mb-2 grid h-[30px] w-full grid-cols-3 gap-3"
+      >
+        {(
+          [
+            { label: "Start", value: startPrice },
+            { label: "Low", value: rawMin },
+            { label: "High", value: rawMax },
+          ] as const
+        ).map((metric) => (
+          <div key={metric.label} className="min-w-0">
+            <dt className="text-[10px] font-medium text-neutral-500">{metric.label}</dt>
+            <dd className="mono truncate text-[11.5px] font-semibold text-neutral-200">
+              {formatValue(metric.value)}
+            </dd>
           </div>
-        ) : (
-          <div className="flex items-center gap-3 text-[11.5px] text-neutral-400">
-            <span>
-              Low: <strong className="mono font-semibold text-neutral-200">{fmtFiat(rawMin, currency, rates)}</strong>
-            </span>
-            <span>
-              High: <strong className="mono font-semibold text-neutral-200">{fmtFiat(rawMax, currency, rates)}</strong>
-            </span>
-          </div>
-        )}
-      </div>
+        ))}
+      </dl>
 
       {/* SVG Chart */}
       <svg
@@ -130,10 +125,11 @@ export function PriceChart({
         viewBox={`0 0 ${W} ${H}`}
         className="w-full overflow-visible cursor-crosshair touch-none"
         onMouseMove={onMouseMove}
-        onMouseLeave={() => setHover(null)}
+        onMouseLeave={clearInspection}
         onTouchStart={onTouchMove}
         onTouchMove={onTouchMove}
-        onTouchEnd={() => setHover(null)}
+        onTouchEnd={clearInspection}
+        onTouchCancel={clearInspection}
       >
         <defs>
           <linearGradient id="price-chart-grad" x1="0" y1="0" x2="0" y2="1">

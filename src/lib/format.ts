@@ -62,11 +62,26 @@ export interface ActivityAmountLine {
   amount: string;
   assetCode: string | null;
   assetIssuer: string | null;
+  balance?: "public" | "private";
   display: string;
 }
 
 /** Return bank-style signed amount lines, including both legs of a self-swap. */
 export function activityAmountLines(item: ActivityItem): ActivityAmountLine[] {
+  if (item.internalTransfer) {
+    return [
+      {
+        ...item.internalTransfer.debit,
+        direction: "out",
+        display: `−${fmtAmount(item.internalTransfer.debit.amount)} ${item.internalTransfer.debit.assetCode}`,
+      },
+      {
+        ...item.internalTransfer.credit,
+        direction: "in",
+        display: `+${fmtAmount(item.internalTransfer.credit.amount)} ${item.internalTransfer.credit.assetCode}`,
+      },
+    ];
+  }
   if (item.swap) {
     return [
       {
@@ -108,6 +123,37 @@ export function fmtFiat(
     currency,
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
+  });
+}
+
+/**
+ * Format a per-unit market price without rounding useful sub-unit movement away.
+ * Portfolio totals should continue to use fmtFiat's conventional cash precision.
+ */
+export function fmtFiatMarketPrice(
+  usdAmount: number,
+  currency: FiatCurrency = "USD",
+  rates: Partial<Record<FiatCurrency, number>> = { USD: 1 },
+): string {
+  if (!Number.isFinite(usdAmount)) return fmtFiat(0, currency, rates);
+  const rate = currency === "USD" ? 1 : rates[currency];
+  if (rate === undefined) return "Rate unavailable";
+  const value = usdAmount * rate;
+  const magnitude = Math.abs(value);
+  const minimumFractionDigits = currency === "JPY" && magnitude >= 1 ? 0 : 2;
+  const maximumFractionDigits = magnitude === 0 || magnitude >= 1
+    ? Math.max(2, minimumFractionDigits)
+    : magnitude >= 0.01
+      ? 4
+      : magnitude >= 0.0001
+        ? 6
+        : 8;
+
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits,
+    maximumFractionDigits,
   });
 }
 
@@ -176,8 +222,12 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
     const d = new Date(item.createdAt).toISOString();
     const type = opTypeLabel(item.type);
     const amountLines = activityAmountLines(item);
-    const dir = item.swap ? "swap" : item.direction;
-    const amt = item.swap
+    const dir = item.internalTransfer ? "internal" : item.swap ? "swap" : item.direction;
+    const amt = item.internalTransfer
+      ? amountLines
+          .map((line) => `${line.balance === "public" ? "Public" : "Private"}: ${line.display}`)
+          .join(" / ")
+      : item.swap
       ? amountLines.map((line) => line.display).join(" / ")
       : item.amount ?? "";
     const asset = item.swap
@@ -186,7 +236,7 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
           .join(" → ")
       : activityAssetPresentation(item).detailLabel ?? "";
     const cp = item.counterparty ?? "";
-    const status = item.successful ? "SUCCESS" : "FAILED";
+    const status = item.pending ? "PENDING" : item.successful ? "SUCCESS" : "FAILED";
     const hash = item.hash;
     const link = network === "mainnet" ? `https://stellarchain.io/tx/${hash}` : `https://testnet.stellarchain.io/tx/${hash}`;
     return [d, type, dir, amt, asset, cp, status, hash, link].map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",");

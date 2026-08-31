@@ -8,9 +8,9 @@ import { fmtMinor } from "@/lib/merchant/money";
 import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { Spinner } from "../ui";
+import { Spinner, useBodyScrollLock } from "../ui";
 import { IconAlert, IconLock, IconRefresh } from "../icons";
-import { IconBackspace, IconInfo, IconStorefront } from "./icons";
+import { IconBackspace, IconInfo, IconReceiptStellar } from "./icons";
 
 const MAX_PIN_LENGTH = 6;
 const MIN_PIN_LENGTH = 4;
@@ -100,14 +100,13 @@ function CustomerDisplayInner({
     setPin((previous) => (previous.length >= MAX_PIN_LENGTH ? previous : previous + key));
   }
 
+  useBodyScrollLock(true);
+
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     restoreFocusRef.current = document.activeElement as HTMLElement | null;
     root.focus({ preventScroll: true });
-    const { overflow } = document.body.style;
-    document.body.style.overflow = "hidden";
-
     function containFocus(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -140,7 +139,6 @@ function CustomerDisplayInner({
     window.addEventListener("keydown", containFocus, true);
     return () => {
       window.removeEventListener("keydown", containFocus, true);
-      document.body.style.overflow = overflow;
       restoreFocusRef.current?.focus?.({ preventScroll: true });
     };
   }, [askForPin]);
@@ -163,7 +161,7 @@ function CustomerDisplayInner({
           }`}
         >
           <div className="flex items-center gap-2 text-[#30D158]">
-            <IconStorefront size={18} />
+            <IconReceiptStellar size={18} />
             <span className="text-[15px] font-semibold tracking-tight text-white">{shopName}</span>
           </div>
           <p className="mt-10 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">

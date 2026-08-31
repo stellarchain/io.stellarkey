@@ -15,7 +15,7 @@ import {
   readStandaloneDisplay,
   shouldPrioritizeStandaloneRestore,
 } from "@/lib/install-handoff";
-import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice } from "./ui";
+import { Button, CopyButton, ErrorText, Field, HashValue, IOSBackButton, Notice, Toggle } from "./ui";
 import { PublicFooter } from "./PublicFooter";
 import { BuildIdentity } from "./BuildIdentity";
 import {
@@ -59,6 +59,7 @@ export function Onboarding() {
   const [secretInput, setSecretInput] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [requirePasswordForSigning, setRequirePasswordForSigning] = useState(true);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [revealedKind, setRevealedKind] = useState<"mnemonic" | "secret">("secret");
   const [saved, setSaved] = useState(false);
@@ -151,7 +152,7 @@ export function Onboarding() {
           path: hwInfo.path,
           index: hwInfo.index,
           device: "trezor",
-        });
+        }, { requirePasswordForSigning });
         triggerHaptic("success");
         completeSetup();
       } catch (e) {
@@ -208,9 +209,9 @@ export function Onboarding() {
         password,
         mode === "import"
           ? looksLikeMnemonic(secretInput)
-            ? { mnemonic: secretInput }
-            : { secret: secretInput.trim() }
-          : {},
+            ? { mnemonic: secretInput, requirePasswordForSigning }
+            : { secret: secretInput.trim(), requirePasswordForSigning }
+          : { requirePasswordForSigning },
       );
       triggerHaptic("success");
       if (mode === "create") {
@@ -558,6 +559,24 @@ export function Onboarding() {
               }}
             />
           </Field>
+        )}
+        {mode !== "restore" && (
+          <div className="flex items-center gap-4 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold text-white">
+                Require password to sign
+              </span>
+              <span className="mt-1 block truncate text-[12px] leading-relaxed text-neutral-400">
+                Recommended · Password required to disable
+              </span>
+            </span>
+            <Toggle
+              checked={requirePasswordForSigning}
+              onChange={(checked) => setRequirePasswordForSigning(checked === true)}
+              label="Require password before signing transactions"
+              disabled={busy}
+            />
+          </div>
         )}
         {error && <ErrorText message={error} />}
         <Button

@@ -65,9 +65,10 @@ test("the document and response CSP compose the shipped static security boundary
     .map((directive) => directive.trim())
     .find((directive) => directive.startsWith("script-src")) ?? "";
   assert.match(scriptDirective, /^script-src 'self'/);
-  assert.doesNotMatch(scriptDirective, /unsafe-inline|unsafe-eval|nonce-/);
+  assert.match(scriptDirective, /'wasm-unsafe-eval'/);
+  assert.doesNotMatch(scriptDirective, /unsafe-inline|(?:^|\s)'unsafe-eval'(?:\s|$)|nonce-/);
   assert.match(documentPolicy, /connect-src 'self' https: wss:\/\/\*\.trezor\.io/);
-  assert.doesNotMatch(documentPolicy, /unsafe-eval|nonce-|frame-ancestors/);
+  assert.doesNotMatch(documentPolicy, /(?:^|\s)'unsafe-eval'(?:\s|;|$)|nonce-|frame-ancestors/);
 
   const responsePolicy = renderStaticHeaders({ template: read("public/_headers") });
   assert.match(responsePolicy, /frame-ancestors 'none'/);

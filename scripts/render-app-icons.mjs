@@ -17,6 +17,7 @@ import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const ICON_SVG = "src/app/icon.svg";
+const FAVICON_ICO = "src/app/favicon.ico";
 const BACKGROUND = "#000000";
 const FOREGROUND = "#FFFFFF";
 const FAVICON_FOREGROUND = "#000000";
@@ -50,6 +51,23 @@ const svg = (size, transform) =>
   `<rect width="${CANVAS}" height="${CANVAS}" fill="${BACKGROUND}"/>` +
   `<g transform="${transform}" color="${FOREGROUND}">${artwork}</g>` +
   `</svg>`;
+const faviconSvg = (size, transform) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${CANVAS} ${CANVAS}">` +
+  `<g transform="${transform}" color="${FAVICON_FOREGROUND}">${artwork}</g>` +
+  `</svg>`;
+
+function singleImageIco(png, size) {
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(1, 4);
+  header[6] = size === 256 ? 0 : size;
+  header[7] = size === 256 ? 0 : size;
+  header.writeUInt16LE(1, 10);
+  header.writeUInt16LE(32, 12);
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(header.length, 18);
+  return Buffer.concat([header, png]);
+}
 
 const browser = await chromium.launch();
 const probe = await browser.newPage({ viewport: { width: CANVAS, height: CANVAS } });
@@ -101,6 +119,18 @@ for (const [out, size, transform] of TARGETS) {
   await p.close();
   console.log(`${out.padEnd(34)} ${String(size).padStart(4)}px  ${transform === ANY ? "any" : "maskable"}`);
 }
+
+const faviconSize = 32;
+const faviconPage = await browser.newPage({
+  viewport: { width: faviconSize, height: faviconSize },
+  deviceScaleFactor: 1,
+});
+await faviconPage.setContent(
+  `<body style="margin:0;background:transparent">${faviconSvg(faviconSize, ANY)}</body>`,
+);
+const faviconPng = await faviconPage.screenshot({ omitBackground: true });
+await faviconPage.close();
+writeFileSync(FAVICON_ICO, singleImageIco(faviconPng, faviconSize));
 await browser.close();
 
 // The favicon shares the "any" sizing so the mark never drifts, but stays a

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "deployments": [
+    {
+      "id": "testnet-private-pool-v2",
+      "network": "testnet",
+      "assets": [
+        {
+          "kind": "native",
+          "code": "XLM",
+          "issuer": null,
+          "name": "Stellar Lumens",
+          "decimals": 7,
+          "displayDecimals": 7,
+          "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+        },
+        {
+          "kind": "stellar",
+          "code": "USDC",
+          "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+          "name": "USD Coin",
+          "decimals": 7,
+          "displayDecimals": 2,
+          "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+        }
+      ],
+      "manifestUrl": "/protocol/private-balance/v1/manifest.json",
+      "manifestSha256": "36829246eab58850cdfeb7983c6ea6d7bc9990ec6bb114be1d96b1ed7644db62"
+    }
+  ]
+}

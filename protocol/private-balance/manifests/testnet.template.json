@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "artifactVersion": "REQUIRED_SEMVER",
+  "status": "testnet-beta",
+  "minimumStellarProtocol": 25,
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+  "realmId": "REQUIRED_32_BYTE_HEX",
+  "poolContractId": "REQUIRED_POOL_CONTRACT_ID",
+  "assetContractId": "REQUIRED_ASSET_CONTRACT_ID",
+  "guardianAddress": "REQUIRED_GUARDIAN_ADDRESS",
+  "stealthAnnouncerAddress": "REQUIRED_FUNDED_CLASSIC_ACCOUNT_ADDRESS",
+  "deploymentBindingHash": "REQUIRED_32_BYTE_HEX",
+  "artifacts": "COPY_FROM_VERIFIED_DEVELOPMENT_MANIFEST",
+  "constants": "COPY_FROM_VERIFIED_DEVELOPMENT_MANIFEST",
+  "hpke": "COPY_FROM_VERIFIED_DEVELOPMENT_MANIFEST",
+  "release": {
+    "contractWasmSha256": "REQUIRED_32_BYTE_HEX",
+    "contractSourceCommit": "REQUIRED_20_BYTE_HEX",
+    "circuitSourceSha256": "REQUIRED_32_BYTE_HEX",
+    "poseidonParametersSha256": "REQUIRED_32_BYTE_HEX",
+    "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
+    "hpkeDependencyIntegritySha256": "REQUIRED_32_BYTE_HEX",
+    "toolchainLockSha256": "REQUIRED_32_BYTE_HEX",
+    "ceremonyTranscriptRoot": "REQUIRED_32_BYTE_HEX",
+    "auditReports": [
+      { "url": "REQUIRED_AUDIT_URL", "sha256": "REQUIRED_32_BYTE_HEX" }
+    ],
+    "deploymentTransactions": [
+      { "kind": "deploy", "hash": "REQUIRED_32_BYTE_HEX", "ledger": 0 }
+    ],
+    "allowedEnvironment": "testnet"
+  }
+}

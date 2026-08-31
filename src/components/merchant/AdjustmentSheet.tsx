@@ -256,6 +256,7 @@ function AdjustmentSheetInner({
 
       <div className="space-y-4 p-4 sm:p-6">
         <SegmentedControl<AdjustmentKind>
+          ariaLabel="Adjustment type"
           value={kind}
           onChange={(next) => {
             setKind(next);
@@ -324,6 +325,7 @@ function AdjustmentSheetInner({
             </div>
             <div className="sm:max-w-[260px]">
               <SegmentedControl<DiscountBasis>
+                ariaLabel="Discount basis"
                 value={basis}
                 onChange={setBasis}
                 options={[

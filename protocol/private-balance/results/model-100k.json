@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "scope": "independent-recovery-model-gate-b",
+  "passed": true,
+  "completedAt": "2026-08-30T07:10:18Z",
+  "sourceCommit": "87ae1f3203de2c5d5b629a802e9b376b7e6068cd",
+  "command": "cargo test --release -p private-balance-test-support --test model_actions one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption -- --ignored --exact",
+  "dataset": {
+    "seedHex": "5354454c4c41524b",
+    "randomizedActions": 100000,
+    "actionKinds": [
+      "deposit",
+      "private-transfer",
+      "withdraw"
+    ],
+    "duplicateCommitmentInterval": 997,
+    "corruptedActionIndex": 50000
+  },
+  "checks": {
+    "nativePoseidon2MatchesCanonicalSoroban": true,
+    "exactTreeMatched": true,
+    "exactNullifierSetMatched": true,
+    "exactTranscriptHeadMatched": true,
+    "exactPublicBalanceMatched": true,
+    "exactActionKindAndValueHistoryMatched": true,
+    "middleRecordCorruptionRejected": true
+  },
+  "measurement": {
+    "testElapsedMs": 138060,
+    "commandWallClockMs": 151460,
+    "peakMemoryFootprintBytes": 61784688,
+    "commandMaximumResidentBytesIncludingCompilation": 725614592
+  },
+  "limitations": [
+    "This is an independent deterministic test-support state/recovery model, not 100,000 on-chain contract submissions.",
+    "The command maximum resident value includes release compilation/linking; the test process peak memory footprint is reported separately.",
+    "This evidence does not replace an independent contract audit, final ceremony, physical-device Gate 0 measurements, or beta/mainnet approval."
+  ]
+}

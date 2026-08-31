@@ -122,6 +122,37 @@ export function playLockSound(): void {
   }
 }
 
+export function playReceiveSound(): void {
+  if (!loadSoundPref()) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const now = ctx.currentTime;
+    // Three ascending notes: C5 → E5 → G5, the "money arrived" figure.
+    const notes: Array<[number, number]> = [
+      [523.25, 0],
+      [659.25, 0.08],
+      [783.99, 0.16],
+    ];
+    for (const [freq, offset] of notes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, now + offset);
+      gain.gain.setValueAtTime(0.001, now + offset);
+      gain.gain.linearRampToValueAtTime(0.09, now + offset + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.3);
+    }
+  } catch {
+    // Ignore
+  }
+}
+
 export function playSwapSound(): void {
   if (!loadSoundPref()) return;
   const ctx = getAudioContext();

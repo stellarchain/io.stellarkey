@@ -52,6 +52,22 @@ StellarKey uses a **Direct Upload** Pages project named `stellarkey`; do not con
 5. Add environment secrets named `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Do not add them to source, workflow files, Pages variables, or local `.env` files.
 6. In the Pages project, add `stellarkey.io` as the production custom domain. Add `www.stellarkey.io` only to redirect it permanently to the apex; do not publish a second wallet origin because passkeys and browser storage are origin-bound.
 
+### Private proving-file compression
+
+The checked-in `circuit.zkey.pc` is a point-compressed, hash-pinned transport that expands locally
+to the exact ceremony zkey. Keep it byte-for-byte unchanged. In **Rules → Compression Rules**, add
+one rule matching a URI path ending in
+`/protocol/private-balance/v1/circuit.zkey.pc`, select Brotli first with gzip as fallback, and keep
+the rule scoped to that path. This is required because `application/octet-stream` is not one of
+Cloudflare's default compressible media types.
+
+After the preview deploy, request the file from a browser-compatible client with
+`Accept-Encoding: br` and confirm `Content-Encoding: br`. Compare the decoded response length and
+SHA-256 with `artifacts.zkeyTransport.byteLength` and `artifacts.zkeyTransport.sha256` in the
+manifest. The manifest's `wireByteLength` is the reproducible Brotli-11 measurement used by the
+wallet's setup copy; the edge response may differ slightly if Cloudflare changes compression
+settings. Never set `Content-Encoding: br` on the uncompressed static file itself.
+
 Pushing a signed, protected `v*` tag runs the complete release gate, publishes and attests the immutable archive on GitHub, downloads that same archive in the protected `production` job, verifies `SHA256SUMS` and the embedded commit, and deploys it with a pinned Wrangler action and CLI version. The deployment must never run from an ordinary branch push.
 
 ## 5. Promotion and smoke test
@@ -59,6 +75,8 @@ Pushing a signed, protected `v*` tag runs the complete release gate, publishes a
 Deploy the exact artifact to an isolated preview origin first. Compare its release commit and file hashes, then test unlock, backup export/restore, send review, testnet submission and reconciliation, swap quoting, merchant charge settlement, staged service-worker update, offline reopen, and reset. Use non-production secrets and small testnet amounts.
 
 Promote the same bytes to production. On physical iPhone/iPad and a desktop browser, verify install, safe areas, no form zoom, passkey capability handling, cross-origin popup behavior, and the optional hardware path. A Trezor test must use the registered production origin and a physical device.
+
+Private Balance must remain disabled unless the deployed static archive contains the exact reviewed testnet-beta or production manifest, proof artifacts, contract IDs, ceremony/audit references, and release evidence. Do not create those records from a production build or substitute development hashes. Promotion uses the same immutable bytes that passed the private recovery, semantic-review, CSP, and physical-device gates.
 
 ## 6. External probes and monitoring
 

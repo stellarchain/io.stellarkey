@@ -50,6 +50,25 @@ test("CI pins third-party actions and verifies the complete static release", () 
   assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
 });
 
+test("main and tagged releases require the pinned Private Payments Gate A", () => {
+  const pinnedCiverCommit = "af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8";
+  const workflows = [
+    read(".github/workflows/ci.yml"),
+    read(".github/workflows/release.yml"),
+  ];
+
+  for (const workflow of workflows) {
+    assert.match(workflow, /private-gate-a:/);
+    assert.match(workflow, /https:\/\/github\.com\/costa-group\/circom_civer\.git/);
+    assert.match(workflow, new RegExp(pinnedCiverCommit));
+    assert.match(workflow, /CIVER_CIRCOM:/);
+    assert.match(workflow, /CIVER_SOURCE_COMMIT:/);
+    assert.match(workflow, /npm run private:gate-a/);
+  }
+
+  assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
+});
+
 test("CI verifies pull-request branches once and main after merge", () => {
   const ci = read(".github/workflows/ci.yml");
 
@@ -115,6 +134,11 @@ test("obsolete promo and scaffold artifacts stay out of the release tree", () =>
     retiredAgentPolicy,
     "scripts/promo",
     "docs/plans",
+    "docs/private-payments-improvements.md",
+    "docs/unified-private-assets-design.md",
+    "docs/unified-private-assets-implementation.md",
+    "protocol/private-balance/docs/plan.md",
+    "protocol/private-balance/docs/plans",
     "public/file.svg",
     "public/globe.svg",
     "public/next.svg",

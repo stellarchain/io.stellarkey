@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gate 0 Feasibility Benchmark</title>
+</head>
+<body>
+  <h1>Gate 0 Browser Feasibility Benchmark</h1>
+  <div id="results">Running benchmarks...</div>
+  <script type="module">
+    import { runBrowserBench } from './bench.ts';
+    runBrowserBench().then(res => {
+      document.getElementById('results').textContent = JSON.stringify(res, null, 2);
+    });
+  </script>
+</body>
+</html>

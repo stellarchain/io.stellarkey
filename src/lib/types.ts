@@ -28,6 +28,8 @@ export interface VaultFile {
   accounts: StoredAccount[];
   archivedAccounts?: StoredAccount[];
   activeAccountId: string | null;
+  /** Ask for a fresh password verification before each transaction signature. */
+  requirePasswordForSigning?: boolean;
 }
 
 export interface AccountMeta {
@@ -65,6 +67,15 @@ export interface ActivitySwap {
   credit: ActivitySwapLeg;
 }
 
+export interface ActivityInternalTransferLeg extends ActivitySwapLeg {
+  balance: "public" | "private";
+}
+
+export interface ActivityInternalTransfer {
+  debit: ActivityInternalTransferLeg;
+  credit: ActivityInternalTransferLeg;
+}
+
 export interface ActivityItem {
   id: string;
   type: string;
@@ -77,6 +88,20 @@ export interface ActivityItem {
   hash: string;
   createdAt: string;
   successful: boolean;
+  /** Locally signed/broadcast but not yet reconciled to a verified ledger action. */
+  pending?: boolean;
+  /** Local provenance for a verified private action normalized into wallet activity. */
+  private?: {
+    deploymentId: string;
+    actionIndex?: number;
+    actionKind: "deposit" | "transfer" | "withdraw";
+    /** UTF-8 memo decrypted from the private note while the wallet is unlocked. */
+    memoHex?: string;
+    /** Local sender-side confirmation of the reusable private recipient. */
+    recipientFingerprint?: string;
+  };
   /** Present only when the active account both paid and received in one path payment. */
   swap?: ActivitySwap;
+  /** Two postings for one movement between this wallet's public and private balances. */
+  internalTransfer?: ActivityInternalTransfer;
 }

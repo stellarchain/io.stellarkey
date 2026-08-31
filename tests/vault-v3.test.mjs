@@ -72,6 +72,112 @@ test("new wallets persist a password-wrapped v3 master key without plaintext sec
   assert.deepEqual(Object.keys(stored.accounts[0].secret).sort(), ["ciphertext", "iv"]);
 });
 
+test("new wallets persist the explicit per-signature password policy", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, {
+    secret: Keypair.random().secret(),
+    requirePasswordForSigning: true,
+  });
+
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  assert.equal(stored.requirePasswordForSigning, true);
+  assert.equal(isSigningPasswordRequired(), true);
+});
+
+test("existing vault records without a signing policy default safely to disabled", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    loadVaultResult,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  delete stored.requirePasswordForSigning;
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
+
+  assert.equal(loadVaultResult().kind, "ready");
+  assert.equal(isSigningPasswordRequired(), false);
+});
+
+test("disabling signing password confirmation requires the current password", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    isSigningPasswordRequired,
+    lockVault,
+    setSigningPasswordRequired,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+
+  await initializeVault(password, {
+    secret: Keypair.random().secret(),
+    requirePasswordForSigning: true,
+  });
+  await assert.rejects(
+    () => setSigningPasswordRequired(false, "wrong password"),
+    /incorrect password/i,
+  );
+  assert.equal(isSigningPasswordRequired(), true);
+
+  await setSigningPasswordRequired(false, password);
+  assert.equal(isSigningPasswordRequired(), false);
+
+  await setSigningPasswordRequired(true);
+  assert.equal(isSigningPasswordRequired(), true);
+});
+
+test("changing the vault password re-wraps the same master key without invalidating secrets or passkeys", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    changeVaultPassword,
+    enablePasskeyUnlock,
+    hasPasskeyUnlock,
+    initializeVault,
+    lockVault,
+    unlockVault,
+    unlockVaultWithPasskey,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+  const deps = passkeyDependencies(localStorage);
+  await enablePasskeyUnlock(password, deps);
+  const replacement = "violet glacier orbit lantern harbor";
+
+  await assert.rejects(
+    () => changeVaultPassword("wrong password", replacement),
+    /incorrect password/i,
+  );
+  await unlockVault(password);
+
+  await changeVaultPassword(password, replacement);
+  assert.equal(hasPasskeyUnlock(localStorage), true);
+  lockVault();
+  await assert.rejects(() => unlockVault(password), /incorrect password/i);
+  await unlockVault(replacement);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+
+  lockVault();
+  await unlockVaultWithPasskey(deps);
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+});
+
 test("POC vault formats are rejected without modifying them", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

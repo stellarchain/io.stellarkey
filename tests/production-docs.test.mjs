@@ -94,6 +94,21 @@ test("production operations cover immutable deploys, recovery, and infrastructur
   }
 });
 
+test("Private Balance ceremony and testnet guidance match the current candidate", () => {
+  const ceremony = read("protocol/private-balance/ceremony/README.md");
+  const testing = read("docs/testing.md");
+  const manifest = JSON.parse(read("protocol/private-balance/manifests/development.json"));
+
+  assert.match(ceremony, new RegExp(String(manifest.artifacts.r1csConstraints)));
+  assert.match(ceremony, new RegExp(manifest.artifacts.r1csSha256));
+  assert.match(ceremony, /before (?:a )?testnet beta/i);
+  assert.match(ceremony, /independent/i);
+  assert.doesNotMatch(ceremony, /57,838/);
+  assert.match(testing, /exact manifest-pinned[\s\S]*Wasm/i);
+  assert.match(testing, /seven Chromium journeys/i);
+  assert.match(testing, /four.*browser.*smoke/i);
+});
+
 test("Trezor remains an explicit separately licensed production boundary", () => {
   const notices = read("THIRD_PARTY_NOTICES.md");
   const deployment = read("docs/production-deployment.md");

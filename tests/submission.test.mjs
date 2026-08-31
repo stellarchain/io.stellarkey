@@ -1001,8 +1001,10 @@ test("active transaction flows render status unknown without claiming success", 
 
 test("the send dialog cannot be dismissed while signing or broadcasting", () => {
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
-  assert.match(send, /onClose=\{stage === "sending" \? \(\) => undefined : onClose\}/);
-  assert.match(send, /dismissable=\{stage !== "sending"\}/);
+  assert.match(send, /onBusyChange\(stage === "sending"\)/);
+  assert.match(send, /<Modal open onClose=\{requestClose\} wide dismissable=\{!surfaceBusy\}>/);
+  assert.match(send, /closeDisabled=\{surfaceBusy\}/);
+  assert.match(send, /if \(next === sendMode \|\| surfaceBusy\) return/);
   assert.match(send, /onClose=\{stage === "sending" \? undefined : onClose\}/);
 });
 

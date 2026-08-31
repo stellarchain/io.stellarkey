@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "input": {
+    "leaves": [
+      "164bacfd808a2998bc9031dbdf6f421ed4ef2e6cb361b133d77b0d6b4c6aabf5",
+      "0000000000000000000000000000000000000000000000000000000000000002"
+    ]
+  },
+  "expected": {
+    "emptyRoot": "047585958785546e518e72d1bbfb7c573205c35c332e0b876f60218918401a59",
+    "rootAfter": "01042451f908fd6863dd1ccd288b671f47cd0b04a9723b7809290ceddb0df28a",
+    "nextIndex": 2
+  }
+}

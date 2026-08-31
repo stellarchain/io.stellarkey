@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Modal, ModalHeader, Select } from "./ui";
@@ -27,6 +27,7 @@ export function CurrencyConverterModal({
   const [fromCode, setFromCode] = useState("XLM");
   const [toCode, setToCode] = useState("USD");
   const [fromAmount, setFromAmount] = useState("100");
+  const fromAmountId = useId();
 
   const units: UnitPriceOption[] = useMemo(() => {
     const names: Record<string, string> = {
@@ -81,11 +82,12 @@ export function CurrencyConverterModal({
         <div className="rounded-3xl bg-white/[0.03] border border-white/10 p-5 space-y-4 shadow-xl">
           {/* From Input */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5" htmlFor={fromAmountId}>
               Convert From
             </label>
             <div className="flex items-center gap-2">
               <input
+                id={fromAmountId}
                 type="text"
                 inputMode="decimal"
                 value={fromAmount}
@@ -123,9 +125,9 @@ export function CurrencyConverterModal({
 
           {/* To Output */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+            <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
               Converted Amount
-            </label>
+            </span>
             <div className="flex items-center gap-2">
               <div className="input mono !h-12 text-[20px] font-semibold flex-1 flex items-center bg-white/[0.02] text-white">
                 {calculatedTo > 0

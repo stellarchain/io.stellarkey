@@ -369,6 +369,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
             <div className="px-4 py-3.5">
               <div className="sm:max-w-[320px]">
                 <SegmentedControl<TillTextSize>
+                  ariaLabel="Till text size"
                   value={tillTextSize}
                   onChange={setTillTextSize}
                   options={(Object.keys(TEXT_SIZE_LABEL) as TillTextSize[]).map((size) => ({

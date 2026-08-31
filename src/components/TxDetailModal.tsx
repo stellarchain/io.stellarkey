@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useWalletIdentity, useWalletPreferences } from "@/hooks/useWallet";
 import { NETWORKS } from "@/lib/stellar";
 import { activityAmountLines, opTypeLabel } from "@/lib/format";
@@ -9,8 +9,21 @@ import { triggerHaptic } from "@/lib/haptics";
 import { loadPrivateTxNote, savePrivateTxNote } from "@/lib/vault";
 import { Button, CopyButton, HashValue, Modal, ModalHeader } from "./ui";
 import { FiatValue } from "./FiatValue";
-import { IconCheck, IconClose, IconExternal, IconShare } from "./icons";
+import { IconCheck, IconClose, IconExternal, IconRefresh, IconShare } from "./icons";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
+
+export function decodePrivateMemoHex(memoHex: string | undefined): string | null {
+  if (!memoHex || memoHex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(memoHex)) return null;
+  try {
+    const bytes = Uint8Array.from(
+      memoHex.match(/.{2}/g) ?? [],
+      byte => Number.parseInt(byte, 16),
+    );
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
 export function TxDetailModal({
   item,
@@ -23,6 +36,7 @@ export function TxDetailModal({
   const { privacyMode } = useWalletPreferences();
   const [copiedReceipt, setCopiedReceipt] = useState(false);
   const [note, setNote] = useState("");
+  const noteFieldId = useId();
   const [noteError, setNoteError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,6 +68,7 @@ export function TxDetailModal({
   const incoming = item.direction === "in";
   const presentedAsset = activityAssetPresentation(item);
   const amountLines = activityAmountLines(item);
+  const privateMemo = decodePrivateMemoHex(item.private?.memoHex);
 
   const explorerUrl = NETWORKS[network].explorerTxUrl(item.hash);
   const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
@@ -62,7 +77,7 @@ export function TxDetailModal({
 
   const receiptSummary = `Stellar Transaction Receipt
 Title: ${item.title}
-Status: ${item.successful ? "Confirmed" : "Failed"}
+Status: ${item.pending ? "Confirming" : item.successful ? "Confirmed" : "Failed"}
 Network: Stellar ${NETWORKS[network].label}
 Amount: ${amountLines.length > 0 ? amountLines.map((line) => line.display).join(" / ") : "N/A"}
 Asset Issuer: ${item.swap ? `Debited: ${item.swap.debit.assetIssuer ?? "Native"}; Credited: ${item.swap.credit.assetIssuer ?? "Native"}` : presentedAsset.issuer ?? (presentedAsset.isNative ? "Native" : "N/A")}
@@ -108,24 +123,34 @@ Explorer: ${explorerUrl}`;
           <span
             className="flex h-12 w-12 items-center justify-center rounded-full text-xl"
             style={{
-              color: item.successful ? "#30D158" : "#FF453A",
-              background: item.successful ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
+              color: item.pending ? "#FF9F0A" : item.successful ? "#30D158" : "#FF453A",
+              background: item.pending ? "rgba(255,159,10,0.15)" : item.successful ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)",
             }}
           >
-            {item.successful ? <IconCheck size={24} /> : <IconClose size={24} />}
+            {item.pending ? <IconRefresh size={24} /> : item.successful ? <IconCheck size={24} /> : <IconClose size={24} />}
           </span>
           <p className="mt-3 text-[13px] font-semibold text-neutral-400">
-            {item.successful ? "Transaction Confirmed" : "Transaction Failed"}
+            {item.pending
+              ? "Confirming on Stellar"
+              : item.private
+                ? "Verified locally"
+              : item.successful
+                ? "Transaction Confirmed"
+                : "Transaction Failed"}
           </p>
-          {item.swap ? (
+          {item.swap || item.internalTransfer ? (
             <div className="mt-3 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
               {amountLines.map((line) => (
                 <div
-                  key={line.direction}
+                  key={`${line.balance ?? "asset"}:${line.direction}`}
                   className="flex items-center justify-between gap-3 py-1 first:pt-0 last:pb-0"
                 >
                   <span className="text-[12px] font-medium text-neutral-400">
-                    {line.direction === "out" ? "You paid" : "You received"}
+                    {line.balance
+                      ? `${line.balance === "public" ? "Public" : "Private"} balance`
+                      : line.direction === "out"
+                        ? "You paid"
+                        : "You received"}
                   </span>
                   <span
                     className={`mono whitespace-nowrap text-[16px] font-semibold ${
@@ -150,7 +175,7 @@ Explorer: ${explorerUrl}`;
               )}
             </p>
           ) : null}
-          {!item.swap && item.amount !== null && presentedAsset.code && (
+          {!item.swap && !item.internalTransfer && item.amount !== null && presentedAsset.code && (
             <FiatValue
               amount={item.amount}
               code={presentedAsset.code}
@@ -215,20 +240,34 @@ Explorer: ${explorerUrl}`;
               {NETWORKS[network].label}
             </span>
           </Row>
-          <Row label="Tx Hash">
-            <HashValue
-              value={item.hash}
-              className="justify-end text-[12px] text-neutral-400"
-            />
-          </Row>
+          {item.private?.actionIndex !== undefined ? (
+            <Row label="Private action">
+              <span className="mono text-[13px] text-white">#{item.private.actionIndex}</span>
+            </Row>
+          ) : (
+            <Row label="Tx Hash">
+              <HashValue
+                value={item.hash}
+                className="justify-end text-[12px] text-neutral-400"
+              />
+            </Row>
+          )}
+          {item.private?.actionKind === "transfer" && (
+            <Row label="Private memo">
+              <span className="max-w-[65%] break-words text-right text-[13px] text-white">
+                {privacyMode ? "••••••" : privateMemo ?? "None"}
+              </span>
+            </Row>
+          )}
         </div>
 
         {/* Private Transaction Note / Tag */}
         <div className="mt-3.5 panel-inset p-3.5 space-y-1.5">
-          <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+          <label className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400" htmlFor={noteFieldId}>
             Private Transaction Note (Encrypted Locally)
           </label>
           <input
+            id={noteFieldId}
             type="text"
             placeholder="e.g. 🧾 Freelance Design Invoice #104"
             value={note}
@@ -241,7 +280,7 @@ Explorer: ${explorerUrl}`;
         </div>
 
         {/* Action Links */}
-        <div className="mt-5 flex flex-wrap gap-2">
+        {!item.private && <div className="mt-5 flex flex-wrap gap-2">
           {item.counterparty && (
             <CopyButton
               value={item.counterparty}
@@ -276,7 +315,7 @@ Explorer: ${explorerUrl}`;
           >
             Stellar Lab <IconExternal size={11} />
           </a>
-        </div>
+        </div>}
 
         <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
           Close

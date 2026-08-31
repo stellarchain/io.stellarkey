@@ -799,6 +799,7 @@ export function PosTerminal({
         <div className="min-w-0 space-y-3">
           <div className="w-full">
             <SegmentedControl<TerminalMode>
+              ariaLabel="Till entry mode"
               value={mode}
               onChange={setMode}
               options={[

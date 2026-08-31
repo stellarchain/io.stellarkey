@@ -111,6 +111,16 @@ test("touch-first screens never expose the keyboard skip link", () => {
   );
 });
 
+test("unavailable browser storage exits startup loading with a recoverable screen", () => {
+  const recovery = read("src/components/StorageRecoveryScreen.tsx");
+  const wallet = read("src/hooks/useWallet.tsx");
+
+  assert.match(wallet, /setPhase\("recovery"\)/);
+  assert.match(recovery, /issue\.kind === "unavailable"/);
+  assert.match(recovery, /Browser storage unavailable/);
+  assert.match(recovery, /Try again/);
+});
+
 test("the mobile wallet header begins directly below the iOS safe area", () => {
   const dashboard = read("src/components/Dashboard.tsx");
 

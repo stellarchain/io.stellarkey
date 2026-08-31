@@ -176,7 +176,10 @@ import {
   merchantWatchDestinations,
 } from "@/lib/merchant/watch";
 import { HorizonRequestError } from "@/lib/horizon";
-import { writeMerchantBootstrapState } from "@/lib/merchant/bootstrap";
+import {
+  merchantShellEnabled,
+  writeMerchantBootstrapState,
+} from "@/lib/merchant/bootstrap";
 import {
   MerchantRuntimeDataProviders,
   type MerchantSettingsContextValue,
@@ -641,9 +644,13 @@ function startOfToday(now = Date.now()): number {
 export function MerchantProvider({
   children,
   enableOnReady = false,
+  enabledHint = false,
+  onRuntimeMounted,
 }: {
   children: React.ReactNode;
   enableOnReady?: boolean;
+  enabledHint?: boolean;
+  onRuntimeMounted?: () => void;
 }) {
   const { phase } = useWalletPhase();
   const { network, activeAccount } = useWalletIdentity();
@@ -684,6 +691,10 @@ export function MerchantProvider({
   const pollRef = useRef<() => Promise<void>>(async () => {});
   const repositoryRef = useRef(getMerchantRepository());
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(() => {
+    onRuntimeMounted?.();
+  }, [onRuntimeMounted]);
 
   const updateStaffSessionId = useCallback((memberId: string | null) => {
     staffSessionIdRef.current = memberId;
@@ -3548,12 +3559,12 @@ export function MerchantProvider({
 
   const shellValue = useMemo<MerchantShellContextValue>(
     () => ({
-      enabled,
+      enabled: merchantShellEnabled({ ready, encryptedEnabled: enabled, enabledHint }),
       unmatched: store.unmatched,
       charges: store.charges,
       activeShift,
     }),
-    [activeShift, enabled, store.charges, store.unmatched],
+    [activeShift, enabled, enabledHint, ready, store.charges, store.unmatched],
   );
   const settingsValue = useMemo<MerchantSettingsContextValue>(
     () => ({ enabled, configured, setEnabled, profileName: settings.profile.name }),

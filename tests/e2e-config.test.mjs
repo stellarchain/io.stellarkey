@@ -22,8 +22,13 @@ test("Playwright owns the production browser-test server and release command", (
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
   assert.match(ci, /npm run build[\s\S]*npm exec -- playwright test/);
   assert.doesNotMatch(ci, /^\s*- run: playwright test$/m);
-  assert.doesNotMatch(ci, /npm run test:e2e/);
+  assert.doesNotMatch(ci, /^\s*- run: npm run test:e2e\s*$/m);
   assert.doesNotMatch(ci, /test:e2e:merchant/);
+  assert.match(
+    ci,
+    /npm exec -- playwright test[\s\S]*npm run test:e2e:private-ui/,
+    "the production suite must remain server-owned and the dev-only private surface must run separately",
+  );
 });
 
 test("wallet and merchant journeys run through Playwright fixtures", () => {

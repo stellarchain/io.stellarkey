@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "input": {
+    "diversifier": "00000000",
+    "ownerCommitment": "13ebf289ee03020bb0999342c395033c6326f328e6f998b8826ae8573fe7814c",
+    "hpkePublicKey": "803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634"
+  },
+  "expected": {
+    "testnet": "tks1qqqqqqqna0egnmsrqg9mpxvngtpe2qeuvvn0x28xlxvt3qn2aptnleupfjqrelajq8lntm7lus6pef0lm80a6v62mtazdl4ctv2wrc8h8mmrg2fqzht",
+    "mainnet": "sks1qqqqqqqna0egnmsrqg9mpxvngtpe2qeuvvn0x28xlxvt3qn2aptnleupfjqrelajq8lntm7lus6pef0lm80a6v62mtazdl4ctv2wrc8h8mmrgf6snrf"
+  }
+}

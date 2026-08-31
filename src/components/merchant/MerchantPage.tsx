@@ -13,7 +13,7 @@ import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconChevronDown, IconDownload } from "../icons";
-import { IconClock, IconInfo, IconStorefront } from "./icons";
+import { IconClock, IconInfo, IconReceiptStellar } from "./icons";
 import { Stat, StatStrip } from "./Stat";
 import { ChargeSheet } from "./ChargeSheet";
 import { PosTerminal } from "./PosTerminal";
@@ -236,7 +236,7 @@ export function MerchantPage({
       <section className="fade-up mx-auto w-full max-w-[520px] pb-[132px] md:pb-0">
         <div className="flex flex-col items-center rounded-[28px] border border-white/[0.08] bg-white/[0.02] px-6 py-16 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/25 bg-[#30D158]/10 text-[#30D158]">
-            <IconStorefront size={26} />
+            <IconReceiptStellar size={26} />
           </span>
           <p className="display-h mt-4 text-[18px] font-semibold text-white">Merchant Mode is off</p>
           <p className="mt-1 max-w-[340px] text-[13px] leading-relaxed text-neutral-400">
@@ -442,6 +442,7 @@ export function MerchantPage({
         <div className="mb-3 w-full">
           <div className="max-w-[300px]">
             <SegmentedControl
+              ariaLabel="Billing section"
               value={sub === "links" ? "links" : "invoices"}
               options={BILLING_OPTIONS}
               onChange={onSubChange}

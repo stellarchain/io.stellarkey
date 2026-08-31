@@ -2,12 +2,19 @@
 
 import { Dashboard } from "./Dashboard";
 import { MerchantRuntimeBoundary } from "./MerchantRuntimeBoundary";
+import { PrivateBalanceRuntimeBoundary } from "./PrivateBalanceRuntimeBoundary";
+import { SigningPasswordPrompt } from "./SigningPasswordPrompt";
 
 /** Merchant operations mount only for enabled or explicitly opened tills. */
 export function UnlockedWalletShell() {
   return (
-    <MerchantRuntimeBoundary>
-      <Dashboard />
-    </MerchantRuntimeBoundary>
+    <>
+      <PrivateBalanceRuntimeBoundary>
+        <MerchantRuntimeBoundary>
+          <Dashboard />
+        </MerchantRuntimeBoundary>
+      </PrivateBalanceRuntimeBoundary>
+      <SigningPasswordPrompt />
+    </>
   );
 }

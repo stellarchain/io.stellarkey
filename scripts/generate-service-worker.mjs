@@ -7,6 +7,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outputRoot = path.join(projectRoot, "out");
 const templatePath = path.join(projectRoot, "public", "sw.js");
+const privateManifestPath = path.join(
+  outputRoot,
+  "protocol",
+  "private-balance",
+  "v1",
+  "manifest.json",
+);
 const BUILD_ORIGIN = "https://stellarkey.invalid";
 
 export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
@@ -22,6 +29,7 @@ export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
 
 export const BASE_SHELL_PATHS = Object.freeze([
   ...PUBLIC_DOCUMENT_PATHS,
+  "/favicon.ico",
   "/manifest.webmanifest",
   "/icon.svg",
   "/icon-192.png",
@@ -54,14 +62,31 @@ export function discoverShellPaths(htmlDocuments) {
   return [...paths];
 }
 
-export function renderServiceWorker({ template, html, htmlDocuments = html, revision }) {
+export function renderServiceWorker({
+  template,
+  html,
+  htmlDocuments = html,
+  revision,
+  privateArtifacts = [],
+  privateArtifactRevision = revision,
+}) {
   if (!/^[a-zA-Z0-9._-]+$/.test(revision)) {
     throw new Error("Service-worker revision contains unsupported characters.");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(privateArtifactRevision)) {
+    throw new Error("Private-artifact revision contains unsupported characters.");
   }
   const paths = discoverShellPaths(htmlDocuments);
   const revisionLine = /^const BUILD_REVISION = .*; \/\/ @generated-revision$/m;
   const precacheLine = /^const PRECACHE_PATHS = .*; \/\/ @generated-precache$/m;
-  if (!revisionLine.test(template) || !precacheLine.test(template)) {
+  const privateRevisionLine = /^const PRIVATE_ARTIFACT_REVISION = .*; \/\/ @generated-private-artifact-revision$/m;
+  const privateArtifactsLine = /^const PRIVATE_ARTIFACT_HASHES = .*; \/\/ @generated-private-artifacts$/m;
+  if (
+    !revisionLine.test(template) ||
+    !precacheLine.test(template) ||
+    !privateRevisionLine.test(template) ||
+    !privateArtifactsLine.test(template)
+  ) {
     throw new Error("Service-worker template is missing its generation markers.");
   }
   return template
@@ -69,7 +94,40 @@ export function renderServiceWorker({ template, html, htmlDocuments = html, revi
     .replace(
       precacheLine,
       `const PRECACHE_PATHS = new Set(${JSON.stringify(paths)}); // @generated-precache`,
+    )
+    .replace(
+      privateRevisionLine,
+      `const PRIVATE_ARTIFACT_REVISION = ${JSON.stringify(privateArtifactRevision)}; // @generated-private-artifact-revision`,
+    )
+    .replace(
+      privateArtifactsLine,
+      `const PRIVATE_ARTIFACT_HASHES = new Map(${JSON.stringify(privateArtifacts)}); // @generated-private-artifacts`,
     );
+}
+
+export function privateArtifactsFromManifest(manifest) {
+  const artifacts = manifest?.artifacts;
+  const entries = [
+    ["/protocol/private-balance/v1/circuit.wasm", artifacts?.wasmSha256],
+    ["/protocol/private-balance/v1/circuit.zkey.pc", artifacts?.zkeyTransport?.sha256],
+    ["/protocol/private-balance/v1/circuit.zkey", artifacts?.zkeySha256],
+    ["/protocol/private-balance/v1/verification-key.json", artifacts?.vkJsonSha256],
+  ];
+  for (const [, hash] of entries) {
+    if (typeof hash !== "string" || !/^[a-f0-9]{64}$/.test(hash)) {
+      throw new Error("Private Balance manifest contains an invalid artifact hash.");
+    }
+  }
+  return entries;
+}
+
+function privateArtifactRevision(manifest, entries) {
+  return createHash("sha256")
+    .update(String(manifest.artifactVersion ?? ""))
+    .update("\0")
+    .update(JSON.stringify(entries))
+    .digest("hex")
+    .slice(0, 20);
 }
 
 export async function resolveOutputFile(shellPath, root = outputRoot) {
@@ -99,14 +157,23 @@ async function buildRevision(template, shellPaths) {
 }
 
 export async function generateServiceWorker() {
-  const [template, htmlDocuments] = await Promise.all([
+  const [template, htmlDocuments, privateManifestSource] = await Promise.all([
     readFile(templatePath, "utf8"),
     Promise.all(
       PUBLIC_DOCUMENT_PATHS.map(async (route) => readFile(await resolveOutputFile(route), "utf8")),
     ),
+    readFile(privateManifestPath, "utf8"),
   ]);
+  const privateManifest = JSON.parse(privateManifestSource);
+  const privateArtifacts = privateArtifactsFromManifest(privateManifest);
   const revision = await buildRevision(template, discoverShellPaths(htmlDocuments));
-  const worker = renderServiceWorker({ template, htmlDocuments, revision });
+  const worker = renderServiceWorker({
+    template,
+    htmlDocuments,
+    revision,
+    privateArtifacts,
+    privateArtifactRevision: privateArtifactRevision(privateManifest, privateArtifacts),
+  });
   await writeFile(path.join(outputRoot, "sw.js"), worker);
   return revision;
 }

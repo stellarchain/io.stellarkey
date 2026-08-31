@@ -289,6 +289,7 @@ export function OrdersPage() {
           </div>
           <div className="sm:w-[288px]">
             <SegmentedControl<StatusFilter>
+              ariaLabel="Filter orders by status"
               value={filter}
               options={FILTERS}
               onChange={setFilter}

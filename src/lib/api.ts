@@ -14,7 +14,7 @@ import {
 } from "@stellar/stellar-sdk";
 import type { ActivityItem, AssetBalance } from "./types";
 import { NETWORKS, type NetworkKey } from "./stellar";
-import { getHorizonUrl } from "./stellar-endpoints";
+import { getAccountHistoryHorizonUrl, getHorizonUrl } from "./stellar-endpoints";
 import { isValidPublicAddress } from "./vault";
 import { normalizeAmount } from "./format";
 import { signHardwareTx, type HardwareSigner } from "./hardware";
@@ -36,6 +36,7 @@ import { withAbortDeadline } from "./wallet-refresh";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 const MARKET_REQUEST_TIMEOUT_MS = 8_000;
+export const ACCOUNT_ACTIVITY_RETENTION_MS = 365 * 24 * 60 * 60 * 1_000;
 
 export async function getJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
@@ -632,8 +633,9 @@ export async function fetchActivity(
   limit = 30,
   cursor?: string,
   signal?: AbortSignal,
+  nowMs = Date.now(),
 ): Promise<{ items: ActivityItem[]; nextCursor: string | null }> {
-  const horizonUrl = getHorizonUrl(network);
+  const horizonUrl = getAccountHistoryHorizonUrl(network);
   const url = new URL(`${horizonUrl}/accounts/${publicKey}/operations`);
   url.searchParams.set("order", "desc");
   url.searchParams.set("limit", String(limit));
@@ -643,8 +645,16 @@ export async function fetchActivity(
     signal,
   });
   const records = data?._embedded?.records ?? [];
-  const items = records.map((op) => mapOperation(op, publicKey));
-  const nextCursor = records.length === limit ? records[records.length - 1].id : null;
+  const cutoffMs = nowMs - ACCOUNT_ACTIVITY_RETENTION_MS;
+  const retainedRecords = records.filter((record) => {
+    const createdAtMs = Date.parse(record.created_at);
+    return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
+  });
+  const items = retainedRecords.map((op) => mapOperation(op, publicKey));
+  const reachedCutoff = retainedRecords.length !== records.length;
+  const nextCursor = !reachedCutoff && records.length === limit
+    ? records[records.length - 1].id
+    : null;
   return { items, nextCursor };
 }
 

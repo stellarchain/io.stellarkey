@@ -966,6 +966,7 @@ function StaffEditor({
         <div>
           <span className="field-label">Role</span>
           <SegmentedControl<StaffRole>
+            ariaLabel="Staff role"
             value={role}
             options={ROLE_OPTIONS}
             onChange={(next) => setRole(next)}
@@ -1149,6 +1150,7 @@ function AddStaffForm({
         <div>
           <span className="field-label">Role</span>
           <SegmentedControl<StaffRole>
+            ariaLabel="Staff role"
             value={role}
             options={ROLE_OPTIONS}
             onChange={setRole}

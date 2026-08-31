@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  getAccountHistoryHorizonUrl,
   getHorizonUrl,
   getRpcUrl,
   loadCustomEndpoint,
@@ -45,6 +46,16 @@ test("endpoint preferences are isolated by network and service with safe fallbac
   resetCustomEndpoints("testnet", storage);
   assert.equal(loadCustomEndpoint("testnet", "horizon", storage), null);
   assert.equal(loadCustomEndpoint("testnet", "rpc", storage), null);
+});
+
+test("account history stays on the public Stellar Horizon", () => {
+  const storage = new MemoryStorage();
+  saveCustomEndpoint("mainnet", "horizon", "https://horizon.user.example", storage);
+  saveCustomEndpoint("testnet", "horizon", "https://horizon-test.user.example", storage);
+
+  assert.equal(getAccountHistoryHorizonUrl("mainnet"), "https://horizon.stellar.org");
+  assert.equal(getAccountHistoryHorizonUrl("testnet"), "https://horizon-testnet.stellar.org");
+  assert.equal(getHorizonUrl("mainnet", storage), "https://horizon.user.example");
 });
 
 test("POC Horizon preference keys are ignored and left untouched", () => {

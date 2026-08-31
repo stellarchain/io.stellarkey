@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -19,14 +19,23 @@ import {
   toggleTrustlineSelection,
 } from "@/lib/transaction-intent";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
-import { IconCheck, IconLedger, IconPlus, IconSearch, IconTrezor } from "./icons";
+import {
+  IconCheck,
+  IconLedger,
+  IconPlus,
+  IconSearch,
+  IconTrezor,
+} from "./icons";
 
-export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-  return <AddAssetInner onClose={onClose} />;
-}
-
-function AddAssetInner({ onClose }: { onClose: () => void }) {
+export function AddAssetPublicPanel({
+  onClose,
+  onBusyChange,
+  embedded = false,
+}: {
+  onClose: () => void;
+  onBusyChange(busy: boolean): void;
+  embedded?: boolean;
+}) {
   const { network, activeAccount } = useWalletIdentity();
   const { balances, recommendedBaseFeeStroops } = useWalletLedger();
   const { submissionStatus } = useWalletSubmission();
@@ -36,6 +45,9 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   const [issuer, setIssuer] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
+  const searchInputId = useId();
+  const assetCodeInputId = useId();
+  const issuerInputId = useId();
   const [error, setError] = useState<string | null>(null);
   // Multi-select: queued trustlines added atomically in ONE transaction
   const [selected, setSelected] = useState<Array<{ code: string; issuer: string }>>([]);
@@ -44,6 +56,11 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
     recommendedBaseFeeStroops,
     Math.min(selected.length, MAX_TRUSTLINE_SELECTIONS),
   );
+
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
 
   useEffect(() => {
     let alive = true;
@@ -142,17 +159,19 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal open onClose={onClose} wide dismissable={!busy}>
-      <ModalHeader
+    <>
+      {!embedded && <ModalHeader
         title="Add Assets"
         subtitle="Select one or more — all added in a single atomic transaction"
         onClose={onClose}
-      />
+      />}
       <div className="p-4 sm:p-6">
         {/* Search */}
         <div className="search-field mb-4 flex items-center gap-2">
           <IconSearch size={15} className="text-neutral-400 shrink-0" />
+          <label htmlFor={searchInputId} className="sr-only">Search verified assets</label>
           <input
+            id={searchInputId}
             placeholder="Search popular tokens (USDC, EURC, AQUA, BTC...)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -182,7 +201,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
                 type="button"
                 disabled={alreadyAdded || !available || busy}
                 onClick={() => handleSelectPopular(asset)}
-                className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-all ${
+                className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-[background-color,border-color,color,opacity] ${
                   alreadyAdded
                     ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-50"
                     : isSelected
@@ -216,14 +235,18 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
 
         {/* Custom asset row */}
         <div className="mt-4 flex gap-2 border-t border-white/[0.08] pt-4">
+          <label htmlFor={assetCodeInputId} className="sr-only">Custom asset code</label>
           <input
+            id={assetCodeInputId}
             className="input !h-11 w-[110px] shrink-0 uppercase text-base md:!h-9 sm:text-[13px]"
             placeholder="CODE"
             maxLength={12}
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
           />
+          <label htmlFor={issuerInputId} className="sr-only">Custom asset issuer address</label>
           <input
+            id={issuerInputId}
             className="input mono !h-11 min-w-0 flex-1 text-base md:!h-9 sm:text-[12.5px]"
             placeholder="Issuer G..."
             value={issuer}
@@ -357,12 +380,11 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           <Button
             className="flex-[2]"
             loading={busy}
+            loadingLabel="Submitting trustline transaction"
             disabled={selected.length === 0 || busy || Boolean(pendingSubmission)}
             onClick={() => void handleAddBatch()}
           >
-            {busy
-              ? "Submitting…"
-              : selected.length > 1
+            {selected.length > 1
                 ? `Add ${selected.length} Trustlines · 1 Tx`
                 : selected.length === 1
                   ? "Add Trustline · 1 Tx"
@@ -370,7 +392,7 @@ function AddAssetInner({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </div>
-    </Modal>
+    </>
   );
 }
 

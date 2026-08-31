@@ -20,6 +20,7 @@ export interface MerchantSettingsContextValue {
 export type MerchantRuntimeIntent = "setup" | "settings" | "merchant";
 
 export interface MerchantRuntimeControlValue {
+  mounted: boolean;
   intent: MerchantRuntimeIntent | null;
   requestRuntime: (intent: MerchantRuntimeIntent) => void;
   consumeIntent: () => void;

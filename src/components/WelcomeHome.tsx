@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { AccountMeta, NetworkKey } from "@/lib/types";
 import { IconKey, IconShield } from "./icons";
-import { Button, CopyButton, HashValue, NetworkBadge } from "./ui";
+import { Button, CopyButton, HashValue, NetworkBadge, Spinner } from "./ui";
 
 /*
  * The first screen after unlocking a wallet that holds nothing yet.
@@ -51,6 +51,7 @@ export function WelcomeHome({
   account,
   network,
   reserveXlm,
+  checking,
   fundBusy,
   fundError,
   backedUp,
@@ -63,6 +64,8 @@ export function WelcomeHome({
   network: NetworkKey;
   /** The network's current minimum balance, when it is known. */
   reserveXlm: string | null;
+  /** True until Horizon has resolved whether this account is funded. */
+  checking: boolean;
   fundBusy: boolean;
   fundError: string | null;
   backedUp: boolean;
@@ -76,7 +79,10 @@ export function WelcomeHome({
 
   return (
     <div className="fade-up grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
-      <section className="panel relative overflow-hidden px-6 py-8 sm:px-9 sm:py-10 lg:col-span-7">
+      <section
+        aria-busy={checking}
+        className="panel relative overflow-hidden px-6 py-8 sm:px-9 sm:py-10 lg:col-span-7"
+      >
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -left-24 -top-28 h-72 w-[28rem] rounded-full bg-[#0A84FF]/20 blur-[90px]"
@@ -85,10 +91,12 @@ export function WelcomeHome({
           <NetworkBadge network={network} />
 
           <h1 className="display-h mt-5 text-[32px] text-white sm:text-[40px]">
-            Your lumens land here.
+            {checking ? "Checking your Stellar account…" : "Your lumens land here."}
           </h1>
           <p className="mt-3 max-w-md text-[15px] leading-relaxed text-neutral-400">
-            {testnet
+            {checking
+              ? "Confirming its current state on Stellar."
+              : testnet
               ? "Claim some test lumens and the account goes live on Stellar."
               : reserveXlm
                 ? `Send at least ${reserveXlm} XLM to the address below and the account goes live on Stellar.`
@@ -98,7 +106,16 @@ export function WelcomeHome({
           {/* One primary action. Showing the address is the quiet way through
               for anyone funding from elsewhere, so it stays a link. */}
           <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
-            {testnet ? (
+            {checking ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="inline-flex min-h-12 items-center gap-2.5 rounded-full bg-white/[0.07] px-5 text-[14px] font-medium text-neutral-300"
+              >
+                <Spinner size={16} />
+                Checking account…
+              </div>
+            ) : testnet ? (
               <Button
                 className="!px-6 !py-3.5 text-[15px] font-semibold"
                 loading={fundBusy}
@@ -112,7 +129,7 @@ export function WelcomeHome({
                 Show my address
               </Button>
             )}
-            {testnet && (
+            {!checking && testnet && (
               <button
                 type="button"
                 onClick={onReceive}

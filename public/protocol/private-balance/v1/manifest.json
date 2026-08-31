@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": 1,
+  "artifactVersion": "1.0.2-dev-fixture",
+  "status": "development",
+  "minimumStellarProtocol": 25,
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
+  "realmId": "38d5fa2d9a4a0a5285baecb752189ebdc4243e90e70d177550768611ed20c856",
+  "poolContractId": "CBDEXYYS76Y2RNDN3II644BW6TSF3ZQG6FYY75ZFYSS4SEV6H5PXRPS6",
+  "guardianAddress": "GCWWPZ2K3YJQTVEE5VRCBS4YBQCZATUA5FQJ6NT7WSZDK5G73S5WNKAF",
+  "stealthAnnouncerAddress": "GCWWPZ2K3YJQTVEE5VRCBS4YBQCZATUA5FQJ6NT7WSZDK5G73S5WNKAF",
+  "deploymentBindingHash": "455d28488577cfe8d8de7ca1d5a68d8b06735019c5ed2f82f977817ea3ce0669",
+  "artifacts": {
+    "r1csSha256": "c5c598c09e09f7e546ef6cf8d924f44eea50c80d7ba9119e2215278de2babc07",
+    "r1csConstraints": 22408,
+    "wasmSha256": "0570325a20bfb11546e80330797cb5be2f7060795de2de644967b342d9201cd7",
+    "wasmByteLength": 183221,
+    "zkeySha256": "8e216c27f1ee692739c60ff40b34751573148d401a19fa5ab1e7e73791b35fbb",
+    "zkeyByteLength": 14169632,
+    "zkeyTransport": {
+      "encoding": "points-compressed",
+      "sha256": "9a928627284fd1bb1497f716f24e23f4affff0766488fa6f9710fe3169c99791",
+      "byteLength": 9554914,
+      "wireByteLength": 3934162
+    },
+    "vkJsonSha256": "ff6d7e3bde0d7d7ba8ae8f60e29be3f1db7a617189319bf2600de98bf99898ba",
+    "vkBinSha256": "00d95310888a96bd632c0136711885eb62a018cecf6b027750f5dab79b2699a3"
+  },
+  "constants": {
+    "treeDepth": 32,
+    "treeArity": 2,
+    "rootWindowLedgers": 1440,
+    "pageCapacity": 32,
+    "maxPagesPerTouch": 4,
+    "publicInputs": 13,
+    "notePlaintextBytes": 128,
+    "recipientEnvelopeBytes": 181,
+    "outputPackageBytes": 213,
+    "addressPayloadBytes": 68,
+    "addressAsciiBytes": 119,
+    "addressContextTagBytes": 0,
+    "addressChecksumBytes": 6
+  },
+  "hpke": {
+    "kemId": "0x0020",
+    "kdfId": "0x0001",
+    "aeadId": "0x0001"
+  },
+  "release": {
+    "contractWasmSha256": "0399170aab630a3bfb5e1109b8017047e0bfb3d6267dc956156a1f811b241778",
+    "contractSourceCommit": "ba09bf5d182f7c200e32d1f7d8917a27ac2bff6f",
+    "circuitSourceSha256": "1f3ea4ed0411e313a5201048449d5536b542e4a8d7cec9560a773922922df55e",
+    "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
+    "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
+    "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
+    "toolchainLockSha256": "dd79028943fbb66df4c9217c18aa064452303d7c88bc8ef1753d413dca52c50d",
+    "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",
+    "auditReports": [],
+    "deploymentTransactions": [],
+    "allowedEnvironment": "testnet"
+  }
+}

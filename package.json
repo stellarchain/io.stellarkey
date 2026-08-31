@@ -1,6 +1,6 @@
 {
   "name": "stellarkey",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "repository": {
@@ -19,20 +19,28 @@
     "icons:render": "node scripts/render-app-icons.mjs",
     "start": "node scripts/static-server.mjs",
     "lint": "eslint",
-    "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/*.test.mjs",
+    "test": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test --test-concurrency=4 tests/*.test.mjs",
     "test:bundle": "node --no-warnings --test tests/bundle-budget.build.mjs",
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "test:hardware": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/hardware.test.mjs",
     "test:swap": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs --test tests/swap.test.mjs",
+    "private:generate": "node protocol/private-balance/scripts/build-private-balance-artifacts.mjs",
+    "private:gate-a": "npm --prefix protocol/private-balance/circuits run gate:a",
+    "private:check-generated": "node protocol/private-balance/scripts/check-generated.mjs",
+    "private:check-reproducible": "node protocol/private-balance/scripts/build-private-balance-artifacts.mjs --check-reproducible",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts --project=desktop-chromium",
+    "test:e2e:private-ui": "E2E_NEXT_DEV=1 E2E_PRIVATE_UI_REQUIRED=1 playwright test e2e/public-private-continuity.spec.ts e2e/overlay-contract.spec.ts --project=desktop-chromium --project=iphone-webkit",
+    "measure:ux": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs scripts/measure-ux.ts",
     "release:verify": "node scripts/assert-clean-release.mjs && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run test:bundle && npm run check:bundle && playwright test"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
     "@stellar/stellar-sdk": "^17.0.1",
+    "@stellarkey/private-balance": "file:protocol/private-balance/packages/browser",
     "@trezor/connect-web": "^9.7.3",
+    "ffjavascript": "0.3.1",
     "next": "16.3.3",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -52,7 +60,8 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "protobufjs": "7.6.5"
+    "protobufjs": "7.6.5",
+    "underscore": "1.13.8"
   },
   "allowScripts": {
     "@stellar/stellar-sdk@14.2.0": true,

@@ -9,6 +9,10 @@ export interface BackupSettings {
   autoLockMs: number | null;
   privacy: boolean;
   sound: boolean;
+  merchantMode?: {
+    enabled: boolean;
+    configured: boolean;
+  };
 }
 
 export interface FullBackupPayload {
@@ -18,6 +22,7 @@ export interface FullBackupPayload {
   settings?: BackupSettings;
   txNotes: Record<string, unknown>;
   merchantStore?: string | null;
+  privateBalanceStore?: string | null;
 }
 
 const FIAT_CURRENCIES = new Set(["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"]);
@@ -102,6 +107,12 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
   if (!isRawKeyEncryptedPayloadValue(value.wrappedMerchantKey)) {
     return null;
   }
+  if (
+    value.requirePasswordForSigning !== undefined &&
+    typeof value.requirePasswordForSigning !== "boolean"
+  ) {
+    return null;
+  }
   return value as unknown as VaultFile;
 }
 
@@ -131,6 +142,16 @@ function isBackupSettings(value: unknown): value is BackupSettings {
   ) {
     return false;
   }
+  if (
+    value.merchantMode !== undefined &&
+    (
+      !isRecord(value.merchantMode) ||
+      typeof value.merchantMode.enabled !== "boolean" ||
+      typeof value.merchantMode.configured !== "boolean"
+    )
+  ) {
+    return false;
+  }
   return (
     typeof value.privacy === "boolean" &&
     typeof value.sound === "boolean"
@@ -140,6 +161,25 @@ function isBackupSettings(value: unknown): value is BackupSettings {
 function isTxNotes(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
   return value.version === 3 && isRawKeyEncryptedPayloadValue(value.crypto);
+}
+
+function isPrivateBalanceStore(value: string): boolean {
+  if (value.length > 32 * 1024 * 1024) return false;
+  try {
+    const archive: unknown = JSON.parse(value);
+    if (!isRecord(archive) || archive.schemaVersion !== 1 || !Array.isArray(archive.records)) {
+      return false;
+    }
+    return archive.records.length <= 4_096 && archive.records.every(record =>
+      isRecord(record) &&
+      typeof record.key === "string" &&
+      record.key.startsWith("private:sensitive:v1:") &&
+      typeof record.value === "string" &&
+      record.value.length <= 16 * 1024 * 1024
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function decodeFullBackupPayload(value: unknown): FullBackupPayload | null {
@@ -170,6 +210,13 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
       return null;
     }
   }
+  if (
+    value.privateBalanceStore !== undefined &&
+    value.privateBalanceStore !== null &&
+    (typeof value.privateBalanceStore !== "string" || !isPrivateBalanceStore(value.privateBalanceStore))
+  ) {
+    return null;
+  }
   return {
     exportedAt: value.exportedAt,
     vault,
@@ -177,5 +224,6 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
     settings: value.settings,
     txNotes: value.txNotes,
     merchantStore: value.merchantStore,
+    privateBalanceStore: value.privateBalanceStore,
   };
 }

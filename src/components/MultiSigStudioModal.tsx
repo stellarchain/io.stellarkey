@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   useWalletContacts,
   useWalletIdentity,
@@ -37,8 +37,8 @@ import {
   Modal,
   ModalHeader,
   Notice,
-  SegmentedControl,
   Spinner,
+  Tabs,
 } from "./ui";
 import {
   IconAlert,
@@ -108,6 +108,8 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   const [configOutcome, setConfigOutcome] = useState<MultisigConfigOutcome | null>(null);
 
   // Approvals state
+  const xdrInputId = useId();
+  const thresholdBaseId = useId();
   const [xdrInput, setXdrInput] = useState("");
   const [reviewBinding, setReviewBinding] = useState<ApprovalReviewBinding | null>(null);
   const [reviewClockMs, setReviewClockMs] = useState(() => Date.now());
@@ -451,19 +453,19 @@ function StudioInner({ onClose }: { onClose: () => void }) {
         onClose={busy ? undefined : onClose}
       />
       <div className="p-4 sm:p-6">
-        <SegmentedControl<Tab>
+        <Tabs<Tab>
           value={tab}
           onChange={(t) => {
-            triggerHaptic("selection");
             setTab(t);
             setError(null);
           }}
+          ariaLabel="Multi-signature section"
           options={[
             { value: "overview", label: "Overview" },
             { value: "configure", label: "Configure", disabled: !info },
             { value: "approvals", label: "Approvals" },
           ]}
-        />
+        >
 
         {/* ============================== OVERVIEW ============================== */}
         {tab === "overview" && (
@@ -831,12 +833,16 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                           ["Medium · payments", customMed, setCustomMed],
                           ["High · settings", customHigh, setCustomHigh],
                         ] as const
-                      ).map(([label, val, setter]) => (
+                      ).map(([label, val, setter], index) => (
                         <div key={label}>
-                          <label className="mb-1 block text-[10.5px] font-medium text-neutral-500">
+                          <label
+                            className="mb-1 block text-[10.5px] font-medium text-neutral-500"
+                            htmlFor={`${thresholdBaseId}-${index}`}
+                          >
                             {label}
                           </label>
                           <input
+                            id={`${thresholdBaseId}-${index}`}
                             type="number"
                             min={0}
                             max={draftTotal}
@@ -902,8 +908,11 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                 </div>
 
                 <div>
-                  <label className="field-label">Shared Transaction Envelope (XDR)</label>
+                  <label className="field-label" htmlFor={xdrInputId}>
+                    Shared Transaction Envelope (XDR)
+                  </label>
                   <textarea
+                    id={xdrInputId}
                     rows={4}
                     placeholder="AAAAAG… paste the partially-signed envelope from the creator"
                     value={xdrInput}
@@ -1238,6 +1247,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
             </p>
           </div>
         )}
+        </Tabs>
       </div>
     </Modal>
   );

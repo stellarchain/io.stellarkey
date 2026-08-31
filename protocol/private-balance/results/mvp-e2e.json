@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scope": "minimal-mvp",
+  "passed": true,
+  "completedAt": "2026-08-31T02:53:19.770Z",
+  "sourceCommit": "f70c5e7dbeeef79eb6dac648ec85f1a8058fd501",
+  "fixtureEvidence": "protocol/private-balance/results/fixtures/testnet-fixture-CBDEXYYS76Y2RNDN3II644BW6TSF3ZQG6FYY75ZFYSS4SEV6H5PXRPS6.json",
+  "fixturePoolContractId": "CBDEXYYS76Y2RNDN3II644BW6TSF3ZQG6FYY75ZFYSS4SEV6H5PXRPS6",
+  "fixtureWasmSha256": "0399170aab630a3bfb5e1109b8017047e0bfb3d6267dc956156a1f811b241778",
+  "fixtureManifestSha256": "36829246eab58850cdfeb7983c6ea6d7bc9990ec6bb114be1d96b1ed7644db62",
+  "senderAccount": "GBLPTCZGSHOXUWRCGQG5VWODYFPAU2KF2DIN6IPKEAZO4LLZMMNEKDSB",
+  "recipientAccount": "GC3Q3NDMRUP4A6TC3TE2NTJHOJ2CHH5EZBB3P7ATZ25CVWJXI2I5TWPO",
+  "browsers": [
+    "desktop-chromium",
+    "desktop-firefox",
+    "desktop-webkit",
+    "iphone-webkit-emulation",
+    "ipad-webkit-emulation"
+  ],
+  "coverage": [
+    "setup and verified initial sync",
+    "two isolated browser profiles",
+    "two deposit submissions and canonical reconciliation",
+    "two-note consolidation",
+    "private send with recipient output and sender change",
+    "recipient canonical sync and exact received balance",
+    "ambiguous RPC timeout with reserved inputs persisted across lock and unlock",
+    "withdrawal to the public Stellar balance",
+    "wallet lock, unlock, and encrypted-state persistence",
+    "encrypted V2 wallet-backup restore with exact private balance",
+    "local Private Balance data removal",
+    "seed-only recovery with exact recovered balance",
+    "selected RPC endpoint switch and canonical resync",
+    "private receive address validation",
+    "manifest tamper fail-closed",
+    "critical modal accessibility",
+    "production CSP browser smoke matrix with QR, overflow, accessibility, and camera policy checks"
+  ],
+  "limitations": [
+    "This is minimal MVP evidence, not beta approval.",
+    "Archive expiry, paid restoration, physical iOS/Android devices, and real Android Chrome remain unverified.",
+    "Ceremony and independent audit evidence remain absent."
+  ]
+}

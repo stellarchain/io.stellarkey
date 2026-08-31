@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "generator": "stellar/rs-soroban-poseidon",
+  "commit": "f27f1ffcda5eb2753759c0b3dff3a06cde7cde3b",
+  "reference_script": "https://github.com/HorizenLabs/poseidon2/blob/055bde3f4782731ba5f5ce5888a440a94327eaf3/poseidon2_rust_params.sage",
+  "parameters": "poseidon2-bn254-t4-v1.json"
+}

@@ -36,7 +36,12 @@ import {
   generateActivityCsv,
   normalizeAmount,
 } from "../src/lib/format.ts";
-import { assetPriceKey, estimatePortfolioUsd, getUnitPrice } from "../src/lib/prices.ts";
+import {
+  assetPriceKey,
+  estimatePortfolioUsd,
+  getRepresentativeUnitPrice,
+  getUnitPrice,
+} from "../src/lib/prices.ts";
 import { parseFiatRates } from "../src/lib/prices.ts";
 import {
   applyMultisigConfig,
@@ -68,6 +73,7 @@ import {
 import * as transactionReview from "../src/lib/transaction-review.ts";
 
 const USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
+const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
 
 function submittedTransaction(fetchCalls) {
   const submission = fetchCalls.find((call) => call.url.endsWith("/transactions"));
@@ -170,6 +176,31 @@ test("portfolio pricing requires an exact verified issuer", () => {
   assert.equal(estimatePortfolioUsd(verified, null, prices, "mainnet"), 25);
   assert.equal(estimatePortfolioUsd(counterfeit, null, prices, "mainnet"), 0);
   assert.equal(getUnitPrice("XLM", null, "testnet", true, 0.25, {}), null);
+});
+
+test("representative asset pricing values only exact known testnet USDC", () => {
+  const mainnetPrices = { [assetPriceKey("mainnet", "USDC", USDC_ISSUER)]: 0.999 };
+
+  assert.equal(
+    getRepresentativeUnitPrice("USDC", USDC_ISSUER, "mainnet", false, 0.2, mainnetPrices),
+    0.999,
+  );
+  assert.equal(
+    getRepresentativeUnitPrice("XLM", null, "testnet", true, 0.2, {}),
+    0.2,
+  );
+  assert.equal(
+    getRepresentativeUnitPrice("USDC", TESTNET_USDC_ISSUER, "testnet", false, 0.2, {}),
+    1,
+  );
+  assert.equal(
+    getRepresentativeUnitPrice("USDC", Keypair.random().publicKey(), "testnet", false, 0.2, {}),
+    null,
+  );
+  assert.equal(
+    getRepresentativeUnitPrice("EURC", TESTNET_USDC_ISSUER, "testnet", false, 0.2, {}),
+    null,
+  );
 });
 
 test("derives live fiat conversion rates from a common market base", () => {
@@ -2285,6 +2316,74 @@ test("maps path payments to the destination asset code and issuer", async (t) =>
   const csv = generateActivityCsv(result.items);
   assert.match(csv, /"swap","−10 XLM \/ \+9\.5 USDC"/);
   assert.match(csv, new RegExp(`"XLM → USDC:${USDC_ISSUER}"`));
+});
+
+test("formats internal public-private transfers as two signed bank-ledger postings", () => {
+  const item = {
+    id: "private:deposit",
+    type: "private_deposit",
+    title: "Added to private balance",
+    direction: "neutral",
+    amount: "25",
+    assetCode: "USDC",
+    assetIssuer: USDC_ISSUER,
+    counterparty: null,
+    hash: "ab".repeat(32),
+    createdAt: "2026-08-31T12:00:00.000Z",
+    successful: true,
+    internalTransfer: {
+      debit: { amount: "25", assetCode: "USDC", assetIssuer: USDC_ISSUER, balance: "public" },
+      credit: { amount: "25", assetCode: "USDC", assetIssuer: USDC_ISSUER, balance: "private" },
+    },
+  };
+
+  assert.deepEqual(activityAmountLines(item).map((line) => [line.balance, line.display]), [
+    ["public", "−25 USDC"],
+    ["private", "+25 USDC"],
+  ]);
+  assert.match(generateActivityCsv([item]), /"internal","Public: −25 USDC \/ Private: \+25 USDC"/);
+});
+
+test("account activity is bounded to one year of public Horizon history", async (t) => {
+  const publicKey = Keypair.random().publicKey();
+  const nowMs = Date.parse("2026-08-30T12:00:00Z");
+  const retainedAt = "2025-08-31T12:00:00Z";
+  const expiredAt = "2025-08-30T11:59:59Z";
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.equal(new URL(String(url)).origin, "https://horizon.stellar.org");
+    return new Response(JSON.stringify({
+      _embedded: {
+        records: [
+          {
+            id: "retained",
+            type: "payment",
+            created_at: retainedAt,
+            transaction_successful: true,
+            transaction_hash: "retained-hash",
+            from: publicKey,
+            to: Keypair.random().publicKey(),
+            amount: "1",
+            asset_type: "native",
+          },
+          {
+            id: "expired",
+            type: "payment",
+            created_at: expiredAt,
+            transaction_successful: true,
+            transaction_hash: "expired-hash",
+            from: publicKey,
+            to: Keypair.random().publicKey(),
+            amount: "2",
+            asset_type: "native",
+          },
+        ],
+      },
+    }), { status: 200 });
+  });
+
+  const result = await fetchActivity(publicKey, "mainnet", 2, undefined, undefined, nowMs);
+  assert.deepEqual(result.items.map((item) => item.id), ["retained"]);
+  assert.equal(result.nextCursor, null);
 });
 
 test("maps strict-receive path payments to destination amount, code, and issuer", async (t) => {

@@ -244,6 +244,7 @@ function CashTenderSheetInner({
 
       <div className="space-y-4 p-4 sm:p-6">
         <SegmentedControl<TenderChoice>
+          ariaLabel="How this order is paid"
           value={choice}
           onChange={setChoice}
           options={[
@@ -404,6 +405,7 @@ function CashTenderSheetInner({
               </div>
               <div className="space-y-3 px-4 pb-4">
                 <SegmentedControl<LegKind>
+                  ariaLabel="First payment method"
                   value={firstLeg}
                   onChange={(next) => {
                     setFirstLeg(next);
@@ -457,6 +459,7 @@ function CashTenderSheetInner({
               </div>
               <div className="space-y-2 px-4 pb-4">
                 <SegmentedControl<LegKind>
+                  ariaLabel="Second payment method"
                   value={secondLeg}
                   onChange={(next) => {
                     setSecondLeg(next);

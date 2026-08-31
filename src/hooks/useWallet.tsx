@@ -20,6 +20,7 @@ import {
   addStoredAccount,
   addHardwareAccount as addHardwareAccountVault,
   addWatchOnlyAccount,
+  changeVaultPassword as changeVaultPasswordRecord,
   getArchivedAccounts,
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
@@ -37,15 +38,21 @@ import {
   restoreVaultBackup,
   saveAutoLockPref,
   saveNetworkPref,
+  setSigningPasswordRequired as setSigningPasswordRequiredRecord,
   setActiveStoredAccount,
   unlockVault,
   unlockVaultWithPasskey,
   updateAccountLabel,
+  verifyVaultPassword,
   wipeVault,
   clearSessionSecrets,
   type InitializeOptions,
   type VaultRestoreResult,
 } from "@/lib/vault";
+import {
+  createSigningAuthorizationGate,
+  type SigningAuthorizationRequest,
+} from "@/lib/signing-authorization";
 import { getMerchantRepository } from "@/lib/merchant/repository";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
@@ -54,7 +61,9 @@ import type { FiatCurrency } from "@/lib/format";
 import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import type { HardwareSigner } from "@/lib/hardware";
+import type { PreparedStealthPayment } from "@/features/private-balance/runtime/stealth-payment";
 import type { NetworkKey } from "@/lib/stellar";
+import { NETWORKS } from "@/lib/stellar";
 import {
   portfolioSnapshotKey,
   type AccountPortfolioSnapshot,
@@ -119,10 +128,14 @@ type Phase = "loading" | "empty" | "recovery" | "locked" | "unlocked";
 type WalletApi = typeof import("@/lib/api");
 type SwapApi = typeof import("@/lib/swap");
 type MultisigApi = typeof import("@/lib/multisig");
+type PrivateBalanceSigningApi = typeof import("@/lib/private-balance-signing");
+type StealthPaymentApi = typeof import("@/features/private-balance/runtime/stealth-payment");
 
 let walletApiPromise: Promise<WalletApi> | null = null;
 let swapApiPromise: Promise<SwapApi> | null = null;
 let multisigApiPromise: Promise<MultisigApi> | null = null;
+let privateBalanceSigningApiPromise: Promise<PrivateBalanceSigningApi> | null = null;
+let stealthPaymentApiPromise: Promise<StealthPaymentApi> | null = null;
 
 function loadWalletApi(): Promise<WalletApi> {
   walletApiPromise ??= import("@/lib/api").catch((error) => {
@@ -146,6 +159,22 @@ function loadMultisigApi(): Promise<MultisigApi> {
     throw error;
   });
   return multisigApiPromise;
+}
+
+function loadPrivateBalanceSigningApi(): Promise<PrivateBalanceSigningApi> {
+  privateBalanceSigningApiPromise ??= import("@/lib/private-balance-signing").catch((error) => {
+    privateBalanceSigningApiPromise = null;
+    throw error;
+  });
+  return privateBalanceSigningApiPromise;
+}
+
+function loadStealthPaymentApi(): Promise<StealthPaymentApi> {
+  stealthPaymentApiPromise ??= import("@/features/private-balance/runtime/stealth-payment").catch((error) => {
+    stealthPaymentApiPromise = null;
+    throw error;
+  });
+  return stealthPaymentApiPromise;
 }
 
 const DEFAULT_BASE_FEE_STROOPS = 100;
@@ -251,7 +280,12 @@ interface WalletContextValue {
 
   createWallet: (
     password: string,
-    opts?: { secret?: string; mnemonic?: string; label?: string },
+    opts?: {
+      secret?: string;
+      mnemonic?: string;
+      label?: string;
+      requirePasswordForSigning?: boolean;
+    },
   ) => Promise<{ account: AccountMeta; revealed: string; kind: "mnemonic" | "secret" }>;
   /** Create a vault around a hardware-only account (Trezor/Ledger) — no phrase, no local secrets */
   createHardwareVault: (
@@ -263,6 +297,7 @@ interface WalletContextValue {
       device: "ledger" | "trezor";
       label?: string;
     },
+    security?: { requirePasswordForSigning?: boolean },
   ) => Promise<{ account: AccountMeta }>;
   revealRecoveryPhrase: (password: string) => Promise<string>;
   completeSetup: () => void;
@@ -305,6 +340,12 @@ interface WalletContextValue {
       onRejected?: SubmissionPreparedCallback;
     };
   }) => Promise<SubmissionResult>;
+  prepareStealthPayment: (params: {
+    metaAddress: string;
+    amount: string;
+    feeStroops?: number;
+  }) => Promise<PreparedStealthPayment>;
+  submitStealthPayment: (review: PreparedStealthPayment) => Promise<SubmissionResult>;
   sendBatch: (params: {
     payments: Array<{
       destination: string;
@@ -353,6 +394,11 @@ interface WalletContextValue {
   }) => Promise<{ xdr: string }>;
   /** Co-sign a shared envelope XDR; submits automatically once weight suffices */
   cosignTransaction: (xdr: string, confirmedNetwork: NetworkKey | null) => Promise<CosignOutcome>;
+  signPrivateBalanceEnvelope: (request: {
+    envelopeXdr: string;
+    expectedTransactionHash: string;
+    networkPassphrase: string;
+  }) => Promise<string>;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -430,6 +476,8 @@ type WalletTransactionsContextValue = Pick<
   WalletContextValue,
   | "refresh"
   | "send"
+  | "prepareStealthPayment"
+  | "submitStealthPayment"
   | "sendBatch"
   | "claimAirdrop"
   | "claimAirdrops"
@@ -441,6 +489,7 @@ type WalletTransactionsContextValue = Pick<
   | "disableMultisig"
   | "prepareCosignPayment"
   | "cosignTransaction"
+  | "signPrivateBalanceEnvelope"
   | "fundFromFriendbot"
 >;
 
@@ -471,6 +520,21 @@ type WalletLifecycleActionsValue = Pick<
 
 const WalletPhaseContext = createContext<WalletPhaseContextValue | null>(null);
 const WalletLifecycleActionsContext = createContext<WalletLifecycleActionsValue | null>(null);
+
+interface WalletSecurityContextValue {
+  signingPasswordRequired: boolean;
+  signingAuthorizationRequest: SigningAuthorizationRequest | null;
+  approveSigningAuthorization: (password: string) => Promise<"approved" | "continue">;
+  continueSigningAuthorization: () => void;
+  cancelSigningAuthorization: (message?: string) => void;
+  changeWalletPassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  changeSigningPasswordRequired: (
+    required: boolean,
+    currentPassword?: string,
+  ) => Promise<void>;
+}
+
+const WalletSecurityContext = createContext<WalletSecurityContextValue | null>(null);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
@@ -541,6 +605,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
   const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
+  const [signingPasswordRequired, setSigningPasswordRequiredState] = useState(false);
+  const signingPasswordRequiredRef = useRef(false);
+  const [signingAuthorizationRequest, setSigningAuthorizationRequest] =
+    useState<SigningAuthorizationRequest | null>(null);
+  const [signingAuthorizationGate] = useState(() =>
+    createSigningAuthorizationGate(setSigningAuthorizationRequest));
+  const verifiedSigningAuthorizationRef = useRef<number | null>(null);
   const [endpointRevision, setEndpointRevision] = useState(0);
   const endpointRevisionRef = useRef(0);
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -554,6 +625,70 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [accounts, activeId],
   );
   const unfunded = phase === "unlocked" && balances !== null && balances.length === 0;
+
+  const commitSigningPasswordRequired = useCallback((required: boolean) => {
+    signingPasswordRequiredRef.current = required;
+    setSigningPasswordRequiredState(required);
+  }, []);
+
+  const requestSigningAuthorization = useCallback(async (
+    label: string,
+    requiresUserGestureContinuation = false,
+  ) => {
+    if (!signingPasswordRequiredRef.current) return;
+    verifiedSigningAuthorizationRef.current = null;
+    await signingAuthorizationGate.request(label, { requiresUserGestureContinuation });
+  }, [signingAuthorizationGate]);
+
+  const approveSigningAuthorization = useCallback(async (password: string) => {
+    const request = signingAuthorizationGate.pending;
+    if (!request) throw new Error("There is no transaction waiting for approval.");
+    await verifyVaultPassword(password);
+    verifiedSigningAuthorizationRef.current = request.id;
+    if (request.requiresUserGestureContinuation) return "continue";
+    signingAuthorizationGate.approve(request.id);
+    verifiedSigningAuthorizationRef.current = null;
+    return "approved";
+  }, [signingAuthorizationGate]);
+
+  const continueSigningAuthorization = useCallback(() => {
+    const request = signingAuthorizationGate.pending;
+    if (!request || verifiedSigningAuthorizationRef.current !== request.id) {
+      throw new Error("Verify your password before continuing to the hardware wallet.");
+    }
+    signingAuthorizationGate.approve(request.id);
+    verifiedSigningAuthorizationRef.current = null;
+  }, [signingAuthorizationGate]);
+
+  const cancelSigningAuthorization = useCallback((message?: string) => {
+    verifiedSigningAuthorizationRef.current = null;
+    signingAuthorizationGate.cancel(message);
+  }, [signingAuthorizationGate]);
+
+  const changeSigningPasswordRequired = useCallback(async (
+    required: boolean,
+    currentPassword?: string,
+  ) => {
+    await setSigningPasswordRequiredRecord(required, currentPassword);
+    commitSigningPasswordRequired(required);
+  }, [commitSigningPasswordRequired]);
+
+  const changeWalletPassword = useCallback(async (
+    currentPassword: string,
+    newPassword: string,
+  ) => {
+    await changeVaultPasswordRecord(currentPassword, newPassword);
+  }, []);
+
+  const withAuthorizedSigningSecret = useCallback(async <T,>(
+    label: string,
+    account: AccountMeta,
+    hardwareSigner: HardwareSigner | undefined,
+    operation: (secretKey: string | undefined) => T | Promise<T>,
+  ): Promise<T> => {
+    await requestSigningAuthorization(label, Boolean(hardwareSigner));
+    return withSigningSecret(account, hardwareSigner, operation);
+  }, [requestSigningAuthorization]);
 
   useEffect(() => {
     const refreshEndpoints = () => {
@@ -680,57 +815,69 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void (async () => {
       await Promise.resolve();
       if (!alive) return;
-      const net = loadNetworkPref();
-      setNetworkState(net);
-      setPrivacyMode(window.localStorage.getItem("stellarkey.privacy.v1") === "1");
-      const storedFiat = window.localStorage.getItem("wallet.currency.v1") as FiatCurrency;
-      if (storedFiat && FIAT_LIST.includes(storedFiat)) {
-        setFiatCurrencyState(storedFiat);
-      } else {
-        // First run: guess display currency from the browser locale (e.g. en-GB -> GBP)
-        try {
-          const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
-          const region = (locale.split("-")[1] ?? "").toUpperCase();
-          const regionToFiat: Record<string, FiatCurrency> = {
-            US: "USD", GB: "GBP", JP: "JPY", CA: "CAD", AU: "AUD", CH: "CHF",
-          };
-          if (region in regionToFiat) {
-            setFiatCurrencyState(regionToFiat[region]);
-          } else {
-            // Eurozone locales
-            const euroRegions = ["FR","DE","ES","IT","NL","IE","AT","PT","FI","BE","GR","LU","SK","SI"];
-            if (euroRegions.includes(region)) setFiatCurrencyState("EUR");
+      try {
+        const net = loadNetworkPref();
+        setNetworkState(net);
+        setPrivacyMode(window.localStorage.getItem("stellarkey.privacy.v1") === "1");
+        const storedFiat = window.localStorage.getItem("wallet.currency.v1") as FiatCurrency;
+        if (storedFiat && FIAT_LIST.includes(storedFiat)) {
+          setFiatCurrencyState(storedFiat);
+        } else {
+          // First run: guess display currency from the browser locale (e.g. en-GB -> GBP)
+          try {
+            const locale = Intl.DateTimeFormat().resolvedOptions().locale || "";
+            const region = (locale.split("-")[1] ?? "").toUpperCase();
+            const regionToFiat: Record<string, FiatCurrency> = {
+              US: "USD", GB: "GBP", JP: "JPY", CA: "CAD", AU: "AUD", CH: "CHF",
+            };
+            if (region in regionToFiat) {
+              setFiatCurrencyState(regionToFiat[region]);
+            } else {
+              // Eurozone locales
+              const euroRegions = ["FR","DE","ES","IT","NL","IE","AT","PT","FI","BE","GR","LU","SK","SI"];
+              if (euroRegions.includes(region)) setFiatCurrencyState("EUR");
+            }
+          } catch {
+            void 0;
           }
-        } catch {
-          void 0;
         }
-      }
-      setAutoLockMsState(loadAutoLockPref());
-      setContacts([]);
-      const vaultResult = loadVaultResult();
-      if (vaultResult.kind !== "ready") {
-        if (vaultResult.kind === "absent") {
+        setAutoLockMsState(loadAutoLockPref());
+        setContacts([]);
+        const vaultResult = loadVaultResult();
+        if (vaultResult.kind !== "ready") {
+          if (vaultResult.kind === "absent") {
+            setPhase("empty");
+            return;
+          }
+          setVaultStorageIssue(vaultResult);
+          setPhase("recovery");
+          return;
+        }
+        if (vaultResult.value.accounts.length === 0) {
           setPhase("empty");
           return;
         }
-        setVaultStorageIssue(vaultResult);
+        const vault = vaultResult.value;
+        commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
+        setAccounts(vault.accounts.map(stripSecret));
+        setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
+        setActiveId(vault.activeAccountId ?? vault.accounts[0].id);
+        setPhase("locked");
+      } catch {
+        if (!alive) return;
+        console.error("Wallet startup could not access browser storage.");
+        setVaultStorageIssue({
+          kind: "unavailable",
+          raw: "",
+          message: "Browser storage is unavailable. Allow site storage for StellarKey, then try again.",
+        });
         setPhase("recovery");
-        return;
       }
-      if (vaultResult.value.accounts.length === 0) {
-        setPhase("empty");
-        return;
-      }
-      const vault = vaultResult.value;
-      setAccounts(vault.accounts.map(stripSecret));
-      setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
-      setActiveId(vault.activeAccountId ?? vault.accounts[0].id);
-      setPhase("locked");
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [commitSigningPasswordRequired]);
 
   const refreshAccountData = useCallback(async () => {
     if (!activeAccount) return;
@@ -1115,6 +1262,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [phase, activePublicKey, endpointRevision, network]);
 
   const lockVaultAndReset = useCallback((notifyPeers = true) => {
+    cancelSigningAuthorization("Wallet locked before signing.");
     lockVault();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
@@ -1123,7 +1271,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("locked");
     setDataLoading(false);
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
-  }, []);
+  }, [cancelSigningAuthorization]);
 
   useEffect(() => {
     if (phase !== "unlocked" || autoLockMs <= 0) return;
@@ -1485,12 +1633,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const createWallet = useCallback(
     async (
       password: string,
-      opts?: { secret?: string; mnemonic?: string; label?: string },
+      opts?: {
+        secret?: string;
+        mnemonic?: string;
+        label?: string;
+        requirePasswordForSigning?: boolean;
+      },
     ) => {
       const initOpts: InitializeOptions = {};
       if (opts?.secret) initOpts.secret = opts.secret;
       if (opts?.mnemonic) initOpts.mnemonic = opts.mnemonic;
+      if (opts?.label) initOpts.label = opts.label;
+      initOpts.requirePasswordForSigning = opts?.requirePasswordForSigning ?? false;
       const { account, revealed } = await initializeVault(password, initOpts);
+      commitSigningPasswordRequired(initOpts.requirePasswordForSigning);
       setAccounts([stripSecret(account)]);
       setArchivedAccounts([]);
       setActiveId(account.id);
@@ -1505,7 +1661,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         kind: (hasMnemonic() ? "mnemonic" : "secret") as "mnemonic" | "secret",
       };
     },
-    [],
+    [commitSigningPasswordRequired],
   );
 
   const createHardwareVault = useCallback(
@@ -1518,8 +1674,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         device: "ledger" | "trezor";
         label?: string;
       },
+      security?: { requirePasswordForSigning?: boolean },
     ) => {
-      const result = await initializeHardwareVault(password, account);
+      const result = await initializeHardwareVault(password, account, security);
+      commitSigningPasswordRequired(security?.requirePasswordForSigning ?? false);
       setAccounts([result.account]);
       setArchivedAccounts([]);
       setActiveId(result.account.id);
@@ -1530,7 +1688,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setActivity([]);
       return result;
     },
-    [],
+    [commitSigningPasswordRequired],
   );
 
   const revealRecoveryPhrase = useCallback(async (password: string) => {
@@ -1554,8 +1712,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setActivity([]);
     setContacts(privateContacts);
+    commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
     setPhase("unlocked");
-  }, []);
+  }, [commitSigningPasswordRequired]);
 
   const unlock = useCallback(async (password: string) => {
     await installUnlockedVault(await unlockVault(password));
@@ -1570,6 +1729,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [lockVaultAndReset]);
 
   const resetWallet = useCallback(async (notifyPeers = true): Promise<void> => {
+    cancelSigningAuthorization("Wallet reset before signing.");
     invalidateTrackingTasks();
     if (typeof indexedDB !== "undefined") await getMerchantRepository().clear();
     wipeVault();
@@ -1596,9 +1756,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     commitTransactionTracking(() => ({ pending: [], resolutions: {} }));
     commitMergeReconciliations(() => []);
     setVaultStorageIssue(null);
+    commitSigningPasswordRequired(false);
     setPhase("empty");
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
-  }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
+  }, [
+    cancelSigningAuthorization,
+    commitMergeReconciliations,
+    commitSigningPasswordRequired,
+    commitTransactionTracking,
+    invalidateTrackingTasks,
+  ]);
 
   useEffect(() => {
     const coordination = openWalletCoordination(tabSenderId, (signal) => {
@@ -1631,6 +1798,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAccounts(vault.accounts.map(stripSecret));
       setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
       setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
+      commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
     }
     setContacts([]);
     setBalances(null);
@@ -1651,7 +1819,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // Wallet is restored but LOCKED — unlock with the backup's password
     setPhase("locked");
     return result;
-  }, [commitMergeReconciliations, commitTransactionTracking, invalidateTrackingTasks]);
+  }, [
+    commitMergeReconciliations,
+    commitSigningPasswordRequired,
+    commitTransactionTracking,
+    invalidateTrackingTasks,
+  ]);
 
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
@@ -1994,7 +2167,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Payment",
         undefined,
         (onPrepared) => api.sendPayment({
@@ -2009,8 +2182,63 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         params.submissionJournal,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
+
+  const prepareStealthPayment = useCallback(async (params: {
+    metaAddress: string;
+    amount: string;
+    feeStroops?: number;
+  }): Promise<PreparedStealthPayment> => {
+    if (!activeAccount) throw new Error("No active account");
+    const [stealth, api] = await Promise.all([
+      loadStealthPaymentApi(),
+      loadWalletApi(),
+    ]);
+    const announcerPublicKey = await stealth.loadStealthPaymentAnnouncer(network);
+    return stealth.prepareStealthPayment({
+      sourcePublicKey: activeAccount.publicKey,
+      metaAddress: params.metaAddress,
+      network,
+      announcerPublicKey,
+      amount: params.amount,
+      baseFeeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
+      loadSourceSequence: async (sourcePublicKey, selectedNetwork) => {
+        const source = await api.getJson<{ sequence?: unknown }>(
+          `${getHorizonUrl(selectedNetwork)}/accounts/${sourcePublicKey}`,
+        );
+        if (!source || typeof source.sequence !== "string") {
+          throw new Error("Your account does not exist on this network.");
+        }
+        return source.sequence;
+      },
+      loadBaseReserveStroops: selectedNetwork => api.fetchCurrentBaseReserve(selectedNetwork),
+    });
+  }, [activeAccount, network, recommendedBaseFeeStroops]);
+
+  const submitStealthPayment = useCallback(async (
+    review: PreparedStealthPayment,
+  ): Promise<SubmissionResult> => {
+    if (!activeAccount) throw new Error("No active account");
+    if (activeAccount.watchOnly) {
+      throw new Error("This is a watch-only account — switch to a signing account to send.");
+    }
+    const stealth = await loadStealthPaymentApi();
+    const hw = hardwareSignerFor(activeAccount);
+    return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, secretKey => runTrackedBroadcast(
+      "Reusable private payment",
+      undefined,
+      onPrepared => stealth.submitPreparedStealthPayment({
+        review,
+        sourcePublicKey: activeAccount.publicKey,
+        network,
+        secretKey,
+        hardwareSigner: hw,
+        onPrepared,
+      }),
+      result => result,
+    ));
+  }, [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret]);
 
   const sendBatch = useCallback(
     async (params: {
@@ -2028,7 +2256,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Batch Payment",
         undefined,
         (onPrepared) => api.sendBatchPayments({
@@ -2042,7 +2270,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (result) => result,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const claimAirdrops = useCallback(
@@ -2050,7 +2278,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
         (onPrepared) => api.claimClaimableBalances({
@@ -2064,7 +2292,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (result) => result,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const claimAirdrop = useCallback(
@@ -2077,7 +2305,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Account merge",
         { kind: "reconcile_account_merge" },
         (onPrepared) => api.mergeAccount({
@@ -2091,7 +2319,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (result) => result,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const trustAsset = useCallback(
@@ -2099,7 +2327,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
         undefined,
         (onPrepared) => api.changeTrust({
@@ -2113,7 +2341,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (result) => result,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const trustAssets = useCallback(
@@ -2121,7 +2349,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         `${assets.length} trustlines`,
         undefined,
         (onPrepared) => api.changeTrustBatch({
@@ -2136,7 +2364,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ));
       return result;
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const swap = useCallback(
@@ -2161,7 +2389,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Swap",
         undefined,
         (onPrepared) => params.mode === "strict-receive"
@@ -2196,7 +2424,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (result) => result,
       ));
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const fundFromFriendbot = useCallback(async () => {
@@ -2214,7 +2442,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Multi-sig update",
         undefined,
         (onPrepared) => msig.applyMultisigConfig({
@@ -2233,7 +2461,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       return result;
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast],
+    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret],
   );
 
   const disableMultisig = useCallback(async () => {
@@ -2243,7 +2471,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     const msig = await loadMultisigApi();
     const hw = hardwareSignerFor(activeAccount);
-    const result = await withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+    const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
       "Multi-sig disabled",
       undefined,
       (onPrepared) => msig.disableMultisig({
@@ -2260,7 +2488,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       toast("Disable request signed — additional approval required", "info");
     }
     return result;
-  }, [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast]);
+  }, [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret]);
 
   const prepareCosignPayment = useCallback(
     async (params: {
@@ -2274,7 +2502,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
+      return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
         network,
         sourcePublicKey: activeAccount.publicKey,
         secretKey,
@@ -2283,7 +2511,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
       }));
     },
-    [activeAccount, network, recommendedBaseFeeStroops],
+    [activeAccount, network, recommendedBaseFeeStroops, withAuthorizedSigningSecret],
   );
 
   const cosignTransaction = useCallback(
@@ -2291,7 +2519,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withSigningSecret(activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (secretKey) => runTrackedBroadcast(
         "Co-signed transaction",
         undefined,
         (onPrepared) => msig.cosignTransaction({
@@ -2306,8 +2534,29 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         (outcome) => outcome.submission,
       ));
     },
-    [activeAccount, network, runTrackedBroadcast],
+    [activeAccount, network, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
+
+  const signPrivateBalanceEnvelope = useCallback(async (request: {
+    envelopeXdr: string;
+    expectedTransactionHash: string;
+    networkPassphrase: string;
+  }) => {
+    if (!activeAccount) throw new Error("No active account");
+    if (activeAccount.watchOnly || activeAccount.hardware) {
+      throw new Error("Private Balance requires an active software account.");
+    }
+    if (request.networkPassphrase !== NETWORKS[network].networkPassphrase) {
+      throw new Error("Private Balance signing network changed. Review the transaction again.");
+    }
+    await requestSigningAuthorization("Sign private balance transaction");
+    const signing = await loadPrivateBalanceSigningApi();
+    return withSecretKey(activeAccount.id, secretKey => signing.signExactPrivateBalanceEnvelope({
+      ...request,
+      expectedSource: activeAccount.publicKey,
+      secretKey,
+    }));
+  }, [activeAccount, network, requestSigningAuthorization]);
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
@@ -2427,6 +2676,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      prepareStealthPayment,
+      submitStealthPayment,
       sendBatch,
       claimAirdrop,
       claimAirdrops,
@@ -2438,6 +2689,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       disableMultisig,
       prepareCosignPayment,
       cosignTransaction,
+      signPrivateBalanceEnvelope,
       fundFromFriendbot,
     }),
     [
@@ -2503,6 +2755,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      prepareStealthPayment,
+      submitStealthPayment,
       sendBatch,
       claimAirdrop,
       claimAirdrops,
@@ -2514,6 +2768,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       disableMultisig,
       prepareCosignPayment,
       cosignTransaction,
+      signPrivateBalanceEnvelope,
       fundFromFriendbot,
     ],
   );
@@ -2522,6 +2777,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     () => ({ phase, vaultStorageIssue }),
     [phase, vaultStorageIssue],
   );
+  const securityValue = useMemo<WalletSecurityContextValue>(() => ({
+    signingPasswordRequired,
+    signingAuthorizationRequest,
+    approveSigningAuthorization,
+    continueSigningAuthorization,
+    cancelSigningAuthorization,
+    changeWalletPassword,
+    changeSigningPasswordRequired,
+  }), [
+    approveSigningAuthorization,
+    cancelSigningAuthorization,
+    changeSigningPasswordRequired,
+    changeWalletPassword,
+    continueSigningAuthorization,
+    signingAuthorizationRequest,
+    signingPasswordRequired,
+  ]);
   const lifecycleActions = useMemo<WalletLifecycleActionsValue>(
     () => ({
       createWallet,
@@ -2652,6 +2924,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const transactionsValue = useMemo<WalletTransactionsContextValue>(() => ({
     refresh,
     send,
+    prepareStealthPayment,
+    submitStealthPayment,
     sendBatch,
     claimAirdrop,
     claimAirdrops,
@@ -2663,6 +2937,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     disableMultisig,
     prepareCosignPayment,
     cosignTransaction,
+    signPrivateBalanceEnvelope,
     fundFromFriendbot,
   }), [
     applyMultisigConfig,
@@ -2673,36 +2948,41 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     fundFromFriendbot,
     mergeAccount,
     prepareCosignPayment,
+    prepareStealthPayment,
     refresh,
     send,
     sendBatch,
+    submitStealthPayment,
+    signPrivateBalanceEnvelope,
     swap,
     trustAsset,
     trustAssets,
   ]);
 
   return (
-    <WalletPhaseContext.Provider value={phaseValue}>
-      <WalletLifecycleActionsContext.Provider value={lifecycleActions}>
-        <WalletIdentityContext.Provider value={identityValue}>
-          <WalletLedgerContext.Provider value={ledgerValue}>
-            <WalletActivityContext.Provider value={activityValue}>
-              <WalletSubmissionContext.Provider value={submissionValue}>
-                <WalletMarketContext.Provider value={marketValue}>
-                  <WalletPreferencesContext.Provider value={preferencesValue}>
-                    <WalletContactsContext.Provider value={contactsValue}>
-                      <WalletTransactionsContext.Provider value={transactionsValue}>
-                        <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
-                      </WalletTransactionsContext.Provider>
-                    </WalletContactsContext.Provider>
-                  </WalletPreferencesContext.Provider>
-                </WalletMarketContext.Provider>
-              </WalletSubmissionContext.Provider>
-            </WalletActivityContext.Provider>
-          </WalletLedgerContext.Provider>
-        </WalletIdentityContext.Provider>
-      </WalletLifecycleActionsContext.Provider>
-    </WalletPhaseContext.Provider>
+    <WalletSecurityContext.Provider value={securityValue}>
+      <WalletPhaseContext.Provider value={phaseValue}>
+        <WalletLifecycleActionsContext.Provider value={lifecycleActions}>
+          <WalletIdentityContext.Provider value={identityValue}>
+            <WalletLedgerContext.Provider value={ledgerValue}>
+              <WalletActivityContext.Provider value={activityValue}>
+                <WalletSubmissionContext.Provider value={submissionValue}>
+                  <WalletMarketContext.Provider value={marketValue}>
+                    <WalletPreferencesContext.Provider value={preferencesValue}>
+                      <WalletContactsContext.Provider value={contactsValue}>
+                        <WalletTransactionsContext.Provider value={transactionsValue}>
+                          <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
+                        </WalletTransactionsContext.Provider>
+                      </WalletContactsContext.Provider>
+                    </WalletPreferencesContext.Provider>
+                  </WalletMarketContext.Provider>
+                </WalletSubmissionContext.Provider>
+              </WalletActivityContext.Provider>
+            </WalletLedgerContext.Provider>
+          </WalletIdentityContext.Provider>
+        </WalletLifecycleActionsContext.Provider>
+      </WalletPhaseContext.Provider>
+    </WalletSecurityContext.Provider>
   );
 }
 
@@ -2769,5 +3049,11 @@ export function useWalletPhase(): WalletPhaseContextValue {
 export function useWalletLifecycleActions(): WalletLifecycleActionsValue {
   const context = useContext(WalletLifecycleActionsContext);
   if (!context) throw new Error("useWalletLifecycleActions must be used within WalletProvider");
+  return context;
+}
+
+export function useWalletSecurity(): WalletSecurityContextValue {
+  const context = useContext(WalletSecurityContext);
+  if (!context) throw new Error("useWalletSecurity must be used within WalletProvider");
   return context;
 }

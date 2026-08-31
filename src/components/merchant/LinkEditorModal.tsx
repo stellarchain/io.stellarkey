@@ -280,6 +280,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         <div className="space-y-2">
           <span className="field-label">What it asks for</span>
           <SegmentedControl
+            ariaLabel="Code type"
             value={kind}
             options={CODE_KINDS.map((option) => ({ ...option, disabled: isEdit }))}
             onChange={chooseKind}

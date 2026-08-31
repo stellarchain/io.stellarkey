@@ -1,0 +1,26 @@
+[package]
+name = "private-balance-protocol"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+soroban-sdk = { version = "=27.0.6", default-features = false, features = ["alloc", "hazmat-crypto"] }
+soroban-poseidon = { git = "https://github.com/stellar/rs-soroban-poseidon", tag = "v27.0.0" }
+sha2 = { version = "0.10.8", default-features = false }
+hkdf = "0.12.4"
+hpke = { version = "=0.14.0", default-features = false, features = ["aes", "alloc", "x25519"] }
+num-bigint = { version = "0.4.8", default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[dev-dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["hazmat-crypto", "testutils"] }
+rand = "0.8.5"
+serde_json = "1.0"
+
+[features]
+default = ["std"]
+std = ["serde", "serde_json"]

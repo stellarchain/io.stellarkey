@@ -1,9 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchantRuntime, useMerchantShell } from "@/hooks/useMerchantRuntime";
+import {
+  usePrivateBalanceRuntime,
+  usePrivateBalanceRuntimeData,
+  usePrivateBalancePortfolio,
+  type PrivateBalanceRuntimePhase,
+} from "@/hooks/usePrivateBalanceRuntime";
+import {
+  portfolioXlmWithPrivateAssets,
+  portfolioUsdWithPrivateAssets,
+  mergePortfolioActivity,
+  privatePortfolioActivityItems,
+  privatePortfolioRepresentativeUsd,
+} from "@/features/private-balance/runtime/portfolio";
+import {
+  ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
+} from "@/lib/private-balance-expected-manifest";
+import { privateBalancePoolConfigured } from "@/lib/private-balance-bootstrap";
 import { NETWORKS } from "@/lib/stellar";
 import {
   getHorizonUrl,
@@ -16,6 +33,7 @@ import { parseSep7PayUri } from "@/lib/payuri";
 import {
   fmtAmount,
   fmtFiat,
+  fmtFiatMarketPrice,
   activityAmountLines,
   generateActivityCsv,
   timeAgo,
@@ -25,7 +43,15 @@ import { formatTrezorAddress } from "@/lib/address-display";
 import type { AccountMeta, ActivityItem, AssetBalance } from "@/lib/types";
 import type { PriceRange as PriceRangeT } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
-import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
+import {
+  PUBLIC_SEND_REQUEST_EVENT,
+} from "@/lib/private-address";
+import {
+  fetchAssetPrices,
+  getRepresentativeUnitPrice,
+  getUnitPrice,
+  type AssetPrices,
+} from "@/lib/prices";
 import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
 import { playTapSound } from "@/lib/sounds";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
@@ -46,14 +72,15 @@ import {
   loadDismissedClaimableBalanceIds,
   restoreClaimableBalance,
 } from "@/lib/claimable-balance-dismissals";
-import { PriceChart } from "./PriceChart";
+import { PriceChart, type PriceChartInspection } from "./PriceChart";
 import { Sparkline } from "./Sparkline";
 import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
 import { FiatValue } from "./FiatValue";
-import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner } from "./ui";
+import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner, Tooltip } from "./ui";
 import { AccountMark } from "./AccountMark";
+import { PrivateShieldNotch } from "./PrivateShieldNotch";
 import { WelcomeHome } from "./WelcomeHome";
 import {
   IconArrowDownLeft,
@@ -76,6 +103,7 @@ import {
   IconKey,
   IconList,
   IconLock,
+  IconMessageCircle,
   IconPlus,
   IconRefresh,
   IconSearch,
@@ -86,19 +114,28 @@ import {
   IconWallet,
   LogoMark,
 } from "./icons";
-import { IconBars, IconReceipt, IconStorefront, IconTag } from "./merchant/icons";
+import { IconBars, IconReceipt, IconStorefront, IconReceiptStellar, IconTag } from "./merchant/icons";
 import { BuildIdentity } from "./BuildIdentity";
-import { ModeSwitcher, type ShellMode } from "./merchant/ModeSwitcher";
+import { ModeSwitcher } from "./merchant/ModeSwitcher";
+import {
+  readShellMode,
+  subscribeShellMode,
+  writeShellMode,
+  type ShellMode,
+} from "@/lib/shell-mode";
 import type { MerchantSub } from "./merchant/MerchantPage";
 import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
-import type { SendPrefill } from "./SendModal";
+import { SendModal, type SendPrefill } from "./SendModal";
+import { ReceiveModal } from "./ReceiveModal";
+import { AddAssetModal } from "./AddAssetModalShell";
 import {
   BRAND_NAME,
   COPYRIGHT_OWNER,
   COPYRIGHT_YEAR,
+  decodeContactAddress,
 } from "@/lib/brand";
 
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
@@ -106,13 +143,10 @@ const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.
 const AddressBookPage = dynamic(() => import("./AddressBookPage").then((m) => m.AddressBookPage), { ssr: false });
 const BackupWizardModal = dynamic(() => import("./BackupWizardModal").then((m) => m.BackupWizardModal), { ssr: false });
 const MultiSigStudioModal = dynamic(() => import("./MultiSigStudioModal").then((m) => m.MultiSigStudioModal), { ssr: false });
-const AddAssetModal = dynamic(() => import("./AddAssetModal").then((m) => m.AddAssetModal), { ssr: false });
 const ClaimableBalancesModal = dynamic(() => import("./ClaimableBalancesModal").then((m) => m.ClaimableBalancesModal), { ssr: false });
 const AssetDetailModal = dynamic(() => import("./AssetDetailModal").then((m) => m.AssetDetailModal), { ssr: false });
 const BatchSendModal = dynamic(() => import("./BatchSendModal").then((m) => m.BatchSendModal), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((m) => m.CommandPalette), { ssr: false });
-const ReceiveModal = dynamic(() => import("./ReceiveModal").then((m) => m.ReceiveModal), { ssr: false });
-const SendModal = dynamic(() => import("./SendModal").then((m) => m.SendModal), { ssr: false });
 const SwapPage = dynamic(() => import("./SwapPage").then((m) => m.SwapPage), { ssr: false });
 const TxDetailModal = dynamic(() => import("./TxDetailModal").then((m) => m.TxDetailModal), { ssr: false });
 const KeyboardShortcutsModal = dynamic(() => import("./KeyboardShortcutsModal").then((m) => m.KeyboardShortcutsModal), { ssr: false });
@@ -121,6 +155,31 @@ const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) =
 const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
 const MerchantPage = dynamic(() => import("./merchant/MerchantPage").then((m) => m.MerchantPage), { ssr: false });
 const SetupWizard = dynamic(() => import("./merchant/SetupWizard").then((m) => m.SetupWizard), { ssr: false });
+const PrivateBalanceAssetRow = dynamic(
+  () =>
+    import("@/features/private-balance/components/PrivateBalanceAssetRow").then(
+      (module) => module.PrivateBalanceAssetRow,
+    ),
+  { ssr: false },
+);
+const PrivateAssetDetailModal = dynamic(
+  () => import("@/features/private-balance/components/PrivateAssetDetailModal").then(
+    (module) => module.PrivateAssetDetailModal,
+  ),
+  { ssr: false },
+);
+const WithdrawPrivate = dynamic(
+  () => import("@/features/private-balance/components/WithdrawPrivate").then(
+    (module) => module.WithdrawPrivate,
+  ),
+  { ssr: false },
+);
+const PrivateBalanceSetup = dynamic(
+  () => import("@/features/private-balance/components/PrivateBalanceSetup").then(
+    (module) => module.PrivateBalanceSetup,
+  ),
+  { ssr: false },
+);
 
 type View =
   | "home"
@@ -217,6 +276,31 @@ interface BeforeInstallPromptEvent extends Event {
 }
 type ActivityFilter = "all" | "in" | "out" | "swap" | "trust";
 
+function privateWithdrawOpeningLabel(
+  phase: PrivateBalanceRuntimePhase,
+  syncProgress: { current: number; total: number } | null,
+): string {
+  switch (phase) {
+    case "loading-artifacts":
+      return "Loading the private wallet";
+    case "reading-meta":
+      return "Opening the encrypted balance";
+    case "scanning-live":
+      return syncProgress
+        ? `Checking private payment ${syncProgress.current} of ${syncProgress.total}`
+        : "Checking recent private activity";
+    case "current":
+      return "Finishing up";
+    case "locked":
+      return "Unlock StellarKey to continue";
+    case "safe-error":
+      return "Private balance needs attention";
+    case "disabled":
+    default:
+      return "Starting the private wallet";
+  }
+}
+
 export function Dashboard() {
   const {
     network,
@@ -258,11 +342,46 @@ export function Dashboard() {
     activeShift: merchantActiveShift,
   } = useMerchantShell();
   const {
+    mounted: merchantRuntimeMounted,
     intent: merchantRuntimeIntent,
     requestRuntime,
     consumeIntent: consumeMerchantRuntimeIntent,
     releaseRuntime,
   } = useMerchantRuntime();
+  const {
+    requested: privateBalanceRequested,
+    availableAssets: privateAvailableAssets,
+    requestRuntime: requestPrivateRuntime,
+    retryRuntime: retryPrivateRuntime,
+    selectedDeploymentId: selectedPrivateDeploymentId,
+    selectAsset: selectPrivateAsset,
+  } = usePrivateBalanceRuntime();
+  const { entries: privatePortfolioEntries } = usePrivateBalancePortfolio();
+  const privatePoolConfigured =
+    privateBalancePoolConfigured(privateAvailableAssets) || privatePortfolioEntries.length > 0;
+  const privateBalanceRuntime = usePrivateBalanceRuntimeData();
+  const privateWithdrawEntry =
+    privatePortfolioEntries.find((entry) => entry.asset.kind === "native") ??
+    privatePortfolioEntries[0] ??
+    null;
+  const privateBalanceAvailable =
+    ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE ||
+    (
+      privateBalanceRuntime.phase === "disabled" &&
+      privateBalanceRuntime.error === null &&
+      privateBalanceRuntime.deployment.manifestStatus !== null
+    );
+  const showPrivatePayments =
+    privateBalanceRequested ||
+    privateBalanceRuntime.configured ||
+    [
+      "reading-meta",
+      "scanning-live",
+      "restoration-required",
+      "restoring",
+      "current",
+      "safe-error",
+    ].includes(privateBalanceRuntime.phase);
 
   const [storedView, setView] = useState<View>(() =>
     merchantRuntimeIntent === "settings"
@@ -274,8 +393,10 @@ export function Dashboard() {
   // The sidebar shows one mode's navigation at a time. Settings is global, so
   // opening it must not knock the sidebar back to the wallet's rows — which is
   // why the mode is held rather than derived from the view.
-  const [storedMode, setMode] = useState<ShellMode>(() =>
-    merchantRuntimeIntent === "merchant" ? "merchant" : "wallet",
+  const storedMode = useSyncExternalStore<ShellMode>(
+    subscribeShellMode,
+    readShellMode,
+    () => "wallet",
   );
   // Turning Merchant Mode off leaves the shell exactly as it was before it was
   // ever turned on, without a render pass that writes state back.
@@ -288,6 +409,15 @@ export function Dashboard() {
   const [hideDust, setHideDust] = useState(false);
   const [hideActivityDust, setHideActivityDust] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
+  const [sendInitialMode, setSendInitialMode] = useState<"public" | "private">("public");
+  const [receiveInitialMode, setReceiveInitialMode] = useState<"public" | "private">("public");
+  const [privateAssetOpen, setPrivateAssetOpen] = useState(false);
+  const [privateAssetDeploymentId, setPrivateAssetDeploymentId] = useState<string | null>(null);
+  const [privateValueInfoOpen, setPrivateValueInfoOpen] = useState(false);
+  const [privateWithdrawDeploymentId, setPrivateWithdrawDeploymentId] = useState<string | null>(null);
+  const [privateWithdrawAttempt, setPrivateWithdrawAttempt] = useState(0);
+  const [privateWithdrawTimedOut, setPrivateWithdrawTimedOut] = useState(false);
+  const [privateSetupOpen, setPrivateSetupOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<SendPrefill | null>(null);
   const [swapPrefill, setSwapPrefill] = useState<SettlementSwapIntent | null>(null);
@@ -300,6 +430,63 @@ export function Dashboard() {
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
   const [renamingAccount, setRenamingAccount] = useState<AccountMeta | null>(null);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
+  const privateAssetOption = privateAssetDeploymentId
+    ? privateAvailableAssets.find((option) => option.deploymentId === privateAssetDeploymentId) ?? null
+    : null;
+  const privateAssetEntry = privateAssetDeploymentId
+    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateAssetDeploymentId) ??
+      (privatePoolConfigured && privateAssetOption
+        ? {
+            deploymentId: privateAssetDeploymentId,
+            asset: privateAssetOption.asset,
+            verifiedBalanceAtomicUnits: "0",
+            lastVerifiedLedger: null,
+            lastVerifiedActionIndex: null,
+            activities: [],
+            pendingActions: [],
+          }
+        : null)
+    : null;
+  const privateWithdrawActiveDeploymentId = privateWithdrawDeploymentId
+    ? selectedPrivateDeploymentId ?? privateWithdrawDeploymentId
+    : null;
+  const privateWithdrawTarget = privateWithdrawActiveDeploymentId
+    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateWithdrawActiveDeploymentId) ?? null
+    : null;
+  const privateWithdrawReady = Boolean(
+    privateWithdrawTarget &&
+    privateBalanceRuntime.configured &&
+    privateBalanceRuntime.asset?.contractId === privateWithdrawTarget.asset.contractId,
+  );
+  const privateWithdrawOpeningLabelText = privateWithdrawOpeningLabel(
+    privateBalanceRuntime.phase,
+    privateBalanceRuntime.syncProgress,
+  );
+  const privateWithdrawScanPercent = privateBalanceRuntime.syncProgress
+    ? Math.min(
+        100,
+        Math.max(
+          0,
+          Math.round(
+            (privateBalanceRuntime.syncProgress.current /
+              Math.max(1, privateBalanceRuntime.syncProgress.total)) * 100,
+          ),
+        ),
+      )
+    : null;
+
+  useEffect(() => {
+    if (!privateWithdrawDeploymentId || privateWithdrawReady || privateBalanceRuntime.error) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setPrivateWithdrawTimedOut(true), 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [
+    privateBalanceRuntime.error,
+    privateWithdrawAttempt,
+    privateWithdrawDeploymentId,
+    privateWithdrawReady,
+  ]);
   const [pinnedAssets, setPinnedAssets] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -405,10 +592,10 @@ export function Dashboard() {
   }
 
   useEffect(() => {
-    if (!merchantRuntimeIntent) return;
+    if (!merchantRuntimeIntent || !merchantRuntimeMounted) return;
     const timer = window.setTimeout(consumeMerchantRuntimeIntent, 0);
     return () => window.clearTimeout(timer);
-  }, [consumeMerchantRuntimeIntent, merchantRuntimeIntent]);
+  }, [consumeMerchantRuntimeIntent, merchantRuntimeIntent, merchantRuntimeMounted]);
 
   useEffect(() => {
     void (async () => {
@@ -440,6 +627,20 @@ export function Dashboard() {
         window.history.replaceState(null, "", window.location.pathname);
       }
     })();
+  }, []);
+
+  // Private Payments → public Send handoff: a pasted G/C address in the
+  // private send flow lands here with the destination prefilled.
+  useEffect(() => {
+    const onPublicSendRequest = (event: Event) => {
+      const destination = (event as CustomEvent<{ destination?: string }>).detail?.destination;
+      setSendPrefill(
+        typeof destination === "string" && destination !== "" ? { destination } : null,
+      );
+      setSendOpen(true);
+    };
+    window.addEventListener(PUBLIC_SEND_REQUEST_EVENT, onPublicSendRequest);
+    return () => window.removeEventListener(PUBLIC_SEND_REQUEST_EVENT, onPublicSendRequest);
   }, []);
 
   useEffect(() => {
@@ -760,6 +961,39 @@ export function Dashboard() {
     });
   }, [accountPortfolioSnapshots, activeAccount, assetPrices, balances, network, xlmPriceUsd]);
   const usdValue = activePortfolio.totalUsd;
+  const privateRepresentativeUsd = useMemo(
+    () => privatePortfolioRepresentativeUsd(privatePortfolioEntries, xlmPriceUsd),
+    [privatePortfolioEntries, xlmPriceUsd],
+  );
+  const mergedActivity = useMemo(
+    () => mergePortfolioActivity(
+      activity,
+      privatePortfolioActivityItems(privatePortfolioEntries),
+    ),
+    [activity, privatePortfolioEntries],
+  );
+
+  const activeRepresentativePublicUsd = useMemo(() => {
+    if (network === "mainnet") return usdValue;
+    if (balances === null) return null;
+    let total = 0;
+    for (const asset of balances) {
+      const amount = Number(asset.balance);
+      if (!Number.isFinite(amount)) return null;
+      if (amount === 0) continue;
+      const unitPrice = getRepresentativeUnitPrice(
+        asset.code,
+        asset.issuer,
+        network,
+        asset.isNative,
+        xlmPriceUsd,
+        assetPrices,
+      );
+      if (unitPrice === null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
+      total += amount * unitPrice;
+    }
+    return total;
+  }, [assetPrices, balances, network, usdValue, xlmPriceUsd]);
 
   const allPortfolio = useMemo(
     () => aggregatePortfolio({
@@ -772,13 +1006,46 @@ export function Dashboard() {
     [accountPortfolioSnapshots, accounts, assetPrices, network, xlmPriceUsd],
   );
   const allPortfolioReady = allPortfolio.completeness === "complete";
-  const heroXlm = portfolioView === "all"
-    ? allPortfolio.nativeBalance
-    : xlm?.balance ?? "0.0000000";
-  const heroUsd =
-    portfolioView === "all"
-      ? allPortfolio.totalUsd
-      : usdValue;
+  const allRepresentativePublicUsd = useMemo(() => {
+    if (!allPortfolioReady) return null;
+    if (network === "mainnet") return allPortfolio.totalUsd;
+
+    let total = 0;
+    for (const asset of allPortfolio.assets) {
+      const amount = Number(asset.balance);
+      if (!Number.isFinite(amount)) return null;
+      if (amount === 0) continue;
+      const unitPrice = getRepresentativeUnitPrice(
+        asset.code,
+        asset.issuer,
+        network,
+        asset.isNative,
+        xlmPriceUsd,
+        assetPrices,
+      );
+      if (unitPrice === null || !Number.isFinite(unitPrice) || unitPrice <= 0) return null;
+      total += amount * unitPrice;
+    }
+    return Number.isFinite(total) ? total : null;
+  }, [allPortfolio.assets, allPortfolio.totalUsd, allPortfolioReady, assetPrices, network, xlmPriceUsd]);
+  const activeAccountTotalUsd = portfolioUsdWithPrivateAssets(
+    activeRepresentativePublicUsd,
+    privateRepresentativeUsd,
+  );
+  const allAccountsTotalUsd = portfolioUsdWithPrivateAssets(
+    allRepresentativePublicUsd,
+    privateRepresentativeUsd,
+  );
+  const activeAccountXlm = portfolioXlmWithPrivateAssets(
+    xlm?.balance ?? accountBalances[activeAccount?.publicKey ?? ""] ?? 0,
+    privatePortfolioEntries,
+  );
+  const allAccountsXlm = portfolioXlmWithPrivateAssets(
+    allPortfolio.nativeBalance,
+    privatePortfolioEntries,
+  );
+  const heroXlm = portfolioView === "all" ? allAccountsXlm : activeAccountXlm;
+  const heroUsd = portfolioView === "all" ? allAccountsTotalUsd : activeAccountTotalUsd;
   const heroLoading = portfolioView === "all"
     ? allPortfolio.completeness === "loading"
     : balances === null && !dataError;
@@ -833,7 +1100,7 @@ export function Dashboard() {
   }, [balances, hideDust, network, q, pinnedAssets]);
 
   const filteredActivity = useMemo(() => {
-    return activity.filter((a) => {
+    return mergedActivity.filter((a) => {
       if (counterpartyFilter && a.counterparty !== counterpartyFilter) return false;
       if (activityFilter === "in" && a.direction !== "in") return false;
       if (activityFilter === "out" && a.direction !== "out") return false;
@@ -866,11 +1133,11 @@ export function Dashboard() {
         a.hash.toLowerCase().includes(q)
       );
     });
-  }, [activity, activityFilter, activityAssetFilter, counterpartyFilter, hideActivityDust, q]);
+  }, [activityFilter, activityAssetFilter, counterpartyFilter, hideActivityDust, mergedActivity, q]);
 
   const activityAssetOptions = useMemo(() => {
     const assets = new Map<string, { value: string; label: string; sublabel?: string }>();
-    for (const item of activity) {
+    for (const item of mergedActivity) {
       const presentations = [
         activityAssetPresentation(item),
         ...(item.swap
@@ -891,7 +1158,7 @@ export function Dashboard() {
       }
     }
     return [...assets.values()];
-  }, [activity]);
+  }, [mergedActivity]);
 
   // Group activity deterministically by date label
   const groupedActivity = useMemo(() => {
@@ -1003,12 +1270,36 @@ export function Dashboard() {
     if (v === "swap") setSwapPrefill(null);
     setView(v);
     if (isMerchantView(v)) {
-      setMode("merchant");
+      writeShellMode("merchant");
     } else if (v !== "settings") {
-      setMode("wallet");
+      writeShellMode("wallet");
     }
     window.scrollTo({ top: 0 });
   }
+
+  const openPrivatePayments = useCallback((deploymentId?: string) => {
+    const targetDeploymentId = deploymentId ??
+      privateWithdrawEntry?.deploymentId ??
+      privateAvailableAssets[0]?.deploymentId ??
+      null;
+    if (!targetDeploymentId) return;
+
+    selectPrivateAsset(targetDeploymentId);
+    requestPrivateRuntime();
+    if (!privatePoolConfigured) {
+      setPrivateSetupOpen(true);
+      return;
+    }
+
+    setPrivateAssetDeploymentId(targetDeploymentId);
+    setPrivateAssetOpen(true);
+  }, [
+    privateAvailableAssets,
+    privatePoolConfigured,
+    privateWithdrawEntry,
+    requestPrivateRuntime,
+    selectPrivateAsset,
+  ]);
 
   /**
    * The sheet is mounted by MerchantPage, so the counter has to be on screen
@@ -1019,7 +1310,7 @@ export function Dashboard() {
   function openShift() {
     triggerHaptic("selection");
     setView((current) => (isMerchantView(current) ? current : "merchant"));
-    setMode("merchant");
+    writeShellMode("merchant");
     setShiftOpen(true);
     window.scrollTo({ top: 0 });
   }
@@ -1059,6 +1350,31 @@ export function Dashboard() {
         run: () => setBatchSendOpen(true),
       },
       { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
+      // Private actions appear only when the runtime is available or configured.
+      ...(privateBalanceAvailable || showPrivatePayments
+        ? [
+            {
+              id: "private-send",
+              label: "Send Privately",
+              hint: "Private asset",
+              run: () => {
+                setSendInitialMode("private");
+                setSendPrefill(null);
+                setSendOpen(true);
+              },
+            },
+            {
+              id: "private-receive",
+              label: "Receive Privately",
+              hint: "Private asset",
+              run: () => {
+                setReceiveInitialMode("private");
+                setReceiveOpen(true);
+              },
+            },
+            { id: "private-open", label: "Open private asset", run: openPrivatePayments },
+          ]
+        : []),
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
       { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
@@ -1152,6 +1468,9 @@ export function Dashboard() {
       contacts,
       activeAccount,
       privacyMode,
+      privateBalanceAvailable,
+      showPrivatePayments,
+      openPrivatePayments,
       network,
       fiatCurrency,
       cycleFiatCurrency,
@@ -1163,7 +1482,10 @@ export function Dashboard() {
   );
 
   return (
-    <div className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden">
+    <div
+      data-app-surface
+      className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden"
+    >
       {/* Privacy Shield */}
       {appHidden && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
@@ -1205,18 +1527,19 @@ export function Dashboard() {
           }`}
         >
           {sidebarCollapsed ? (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setSidebarCollapsed(false);
-              }}
-              className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/[0.08]"
-              title="Expand Sidebar"
-              aria-label="Expand Sidebar"
-            >
-              <LogoMark size={30} className="text-white" />
-            </button>
+            <Tooltip label="Expand Sidebar" side="right">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setSidebarCollapsed(false);
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition-colors hover:bg-white/[0.08]"
+                aria-label="Expand Sidebar"
+              >
+                <LogoMark size={30} className="text-white" />
+              </button>
+            </Tooltip>
           ) : (
             <>
               <div className="flex min-w-0 items-center gap-1.5">
@@ -1269,19 +1592,23 @@ export function Dashboard() {
             */}
             {merchantEnabled &&
               (sidebarCollapsed ? (
-                <button
-                  type="button"
-                  onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
-                  className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-all hover:bg-white/[0.08] hover:text-white"
-                  title={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
-                  aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
+                <Tooltip
+                  label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
+                  side="right"
                 >
-                  {mode === "merchant" ? (
-                    <IconStorefront size={18} className="text-[#30D158]" />
-                  ) : (
-                    <IconWallet size={18} />
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
+                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-all hover:bg-white/[0.08] hover:text-white"
+                    aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
+                  >
+                    {mode === "merchant" ? (
+                      <IconReceiptStellar size={18} className="text-[#30D158]" />
+                    ) : (
+                      <IconWallet size={18} />
+                    )}
+                  </button>
+                </Tooltip>
               ) : (
                 <div className="mb-2">
                   <ModeSwitcher mode={mode} onChange={switchMode} />
@@ -1309,40 +1636,48 @@ export function Dashboard() {
 
             {mode === "merchant" ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => switchTab("merchant")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "merchant"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={sidebarCollapsed ? "Point of Sale (⌘6)" : undefined}
-                >
-                  <IconStorefront size={18} />
-                  {!sidebarCollapsed && <span>Point of Sale</span>}
-                </button>
+                <Tooltip label={sidebarCollapsed ? "Point of Sale (⌘6)" : null} side="right">
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed ? "Point of Sale (⌘6)" : undefined}
+                    onClick={() => switchTab("merchant")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "merchant"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <IconStorefront size={18} />
+                    {!sidebarCollapsed && <span>Point of Sale</span>}
+                  </button>
+                </Tooltip>
 
-                <button
-                  type="button"
-                  onClick={() => switchTab("orders")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "orders"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={
-                    sidebarCollapsed
+                <Tooltip
+                  label={sidebarCollapsed
+                    ? merchantAttention > 0
+                      ? `Orders (${merchantAttention} need attention)`
+                      : "Orders"
+                    : null}
+                  side="right"
+                >
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed
                       ? merchantAttention > 0
                         ? `Orders (${merchantAttention} need attention)`
                         : "Orders"
-                      : undefined
-                  }
-                >
+                      : undefined}
+                    onClick={() => switchTab("orders")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "orders"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
                   <div className="flex items-center gap-2.5">
                     <IconReceipt size={18} />
                     {!sidebarCollapsed && <span>Orders</span>}
@@ -1364,175 +1699,199 @@ export function Dashboard() {
                         {merchantAttention}
                       </span>
                     ))}
-                </button>
+                  </button>
+                </Tooltip>
 
-                <button
-                  type="button"
-                  onClick={() => switchTab("catalogue")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "catalogue"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={sidebarCollapsed ? "Catalogue" : undefined}
-                >
-                  <IconTag size={18} />
-                  {!sidebarCollapsed && <span>Catalogue</span>}
-                </button>
+                <Tooltip label={sidebarCollapsed ? "Catalogue" : null} side="right">
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed ? "Catalogue" : undefined}
+                    onClick={() => switchTab("catalogue")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "catalogue"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <IconTag size={18} />
+                    {!sidebarCollapsed && <span>Catalogue</span>}
+                  </button>
+                </Tooltip>
 
                 {/* Counter codes is the other half of Invoices, so it lights this row. */}
-                <button
-                  type="button"
-                  onClick={() => switchTab("invoices")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "invoices" || view === "links"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={sidebarCollapsed ? "Invoices" : undefined}
-                >
-                  <IconFileText size={18} />
-                  {!sidebarCollapsed && <span>Invoices</span>}
-                </button>
+                <Tooltip label={sidebarCollapsed ? "Invoices" : null} side="right">
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed ? "Invoices" : undefined}
+                    onClick={() => switchTab("invoices")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "invoices" || view === "links"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <IconFileText size={18} />
+                    {!sidebarCollapsed && <span>Invoices</span>}
+                  </button>
+                </Tooltip>
 
-                <button
-                  type="button"
-                  onClick={() => switchTab("customers")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "customers"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={sidebarCollapsed ? "Customers" : undefined}
-                >
-                  <IconUsers size={18} />
-                  {!sidebarCollapsed && <span>Customers</span>}
-                </button>
+                <Tooltip label={sidebarCollapsed ? "Customers" : null} side="right">
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed ? "Customers" : undefined}
+                    onClick={() => switchTab("customers")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "customers"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <IconUsers size={18} />
+                    {!sidebarCollapsed && <span>Customers</span>}
+                  </button>
+                </Tooltip>
 
-                <button
-                  type="button"
-                  onClick={() => switchTab("insights")}
-                  className={`group relative flex w-full items-center rounded-xl transition-all ${
-                    sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-                  } text-[13.5px] font-semibold ${
-                    view === "insights"
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                  title={sidebarCollapsed ? "Insights" : undefined}
-                >
-                  <IconBars size={18} />
-                  {!sidebarCollapsed && <span>Insights</span>}
-                </button>
+                <Tooltip label={sidebarCollapsed ? "Insights" : null} side="right">
+                  <button
+                    type="button"
+                    aria-label={sidebarCollapsed ? "Insights" : undefined}
+                    onClick={() => switchTab("insights")}
+                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                      sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                    } text-[13.5px] font-semibold ${
+                      view === "insights"
+                        ? "bg-[#0A84FF] text-white shadow-sm"
+                        : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <IconBars size={18} />
+                    {!sidebarCollapsed && <span>Insights</span>}
+                  </button>
+                </Tooltip>
 
               </>
             ) : (
               <>
-            <button
-              type="button"
-              onClick={() => switchTab("home")}
-              className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-              } text-[13.5px] font-semibold ${
-                view === "home"
-                  ? "bg-[#0A84FF] text-white shadow-sm"
-                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              title={sidebarCollapsed ? "Home (⌘1)" : undefined}
-            >
-              <div className="flex items-center gap-2.5">
-                <IconHome size={18} />
-                {!sidebarCollapsed && <span>Home</span>}
-              </div>
-            </button>
+            <Tooltip label={sidebarCollapsed ? "Home (⌘1)" : null} side="right">
+              <button
+                type="button"
+                aria-label={sidebarCollapsed ? "Home (⌘1)" : undefined}
+                onClick={() => switchTab("home")}
+                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                  sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+                } text-[13.5px] font-semibold ${
+                  view === "home"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <IconHome size={18} />
+                  {!sidebarCollapsed && <span>Home</span>}
+                </div>
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={() => switchTab("activity")}
-              className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-              } text-[13.5px] font-semibold ${
-                view === "activity"
-                  ? "bg-[#0A84FF] text-white shadow-sm"
-                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              title={sidebarCollapsed ? "Activity (⌘2)" : undefined}
-            >
-              <div className="flex items-center gap-2.5">
-                <IconList size={18} />
-                {!sidebarCollapsed && <span>Activity</span>}
-              </div>
-              {!sidebarCollapsed && activity.length > 0 && (
-                <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
-              )}
-            </button>
+            <Tooltip label={sidebarCollapsed ? "Activity (⌘2)" : null} side="right">
+              <button
+                type="button"
+                aria-label={sidebarCollapsed ? "Activity (⌘2)" : undefined}
+                onClick={() => switchTab("activity")}
+                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                  sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+                } text-[13.5px] font-semibold ${
+                  view === "activity"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <IconList size={18} />
+                  {!sidebarCollapsed && <span>Activity</span>}
+                </div>
+                {!sidebarCollapsed && activity.length > 0 && (
+                  <span className="mono text-[11px] font-normal opacity-80">{activity.length}</span>
+                )}
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={() => switchTab("swap")}
-              className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-              } text-[13.5px] font-semibold ${
-                view === "swap"
-                  ? "bg-[#0A84FF] text-white shadow-sm"
-                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              title={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
-            >
-              <IconSwap size={18} />
-              {!sidebarCollapsed && <span>DEX Swap</span>}
-            </button>
+            <Tooltip label={sidebarCollapsed ? "DEX Swap (⌘3)" : null} side="right">
+              <button
+                type="button"
+                aria-label={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
+                onClick={() => switchTab("swap")}
+                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                  sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                } text-[13.5px] font-semibold ${
+                  view === "swap"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <IconSwap size={18} />
+                {!sidebarCollapsed && <span>DEX Swap</span>}
+              </button>
+            </Tooltip>
 
-            <button
-              type="button"
-              onClick={() => switchTab("contacts")}
-              className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
-              } text-[13.5px] font-semibold ${
-                view === "contacts"
-                  ? "bg-[#0A84FF] text-white shadow-sm"
-                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              title={sidebarCollapsed ? "Contacts (⌘4)" : undefined}
-            >
-              <div className="flex items-center gap-2.5">
-                <IconBook size={18} />
-                {!sidebarCollapsed && <span>Contacts</span>}
-              </div>
-              {!sidebarCollapsed && contacts.length > 0 && (
-                <span className="mono text-[11px] font-normal opacity-80">{contacts.length}</span>
-              )}
-            </button>
+            <Tooltip label={sidebarCollapsed ? "Contacts (⌘4)" : null} side="right">
+              <button
+                type="button"
+                aria-label={sidebarCollapsed ? "Contacts (⌘4)" : undefined}
+                onClick={() => switchTab("contacts")}
+                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                  sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
+                } text-[13.5px] font-semibold ${
+                  view === "contacts"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <IconBook size={18} />
+                  {!sidebarCollapsed && <span>Contacts</span>}
+                </div>
+                {!sidebarCollapsed && contacts.length > 0 && (
+                  <span className="mono text-[11px] font-normal opacity-80">{contacts.length}</span>
+                )}
+              </button>
+            </Tooltip>
               </>
             )}
 
-            <button
-              type="button"
-              onClick={openSettingsForMode}
-              className={`group relative flex w-full items-center rounded-xl transition-all ${
-                sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
-              } text-[13.5px] font-semibold ${
-                view === "settings"
-                  ? "bg-[#0A84FF] text-white shadow-sm"
-                  : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
-              }`}
-              title={
-                sidebarCollapsed
+            <Tooltip
+              label={sidebarCollapsed
+                ? mode === "merchant"
+                  ? "Merchant settings"
+                  : "Settings (⌘5)"
+                : null}
+              side="right"
+            >
+              <button
+                type="button"
+                aria-label={sidebarCollapsed
                   ? mode === "merchant"
                     ? "Merchant settings"
                     : "Settings (⌘5)"
-                  : undefined
-              }
-            >
-              <IconGear size={18} />
-              {!sidebarCollapsed && <span>Settings</span>}
-            </button>
+                  : undefined}
+                onClick={openSettingsForMode}
+                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                  sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
+                } text-[13.5px] font-semibold ${
+                  view === "settings"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <IconGear size={18} />
+                {!sidebarCollapsed && <span>Settings</span>}
+              </button>
+            </Tooltip>
 
             {/* Accounts Subgroup (Zero Outer Borders) */}
             {!sidebarCollapsed ? (
@@ -1555,6 +1914,9 @@ export function Dashboard() {
                 <div className="space-y-0.5">
                   {accounts.map((acct) => {
                     const isActive = acct.id === activeAccount?.id;
+                    const accountXlm = isActive
+                      ? activeAccountXlm ?? accountBalances[acct.publicKey] ?? 0
+                      : accountBalances[acct.publicKey] ?? 0;
                     return (
                       <button
                         key={acct.id}
@@ -1584,17 +1946,23 @@ export function Dashboard() {
                             <p className="mono truncate text-[10.5px] text-neutral-400 pt-0.5">
                               {privacyMode
                                 ? "••••••"
-                                : `${fmtAmount(accountBalances[acct.publicKey] ?? 0)} XLM`}
+                                : `${fmtAmount(accountXlm)} XLM`}
                             </p>
                           </div>
                         </div>
-                        {/* Fiat value at the end of the row (Trezor Suite style) */}
-                        <FiatValue
-                          amount={accountBalances[acct.publicKey] ?? 0}
-                          code="XLM"
-                          prefix=""
-                          className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300"
-                        />
+                        {/* Active account uses its complete public + private portfolio value. */}
+                        {isActive && activeAccountTotalUsd !== null && !privacyMode ? (
+                          <span className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300">
+                            {fmtFiat(activeAccountTotalUsd, fiatCurrency, fiatRates)}
+                          </span>
+                        ) : (
+                          <FiatValue
+                            amount={accountXlm}
+                            code="XLM"
+                            prefix=""
+                            className="mono shrink-0 pl-2 text-[11.5px] font-semibold text-neutral-300"
+                          />
+                        )}
                       </button>
                     );
                   })}
@@ -1605,32 +1973,39 @@ export function Dashboard() {
                 {accounts.map((acct) => {
                   const isActive = acct.id === activeAccount?.id;
                   return (
-                    <button
+                    <Tooltip
                       key={acct.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        selectAccount(acct.id);
-                      }}
-                      className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
-                        isActive
-                          ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
-                          : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
-                      }`}
-                      title={`${acct.label} - ${formatTrezorAddress(acct.publicKey)}`}
+                      label={`${acct.label} · ${formatTrezorAddress(acct.publicKey)}`}
+                      side="right"
                     >
-                      <AccountMark publicKey={acct.publicKey} size={28} />
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={`${acct.label} · ${formatTrezorAddress(acct.publicKey)}`}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          selectAccount(acct.id);
+                        }}
+                        className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
+                          isActive
+                            ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
+                            : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <AccountMark publicKey={acct.publicKey} size={28} />
+                      </button>
+                    </Tooltip>
                   );
                 })}
-                <button
-                  type="button"
-                  onClick={() => setAddAccountOpen(true)}
-                  className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
-                  title="Add Account"
-                >
-                  <IconPlus size={14} />
-                </button>
+                <Tooltip label="Add Account" side="right">
+                  <button
+                    type="button"
+                    aria-label="Add Account"
+                    onClick={() => setAddAccountOpen(true)}
+                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-dashed border-white/20 text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors mt-1"
+                  >
+                    <IconPlus size={14} />
+                  </button>
+                </Tooltip>
               </div>
             )}
           </nav>
@@ -1642,52 +2017,74 @@ export function Dashboard() {
             <>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="icon-btn !h-8 !w-8"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      togglePrivacy();
-                    }}
-                    title={privacyMode ? "Show balances" : "Hide balances"}
-                  >
-                    {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn !h-8 !w-8"
-                    onClick={() => {
-                      triggerHaptic("light");
-                      void refresh();
-                    }}
-                    disabled={dataLoading}
-                    title="Refresh Network Data"
-                  >
-                    {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn !h-8 !w-8"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setConverterOpen(true);
-                    }}
-                    title="Live Currency Converter & Calculator"
-                  >
-                    <IconCalculator size={15} />
-                  </button>
+                  <Tooltip label={privacyMode ? "Show balances" : "Hide balances"}>
+                    <button
+                      type="button"
+                      className="icon-btn !h-8 !w-8"
+                      aria-label={privacyMode ? "Show balances" : "Hide balances"}
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        togglePrivacy();
+                      }}
+                    >
+                      {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Refresh network data">
+                    <button
+                      type="button"
+                      className="icon-btn !h-8 !w-8"
+                      aria-label="Refresh network data"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        void refresh();
+                      }}
+                      disabled={dataLoading}
+                    >
+                      {dataLoading ? <Spinner /> : <IconRefresh size={15} />}
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Calculator">
+                    <button
+                      type="button"
+                      className="icon-btn !h-8 !w-8"
+                      aria-label="Calculator"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setConverterOpen(true);
+                      }}
+                    >
+                      <IconCalculator size={15} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Send feedback">
+                    <button
+                      type="button"
+                      className="icon-btn !h-8 !w-8"
+                      aria-label="Send feedback"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        const subject = encodeURIComponent("StellarKey feedback");
+                        window.location.href = `mailto:${decodeContactAddress("support")}?subject=${subject}`;
+                      }}
+                    >
+                      <IconMessageCircle size={15} />
+                    </button>
+                  </Tooltip>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setNetworkModalOpen(true);
-                  }}
-                  className="cursor-pointer transition-transform active:scale-95"
-                  title="Switch Network"
-                >
-                  <NetworkBadge network={network} />
-                </button>
+                <Tooltip label="Switch network">
+                  <button
+                    type="button"
+                    aria-label="Switch network"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setNetworkModalOpen(true);
+                    }}
+                    className="cursor-pointer transition-transform active:scale-95"
+                  >
+                    <NetworkBadge network={network} />
+                  </button>
+                </Tooltip>
               </div>
 
               <button
@@ -1714,42 +2111,48 @@ export function Dashboard() {
             </>
           ) : (
             <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                className="icon-btn !h-9 !w-9"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  togglePrivacy();
-                }}
-                title={privacyMode ? "Show balances" : "Hide balances"}
-              >
-                {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-              </button>
-              <button
-                type="button"
-                className="icon-btn !h-9 !w-9"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setNetworkModalOpen(true);
-                }}
-                title={`Network: ${network}`}
-              >
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
-                />
-              </button>
-              <button
-                type="button"
-                className="icon-btn !h-9 !w-9 hover:!text-[#FF453A]"
-                onClick={() => {
-                  triggerHaptic("warning");
-                  lock();
-                }}
-                title="Lock Wallet"
-              >
-                <IconLock size={16} />
-              </button>
+              <Tooltip label={privacyMode ? "Show balances" : "Hide balances"} side="right">
+                <button
+                  type="button"
+                  className="icon-btn !h-9 !w-9"
+                  aria-label={privacyMode ? "Show balances" : "Hide balances"}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    togglePrivacy();
+                  }}
+                >
+                  {privacyMode ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                </button>
+              </Tooltip>
+              <Tooltip label={`Network: ${network}`} side="right">
+                <button
+                  type="button"
+                  className="icon-btn !h-9 !w-9"
+                  aria-label={`Network: ${network}`}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setNetworkModalOpen(true);
+                  }}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: network === "mainnet" ? "#30d158" : "#ff9f0a" }}
+                  />
+                </button>
+              </Tooltip>
+              <Tooltip label="Lock Wallet" side="right">
+                <button
+                  type="button"
+                  className="icon-btn !h-9 !w-9 hover:!text-[#FF453A]"
+                  aria-label="Lock Wallet"
+                  onClick={() => {
+                    triggerHaptic("warning");
+                    lock();
+                  }}
+                >
+                  <IconLock size={16} />
+                </button>
+              </Tooltip>
             </div>
           )}
         </div>
@@ -1922,6 +2325,7 @@ export function Dashboard() {
               onOpenBackupWizard={() => setBackupWizardOpen(true)}
               onOpenMultisigStudio={() => setMultisigOpen(true)}
               onOpenSetupWizard={() => requestRuntime("setup")}
+              onOpenMerchant={() => switchTab("merchant")}
               onOpenSwap={(intent: SettlementSwapIntent) => {
                 switchTab("swap");
                 setSwapPrefill(intent);
@@ -1956,11 +2360,12 @@ export function Dashboard() {
               shiftOpen={shiftOpen}
               onShiftOpenChange={setShiftOpen}
             />
-          ) : view === "home" && unfunded ? (
+          ) : view === "home" && (balances === null || unfunded || fundBusy) ? (
             <WelcomeHome
               account={activeAccount}
               network={network}
               reserveXlm={minimumBalanceXlm}
+              checking={balances === null}
               fundBusy={fundBusy}
               fundError={fundError}
               backedUp={backupExported}
@@ -1971,9 +2376,10 @@ export function Dashboard() {
               <PriceCard />
             </WelcomeHome>
           ) : view === "home" ? (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className="dashboard-home-grid grid grid-cols-1 items-stretch gap-6 lg:grid-cols-12">
               {/* Left Column: Hero Portfolio & Assets */}
-              <div className="lg:col-span-7 space-y-6">
+              <div className="dashboard-home-column space-y-6 lg:col-span-7 lg:space-y-0">
+                <div className="dashboard-home-primary flex flex-col gap-6">
                 {/* Live confirmation banner for broadcast-but-unconfirmed txs */}
                 {pendingTxs.length > 0 && (
                   <div className="fade-up mb-3 space-y-2">
@@ -2052,7 +2458,7 @@ export function Dashboard() {
                 )}
 
                 {/* Hero Total Balance */}
-                <section className="panel fade-up flex flex-col items-center p-4 text-center sm:p-6">
+                <section className="panel dashboard-home-balance-card fade-up flex flex-col items-center p-4 text-center sm:p-6 lg:flex-1">
                   {accounts.length > 1 && (
                 <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
                   {(
@@ -2080,7 +2486,7 @@ export function Dashboard() {
                 </div>
               )}
               <p className="text-[13px] font-semibold text-neutral-400">
-                {portfolioView === "all" ? "XLM across all accounts" : "Native balance"}
+                Balance
               </p>
                   <h2
                     className="balance-display mt-1.5 text-white"
@@ -2119,16 +2525,21 @@ export function Dashboard() {
                         type="button"
                         onClick={cycleFiatCurrency}
                         className="flex items-center gap-1.5 rounded-full bg-white/[0.05] border border-white/10 px-3.5 py-1 text-[13.5px] font-medium text-neutral-200 hover:text-white transition-colors cursor-pointer"
-                        title="Click to cycle currency"
+                        title={network === "testnet"
+                          ? "Representative mainnet pricing. Testnet assets have no real monetary value. Click to cycle currency."
+                          : "Click to cycle currency"}
                       >
-                        <span>{portfolioView === "all" ? "Total portfolio " : "≈ "}{fmtFiat(heroUsd, fiatCurrency, fiatRates)}</span>
+                        <span>{portfolioView === "all" ? "Total portfolio " : "Total account "}{fmtFiat(heroUsd, fiatCurrency, fiatRates)}</span>
                         <span className="text-[10px] text-neutral-500 font-mono font-bold uppercase ml-0.5">
                           {fiatCurrency}
                         </span>
                       </button>
                     ) : network === "testnet" ? (
-                      <p className="text-[13px] text-neutral-500">
-                        Testnet Lumens — No real value
+                      <p
+                        className="text-[13px] text-neutral-500"
+                        title="Testnet assets have no real monetary value."
+                      >
+                        Representative value unavailable
                       </p>
                     ) : (
                       <p className="text-[13px] text-neutral-500">Fetching live rates…</p>
@@ -2161,7 +2572,13 @@ export function Dashboard() {
                   )}
 
                   {/* Primary Actions — iOS-style circular quick actions */}
-                  <div className="mt-8 grid w-full max-w-[360px] grid-cols-4 gap-2">
+                  <div
+                    className={`mt-8 grid w-full gap-2 ${
+                      privateWithdrawEntry
+                        ? "max-w-[420px] grid-cols-5"
+                        : "max-w-[360px] grid-cols-4"
+                    }`}
+                  >
                     <ActionButton
                       icon={<IconSend size={21} />}
                       label="Send"
@@ -2187,6 +2604,19 @@ export function Dashboard() {
                       label="Add"
                       onClick={() => setAddAssetOpen(true)}
                     />
+                    {privateWithdrawEntry && (
+                      <ActionButton
+                        icon={<IconArrowUpRight size={21} />}
+                        label="Withdraw"
+                        disabled={activeAccount?.watchOnly === true}
+                        onClick={() => {
+                          selectPrivateAsset(privateWithdrawEntry.deploymentId);
+                          requestPrivateRuntime();
+                          setPrivateWithdrawAttempt(current => current + 1);
+                          setPrivateWithdrawDeploymentId(privateWithdrawEntry.deploymentId);
+                        }}
+                      />
+                    )}
                   </div>
 
                   {activeAccount && (
@@ -2207,7 +2637,9 @@ export function Dashboard() {
                     </div>
                   )}
                 </section>
+                </div>
 
+                <div className="space-y-6">
                 {/* Assets List with Sparklines */}
                 <section className="fade-up">
                   <div
@@ -2256,16 +2688,6 @@ export function Dashboard() {
                         Multi-Send
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setAddAssetOpen(true);
-                      }}
-                      className="order-2 text-[13px] font-semibold text-[#0A84FF] hover:underline sm:order-none"
-                    >
-                      + Add Asset
-                    </button>
                   </div>
                   <div className="list-group">
                     {balances === null &&
@@ -2289,6 +2711,17 @@ export function Dashboard() {
                     {filteredAssets?.map((asset, i) => {
                       const known = lookupKnownAsset(asset.code, asset.issuer, network);
                       const hue = assetHue(asset.key);
+                      const unitPrice = getRepresentativeUnitPrice(
+                        asset.code,
+                        asset.issuer,
+                        network,
+                        asset.isNative,
+                        xlmPriceUsd,
+                        assetPrices,
+                      );
+                      const fiatValue = unitPrice === null
+                        ? null
+                        : Number(asset.balance) * unitPrice;
                       return (
                         <button
                           key={asset.key}
@@ -2380,9 +2813,9 @@ export function Dashboard() {
                               <span className="mono block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]">
                                 {privacyMode ? "••••••" : fmtAmount(asset.balance)}
                               </span>
-                              {asset.isNative && !privacyMode && xlmPriceUsd !== null && (
+                              {!privacyMode && fiatValue !== null && Number.isFinite(fiatValue) && (
                                 <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">
-                                  {fmtFiat(parseFloat(asset.balance) * xlmPriceUsd, fiatCurrency, fiatRates)}
+                                  {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
                                 </span>
                               )}
                             </span>
@@ -2392,93 +2825,120 @@ export function Dashboard() {
                     })}
                   </div>
                 </section>
+
+                {(privateBalanceAvailable || privateAvailableAssets.length > 0 || privatePortfolioEntries.length > 0) && (
+                  <section className="fade-up" aria-labelledby="private-assets-heading">
+                    <div className="flex items-center gap-2 px-1 pb-2.5">
+                      <h2
+                        id="private-assets-heading"
+                        className="mr-auto text-[16px] font-bold tracking-tight text-white"
+                      >
+                        Your Private Assets
+                      </h2>
+                      {network === "testnet" && (
+                        <button
+                          type="button"
+                          aria-label="About testnet private asset values"
+                          aria-haspopup="dialog"
+                          onClick={() => setPrivateValueInfoOpen(true)}
+                          className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
+                        >
+                          ⓘ
+                        </button>
+                      )}
+                    </div>
+                    <div className="list-group">
+                      {privateAvailableAssets.length === 0 && (
+                        <div className="flex min-h-16 items-center gap-3 px-4 py-3.5 text-[13px] text-neutral-400">
+                          {privateBalanceRuntime.error ? (
+                            <IconAlert size={17} className="shrink-0 text-[#FF9F0A]" />
+                          ) : (
+                            <Spinner size={17} />
+                          )}
+                          <span>
+                            {privateBalanceRuntime.error ?? "Checking private assets…"}
+                          </span>
+                        </div>
+                      )}
+                      {privateAvailableAssets.map((option, index) => {
+                        const entry = privatePortfolioEntries.find(
+                          (candidate) => candidate.deploymentId === option.deploymentId,
+                        );
+                        return (
+                          <PrivateBalanceAssetRow
+                            key={option.deploymentId}
+                            option={option}
+                            entry={entry ?? null}
+                            configured={privatePoolConfigured}
+                            separated={index > 0}
+                            privacyMode={privacyMode}
+                            xlmPriceUsd={xlmPriceUsd}
+                            fiatCurrency={fiatCurrency}
+                            fiatRates={fiatRates}
+                            onOpen={() => {
+                              selectPrivateAsset(option.deploymentId);
+                              if (!privatePoolConfigured) {
+                                requestPrivateRuntime();
+                                setPrivateSetupOpen(true);
+                                return;
+                              }
+                              openPrivatePayments(option.deploymentId);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+                </div>
               </div>
 
               {/* Right Column: Live Chart & Recent Activity Stream */}
-              <div className="lg:col-span-5 space-y-6">
+              <div className="dashboard-home-column space-y-6 lg:col-span-5 lg:space-y-0">
                 {/* Live XLM Price Chart */}
                 <PriceCard />
 
-                {/* Recent Activity Mini-Feed */}
-                <div className="panel p-5 fade-up">
-                  <div className="flex items-center justify-between pb-3">
-                    <h3 className="text-[15px] font-bold text-white">Recent Activity</h3>
+                <section data-dashboard-recent-activity className="self-start fade-up">
+                  <div className="flex items-center gap-3 px-1 pb-2.5">
+                    <h2 className="mr-auto text-[16px] font-bold tracking-tight text-white">
+                      Recent Activity
+                    </h2>
                     <button
                       type="button"
                       onClick={() => switchTab("activity")}
-                      className="text-[12px] font-semibold text-[#0A84FF] hover:underline"
+                      className="text-[12px] font-medium text-neutral-400 hover:text-white"
                     >
                       View All
                     </button>
                   </div>
-                  {activity.length === 0 ? (
-                    <p className="text-center py-6 text-[13px] text-neutral-500">
-                      No recent activity
-                    </p>
-                  ) : (
-                    <div className="space-y-1">
-                      {activity.slice(0, 5).map((item) => {
-                        const incoming = item.direction === "in";
-                        const neutral = item.direction === "neutral";
-                        const presentedAsset = activityAssetPresentation(item);
-                        const matchedContact = contacts.find((c) => c.address === item.counterparty);
-                        const fiatValue = privacyMode ? null : activityFiat(item);
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic("selection");
-                              setTxDetail(item);
-                            }}
-                            className="flex w-full items-center justify-between rounded-xl p-2 text-left hover:bg-white/[0.04] transition-colors"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span
-                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px]"
-                                style={{
-                                  color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
-                                  background: neutral
-                                    ? "rgba(100,210,255,0.12)"
-                                    : incoming
-                                      ? "rgba(48,209,88,0.14)"
-                                      : "rgba(255,69,58,0.14)",
-                                }}
-                              >
-                                {neutral ? (
-                                  <IconSwap size={12} />
-                                ) : incoming ? (
-                                  "↓"
-                                ) : (
-                                  "↑"
-                                )}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-[13px] font-semibold text-white leading-tight">
-                                  {item.title}
-                                </p>
-                                <p className="truncate text-[11px] text-neutral-400">
-                                  {matchedContact ? matchedContact.name : timeAgo(item.createdAt)}
-                                  {presentedAsset.issuerDisplay
-                                    ? ` · ${presentedAsset.issuerDisplay}`
-                                    : ""}
-                                </p>
-                              </div>
-                            </div>
-                            <ActivityAmountDisplay
-                              item={item}
-                              privacyMode={privacyMode}
-                              fiatValue={fiatValue}
-                              fiatCurrency={fiatCurrency}
-                              fiatRates={fiatRates}
-                              compact
-                            />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                  <div className="list-group">
+                    {mergedActivity.length === 0 ? (
+                      <p className="px-4 py-10 text-center text-[13px] text-neutral-500">
+                        No recent activity
+                      </p>
+                    ) : (
+                      mergedActivity.slice(0, 5).map((item, index) => (
+                        <ActivityLedgerRow
+                          key={item.id}
+                          item={item}
+                          separated={index > 0}
+                          matchedContact={contacts.find(
+                            (contact) => contact.address === item.counterparty,
+                          )}
+                          privacyMode={privacyMode}
+                          fiatValue={privacyMode ? null : activityFiat(item)}
+                          fiatCurrency={fiatCurrency}
+                          fiatRates={fiatRates}
+                          compact
+                          onOpen={() => {
+                            triggerHaptic("selection");
+                            setTxDetail(item);
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </section>
               </div>
             </div>
           ) : view === "activity" ? (
@@ -2537,6 +2997,8 @@ export function Dashboard() {
                     onChange={setActivityAssetFilter}
                     ariaLabel="Filter by asset"
                     className="mono !h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
+                    preserveOptionLabels
+                    panelMinWidth={240}
                     options={[
                       { value: "all", label: "All Assets" },
                       ...activityAssetOptions,
@@ -2595,71 +3057,24 @@ export function Dashboard() {
                         </span>
                       </div>
                       <div className="list-group">
-                        {group.items.map((item, i) => {
-                          const incoming = item.direction === "in";
-                          const neutral = item.direction === "neutral";
-                          const presentedAsset = activityAssetPresentation(item);
-                          const matchedContact = contacts.find((c) => c.address === item.counterparty);
-                          const fiatValue = privacyMode ? null : activityFiat(item);
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className={`row-hover flex w-full items-center gap-3.5 px-4 py-3.5 text-left ${
-                                i > 0 ? "ios-sep" : ""
-                              }`}
-                              onClick={() => {
-                                triggerHaptic("selection");
-                                setTxDetail(item);
-                              }}
-                            >
-                              <span
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                                style={{
-                                  color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
-                                  background: neutral
-                                    ? "rgba(100,210,255,0.12)"
-                                    : incoming
-                                      ? "rgba(48,209,88,0.14)"
-                                      : "rgba(255,69,58,0.14)",
-                                }}
-                              >
-                                {item.type === "change_trust" ? (
-                                  <IconShield size={16} />
-                                ) : neutral ? (
-                                  <IconSwap size={16} />
-                                ) : incoming ? (
-                                  <IconArrowDownLeft size={16} />
-                                ) : (
-                                  <IconArrowUpRight size={16} />
-                                )}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[15px] font-semibold leading-tight text-white">
-                                  {item.title}
-                                </span>
-                                <span className="block truncate text-[12px] leading-tight text-neutral-400">
-                                  {timeAgo(item.createdAt)}
-                                  {matchedContact
-                                    ? ` · ${matchedContact.name}`
-                                    : item.counterparty
-                                      ? ` · ${formatTrezorAddress(item.counterparty)}`
-                                      : ""}
-                                  {presentedAsset.issuerDisplay
-                                    ? ` · ${presentedAsset.issuerDisplay}`
-                                    : ""}
-                                </span>
-                              </span>
-                              <ActivityAmountDisplay
-                                item={item}
-                                privacyMode={privacyMode}
-                                fiatValue={fiatValue}
-                                fiatCurrency={fiatCurrency}
-                                fiatRates={fiatRates}
-                              />
-                            </button>
-                          );
-                        })}
+                        {group.items.map((item, index) => (
+                          <ActivityLedgerRow
+                            key={item.id}
+                            item={item}
+                            separated={index > 0}
+                            matchedContact={contacts.find(
+                              (contact) => contact.address === item.counterparty,
+                            )}
+                            privacyMode={privacyMode}
+                            fiatValue={privacyMode ? null : activityFiat(item)}
+                            fiatCurrency={fiatCurrency}
+                            fiatRates={fiatRates}
+                            onOpen={() => {
+                              triggerHaptic("selection");
+                              setTxDetail(item);
+                            }}
+                          />
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -2708,11 +3123,8 @@ export function Dashboard() {
           <IconSwap size={22} />
           <span>Swap</span>
         </button>
-        {/*
-          Merchant takes the Contacts slot while the counter is open; Contacts
-          stays reachable from the command palette and from Settings.
-        */}
-        {merchantEnabled ? (
+        {/* Merchant mode keeps the counter destination; Wallet keeps Contacts. */}
+        {mode === "merchant" && merchantEnabled ? (
           <button
             type="button"
             className={`tab-item ${isMerchantView(view) ? "active" : ""}`}
@@ -2741,16 +3153,150 @@ export function Dashboard() {
         </button>
       </nav>
 
-      <SendModal
-        open={sendOpen}
-        onClose={() => {
-          setSendOpen(false);
-          setSendPrefill(null);
-        }}
-        prefill={sendPrefill}
-      />
+      {sendOpen && (
+        <SendModal
+          open
+          initialMode={sendInitialMode}
+          onClose={() => {
+            setSendOpen(false);
+            setSendInitialMode("public");
+            setSendPrefill(null);
+          }}
+          prefill={sendPrefill}
+        />
+      )}
+      {privateAssetOpen && (
+        <PrivateAssetDetailModal
+          entry={privateAssetEntry}
+          network={network}
+          privacyMode={privacyMode}
+          xlmPriceUsd={xlmPriceUsd}
+          fiatCurrency={fiatCurrency}
+          fiatRates={fiatRates}
+          onClose={() => {
+            setPrivateAssetOpen(false);
+            setPrivateAssetDeploymentId(null);
+          }}
+        />
+      )}
+      <Modal open={privateValueInfoOpen} onClose={() => setPrivateValueInfoOpen(false)}>
+        <ModalHeader
+          title="Testnet values"
+          subtitle="Representative pricing only"
+          onClose={() => setPrivateValueInfoOpen(false)}
+        />
+        <div className="space-y-3 p-4 sm:p-6">
+          <p className="text-[13px] leading-relaxed text-neutral-300">
+            Testnet assets have no real monetary value. StellarKey applies current mainnet XLM
+            pricing and the USDC dollar reference so this test wallet behaves like the real app.
+          </p>
+          <p className="text-[12px] leading-relaxed text-neutral-500">
+            These figures are for interface testing only and cannot be redeemed or traded for the
+            displayed amount.
+          </p>
+          <Button variant="ghost" className="w-full" onClick={() => setPrivateValueInfoOpen(false)}>
+            Close
+          </Button>
+        </div>
+      </Modal>
+      {privateWithdrawDeploymentId && (
+        privateWithdrawReady && privateWithdrawTarget ? (
+          <WithdrawPrivate
+            key={privateWithdrawTarget.deploymentId}
+            onClose={() => setPrivateWithdrawDeploymentId(null)}
+          />
+        ) : (
+          <Modal open onClose={() => setPrivateWithdrawDeploymentId(null)}>
+            <ModalHeader
+              title="Withdraw Funds"
+              subtitle={privateWithdrawTarget
+                ? `Preparing private ${privateWithdrawTarget.asset.code}`
+                : "Preparing private balance"}
+              onClose={() => setPrivateWithdrawDeploymentId(null)}
+            />
+            <div className="flex min-h-40 flex-col items-center justify-center gap-3 p-6 text-center">
+              {privateBalanceRuntime.error ? (
+                <>
+                  <p className="text-[13px] leading-relaxed text-[#FF6961]">
+                    {privateBalanceRuntime.error}
+                  </p>
+                  <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                    Close
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="w-full max-w-72 space-y-3" aria-live="polite">
+                    <div
+                      role="progressbar"
+                      aria-label={privateWithdrawOpeningLabelText}
+                      aria-valuemin={privateWithdrawScanPercent === null ? undefined : 0}
+                      aria-valuemax={privateWithdrawScanPercent === null ? undefined : 100}
+                      aria-valuenow={privateWithdrawScanPercent ?? undefined}
+                      aria-valuetext={privateWithdrawOpeningLabelText}
+                      className="h-1.5 overflow-hidden rounded-full bg-white/10"
+                    >
+                      <div
+                        className={`h-full rounded-full bg-[#0A84FF] transition-[width] duration-[180ms] ease-out ${
+                          privateWithdrawScanPercent === null ? "w-2/5 motion-safe:animate-pulse" : ""
+                        }`}
+                        style={privateWithdrawScanPercent === null
+                          ? undefined
+                          : { width: `${privateWithdrawScanPercent}%` }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[13px] font-medium text-neutral-200">
+                        {privateWithdrawTimedOut ? "Still opening" : privateWithdrawOpeningLabelText}
+                      </p>
+                      <p className="text-[12px] leading-relaxed text-neutral-500">
+                        {privateWithdrawTimedOut
+                          ? "This is taking longer than expected. Nothing has been sent."
+                          : "You can close this window safely while StellarKey checks the latest private state."}
+                      </p>
+                    </div>
+                    {privateWithdrawTimedOut && (
+                      <div className="flex justify-center gap-2 pt-1">
+                        <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            if (!privateWithdrawActiveDeploymentId) return;
+                            setPrivateWithdrawTimedOut(false);
+                            setPrivateWithdrawAttempt(current => current + 1);
+                            selectPrivateAsset(privateWithdrawActiveDeploymentId);
+                            retryPrivateRuntime();
+                          }}
+                        >
+                          Try again
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal>
+        )
+      )}
+      {privateSetupOpen && (
+        <PrivateBalanceSetup
+          open
+          onClose={() => setPrivateSetupOpen(false)}
+        />
+      )}
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
-      <ReceiveModal open={receiveOpen} onClose={() => setReceiveOpen(false)} />
+      {receiveOpen && (
+        <ReceiveModal
+          open
+          initialMode={receiveInitialMode}
+          onClose={() => {
+            setReceiveOpen(false);
+            setReceiveInitialMode("public");
+          }}
+        />
+      )}
       <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
       {claimableBalancesOpen && (
         <ClaimableBalancesModal
@@ -2859,6 +3405,121 @@ export function Dashboard() {
   );
 }
 
+function activityIdentifierLabel(
+  item: ActivityItem,
+  matchedContact?: Contact,
+  compact = false,
+) {
+  const counterparty = item.counterparty?.trim() || null;
+  const issuer = item.assetIssuer?.trim() || null;
+  const compactLabels: string[] = [];
+  const fullLabels: string[] = [];
+  const compactAddressOptions = compact ? { head: 4, tail: 4 } : undefined;
+
+  if (counterparty) {
+    compactLabels.push(
+      matchedContact?.name ?? formatTrezorAddress(counterparty, compactAddressOptions),
+    );
+    fullLabels.push(
+      matchedContact
+        ? `${matchedContact.name} · ${formatTrezorAddress(counterparty, { full: true })}`
+        : formatTrezorAddress(counterparty, { full: true }),
+    );
+  }
+
+  if (issuer && issuer !== counterparty) {
+    compactLabels.push(`Issuer ${formatTrezorAddress(issuer, compactAddressOptions)}`);
+    fullLabels.push(`Issuer ${formatTrezorAddress(issuer, { full: true })}`);
+  }
+
+  return {
+    compactLabel: compactLabels.join(" · "),
+    fullLabel: fullLabels.join(" · "),
+  };
+}
+
+function ActivityLedgerRow({
+  item,
+  separated,
+  matchedContact,
+  privacyMode,
+  fiatValue,
+  fiatCurrency,
+  fiatRates,
+  compact = false,
+  onOpen,
+}: {
+  item: ActivityItem;
+  separated: boolean;
+  matchedContact?: Contact;
+  privacyMode: boolean;
+  fiatValue: number | null;
+  fiatCurrency: FiatCurrency;
+  fiatRates: Partial<Record<FiatCurrency, number>>;
+  compact?: boolean;
+  onOpen: () => void;
+}) {
+  const incoming = item.direction === "in";
+  const neutral = item.direction === "neutral";
+  const identifier = activityIdentifierLabel(item, matchedContact, compact);
+
+  return (
+    <button
+      type="button"
+      className={`row-hover flex min-w-0 w-full overflow-hidden items-center gap-3.5 px-4 py-3.5 text-left ${
+        separated ? "ios-sep" : ""
+      }`}
+      onClick={onOpen}
+    >
+      <span className="relative shrink-0">
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-full"
+          style={{
+            color: neutral ? "#64D2FF" : incoming ? "#30D158" : "#FF453A",
+            background: neutral
+              ? "rgba(100,210,255,0.12)"
+              : incoming
+                ? "rgba(48,209,88,0.14)"
+                : "rgba(255,69,58,0.14)",
+          }}
+        >
+          {item.type === "change_trust" ? (
+            <IconShield size={16} />
+          ) : neutral ? (
+            <IconSwap size={16} />
+          ) : incoming ? (
+            <IconArrowDownLeft size={16} />
+          ) : (
+            <IconArrowUpRight size={16} />
+          )}
+        </span>
+        {item.private && <PrivateShieldNotch ground={19} shield={15} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold leading-tight text-white">
+          {item.title}
+        </span>
+        <span
+          className="block truncate text-[12px] leading-tight text-neutral-400"
+          title={identifier.fullLabel || undefined}
+        >
+          {timeAgo(item.createdAt)}
+          {item.pending ? " · Confirming…" : ""}
+          {identifier.compactLabel ? ` · ${identifier.compactLabel}` : ""}
+        </span>
+      </span>
+      <ActivityAmountDisplay
+        item={item}
+        privacyMode={privacyMode}
+        fiatValue={fiatValue}
+        fiatCurrency={fiatCurrency}
+        fiatRates={fiatRates}
+        compact={compact}
+      />
+    </button>
+  );
+}
+
 function ActivityAmountDisplay({
   item,
   privacyMode,
@@ -2877,16 +3538,21 @@ function ActivityAmountDisplay({
   const lines = activityAmountLines(item);
   if (lines.length === 0) return null;
 
-  if (item.swap) {
+  if (item.swap || item.internalTransfer) {
     return (
       <span
-        className="shrink-0 text-right"
-        aria-label={privacyMode ? "Swap amounts hidden" : lines.map((line) => line.display).join(", ")}
+        className="min-w-0 max-w-[42%] shrink-0 overflow-hidden text-right"
+        title={compact && !privacyMode ? lines.map((line) => line.display).join(" · ") : undefined}
+        aria-label={
+          privacyMode
+            ? `${item.internalTransfer ? "Internal transfer" : "Swap"} amounts hidden`
+            : lines.map((line) => line.display).join(", ")
+        }
       >
         {lines.map((line) => (
           <span
-            key={line.direction}
-            className={`mono block whitespace-nowrap font-semibold leading-tight ${
+            key={`${line.balance ?? "asset"}:${line.direction}`}
+            className={`mono block truncate font-semibold leading-tight ${
               compact ? "text-[12px]" : "text-[14px]"
             } ${
               privacyMode
@@ -2905,9 +3571,13 @@ function ActivityAmountDisplay({
 
   const [line] = lines;
   return (
-    <span className="shrink-0 text-right">
+    <span
+      className="min-w-0 max-w-[42%] shrink-0 overflow-hidden text-right"
+      title={compact && !privacyMode ? line.display : undefined}
+      aria-label={privacyMode ? "Amount hidden" : line.display}
+    >
       <span
-        className={`mono block whitespace-nowrap font-medium leading-tight ${compact ? "text-[13px]" : "text-[15px]"} ${
+        className={`mono block truncate font-medium leading-tight ${compact ? "text-[13px]" : "text-[15px]"} ${
           privacyMode
             ? "text-neutral-500"
             : line.direction === "in"
@@ -2920,7 +3590,7 @@ function ActivityAmountDisplay({
         {privacyMode ? "••••••" : line.display}
       </span>
       {fiatValue !== null && (
-        <span className={`block leading-tight text-neutral-500 ${compact ? "text-[10.5px]" : "text-[11.5px]"}`}>
+        <span className={`block truncate leading-tight text-neutral-500 ${compact ? "text-[10.5px]" : "text-[11.5px]"}`}>
           ≈ {fmtFiat(fiatValue, fiatCurrency, fiatRates)}
         </span>
       )}
@@ -3228,6 +3898,13 @@ function PriceCard() {
   } = useWallet();
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
+  const [chartInspection, setChartInspection] = useState<PriceChartInspection | null>(null);
+  const periodLabel = ({
+    "1D": "24-hour",
+    "7D": "7-day",
+    "1M": "1-month",
+    "1Y": "1-year",
+  } satisfies Record<PriceRangeT, string>)[priceRange];
 
   const totalAllXlm = useMemo(
     () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
@@ -3267,10 +3944,12 @@ function PriceCard() {
         })()
       : priceData?.changePct ?? null;
 
-  const up = (changePct ?? 0) >= 0;
+  const displayedValue = chartInspection?.p ?? currentValue;
+  const displayedChangePct = chartInspection?.changePct ?? changePct;
+  const up = (displayedChangePct ?? 0) >= 0;
 
   return (
-    <section className="panel fade-up relative p-5">
+    <section className="panel fade-up relative flex h-full flex-col p-5 sm:p-6">
       {/* Mode toggle */}
       {canShowPortfolio && (
         <div className="mb-3 flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-0.5">
@@ -3285,6 +3964,7 @@ function PriceCard() {
               type="button"
               onClick={() => {
                 triggerHaptic("selection");
+                setChartInspection(null);
                 setChartMode(opt.id);
               }}
               className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
@@ -3299,16 +3979,25 @@ function PriceCard() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0">
           <p className="truncate text-[12.5px] font-semibold text-neutral-400">{headerLabel}</p>
-          <div className="mt-0.5 flex flex-nowrap items-center gap-2.5">
+          <p className="mt-0.5 truncate text-[10.5px] text-neutral-500">
+            {mode === "market"
+              ? `Stellar Lumens · ${periodLabel} range`
+              : `${periodLabel} estimate · current balance`}
+          </p>
+        </div>
+        <div className="min-w-0 justify-self-end text-right">
+          <div className="flex flex-nowrap items-center justify-end gap-2.5 text-right">
             <span className="whitespace-nowrap text-[24px] font-bold tracking-tight text-white">
-              {currentValue !== null
-                ? fmtFiat(currentValue, fiatCurrency, fiatRates)
+              {displayedValue !== null
+                ? mode === "market"
+                  ? fmtFiatMarketPrice(displayedValue, fiatCurrency, fiatRates)
+                  : fmtFiat(displayedValue, fiatCurrency, fiatRates)
                 : "—"}
             </span>
-            {changePct !== null && (
+            {displayedChangePct !== null && (
               <span
                 className="shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-semibold"
                 style={{
@@ -3317,10 +4006,19 @@ function PriceCard() {
                 }}
               >
                 {up ? "+" : ""}
-                {changePct.toFixed(2)}%
+                {displayedChangePct.toFixed(2)}%
               </span>
             )}
           </div>
+          {priceLoading && (
+            <p
+              aria-live="polite"
+              className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-neutral-500"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0A84FF]" aria-hidden="true" />
+              Updating
+            </p>
+          )}
         </div>
       </div>
       <div className="mt-3">
@@ -3330,6 +4028,7 @@ function PriceCard() {
             range={priceRange}
             currency={fiatCurrency}
             rates={fiatRates}
+            onInspect={setChartInspection}
           />
         ) : priceData && priceData.points.length > 1 ? (
           <PriceChart
@@ -3337,41 +4036,40 @@ function PriceCard() {
             range={priceRange}
             currency={fiatCurrency}
             rates={fiatRates}
+            marketPrecision
+            onInspect={setChartInspection}
           />
         ) : (
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}
       </div>
-      {/* Range selector — own full-width row under the chart (iOS Stocks style),
-          so the header can never wrap and change height between tabs */}
-      <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-white/[0.06] p-1">
-        {ranges.map((r) => (
-          <button
-            key={r}
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              void changePriceRange(r);
-            }}
-            className={`rounded-lg px-2.5 py-1 text-center text-[12px] font-semibold transition-all ${
-              priceRange === r ? "bg-white/[0.18] text-white shadow-sm" : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            {r}
-          </button>
-        ))}
+      {/* The footer owns the remaining space so both desktop summary cards end
+          on one optical action line without fixed card heights. */}
+      <div data-market-range-selector className="mt-auto pt-3">
+        <div
+          aria-label="Chart range"
+          className="grid grid-cols-4 gap-1 rounded-xl bg-white/[0.06] p-1"
+          role="group"
+        >
+          {ranges.map((r) => (
+            <button
+              key={r}
+              type="button"
+              aria-pressed={priceRange === r}
+              onClick={() => {
+                triggerHaptic("selection");
+                setChartInspection(null);
+                void changePriceRange(r);
+              }}
+              className={`rounded-lg px-2.5 py-1 text-center text-[12px] font-semibold transition-colors ${
+                priceRange === r ? "bg-white/[0.18] text-white shadow-sm" : "text-neutral-400 hover:text-white"
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       </div>
-      {/* Reserved footer slot — identical height in both tab modes */}
-      <p className="mt-2 flex h-[16px] items-center text-[10.5px] text-neutral-500">
-        {mode === "portfolio"
-          ? "Estimated from your current balance × historical XLM price."
-          : ""}
-      </p>
-      {priceLoading && (
-        <p className="pointer-events-none absolute bottom-3.5 right-4 text-[10px] text-neutral-500">
-          Updating…
-        </p>
-      )}
     </section>
   );
 }
