@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-31
+
 ### Added
 
 - Added Circle's official USDC and EURC token logos as bundled local verified-asset icons.
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merchant payment requests default to a muxed destination and offer a consistent Standard or Trezor-compatible request without closing the active sheet.
 - Updated landing-page merchant copy to explain muxed-address routing and the Trezor `MEMO_ID` fallback.
 - Renamed the charge modal's `MEMO_ID` compatibility option from Trezor to Legacy while retaining explicit Trezor guidance.
+- Clarified that production Private Payments remains a testnet-only preview and refuses Mainnet.
 
 ### Fixed
 
