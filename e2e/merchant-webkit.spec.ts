@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { MuxedAccount } from "@stellar/stellar-sdk";
 import {
   importTestWallet,
   installNetworkFixtures,
@@ -16,7 +17,12 @@ async function enterAmount(page: Page, keys: string[]): Promise<void> {
   await page.getByRole("button", { name: "Add to ticket" }).click();
 }
 
-async function openAwaitingCharge(page: Page): Promise<{ reference: string; amount: string }> {
+async function openAwaitingCharge(page: Page): Promise<{
+  reference: string;
+  routingId: string;
+  destination: string;
+  amount: string;
+}> {
   await enterAmount(page, ["1", "00"]);
   await page.getByRole("button", { name: "Charge", exact: true }).click();
   await page.getByRole("dialog", { name: /Add a tip/ }).getByRole("button", { name: "No tip" }).click();
@@ -26,12 +32,23 @@ async function openAwaitingCharge(page: Page): Promise<{ reference: string; amou
   const reference = subtitle.split(" · ").at(-1)?.trim() ?? "";
   const alt = (await dialog.locator('img[alt^="Payment request for "]').getAttribute("alt")) ?? "";
   const amount = /^Payment request for ([0-9.]+) XLM$/.exec(alt)?.[1] ?? "";
+  const destinationTitle = await dialog
+    .getByText("To", { exact: true })
+    .locator("..")
+    .getByRole("button")
+    .getAttribute("title");
+  const destination = destinationTitle?.split("\n", 1)[0]?.trim() ?? "";
+  const routingId = destination ? MuxedAccount.fromAddress(destination, "0").id() : "";
   expect(reference).not.toBe("");
   expect(amount).not.toBe("");
-  return { reference, amount };
+  expect(routingId).not.toBe("");
+  return { reference, routingId, destination, amount };
 }
 
-function paymentFor(reference: string, amount: string): HorizonPayment {
+function paymentFor(
+  route: { routingId: string; destination: string },
+  amount: string,
+): HorizonPayment {
   return {
     id: "webkit-payment-1001",
     type: "payment",
@@ -40,10 +57,12 @@ function paymentFor(reference: string, amount: string): HorizonPayment {
     created_at: new Date().toISOString(),
     paging_token: String((BigInt(100_001) << BigInt(32)) + BigInt(1)),
     to: testAccount,
+    to_muxed: route.destination,
+    to_muxed_id: route.routingId,
     from: testPayer,
     asset_type: "native",
     amount,
-    transaction: { memo: reference, memo_type: "text", successful: true },
+    transaction: { successful: true },
   };
 }
 
@@ -100,7 +119,7 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   const restoredCharge = page.getByRole("dialog", { name: /^Charge/ });
   await expect(restoredCharge.getByText("Watching for payment", { exact: true })).toBeVisible();
 
-  incoming.push(paymentFor(charge.reference, charge.amount));
+  incoming.push(paymentFor(charge, charge.amount));
   const paidCharge = page.getByRole("dialog", { name: "Paid", exact: true });
   await expect(paidCharge.getByText("Paid in full", { exact: true })).toBeVisible({
     timeout: 15_000,
