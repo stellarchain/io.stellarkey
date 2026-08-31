@@ -113,7 +113,7 @@ offline behavior, recovery, and security boundaries.
 
 ## Verify a deployed release
 
-The current release is `1.3.0`. Every build embeds the full 40-character Git
+The current release is `1.4.0`. Every build embeds the full 40-character Git
 commit SHA in the interface and in
 [`/release.json`](https://stellarkey.io/release.json). Compare it with the
 commit attached to the corresponding source release or run:
