@@ -34,54 +34,57 @@ test('the tracked changelog documents the current release', () => {
   assert.match(source, /semver\.org\/spec\/v2\.0\.0/i);
   assert.deepEqual(
     document.releases.map(({ version }) => version),
-    ['Unreleased', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
+    ['Unreleased', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
   );
-  assert.deepEqual(
-    document.releases[0].categories.map(({ name }) => name),
-    ['Added', 'Changed', 'Fixed', 'Security']
-  );
-  assert.ok(document.releases[0].categories.every(({ entries }) => entries.length > 0));
-  const unreleasedEntries = document.releases[0].categories.flatMap(({ entries }) => entries);
-  assert.match(unreleasedEntries.join(' '), /USDT0.*Mainnet.*local logo/i);
-  assert.match(unreleasedEntries.join(' '), /version and build hash.*footer/i);
-  assert.match(
-    unreleasedEntries.join(' '),
-    /muxed.*MEMO_ID.*payment route/i
-  );
+  assert.deepEqual(document.releases[0].categories, []);
   assert.deepEqual(
     document.releases[1].categories.map(({ name }) => name),
-    ['Added', 'Changed', 'Fixed', 'Security', 'Removed']
+    ['Added', 'Changed', 'Fixed', 'Security']
   );
   assert.equal(document.releases[1].date, '2026-08-31');
   assert.ok(document.releases[1].categories.every(({ entries }) => entries.length > 0));
   const currentEntries = document.releases[1].categories.flatMap(({ entries }) => entries);
   assert.ok(currentEntries.length <= 24, 'public release notes should stay concise');
-  assert.match(currentEntries.join(' '), /Private Payments.*testnet-only/i);
-  assert.equal(document.releases[2].date, '2026-08-29');
+  assert.match(currentEntries.join(' '), /USDT0.*Mainnet.*local logo/i);
+  assert.match(currentEntries.join(' '), /version and build hash.*footer/i);
+  assert.match(
+    currentEntries.join(' '),
+    /muxed.*MEMO_ID.*payment route/i
+  );
+  assert.deepEqual(
+    document.releases[2].categories.map(({ name }) => name),
+    ['Added', 'Changed', 'Fixed', 'Security', 'Removed']
+  );
+  assert.equal(document.releases[2].date, '2026-08-31');
   assert.match(
     document.releases[2].categories.flatMap(({ entries }) => entries).join(' '),
-    /claimable.*display currency.*backup/i
+    /Private Payments.*testnet-only/i
   );
   assert.equal(document.releases[3].date, '2026-08-29');
   assert.match(
-    document.releases[4].categories.flatMap(({ entries }) => entries).join(' '),
+    document.releases[3].categories.flatMap(({ entries }) => entries).join(' '),
+    /claimable.*display currency.*backup/i
+  );
+  assert.equal(document.releases[4].date, '2026-08-29');
+  assert.match(
+    document.releases[5].categories.flatMap(({ entries }) => entries).join(' '),
     /self-custody.*Trezor.*merchant/i
   );
 });
 
-test('all authoritative release markers agree on version 1.3.0', () => {
+test('all authoritative release markers agree on version 1.4.0', () => {
   const packageJson = JSON.parse(read('package.json'));
   const packageLock = JSON.parse(read('package-lock.json'));
   const brand = read('src/lib/brand.ts');
   const security = read('SECURITY.md');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '1.3.0');
-  assert.equal(packageLock.version, '1.3.0');
-  assert.equal(packageLock.packages[''].version, '1.3.0');
-  assert.match(brand, /APPLICATION_VERSION = "1\.3\.0"/);
-  assert.match(security, /latest `1\.3\.x` release/i);
-  assert.match(readme, /current release is `1\.3\.0`/i);
+  assert.equal(packageJson.version, '1.4.0');
+  assert.equal(packageLock.version, '1.4.0');
+  assert.equal(packageLock.packages[''].version, '1.4.0');
+  assert.match(brand, /APPLICATION_VERSION = "1\.4\.0"/);
+  assert.match(security, /latest `1\.4\.x` release/i);
+  assert.match(readme, /current release is `1\.4\.0`/i);
   assert.match(readme, /\[changelog\]\(CHANGELOG\.md\)/i);
 });
 

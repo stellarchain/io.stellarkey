@@ -1,7 +1,7 @@
 export const BRAND_NAME = "StellarKey";
 export const BRAND_ORIGIN = "https://stellarkey.io";
 export const SOURCE_REPOSITORY_URL = "https://github.com/stellarchain/io.stellarkey";
-export const APPLICATION_VERSION = "1.3.0";
+export const APPLICATION_VERSION = "1.4.0";
 export const BUILD_COMMIT = process.env.NEXT_PUBLIC_BUILD_COMMIT ?? "development";
 export const BUILD_IS_DIRTY = process.env.NEXT_PUBLIC_BUILD_DIRTY === "true";
 export const SOURCE_COMMIT_URL = `${SOURCE_REPOSITORY_URL}/commit/${BUILD_COMMIT}`;
