@@ -105,6 +105,7 @@ function awaitingStore({ split = false, expiresAt = NOW + 60_000 } = {}) {
     amountMinor,
     now: NOW - 1_000,
     id: "charge-1",
+    routingId: "5001",
   });
   return {
     ...base,
@@ -126,7 +127,9 @@ function payment(overrides = {}) {
     destination: TILL,
     amount: "10.0000000",
     asset: USDC,
-    memo: "M1001",
+    routingId: "5001",
+    routingConflict: false,
+    memo: null,
     createdAt: "2027-01-15T08:00:00Z",
     ...overrides,
   };
@@ -268,7 +271,7 @@ test("a payment cannot settle a charge issued to another receiving account", () 
 
   assert.equal(reconciled.orders[0].status, "awaiting");
   assert.equal(reconciled.charges[0].status, "awaiting");
-  assert.equal(reconciled.paymentReconciliations[0].outcome, "unmatched");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "routing_unknown");
 });
 
 test("watch targets and cursors retain immutable destinations after settings change", async () => {
@@ -391,7 +394,7 @@ test("a duplicate is resolved only by its persisted non-failed refund submission
 test("dismiss and exact manual attach keep an immutable staff audit", () => {
   const candidate = reconcileIncomingPayments(awaitingStore(), {
     network: "mainnet",
-    payments: [payment({ memo: null })],
+    payments: [payment({ routingId: null })],
     now: NOW,
   });
   assert.equal(candidate.paymentReconciliations[0].outcome, "needs_confirmation");
@@ -408,7 +411,7 @@ test("dismiss and exact manual attach keep an immutable staff audit", () => {
 
   const stray = reconcileIncomingPayments(awaitingStore(), {
     network: "mainnet",
-    payments: [payment({ id: "stray", memo: "UNKNOWN" })],
+    payments: [payment({ id: "stray", routingId: "999999" })],
     now: NOW,
   });
   const dismissed = dismissReconciledPayment(stray, {
@@ -446,7 +449,7 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
       asset_code: "USDC",
       asset_issuer: ISSUER,
       amount: "10.0000000",
-      transaction: { memo: "M1001", memo_type: "text", successful: true },
+      transaction: { memo: "5001", memo_type: "id", successful: true },
     });
     return new Response(JSON.stringify({
       _embedded: {

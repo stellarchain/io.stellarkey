@@ -12,6 +12,10 @@ import { LIVE_SECOND_MS, useLiveNow } from "@/hooks/useLiveNow";
 import { useWakeLock } from "@/hooks/useWakeLock";
 import { assetKey, quoteFor, secondsRemaining } from "@/lib/merchant/charge";
 import { fmtMinor, fromStroops, minorForAssetAmount, toStroops } from "@/lib/merchant/money";
+import {
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "@/lib/merchant/routing";
 import type { Charge, ChargeQuote, MatchedPayment } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { CopyButton, HashValue, Modal, ModalHeader, Notice, SegmentedControl, Spinner } from "../ui";
@@ -64,6 +68,8 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const { toast } = useToast();
 
   const [selectedKey, setSelectedKey] = useState(() => assetKey(charge.quotes[0].asset));
+  const [requestTransport, setRequestTransport] =
+    useState<MerchantPaymentTransport>("muxed");
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const now = useLiveNow(LIVE_SECOND_MS);
 
@@ -71,7 +77,12 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
     charge.quotes.find((q) => assetKey(q.asset) === selectedKey) ?? charge.quotes[0];
   const payment = charge.payment;
   const paidQuote = payment ? quoteFor(charge, payment.asset) : null;
-  const payUri = payUriFor(charge, quote.asset);
+  const payUri = payUriFor(charge, quote.asset, requestTransport);
+  const requestTarget = merchantPaymentTransport(
+    charge.destination,
+    charge.routingId,
+    requestTransport,
+  );
   const order = orderFor(charge.id);
   const awaiting = charge.status === "awaiting";
   const wakeLock = useWakeLock(awaiting);
@@ -225,6 +236,20 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
           </div>
         )}
 
+        {awaiting && (
+          <div className="mx-auto w-full max-w-[320px]">
+            <SegmentedControl
+              ariaLabel="Payment request compatibility"
+              value={requestTransport}
+              onChange={setRequestTransport}
+              options={[
+                { label: "Standard", value: "muxed" },
+                { label: "Trezor", value: "memo-id" },
+              ]}
+            />
+          </div>
+        )}
+
         {/* ---------- the live status ---------- */}
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3">
           <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2.5">
@@ -319,17 +344,20 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
 
             <div className="panel-inset px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                Memo — must not be removed
+                Payment route
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-3">
-                <span className="mono text-[20px] font-semibold text-white">
-                  {charge.reference}
+                <span className="text-[15px] font-semibold text-white">
+                  {requestTransport === "muxed" ? "Included in the address" : "Trezor MEMO_ID"}
                 </span>
-                <CopyButton value={charge.reference} label="Copy" />
+                {requestTransport === "memo-id" && (
+                  <CopyButton value={charge.routingId} label="Copy ID" />
+                )}
               </div>
               <p className="mt-2 text-[12px] leading-relaxed text-neutral-400">
-                The QR already carries it. A payment that arrives without this memo has to be
-                matched to the order by hand.
+                {requestTransport === "muxed"
+                  ? "The muxed Stellar address files the payment automatically. No memo is required."
+                  : `Use the shop account and MEMO_ID ${charge.routingId}. The QR carries both fields for compatible hardware-wallet flows.`}
               </p>
             </div>
 
@@ -337,9 +365,15 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <span className="shrink-0 text-[13px] text-neutral-400">To</span>
                 <HashValue
-                  value={charge.destination}
+                  value={requestTarget.destination}
                   className="text-[12.5px] text-neutral-200"
                 />
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
+                <span className="shrink-0 text-[13px] text-neutral-400">Order reference</span>
+                <span className="mono truncate text-[12.5px] text-neutral-200">
+                  {charge.reference}
+                </span>
               </div>
               {payUri && (
                 <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
@@ -387,7 +421,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
                   Cancel charge
                 </button>
                 <p className="mt-1.5 text-center text-[12px] leading-relaxed text-neutral-500">
-                  Ends the request. Anything paid against {charge.reference} afterwards arrives in
+                  Ends the request. Anything paid against this payment route afterwards arrives in
                   the unmatched tray instead.
                 </p>
               </div>
@@ -525,8 +559,8 @@ function PaymentFacts({ payment }: { payment: MatchedPayment }) {
       <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
         <span className="shrink-0 text-[13px] text-neutral-400">Matched</span>
         <span className="text-[12.5px] text-neutral-200">
-          {payment.lane === "memo"
-            ? `by the memo ${payment.memo ?? ""}`.trim()
+          {payment.lane === "routing"
+            ? `by payment route ${payment.routingId ?? ""}`.trim()
             : payment.lane === "amount"
               ? "by amount"
               : "by hand"}

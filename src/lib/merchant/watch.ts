@@ -3,6 +3,7 @@ import type { NetworkKey } from "../stellar";
 import { getHorizonJson } from "../horizon";
 import type { ObservedPayment } from "./match";
 import type { AcceptedAsset } from "./types";
+import { isMerchantRoutingId } from "./routing";
 export { merchantCursorKey, merchantWatchDestinations } from "./watch-targets";
 
 /**
@@ -34,13 +35,15 @@ interface RawPayment {
   created_at: string;
   paging_token: string;
   to?: string;
+  to_muxed?: string;
+  to_muxed_id?: string;
   from?: string;
+  from_muxed?: string;
+  from_muxed_id?: string;
   asset_type?: string;
   asset_code?: string;
   asset_issuer?: string;
   amount?: string;
-  /** Present for path payments — what the recipient actually received. */
-  to_muxed?: string;
   transaction?: RawTransaction;
 }
 
@@ -64,16 +67,25 @@ function assetOf(record: RawPayment): AcceptedAsset | null {
   return null;
 }
 
-/**
- * Only a text memo can carry a charge reference. An id or hash memo is real but
- * cannot be compared to `MC1042`, so it is treated as absent and the payment
- * falls through to the amount lane.
- */
 function memoOf(record: RawPayment): string | null {
-  const tx = record.transaction;
-  if (!tx?.memo) return null;
-  if (tx.memo_type && tx.memo_type !== "text") return null;
-  return tx.memo;
+  return record.transaction?.memo ?? null;
+}
+
+function routingOf(record: RawPayment): {
+  routingId: string | null;
+  routingConflict: boolean;
+} {
+  const muxedValue = record.to_muxed_id;
+  const memoValue = record.transaction?.memo_type?.toLowerCase() === "id"
+    ? record.transaction.memo
+    : undefined;
+  const muxedId = muxedValue && isMerchantRoutingId(muxedValue) ? muxedValue : null;
+  const memoId = memoValue && isMerchantRoutingId(memoValue) ? memoValue : null;
+  const malformed = (muxedValue !== undefined && muxedId === null) ||
+    (memoValue !== undefined && memoId === null);
+  const disagrees = muxedId !== null && memoId !== null && muxedId !== memoId;
+  if (malformed || disagrees) return { routingId: null, routingConflict: true };
+  return { routingId: muxedId ?? memoId, routingConflict: false };
 }
 
 /**
@@ -141,15 +153,17 @@ export async function fetchIncomingPayments({
 
     const asset = assetOf(record);
     if (!asset || !record.amount) continue;
+    const routing = routingOf(record);
 
     payments.push({
       id: record.id,
       transactionHash: record.transaction_hash,
       ledger: ledger ?? 0,
-      from: record.from ?? "",
+      from: record.from_muxed ?? record.from ?? "",
       destination: record.to,
       amount: record.amount,
       asset,
+      ...routing,
       memo: memoOf(record),
       createdAt: record.created_at,
     });

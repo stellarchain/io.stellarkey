@@ -7,6 +7,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { assetKey, isNative, referencePrefix } from "@/lib/merchant/charge";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import { counterReference } from "@/lib/merchant/payment-reference";
+import { createMerchantRoutingId } from "@/lib/merchant/routing";
 import type {
   AcceptedAsset,
   CounterCode,
@@ -133,6 +134,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   const [staffId, setStaffId] = useState(code?.staffId ?? "");
   const [expiry, setExpiry] = useState(dateInput(code?.expiresAt ?? null));
   const [active, setActive] = useState(code?.active ?? true);
+  const [previewRoutingId] = useState(() => code?.routingId ?? createMerchantRoutingId());
   const [today] = useState(() => dateInput(Date.now()));
   const [error, setError] = useState("");
 
@@ -172,7 +174,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
           kind,
           amountMinor,
           asset: previewAsset,
-          memo: effectiveMemo,
+          routingId: previewRoutingId,
           title: title.trim() || "Counter code",
         })
     : null;
@@ -235,6 +237,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
             staffId: kind === "tip" ? staffId || null : null,
             expiresAt: expiryTimestamp(expiry),
             active,
+            routingId: previewRoutingId,
           });
       triggerHaptic("success");
       toast(`${saved.title} ${code ? "updated" : "published"}.`, "success");
@@ -261,7 +264,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         {!isEdit && counterCodeBlockedReason && <Notice tone="warn">{counterCodeBlockedReason}</Notice>}
         {isEdit && (
           <Notice tone="warn">
-            The network, receiving account, memo, assets and fixed quote are frozen. Copied and
+            The network, receiving account, payment route, assets and fixed quote are frozen. Copied and
             printed requests cannot be recalled; create a new code to change payment details.
           </Notice>
         )}
@@ -395,7 +398,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         </div>
 
         <Field
-          label="Memo suffix"
+          label="Reference suffix"
           hint={effectiveMemo ? `${effectiveMemo} · ${memoBytes} of 28 bytes` : "Use uppercase letters or numbers"}
         >
           <input

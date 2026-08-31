@@ -19,6 +19,11 @@ import {
 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
+import {
+  createMerchantRoutingId,
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "./routing";
 import type {
   AcceptedAsset,
   Invoice,
@@ -48,10 +53,11 @@ export interface CreateInvoiceDraftInput {
   note?: string | null;
   network: NetworkKey;
   now?: number;
+  routingId?: string;
 }
 
 export interface UpdateInvoiceDraftInput
-  extends Omit<CreateInvoiceDraftInput, "id" | "network"> {
+  extends Omit<CreateInvoiceDraftInput, "id" | "network" | "routingId"> {
   invoiceId: string;
   network?: NetworkKey;
 }
@@ -251,6 +257,7 @@ export function createInvoiceDraft(
   const invoice: Invoice = {
     id,
     ...identity,
+    routingId: input.routingId ?? createMerchantRoutingId(),
     status: "draft",
     customerName: valid.customerName,
     customerEmail: valid.customerEmail,
@@ -345,10 +352,11 @@ export function issueInvoice(store: MerchantStore, input: IssueInvoiceInput): In
   return { invoice: issued, store: replaceInvoice(store, issued) };
 }
 
-export function invoicePayUri(
+function invoicePayUriForTransport(
   invoice: Invoice,
   asset: AcceptedAsset,
   shopName?: string,
+  transport: MerchantPaymentTransport = "muxed",
 ): string {
   if (!invoice.destination || !invoice.issuedAt || invoice.status === "draft" || invoice.status === "void") {
     throw new Error("This invoice is not payable.");
@@ -357,16 +365,31 @@ export function invoicePayUri(
   if (remainingMinor <= 0) throw new Error("This invoice is already paid.");
   const quote = invoice.quotes.find((entry) => sameAsset(entry.asset, asset));
   if (!quote) throw new Error(`${asset.code} is not quoted for this invoice.`);
+  const target = merchantPaymentTransport(invoice.destination, invoice.routingId, transport);
   return buildSep7PayUri({
-    destination: invoice.destination,
+    ...target,
     amount: assetAmountFor(remainingMinor, quote.unitPriceMinorE6),
     assetCode: isNative(asset) ? undefined : asset.code,
     assetIssuer: isNative(asset) ? undefined : (asset.issuer ?? undefined),
-    memo: invoice.reference,
-    memoType: "text",
     msg: shopName ? `${shopName} · ${invoice.number}` : invoice.number,
     networkPassphrase: NETWORKS[invoice.network].networkPassphrase,
   });
+}
+
+export function invoicePayUri(
+  invoice: Invoice,
+  asset: AcceptedAsset,
+  shopName?: string,
+): string {
+  return invoicePayUriForTransport(invoice, asset, shopName, "muxed");
+}
+
+export function invoiceCompatibilityPayUri(
+  invoice: Invoice,
+  asset: AcceptedAsset,
+  shopName?: string,
+): string {
+  return invoicePayUriForTransport(invoice, asset, shopName, "memo-id");
 }
 
 export function reconcileInvoicePayments(
@@ -387,10 +410,10 @@ export function reconcileInvoicePayments(
       unclaimed.push(payment);
       continue;
     }
-    const invoiceIndex = payment.memo
+    const invoiceIndex = !payment.routingConflict && payment.routingId
       ? invoices.findIndex(
           (invoice) =>
-            invoice.reference === payment.memo &&
+            invoice.routingId === payment.routingId &&
             invoice.network === input.network &&
             invoice.destination === payment.destination &&
             (invoice.status === "sent" ||
