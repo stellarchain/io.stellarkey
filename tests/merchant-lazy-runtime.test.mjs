@@ -99,6 +99,11 @@ test("the authenticated wallet has no second full-screen merchant loading gate",
 test("merchant setup is mounted only after its runtime is requested", () => {
   const dashboard = source("src/components/Dashboard.tsx");
   assert.match(dashboard, /requestRuntime\("setup"\)/);
+  assert.match(dashboard, /useState\(false\)/);
+  assert.match(
+    dashboard,
+    /if \(!merchantRuntimeIntent \|\| !merchantRuntimeMounted\) return;[\s\S]*merchantRuntimeIntent === "setup"[\s\S]*setSetupWizardOpen\(true\)/,
+  );
   assert.match(dashboard, /setupWizardOpen && \(/);
   assert.match(dashboard, /releaseRuntime/);
 });

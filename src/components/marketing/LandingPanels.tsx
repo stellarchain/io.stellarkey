@@ -151,7 +151,7 @@ export function PanelCharge() {
         <div className="sub">= 42.7459510 XLM</div>
         <div className="qr"><img src="/marketing/demo-qr.svg" alt="Stellar payment request QR code" width={148} height={148} loading="lazy" decoding="async" /></div>
         <div className="rows">
-          <div><span>Memo</span><b>NSC-O-1001</b></div>
+          <div><span>Payment route</span><b>Included in address</b></div>
         </div>
         <div className="wait"><span className="dot live" />watching for payment · 9:56</div>
       </div>

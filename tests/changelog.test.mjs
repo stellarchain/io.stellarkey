@@ -38,7 +38,7 @@ test('the tracked changelog documents the current release', () => {
   );
   assert.deepEqual(
     document.releases[0].categories.map(({ name }) => name),
-    ['Added', 'Changed', 'Security']
+    ['Added', 'Changed', 'Fixed', 'Security']
   );
   assert.ok(document.releases[0].categories.every(({ entries }) => entries.length > 0));
   const unreleasedEntries = document.releases[0].categories.flatMap(({ entries }) => entries);
