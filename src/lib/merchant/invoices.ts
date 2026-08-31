@@ -410,10 +410,10 @@ export function reconcileInvoicePayments(
       unclaimed.push(payment);
       continue;
     }
-    const invoiceIndex = payment.memo
+    const invoiceIndex = !payment.routingConflict && payment.routingId
       ? invoices.findIndex(
           (invoice) =>
-            invoice.reference === payment.memo &&
+            invoice.routingId === payment.routingId &&
             invoice.network === input.network &&
             invoice.destination === payment.destination &&
             (invoice.status === "sent" ||

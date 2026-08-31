@@ -7,9 +7,9 @@ import type { Charge, MatchedPayment, MerchantSettings } from "./types";
 export type ObservedPayment = Omit<MatchedPayment, "lane">;
 
 export type MatchOutcome =
-  /** The memo named a charge. Nothing to confirm. */
+  /** The muxed destination or compatibility MEMO_ID named a charge. */
   | {
-      lane: "memo";
+      lane: "routing";
       charge: Charge;
       verdict: AmountVerdict;
       direction: AmountDirection;
@@ -37,7 +37,9 @@ export type UnmatchedReason =
   | "wrong_asset"
   | "outside_band"
   | "expired"
-  | "invalid_time";
+  | "invalid_time"
+  | "routing_conflict"
+  | "routing_unknown";
 
 function amountVerdict(
   payment: ObservedPayment,
@@ -64,7 +66,7 @@ function amountVerdict(
 /**
  * Resolve an incoming payment to a charge.
  *
- * The order is memo, then the amount lane — exact stroops first, the tolerance
+ * The order is routing identity, then the amount lane — exact stroops first, the tolerance
  * band second — then the time window. Exact comparison runs before the band
  * because the band is millions of stroops wide: it can tell a payment from a
  * typo, but it cannot tell three identical espressos apart. Anything the rules
@@ -77,24 +79,26 @@ export function matchPayment(
   settings: MerchantSettings,
 ): MatchOutcome {
   // `charges` is expected to be scoped to the active network by the caller.
+  if (payment.routingConflict) {
+    return { lane: "unmatched", reason: "routing_conflict" };
+  }
   const paymentAt = parsePaymentCreatedAt(payment.createdAt);
   if (paymentAt === null) return { lane: "unmatched", reason: "invalid_time" };
 
-  // Lane 1 — the memo names a charge outright.
-  if (payment.memo) {
-    const named = charges.find((c) => c.reference === payment.memo);
-    if (named) {
-      if (named.status !== "awaiting" && named.status !== "expired") {
-        return { lane: "duplicate", charge: named };
-      }
-      const late = paymentAt >= named.expiresAt;
-      const comparison = amountVerdict(payment, named, settings);
-      if (!comparison) return { lane: "unmatched", reason: "wrong_asset" };
-      return { lane: "memo", charge: named, ...comparison, late };
+  // Lane 1 — the normalized muxed/MEMO_ID identity names a charge outright.
+  if (payment.routingId) {
+    const named = charges.find((c) => c.routingId === payment.routingId);
+    if (!named) return { lane: "unmatched", reason: "routing_unknown" };
+    if (named.status !== "awaiting" && named.status !== "expired") {
+      return { lane: "duplicate", charge: named };
     }
+    const late = paymentAt >= named.expiresAt;
+    const comparison = amountVerdict(payment, named, settings);
+    if (!comparison) return { lane: "unmatched", reason: "wrong_asset" };
+    return { lane: "routing", charge: named, ...comparison, late };
   }
 
-  // Lane 2 — no usable memo. Only charges still open, in the asset that arrived.
+  // Lane 2 — no routing identity. Only charges still open, in the asset that arrived.
   const live = charges.filter(
     (c) =>
       (c.status === "awaiting" || c.status === "expired") &&
