@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved the public version and build hash from beneath the header logo into the footer legal line.
 - Merchant charges, invoices, and counter codes now use immutable random payment routes; human order references remain display-only.
 - Merchant payment requests default to a muxed destination and offer a consistent Standard or Trezor-compatible request without closing the active sheet.
+- Updated landing-page merchant copy to explain muxed-address routing and the Trezor `MEMO_ID` fallback.
+- Renamed the charge modal's `MEMO_ID` compatibility option from Trezor to Legacy while retaining explicit Trezor guidance.
+
+### Fixed
+
+- Kept merchant setup behind its lazy provider boundary so opening it cannot fail while the merchant runtime loads.
 
 ### Security
 

@@ -539,9 +539,7 @@ export function Dashboard() {
   // Mounted on the shell, not inside Settings: turning Merchant Mode on
   // re-renders the toggle's own row, and a wizard owned by that row would be
   // torn down in the same pass that asked for it.
-  const [setupWizardOpen, setSetupWizardOpen] = useState(
-    () => merchantRuntimeIntent === "setup",
-  );
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
   // The shift sheet lives in MerchantPage; the shell holds the flag so the
   // desktop sidebar and the command palette can open that same sheet.
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -593,7 +591,10 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!merchantRuntimeIntent || !merchantRuntimeMounted) return;
-    const timer = window.setTimeout(consumeMerchantRuntimeIntent, 0);
+    const timer = window.setTimeout(() => {
+      if (merchantRuntimeIntent === "setup") setSetupWizardOpen(true);
+      consumeMerchantRuntimeIntent();
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [consumeMerchantRuntimeIntent, merchantRuntimeIntent, merchantRuntimeMounted]);
 

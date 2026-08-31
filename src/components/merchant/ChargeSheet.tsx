@@ -244,7 +244,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
               onChange={setRequestTransport}
               options={[
                 { label: "Standard", value: "muxed" },
-                { label: "Trezor", value: "memo-id" },
+                { label: "Legacy", value: "memo-id" },
               ]}
             />
           </div>
@@ -348,7 +348,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-3">
                 <span className="text-[15px] font-semibold text-white">
-                  {requestTransport === "muxed" ? "Included in the address" : "Trezor MEMO_ID"}
+                  {requestTransport === "muxed" ? "Included in the address" : "Legacy MEMO_ID"}
                 </span>
                 {requestTransport === "memo-id" && (
                   <CopyButton value={charge.routingId} label="Copy ID" />
@@ -357,7 +357,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
               <p className="mt-2 text-[12px] leading-relaxed text-neutral-400">
                 {requestTransport === "muxed"
                   ? "The muxed Stellar address files the payment automatically. No memo is required."
-                  : `Use the shop account and MEMO_ID ${charge.routingId}. The QR carries both fields for compatible hardware-wallet flows.`}
+                  : `Use the shop account and MEMO_ID ${charge.routingId}. The QR carries both fields for legacy and hardware-wallet flows, including Trezor.`}
               </p>
             </div>
 

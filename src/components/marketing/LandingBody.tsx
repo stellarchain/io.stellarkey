@@ -181,7 +181,7 @@ export function LandingBody() {
               <div className="qr"><img src="/marketing/demo-qr.svg" alt="Stellar payment request" width={148} height={148} /></div>
               <div className="rows">
                 <div><span>asking</span><b className="g">22.3755101 XLM</b></div>
-                <div><span>memo</span><b className="g">MC-O-1024</b></div>
+                <div><span>payment route</span><b className="g">in the address</b></div>
               </div>
               <div className="wait"><span className="dot live"></span>watching horizon · 9:57</div>
             </div>
@@ -192,7 +192,7 @@ export function LandingBody() {
                 <div className="amt">22.3755101 XLM received</div>
               </div>
               <div className="rows" style={{ marginTop: "1.1rem" }}>
-                <div><span>matched by</span><b>memo</b></div>
+                <div><span>matched by</span><b>payment route</b></div>
                 <div><span>ledger</span><b>4,369,215</b></div>
               </div>
             </div>
@@ -213,7 +213,7 @@ export function LandingBody() {
         <ol className="steps rv">
           <li><span className="n">01 / ring up</span><h3>Build the ticket</h3><p>Keypad or product tiles, with per-line VAT, modifiers and discounts worked out on device.</p></li>
           <li><span className="n">02 / tip</span><h3>Ask, don’t assume</h3><p>The customer is offered the tip before the code appears, never added quietly after.</p></li>
-          <li><span className="n">03 / charge</span><h3>Show the code</h3><p>A SEP-7 request carrying your address, the amount, and a memo unique to this order.</p></li>
+          <li><span className="n">03 / charge</span><h3>Show the code</h3><p>A SEP-7 request carrying a muxed Stellar address and the amount. The payment route is embedded in the address, so no memo is required.</p></li>
           <li><span className="n">04 / settle</span><h3>It files itself</h3><p>The till marks the order paid when the network payment is reported and matched.</p></li>
         </ol>
 
@@ -251,9 +251,9 @@ export function LandingBody() {
         </div>
         <div className="row rv">
           <div>
-            <p className="mono-label">one qr<span className="sep">{"//"}</span>one memo</p>
-            <h3>The memo is the reconciliation</h3>
-            <p>That reference ties the payment to this order. Matched from the public ledger, on device, with no webhook to receive and nothing to poll but Horizon.</p>
+            <p className="mono-label">one qr<span className="sep">{"//"}</span>one payment route</p>
+            <h3>The address carries the reconciliation</h3>
+            <p>Each request has an immutable numeric route. Standard embeds it in a muxed Stellar address; Trezor uses the same route as a MEMO_ID with the classic shop address. StellarKey matches either form from the public ledger, on device.</p>
             <ul className="ticks">
               <li>Underpaid and overpaid handled explicitly, not silently</li>
               <li>Anything unmatched lands in a tray instead of disappearing</li>
@@ -284,7 +284,7 @@ export function LandingBody() {
             <h3>Orders, catalogue, customers — kept here</h3>
             <p>Every record the till produces lives in this device’s encrypted storage, and each figure carries the payment that made it.</p>
             <ul className="ticks">
-              <li>Every sale with its payment, its ledger and its memo</li>
+              <li>Every sale with its payment, its ledger and its route</li>
               <li>A catalogue with per-item tax rates and stock</li>
               <li>Customers built from the addresses that actually paid you</li>
               <li>CSV exports that state their own row counts</li>
