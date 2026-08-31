@@ -64,6 +64,16 @@ test("main and tagged releases require the pinned Private Payments Gate A", () =
     assert.match(workflow, /CIVER_CIRCOM:/);
     assert.match(workflow, /CIVER_SOURCE_COMMIT:/);
     assert.match(workflow, /npm run private:gate-a/);
+    assert.doesNotMatch(
+      workflow,
+      /^ {4}env:\s*\n {6}CIVER_CIRCOM:\s*\$\{\{\s*runner\.temp\s*\}\}/m,
+      "runner.temp is unavailable in a job-level env block",
+    );
+    assert.match(
+      workflow,
+      /^ {6}- run: npm run private:gate-a\s*\n {8}env:\s*\n {10}CIVER_CIRCOM:\s*\$\{\{\s*runner\.temp\s*\}\}\/circom_civer\/target\/release\/civer_circom$/m,
+      "the analyzer path must be resolved from runner.temp at step scope",
+    );
   }
 
   assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
