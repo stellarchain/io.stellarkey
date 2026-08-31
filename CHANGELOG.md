@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Kept merchant setup behind its lazy provider boundary so opening it cannot fail while the merchant runtime loads.
+- Scoped the Private Payments analyzer path to the GitHub Actions step where runner metadata is available, restoring CI and tagged-release execution.
 
 ### Security
 

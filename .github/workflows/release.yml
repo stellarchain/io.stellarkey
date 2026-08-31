@@ -21,7 +21,6 @@ jobs:
     permissions:
       contents: read
     env:
-      CIVER_CIRCOM: ${{ runner.temp }}/circom_civer/target/release/civer_circom
       CIVER_SOURCE_COMMIT: af7d4ed0325e6f7743d8a1ac0e415d0c69b8aae8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,6 +41,8 @@ jobs:
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
       - run: corepack npm --prefix protocol/private-balance/circuits ci
       - run: npm run private:gate-a
+        env:
+          CIVER_CIRCOM: ${{ runner.temp }}/circom_civer/target/release/civer_circom
 
   release:
     needs: private-gate-a
