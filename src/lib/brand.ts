@@ -26,6 +26,8 @@ export const PUBLIC_ROUTES = Object.freeze({
   privacy: "/privacy",
   terms: "/terms",
   security: "/security",
+  /** The Private Payments explainer: what is encrypted, what stays public. */
+  private: "/private",
   support: "/support",
   changelog: "/changelog",
 } as const);

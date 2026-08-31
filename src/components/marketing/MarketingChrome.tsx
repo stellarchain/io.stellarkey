@@ -36,7 +36,7 @@ import "./chrome.css";
 const NAV = [
   ["/#wallet", "Wallet"],
   ["/#till", "Merchant"],
-  ["/#cost", "Cost"],
+  ["/#private", "Private"],
   ["/#limits", "Limits"],
   ["/#faq", "FAQ"],
 ] as const;
@@ -79,12 +79,9 @@ export function MarketingHeader() {
   return (
     <header>
       <nav className="nav">
-        <div className="brand-stack">
-          <Link className="brand" href={PUBLIC_ROUTES.home} aria-label={`${BRAND_NAME} home`}>
-            <Brand />
-          </Link>
-          <BuildIdentity className="build-id" />
-        </div>
+        <Link className="brand" href={PUBLIC_ROUTES.home} aria-label={`${BRAND_NAME} home`}>
+          <Brand />
+        </Link>
         <div className="links">
           {NAV.map(([href, label]) => (
             <a key={href} href={href}>{label}</a>
@@ -157,7 +154,8 @@ export function MarketingFooter() {
       </div>
       <div className="legal">
         <span>
-          © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER} · self-custody · you hold the keys
+          © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER} · self-custody · you hold the keys ·{" "}
+          <BuildIdentity className="build-id" />
         </span>
         <span className="fine">
           Independent project. Not affiliated with, sponsored or endorsed by the Stellar

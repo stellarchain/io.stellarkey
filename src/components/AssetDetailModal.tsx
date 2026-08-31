@@ -51,6 +51,7 @@ export function AssetDetailModal({
   const { submissionStatus } = useWalletSubmission();
   const { trustAsset, refresh } = useWalletTransactions();
   const horizonUrl = getHorizonUrl(network);
+  const known = asset ? lookupKnownAsset(asset.code, asset.issuer, network) : null;
   const metadataIdentity = asset && !asset.isNative && asset.issuer
     ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)
     : null;
@@ -65,7 +66,7 @@ export function AssetDetailModal({
       : null,
   );
   const currentMetadata = selectCurrentAssetMetadata(metadataIdentity, metadata);
-  const logoUrl = currentMetadata?.logoUrl ?? null;
+  const logoUrl = known?.iconUrl ?? currentMetadata?.logoUrl ?? null;
   const issuerInfo = currentMetadata?.issuerInfo ?? null;
 
   // Fetch USD price for this asset when the modal opens
@@ -83,7 +84,7 @@ export function AssetDetailModal({
   }, [asset, network]);
 
   useEffect(() => {
-    if (!asset || asset.isNative || !asset.issuer || !metadataIdentity) return;
+    if (!asset || asset.isNative || !asset.issuer || !metadataIdentity || known?.iconUrl) return;
     const code = asset.code;
     const issuer = asset.issuer;
     const identity = metadataIdentity;
@@ -109,7 +110,7 @@ export function AssetDetailModal({
     return () => {
       alive = false;
     };
-  }, [asset, horizonUrl, metadataIdentity]);
+  }, [asset, horizonUrl, known?.iconUrl, metadataIdentity]);
 
   const unitPrice =
     asset && asset.isNative && network === "mainnet"
@@ -156,7 +157,6 @@ export function AssetDetailModal({
 
   if (!asset) return null;
 
-  const known = lookupKnownAsset(asset.code, asset.issuer, network);
   const knownIssuerDomain = normalizeIssuerHomeDomain(known?.anchorDomain);
   const declaredIssuerDomain = normalizeIssuerHomeDomain(issuerInfo?.domain);
   const issuerDomain = knownIssuerDomain ?? declaredIssuerDomain;

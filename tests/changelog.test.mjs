@@ -36,7 +36,13 @@ test('the tracked changelog documents the current release', () => {
     document.releases.map(({ version }) => version),
     ['Unreleased', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
   );
-  assert.deepEqual(document.releases[0].categories, []);
+  assert.deepEqual(
+    document.releases[0].categories.map(({ name }) => name),
+    ['Added', 'Changed']
+  );
+  const unreleasedEntries = document.releases[0].categories.flatMap(({ entries }) => entries);
+  assert.match(unreleasedEntries.join(' '), /USDT0.*Mainnet.*local logo/i);
+  assert.match(unreleasedEntries.join(' '), /version and build hash.*footer/i);
   assert.deepEqual(
     document.releases[1].categories.map(({ name }) => name),
     ['Added', 'Changed', 'Fixed', 'Security', 'Removed']

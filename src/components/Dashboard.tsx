@@ -2735,16 +2735,17 @@ export function Dashboard() {
                           }`}
                         >
                             {(() => {
-                              const logoUrl =
+                              const logoUrl = known?.iconUrl ?? (
                                 !asset.isNative && asset.issuer
-                                ? assetLogos[
-                                    assetMetadataCacheKey(
-                                      asset.code,
-                                      asset.issuer,
-                                      getHorizonUrl(network),
-                                    )
-                                  ]
-                                : undefined;
+                                  ? assetLogos[
+                                      assetMetadataCacheKey(
+                                        asset.code,
+                                        asset.issuer,
+                                        getHorizonUrl(network),
+                                      )
+                                    ]
+                                  : undefined
+                              );
                               const bgStyle = known
                                 ? { background: known.color }
                                 : asset.isNative

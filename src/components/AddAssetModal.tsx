@@ -9,7 +9,12 @@ import {
 } from "@/hooks/useWallet";
 import { isValidPublicAddress } from "@/lib/vault";
 import { formatTrezorAddress } from "@/lib/address-display";
-import { lookupKnownAsset, POPULAR_ASSETS, type KnownAsset } from "@/lib/assets";
+import {
+  knownAssetsForNetwork,
+  knownAssetIssuer,
+  lookupKnownAsset,
+  type KnownAsset,
+} from "@/lib/assets";
 import { networkFeeXlm } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
 import type { SubmissionResult } from "@/lib/submission";
@@ -90,20 +95,21 @@ export function AddAssetPublicPanel({
   );
 
   const filteredPopular = useMemo(() => {
+    const networkAssets = knownAssetsForNetwork(network);
     const q = search.trim().toLowerCase();
-    if (!q) return POPULAR_ASSETS;
-    return POPULAR_ASSETS.filter(
+    if (!q) return networkAssets;
+    return networkAssets.filter(
       (a) =>
         a.code.toLowerCase().includes(q) ||
         a.name.toLowerCase().includes(q) ||
         (a.anchorDomain ?? "").toLowerCase().includes(q),
     );
-  }, [search]);
+  }, [network, search]);
 
   function handleSelectPopular(asset: KnownAsset) {
     triggerHaptic("selection");
-    const iss =
-      (network === "mainnet" ? asset.mainnetIssuer : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
+    const iss = knownAssetIssuer(asset, network) ?? "";
+    if (!iss) return;
     // Codes in the directory can be mixed-case (e.g. "yXLM"); the queue stores
     // them uppercased, so the dedupe key must be normalized the same way.
     const update = toggleTrustlineSelection(selected, {
@@ -185,10 +191,7 @@ export function AddAssetPublicPanel({
         </p>
         <div className="grid max-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
           {filteredPopular.map((asset) => {
-            const iss =
-              (network === "mainnet"
-                ? asset.mainnetIssuer
-                : (asset.testnetIssuer ?? asset.mainnetIssuer)) ?? "";
+            const iss = knownAssetIssuer(asset, network) ?? "";
             const alreadyAdded = existingAssets.has(`${asset.code.toUpperCase()}:${iss}`);
             const isSelected = selected.some(
               (s) => `${s.code}:${s.issuer}` === `${asset.code.toUpperCase()}:${iss}`,
@@ -210,12 +213,23 @@ export function AddAssetPublicPanel({
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="mono flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                    style={{ background: asset.color }}
-                  >
-                    {asset.code.slice(0, 2)}
-                  </span>
+                  {asset.iconUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={asset.iconUrl}
+                      alt=""
+                      width={28}
+                      height={28}
+                      className="h-7 w-7 shrink-0 rounded-full object-cover shadow-inner"
+                    />
+                  ) : (
+                    <span
+                      className="mono flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
+                      style={{ background: asset.color }}
+                    >
+                      {asset.code.slice(0, 2)}
+                    </span>
+                  )}
                   <div className="min-w-0">
                     <p className="truncate text-[13px] font-semibold text-white">{asset.code}</p>
                     <p className="truncate text-[10.5px] text-neutral-400">{asset.name}</p>
@@ -296,12 +310,23 @@ export function AddAssetPublicPanel({
                     className="flex items-center justify-between rounded-xl bg-white/[0.04] px-2.5 py-1.5"
                   >
                     <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                        style={{ background: known?.color ?? "#5E5CE6" }}
-                      >
-                        {s.code.slice(0, 2)}
-                      </span>
+                      {known?.iconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={known.iconUrl}
+                          alt=""
+                          width={20}
+                          height={20}
+                          className="h-5 w-5 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span
+                          className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                          style={{ background: known?.color ?? "#5E5CE6" }}
+                        >
+                          {s.code.slice(0, 2)}
+                        </span>
+                      )}
                       <span className="truncate text-[12.5px] font-medium text-white">
                         {s.code}
                       </span>

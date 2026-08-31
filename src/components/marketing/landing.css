@@ -60,6 +60,112 @@
 
 .mk .calc-sources a:hover { text-decoration-color: currentColor; }
 
+/* ── act three and the till kit ─────────────────────────────── */
+
+/*
+ * Plain capability/edge facts: the refusal grid's layout with a gold diamond
+ * where the refusals wear a red cross — these are facts, not refusals.
+ */
+.mk .facts {
+  display: grid;
+  margin-top: 3rem;
+  padding: 0;
+  border-top: 1px solid var(--hair);
+}
+
+.mk .facts li {
+  list-style: none;
+  display: flex;
+  gap: .85rem;
+  padding: 1.4rem 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.mk .facts .d {
+  font-family: var(--mono);
+  font-size: .6rem;
+  color: var(--gold-deep);
+  flex: none;
+  margin-top: .3rem;
+}
+
+.mk .facts .d svg { width: 17px; height: 17px; display: block; color: var(--gold); opacity: .8; }
+
+.mk .facts b {
+  display: block;
+  font-size: .95rem;
+  font-weight: 500;
+  margin-bottom: .2rem;
+}
+
+.mk .facts span:not(.d) {
+  font-size: .85rem;
+  color: var(--fg-faint);
+  line-height: 1.55;
+  display: block;
+}
+
+@media (min-width: 760px) {
+  .mk .facts { grid-template-columns: 1fr 1fr; }
+  .mk .facts li:nth-child(odd) { padding-right: 2.5rem; }
+  .mk .facts li:nth-child(even) { padding-left: 2.5rem; border-left: 1px solid var(--hair); }
+}
+
+/* Two phone sheets side by side, act three's send-and-review pairing. */
+.mk .pair { display: grid; gap: 1.25rem; align-items: start; }
+
+@media (min-width: 640px) {
+  .mk .pair { grid-template-columns: 1fr 1fr; gap: 1.75rem; }
+}
+
+/*
+ * The what-leaves-your-device diagram. The SVG keeps a readable minimum width
+ * and the wrapper scrolls on narrow screens instead of shrinking the type or
+ * widening the page.
+ */
+.mk .split { margin-top: 2.5rem; overflow-x: auto; overflow-y: hidden; }
+.mk .split svg { display: block; width: 100%; min-width: 42rem; height: auto; }
+
+/* The icon family: one glyph, three containers. */
+.mk .marks {
+  display: grid;
+  margin-top: 3rem;
+  border-top: 1px solid var(--hair);
+}
+
+.mk .marks > div {
+  padding: 2rem 0;
+  border-bottom: 1px solid var(--hair);
+  text-align: center;
+  color: var(--gold);
+}
+
+.mk .marks svg { width: 56px; height: 56px; margin: 0 auto; display: block; }
+
+.mk .marks b {
+  display: block;
+  margin-top: 1rem;
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 400;
+  color: var(--fg);
+}
+
+.mk .marks span {
+  display: block;
+  margin-top: .3rem;
+  font-size: .85rem;
+  color: var(--fg-faint);
+}
+
+@media (min-width: 760px) {
+  .mk .marks { grid-template-columns: repeat(3, 1fr); }
+  .mk .marks > div { border-bottom: 0; border-left: 1px solid var(--hair); }
+  .mk .marks > div:first-child { border-left: 0; }
+}
+
 /* ── narrow screens ─────────────────────────────────────────── */
 
 @media (max-width: 639px) {
@@ -144,4 +250,121 @@
   }
 
   .mk .verify td:last-child { text-align: left; color: var(--fg); }
+}
+
+/* ── the panel system: every former screenshot, rebuilt in house chrome ──
+   Panels reuse the .demo card (bar + body) and the .rows/.keys/.qr/.amount
+   primitives from marketing.css. Only what screenshots used to carry is new. */
+.mk .pbody{padding:1.25rem 1.35rem;font-family:var(--mono);font-size:.78rem}
+.mk .p-s{width:21.5rem;max-width:100%}
+.mk .p-h{width:15.75rem;max-width:100%}
+.mk .demo.pane{box-shadow:0 22px 46px rgb(0 0 0/.55)}
+.mk .panel-grid{display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start}
+.mk .panel-grid.center{justify-content:center}
+.mk .panel-grid.fill .demo.pane{flex:1 1 19rem;width:auto;max-width:none}
+.mk .gal .demo.pane{width:100%;max-width:24rem}
+/* Tailwind's .inline utility (display:inline) leaks in from the app globals
+   and an inline box ignores max-width — pin the display explicitly. */
+.mk .demo.inline{display:block;max-width:44rem;margin-inline:auto}
+.mk .verify{max-width:44rem}
+.mk .split{max-width:47.5rem;margin-inline:auto}
+.mk .row .demo.pane{justify-self:end;width:21.5rem;max-width:100%}
+.mk .acts{display:flex;gap:1.1rem;margin-top:1.2rem;justify-content:space-between;padding:0 .2rem}
+.mk .acts div{display:grid;justify-items:center;gap:.45rem;font-size:.62rem;letter-spacing:.06em;color:var(--fg-faint)}
+.mk .acts i{width:2.6rem;height:2.6rem;border-radius:50%;border:1px solid var(--hair-2);display:grid;place-items:center;color:var(--fg-dim);font-style:normal}
+.mk .acts .go i{background:var(--gold);border-color:var(--gold);color:var(--canvas)}
+.mk .acts svg{width:1.05rem;height:1.05rem}
+.mk .pill{display:inline-block;font-family:var(--mono);font-size:.68rem;color:var(--fg-faint);border:1px solid var(--hair);border-radius:999px;padding:.28rem .75rem;margin-top:.55rem}
+.mk .spark{margin-top:1rem}
+.mk .spark svg{width:100%;height:4.2rem;display:block}
+.mk .bars{display:flex;gap:.45rem;align-items:flex-end;height:5.2rem;margin-top:1.2rem}
+.mk .bars i{flex:1;background:var(--raise);border-radius:.2rem .2rem 0 0;min-height:.3rem}
+.mk .bars i.hot{background:var(--gold)}
+.mk .bars-x{display:flex;gap:.45rem;margin-top:.4rem}
+.mk .bars-x span{flex:1;text-align:center;font-size:.58rem;color:var(--fg-ghost);letter-spacing:.04em}
+.mk .ringwrap{display:flex;gap:1.4rem;align-items:center;margin-top:.4rem}
+.mk .score{width:5.4rem;height:5.4rem;flex:none;position:relative;box-shadow:none}
+.mk .score svg{width:100%;height:100%;transform:rotate(-90deg)}
+.mk .score b{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--sans);font-size:1.15rem;font-weight:500;color:var(--fg)}
+.mk .tix{display:grid;gap:.1rem;flex:1}
+.mk .tix div{display:flex;gap:.6rem;align-items:center;padding:.34rem 0;color:var(--fg-dim);font-size:.74rem}
+.mk .tix svg{width:.85rem;height:.85rem;color:var(--jade);flex:none}
+.mk .tag{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;border-radius:.3rem;padding:.26rem .55rem}
+.mk .tag.j{color:var(--jade);background:rgb(79 201 141/.1);border:1px solid rgb(79 201 141/.25)}
+.mk .tag.b{color:#6DB3FF;background:rgb(10 132 255/.12);border:1px solid rgb(10 132 255/.3)}
+.mk .stats{display:grid;grid-template-columns:repeat(2,1fr)}
+@media(min-width:640px){.mk .stats{grid-template-columns:repeat(4,1fr)}}
+.mk .stats>div{padding:1.05rem 1.25rem;border-left:1px solid var(--hair)}
+.mk .stats>div:first-child{border-left:0}
+@media(max-width:639px){.mk .stats>div:nth-child(3){border-left:0}.mk .stats>div:nth-child(n+3){border-top:1px solid var(--hair)}}
+.mk .stats em{display:block;font-style:normal;font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-ghost);margin-bottom:.35rem}
+.mk .stats b{font-family:var(--mono);font-size:1.05rem;font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums}
+.mk .stats b.j{color:var(--jade)}
+.mk .feed{display:grid}
+.mk .feed>div{display:flex;align-items:center;gap:.85rem;padding:.72rem 0;border-bottom:1px solid var(--hair)}
+.mk .feed>div:last-child{border-bottom:0}
+.mk .lead{position:relative;width:2.35rem;height:2.35rem;flex:none}
+.mk .lead .c{width:2.35rem;height:2.35rem;border-radius:50%;display:grid;place-items:center}
+.mk .lead svg.ar{width:1rem;height:1rem}
+.mk .c.out{background:rgb(253 218 36/.1);color:var(--gold)}
+.mk .c.in{background:rgb(79 201 141/.12);color:var(--jade)}
+.mk .c.plain{background:var(--raise);color:var(--fg-faint)}
+.mk .lead .notch{position:absolute;right:-.22rem;bottom:-.22rem;width:1.12rem;height:1.12rem;border-radius:50%;background:var(--panel);display:grid;place-items:center}
+.mk .lead .notch svg{width:.88rem;height:.88rem;display:block}
+.mk .feed .t{flex:1;min-width:0}
+.mk .feed .t b{display:block;font-family:var(--sans);font-size:.85rem;font-weight:500;color:var(--fg);letter-spacing:-.01em}
+.mk .feed .t span{font-size:.66rem;color:var(--fg-faint)}
+.mk .feed .a{font-variant-numeric:tabular-nums;font-size:.82rem;color:var(--fg-dim)}
+.mk .feed .a.j{color:var(--jade)}
+.mk .deal{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--hair);border-top:1px solid var(--hair);margin-top:1.1rem}
+.mk .deal>div{background:var(--panel);padding:.95rem 1rem 1.05rem}
+.mk .deal em{display:block;font-style:normal;font-family:var(--mono);font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.6rem}
+.mk .deal .prv em{color:#6DB3FF}
+.mk .deal .pub em{color:var(--fg-ghost)}
+.mk .deal u{display:block;text-decoration:none;font-size:.72rem;color:var(--fg-dim);padding:.22rem 0}
+.mk .lines{margin-top:.2rem}
+.mk .lines>div{display:flex;justify-content:space-between;gap:1rem;padding:.4rem 0;border-bottom:1px solid var(--hair);color:var(--fg-dim);font-variant-numeric:tabular-nums}
+.mk .lines>div:last-child{border-bottom:0}
+.mk .lines .q{color:var(--fg-ghost)}
+.mk .lines .tot{color:var(--fg);font-weight:500}
+.mk .mix{display:grid;gap:.8rem;margin-top:1rem}
+.mk .mix>div{display:grid;gap:.35rem}
+.mk .mix .mh{display:flex;justify-content:space-between;font-size:.72rem;color:var(--fg-dim)}
+.mk .mix i{height:.45rem;border-radius:.25rem;background:var(--raise);display:block;position:relative;overflow:hidden}
+.mk .mix i::after{content:"";position:absolute;inset:0;width:var(--w);background:var(--gold);border-radius:.25rem}
+.mk .mix .u i::after{background:var(--jade)}
+.mk .obs{display:grid;gap:.85rem}
+.mk .obs p{margin:0;font-family:var(--sans);font-size:.88rem;color:var(--fg-dim);line-height:1.55}
+.mk .obs p b{color:var(--fg);font-weight:500}
+.mk .mockbtn{margin-top:1.15rem;display:flex;align-items:center;justify-content:center;height:2.3rem;border-radius:.375rem;font-family:var(--sans);font-size:.8rem;font-weight:500;background:var(--gold);color:var(--canvas)}
+.mk .vcode{font-family:var(--mono);text-align:center;margin-top:.2rem}
+.mk .vcode em{display:block;font-style:normal;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-ghost)}
+.mk .vcode b{font-size:1.25rem;letter-spacing:.28em;color:var(--fg);font-weight:500}
+.mk .addr{display:flex;justify-content:center;margin-top:.7rem}
+.mk .addr span{font-family:var(--mono);font-size:.66rem;color:var(--fg-faint);border:1px solid var(--hair);border-radius:999px;padding:.3rem .8rem}
+
+/* ── the hero stack: three acts in one composition ─────────────
+   The signing demo up front; the till's charge card and the private feed
+   fanned behind it. The backs are decorative duplicates (aria-hidden). */
+@media(min-width:1040px){
+  .mk .hero-grid{grid-template-columns:minmax(0,1fr) minmax(0,33rem);gap:3rem}
+}
+.mk .hero-stack{position:relative;z-index:0}
+.mk .hero-stack::before{content:"";position:absolute;inset:-22% -32%;background:radial-gradient(closest-side,rgb(253 218 36/.11),transparent 72%);z-index:-1;pointer-events:none}
+.mk .hero-stack::after{content:"";position:absolute;left:-30%;bottom:-24%;width:60%;height:60%;background:radial-gradient(closest-side,rgb(79 201 141/.06),transparent 70%);z-index:-1;pointer-events:none}
+.mk .hero-stack .stack-front{position:relative;z-index:2;max-width:25rem;margin-inline:auto}
+.mk .hero-stack .stack-back{display:none;position:absolute;top:0;z-index:1;filter:brightness(.58) saturate(.9);pointer-events:none}
+@media(min-width:1040px){
+  .mk .hero-stack .stack-back{display:block}
+  .mk .hero-stack .back-l{left:-2rem;top:5rem;transform:rotate(-5deg) scale(.76);transform-origin:top left}
+  .mk .hero-stack .back-r{right:-2rem;top:3rem;transform:rotate(4deg) scale(.76);transform-origin:top right}
+  .mk .hero-stack .back-l{animation:heroFloatA 9s ease-in-out infinite}
+  .mk .hero-stack .back-r{animation:heroFloatB 11s ease-in-out infinite}
+  .mk .hero-stack .stack-front{animation:heroFloatC 13s ease-in-out infinite}
+}
+@keyframes heroFloatA{0%,100%{translate:0 0}50%{translate:0 -10px}}
+@keyframes heroFloatB{0%,100%{translate:0 0}50%{translate:0 12px}}
+@keyframes heroFloatC{0%,100%{translate:0 0}50%{translate:0 -6px}}
+@media(prefers-reduced-motion:reduce){
+  .mk .hero-stack .stack-back, .mk .hero-stack .stack-front{animation:none}
 }

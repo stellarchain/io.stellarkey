@@ -40,9 +40,10 @@ export function LandingClient() {
     }
 
     /* ── the demos ─────────────────────────────────────────────
-       Two of them: signing a payment in the hero, and taking one at the
-       counter in act two. So the driver is written once and bound per node
-       rather than reaching for ids. Each plays once when it is scrolled to. */
+       Three of them: signing a payment in the hero, taking one at the
+       counter in act two, and a private payment in act three. So the driver
+       is written once and bound per node rather than reaching for ids. Each
+       plays once when it is scrolled to. */
     const SCRIPTS: Record<string, DemoSpec> = {
       sign: {
         labels: ["vault locked", "before you sign", "signed on this device", "on the public ledger"],
@@ -85,6 +86,23 @@ export function LandingClient() {
           d.querySelectorAll("[data-keys] span").forEach((key) => key.classList.remove("hit"));
         },
       },
+      quiet: {
+        labels: ["adding funds", "proving on this device", "the private send", "what the ledger sees"],
+        run(d, api) {
+          const pins = Array.from(d.querySelectorAll("[data-prove] i"));
+          pins.forEach((el) => el.classList.remove("on"));
+          api.show(0);
+          api.wait(2400, () => {
+            api.show(1);
+            pins.forEach((el, n) => api.wait(420 + n * 260, () => el.classList.add("on")));
+            api.wait(420 + pins.length * 260 + 520, () => {
+              api.show(2);
+              api.wait(2700, () => api.show(3));
+            });
+          });
+        },
+        rest(d) { d.querySelectorAll("[data-prove] i").forEach((el) => el.classList.add("on")); },
+      },
     };
 
     for (const d of Array.from(document.querySelectorAll<HTMLElement>("[data-demo]"))) {
@@ -114,6 +132,8 @@ export function LandingClient() {
           bars.forEach((b, n) => b.classList.toggle("fill", n <= i));
           label.textContent = spec.labels[i];
           dot.className = "dot" + (i === 0 ? "" : i === steps.length - 1 ? " done" : " live");
+          // Loop: after the last step has had its moment, start over.
+          if (i === steps.length - 1) api.wait(3600, () => spec.run(d, api));
         },
       };
       let automatic: IntersectionObserver | null = null;

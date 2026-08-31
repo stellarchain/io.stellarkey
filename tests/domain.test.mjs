@@ -28,7 +28,7 @@ import {
   sendPayment,
 } from "../src/lib/api.ts";
 import { swapStrictReceive, swapStrictSend } from "../src/lib/swap.ts";
-import { lookupKnownAsset, POPULAR_ASSETS } from "../src/lib/assets.ts";
+import * as assetDirectory from "../src/lib/assets.ts";
 import {
   fmtAmount,
   activityAmountLines,
@@ -72,8 +72,11 @@ import {
 } from "../src/lib/transaction-review.ts";
 import * as transactionReview from "../src/lib/transaction-review.ts";
 
+const { knownAssetIssuer, lookupKnownAsset, POPULAR_ASSETS } = assetDirectory;
+
 const USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
+const USDT0_ISSUER = "GATISXX6BZ6NC7IKQBY37CJD4SOZL3CYZJWXEDG6JVIY4WBS6KXJHN6Q";
 
 function submittedTransaction(fetchCalls) {
   const submission = fetchCalls.find((call) => call.url.endsWith("/transactions"));
@@ -155,9 +158,49 @@ test("all advertised asset issuers are valid for their configured network", asyn
 });
 
 test("known asset lookup requires the exact issuer and network", () => {
-  assert.equal(lookupKnownAsset("USDC", USDC_ISSUER, "mainnet")?.name, "USD Coin");
+  const usdc = lookupKnownAsset("USDC", USDC_ISSUER, "mainnet");
+  assert.equal(usdc?.name, "USD Coin");
+  assert.equal(usdc?.iconUrl, "/assets/usdc.svg");
+  assert.match(
+    readFileSync(new URL("../public/assets/usdc.svg", import.meta.url), "utf8"),
+    /viewBox="0 0 96 96"/,
+  );
   assert.equal(lookupKnownAsset("USDC", Keypair.random().publicKey(), "mainnet"), null);
   assert.equal(lookupKnownAsset("USDC", USDC_ISSUER, "testnet"), null);
+
+  const eurc = lookupKnownAsset("EURC", TESTNET_USDC_ISSUER, "testnet");
+  assert.equal(eurc?.name, "Euro Coin");
+  assert.equal(eurc?.iconUrl, "/assets/eurc.svg");
+  assert.match(
+    readFileSync(new URL("../public/assets/eurc.svg", import.meta.url), "utf8"),
+    /viewBox="0 0 96 96"/,
+  );
+  assert.equal(lookupKnownAsset("EURC", TESTNET_USDC_ISSUER, "mainnet"), null);
+
+  const usdt0 = lookupKnownAsset("USDT0", USDT0_ISSUER, "mainnet");
+  assert.equal(usdt0?.name, "USDT0");
+  assert.equal(usdt0?.anchorDomain, "usdt0.to");
+  assert.equal(usdt0?.iconUrl, "/assets/usdt0.svg");
+  assert.equal(knownAssetIssuer(usdt0, "mainnet"), USDT0_ISSUER);
+  assert.equal(knownAssetIssuer(usdt0, "testnet"), null);
+  assert.equal(lookupKnownAsset("USDT0", Keypair.random().publicKey(), "mainnet"), null);
+  assert.equal(lookupKnownAsset("USDT0", USDT0_ISSUER, "testnet"), null);
+  assert.match(
+    readFileSync(new URL("../public/assets/usdt0.svg", import.meta.url), "utf8"),
+    /viewBox="0 0 512 512"/,
+  );
+});
+
+test("verified asset lists omit assets unavailable on the selected network", () => {
+  assert.equal(typeof assetDirectory.knownAssetsForNetwork, "function");
+  assert.deepEqual(
+    assetDirectory.knownAssetsForNetwork("mainnet").map(({ code }) => code),
+    ["USDC", "USDT0"],
+  );
+  assert.deepEqual(
+    assetDirectory.knownAssetsForNetwork("testnet").map(({ code }) => code),
+    ["USDC", "EURC"],
+  );
 });
 
 test("portfolio pricing requires an exact verified issuer", () => {
