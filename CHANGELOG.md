@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Kept merchant setup behind its lazy provider boundary so opening it cannot fail while the merchant runtime loads.
-- Made the isolated Private Payments circuit gate install the internal browser package required by its circuit tests.
+- Made the isolated Private Payments circuit gate package its internal browser dependency and import only the required proof helper so clean release runners resolve dependencies without loading unrelated encryption modules.
 - Scoped the Private Payments analyzer path to the GitHub Actions step where runner metadata is available, restoring CI and tagged-release execution.
 
 ### Security

@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./note": {
+      "types": "./dist/note.d.ts",
+      "import": "./dist/note.js"
     }
   },
   "scripts": {

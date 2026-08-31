@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as snarkjs from 'snarkjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { computeNullifier } from '@stellarkey/private-balance';
+import { computeNullifier } from '@stellarkey/private-balance/note';
 
 const buildDir = join(import.meta.dirname, '../build');
 const wasmPath = process.env.PRIVATE_BALANCE_ACTION_WASM_PATH

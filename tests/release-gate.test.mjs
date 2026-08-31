@@ -83,10 +83,46 @@ test("the isolated Private Payments Gate A installs its internal browser package
   const circuits = JSON.parse(
     read("protocol/private-balance/circuits/package.json"),
   );
+  const browser = JSON.parse(
+    read("protocol/private-balance/packages/browser/package.json"),
+  );
+  const actionCircuitTest = read(
+    "protocol/private-balance/circuits/test/action.circuit.test.mjs",
+  );
+  const circuitNpmConfigUrl = new URL(
+    "../protocol/private-balance/circuits/.npmrc",
+    import.meta.url,
+  );
+  assert.equal(existsSync(circuitNpmConfigUrl), true);
+  const circuitNpmConfig = read("protocol/private-balance/circuits/.npmrc");
+  const circuitLock = JSON.parse(
+    read("protocol/private-balance/circuits/package-lock.json"),
+  );
 
   assert.equal(
     circuits.dependencies["@stellarkey/private-balance"],
     "file:../packages/browser",
+  );
+  assert.deepEqual(browser.exports["./note"], {
+    types: "./dist/note.d.ts",
+    import: "./dist/note.js",
+  });
+  assert.match(
+    actionCircuitTest,
+    /from '@stellarkey\/private-balance\/note'/,
+  );
+  assert.doesNotMatch(
+    actionCircuitTest,
+    /from '@stellarkey\/private-balance';/,
+  );
+  assert.match(circuitNpmConfig, /^install-links=true$/m);
+  assert.notEqual(
+    circuitLock.packages["node_modules/@stellarkey/private-balance"]?.link,
+    true,
+  );
+  assert.equal(
+    circuitLock.packages["node_modules/@noble/hashes"]?.version,
+    "2.4.0",
   );
 });
 
