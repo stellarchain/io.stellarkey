@@ -155,9 +155,9 @@ const REASON_LABEL: Record<RefundReason, string> = {
 };
 
 const LANE_LABEL: Record<MatchLane, string> = {
-  memo: "Matched by memo",
+  routing: "Matched by payment route",
   amount: "Matched by amount",
-  // Materially different from a memo match: a person decided this, not a rule.
+  // Materially different from a routed match: a person decided this, not a rule.
   manual: "Attached by staff",
 };
 

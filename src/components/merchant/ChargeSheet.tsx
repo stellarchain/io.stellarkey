@@ -525,8 +525,8 @@ function PaymentFacts({ payment }: { payment: MatchedPayment }) {
       <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-4 py-3">
         <span className="shrink-0 text-[13px] text-neutral-400">Matched</span>
         <span className="text-[12.5px] text-neutral-200">
-          {payment.lane === "memo"
-            ? `by the memo ${payment.memo ?? ""}`.trim()
+          {payment.lane === "routing"
+            ? `by payment route ${payment.routingId ?? ""}`.trim()
             : payment.lane === "amount"
               ? "by amount"
               : "by hand"}

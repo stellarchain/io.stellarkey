@@ -399,10 +399,10 @@ export function reconcileCounterPayments(
       unclaimed.push(payment);
       continue;
     }
-    const codeIndex = payment.memo
+    const codeIndex = !payment.routingConflict && payment.routingId
       ? counterCodes.findIndex(
           (code) =>
-            code.memoPrefix === payment.memo &&
+            code.routingId === payment.routingId &&
             code.network === input.network &&
             code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
@@ -433,7 +433,7 @@ export function reconcileCounterPayments(
     const record: CounterPayment = {
       id: payment.id,
       codeId: code.id,
-      payment: { ...payment, asset: { ...payment.asset }, lane: "memo" },
+      payment: { ...payment, asset: { ...payment.asset }, lane: "routing" },
       amountMinor: priced.amountMinor,
       quote: priced.quote,
       seenAt: now,
