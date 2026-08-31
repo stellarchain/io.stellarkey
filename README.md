@@ -21,6 +21,14 @@ React 19, and `@stellar/stellar-sdk` 17. Production is a static export. Vault
 encryption, recovery, transaction construction, review, and signing happen in
 the browser; the app connects directly to Stellar services.
 
+<p align="center">
+  <img src="./docs/images/stellarkey-dashboard.png" alt="StellarKey dashboard on Stellar testnet showing public and private XLM and USDC balances, market data, and recent activity" width="1200">
+</p>
+
+<p align="center">
+  <sub>Wallet overview on Stellar testnet with configured public and private XLM and USDC assets.</sub>
+</p>
+
 > [!CAUTION]
 > StellarKey is financial software. Start with testnet and small amounts. Always
 > verify the network, destination, asset issuer, amount, memo, and transaction
@@ -43,6 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
+| **Private Payments preview** | Testnet-only private XLM and USDC balances, reusable private addresses, encrypted memos, local proving, recovery, deposits, transfers, and withdrawals |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 
@@ -71,9 +80,10 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Balance protocol work is present but remains development-only and is
-not mounted in the production wallet. Its privacy limits, local storage, direct
-RPC metadata, and recovery model are documented in the
+Private Payments is an experimental testnet-only preview and refuses Mainnet.
+Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
+the fee-paying Stellar account, and timing remain public. Its privacy limits,
+local storage, direct RPC metadata, and recovery model are documented in the
 [Private Balance security model](docs/private-balance.md).
 
 ## Backend-free architecture
@@ -84,8 +94,9 @@ RPC metadata, and recovery model are documented in the
   application API. Users can select verified HTTPS endpoints in Settings.
 - Asset identity is always the complete `(network, code, issuer)` tuple. A
   matching code alone is never treated as verified or assigned a price.
-- Portfolio values are limited to mainnet assets with an exact verified price
-  mapping. Testnet balances are never assigned monetary value.
+- Mainnet portfolio values require an exact verified asset-price mapping.
+  Testnet values are clearly identified as representative estimates using the
+  corresponding Mainnet market price; testnet assets still have no real value.
 - XLM, verified asset prices, and fiat conversion rates come from live
   CoinGecko data and are cached briefly in memory.
 - The CSP allows outbound HTTPS because endpoints are user-configurable and
