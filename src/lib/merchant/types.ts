@@ -263,7 +263,7 @@ export interface Charge {
   payment: MatchedPayment | null;
 }
 
-export type MatchLane = "memo" | "amount" | "manual";
+export type MatchLane = "routing" | "amount" | "manual";
 
 export interface MatchedPayment {
   /** Horizon payment operation id. */
@@ -275,6 +275,11 @@ export interface MatchedPayment {
   destination: string;
   amount: StellarAmount;
   asset: AcceptedAsset;
+  /** Normalized from either the muxed destination ID or a compatibility MEMO_ID. */
+  routingId: string | null;
+  /** True when routing transports disagree or carry a malformed ID. */
+  routingConflict: boolean;
+  /** Raw transaction memo retained as an immutable ledger fact. */
   memo: string | null;
   createdAt: string;
   lane: MatchLane;
@@ -300,6 +305,8 @@ export type PaymentReconciliationOutcome =
   | "wrong_asset"
   | "outside_band"
   | "invalid_time"
+  | "routing_conflict"
+  | "routing_unknown"
   | "unmatched";
 
 export type PaymentResolutionKind = "attached" | "dismissed" | "refund_submitted";

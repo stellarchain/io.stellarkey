@@ -65,20 +65,24 @@ const RECONCILIATION_LABEL: Record<PaymentReconciliationOutcome, string> = {
   wrong_asset: "Wrong asset",
   outside_band: "Amount does not fit",
   invalid_time: "Invalid ledger time",
+  routing_conflict: "Payment route conflict",
+  routing_unknown: "Unknown payment route",
   unmatched: "No matching charge",
 };
 
 const RECONCILIATION_DETAIL: Record<PaymentReconciliationOutcome, string> = {
   settled: "This payment has already settled its order.",
-  needs_confirmation: "The amount and asset fit one charge, but no usable memo named it.",
-  underpaid: "The memo names a charge, but the received amount is short.",
-  overpaid: "The memo names a charge, but the received amount is higher than quoted.",
+  needs_confirmation: "The amount and asset fit one charge, but no payment route named it.",
+  underpaid: "The payment route names a charge, but the received amount is short.",
+  overpaid: "The payment route names a charge, but the received amount is higher than quoted.",
   late: "The payment is exact, but it arrived after the held quote expired.",
   duplicate: "This reference already has a settled payment. Review the second arrival separately.",
   ambiguous: "Several open charges fit exactly, so staff must choose one.",
   wrong_asset: "No open charge quotes the asset that arrived.",
   outside_band: "The amount is outside the configured tolerance for every open charge.",
   invalid_time: "Horizon did not provide a valid ledger timestamp, so this payment needs review.",
+  routing_conflict: "The muxed destination and compatibility memo disagree, so this payment needs review.",
+  routing_unknown: "The payment route is valid but does not belong to an active charge on this account.",
   unmatched: "No open charge can safely claim this payment.",
 };
 
