@@ -23,7 +23,7 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the committed testnet deployment is the manifest and catalogue source of truth', () => {
+test('the committed testnet deployment remains the preview manifest and catalogue source of truth', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
@@ -37,7 +37,39 @@ test('the committed testnet deployment is the manifest and catalogue source of t
     new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
   );
   const manifest = JSON.parse(manifestBytes);
-  assert.deepEqual(manifest, fixture.manifest);
+  const {
+    artifactVersion,
+    status,
+    release,
+    ...deploymentManifest
+  } = manifest;
+  const {
+    artifactVersion: fixtureArtifactVersion,
+    status: fixtureStatus,
+    release: fixtureRelease,
+    ...fixtureDeploymentManifest
+  } = fixture.manifest;
+
+  assert.deepEqual(deploymentManifest, fixtureDeploymentManifest);
+  assert.equal(artifactVersion, '1.0.2-testnet-preview');
+  assert.equal(status, 'testnet-preview');
+  assert.equal(fixtureArtifactVersion, '1.0.2-dev-fixture');
+  assert.equal(fixtureStatus, 'development');
+  for (const key of [
+    'contractWasmSha256',
+    'circuitSourceSha256',
+    'poseidonParametersSha256',
+    'hpkePackageVersion',
+    'hpkeDependencyIntegritySha256',
+    'ceremonyTranscriptRoot',
+    'auditReports',
+    'deploymentTransactions',
+    'allowedEnvironment',
+  ]) {
+    assert.deepEqual(release[key], fixtureRelease[key], `release.${key}`);
+  }
+  assert.match(release.contractSourceCommit, /^[0-9a-f]{40}$/);
+  assert.match(release.toolchainLockSha256, /^[0-9a-f]{64}$/);
   assert.equal(manifest.poolContractId, fixture.poolContractId);
   assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
 

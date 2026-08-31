@@ -17,7 +17,7 @@ test('manifest: validates real manifest.json successfully', () => {
   const manifest = validateManifest(raw);
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.protocolVersion, 1);
-  assert.equal(manifest.status, 'development');
+  assert.equal(manifest.status, 'testnet-preview');
   assert.equal(manifest.constants.treeDepth, 32);
   assert.equal(manifest.constants.pageCapacity, 32);
   assert.equal(manifest.constants.publicInputs, 13);
@@ -121,6 +121,25 @@ test('manifest: beta and production releases require ceremony, audit, and deploy
   );
 });
 
+test('manifest: production-hosted preview is usable only on Stellar testnet', () => {
+  const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const preview = validateManifest({ ...raw, status: 'testnet-preview' });
+
+  assert.equal(preview.release.ceremonyTranscriptRoot, '0'.repeat(64));
+  assert.deepEqual(preview.release.auditReports, []);
+  assert.deepEqual(
+    manifestModule.privateBalanceAvailability(preview, 'testnet'),
+    { ready: true },
+  );
+  assert.deepEqual(
+    manifestModule.privateBalanceAvailability(preview, 'mainnet'),
+    {
+      ready: false,
+      reason: 'Private Payments are available on Stellar testnet only.',
+    },
+  );
+});
+
 test('manifest: wallet build pins the exact shipped manifest SHA-256', () => {
   const bytes = readFileSync(manifestPath);
   const expected = createHash('sha256').update(bytes).digest('hex');
@@ -147,6 +166,18 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.match(buildSource, /STELLAR_CLI_VERSION = '27\.0\.0'/);
   assert.match(buildSource, /'contract',\s*'build'/);
   assert.match(buildSource, /'--optimize=false'/);
+  assert.match(source, /artifactVersion: '1\.0\.2-testnet-preview'/);
+  assert.match(source, /status: 'testnet-preview'/);
+  assert.match(
+    source,
+    /const manifest = \{[\s\S]*\.\.\.deploymentEvidence\.manifest,[\s\S]*release: baseManifest\.release,[\s\S]*\};/,
+    'the preview must use freshly reproduced release metadata after artifact equality checks',
+  );
+  assert.match(
+    source,
+    /protocol\/private-balance\/manifests\/development\.json'[\s\S]*JSON\.stringify\(deploymentEvidence\.manifest/,
+    'normal generation must preserve the exact development deployment evidence separately',
+  );
 });
 
 test('manifest: deployment preparation stages artifacts without publishing unverified evidence', () => {
@@ -206,7 +237,7 @@ test('manifest: loader authenticates exact bytes before schema validation', asyn
       headers: { 'content-length': String(bytes.byteLength) },
     }),
   });
-  assert.equal(loaded.manifest.status, 'development');
+  assert.equal(loaded.manifest.status, 'testnet-preview');
   assert.equal(loaded.manifestHash, manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256);
 
   const modified = Buffer.concat([bytes.subarray(0, -1), Buffer.from(' \n')]);
