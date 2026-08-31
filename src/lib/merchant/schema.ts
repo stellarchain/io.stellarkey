@@ -250,6 +250,8 @@ const observedPayment = objectOf<Omit<Merchant.MatchedPayment, "lane">>({
   destination: nonEmptyString,
   amount: nonEmptyString,
   asset: acceptedAsset,
+  routingId: nullable(merchantRoutingId),
+  routingConflict: booleanValue,
   memo: nullableString,
   createdAt: nonEmptyString,
 }, {});
@@ -262,9 +264,11 @@ const matchedPayment = objectOf<Merchant.MatchedPayment>({
   destination: nonEmptyString,
   amount: nonEmptyString,
   asset: acceptedAsset,
+  routingId: nullable(merchantRoutingId),
+  routingConflict: booleanValue,
   memo: nullableString,
   createdAt: nonEmptyString,
-  lane: oneOf("memo", "amount", "manual"),
+  lane: oneOf("routing", "amount", "manual"),
 }, {});
 
 const charge = objectOf<Merchant.Charge>({
@@ -291,6 +295,8 @@ const unmatchedPayment = objectOf<Merchant.UnmatchedPayment>({
   destination: nonEmptyString,
   amount: nonEmptyString,
   asset: acceptedAsset,
+  routingId: nullable(merchantRoutingId),
+  routingConflict: booleanValue,
   memo: nullableString,
   createdAt: nonEmptyString,
   seenAt: timestamp,
@@ -305,6 +311,8 @@ const unmatchedPayment = objectOf<Merchant.UnmatchedPayment>({
     "wrong_asset",
     "outside_band",
     "invalid_time",
+    "routing_conflict",
+    "routing_unknown",
     "unmatched",
   ),
   candidateChargeId: nullableString,
@@ -335,6 +343,8 @@ const paymentReconciliation = objectOf<Merchant.PaymentReconciliation>({
     "wrong_asset",
     "outside_band",
     "invalid_time",
+    "routing_conflict",
+    "routing_unknown",
     "unmatched",
   ),
   chargeId: nullableString,

@@ -81,6 +81,8 @@ function payment(over = {}) {
     amount: "27.3300000",
     asset: USDC_ASSET,
     memo: null,
+    routingId: null,
+    routingConflict: false,
     createdAt: new Date(NOW + 1_000).toISOString(),
     ...over,
   };
@@ -148,32 +150,45 @@ test("a split charge quotes only its exact outstanding remainder", () => {
   assert.equal(quoteFor(c, USDC_ASSET).amount, "6.0000000");
 });
 
-test("the memo lane names a charge outright", () => {
+test("the routing lane names a charge outright", () => {
   const c = charge(1042, 2733);
-  const out = matchPayment(payment({ memo: "MC-O-1042" }), [c], settings());
-  assert.equal(out.lane, "memo");
+  const out = matchPayment(payment({ routingId: c.routingId }), [c], settings());
+  assert.equal(out.lane, "routing");
   assert.equal(out.charge.id, "chg_1042");
   assert.equal(out.verdict, "exact");
   assert.equal(chargeStatusFor(out.verdict), "paid");
 });
 
-test("the memo lane still names short and over payments", () => {
+test("the routing lane still names short and over payments", () => {
   const c = charge(1042, 2733);
-  const short = matchPayment(payment({ memo: "MC-O-1042", amount: "22.8000000" }), [c], settings());
-  assert.equal(short.lane, "memo");
+  const short = matchPayment(payment({ routingId: c.routingId, amount: "22.8000000" }), [c], settings());
+  assert.equal(short.lane, "routing");
   assert.equal(short.verdict, "short");
   assert.equal(chargeStatusFor(short.verdict), "underpaid");
 
-  const over = matchPayment(payment({ memo: "MC-O-1042", amount: "30.0000000" }), [c], settings());
+  const over = matchPayment(payment({ routingId: c.routingId, amount: "30.0000000" }), [c], settings());
   assert.equal(over.verdict, "over");
   assert.equal(chargeStatusFor(over.verdict), "overpaid");
 });
 
-test("a second payment on a settled reference is a duplicate, never a match", () => {
+test("a second payment on a settled routing ID is a duplicate, never a match", () => {
   const paid = charge(1042, 2733, { status: "paid" });
-  const out = matchPayment(payment({ memo: "MC-O-1042" }), [paid], settings());
+  const out = matchPayment(payment({ routingId: paid.routingId }), [paid], settings());
   assert.equal(out.lane, "duplicate");
   assert.equal(out.charge.id, "chg_1042");
+});
+
+test("a conflicting or unknown routing identity never falls through to amount matching", () => {
+  const c = charge(1042, 2733);
+  const conflict = matchPayment(
+    payment({ routingId: c.routingId, routingConflict: true }),
+    [c],
+    settings(),
+  );
+  assert.deepEqual(conflict, { lane: "unmatched", reason: "routing_conflict" });
+
+  const unknown = matchPayment(payment({ routingId: "999999" }), [c], settings());
+  assert.deepEqual(unknown, { lane: "unmatched", reason: "routing_unknown" });
 });
 
 test("exact stroops beat the band, so a one-stroop salt still resolves", () => {
@@ -225,9 +240,9 @@ test("an expired charge stops being a candidate", () => {
   const out = matchPayment(latePayment, [c], settings());
   assert.equal(out.lane, "unmatched");
   assert.equal(out.reason, "expired");
-  // The memo lane still resolves it, so a late payer is not stranded.
-  const named = matchPayment({ ...latePayment, memo: c.reference }, [c], settings());
-  assert.equal(named.lane, "memo");
+  // The routing lane still resolves it, so a late payer is not stranded.
+  const named = matchPayment({ ...latePayment, routingId: c.routingId }, [c], settings());
+  assert.equal(named.lane, "routing");
   assert.equal(named.late, true);
 });
 
@@ -256,7 +271,7 @@ test("a ledger sequence is derived from the paging token", () => {
   assert.equal(ledgerFromPagingToken("not-a-token"), null);
 });
 
-test("the watcher reads /payments with the transaction joined for its memo", async (t) => {
+test("the watcher normalizes muxed destinations and preserves muxed payer addresses", async (t) => {
   let requested;
   t.mock.method(globalThis, "fetch", async (url) => {
     requested = new URL(String(url));
@@ -271,12 +286,15 @@ test("the watcher reads /payments with the transaction joined for its memo", asy
               created_at: "2026-08-24T18:14:31Z",
               paging_token: (BigInt(56_420_130) << BigInt(32)).toString(),
               to: TILL,
+              to_muxed: "MAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI47YAAAAAAAAAABDUKQ",
+              to_muxed_id: "42",
               from: PAYER,
+              from_muxed: "MCUXWZHL7FGVL3MVYH6N5G3RACCKAC7ZLTUBKKN4I5MCCTDPJXITM4AAAAAAAAAAFE2Q",
               asset_type: "credit_alphanum4",
               asset_code: "USDC",
               asset_issuer: USDC,
               amount: "27.3300000",
-              transaction: { memo: "MC1042", memo_type: "text", successful: true },
+              transaction: { memo: "Customer note", memo_type: "text", successful: true },
             },
           ],
         },
@@ -291,14 +309,17 @@ test("the watcher reads /payments with the transaction joined for its memo", asy
   assert.equal(requested.searchParams.get("order"), "asc");
   assert.equal(requested.searchParams.get("cursor"), "12");
   assert.equal(result.payments.length, 1);
-  assert.equal(result.payments[0].memo, "MC1042");
+  assert.equal(result.payments[0].memo, "Customer note");
+  assert.equal(result.payments[0].routingId, "42");
+  assert.equal(result.payments[0].routingConflict, false);
+  assert.match(result.payments[0].from, /^M/);
   assert.equal(result.payments[0].asset.code, "USDC");
   assert.equal(result.payments[0].destination, TILL);
   assert.equal(result.payments[0].ledger, 56_420_130);
   assert.equal(result.latestLedger, 56_420_130);
 });
 
-test("the watcher ignores failures, outbound legs and unreadable memos", async (t) => {
+test("the watcher accepts MEMO_ID fallback and flags conflicting dual routing", async (t) => {
   const base = {
     type: "payment",
     transaction_hash: "b".repeat(64),
@@ -323,6 +344,15 @@ test("the watcher ignores failures, outbound legs and unreadable memos", async (
               from: PAYER,
               transaction: { memo: "12345", memo_type: "id", successful: true },
             },
+            {
+              ...base,
+              id: "conflict",
+              paging_token: (BigInt(56_420_001) << BigInt(32)).toString(),
+              to: TILL,
+              to_muxed_id: "99",
+              from: PAYER,
+              transaction: { memo: "12345", memo_type: "id", successful: true },
+            },
           ],
         },
       }),
@@ -331,8 +361,11 @@ test("the watcher ignores failures, outbound legs and unreadable memos", async (
   );
 
   const result = await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "1" });
-  assert.equal(result.payments.length, 1);
+  assert.equal(result.payments.length, 2);
   assert.equal(result.payments[0].id, "idmemo");
-  // An id memo cannot carry a reference, so it falls through to the amount lane.
-  assert.equal(result.payments[0].memo, null);
+  assert.equal(result.payments[0].memo, "12345");
+  assert.equal(result.payments[0].routingId, "12345");
+  assert.equal(result.payments[0].routingConflict, false);
+  assert.equal(result.payments[1].routingId, null);
+  assert.equal(result.payments[1].routingConflict, true);
 });
