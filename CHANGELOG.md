@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added Stellar muxed-address payments to Send and Multi-Send, with an explicit base-account plus `MEMO_ID` fallback for Trezor.
+
+### Changed
+
+- Merchant charges, invoices, and counter codes now use immutable random payment routes; human order references remain display-only.
+- Merchant payment requests default to a muxed destination and offer a consistent Standard or Trezor-compatible request without closing the active sheet.
+
+### Security
+
+- Conflicting or malformed muxed and `MEMO_ID` routes are isolated for review instead of being matched by amount.
+
 ## [1.3.0] - 2026-08-31
 
 ### Added
