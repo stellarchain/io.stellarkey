@@ -247,6 +247,8 @@ export interface Charge {
   id: string;
   orderId: string;
   reference: string;
+  /** Immutable uint64 identity carried by an M-address or compatibility MEMO_ID. */
+  routingId: string;
   network: NetworkKey;
   destination: string;
   /** What the shop is owed, in its own currency. */
@@ -541,6 +543,8 @@ export interface Invoice {
   /** The payer's address once one has paid, otherwise null. */
   customerAddress: string | null;
   reference: string;
+  /** Immutable uint64 identity carried by an M-address or compatibility MEMO_ID. */
+  routingId: string;
   network: NetworkKey;
   /** Snapshotted at issue so a later settings change cannot redirect the document. */
   destination: string | null;
@@ -589,6 +593,8 @@ export interface CounterCode {
   acceptedAssets: AcceptedAsset[];
   /** Prefix for the memo every payment against this code carries. */
   memoPrefix: string;
+  /** Immutable uint64 identity carried by an M-address or compatibility MEMO_ID. */
+  routingId: string;
   /** Immutable human-readable SEP-7 message captured when the request is published. */
   requestMessage: string;
   /** Snapshotted publication network and destination; shared paper cannot be redirected later. */
@@ -770,7 +776,7 @@ export type TillTextSize = "standard" | "large" | "xlarge";
 
 /** Everything Merchant Mode keeps on this device, versioned for fail-closed schema detection. */
 export interface MerchantStore {
-  version: 2;
+  version: 3;
   /** Monotonic local revision used to reject stale writes from another tab. */
   revision: number;
   /** Per-tab identifier of the last successful writer. */

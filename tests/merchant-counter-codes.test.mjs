@@ -5,6 +5,7 @@ import test from "node:test";
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 import { NETWORKS } from "../src/lib/stellar.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 
 const NOW = 1_800_000_000_000;
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
@@ -80,6 +81,7 @@ function fixedInput(member, overrides = {}) {
     expiresAt: null,
     network: "mainnet",
     destination: TILL,
+    routingId: "3001",
     quotes: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW,
     ...overrides,
@@ -100,8 +102,12 @@ function payment(id, amount, asset, memo) {
   };
 }
 
-test("fixed codes persist an immutable publication quote and exact SEP-7 request", async () => {
-  const { counterCodePayUri, createCounterCode } = await counterDomain();
+test("fixed codes persist muxed routing and an equivalent MEMO_ID compatibility request", async () => {
+  const {
+    counterCodeCompatibilityPayUri,
+    counterCodePayUri,
+    createCounterCode,
+  } = await counterDomain();
   const { member, store } = merchantStore();
   const created = createCounterCode(store, fixedInput(member));
 
@@ -121,15 +127,19 @@ test("fixed codes persist an immutable publication quote and exact SEP-7 request
 
   const parsed = parseSep7PayUri(counterCodePayUri(created.code, USDC, "North Star"));
   assert.deepEqual(parsed, {
-    destination: TILL,
+    destination: muxedAddressForRouting(TILL, created.code.routingId),
     amount: "10.0000000",
     assetCode: "USDC",
     assetIssuer: ISSUER,
-    memo: "NS-C-BAG",
-    memoType: "text",
     msg: "North Star · Coffee bag",
     networkPassphrase: NETWORKS.mainnet.networkPassphrase,
   });
+  assert.match(parsed.destination, /^M/);
+
+  const compatibility = parseSep7PayUri(counterCodeCompatibilityPayUri(created.code, USDC));
+  assert.equal(compatibility.destination, TILL);
+  assert.equal(compatibility.memo, created.code.routingId);
+  assert.equal(compatibility.memoType, "id");
 });
 
 test("a new counter code cannot reuse a payment reference held by another merchant record", async () => {

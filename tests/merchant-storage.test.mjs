@@ -45,7 +45,7 @@ function sampleStore() {
   const settings = emptyStore().settings;
   const order = completedOrder();
   return {
-    version: 2,
+    version: 3,
     settings: {
       ...settings,
       enabled: true,
@@ -60,6 +60,7 @@ function sampleStore() {
         id: "charge-1",
         orderId: order.id,
         reference: order.reference,
+        routingId: "4001",
         network: "testnet",
         destination: TILL,
         amountMinor: 250,
@@ -92,9 +93,9 @@ function sampleStore() {
   };
 }
 
-test("the operational store defaults to a complete v2 schema", () => {
+test("the operational store defaults to a complete v3 schema", () => {
   const store = emptyStore();
-  assert.equal(store.version, 2);
+  assert.equal(store.version, 3);
   assert.deepEqual(store.staff, []);
   assert.equal(store.activeStaffId, null);
   assert.deepEqual(store.onShiftStaffIds, []);
