@@ -79,6 +79,17 @@ test("main and tagged releases require the pinned Private Payments Gate A", () =
   assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
 });
 
+test("the isolated Private Payments Gate A installs its internal browser package", () => {
+  const circuits = JSON.parse(
+    read("protocol/private-balance/circuits/package.json"),
+  );
+
+  assert.equal(
+    circuits.dependencies["@stellarkey/private-balance"],
+    "file:../packages/browser",
+  );
+});
+
 test("CI verifies pull-request branches once and main after merge", () => {
   const ci = read(".github/workflows/ci.yml");
 
