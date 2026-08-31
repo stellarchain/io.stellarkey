@@ -10,8 +10,9 @@ import { NETWORKS } from "@/lib/stellar";
 import { assetKey } from "@/lib/merchant/charge";
 import { counterCodeAvailability } from "@/lib/merchant/counter-codes";
 import { fmtMinor } from "@/lib/merchant/money";
+import type { MerchantPaymentTransport } from "@/lib/merchant/routing";
 import type { AcceptedAsset, CounterCode } from "@/lib/merchant/types";
-import { Button, CopyButton, Modal, ModalHeader, Notice } from "../ui";
+import { Button, CopyButton, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
 import { IconInfo, IconPrinter } from "./icons";
 
 /** A6 in millimetres, and the code's printed width inside it. */
@@ -91,7 +92,7 @@ function PosterFace({
   suggestionLine,
   qrDataUrl,
   assetsText,
-  memo,
+  routeLine,
   footer,
 }: {
   shopName: string;
@@ -102,7 +103,7 @@ function PosterFace({
   suggestionLine: string | null;
   qrDataUrl: string | null;
   assetsText: string;
-  memo: string;
+  routeLine: string;
   footer: string;
 }) {
   return (
@@ -214,7 +215,7 @@ function PosterFace({
           )}
         </div>
 
-        {/* What it takes, and the memo a hand-typed payment must quote */}
+        {/* What it takes, and how the request carries its payment route. */}
         <div style={{ width: "100%" }}>
           <p style={{ margin: 0, fontSize: "3.4cqw", fontWeight: 600 }}>Accepts {assetsText}</p>
           <p
@@ -224,7 +225,7 @@ function PosterFace({
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
             }}
           >
-            Memo {memo}
+            {routeLine}
           </p>
         </div>
 
@@ -263,6 +264,8 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
   const [chosenKey, setChosenKey] = useState(() =>
     code.acceptedAssets.length > 0 ? assetKey(code.acceptedAssets[0]) : "",
   );
+  const [requestTransport, setRequestTransport] =
+    useState<MerchantPaymentTransport>("muxed");
   const now = useLiveNow();
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const mounted = useSyncExternalStore(subscribeNothing, readMounted, readNotMounted);
@@ -271,13 +274,10 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
     code.acceptedAssets.find((a) => assetKey(a) === chosenKey) ?? code.acceptedAssets[0] ?? null;
 
   const shopName = settings.profile.name.trim() || "Your shop";
-  /* Paper cannot count, so the memo is fixed: every payment against this card
-     carries it, and Horizon totals the account on it. */
-  const memo = code.memoPrefix;
   const printedAmount = asset
     ? code.quotes.find((quote) => assetKey(quote.asset) === assetKey(asset))?.amount ?? null
     : null;
-  const uri = asset ? counterCodePayUriFor(code, asset) : null;
+  const uri = asset ? counterCodePayUriFor(code, asset, requestTransport) : null;
   const availability = counterCodeAvailability(code, now);
   const receivingAccountChanged = settings.receivingPublicKey !== code.destination;
   const canShare = availability === "active" && !receivingAccountChanged && uri !== null;
@@ -329,7 +329,11 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
       suggestionLine={suggestionLine}
       qrDataUrl={qrDataUrl}
       assetsText={asset ? asset.code : assetLine(code.acceptedAssets)}
-      memo={memo}
+      routeLine={
+        requestTransport === "muxed"
+          ? `Payment route included · ${code.memoPrefix}`
+          : `MEMO_ID ${code.routingId}`
+      }
       footer={
         settings.profile.receiptFooter.trim() ||
         "Payments go straight to this shop's own Stellar account. Nothing is held by anyone in between, and a refund is an ordinary payment back."
@@ -358,6 +362,15 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
+              <SegmentedControl
+                ariaLabel="Payment request compatibility"
+                value={requestTransport}
+                onChange={setRequestTransport}
+                options={[
+                  { label: "Standard", value: "muxed" },
+                  { label: "Trezor", value: "memo-id" },
+                ]}
+              />
               {code.acceptedAssets.length > 1 && (
                 <div className="space-y-1.5">
                   <span className="field-label">Code asks for</span>
@@ -409,8 +422,10 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                   <dd className="mono text-white">44 cm+</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
-                  <dt className="text-neutral-400">Memo</dt>
-                  <dd className="mono text-white">{memo}</dd>
+                  <dt className="text-neutral-400">Payment route</dt>
+                  <dd className="text-right text-white">
+                    {requestTransport === "muxed" ? "Included in address" : `MEMO_ID ${code.routingId}`}
+                  </dd>
                 </div>
                 {printedAmount && asset && (
                   <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
@@ -465,7 +480,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
               <span>
                 {!uri ? (
                   <>
-                    <span className="font-semibold text-white">Incomplete legacy record. </span>
+                    <span className="font-semibold text-white">Request unavailable. </span>
                     This saved code has no reproducible publication request and cannot be printed.
                   </>
                 ) : availability !== "active" ? (

@@ -38,11 +38,16 @@ test('the tracked changelog documents the current release', () => {
   );
   assert.deepEqual(
     document.releases[0].categories.map(({ name }) => name),
-    ['Added', 'Changed']
+    ['Added', 'Changed', 'Security']
   );
+  assert.ok(document.releases[0].categories.every(({ entries }) => entries.length > 0));
   const unreleasedEntries = document.releases[0].categories.flatMap(({ entries }) => entries);
   assert.match(unreleasedEntries.join(' '), /USDT0.*Mainnet.*local logo/i);
   assert.match(unreleasedEntries.join(' '), /version and build hash.*footer/i);
+  assert.match(
+    unreleasedEntries.join(' '),
+    /muxed.*MEMO_ID.*payment route/i
+  );
   assert.deepEqual(
     document.releases[1].categories.map(({ name }) => name),
     ['Added', 'Changed', 'Fixed', 'Security', 'Removed']

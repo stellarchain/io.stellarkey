@@ -7,6 +7,7 @@ import { recordRefundSubmission } from "../src/lib/merchant/refunds.ts";
 import { decodeMerchantStore } from "../src/lib/merchant/storage.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 import { NETWORKS } from "../src/lib/stellar.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 
 const NOW = 1_800_000_000_000;
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
@@ -86,12 +87,13 @@ function draftInput(member, overrides = {}) {
     dueAt: NOW + 14 * 24 * 60 * 60 * 1000,
     note: "Thank you",
     network: "mainnet",
+    routingId: "2001",
     now: NOW,
     ...overrides,
   };
 }
 
-function payment(id, amount, memo) {
+function payment(id, amount, routingId) {
   return {
     id,
     transactionHash: id.padEnd(64, "a").slice(0, 64),
@@ -100,7 +102,9 @@ function payment(id, amount, memo) {
     destination: TILL,
     amount,
     asset: USDC,
-    memo,
+    routingId,
+    routingConflict: false,
+    memo: null,
     createdAt: new Date(NOW + 1000).toISOString(),
   };
 }
@@ -153,8 +157,13 @@ test("a new invoice cannot reuse a payment reference held by another merchant re
   );
 });
 
-test("issue-time quotes are immutable and SEP-7 carries exact asset, amount, memo, and network", async () => {
-  const { createInvoiceDraft, invoicePayUri, issueInvoice } = await invoiceDomain();
+test("issue-time quotes are immutable and SEP-7 uses muxed routing with a MEMO_ID fallback", async () => {
+  const {
+    createInvoiceDraft,
+    invoiceCompatibilityPayUri,
+    invoicePayUri,
+    issueInvoice,
+  } = await invoiceDomain();
   const { member, store } = merchantStore();
   const draft = createInvoiceDraft(store, draftInput(member));
   const issued = issueInvoice(draft.store, {
@@ -179,15 +188,21 @@ test("issue-time quotes are immutable and SEP-7 carries exact asset, amount, mem
   ]);
   const parsed = parseSep7PayUri(invoicePayUri(issued.invoice, USDC, "North Star"));
   assert.deepEqual(parsed, {
-    destination: TILL,
+    destination: muxedAddressForRouting(TILL, issued.invoice.routingId),
     amount: "10.0000000",
     assetCode: "USDC",
     assetIssuer: ISSUER,
-    memo: issued.invoice.reference,
-    memoType: "text",
     msg: `North Star · ${issued.invoice.number}`,
     networkPassphrase: NETWORKS.mainnet.networkPassphrase,
   });
+  assert.match(parsed.destination, /^M/);
+
+  const compatibility = parseSep7PayUri(
+    invoiceCompatibilityPayUri(issued.invoice, USDC, "North Star"),
+  );
+  assert.equal(compatibility.destination, TILL);
+  assert.equal(compatibility.memo, issued.invoice.routingId);
+  assert.equal(compatibility.memoType, "id");
 
   assert.throws(
     () =>
@@ -217,7 +232,7 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
     now: NOW + 100,
   });
 
-  const firstPayment = payment("payment-1", "4.0000000", issued.invoice.reference);
+  const firstPayment = payment("payment-1", "4.0000000", issued.invoice.routingId);
   const first = reconcileInvoicePayments(issued.store, {
     network: "mainnet",
     payments: [firstPayment],
@@ -238,7 +253,7 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
 
   const second = reconcileInvoicePayments(replay.store, {
     network: "mainnet",
-    payments: [payment("payment-2", "6.0000000", issued.invoice.reference)],
+    payments: [payment("payment-2", "6.0000000", issued.invoice.routingId)],
     now: NOW + 2000,
   });
   assert.equal(second.store.invoices[0].status, "paid");
@@ -259,7 +274,7 @@ test("an invoice overpayment settles only the balance and isolates the exact sur
     quotes: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW + 100,
   });
-  const observed = payment("payment-overpaid", "12.0000000", issued.invoice.reference);
+  const observed = payment("payment-overpaid", "12.0000000", issued.invoice.routingId);
 
   const reconciled = reconcileInvoicePayments(issued.store, {
     network: "mainnet",
@@ -357,7 +372,7 @@ test("an invoice payment cannot file against another receiving account", async (
     now: NOW + 100,
   });
   const observed = {
-    ...payment("wrong-invoice-destination", "10.0000000", issued.invoice.reference),
+    ...payment("wrong-invoice-destination", "10.0000000", issued.invoice.routingId),
     destination: ISSUER,
   };
   const reconciled = reconcileInvoicePayments(issued.store, {

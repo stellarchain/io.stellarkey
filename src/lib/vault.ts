@@ -949,6 +949,12 @@ export function isValidPublicAddress(addr: string): boolean {
   return StrKey.isValidEd25519PublicKey(addr.trim());
 }
 
+/** A classic payment destination may be a base G-address or CAP-27 M-address. */
+export function isValidPaymentAddress(addr: string): boolean {
+  const value = addr.trim();
+  return StrKey.isValidEd25519PublicKey(value) || StrKey.isValidMed25519PublicKey(value);
+}
+
 export function looksLikeMnemonic(text: string): boolean {
   const words = text.trim().split(/\s+/);
   return words.length === 12 || words.length === 24;

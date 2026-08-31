@@ -8,6 +8,10 @@ import { triggerHaptic } from "@/lib/haptics";
 import { assetKey } from "@/lib/merchant/charge";
 import { invoiceStatusAt } from "@/lib/merchant/invoices";
 import { assetAmountFor, fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
+import {
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "@/lib/merchant/routing";
 import type { Invoice, InvoiceStatus, Minor } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import {
@@ -19,6 +23,7 @@ import {
   Modal,
   ModalHeader,
   Notice,
+  SegmentedControl,
   Select,
 } from "../ui";
 import {
@@ -206,6 +211,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const [selectedAssetKey, setSelectedAssetKey] = useState(
     () => invoice.quotes[0] ? assetKey(invoice.quotes[0].asset) : "",
   );
+  const [requestTransport, setRequestTransport] =
+    useState<MerchantPaymentTransport>("muxed");
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
   const mounted = useSyncExternalStore(subscribeNothing, readMounted, readNotMounted);
 
@@ -237,8 +244,11 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     : null;
   const payUri = useMemo(() => {
     if (!selectedQuote) return null;
-    return invoicePayUriFor(invoice, selectedQuote.asset);
-  }, [invoice, invoicePayUriFor, selectedQuote]);
+    return invoicePayUriFor(invoice, selectedQuote.asset, requestTransport);
+  }, [invoice, invoicePayUriFor, requestTransport, selectedQuote]);
+  const requestTarget = destination
+    ? merchantPaymentTransport(destination, invoice.routingId, requestTransport)
+    : null;
 
   useEffect(() => {
     if (!payUri) return;
@@ -267,7 +277,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     try {
       await navigator.clipboard.writeText(payUri);
       triggerHaptic("selection");
-      toast("Payment request copied. It carries the account and the reference.", "success");
+      toast("Payment request copied. It carries the account and payment route.", "success");
     } catch {
       triggerHaptic("error");
       toast("The clipboard is not available here", "error");
@@ -294,9 +304,16 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
         ? [`This is ${overdueDays} ${overdueDays === 1 ? "day" : "days"} past due.`]
         : []),
       "",
-      ...(destination ? [`Pay to ${destination}`] : []),
-      `Quote ${invoice.reference} as the payment memo, or the payment lands unmatched.`,
-      ...(payUri ? ["", payUri] : []),
+      ...(payUri
+        ? [
+            "",
+            requestTransport === "memo-id"
+              ? "Trezor-compatible Stellar payment request (account and MEMO_ID included):"
+              : "Stellar payment request (payment route included; no memo required):",
+            payUri,
+          ]
+        : []),
+      `Invoice reference: ${invoice.reference}`,
       "",
       shopName || "",
     ];
@@ -305,7 +322,6 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   }, [
     balanceMinor,
     currency,
-    destination,
     invoice.customerEmail,
     invoice.customerName,
     invoice.dueAt,
@@ -316,6 +332,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     overdueDays,
     paidMinor,
     payUri,
+    requestTransport,
     shopName,
   ]);
 
@@ -638,7 +655,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
 
             <div>
               <p className="text-[12px] text-neutral-400">
-                Reference the payer must quote as the memo
+                Invoice reference
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-3">
                 <span className="mono text-[20px] font-semibold text-white">
@@ -647,8 +664,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
                 <CopyButton value={invoice.reference} label="Copy" />
               </div>
               <p className="mt-2 text-[12px] leading-relaxed text-neutral-400">
-                A payment that arrives without it lands in the unmatched tray and has to be filed
-                against this invoice by hand.
+                For customer records. The payment request carries a separate automatic payment
+                route, so the payer does not need to type this reference.
               </p>
             </div>
 
@@ -672,6 +689,15 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               </Notice>
             ) : destination && payUri && selectedQuote && payAmount ? (
               <>
+                <SegmentedControl
+                  ariaLabel="Payment request compatibility"
+                  value={requestTransport}
+                  onChange={setRequestTransport}
+                  options={[
+                    { label: "Standard", value: "muxed" },
+                    { label: "Trezor", value: "memo-id" },
+                  ]}
+                />
                 {invoice.quotes.length > 1 && (
                   <div>
                     <span className="field-label">Pay with</span>
@@ -716,12 +742,21 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
                   </div>
                 </div>
                 <p className="text-center text-[12px] leading-relaxed text-neutral-400">
-                  The request carries this exact amount, asset, issuer, memo, destination and
-                  {invoice.network} network. Horizon applies matching payments to the balance once.
+                  The request carries this exact amount, asset, issuer, destination, payment route
+                  and {invoice.network} network. Horizon applies matching payments to the balance once.
                 </p>
                 <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] pt-3">
                   <span className="shrink-0 text-[13px] text-neutral-400">To</span>
-                  <HashValue value={destination} className="text-[12.5px] text-neutral-200" />
+                  <HashValue
+                    value={requestTarget?.destination ?? destination}
+                    className="text-[12.5px] text-neutral-200"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] pt-3">
+                  <span className="shrink-0 text-[13px] text-neutral-400">Payment route</span>
+                  <span className="text-right text-[12.5px] text-neutral-200">
+                    {requestTransport === "muxed" ? "Included in address" : `MEMO_ID ${invoice.routingId}`}
+                  </span>
                 </div>
               </>
             ) : (
@@ -943,7 +978,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               addressLines={settings.profile.addressLines.filter(Boolean)}
               taxId={settings.profile.taxId.trim()}
               footer={settings.profile.receiptFooter.trim()}
-              destination={destination}
+              destination={requestTarget?.destination ?? destination}
+              requestTransport={requestTransport}
               qrDataUrl={qrDataUrl}
               payAmount={payAmount}
               payAssetCode={selectedQuote?.asset.code ?? null}
@@ -1000,6 +1036,7 @@ function InvoicePaper({
   taxId,
   footer,
   destination,
+  requestTransport,
   qrDataUrl,
   payAmount,
   payAssetCode,
@@ -1015,6 +1052,7 @@ function InvoicePaper({
   taxId: string;
   footer: string;
   destination: string | null;
+  requestTransport: MerchantPaymentTransport;
   qrDataUrl: string | null;
   payAmount: string | null;
   payAssetCode: string | null;
@@ -1167,7 +1205,9 @@ function InvoicePaper({
             HOW TO PAY
           </p>
           <p style={{ margin: "2mm 0 0", fontSize: "8.5pt" }}>
-            Pay in any Stellar wallet, to this account:
+            {requestTransport === "muxed"
+              ? "Scan this standard Stellar request. Its payment route is included in the address:"
+              : "Scan this Trezor-compatible request. It includes the account and MEMO_ID:"}
           </p>
           <p
             style={{
@@ -1179,14 +1219,12 @@ function InvoicePaper({
           >
             {destination ?? "— no receiving account set —"}
           </p>
-          <p style={{ margin: "3mm 0 0", fontSize: "8.5pt" }}>
-            Quote this reference as the payment memo:
-          </p>
+          <p style={{ margin: "3mm 0 0", fontSize: "8.5pt" }}>Invoice reference:</p>
           <p style={{ margin: "1mm 0 0", fontSize: "14pt", fontWeight: 700, fontFamily: MONO }}>
             {invoice.reference}
           </p>
           <p style={{ margin: "2mm 0 0", fontSize: "7.5pt" }}>
-            A payment without the reference has to be matched by hand.
+            The QR carries the payment route automatically.
           </p>
           {payAmount && payAssetCode && (
             <p style={{ margin: "3mm 0 0", fontSize: "11pt", fontWeight: 700, fontFamily: MONO }}>

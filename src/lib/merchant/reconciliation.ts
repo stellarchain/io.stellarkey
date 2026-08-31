@@ -36,6 +36,8 @@ function outcomeForUnmatched(reason: UnmatchedReason): PaymentReconciliationOutc
   if (reason === "outside_band") return "outside_band";
   if (reason === "expired") return "late";
   if (reason === "invalid_time") return "invalid_time";
+  if (reason === "routing_conflict") return "routing_conflict";
+  if (reason === "routing_unknown") return "routing_unknown";
   return "unmatched";
 }
 
@@ -94,7 +96,7 @@ function updateChargeWithPayment(
     ...store,
     charges: store.charges.map((entry) =>
       entry.id === charge.id
-        ? { ...entry, status, payment: { ...payment, lane: "memo" as const } }
+        ? { ...entry, status, payment: { ...payment, lane: "routing" as const } }
         : entry,
     ),
   };
@@ -114,13 +116,13 @@ function reconcileOne(
   const outcome = matchPayment(payment, scoped, store.settings);
   let next = store;
   let charge: Charge | null = "charge" in outcome ? outcome.charge : null;
-  if (!charge && payment.memo) {
-    charge = scoped.find((entry) => entry.reference === payment.memo) ?? null;
+  if (!charge && payment.routingId) {
+    charge = scoped.find((entry) => entry.routingId === payment.routingId) ?? null;
   }
   let recordedOutcome: PaymentReconciliationOutcome;
   let needsTray = true;
 
-  if (outcome.lane === "memo") {
+  if (outcome.lane === "routing") {
     if (outcome.late) {
       recordedOutcome = "late";
       next = updateChargeWithPayment(next, outcome.charge, payment, "expired");

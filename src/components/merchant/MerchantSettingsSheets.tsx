@@ -347,7 +347,7 @@ export function MerchantSettingsSheetContent({
               icon={<IconPercent size={16} />}
               tint="#BF5AF2"
               label="Amount tolerance"
-              sub="Only for a payment that arrives without a memo"
+              sub="Only for a payment that arrives without a known route"
               suffix="%"
               value={(settings.toleranceBps / 100).toFixed(2)}
               inputMode="decimal"
@@ -381,7 +381,7 @@ export function MerchantSettingsSheetContent({
             </SettingsRow>
             <NoteRow>
               An exact amount is always matched first. Tolerance only resolves a single remaining
-              memo-less candidate.
+              unassigned candidate.
             </NoteRow>
           </div>
         </SheetBody>
