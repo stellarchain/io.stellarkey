@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-01
+
+### Changed
+
+- Made the hash-pinned Private Payments preview available from production-hosted StellarKey when the wallet is on Stellar Testnet; Mainnet remains unavailable.
+
+### Fixed
+
+- Kept private-asset status markers within their mobile row bounds.
+
+### Security
+
+- Added an explicit unaudited `testnet-preview` manifest state without weakening ceremony, audit, or deployment-evidence requirements for beta and production manifests.
+
 ## [1.4.0] - 2026-08-31
 
 ### Added

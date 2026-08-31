@@ -84,7 +84,7 @@ export function PrivateBalanceAssetRow({
         {dot && (
           <span
             aria-hidden="true"
-            className="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full"
+            className="absolute bottom-0 right-0 flex h-[15px] w-[15px] items-center justify-center rounded-full"
             style={{ background: 'var(--color-panel, #1c1c1e)' }}
           >
             <span className="h-[9px] w-[9px] rounded-full" style={{ background: dot }} />

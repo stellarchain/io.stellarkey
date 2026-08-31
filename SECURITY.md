@@ -4,7 +4,7 @@ StellarKey is financial software. Please report vulnerabilities privately and av
 
 ## Supported versions
 
-Only the latest `1.4.x` release is currently supported with security updates. When a newer production release is published, older builds should be treated as unsupported unless a release notice says otherwise. Verify the deployed commit and checksums as described in the README before testing a report.
+The current supported release is `1.4.1`; only the latest `1.4.x` release receives security updates. When a newer production release is published, older builds should be treated as unsupported unless a release notice says otherwise. Verify the deployed commit and checksums as described in the README before testing a report.
 
 ## Reporting a vulnerability
 

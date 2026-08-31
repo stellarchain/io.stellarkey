@@ -23,7 +23,10 @@ const PHASE_LABELS = {
   'safe-error': 'Stopped safely',
 } as const;
 
-function manifestLabel(status: 'development' | 'testnet-beta' | 'production' | null) {
+function manifestLabel(
+  status: 'development' | 'testnet-preview' | 'testnet-beta' | 'production' | null,
+) {
+  if (status === 'testnet-preview') return 'Testnet preview';
   if (status === 'testnet-beta') return 'Testnet beta';
   if (status === 'production') return 'Production';
   if (status === 'development') return 'Development only';
