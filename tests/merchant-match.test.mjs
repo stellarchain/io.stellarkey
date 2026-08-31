@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCharge, chargePayUri, orderReference, referencePrefix, quoteFor } from "../src/lib/merchant/charge.ts";
+import {
+  chargeCompatibilityPayUri,
+  createCharge,
+  chargePayUri,
+  orderReference,
+  referencePrefix,
+  quoteFor,
+} from "../src/lib/merchant/charge.ts";
 import { matchPayment, chargeStatusFor } from "../src/lib/merchant/match.ts";
 import { fetchIncomingPayments, ledgerFromPagingToken } from "../src/lib/merchant/watch.ts";
 import { defaultSettings } from "../src/lib/merchant/defaults.ts";
@@ -59,6 +66,7 @@ function charge(number, totalMinor, over = {}, quoteInputs) {
     ],
     now: NOW,
     id: `chg_${number}`,
+    routingId: String(10_000 + number),
   });
   return { ...c, ...over };
 }
@@ -86,21 +94,33 @@ test("a reference fits a text memo and reads like the shop", () => {
   assert.ok(orderReference("A".repeat(60), 999).length <= 28);
 });
 
-test("the SEP-7 request carries the memo, the issuer and the network", () => {
+test("the preferred SEP-7 request uses a muxed destination and no memo", () => {
   const c = charge(1042, 2733);
   const quote = quoteFor(c, USDC_ASSET);
   const parsed = parseSep7PayUri(chargePayUri(c, quote, "Meridian Coffee"));
-  assert.equal(parsed.destination, TILL);
+  assert.match(parsed.destination, /^M/);
   assert.equal(parsed.amount, "27.3300000");
   assert.equal(parsed.assetCode, "USDC");
   assert.equal(parsed.assetIssuer, USDC);
-  assert.equal(parsed.memo, "MC-O-1042");
-  assert.equal(parsed.memoType, "text");
+  assert.equal(parsed.memo, undefined);
+  assert.equal(parsed.memoType, undefined);
+  assert.equal(parsed.msg, "Meridian Coffee · MC-O-1042");
   assert.equal(parsed.networkPassphrase, "Public Global Stellar Network ; September 2015");
   // Never the three parameters this wallet refuses.
   assert.equal(parsed.callback, undefined);
   assert.equal(parsed.originDomain, undefined);
   assert.equal(parsed.signature, undefined);
+});
+
+test("the hardware-compatible request carries the same routing ID as MEMO_ID", () => {
+  const c = charge(1042, 2733);
+  const quote = quoteFor(c, USDC_ASSET);
+  const parsed = parseSep7PayUri(chargeCompatibilityPayUri(c, quote, "Meridian Coffee"));
+
+  assert.equal(parsed.destination, TILL);
+  assert.equal(parsed.memo, c.routingId);
+  assert.equal(parsed.memoType, "id");
+  assert.equal(parsed.msg, "Meridian Coffee · MC-O-1042");
 });
 
 test("a native quote omits the asset code, as SEP-7 requires", () => {
