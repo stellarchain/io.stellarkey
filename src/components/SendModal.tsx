@@ -15,7 +15,7 @@ import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
-import { isValidPaymentAddress, isValidPublicAddress } from "@/lib/vault";
+import { isValidPaymentAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
 import { parseSep7PayUri, validateSep7PayRequest, type PayUriPayload } from "@/lib/payuri";
 import { fmtAmount, isValidAmount, memoByteLength } from "@/lib/format";
