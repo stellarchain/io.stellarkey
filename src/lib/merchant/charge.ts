@@ -11,6 +11,11 @@ import type {
   Minor,
   Order,
 } from "./types";
+import {
+  createMerchantRoutingId,
+  merchantPaymentTransport,
+  type MerchantPaymentTransport,
+} from "./routing";
 
 export { orderReference, referencePrefix } from "./payment-reference";
 
@@ -77,6 +82,7 @@ export interface CreateChargeInput {
   amountMinor?: Minor;
   now?: number;
   id?: string;
+  routingId?: string;
 }
 
 export function createCharge({
@@ -88,6 +94,7 @@ export function createCharge({
   amountMinor,
   now = Date.now(),
   id,
+  routingId,
 }: CreateChargeInput): Charge {
   if (!destination) throw new Error("Merchant Mode needs a receiving account before it can charge.");
   if (quotes.length === 0) throw new Error("No accepted asset has a price right now.");
@@ -99,6 +106,7 @@ export function createCharge({
     id: id ?? `chg_${now.toString(36)}_${randomHex(12)}`,
     orderId: order.id,
     reference: order.reference,
+    routingId: routingId ?? createMerchantRoutingId(),
     network,
     destination,
     amountMinor: chargeAmount,
@@ -119,17 +127,33 @@ export function quoteFor(charge: Charge, asset: AcceptedAsset): ChargeQuote | nu
  * The SEP-7 request a customer's wallet reads. `network_passphrase` is always
  * set: without it a testnet request and a mainnet one are indistinguishable.
  */
-export function chargePayUri(charge: Charge, quote: ChargeQuote, shopName?: string): string {
+function chargePayUriForTransport(
+  charge: Charge,
+  quote: ChargeQuote,
+  shopName: string | undefined,
+  transport: MerchantPaymentTransport,
+): string {
+  const target = merchantPaymentTransport(charge.destination, charge.routingId, transport);
   return buildSep7PayUri({
-    destination: charge.destination,
+    ...target,
     amount: quote.amount,
     assetCode: isNative(quote.asset) ? undefined : quote.asset.code,
     assetIssuer: isNative(quote.asset) ? undefined : (quote.asset.issuer ?? undefined),
-    memo: charge.reference,
-    memoType: "text",
     msg: shopName ? `${shopName} · ${charge.reference}` : undefined,
     networkPassphrase: NETWORKS[charge.network].networkPassphrase,
   });
+}
+
+export function chargePayUri(charge: Charge, quote: ChargeQuote, shopName?: string): string {
+  return chargePayUriForTransport(charge, quote, shopName, "muxed");
+}
+
+export function chargeCompatibilityPayUri(
+  charge: Charge,
+  quote: ChargeQuote,
+  shopName?: string,
+): string {
+  return chargePayUriForTransport(charge, quote, shopName, "memo-id");
 }
 
 export function secondsRemaining(charge: Charge, now = Date.now()): number {

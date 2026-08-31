@@ -1,5 +1,6 @@
 import { StrKey } from "@stellar/stellar-sdk";
 import type * as Merchant from "./types";
+import { isMerchantRoutingId } from "./routing";
 
 type Validator<T> = (value: unknown) => value is T;
 type OptionalKeys<T> = {
@@ -63,6 +64,8 @@ function recordOf<T>(validate: Validator<T>): Validator<Record<string, T>> {
 const stringValue: Validator<string> = (value): value is string => typeof value === "string";
 const nonEmptyString: Validator<string> = (value): value is string =>
   typeof value === "string" && value.length > 0;
+const merchantRoutingId: Validator<string> = (value): value is string =>
+  typeof value === "string" && isMerchantRoutingId(value);
 const booleanValue: Validator<boolean> = (value): value is boolean => typeof value === "boolean";
 const finiteNumber: Validator<number> = (value): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -268,6 +271,7 @@ const charge = objectOf<Merchant.Charge>({
   id: nonEmptyString,
   orderId: nonEmptyString,
   reference: nonEmptyString,
+  routingId: merchantRoutingId,
   network,
   destination: nonEmptyString,
   amountMinor: minor,
@@ -507,6 +511,7 @@ const invoice = objectOf<Merchant.Invoice>({
   customerEmail: nullableString,
   customerAddress: nullableString,
   reference: nonEmptyString,
+  routingId: merchantRoutingId,
   network,
   destination: nullableString,
   quotes: arrayOf(chargeQuote),
@@ -540,6 +545,7 @@ const counterCode = objectOf<Merchant.CounterCode>({
   currency,
   acceptedAssets: nonEmptyArrayOf(acceptedAsset),
   memoPrefix: nonEmptyString,
+  routingId: merchantRoutingId,
   requestMessage: nonEmptyString,
   network,
   destination: nonEmptyString,
@@ -680,7 +686,7 @@ function validCursors(value: unknown): value is Record<string, string> {
 }
 
 const merchantStoreShape = objectOf<Merchant.MerchantStore>({
-  version: oneOf(2),
+  version: oneOf(3),
   revision: nonNegativeInteger,
   writerId: nullable(nonEmptyString),
   updatedAt: timestamp,
