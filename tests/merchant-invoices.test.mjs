@@ -93,7 +93,7 @@ function draftInput(member, overrides = {}) {
   };
 }
 
-function payment(id, amount, memo) {
+function payment(id, amount, routingId) {
   return {
     id,
     transactionHash: id.padEnd(64, "a").slice(0, 64),
@@ -102,7 +102,9 @@ function payment(id, amount, memo) {
     destination: TILL,
     amount,
     asset: USDC,
-    memo,
+    routingId,
+    routingConflict: false,
+    memo: null,
     createdAt: new Date(NOW + 1000).toISOString(),
   };
 }
@@ -230,7 +232,7 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
     now: NOW + 100,
   });
 
-  const firstPayment = payment("payment-1", "4.0000000", issued.invoice.reference);
+  const firstPayment = payment("payment-1", "4.0000000", issued.invoice.routingId);
   const first = reconcileInvoicePayments(issued.store, {
     network: "mainnet",
     payments: [firstPayment],
@@ -251,7 +253,7 @@ test("Horizon payments settle partially then fully and replay is idempotent", as
 
   const second = reconcileInvoicePayments(replay.store, {
     network: "mainnet",
-    payments: [payment("payment-2", "6.0000000", issued.invoice.reference)],
+    payments: [payment("payment-2", "6.0000000", issued.invoice.routingId)],
     now: NOW + 2000,
   });
   assert.equal(second.store.invoices[0].status, "paid");
@@ -272,7 +274,7 @@ test("an invoice overpayment settles only the balance and isolates the exact sur
     quotes: [{ asset: USDC, currencyPerUnit: 1 }],
     now: NOW + 100,
   });
-  const observed = payment("payment-overpaid", "12.0000000", issued.invoice.reference);
+  const observed = payment("payment-overpaid", "12.0000000", issued.invoice.routingId);
 
   const reconciled = reconcileInvoicePayments(issued.store, {
     network: "mainnet",
@@ -370,7 +372,7 @@ test("an invoice payment cannot file against another receiving account", async (
     now: NOW + 100,
   });
   const observed = {
-    ...payment("wrong-invoice-destination", "10.0000000", issued.invoice.reference),
+    ...payment("wrong-invoice-destination", "10.0000000", issued.invoice.routingId),
     destination: ISSUER,
   };
   const reconciled = reconcileInvoicePayments(issued.store, {
