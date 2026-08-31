@@ -15,10 +15,12 @@ export interface HorizonPayment {
   created_at: string;
   paging_token: string;
   to: string;
+  to_muxed?: string;
+  to_muxed_id?: string;
   from: string;
   asset_type: "native";
   amount: string;
-  transaction: { memo: string; memo_type: "text"; successful: true };
+  transaction: { memo?: string; memo_type?: string; successful: true };
 }
 
 function json(route: Route, body: unknown, status = 200) {
