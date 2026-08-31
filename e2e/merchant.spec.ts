@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { Networks, TransactionBuilder } from "@stellar/stellar-sdk";
+import { MuxedAccount, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
 import {
   chromium,
   test,
@@ -27,10 +27,12 @@ type HorizonPayment = {
   created_at: string;
   paging_token: string;
   to: string;
+  to_muxed?: string;
+  to_muxed_id?: string;
   from: string;
   asset_type: "native";
   amount: string;
-  transaction: { memo: string; memo_type: "text"; successful: true };
+  transaction: { memo?: string; memo_type?: string; successful: true };
 };
 
 function accountBody(publicKey: string) {
@@ -197,9 +199,17 @@ async function readVisibleChargeRequest(chargeDialog: Locator) {
   await qr.waitFor();
   const alt = (await qr.getAttribute("alt")) ?? "";
   const amount = /^Payment request for ([0-9.]+) XLM$/.exec(alt)?.[1] ?? "";
+  const destinationTitle = await chargeDialog
+    .getByText("To", { exact: true })
+    .locator("..")
+    .getByRole("button")
+    .getAttribute("title");
+  const destination = destinationTitle?.split("\n", 1)[0]?.trim() ?? "";
+  const routingId = destination ? MuxedAccount.fromAddress(destination, "0").id() : "";
   assert.ok(reference, "charge dialog must expose its immutable memo reference");
   assert.ok(amount, "charge dialog must expose its native amount in the QR description");
-  return { charge: { reference }, quote: { amount } };
+  assert.ok(routingId, "charge dialog must expose a muxed payment route");
+  return { charge: { reference, routingId, destination }, quote: { amount } };
 }
 
 async function raiseCryptoCharge(page: Page, keys: string[]) {
@@ -215,7 +225,7 @@ async function raiseCryptoCharge(page: Page, keys: string[]) {
 
 function incomingPayment(
   id: string,
-  reference: string,
+  route: { routingId: string; destination: string },
   amount: string,
   ledger: number,
 ): HorizonPayment {
@@ -227,10 +237,12 @@ function incomingPayment(
     created_at: new Date().toISOString(),
     paging_token: String((BigInt(ledger) << BigInt(32)) + BigInt(1)),
     to: account,
+    to_muxed: route.destination,
+    to_muxed_id: route.routingId,
     from: payer,
     asset_type: "native",
     amount,
-    transaction: { memo: reference, memo_type: "text", successful: true },
+    transaction: { successful: true },
   };
 }
 
@@ -498,7 +510,7 @@ test(
 
       // A real Horizon payment settles a high-value crypto order and creates a customer record.
       const crypto = await raiseCryptoCharge(page, ["3", "00", "0"]);
-      incoming.push(incomingPayment("pay1002", crypto.charge.reference, crypto.quote.amount, 100_001));
+      incoming.push(incomingPayment("pay1002", crypto.charge, crypto.quote.amount, 100_001));
       const paidCrypto = page.getByRole("dialog").filter({ hasText: "Paid in full" });
       await paidCrypto.getByText("Paid in full", { exact: true }).waitFor({ timeout: 12_000 });
       await paidCrypto.getByRole("button", { name: "Close", exact: true }).click();
@@ -547,7 +559,7 @@ test(
       await splitCharge.getByText("Watching for payment", { exact: true }).waitFor();
       const splitState = await readVisibleChargeRequest(splitCharge);
       incoming.push(
-        incomingPayment("pay1003", splitState.charge.reference, splitState.quote.amount, 100_002),
+        incomingPayment("pay1003", splitState.charge, splitState.quote.amount, 100_002),
       );
       const paidSplit = page.getByRole("dialog").filter({ hasText: "Paid in full" });
       await paidSplit.getByText("Paid in full", { exact: true }).waitFor({ timeout: 12_000 });
