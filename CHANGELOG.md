@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added Circle's official USDC and EURC token logos as bundled local verified-asset icons.
+- Added USDT0 to Verified Stellar Assets on Mainnet with its exact issuer and a bundled local logo.
+
+### Changed
+
+- Hid verified assets from Add Asset when they are unavailable on the selected network.
+- Moved the public version and build hash from beneath the header logo into the footer legal line.
+
 ## [1.3.0] - 2026-08-31
 
 ### Added

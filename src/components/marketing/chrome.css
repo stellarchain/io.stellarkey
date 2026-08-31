@@ -6,26 +6,13 @@
 
 /* ── release identity ───────────────────────────────────────── */
 
-.mk .nav .brand-stack {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  line-height: 1;
-}
-
-.mk .nav .build-id {
-  margin-top: .12rem;
-  margin-left: 2rem;
+.mk .legal .build-id {
   color: var(--fg-ghost);
-  font-size: .54rem;
-  letter-spacing: .025em;
-  line-height: 1;
+  letter-spacing: inherit;
   transition: color .18s;
 }
 
-.mk .nav .build-id:hover { color: var(--fg-dim); }
+.mk .legal .build-id:hover { color: var(--fg-dim); }
 
 /* ── footer links ───────────────────────────────────────────── */
 

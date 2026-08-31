@@ -27,6 +27,9 @@
 /security
   Cache-Control: no-cache, must-revalidate
 
+/private
+  Cache-Control: no-cache, must-revalidate
+
 /support
   Cache-Control: no-cache, must-revalidate
 

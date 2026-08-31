@@ -34,6 +34,12 @@ export function DocShield() {
   return <Ico><path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6Z" /><path d="M9.2 12.2 11.2 14.2 15 10.4" /></Ico>;
 }
 
+/* The Private Payments document: the security shield, but holding masked
+   digits instead of a check — a value that keeps itself to itself. */
+export function DocShieldDots() {
+  return <Ico><path d="M12 3 5 6v5.5c0 4.2 2.9 7.6 7 9.5 4.1-1.9 7-5.3 7-9.5V6Z" /><path d="M8.6 11.8h.01M12 11.8h.01M15.4 11.8h.01" /></Ico>;
+}
+
 export function DocAlert() {
   return <Ico><path d="M12 4.4 21 19.6H3Z" /><path d="M12 10v4M12 17h.01" /></Ico>;
 }

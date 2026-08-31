@@ -23,6 +23,7 @@ export const PUBLIC_DOCUMENT_PATHS = Object.freeze([
   "/privacy",
   "/terms",
   "/security",
+  "/private",
   "/support",
   "/changelog",
 ]);

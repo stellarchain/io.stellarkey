@@ -9,6 +9,7 @@ import {
   DocFile,
   DocScales,
   DocShield,
+  DocShieldDots,
 } from "./marketing/DocIcons";
 import { MarketingFooter, MarketingHeader } from "./marketing/MarketingChrome";
 import "./marketing/marketing.css";
@@ -25,6 +26,7 @@ const navigation = [
   ["privacy", "Privacy", PUBLIC_ROUTES.privacy, DocEyeOff],
   ["terms", "Terms", PUBLIC_ROUTES.terms, DocScales],
   ["security", "Security", PUBLIC_ROUTES.security, DocShield],
+  ["private", "Private Payments", PUBLIC_ROUTES.private, DocShieldDots],
   ["support", "Support", PUBLIC_ROUTES.support, DocBook],
   ["changelog", "Changelog", PUBLIC_ROUTES.changelog, DocCycle],
 ] as const;

@@ -88,6 +88,11 @@ test("one shared visible build identity covers every route shell", () => {
   const publicFooter = read("src/components/PublicFooter.tsx");
   const lockScreen = read("src/components/LockScreen.tsx");
   const onboarding = read("src/components/Onboarding.tsx");
+  const marketingHeader = marketing.slice(
+    marketing.indexOf("export function MarketingHeader"),
+    marketing.indexOf("export function MarketingFooter"),
+  );
+  const marketingFooter = marketing.slice(marketing.indexOf("export function MarketingFooter"));
 
   assert.match(identity, /APPLICATION_VERSION/);
   assert.match(identity, /BUILD_COMMIT/);
@@ -104,15 +109,20 @@ test("one shared visible build identity covers every route shell", () => {
     assert.match(read(shell), /<BuildIdentity/, `${shell} must expose the release identity`);
   }
 
+  assert.doesNotMatch(
+    marketingHeader,
+    /<BuildIdentity/,
+    "the marketing header must keep the product mark free of release metadata",
+  );
   assert.match(
-    marketing,
-    /export function MarketingHeader\(\)[\s\S]*?<BuildIdentity[\s\S]*?export function MarketingFooter/,
-    "public documents must expose the identity in their always-visible header",
+    marketingFooter,
+    /<div className="legal">[\s\S]*?<BuildIdentity/,
+    "marketing pages must expose the release identity in the footer legal bar",
   );
   assert.equal(
     marketing.match(/<BuildIdentity/g)?.length,
     1,
-    "marketing pages must not duplicate the identity in the distant footer",
+    "marketing pages must expose exactly one release identity",
   );
   assert.match(publicFooter, /showBuildIdentity\s*=\s*true/);
   assert.match(publicFooter, /\{showBuildIdentity\s*&&[\s\S]*?<BuildIdentity/);

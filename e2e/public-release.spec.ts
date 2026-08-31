@@ -9,6 +9,7 @@ const routes = [
   { path: "/terms", heading: "You remain in control", title: "You remain in control — StellarKey" },
   { path: "/security", heading: "Protect the recovery path", title: "Protect the recovery path — StellarKey" },
   { path: "/support", heading: "Support without custody", title: "Support without custody — StellarKey" },
+  { path: "/private", heading: "Private payments, explained.", title: "Private Payments — StellarKey" },
   { path: "/changelog", heading: "Changelog", title: "Changelog — StellarKey" },
 ] as const;
 
@@ -17,20 +18,26 @@ test.beforeEach(async ({ context }) => {
   await installNetworkFixtures(context);
 });
 
-async function expectVisibleReleaseIdentity(page: Page) {
+async function expectReleaseIdentity(page: Page, placement: "footer" | "viewport") {
   const identity = page.locator("[data-build-identity]");
   await expect(identity).toHaveCount(1);
+  if (placement === "footer") {
+    await expect(page.locator("footer").locator("[data-build-identity]")).toHaveCount(1);
+    await identity.scrollIntoViewIfNeeded();
+  }
   await expect(identity).toBeVisible();
   await expect(identity).toHaveText(
     new RegExp(`^v${APPLICATION_VERSION.replaceAll(".", "\\.")} · (?:[0-9a-f]{7}|development)$`),
   );
-  expect(
-    await identity.evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return rect.top >= 0 && rect.bottom <= window.innerHeight;
-    }),
-    "the release identity must be visible without scrolling",
-  ).toBe(true);
+  if (placement === "viewport") {
+    expect(
+      await identity.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= window.innerHeight;
+      }),
+      "the release identity must be visible without scrolling",
+    ).toBe(true);
+  }
 }
 
 for (const route of routes) {
@@ -45,7 +52,7 @@ for (const route of routes) {
     expect(canonical).not.toBeNull();
     expect(new URL(canonical!).origin).toBe("https://stellarkey.io");
     expect(new URL(canonical!).pathname).toBe(route.path);
-    await expectVisibleReleaseIdentity(page);
+    await expectReleaseIdentity(page, "footer");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (route.path === "/") {
       const sharingAlt = await page.locator('meta[property="og:image:alt"]').getAttribute("content");
@@ -59,7 +66,7 @@ test("the wallet entry page shows the same release identity", async ({ page }) =
   const response = await page.goto("/app", { waitUntil: "domcontentloaded" });
 
   expect(response?.status()).toBe(200);
-  await expectVisibleReleaseIdentity(page);
+  await expectReleaseIdentity(page, "viewport");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -70,7 +77,7 @@ test("locked authentication keeps the release identity above the fold", async ({
 
   await expect(page.getByRole("heading", { level: 1, name: "StellarKey" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Vault" })).toBeVisible();
-  await expectVisibleReleaseIdentity(page);
+  await expectReleaseIdentity(page, "viewport");
 });
 
 test("the skip link appears for keyboards but cannot overlay touch-first screens", async ({ page }, testInfo) => {
@@ -150,8 +157,10 @@ test("the changelog publishes the current release as semantic text", async ({ pa
   const unreleased = page.locator("#release-unreleased");
 
   await expect(page.getByRole("heading", { level: 2, name: "Unreleased" })).toBeVisible();
-  await expect(unreleased.getByRole("heading", { level: 3 })).toHaveCount(0);
-  await expect(unreleased.getByRole("listitem")).toHaveCount(0);
+  const unreleasedCategories = unreleased.getByRole("heading", { level: 3 });
+  for (const category of await unreleasedCategories.allTextContents()) {
+    expect(category).toMatch(/^(Added|Changed|Deprecated|Removed|Fixed|Security)$/);
+  }
   await expect(currentRelease.getByRole("heading", { level: 2, name: APPLICATION_VERSION })).toBeVisible();
   await expect(currentRelease.locator('time[datetime="2026-08-31"]')).toHaveText("31 August 2026");
   await expect(page.getByRole("link", { name: /source repository/i })).toHaveAttribute(
@@ -161,44 +170,23 @@ test("the changelog publishes the current release as semantic text", async ({ pa
   await expect(page.locator("article")).not.toContainText(/<script|<strong|<a /i);
 });
 
-test("the fee comparison is editable, sourced, and explicit about its assumptions", async ({ page }) => {
+test("the landing page tells the private payments story with its limits attached", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  const comparison = page.getByRole("region", { name: "Annual fee comparison" });
-  const sales = comparison.getByRole("slider", { name: "Sales a day", exact: true });
-  const ticket = comparison.getByRole("slider", { name: "Average ticket", exact: true });
+  await expect(page.getByRole("heading", { level: 2, name: "Then it goes quiet." })).toBeVisible();
+  const act = page.locator("#private");
+  await expect(act).toContainText("preview on Stellar testnet");
+  await expect(act).toContainText("public by design");
+  await expect(act).toContainText("Privacy grows with more independent activity");
+  await expect(act).toContainText("not a guarantee");
+  await expect(
+    page.locator("#private-how").getByRole("link", { name: "Read exactly how it works →" }),
+  ).toHaveAttribute("href", "/private");
 
-  const setRange = async (input: typeof sales, value: string) => {
-    await input.evaluate((element, nextValue) => {
-      const range = element as HTMLInputElement;
-      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      if (!valueSetter) throw new Error("Range inputs must expose a native value setter");
-      valueSetter.call(range, nextValue);
-      range.dispatchEvent(new Event("input", { bubbles: true }));
-    }, value);
-  };
-  await setRange(sales, "100");
-  await setRange(ticket, "1000");
-
-  await expect(comparison).toContainText("36,500 sales a year");
-  await expect(comparison).toContainText("£365,000");
-  for (const provider of ["Square", "PayPal Point of Sale", "SumUp", "Stripe Terminal"]) {
-    await expect(comparison.getByRole("row", { name: new RegExp(provider) })).toBeVisible();
-  }
-  const stellarKeyRow = comparison.getByRole("row", { name: /StellarKey/ });
-  await expect(stellarKeyRow).toContainText("StellarKey processing fee");
-  await expect(stellarKeyRow).toContainText("£0.00");
-
-  await expect(comparison).toContainText("Illustrative UK assumptions checked 29 August 2026");
-  await expect(comparison).toContainText("365 trading days");
-  await expect(comparison).toContainText("Provider fees can vary");
-  await expect(comparison).toContainText("The sender pays Stellar network fees");
-  await expect(comparison).toContainText("Conversion, spread, reserves, tax, and off-ramp fees are excluded");
-  await expect(comparison.getByRole("link", { name: "Stellar fee documentation" })).toHaveAttribute(
-    "href",
-    "https://developers.stellar.org/docs/learn/fundamentals/fees-resource-limits-metering",
+  const landing = await page.locator("main").innerText();
+  expect(landing).not.toMatch(
+    /anonymous|untraceable|100% confidential|metadata-free|secretly|guaranteed private|privacy score|anonymity score/i,
   );
-  await expect(comparison.getByText(/live network fee|current XLM rate|fixed network fee/i)).toHaveCount(0);
 });
 
 test("unknown routes return a branded, non-indexable 404", async ({ page }) => {
@@ -209,7 +197,7 @@ test("unknown routes return a branded, non-indexable 404", async ({ page }) => {
   expect(response?.status()).toBe(404);
   await expect(page).toHaveTitle("Page not found — StellarKey");
   await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
-  await expectVisibleReleaseIdentity(page);
+  await expectReleaseIdentity(page, "footer");
   expect(await page.locator('meta[name="robots"]').evaluateAll((nodes) =>
     nodes.some((node) => /noindex/i.test(node.getAttribute("content") ?? "")),
   )).toBe(true);
