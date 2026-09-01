@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
+    "@noble/hashes": "2.4.0",
     "@stellar/stellar-sdk": "^17.0.1",
     "@stellarkey/private-balance": "file:protocol/private-balance/packages/browser",
     "@trezor/connect-web": "^9.7.3",
