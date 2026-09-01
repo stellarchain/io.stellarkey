@@ -17,7 +17,7 @@ test('manifest: validates real manifest.json successfully', () => {
   const manifest = validateManifest(raw);
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.protocolVersion, 1);
-  assert.equal(manifest.status, 'testnet-preview');
+  assert.equal(manifest.status, 'development');
   assert.equal(manifest.constants.treeDepth, 32);
   assert.equal(manifest.constants.pageCapacity, 32);
   assert.equal(manifest.constants.publicInputs, 13);
@@ -29,6 +29,11 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.ok(manifest.artifacts.zkeyTransport.byteLength < manifest.artifacts.zkeyByteLength);
   assert.ok(manifest.artifacts.zkeyTransport.wireByteLength < manifest.artifacts.zkeyTransport.byteLength);
   assert.match(manifest.release.contractWasmSha256, /^[0-9a-f]{64}$/);
+  assert.equal(
+    manifest.release.powersOfTauSha256,
+    'cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357',
+  );
+  assert.equal(manifest.release.zkeyVerified, false);
   assert.equal(manifest.release.allowedEnvironment, 'testnet');
 });
 
@@ -109,7 +114,7 @@ test('manifest: requires the Protocol 25 BN254 and Poseidon host baseline', () =
   );
 });
 
-test('manifest: beta and production releases require ceremony, audit, and deployment evidence', () => {
+test('manifest: every non-development release requires verified proving and release evidence', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
   assert.throws(
     () => validateManifest({ ...raw, status: 'testnet-beta', release: undefined }),
@@ -119,16 +124,26 @@ test('manifest: beta and production releases require ceremony, audit, and deploy
     () => validateManifest({ ...raw, status: 'testnet-beta' }),
     /release provenance is incomplete/i,
   );
+  assert.throws(
+    () => validateManifest({ ...raw, status: 'testnet-preview' }),
+    /release provenance is incomplete/i,
+  );
 });
 
-test('manifest: production-hosted preview is usable only on Stellar testnet', () => {
+test('manifest: quarantined development proving material is local-development only', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const preview = validateManifest({ ...raw, status: 'testnet-preview' });
+  const preview = validateManifest(raw);
 
   assert.equal(preview.release.ceremonyTranscriptRoot, '0'.repeat(64));
   assert.deepEqual(preview.release.auditReports, []);
   assert.deepEqual(
     manifestModule.privateBalanceAvailability(preview, 'testnet'),
+    { ready: false, reason: 'Private Balance is still using development artifacts.' },
+  );
+  assert.deepEqual(
+    manifestModule.privateBalanceAvailability(preview, 'testnet', {
+      allowDevelopmentFixture: true,
+    }),
     { ready: true },
   );
   assert.deepEqual(
@@ -166,8 +181,8 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.match(buildSource, /STELLAR_CLI_VERSION = '27\.0\.0'/);
   assert.match(buildSource, /'contract',\s*'build'/);
   assert.match(buildSource, /'--optimize=false'/);
-  assert.match(source, /artifactVersion: '1\.0\.2-testnet-preview'/);
-  assert.match(source, /status: 'testnet-preview'/);
+  assert.doesNotMatch(source, /artifactVersion: '1\.0\.2-testnet-preview'/);
+  assert.doesNotMatch(source, /status: 'testnet-preview'/);
   assert.match(
     source,
     /const manifest = \{[\s\S]*\.\.\.deploymentEvidence\.manifest,[\s\S]*release: baseManifest\.release,[\s\S]*\};/,
@@ -237,7 +252,7 @@ test('manifest: loader authenticates exact bytes before schema validation', asyn
       headers: { 'content-length': String(bytes.byteLength) },
     }),
   });
-  assert.equal(loaded.manifest.status, 'testnet-preview');
+  assert.equal(loaded.manifest.status, 'development');
   assert.equal(loaded.manifestHash, manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256);
 
   const modified = Buffer.concat([bytes.subarray(0, -1), Buffer.from(' \n')]);

@@ -23,6 +23,8 @@
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "REQUIRED_32_BYTE_HEX",
     "toolchainLockSha256": "REQUIRED_32_BYTE_HEX",
+    "powersOfTauSha256": "REQUIRED_32_BYTE_HEX",
+    "zkeyVerified": true,
     "ceremonyTranscriptRoot": "REQUIRED_32_BYTE_HEX",
     "auditReports": [
       { "url": "REQUIRED_AUDIT_URL", "sha256": "REQUIRED_32_BYTE_HEX" }

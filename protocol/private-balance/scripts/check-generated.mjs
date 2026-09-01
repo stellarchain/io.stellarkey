@@ -16,6 +16,7 @@ const trackedOutputs = [
   'public/protocol/private-balance/v1/verification-key.json',
   'src/lib/private-balance-expected-manifest.ts',
   'src/lib/private-balance-expected-catalogue.ts',
+  'protocol/private-balance/packages/browser/dist',
   'protocol/private-balance/generated/pool-client',
   'protocol/private-balance/vectors/keys-v1.json',
   'protocol/private-balance/vectors/addresses-v1.json',
@@ -69,6 +70,12 @@ execFileSync(process.execPath, ['protocol/private-balance/scripts/verify-proof-v
   stdio: 'inherit',
 });
 execFileSync(process.execPath, ['protocol/private-balance/scripts/verify-artifacts.mjs'], {
+  cwd: root,
+  stdio: 'inherit',
+});
+execFileSync(process.execPath, [
+  'protocol/private-balance/circuits/scripts/verify-proving-key.mjs',
+], {
   cwd: root,
   stdio: 'inherit',
 });

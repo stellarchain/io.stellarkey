@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 import * as snarkjs from 'snarkjs';
 import { encodePointCompressedZkey } from './zkey-point-transport.mjs';
+import { POWERS_OF_TAU_SHA256 } from '../circuits/scripts/powers-of-tau.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -258,7 +259,11 @@ const baseManifest = {
       join(process.cwd(), 'protocol/private-balance/parameters/generator.lock'),
       join(process.cwd(), 'protocol/private-balance/scripts/build-private-balance-artifacts.mjs'),
       join(process.cwd(), 'protocol/private-balance/scripts/zkey-point-transport.mjs'),
+      join(process.cwd(), 'protocol/private-balance/circuits/scripts/powers-of-tau.mjs'),
+      join(process.cwd(), 'protocol/private-balance/circuits/scripts/verify-proving-key.mjs'),
     ]),
+    powersOfTauSha256: POWERS_OF_TAU_SHA256,
+    zkeyVerified: false,
     ceremonyTranscriptRoot: '0'.repeat(64),
     auditReports: [],
     deploymentTransactions: [],
@@ -280,8 +285,6 @@ if (prepareDeployment) {
 const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);
 const manifest = {
   ...deploymentEvidence.manifest,
-  artifactVersion: '1.0.2-testnet-preview',
-  status: 'testnet-preview',
   release: baseManifest.release,
 };
 
