@@ -440,7 +440,8 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
     const record = (id, token, createdAt) => ({
       id,
       type: "payment",
-      transaction_hash: id.padEnd(64, "0"),
+      transaction_hash: (id === "newer" ? "a" : "b").repeat(64),
+      transaction_successful: true,
       created_at: createdAt,
       paging_token: token,
       to: TILL,
@@ -471,6 +472,33 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
   await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: first.cursor });
   assert.equal(requested.searchParams.get("order"), "asc");
   assert.equal(requested.searchParams.get("cursor"), newerToken);
+});
+
+test("the watcher fails closed on a payment without explicit successful transaction evidence", async (t) => {
+  const token = (BigInt(60_000_003) << 32n).toString();
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    _embedded: {
+      records: [{
+        id: "missing-success",
+        type: "payment",
+        transaction_hash: "a".repeat(64),
+        created_at: "2027-01-15T08:02:00Z",
+        paging_token: token,
+        to: TILL,
+        from: PAYER,
+        asset_type: "credit_alphanum4",
+        asset_code: "USDC",
+        asset_issuer: ISSUER,
+        amount: "10.0000000",
+        transaction: { memo: "5001", memo_type: "id" },
+      }],
+    },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+
+  await assert.rejects(
+    fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "1" }),
+    /invalid.*horizon|successful.*required/i,
+  );
 });
 
 test("duplicate and unmatched production surfaces expose real audited actions", () => {

@@ -342,6 +342,34 @@ test("an atomic local commit rejects same-revision encrypted row tampering", asy
   assert.equal(JSON.parse(driver.records.get(repository.recordKey)).revision, 1);
 });
 
+test("merchant metadata rejects a valid historical row spliced under a newer revision", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const first = {
+    ...emptyStore(),
+    revision: 1,
+    writerId: "tab-a",
+    updatedAt: 10,
+    catalogue: [{ ...emptyStore().catalogue[0], name: "Original item" }],
+  };
+  await repository.commit(first, KEY, null);
+  const [rowKey, historicalRaw] = [...await driver.readPrefix(repository.dataPrefix)]
+    .find(([, raw]) => raw.includes("ciphertext"));
+
+  await repository.commit({
+    ...first,
+    revision: 2,
+    updatedAt: 20,
+    catalogue: [{ ...first.catalogue[0], name: "Current item" }],
+  }, KEY, 1);
+  driver.records.set(rowKey, historicalRaw);
+
+  const loaded = await new MerchantRepository(driver).load(KEY);
+  assert.equal(loaded.kind, "corrupt");
+});
+
 test("encrypted archive export authenticates every retained merchant row", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
   globalThis.window = { localStorage: memoryStorage() };
