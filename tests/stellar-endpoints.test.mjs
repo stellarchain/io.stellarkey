@@ -21,6 +21,28 @@ class MemoryStorage {
   removeItem(key) { this.#items.delete(key); }
 }
 
+test("Settings requires fresh wallet authorization before endpoint persistence", () => {
+  const source = readFileSync(
+    new URL("../src/components/SettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const saveHandler = source.split("async function handleTestAndSaveEndpoint")[1]
+    ?.split("async function handleResetEndpoints")[0] ?? "";
+  const resetHandler = source.split("async function handleResetEndpoints")[1]
+    ?.split("async function handleEnablePasskey")[0] ?? "";
+
+  assert.match(saveHandler, /await authorizeSensitiveAction\(/);
+  assert.ok(
+    saveHandler.indexOf("await authorizeSensitiveAction(") < saveHandler.indexOf("saveCustomEndpoint("),
+    "authorization must complete before an endpoint is persisted",
+  );
+  assert.match(resetHandler, /await authorizeSensitiveAction\(/);
+  assert.ok(
+    resetHandler.indexOf("await authorizeSensitiveAction(") < resetHandler.indexOf("resetCustomEndpoints("),
+    "authorization must complete before endpoints are reset",
+  );
+});
+
 test("custom Stellar endpoints are HTTPS-only, credential-free, and normalized", () => {
   assert.equal(normalizeStellarEndpointUrl(" https://node.example/rpc/ "), "https://node.example/rpc");
   assert.throws(() => normalizeStellarEndpointUrl("http://node.example"), /HTTPS/i);
