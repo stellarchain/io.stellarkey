@@ -84,7 +84,9 @@ Private Payments is an experimental testnet-only preview and refuses Mainnet.
 Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
 the fee-paying Stellar account, and timing remain public. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
-[Private Balance security model](docs/private-balance.md).
+[Private Balance security model](docs/private-balance.md). The preview uses a
+single-party development proving key with no recorded independent audit or
+multi-contributor ceremony and must not hold funds of value.
 
 ## Backend-free architecture
 

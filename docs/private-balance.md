@@ -1,13 +1,19 @@
 # Private Balance security and privacy model
 
-Private Balance is development-only in this repository and is not deployed or
-enabled in the production wallet. Its checked-in manifest deliberately fails the
-release gate. Do not change that status until the ceremony, audit, testnet, and
-release evidence in the protocol plan exists for the same artifact hashes.
+Private Balance is deployed as an explicitly unaudited, testnet-only preview.
+The production-hosted wallet may load its hash-pinned artifacts only while the
+wallet is connected to Stellar Testnet and after the user opts in for the current
+session. Mainnet rejects the preview manifest. The proving key was produced by a
+single-party development setup with no recorded contribution transcript or
+independent audit; anyone who retained that setup secret could forge proofs and
+drain the preview pool. Do not treat the preview as a testnet beta or promote its
+artifacts until a public multi-party ceremony, independent verification, audit,
+deployment, and recovery evidence exist for the exact same hashes.
 
 ## What it is
 
-Private Balance is a separate native-XLM shielded note pool. A supported
+Private Balance is a shielded note pool for the manifest-approved Testnet XLM
+and USDC asset contracts. A supported
 software wallet derives a deployment-bound viewing and spending context inside
 the unlocked vault boundary. The browser reads the canonical encrypted action
 archive from Stellar RPC, verifies its hash chain and Merkle root, opens only
