@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('testnet preview private payments remain behind a verified lazy boundary', async () => {
+test('quarantined private payments remain behind a development-only lazy boundary', async () => {
   const shell = read('../src/components/UnlockedWalletShell.tsx');
   const boundary = read('../src/components/PrivateBalanceRuntimeBoundary.tsx');
   const dashboard = read('../src/components/Dashboard.tsx');
@@ -47,7 +47,10 @@ test('testnet preview private payments remain behind a verified lazy boundary', 
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'testnet'),
-    { ready: true },
+    {
+      ready: false,
+      reason: 'Private Balance is still using development artifacts.',
+    },
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'mainnet'),
@@ -56,10 +59,7 @@ test('testnet preview private payments remain behind a verified lazy boundary', 
       reason: 'Private Payments are available on Stellar testnet only.',
     },
   );
-  const shippedDevelopmentFixture = validateManifest({
-    ...manifest,
-    status: 'development',
-  });
+  const shippedDevelopmentFixture = validateManifest(manifest);
   assert.deepEqual(
     privateBalanceAvailability(shippedDevelopmentFixture, 'testnet', {
       allowDevelopmentFixture: true,
