@@ -50,7 +50,7 @@ function availableNotes(notes: readonly ShieldedNoteRecord[]): AvailableNote[] {
   return notes
     .filter(note => note.status === 'unspent')
     .map(note => {
-      if (!/^[0-9a-f]{64}$/.test(note.id) || note.commitment !== note.id) {
+      if (!/^[0-9a-f]{64}$/.test(note.id) || !/^[0-9a-f]{64}$/.test(note.commitment)) {
         throw new Error('Private note identity is invalid.');
       }
       if (!/^[1-9][0-9]*$/.test(note.value)) {

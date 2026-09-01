@@ -298,7 +298,7 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     if (note.assetContractId !== input.intent.assetContractId) {
       throw new Error('Selected private note belongs to another asset');
     }
-    if (note.id !== note.commitment || note.id !== noteId) {
+    if (note.id !== noteId || !/^[0-9a-f]{64}$/.test(note.id)) {
       throw new Error('Selected private note identity is inconsistent');
     }
     const commitment = decodeHex32(note.commitment, 'Note commitment');

@@ -10,7 +10,7 @@ export interface DeploymentContext {
 export type NoteStatus = 'unspent' | 'reserved' | 'spent';
 
 export interface ShieldedNoteRecord {
-  id: string; // Hex of note commitment
+  id: string; // Stable 32-byte wallet identity; duplicate leaves are leaf-bound
   commitment: string; // Hex (32 bytes)
   value: string; // Decimal string of stroops
   assetContractId: string; // Canonical SAC contract address

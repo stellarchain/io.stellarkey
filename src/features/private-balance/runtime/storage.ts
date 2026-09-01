@@ -177,7 +177,7 @@ function isNote(value: unknown): value is ShieldedNoteRecord {
     : note.spentInActionIndex === undefined;
   return (
     isHex(note.id, 32) &&
-    note.commitment === note.id &&
+    isHex(note.commitment, 32) &&
     typeof note.value === 'string' &&
     /^[1-9][0-9]*$/.test(note.value) &&
     typeof note.assetContractId === 'string' &&

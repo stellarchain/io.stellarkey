@@ -14,6 +14,7 @@ import {
   type MerkleTree,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
+import { sha256 } from '@noble/hashes/sha2.js';
 import type { ShieldedActivityRecord, ShieldedNoteRecord } from './types';
 
 export interface ArchiveScanContext {
@@ -47,6 +48,21 @@ export interface ScanArchiveRecordsResult {
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+const duplicateNoteIdDomain = new TextEncoder().encode('StellarKey private note v1');
+
+function duplicateNoteId(commitment: Uint8Array, leafIndex: number): string {
+  if (!Number.isSafeInteger(leafIndex) || leafIndex < 0) {
+    throw new Error('Private note leaf index is invalid');
+  }
+  const leaf = new Uint8Array(8);
+  new DataView(leaf.buffer).setBigUint64(0, BigInt(leafIndex), false);
+  const input = new Uint8Array(duplicateNoteIdDomain.length + commitment.length + leaf.length);
+  input.set(duplicateNoteIdDomain, 0);
+  input.set(commitment, duplicateNoteIdDomain.length);
+  input.set(leaf, duplicateNoteIdDomain.length + commitment.length);
+  return hex(sha256(input));
 }
 
 function decodeHex32(value: string, name: string): Uint8Array {
@@ -145,7 +161,7 @@ export async function scanArchiveRecords(
 
   const tree = input.initialTree ? cloneTree(input.initialTree) : await createEmptyTree();
   const notes = (input.existingNotes ?? []).map(cloneNote);
-  const notesByCommitment = new Map(notes.map(note => [note.commitment, note]));
+  const usedNoteIds = new Set(notes.map(note => note.id));
   const nullifiersByCommitment = new Map<string, string>();
   const notesByNullifier = new Map<string, ShieldedNoteRecord>();
   const activities: ShieldedActivityRecord[] = [];
@@ -162,7 +178,7 @@ export async function scanArchiveRecords(
       decodeHex32(note.commitment, 'Note commitment'),
     );
     const nullifierHex = hex(nullifier);
-    nullifiersByCommitment.set(note.commitment, nullifierHex);
+    nullifiersByCommitment.set(note.id, nullifierHex);
     notesByNullifier.set(nullifierHex, note);
   }
 
@@ -219,21 +235,22 @@ export async function scanArchiveRecords(
       if (!note) continue;
 
       const commitment = hex(output.cm);
-      // A commitment uniquely binds the note plaintext. A sender can reseal
-      // that same note into another valid envelope, but it must not create a
-      // second local balance entry or halt future synchronization. Keep the
-      // first canonical leaf/note and continue; the on-chain duplicate leaf is
-      // still appended to the Merkle frontier below.
-      if (notesByCommitment.has(commitment)) continue;
+      const leafIndex = record.startingLeafIndex + outputIndex;
+      const noteId = usedNoteIds.has(commitment)
+        ? duplicateNoteId(output.cm, leafIndex)
+        : commitment;
+      if (usedNoteIds.has(noteId)) {
+        throw new Error('Private note identity collision');
+      }
       const memoHex = hex(note.memo.slice(0, note.memoLength));
       const recovered: ShieldedNoteRecord = {
-        id: commitment,
+        id: noteId,
         commitment,
         value: note.value.toString(),
         assetContractId,
         diversifier: hex(note.diversifier),
         ownerCommitment: hex(note.ownerCommitment),
-        leafIndex: record.startingLeafIndex + outputIndex,
+        leafIndex,
         actionIndex: record.actionIndex,
         rho: hex(note.rho),
         memoHex,
@@ -250,9 +267,9 @@ export async function scanArchiveRecords(
       );
       const nullifierHex = hex(nullifier);
       notes.push(recovered);
-      notesByCommitment.set(commitment, recovered);
+      usedNoteIds.add(noteId);
       notesByNullifier.set(nullifierHex, recovered);
-      nullifiersByCommitment.set(commitment, nullifierHex);
+      nullifiersByCommitment.set(noteId, nullifierHex);
       ownedOutputValue += note.value;
       if (memoHex) receivedMemoHex ??= memoHex;
     }
