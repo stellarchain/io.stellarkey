@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Closed secret-bearing paper-wallet print windows when their parent modal closes or the wallet locks, resets, or receives a peer-tab lock.
 - Preserved signed-transaction recovery records after untrusted Horizon 4xx responses and allowed only exact-hash canonical lookup results to resolve prepared submissions.
 - Enforced current staff or owner authorization for merchant lifecycle, recovery erasure, charge voiding, customer mutations, takings, and customer records, with latest-revision checks at persistence boundaries.
 - Kept the privacy shield above portal dialogs, stopped charge monitoring from synthesizing staff activity, quarantined counter codes after receiving-account rotation, and neutralized spreadsheet formulas in merchant CSV exports.

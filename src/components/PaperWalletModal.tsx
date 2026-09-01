@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { exportKeystoreWithPassword, exportVaultBackup } from "@/lib/vault";
-import { openPaperWalletPrint } from "@/lib/paperwallet";
+import { closePaperWalletPrints, openPaperWalletPrint } from "@/lib/paperwallet";
 import { markBackupExported } from "@/lib/backup-health";
 import { useToast } from "./Toast";
 import { Button, Modal, ModalHeader } from "./ui";
@@ -38,6 +38,8 @@ export function PaperWalletModal({
   const [exportPassword, setExportPassword] = useState("");
   const [exportBusy, setExportBusy] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => () => closePaperWalletPrints(), []);
 
   useEffect(() => {
     let alive = true;

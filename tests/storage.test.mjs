@@ -77,6 +77,7 @@ test("auto-lock covers the live onboarding vault session and uses a monotonic cl
   assert.match(autoLock, /phase === "empty" && isUnlocked\(\)/);
   assert.match(autoLock, /performance\.now\(\)/);
   assert.doesNotMatch(autoLock, /Date\.now\(\)/);
+  assert.match(autoLock, /closePaperWalletPrints\(\)/);
 });
 
 test("every user-controlled JSON file is bounded before file.text", () => {

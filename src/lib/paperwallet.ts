@@ -25,6 +25,21 @@ export interface PaperWalletDoc {
   secQrDataUrl: string;
 }
 
+const openPaperWalletWindows = new Set<Window>();
+
+/** Close every secret-bearing print document owned by the current wallet session. */
+export function closePaperWalletPrints(): void {
+  for (const child of openPaperWalletWindows) {
+    try {
+      if (!child.closed) child.close();
+    } catch {
+      // Cross-origin navigation may make a child inaccessible; continue closing
+      // the remaining documents and forget the inaccessible reference.
+    }
+  }
+  openPaperWalletWindows.clear();
+}
+
 function chunk4(s: string): string {
   return (s.match(/.{1,4}/g) ?? [s]).join(" ");
 }
@@ -172,6 +187,7 @@ export function openPaperWalletPrint(doc: PaperWalletDoc): void {
     console.error("Popup blocked: allow popups to export the PDF certificate.");
     return;
   }
+  openPaperWalletWindows.add(win);
 
   // Invoke printing from the trusted parent application rather than an inline
   // child script, which the production CSP correctly blocks. Once loaded, the
