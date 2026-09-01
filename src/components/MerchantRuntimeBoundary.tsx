@@ -35,6 +35,9 @@ const EMPTY_SHELL: MerchantShellContextValue = {
   unmatched: [],
   charges: [],
   activeShift: null,
+  authorizeWalletExit: async () => {
+    throw new Error("Merchant Mode is still loading. Try again in a moment.");
+  },
 };
 
 /**

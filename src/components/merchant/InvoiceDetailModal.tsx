@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
-import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
+import {
+  useMerchantConfiguration,
+  useMerchantRecords,
+  useMerchantReporting,
+} from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey } from "@/lib/merchant/charge";
 import { invoiceStatusAt } from "@/lib/merchant/invoices";
@@ -198,6 +202,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
     submitPaymentRefund,
     voidInvoice,
   } = useMerchantRecords();
+  const { exportInvoiceRecord } = useMerchantReporting();
   const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
 
@@ -426,17 +431,21 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   }
 
   function exportInvoice() {
-    const blob = new Blob([JSON.stringify(invoice, null, 2)], {
-      type: "application/json;charset=utf-8",
-    });
-    const href = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = href;
-    anchor.download = `${invoice.number.toLowerCase()}.json`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(href), 0);
-    triggerHaptic("light");
-    toast("Invoice audit record exported", "success");
+    setActionError("");
+    try {
+      const file = exportInvoiceRecord(invoice.id);
+      const blob = new Blob([file.contents], { type: "application/json;charset=utf-8" });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = file.fileName;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(href), 0);
+      triggerHaptic("light");
+      toast("Invoice audit record exported", "success");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "The invoice could not be exported.");
+    }
   }
 
   const steps = buildTimeline(invoice, status, paidMinor);

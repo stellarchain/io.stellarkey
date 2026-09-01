@@ -100,4 +100,11 @@ test("the merchant provider reloads revisions and leases Horizon polling", () =>
   assert.match(hook, /navigator\.locks\.request/);
   assert.match(hook, /merchantWriterLockRef/);
   assert.match(hook, /stellarkey\.merchant\.writer\.v1/);
+  const poll = hook.split("const pollNow = useCallback")[1]?.split("const hasLiveCharge")[0] ?? "";
+  assert.match(poll, /merchantWriterLockRef\.current === "pending"/);
+  assert.ok(
+    poll.indexOf('merchantWriterLockRef.current === "pending"') <
+      poll.indexOf("claimWatcherLease("),
+    "a non-writer tab must not acquire the settlement watcher lease",
+  );
 });

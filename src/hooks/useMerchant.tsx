@@ -428,6 +428,7 @@ interface MerchantContextValue {
   exportRecords: ExportRecord[];
   canSeeReports: boolean;
   canExportRecords: boolean;
+  exportInvoiceRecord: (invoiceId: string) => { fileName: string; contents: string };
   previewReportExport: (input: {
     from: number;
     to: number;
@@ -639,6 +640,7 @@ type MerchantReportingValue = Pick<
   | "exportRecords"
   | "canSeeReports"
   | "canExportRecords"
+  | "exportInvoiceRecord"
   | "previewReportExport"
   | "createReportExport"
 >;
@@ -1025,15 +1027,30 @@ export function MerchantProvider({
     [commitStore],
   );
 
+  const requireExportingStaff = useCallback((current: MerchantStore): StaffMember => {
+    const actorId = staffSessionIdRef.current;
+    const actor = current.staff.find(
+      (member) =>
+        member.id === actorId &&
+        member.id === current.activeStaffId &&
+        member.active &&
+        member.permissions.exportRecords,
+    );
+    if (!actor) throw new Error("The active staff member cannot export merchant records.");
+    return actor;
+  }, []);
   const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
   const exportEncryptedArchive = useCallback(async () => {
+    requireExportingStaff(storeRef.current);
     const key = readMerchantKey();
     try {
-      return await repositoryRef.current.exportEncryptedArchive(key);
+      const archive = await repositoryRef.current.exportEncryptedArchive(key);
+      requireExportingStaff(storeRef.current);
+      return archive;
     } finally {
       key.fill(0);
     }
-  }, [readMerchantKey]);
+  }, [readMerchantKey, requireExportingStaff]);
   const resetRecoveryData = useCallback(async () => {
     const actorId = staffSessionIdRef.current ?? "";
     requireActiveOwner(storeRef.current, actorId);
@@ -1197,6 +1214,23 @@ export function MerchantProvider({
 
   const canSeeReports = Boolean(activeStaff?.permissions.seeReports);
   const canExportRecords = Boolean(activeStaff?.permissions.exportRecords);
+  const exportInvoiceRecord = useCallback((invoiceId: string) => {
+    const current = storeRef.current;
+    requireExportingStaff(current);
+    const invoice = current.invoices.find((entry) => entry.id === invoiceId);
+    if (!invoice) throw new Error("That invoice is no longer available.");
+    return {
+      fileName: `${invoice.number.toLowerCase()}.json`,
+      contents: JSON.stringify(invoice, null, 2),
+    };
+  }, [requireExportingStaff]);
+
+  const authorizeWalletExit = useCallback(async (): Promise<void> => {
+    const actorId = staffSessionIdRef.current ?? "";
+    requireActiveOwner(storeRef.current, actorId);
+    await authorizeSensitiveAction("Leave Merchant Mode");
+    requireActiveOwner(storeRef.current, actorId);
+  }, [authorizeSensitiveAction]);
 
   const taxPeriods = useMemo(
     () => deriveTaxPeriods(store, { network, now: reportingNow }),
@@ -2545,7 +2579,13 @@ export function MerchantProvider({
   }, [activeWatcherLeaseKeys, writerId]);
 
   const pollNow = useCallback(async () => {
-    if (!enabled || !online || watchDestinations.length === 0 || polling.current) return;
+    if (
+      !enabled ||
+      !online ||
+      watchDestinations.length === 0 ||
+      polling.current ||
+      merchantWriterLockRef.current === "pending"
+    ) return;
     polling.current = true;
     let latestLedger: number | null = null;
     let firstFailure: unknown = null;
@@ -3122,11 +3162,17 @@ export function MerchantProvider({
     async (patch: Partial<MerchantSettings>) => {
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing merchant settings.");
-      requireActiveOwner(storeRef.current, actorId);
+      const before = storeRef.current;
+      requireActiveOwner(before, actorId);
+      const changesTerminalName =
+        patch.terminalName !== undefined && patch.terminalName !== before.settings.terminalName;
+      if (changesTerminalName && activeShiftForTerminal(before)) {
+        throw new Error("Close the current shift before renaming this terminal.");
+      }
       const receivingPublicKey = patch.receivingPublicKey;
       const changesReceivingAccount =
         receivingPublicKey !== undefined &&
-        receivingPublicKey !== storeRef.current.settings.receivingPublicKey;
+        receivingPublicKey !== before.settings.receivingPublicKey;
       if (changesReceivingAccount) {
         if (!receivingPublicKey) throw new Error("Choose a merchant receiving account.");
         assertMerchantReceivingAccount(accounts, receivingPublicKey);
@@ -3134,6 +3180,13 @@ export function MerchantProvider({
       }
       await commitStore((latest) => {
         requireActiveOwner(latest, actorId);
+        if (
+          changesTerminalName &&
+          patch.terminalName !== latest.settings.terminalName &&
+          activeShiftForTerminal(latest)
+        ) {
+          throw new Error("Close the current shift before renaming this terminal.");
+        }
         return { ...latest, settings: { ...latest.settings, ...patch } };
       });
     },
@@ -3328,6 +3381,7 @@ export function MerchantProvider({
     exportRecords: store.exportRecords,
     canSeeReports,
     canExportRecords,
+    exportInvoiceRecord,
     previewReportExport,
     createReportExport,
 
@@ -3402,6 +3456,7 @@ export function MerchantProvider({
     enabled,
     endStaffSession,
     exportEncryptedArchive,
+    exportInvoiceRecord,
     exportRecoveryData,
     forgetCustomer,
     invoiceBlockedReason,
@@ -3732,6 +3787,7 @@ export function MerchantProvider({
       exportRecords: store.exportRecords,
       canSeeReports,
       canExportRecords,
+      exportInvoiceRecord,
       previewReportExport,
       createReportExport,
     }),
@@ -3739,6 +3795,7 @@ export function MerchantProvider({
       canExportRecords,
       canSeeReports,
       createReportExport,
+      exportInvoiceRecord,
       previewReportExport,
       store.exportRecords,
       taxPeriods,
@@ -3752,8 +3809,17 @@ export function MerchantProvider({
       unmatched: store.unmatched,
       charges: store.charges,
       activeShift,
+      authorizeWalletExit,
     }),
-    [activeShift, enabled, enabledHint, ready, store.charges, store.unmatched],
+    [
+      activeShift,
+      authorizeWalletExit,
+      enabled,
+      enabledHint,
+      ready,
+      store.charges,
+      store.unmatched,
+    ],
   );
   const settingsValue = useMemo<MerchantSettingsContextValue>(
     () => ({ enabled, configured, setEnabled, profileName: settings.profile.name }),

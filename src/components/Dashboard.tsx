@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchantRuntime, useMerchantShell } from "@/hooks/useMerchantRuntime";
+import { useToast } from "./Toast";
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -341,7 +342,9 @@ export function Dashboard() {
     unmatched: merchantUnmatched,
     charges: merchantCharges,
     activeShift: merchantActiveShift,
+    authorizeWalletExit: merchantAuthorizeWalletExit,
   } = useMerchantShell();
+  const { toast } = useToast();
   const {
     mounted: merchantRuntimeMounted,
     intent: merchantRuntimeIntent,
@@ -1318,7 +1321,15 @@ export function Dashboard() {
   }
 
   /** Merchant selects the till, Wallet returns Home. */
-  function switchMode(next: ShellMode) {
+  async function switchMode(next: ShellMode) {
+    if (next === "wallet" && mode === "merchant") {
+      try {
+        await merchantAuthorizeWalletExit();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : "Owner authorization is required.", "error");
+        return;
+      }
+    }
     switchTab(next === "merchant" ? "merchant" : "home");
   }
 
