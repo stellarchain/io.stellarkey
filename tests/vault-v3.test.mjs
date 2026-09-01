@@ -350,6 +350,26 @@ test("account keystores accept only the current format marker", async () => {
   );
 });
 
+test("account keystores bind the declared address to the decrypted secret", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    exportKeystoreWithPassword,
+    importKeystore,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const { account } = await initializeVault(password, { secret: Keypair.random().secret() });
+  const keystore = JSON.parse(await exportKeystoreWithPassword(account.id, password));
+  keystore.address = Keypair.random().publicKey();
+
+  await assert.rejects(
+    () => importKeystore(JSON.stringify(keystore), password),
+    /address|match/i,
+  );
+});
+
 test("an optional local passkey unwraps the v3 master key while password fallback remains", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

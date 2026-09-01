@@ -330,6 +330,7 @@ export class MerchantRepository {
     metaRaw: string,
     recordRaws: ReadonlyMap<string, string>,
     key: Uint8Array,
+    recordSnapshot = true,
   ): StorageLoadResult<MerchantStore> {
     let metaEnvelope: EncryptedMerchantRecordEnvelope | null = null;
     try {
@@ -432,12 +433,14 @@ export class MerchantRepository {
       ) {
         throw new Error("Merchant metadata does not match its records.");
       }
-      this.snapshot = {
-        store: decoded,
-        metaRaw,
-        records: persisted,
-        metadataSchema: metadata.schema,
-      };
+      if (recordSnapshot) {
+        this.snapshot = {
+          store: decoded,
+          metaRaw,
+          records: persisted,
+          metadataSchema: metadata.schema,
+        };
+      }
       return { kind: "ready", value: decoded };
     } catch {
       const raw = metaEnvelope
@@ -590,6 +593,44 @@ export class MerchantRepository {
     }
     await this.driver.replacePrefixVerified(RECORD_ROOT_PREFIX, records);
     this.snapshot = null;
+  }
+
+  verifyEncryptedArchive(raw: string, key: Uint8Array): MerchantStore {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("Merchant recovery archive is invalid.");
+    }
+    if (!isEncryptedMerchantRecordArchive(parsed)) {
+      throw new Error("Merchant recovery archive is invalid.");
+    }
+    const records = new Map(Object.entries(parsed.records));
+    const metaRaw = records.get(RECORD_META_KEY);
+    if (!metaRaw) throw new Error("Merchant recovery archive metadata is missing.");
+    records.delete(RECORD_META_KEY);
+    if ([...records.keys()].some((storageKey) => !storageKey.startsWith(RECORD_DATA_PREFIX))) {
+      throw new Error("Merchant recovery archive contains unsupported records.");
+    }
+    let meta: unknown;
+    try {
+      meta = JSON.parse(metaRaw);
+    } catch {
+      throw new Error("Merchant recovery archive metadata is invalid.");
+    }
+    if (
+      !isEncryptedMerchantRecordEnvelope(meta) ||
+      meta.revision !== parsed.revision ||
+      meta.writerId !== parsed.writerId ||
+      meta.updatedAt !== parsed.updatedAt
+    ) {
+      throw new Error("Merchant recovery archive metadata does not match.");
+    }
+    const decoded = this.decodeRecordSet(metaRaw, records, key, false);
+    if (decoded.kind !== "ready") {
+      throw new Error("Merchant recovery archive could not be decrypted or authenticated.");
+    }
+    return decoded.value;
   }
 
   async clear(): Promise<void> {

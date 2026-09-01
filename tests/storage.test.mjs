@@ -60,6 +60,19 @@ test("full wallet reset also removes every private-payment IndexedDB record", ()
   assert.match(reset, /IndexedDbEncryptedRecordDriver\(\)\.removePrefix\("private:"\)/);
 });
 
+test("every user-controlled JSON file is bounded before file.text", () => {
+  for (const path of [
+    "src/components/Onboarding.tsx",
+    "src/components/BackupWizardModal.tsx",
+    "src/components/AddressBookPage.tsx",
+    "src/components/SettingsPage.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.match(source, /readBoundedTextFile/);
+    assert.doesNotMatch(source, /await file\.text\(\)/);
+  }
+});
+
 test("POC plaintext contacts are rejected and never rewritten", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
@@ -278,6 +291,34 @@ test("encrypted backups reject malformed decrypted payloads before restore", asy
   await assert.rejects(
     () => inspectVaultBackup(backup, password),
     /malformed|invalid/i,
+  );
+});
+
+test("backup inspection opens every nested signing credential", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    addStoredAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await addStoredAccount({ secret: Keypair.random().secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  [payload.vault.accounts[0].secret, payload.vault.accounts[1].secret] = [
+    payload.vault.accounts[1].secret,
+    payload.vault.accounts[0].secret,
+  ];
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+
+  await assert.rejects(
+    () => inspectVaultBackup(JSON.stringify(backup), password),
+    /could not unlock or validate/i,
   );
 });
 

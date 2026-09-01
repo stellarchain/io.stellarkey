@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { useWalletContacts } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import type { Contact } from "@/lib/contacts";
+import {
+  MAX_CONTACTS_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 import { triggerHaptic } from "@/lib/haptics";
 import { Avatar, Button, HashValue } from "./ui";
 import { EditContactModal } from "./EditContactModal";
@@ -69,9 +73,10 @@ export function AddressBookPage({
 
   async function handleImport(file: File) {
     try {
-      const text = await file.text();
+      const text = await readBoundedTextFile(file, MAX_CONTACTS_FILE_BYTES, "Contacts file");
       const list = JSON.parse(text) as Contact[];
       if (!Array.isArray(list)) throw new Error("Invalid contacts file format.");
+      if (list.length > 5_000) throw new Error("Contacts file contains too many records.");
       const knownAddresses = new Set(contacts.map((contact) => contact.address));
       let imported = 0;
       for (const c of list) {
