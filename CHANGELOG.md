@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound public payment signing to an immutable account, network, destination, asset, amount, memo, fee, and signer-path review snapshot, and added exact on-device Trezor receive-address verification.
 - Required current staff authority for retained merchant views and exports, fresh owner authorization before leaving Merchant Mode, writer ownership before settlement polling, and active counter-code status before constructing printable payment artifacts.
 - Revoked password and passkey unlocks that finish after a lock, and serialized backup restore against an early, cross-tab reset epoch so erased credentials cannot be resurrected.
 - Bound transaction finality, merge recovery, expiry decisions, and merchant settlement reads to canonical SDF Horizon; configurable endpoints can still submit transactions but cannot fabricate confirmation or unlock retries.

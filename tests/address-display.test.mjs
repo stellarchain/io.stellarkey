@@ -34,6 +34,7 @@ test("screens use the shared Trezor-style address presentation", () => {
   const addressBook = read("src/components/AddressBookPage.tsx");
   const multisig = read("src/components/MultiSigStudioModal.tsx");
   const settings = read("src/components/SettingsPage.tsx");
+  const receive = read("src/components/ReceiveModal.tsx");
 
   assert.doesNotMatch(combined, /shortenAddr/);
   for (const file of files) {
@@ -48,4 +49,6 @@ test("screens use the shared Trezor-style address presentation", () => {
     settings,
     /line\.kind === "address"\s*\?\s*\(\s*<HashValue[\s\S]*?full[\s\S]*?value=\{line\.value\}/,
   );
+  assert.match(receive, /verifyTrezorAddress/);
+  assert.match(receive, /Verify on Trezor/);
 });

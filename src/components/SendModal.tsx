@@ -37,11 +37,14 @@ import {
 } from "@/lib/api";
 import type { Contact } from "@/lib/contacts";
 import {
+  bindPublicPaymentReview,
   clearFederationMemoForDestinationChange,
   memoReviewPresentation,
   normalizeFederationMemo,
+  requireCurrentPublicPaymentReview,
   resolveRequestedAsset,
   spendableAssetBalance,
+  type PublicPaymentReview,
 } from "@/lib/transaction-intent";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -268,6 +271,7 @@ function SendInner({
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
   const [cosignXdr, setCosignXdr] = useState<string | null>(null);
   const [stealthReview, setStealthReview] = useState<StealthReview | null>(null);
+  const [publicReview, setPublicReview] = useState<PublicPaymentReview | null>(null);
   const [preparingReview, setPreparingReview] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [resolvingFed, setResolvingFed] = useState(false);
@@ -359,7 +363,6 @@ function SendInner({
         : null
     : null;
   const effectiveError = error ?? pendingPrefillAsset?.error ?? settlementContextError;
-  const reviewMemo = memoReviewPresentation(memo, memoType);
 
   // Recent recipients derived from outgoing activity (most recent first)
   const recentRecipients = useMemo(() => {
@@ -488,17 +491,61 @@ function SendInner({
   const reviewedTotalDebitXlm = stealthReview
     ? stroopsToAmount(BigInt(stealthReview.totalDebitStroops))
     : null;
+  const reviewedAmount = stealthReview ? amount : publicReview?.amount ?? amount;
+  const reviewedAsset = publicReview?.asset ?? selectedAsset;
+  const reviewedBalance = publicReview?.asset.balanceBefore ?? balance;
+  const reviewedDestination = stealthReview
+    ? destination.trim()
+    : publicReview?.destination ?? effectiveDestination;
+  const reviewedSourcePublicKey = publicReview?.sourcePublicKey ?? activeAccount?.publicKey ?? "";
+  const reviewedAccount = accounts.find((account) => account.publicKey === reviewedSourcePublicKey)
+    ?? activeAccount;
+  const reviewedContact = contacts.find((contact) => contact.address === reviewedDestination);
+  const reviewedMemo = publicReview?.memo ?? (memo.trim()
+    ? { type: memoType, value: memo.trim() }
+    : undefined);
+  const reviewMemo = reviewedMemo
+    ? memoReviewPresentation(reviewedMemo.value, reviewedMemo.type)
+    : null;
+  const reviewNeedsCosigners = stealthReview
+    ? needsCosigners
+    : publicReview?.needsCosigners ?? needsCosigners;
   const reviewedFeeXlm = stealthReview
     ? stroopsToAmount(BigInt(stealthReview.networkFeeStroops))
-    : feeXlm;
+    : publicReview
+      ? stroopsToAmount(BigInt(publicReview.feeStroops))
+      : feeXlm;
   const remainingBalance = reviewedTotalDebitXlm
-    ? subtractStellarAmounts(balance, [reviewedTotalDebitXlm])
-    : isValidAmount(amount)
-      ? subtractStellarAmounts(balance, [amount, ...(selectedAsset?.isNative ? [feeXlm] : [])])
-    : balance;
+    ? subtractStellarAmounts(reviewedBalance, [reviewedTotalDebitXlm])
+    : isValidAmount(reviewedAmount)
+      ? subtractStellarAmounts(
+          reviewedBalance,
+          [reviewedAmount, ...(reviewedAsset?.isNative ? [reviewedFeeXlm] : [])],
+        )
+      : reviewedBalance;
 
   async function handleReview() {
     if (!stealthDestination) {
+      if (!selectedAsset || !activeAccount) return;
+      const paymentMemo: StellarMemoInput | undefined = memo.trim()
+        ? { type: memoType, value: memo.trim() }
+        : undefined;
+      setPublicReview(bindPublicPaymentReview({
+        sourcePublicKey: activeAccount.publicKey,
+        network,
+        destination: effectiveDestination,
+        amount,
+        asset: {
+          key: selectedAsset.key,
+          code: selectedAsset.code,
+          issuer: selectedAsset.issuer,
+          isNative: selectedAsset.isNative,
+          balanceBefore: selectedAsset.balance,
+        },
+        memo: paymentMemo,
+        feeStroops,
+        needsCosigners,
+      }));
       triggerHaptic("selection");
       setStealthReview(null);
       setStage("review");
@@ -508,6 +555,7 @@ function SendInner({
     setPreparingReview(true);
     setError(null);
     try {
+      setPublicReview(null);
       const review = await prepareStealthPayment({
         metaAddress: destination.trim(),
         amount,
@@ -580,18 +628,19 @@ function SendInner({
         window.setTimeout(() => void refresh(), 4000);
         return;
       }
-      const paymentMemo: StellarMemoInput | undefined = memo.trim()
-        ? { type: memoType, value: memo.trim() }
-        : undefined;
-      if (needsCosigners) {
+      const reviewed = requireCurrentPublicPaymentReview(publicReview, {
+        sourcePublicKey: activeAccount?.publicKey ?? "",
+        network,
+      });
+      if (reviewed.needsCosigners) {
         // Multi-sig account: collect our signature, share the envelope instead of submitting
         const result = await prepareCosignPayment({
-          destination: effectiveDestination,
-          amount,
-          assetCode: selectedAsset.code,
-          issuer: selectedAsset.issuer,
-          memo: paymentMemo,
-          feeStroops,
+          destination: reviewed.destination,
+          amount: reviewed.amount,
+          assetCode: reviewed.asset.code,
+          issuer: reviewed.asset.issuer ?? undefined,
+          memo: reviewed.memo,
+          feeStroops: reviewed.feeStroops,
         });
         setCosignXdr(result.xdr);
         setStage("cosign");
@@ -599,12 +648,12 @@ function SendInner({
         return;
       }
       const result = await send({
-        destination: effectiveDestination,
-        amount,
-        assetCode: selectedAsset.code,
-        issuer: selectedAsset.issuer,
-        memo: paymentMemo,
-        feeStroops,
+        destination: reviewed.destination,
+        amount: reviewed.amount,
+        assetCode: reviewed.asset.code,
+        issuer: reviewed.asset.issuer ?? undefined,
+        memo: reviewed.memo,
+        feeStroops: reviewed.feeStroops,
       });
       setHash(result.hash);
       setSubmission(result);
@@ -669,8 +718,8 @@ function SendInner({
     }
   }
 
-  const knownSelected = selectedAsset
-    ? lookupKnownAsset(selectedAsset.code, selectedAsset.issuer, network)
+  const knownSelected = reviewedAsset
+    ? lookupKnownAsset(reviewedAsset.code, reviewedAsset.issuer, publicReview?.network ?? network)
     : null;
 
   return (
@@ -780,7 +829,7 @@ function SendInner({
           <>
             <div className="flex flex-col items-center pb-2">
               <p className="display-h text-[36px] text-white">
-                {fmtAmount(amount)}
+                {fmtAmount(reviewedAmount)}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <span
@@ -788,22 +837,22 @@ function SendInner({
                   style={
                     knownSelected
                       ? { background: knownSelected.color, color: "#fff" }
-                      : selectedAsset?.isNative
+                      : reviewedAsset?.isNative
                         ? { background: "#fdda24", color: "#0d0d0d" }
                         : { background: "rgba(255,255,255,0.08)", color: "#fff" }
                   }
                 >
-                  {selectedAsset?.code}
+                  {reviewedAsset?.code}
                 </span>
                 {knownSelected && (
                   <span className="text-[12px] text-neutral-400">{knownSelected.name}</span>
                 )}
               </div>
               <FiatValue
-                amount={amount}
-                code={selectedAsset?.code ?? "XLM"}
-                issuer={selectedAsset?.issuer}
-                isNative={selectedAsset?.isNative}
+                amount={reviewedAmount}
+                code={reviewedAsset?.code ?? "XLM"}
+                issuer={reviewedAsset?.issuer ?? undefined}
+                isNative={reviewedAsset?.isNative}
                 className="mt-2 text-[13px] text-neutral-400"
               />
             </div>
@@ -811,7 +860,7 @@ function SendInner({
             <div className="panel-inset mt-6 divide-y divide-white/[0.08] px-4">
               <Row label="To">
                 <HashValue
-                  value={stealthDestination ? destination.trim() : effectiveDestination}
+                  value={reviewedDestination}
                   className="justify-end text-[12px] text-white"
                 />
               </Row>
@@ -828,15 +877,15 @@ function SendInner({
                   <span className="text-[13px] text-white">{destination}</span>
                 </Row>
               )}
-              {matchedContact && (
+              {reviewedContact && (
                 <Row label="Contact">
-                  <span className="text-[13px] text-white">{matchedContact.name}</span>
+                  <span className="text-[13px] text-white">{reviewedContact.name}</span>
                 </Row>
               )}
-              {!selectedAsset?.isNative && (
+              {!reviewedAsset?.isNative && (
                 <Row label="Issuer">
                   <HashValue
-                    value={selectedAsset?.issuer ?? ""}
+                    value={reviewedAsset?.issuer ?? ""}
                     className="justify-end text-[12px] text-neutral-300"
                   />
                 </Row>
@@ -869,7 +918,7 @@ function SendInner({
               )}
               <Row label="Network Fee">
                 <span className="mono text-[13px] text-neutral-300">
-                  {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? feeStroops} stroops)</span>
+                  {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? publicReview?.feeStroops ?? feeStroops} stroops)</span>
                 </span>
               </Row>
               <Row label="Transaction Valid For">
@@ -886,13 +935,13 @@ function SendInner({
               </p>
               <div className="flex justify-between text-neutral-300">
                 <span>Balance Before</span>
-                <span className="mono">{fmtAmount(balance)} {selectedAsset?.code}</span>
+                <span className="mono">{fmtAmount(reviewedBalance)} {reviewedAsset?.code}</span>
               </div>
               <div className="flex justify-between text-[#FF453A]">
                 <span>Transfer Amount</span>
-                <span className="mono">−{fmtAmount(amount)} {selectedAsset?.code}</span>
+                <span className="mono">−{fmtAmount(reviewedAmount)} {reviewedAsset?.code}</span>
               </div>
-              {selectedAsset?.isNative && (
+              {reviewedAsset?.isNative && (
                 <div className="flex justify-between text-neutral-400">
                   <span>Network Gas Fee</span>
                   <span className="mono">−{reviewedFeeXlm} XLM</span>
@@ -922,7 +971,7 @@ function SendInner({
               )}
               <div className="border-t border-white/10 pt-1.5 flex justify-between font-semibold text-white">
                 <span>Balance After</span>
-                <span className="mono">{remainingBalance} {selectedAsset?.code}</span>
+                <span className="mono">{remainingBalance} {reviewedAsset?.code}</span>
               </div>
             </div>
 
@@ -942,7 +991,7 @@ function SendInner({
             )}
 
             {/* Multi-sig cosigner requirement warning */}
-            {needsCosigners && (
+            {reviewNeedsCosigners && (
               <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FF9F0A]">
                 <span className="shrink-0 text-[16px]">✍️</span>
                 <span>
@@ -954,30 +1003,30 @@ function SendInner({
             )}
 
             {/* Hardware Security Badge */}
-            {activeAccount?.hardware && (
+            {reviewedAccount?.hardware && (
               <div className="panel-inset mt-3 p-3 flex items-center justify-between bg-[#0A84FF]/[0.08] border border-[#0A84FF]/30 text-[12px]">
                 <div className="flex items-center gap-2 text-[#0A84FF]">
-                  {activeAccount.hardware === "ledger" ? (
+                  {reviewedAccount.hardware === "ledger" ? (
                     <IconLedger size={16} className="text-[#64D2FF]" />
                   ) : (
                     <IconTrezor size={16} className="text-emerald-400" />
                   )}
                   <span className="font-semibold">
-                    Confirm &amp; Sign on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Hardware Device
+                    Confirm &amp; Sign on {reviewedAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Hardware Device
                   </span>
                 </div>
                 <span className="mono text-[11px] text-neutral-400">
-                  {activeAccount.path ?? "m/44'/148'/0'"}
+                  {reviewedAccount.path ?? "Path unavailable"}
                 </span>
               </div>
             )}
 
             {/* Hardware signing pending hint */}
-            {stage === "sending" && activeAccount?.hardware && (
+            {stage === "sending" && reviewedAccount?.hardware && (
               <div className="mt-3 flex items-center gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3 text-[12px] leading-relaxed text-[#FF9F0A]">
                 <Spinner size={13} />
                 <span>
-                  Waiting for your {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"}{" "}
+                  Waiting for your {reviewedAccount.hardware === "ledger" ? "Ledger" : "Trezor"}{" "}
                   — review and confirm the transaction on the device.
                 </span>
               </div>
@@ -1007,6 +1056,7 @@ function SendInner({
                 disabled={stage === "sending"}
                 onClick={() => {
                   triggerHaptic("selection");
+                  setPublicReview(null);
                   setStage("form");
                 }}
               >
@@ -1014,11 +1064,11 @@ function SendInner({
               </Button>
               <Button
                 loading={stage === "sending"}
-                loadingLabel={needsCosigners ? "Signing transaction" : "Sending payment"}
+                loadingLabel={reviewNeedsCosigners ? "Signing transaction" : "Sending payment"}
                 disabled={stage === "sending"}
                 onClick={() => void handleConfirm()}
               >
-                {needsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
+                {reviewNeedsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
               </Button>
             </div>
           </>

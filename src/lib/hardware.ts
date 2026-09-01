@@ -128,6 +128,28 @@ export async function connectTrezorDevice(index = 0): Promise<HardwareAccountInf
   };
 }
 
+/**
+ * Show a stored account's derivation path on Trezor and require the device to
+ * return the exact public key rendered by the receive screen.
+ */
+export async function verifyTrezorAddress(path: string, expectedPublicKey: string): Promise<void> {
+  if (!path.trim()) throw new Error("This Trezor account has no derivation path to verify.");
+  if (!StrKey.isValidEd25519PublicKey(expectedPublicKey)) {
+    throw new Error("The stored Stellar address is invalid.");
+  }
+  const tc = await loadTrezorConnect();
+  const res = await tc.stellarGetAddress({ path, showOnTrezor: true });
+  if (!res.success) {
+    throw trezorError(res.payload, "Trezor address verification was rejected.");
+  }
+  if (!StrKey.isValidEd25519PublicKey(res.payload.address)) {
+    throw new Error("Trezor returned an invalid Stellar address.");
+  }
+  if (res.payload.address !== expectedPublicKey) {
+    throw new Error("The address shown by Trezor does not match this wallet account.");
+  }
+}
+
 /* ---- stellar-sdk Transaction → Trezor StellarSignTransaction mapping ---- */
 
 function toStroops(amount: string): string {

@@ -4,6 +4,45 @@ import { subtractStellarAmounts, type StellarMemoInput } from "./stellar-domain"
 import type { AssetBalance, NetworkKey } from "./types";
 import { formatTrezorAddress } from "./address-display";
 
+export interface PublicPaymentReview {
+  readonly sourcePublicKey: string;
+  readonly network: NetworkKey;
+  readonly destination: string;
+  readonly amount: string;
+  readonly asset: Readonly<{
+    key: string;
+    code: string;
+    issuer: string | null;
+    isNative: boolean;
+    balanceBefore: string;
+  }>;
+  readonly memo?: Readonly<StellarMemoInput>;
+  readonly feeStroops: number;
+  readonly needsCosigners: boolean;
+}
+
+export function bindPublicPaymentReview(review: PublicPaymentReview): PublicPaymentReview {
+  return Object.freeze({
+    ...review,
+    asset: Object.freeze({ ...review.asset }),
+    ...(review.memo ? { memo: Object.freeze({ ...review.memo }) } : {}),
+  });
+}
+
+export function requireCurrentPublicPaymentReview(
+  review: PublicPaymentReview | null,
+  current: Pick<PublicPaymentReview, "sourcePublicKey" | "network">,
+): PublicPaymentReview {
+  if (!review) throw new Error("Review this payment before signing it.");
+  if (review.sourcePublicKey !== current.sourcePublicKey) {
+    throw new Error("The active account changed. Review the payment again before signing.");
+  }
+  if (review.network !== current.network) {
+    throw new Error("The Stellar network changed. Review the payment again before signing.");
+  }
+  return review;
+}
+
 export interface SwapRequestIdentity {
   network: NetworkKey;
   sendAssetKey: string;

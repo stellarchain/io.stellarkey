@@ -13,7 +13,7 @@ import { buildSep7PayUri } from "@/lib/payuri";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, CopyButton, HashValue, LoadingRegion, Modal, ModalHeader, Select, Tabs } from "./ui";
 import { FiatValue } from "./FiatValue";
-import { IconAlert, IconDownload, IconShare } from "./icons";
+import { IconAlert, IconDownload, IconShare, IconTrezor } from "./icons";
 
 // The private receive body stays behind the feature's lazy boundary: the chunk
 // only loads when someone actually switches the toggle to Private.
@@ -79,6 +79,13 @@ function ReceiveInner({
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [requestAmount, setRequestAmount] = useState("");
   const [requestMemo, setRequestMemo] = useState("");
+  const [trezorVerification, setTrezorVerification] = useState<
+    {
+      accountId: string | null;
+      state: "idle" | "pending" | "success" | "error";
+      message: string;
+    }
+  >({ accountId: null, state: "idle", message: "" });
   const requestAmountId = useId();
   const requestMemoId = useId();
 
@@ -132,6 +139,40 @@ function ReceiveInner({
 
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
+  async function handleVerifyTrezor() {
+    if (activeAccount?.hardware !== "trezor") return;
+    if (!activeAccount.path) {
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "error",
+        message: "This Trezor account has no saved derivation path to verify.",
+      });
+      return;
+    }
+    setTrezorVerification({
+      accountId: activeAccount.id,
+      state: "pending",
+      message: "Check the address on your Trezor.",
+    });
+    try {
+      const { verifyTrezorAddress } = await import("@/lib/hardware");
+      await verifyTrezorAddress(activeAccount.path, activeAccount.publicKey);
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "success",
+        message: "The address on Trezor matches this account.",
+      });
+      triggerHaptic("success");
+    } catch (error) {
+      setTrezorVerification({
+        accountId: activeAccount.id,
+        state: "error",
+        message: error instanceof Error ? error.message : "Trezor verification failed.",
+      });
+      triggerHaptic("error");
+    }
+  }
+
   async function handleShare() {
     try {
       triggerHaptic("light");
@@ -183,6 +224,20 @@ function ReceiveInner({
 
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         <CopyButton value={address} label="Copy Address" className="chip" />
+        {activeAccount?.hardware === "trezor" && (
+          <Button
+            variant="secondary"
+            className="!h-8 !px-3 !text-[12px]"
+            loading={
+              trezorVerification.accountId === activeAccount.id &&
+              trezorVerification.state === "pending"
+            }
+            loadingLabel="Checking Trezor"
+            onClick={() => void handleVerifyTrezor()}
+          >
+            <IconTrezor size={13} /> Verify on Trezor
+          </Button>
+        )}
         {canShare && (
           <Button
             variant="secondary"
@@ -213,6 +268,23 @@ function ReceiveInner({
           {showCustomRequest ? "Hide Request Options" : "Set Amount / Memo"}
         </button>
       </div>
+
+      {activeAccount?.hardware === "trezor" &&
+        trezorVerification.accountId === activeAccount.id &&
+        trezorVerification.state !== "idle" && (
+        <p
+          aria-live="polite"
+          className={`mt-2 text-[11.5px] ${
+            trezorVerification.state === "success"
+              ? "text-[#30D158]"
+              : trezorVerification.state === "error"
+                ? "text-[#FF453A]"
+                : "text-neutral-400"
+          }`}
+        >
+          {trezorVerification.message}
+        </p>
+      )}
 
       {showCustomRequest && (
         <div className="fade-up mt-4 w-full space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left">
