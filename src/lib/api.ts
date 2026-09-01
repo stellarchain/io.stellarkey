@@ -1325,6 +1325,34 @@ export interface FeeStats {
 
 export const MAX_BASE_FEE_STROOPS = 100_000;
 
+interface HorizonFeeStatsPayload {
+  last_ledger_base_fee?: unknown;
+  fee_charged?: {
+    min?: unknown;
+    mode?: unknown;
+    p90?: unknown;
+    p99?: unknown;
+  } | null;
+}
+
+function boundedFeeStroops(value: unknown, fallback: number): number {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= Number(BASE_FEE) && parsed <= MAX_BASE_FEE_STROOPS
+    ? parsed
+    : fallback;
+}
+
+export function parseFeeStats(data: HorizonFeeStatsPayload): FeeStats {
+  return {
+    lastLedgerBaseFee: boundedFeeStroops(data.last_ledger_base_fee, 100),
+    minAcceptedFee: boundedFeeStroops(data.fee_charged?.min, 100),
+    modeAcceptedFee: boundedFeeStroops(data.fee_charged?.mode, 100),
+    p90AcceptedFee: boundedFeeStroops(data.fee_charged?.p90, 150),
+    p99AcceptedFee: boundedFeeStroops(data.fee_charged?.p99, 300),
+  };
+}
+
 export function selectRecommendedBaseFee(
   stats: Pick<FeeStats, "p90AcceptedFee"> | null,
   requestedFee?: number,
@@ -1356,19 +1384,10 @@ export async function loadRecommendedBaseFee(
 
 export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | null> {
   const horizonUrl = getHorizonUrl(network);
-  const data = await getJson<{
-    last_ledger_base_fee: string;
-    fee_charged?: { min: string; mode: string; p90: string; p99: string };
-  }>(`${horizonUrl}/fee_stats`);
+  const data = await getJson<HorizonFeeStatsPayload>(`${horizonUrl}/fee_stats`);
 
   if (!data) return null;
-  return {
-    lastLedgerBaseFee: parseInt(data.last_ledger_base_fee || "100", 10),
-    minAcceptedFee: parseInt(data.fee_charged?.min || "100", 10),
-    modeAcceptedFee: parseInt(data.fee_charged?.mode || "100", 10),
-    p90AcceptedFee: parseInt(data.fee_charged?.p90 || "150", 10),
-    p99AcceptedFee: parseInt(data.fee_charged?.p99 || "300", 10),
-  };
+  return parseFeeStats(data);
 }
 
 interface CoinGeckoPriceResp {
