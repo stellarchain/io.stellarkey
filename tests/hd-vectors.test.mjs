@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -99,4 +100,18 @@ test("SEP-0005's standard 15-word mnemonic is accepted for wallet recovery", asy
     (await keypairFromMnemonicIndex(mnemonic, 0)).publicKey(),
     "GAVXVW5MCK7Q66RIBWZZKZEDQTRXWCZUP4DIIFXCCENGW2P6W4OA34RH",
   );
+});
+
+test("HD derivation clears transient seed and chain-code buffers in finally blocks", () => {
+  const source = readFileSync(new URL("../src/lib/hd.ts", import.meta.url), "utf8");
+  const slip10 = source.slice(
+    source.indexOf("export async function slip10Ed25519Derive"),
+    source.indexOf("export const STELLAR_COIN_TYPE"),
+  );
+  const keypair = source.slice(source.indexOf("export async function keypairFromMnemonicIndex"));
+
+  assert.match(slip10, /finally\s*\{/);
+  assert.match(slip10, /chainCode\.fill\(0\)/);
+  assert.match(slip10, /derived\?\.fill\(0\)/);
+  assert.match(keypair, /finally\s*\{[\s\S]*seed\.fill\(0\)[\s\S]*raw\?\.fill\(0\)/);
 });
