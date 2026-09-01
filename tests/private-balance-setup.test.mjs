@@ -20,7 +20,9 @@ test('private payments setup is one consent screen with an honest disclosure and
   // Exactly one reworded consent checkbox.
   assert.equal((setup.match(/type="checkbox"/g) ?? []).length, 1);
   assert.match(setup, /Money moving in or out of my private balance is public/);
-  assert.match(setup, /can cost network fees\. I understand\./);
+  assert.match(setup, /single-party development proving key/);
+  assert.match(setup, /could forge proofs and take testnet funds/);
+  assert.match(setup, /use testnet funds only/);
   assert.match(setup, /Turn On/);
   assert.match(setup, /Not Now/);
   assert.match(setup, /void optIn\(\)/);

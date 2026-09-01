@@ -1,5 +1,5 @@
 const LEASE_PREFIX = 'stellarkey.private.runtime-lease.v1';
-const CHANNEL_PREFIX = 'stellarkey.private.runtime-updates.v1';
+const CHANNEL_PREFIX = 'stellarkey.private.runtime-updates.v2';
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -29,13 +29,12 @@ export type PrivateBalanceRuntimePhase =
   | 'safe-error';
 
 export interface PrivateBalanceFollowerUpdate {
-  protocolVersion: 1;
+  protocolVersion: 2;
   type: 'private-runtime-update';
   senderId: string;
   nonce: string;
   phase: PrivateBalanceRuntimePhase;
   revision: number;
-  verifiedBalanceStroops: string;
   lastVerifiedActionIndex: number | null;
 }
 
@@ -62,7 +61,6 @@ const UPDATE_KEYS = [
   'revision',
   'senderId',
   'type',
-  'verifiedBalanceStroops',
 ].sort();
 
 function hex32(value: string, name: string): string {
@@ -185,14 +183,12 @@ export function decodePrivateBalanceFollowerUpdate(raw: string): PrivateBalanceF
     if (!value || typeof value !== 'object' || Array.isArray(value) || !exactKeys(value)) return null;
     const update = value as Partial<PrivateBalanceFollowerUpdate>;
     if (
-      update.protocolVersion !== 1 ||
+      update.protocolVersion !== 2 ||
       update.type !== 'private-runtime-update' ||
       typeof update.senderId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(update.senderId) ||
       typeof update.nonce !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(update.nonce) ||
       typeof update.phase !== 'string' || !PHASES.has(update.phase as PrivateBalanceRuntimePhase) ||
       !Number.isSafeInteger(update.revision) || (update.revision as number) < 0 ||
-      typeof update.verifiedBalanceStroops !== 'string' ||
-        !/^(?:0|[1-9][0-9]*)$/.test(update.verifiedBalanceStroops) ||
       (update.lastVerifiedActionIndex !== null &&
         (typeof update.lastVerifiedActionIndex !== 'number' ||
           !Number.isSafeInteger(update.lastVerifiedActionIndex) ||
@@ -235,7 +231,7 @@ export function openPrivateBalanceFollowerChannel(
     post: update => {
       if (!channel) return;
       const message: PrivateBalanceFollowerUpdate = {
-        protocolVersion: 1,
+        protocolVersion: 2,
         type: 'private-runtime-update',
         senderId,
         nonce: globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,

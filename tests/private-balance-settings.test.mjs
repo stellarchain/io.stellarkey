@@ -16,11 +16,11 @@ test('advanced privacy keeps unique diagnostics concise and protects local remov
     assert.doesNotMatch(settings, new RegExp(duplicate, 'i'));
   }
   assert.match(settings, /Advanced privacy/);
-  assert.match(settings, /Verify private history/);
+  assert.match(settings, /Check private history/);
   assert.match(settings, /Technical details/);
   assert.match(settings, /aria-expanded/);
   assert.match(settings, /aria-live="polite"/);
-  assert.match(settings, /Private history verified/);
+  assert.match(settings, /Private history checked against the selected RPC/);
   // Errors route through the humanizer (title + body, raw message behind the
   // collapsed Technical details) — never a raw runtime string on screen.
   assert.match(settings, /HumanizedErrorNotice/);

@@ -114,7 +114,7 @@ export function PrivateProtocolSettings({
     setResult(null);
     try {
       await runFullVerification();
-      setResult('Private history verified.');
+      setResult('Private history checked against the selected RPC.');
     } catch (cause: unknown) {
       setError(cause ?? new Error('Private history verification stopped safely.'));
     } finally {
@@ -163,7 +163,7 @@ export function PrivateProtocolSettings({
                 <IconRefresh size={17} className={working === 'verify' ? 'animate-spin' : ''} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[13.5px] font-semibold text-white">Verify private history</span>
+                <span className="block text-[13.5px] font-semibold text-white">Check private history</span>
                 <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
                   Recheck your private history against the network from scratch.
                 </span>

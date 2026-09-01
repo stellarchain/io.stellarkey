@@ -63,13 +63,13 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
               </Notice>
             ) : (
               <Notice>
-                StellarKey reads the public record on the network for activity since your last
-                verified point and verifies it on this device. Your recovery phrase stays inside your vault.
+                StellarKey reads activity reported by your selected RPC since your last checked
+                point and validates its internal consistency on this device. Your recovery phrase stays inside your vault.
               </Notice>
             )}
             <dl className="ios-group overflow-hidden">
               <div className="ios-sep flex min-h-12 items-center justify-between gap-4 px-4 py-3 text-[13px]">
-                <dt className="text-neutral-400">Verified through</dt>
+                <dt className="text-neutral-400">Checked through</dt>
                 <dd className="font-semibold text-white">
                   {checkpoint ? `Ledger ${checkpoint.latestLedger.toLocaleString()}` : 'Not yet'}
                 </dd>
@@ -89,7 +89,7 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
             </Button>
             <p className="text-center text-[11px] leading-relaxed text-neutral-500">
               {restoring
-                ? 'Only the archived record needed for the next verified step is restored. StellarKey resumes the check after confirmation.'
+                ? 'Only the archived record needed for the next checked step is restored. StellarKey resumes the check after confirmation.'
                 : 'Picks up where your last check left off. For a from-scratch recheck of your whole history, open Advanced privacy → Verify private history.'}
             </p>
         </>

@@ -520,7 +520,6 @@ export function PrivateBalanceProvider({
         channel?.post({
           phase,
           revision: durable.revision,
-          verifiedBalanceStroops: next.verifiedBalanceStroops,
           lastVerifiedActionIndex: next.lastVerifiedActionIndex,
         });
       } catch {
@@ -922,18 +921,17 @@ export function PrivateBalanceProvider({
       if (!active || leaderRef.current) return;
       clearDecryptedState(null);
       dispatch({ type: 'SET_OPTED_IN', optedIn: true });
-      setSnapshot({
+      setSnapshot(current => ({
+        ...current,
         phase: update.phase,
         configured: true,
         isLeader: false,
         backgroundSyncing: false,
         syncProgress: null,
-        verifiedBalanceStroops: update.verifiedBalanceStroops,
         lastVerifiedActionIndex: update.lastVerifiedActionIndex,
         error: null,
         restoreRequiredActionIndex: null,
-        deployment,
-      });
+      }));
     });
 
     const claimOrRenewLease = () => {

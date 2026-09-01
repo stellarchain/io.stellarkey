@@ -102,9 +102,8 @@ export function shouldMountPrivateBalanceRuntime({
   accountReady,
   deploymentReady,
   requested,
-  encryptedStateExists,
 }: PrivateBalanceRuntimeMountInput): boolean {
-  return accountReady && deploymentReady && (requested || encryptedStateExists);
+  return accountReady && deploymentReady && requested;
 }
 
 /** Private Payments is enabled for the shared pool when any asset sees its durable state. */

@@ -37,13 +37,12 @@ test('private runtime lease elects one scoped leader and transfers after expiry'
 
 test('private follower updates accept only a redacted exact schema', () => {
   const update = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     type: 'private-runtime-update',
     senderId: 'tab-a',
     nonce: 'nonce-a',
     phase: 'current',
     revision: 7,
-    verifiedBalanceStroops: '5000000',
     lastVerifiedActionIndex: 12,
   };
   assert.deepEqual(decodePrivateBalanceFollowerUpdate(JSON.stringify(update)), update);
@@ -53,16 +52,13 @@ test('private follower updates accept only a redacted exact schema', () => {
     { commitments: [] },
     { memo: 'secret' },
     { transaction: 'AAAA' },
+    { verifiedBalanceStroops: '5000000' },
   ]) {
     assert.equal(
       decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, ...extra })),
       null,
     );
   }
-  assert.equal(
-    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, verifiedBalanceStroops: '-1' })),
-    null,
-  );
   assert.equal(
     decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'proving-secret' })),
     null,

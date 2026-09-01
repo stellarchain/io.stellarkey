@@ -19,7 +19,9 @@ test('the activity check speaks plainly, is named honestly, and reports concrete
   assert.match(recovery, /balance stays unavailable/i);
   assert.match(recovery, /recovery phrase stays inside your vault/i);
   assert.match(recovery, /HumanizedErrorNotice/);
+  assert.match(recovery, /Restore Private History/);
+  assert.match(recovery, /maintenance transaction/);
   // Vocabulary bans hold: identifiers only behind Technical details. (The
   // `checkpoint` runtime field may appear as code, never as displayed copy.)
-  assert.doesNotMatch(recovery, /archive|Merkle|canonical|Selected RPC|Last verified page/);
+  assert.doesNotMatch(recovery, /Merkle|canonical|Last verified page/);
 });
