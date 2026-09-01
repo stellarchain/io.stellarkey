@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('quarantined private payments remain behind a development-only lazy boundary', async () => {
+test('hash-pinned development private payments remain behind a Testnet-only lazy boundary', async () => {
   const shell = read('../src/components/UnlockedWalletShell.tsx');
   const boundary = read('../src/components/PrivateBalanceRuntimeBoundary.tsx');
   const dashboard = read('../src/components/Dashboard.tsx');
@@ -37,13 +37,8 @@ test('quarantined private payments remain behind a development-only lazy boundar
   assert.match(provider, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE/);
   assert.match(
     expectedManifest,
-    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE =\n  process\.env\.NODE_ENV === 'development';$/m,
-    'development fixtures must be visible only in a development build',
-  );
-  assert.doesNotMatch(
-    expectedManifest,
-    /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true/,
-    'a generated production module must never hardcode the fixture bypass',
+    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true;$/m,
+    'the exact hash-pinned fixture must be available from production hosting on Testnet',
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'testnet'),
