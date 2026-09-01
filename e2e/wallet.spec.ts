@@ -45,6 +45,14 @@ test("corrupt vault data enters explicit recovery without overwriting the payloa
 test("network settings verify, persist, and reset direct endpoints", async ({ page }) => {
   await importTestWallet(page);
 
+  async function authorizeEndpointChange() {
+    const approval = page.getByRole("dialog", { name: "Confirm security change" });
+    await expect(approval).toBeVisible();
+    await approval.getByLabel("Wallet Password").fill(testPassword);
+    await approval.getByRole("button", { name: "Authorize" }).click();
+    await expect(approval).toBeHidden();
+  }
+
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button").filter({
     has: page.getByText("Network", { exact: true }),
@@ -52,16 +60,19 @@ test("network settings verify, persist, and reset direct endpoints", async ({ pa
   await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
 
   await page.getByRole("button", { name: "Test & Save Horizon" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
   )).toBe("https://horizon-testnet.stellar.org");
 
   await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
   )).toBe("https://soroban-testnet.stellar.org");
 
   await page.getByRole("button", { name: "Reset to Defaults" }).click();
+  await authorizeEndpointChange();
   await expect.poll(() => page.evaluate(() => ({
     horizon: localStorage.getItem("wallet.endpoint.horizon.testnet.v1"),
     rpc: localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
