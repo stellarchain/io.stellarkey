@@ -2533,6 +2533,26 @@ test("issuer-aware activity presentation and CSV retain the full asset identity"
   assert.match(csv, new RegExp(`"USDC:${USDC_ISSUER}"`));
 });
 
+test("activity CSV neutralizes spreadsheet formulas in every string cell", () => {
+  const csv = generateActivityCsv([{
+    id: "formula",
+    type: "=HYPERLINK(\"https://example.invalid\")",
+    title: "Unknown operation",
+    direction: "neutral",
+    amount: null,
+    assetCode: null,
+    assetIssuer: null,
+    counterparty: "+CMD|'/C calc'!A0",
+    hash: "@SUM(A1:A2)",
+    createdAt: "2026-01-01T00:00:00Z",
+    successful: true,
+  }]);
+
+  assert.match(csv, /"'=HYPERLINK\(""https:\/\/example\.invalid""\)"/);
+  assert.match(csv, /"'\+CMD\|'\/C calc'!A0"/);
+  assert.match(csv, /"'@SUM\(A1:A2\)"/);
+});
+
 test("derives and validates network-specific SAC contract IDs", () => {
   const native = {
     key: "native",

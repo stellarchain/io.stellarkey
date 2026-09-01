@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Neutralized spreadsheet formulas in wallet activity CSV exports and applied the same shared encoding to merchant reports.
+- Enforced the same bounded, visible contact-name rules for JSON imports and direct persistence as the contact editor.
+
+### Security
+
+- New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
+
+### Fixed
+
 - Prevented merged mnemonic-derived accounts from being recreated at an archived HD index or appearing twice after account recovery; existing duplicate derived metadata is repaired on load while preserving the selected account.
 - Kept non-sensitive payment-received feedback visible when Merchant Mode locks the operator immediately after settlement.
 - Preserved the exact case of Stellar asset codes when adding and deduplicating trustlines.
