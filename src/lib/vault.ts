@@ -1,4 +1,5 @@
 import { Keypair, StrKey } from "@stellar/stellar-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   decryptString,
   encryptString,
@@ -32,6 +33,11 @@ import {
 } from "./merchant/bootstrap";
 import { validateNewVaultPassword } from "./password-strength";
 import { replaceBackupStorage } from "./backup-storage";
+import {
+  MAX_BACKUP_FILE_BYTES,
+  MAX_KEYSTORE_FILE_BYTES,
+  utf8ByteLength,
+} from "./import-limits";
 import {
   createVaultMasterKey,
   decryptVaultBytes,
@@ -200,6 +206,29 @@ function replacePersistedVault(previous: VaultFile, next: VaultFile): void {
 
 export function loadVault(): VaultFile | null {
   return readVault();
+}
+
+export function backupVaultIdentity(vault: VaultFile | null = readVault()): string | null {
+  if (!vault) return null;
+  const credentialState = {
+    wrappedMasterKey: vault.wrappedMasterKey,
+    wrappedMerchantKey: vault.wrappedMerchantKey,
+    mnemonic: vault.mnemonic ?? null,
+    accounts: [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+      .map((account) => ({
+        id: account.id,
+        publicKey: account.publicKey,
+        index: account.index ?? null,
+        path: account.path ?? null,
+        secret: account.secret ?? null,
+        watchOnly: account.watchOnly === true,
+        hardware: account.hardware ?? null,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+  return [...sha256(new TextEncoder().encode(JSON.stringify(credentialState)))]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function assertVaultCreationAllowed(): void {
@@ -1269,6 +1298,11 @@ export interface VaultBackupInfo {
   exportedAt?: string;
 }
 
+interface PreparedBackupPayload {
+  encryptedContacts: string;
+  preparedPrivateBalanceStore: string | null;
+}
+
 function readLocalJson(key: string): unknown {
   try {
     const raw = window.localStorage.getItem(key);
@@ -1280,6 +1314,7 @@ function readLocalJson(key: string): unknown {
 
 /** True when the file is a valid v2 fully-encrypted backup envelope. */
 export function isEncryptedBackup(json: string): boolean {
+  if (utf8ByteLength(json) > MAX_BACKUP_FILE_BYTES) return false;
   try {
     const p = JSON.parse(json) as { kind?: string; version?: number; crypto?: unknown };
     return p.kind === BACKUP_KIND && p.version === 2 && isEncryptedPayloadValue(p.crypto);
@@ -1292,6 +1327,9 @@ async function decodeBackup(
   json: string,
   password?: string,
 ): Promise<{ payload: FullBackupPayload }> {
+  if (utf8ByteLength(json) > MAX_BACKUP_FILE_BYTES) {
+    throw new Error("Backup file exceeds the supported size limit.");
+  }
   let parsed: {
     kind?: string;
     version?: number;
@@ -1320,6 +1358,9 @@ async function decodeBackup(
   } catch {
     throw new Error("Incorrect password for this backup file.");
   }
+  if (utf8ByteLength(plaintext) > MAX_BACKUP_FILE_BYTES) {
+    throw new Error("The decrypted backup payload exceeds the supported size limit.");
+  }
   let decoded: unknown;
   try {
     decoded = JSON.parse(plaintext);
@@ -1331,12 +1372,117 @@ async function decodeBackup(
   return { payload };
 }
 
+async function prepareDecodedBackup(
+  payload: FullBackupPayload,
+  password: string,
+): Promise<PreparedBackupPayload> {
+  const vault = payload.vault;
+  let masterKey: Uint8Array | null = null;
+  let merchantKey: Uint8Array | null = null;
+  try {
+    masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password);
+
+    for (const account of [...vault.accounts, ...(vault.archivedAccounts ?? [])]) {
+      if (account.watchOnly || account.hardware) continue;
+      let secret = await decryptAccountSecret(vault, account, masterKey);
+      secret = "";
+    }
+
+    const encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    try {
+      if (!isTxNoteEnvelope(payload.txNotes)) {
+        throw new Error("Private transaction notes are malformed.");
+      }
+      const notes = JSON.parse(await decryptVaultString(payload.txNotes.crypto, masterKey)) as unknown;
+      if (!notes || typeof notes !== "object" || Array.isArray(notes)) {
+        throw new Error("Private transaction notes are malformed.");
+      }
+      for (const [hash, note] of Object.entries(notes)) {
+        if (!/^[0-9a-f]{1,128}$/i.test(hash) || typeof note !== "string" || note.length > 10_000) {
+          throw new Error("Private transaction notes are malformed.");
+        }
+      }
+    } catch {
+      throw new Error("Private transaction notes could not be decrypted or authenticated.");
+    }
+
+    merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
+    if (merchantKey.byteLength !== 32) throw new Error("Merchant recovery key is invalid.");
+    if (payload.merchantStore) {
+      getMerchantRepository().verifyEncryptedArchive(payload.merchantStore, merchantKey);
+    }
+
+    let preparedPrivateBalanceStore: string | null = null;
+    if (payload.privateBalanceStore) {
+      if (typeof indexedDB === "undefined") {
+        throw new Error("IndexedDB is required to verify this backup's Private Balance records.");
+      }
+      const { preparePrivateBalanceBackupArchive } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      const prepared = await preparePrivateBalanceBackupArchive({
+        archive: payload.privateBalanceStore,
+        resolveStorageKey: async context => {
+          const account = vault.accounts.find(candidate => candidate.id === context.accountId);
+          if (!account || account.watchOnly || account.hardware) {
+            throw new Error("Private Balance backup references an unsupported wallet account.");
+          }
+          let secret = "";
+          let rawSeed: Uint8Array | null = null;
+          let sessionRoot: Uint8Array | null = null;
+          try {
+            secret = await decryptAccountSecret(vault, account, masterKey as Uint8Array);
+            rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(secret));
+            const { derivePrivacySessionRoot, derivePrivateStorageKey } = await import(
+              "@stellarkey/private-balance"
+            );
+            sessionRoot = derivePrivacySessionRoot(
+              rawSeed,
+              1,
+              decodePrivacyContextHex(context.networkId, "Network ID"),
+              decodePrivacyContextHex(context.realmId, "Realm ID"),
+              decodePrivacyContextHex(context.poolId, "Pool ID"),
+              new Uint8Array(StrKey.decodeEd25519PublicKey(account.publicKey)),
+            );
+            return derivePrivateStorageKey(
+              sessionRoot,
+              decodePrivacyContextHex(context.deploymentBindingHash, "Deployment binding hash"),
+            );
+          } finally {
+            secret = "";
+            rawSeed?.fill(0);
+            sessionRoot?.fill(0);
+          }
+        },
+        validateContext: async (context, state) => {
+          if (
+            state.checkpoint &&
+            state.checkpoint.deploymentBindingHash !== context.deploymentBindingHash
+          ) {
+            throw new Error("Private Balance checkpoint deployment binding does not match.");
+          }
+        },
+      });
+      preparedPrivateBalanceStore = JSON.stringify(prepared);
+    } else if (typeof indexedDB !== "undefined") {
+      preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
+    }
+    return { encryptedContacts, preparedPrivateBalanceStore };
+  } catch {
+    throw new Error("The backup could not unlock or validate its encrypted wallet data.");
+  } finally {
+    zeroKey(merchantKey);
+    zeroKey(masterKey);
+  }
+}
+
 /** Summarize a backup file (requires the backup password). */
 export async function inspectVaultBackup(
   json: string,
   password?: string,
 ): Promise<VaultBackupInfo> {
   const { payload } = await decodeBackup(json, password);
+  await prepareDecodedBackup(payload, password as string);
   return {
     accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
@@ -1428,74 +1574,10 @@ export async function restoreVaultBackup(
 ): Promise<VaultRestoreResult> {
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
-  let encryptedContacts: string;
-  let preparedPrivateBalanceStore: string | null = null;
-  let masterKey: Uint8Array | null = null;
-  try {
-    masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password as string);
-    encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
-    if (payload.privateBalanceStore) {
-      if (typeof indexedDB === "undefined") {
-        throw new Error("IndexedDB is required to restore this backup's Private Balance records.");
-      }
-      const { preparePrivateBalanceBackupArchive } = await import(
-        "@/features/private-balance/runtime/backup"
-      );
-      const prepared = await preparePrivateBalanceBackupArchive({
-        archive: payload.privateBalanceStore,
-        resolveStorageKey: async context => {
-          const account = vault.accounts.find(candidate => candidate.id === context.accountId);
-          if (!account || account.watchOnly || account.hardware) {
-            throw new Error("Private Balance backup references an unsupported wallet account.");
-          }
-          let secret = "";
-          let rawSeed: Uint8Array | null = null;
-          let sessionRoot: Uint8Array | null = null;
-          try {
-            secret = await decryptAccountSecret(vault, account, masterKey as Uint8Array);
-            rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(secret));
-            const { derivePrivacySessionRoot, derivePrivateStorageKey } = await import(
-              "@stellarkey/private-balance"
-            );
-            sessionRoot = derivePrivacySessionRoot(
-              rawSeed,
-              1,
-              decodePrivacyContextHex(context.networkId, "Network ID"),
-              decodePrivacyContextHex(context.realmId, "Realm ID"),
-              decodePrivacyContextHex(context.poolId, "Pool ID"),
-              new Uint8Array(StrKey.decodeEd25519PublicKey(account.publicKey)),
-            );
-            return derivePrivateStorageKey(
-              sessionRoot,
-              decodePrivacyContextHex(
-                context.deploymentBindingHash,
-                "Deployment binding hash",
-              ),
-            );
-          } finally {
-            secret = "";
-            rawSeed?.fill(0);
-            sessionRoot?.fill(0);
-          }
-        },
-        validateContext: async (context, state) => {
-          if (
-            state.checkpoint &&
-            state.checkpoint.deploymentBindingHash !== context.deploymentBindingHash
-          ) {
-            throw new Error("Private Balance checkpoint deployment binding does not match.");
-          }
-        },
-      });
-      preparedPrivateBalanceStore = JSON.stringify(prepared);
-    } else if (typeof indexedDB !== "undefined") {
-      preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
-    }
-  } catch {
-    throw new Error("The backup could not unlock or validate its encrypted wallet data.");
-  } finally {
-    zeroKey(masterKey);
-  }
+  const { encryptedContacts, preparedPrivateBalanceStore } = await prepareDecodedBackup(
+    payload,
+    password as string,
+  );
   const restoreKeys = [
     VAULT_KEY,
     NETWORK_KEY,
@@ -1605,14 +1687,35 @@ export async function importKeystore(
   json: string,
   keystorePassword: string,
 ): Promise<AccountMeta> {
-  const parsed = JSON.parse(json) as KeystoreFile;
+  if (utf8ByteLength(json) > MAX_KEYSTORE_FILE_BYTES) {
+    throw new Error("Keystore file exceeds the supported size limit.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("Invalid Wallet keystore format");
+  }
   if (
-    !parsed ||
+    !isRecord(parsed) ||
     parsed.format !== KEYSTORE_FORMAT ||
-    !parsed.crypto
+    parsed.version !== 1 ||
+    typeof parsed.address !== "string" ||
+    !isValidPublicAddress(parsed.address) ||
+    typeof parsed.exportedAt !== "number" ||
+    !Number.isFinite(parsed.exportedAt) ||
+    !isEncryptedPayloadValue(parsed.crypto)
   ) {
     throw new Error("Invalid Wallet keystore format");
   }
-  const secret = await decryptString(parsed.crypto, keystorePassword);
-  return addStoredAccount({ secret });
+  let secret = await decryptString(parsed.crypto, keystorePassword);
+  try {
+    if (!validateStellarSecret(secret)) throw new Error("Keystore signing credential is invalid.");
+    if (Keypair.fromSecret(secret).publicKey() !== parsed.address) {
+      throw new Error("Keystore address does not match its encrypted signing credential.");
+    }
+    return await addStoredAccount({ secret });
+  } finally {
+    secret = "";
+  }
 }

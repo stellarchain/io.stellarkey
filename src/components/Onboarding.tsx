@@ -12,6 +12,10 @@ import {
 import { markBackupVerified } from "@/lib/backup-health";
 import { BRAND_NAME } from "@/lib/brand";
 import {
+  MAX_BACKUP_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
+import {
   readStandaloneDisplay,
   shouldPrioritizeStandaloneRestore,
 } from "@/lib/install-handoff";
@@ -89,7 +93,7 @@ export function Onboarding() {
   const passwordStrength = estimatePasswordStrength(password);
 
   async function handleRestoreBackupFile(file: File) {
-    const json = await file.text();
+    const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
     if (isEncryptedBackup(json)) {
       // Fully-encrypted backup — ask for the backup's password first
       setPendingBackupJson(json);

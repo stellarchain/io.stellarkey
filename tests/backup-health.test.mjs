@@ -39,16 +39,20 @@ test("backup health records exports and successful verification locally", async 
   const exportedAt = "2026-08-27T09:00:00.000Z";
   const verifiedAt = "2026-08-27T09:05:00.000Z";
 
-  markBackupExported(exportedAt);
-  assert.deepEqual(loadBackupHealth(), {
-    version: 1,
+  const vaultId = "a".repeat(64);
+  markBackupExported(exportedAt, vaultId);
+  assert.deepEqual(loadBackupHealth(vaultId), {
+    version: 2,
+    vaultId,
     lastExportedAt: exportedAt,
     lastVerifiedAt: null,
   });
-  markBackupVerified(verifiedAt);
-  assert.deepEqual(loadBackupHealth(), {
-    version: 1,
+  markBackupVerified(verifiedAt, vaultId);
+  assert.deepEqual(loadBackupHealth(vaultId), {
+    version: 2,
+    vaultId,
     lastExportedAt: exportedAt,
     lastVerifiedAt: verifiedAt,
   });
+  assert.equal(loadBackupHealth("b".repeat(64)), null);
 });

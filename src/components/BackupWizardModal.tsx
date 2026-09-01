@@ -31,6 +31,10 @@ import {
   IconShield,
 } from "./icons";
 import { PaperWalletModal } from "./PaperWalletModal";
+import {
+  MAX_BACKUP_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 
 type Method = "file" | "phrase" | "secret" | "paper";
 type Step =
@@ -168,7 +172,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     void (async () => {
       setError(null);
       try {
-        const json = await file.text();
+        const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
         if (!isEncryptedBackup(json)) {
           throw new Error(
             "This file is not an encrypted Wallet backup — it may be an outdated legacy export.",
@@ -193,7 +197,6 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     try {
       const info = await inspectVaultBackup(restoreFile, restorePw);
       if (info.accountCount === 0) throw new Error("Backup contains no accounts.");
-      setBackupHealth(markBackupVerified());
       setRestoreInfo(info);
       triggerHaptic("success");
       setStep("restore-confirm");
@@ -210,6 +213,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const result = await restoreWalletFromBackup(restoreFile, restorePw || undefined);
+      setBackupHealth(markBackupVerified());
       triggerHaptic("success");
       toast(
         `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"}${

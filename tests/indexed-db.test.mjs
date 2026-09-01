@@ -387,6 +387,35 @@ test("encrypted archive export authenticates every retained merchant row", async
   await assert.rejects(repository.exportEncryptedArchive(KEY), /authenticated|corrupt/i);
 });
 
+test("merchant backup verification decrypts every archive row before restore", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const expected = {
+    ...emptyStore(),
+    revision: 1,
+    writerId: "backup-test",
+    updatedAt: 10,
+    catalogue: [{ ...emptyStore().catalogue[0], name: "Recoverable item" }],
+  };
+  await repository.commit(expected, KEY, null);
+  const archiveRaw = await repository.exportEncryptedArchive(KEY);
+  assert.ok(archiveRaw);
+  assert.equal(repository.verifyEncryptedArchive(archiveRaw, KEY).catalogue[0].name, "Recoverable item");
+
+  const archive = JSON.parse(archiveRaw);
+  const rowKey = Object.keys(archive.records).find((key) => key !== repository.recordKey);
+  const row = JSON.parse(archive.records[rowKey]);
+  const ciphertext = row.crypto.ciphertext;
+  row.crypto.ciphertext = `${ciphertext[0] === "A" ? "B" : "A"}${ciphertext.slice(1)}`;
+  archive.records[rowKey] = JSON.stringify(row);
+  assert.throws(
+    () => repository.verifyEncryptedArchive(JSON.stringify(archive), KEY),
+    /decrypt|authenticate|corrupt/i,
+  );
+});
+
 test("IndexedDB prefix reads use a bounded key range instead of scanning the store", () => {
   const source = readFileSync(new URL("../src/lib/indexed-db.ts", import.meta.url), "utf8");
   const method = source.slice(source.indexOf("async readPrefix"), source.indexOf("async putVerified"));

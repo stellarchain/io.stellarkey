@@ -49,6 +49,10 @@ import {
   loadBackupHealth,
   type BackupHealth,
 } from "@/lib/backup-health";
+import {
+  MAX_KEYSTORE_FILE_BYTES,
+  readBoundedTextFile,
+} from "@/lib/import-limits";
 import type { AccountMeta } from "@/lib/types";
 import {
   APPLICATION_VERSION,
@@ -669,7 +673,7 @@ export function SettingsPage({
   }
 
   async function handleImportKeystoreFile(file: File) {
-    setKeystoreJson(await file.text());
+    setKeystoreJson(await readBoundedTextFile(file, MAX_KEYSTORE_FILE_BYTES, "Keystore file"));
     setKsPassword("");
     setKsError(null);
   }
