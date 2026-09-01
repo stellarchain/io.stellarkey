@@ -7,12 +7,14 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url));
 const text = (path) => read(path).toString("utf8");
 const sha256 = (path) => createHash("sha256").update(read(path)).digest("hex");
 
-test("private-payment documentation describes the deployed testnet preview", () => {
+test("private-payment documentation describes the quarantined development prototype", () => {
   const model = text("docs/private-balance.md");
-  assert.match(model, /unaudited, testnet-only preview/i);
-  assert.match(model, /single-party development setup/i);
+  assert.match(model, /development-only testnet prototype/i);
+  assert.match(model, /single-party setup/i);
+  assert.match(model, /fails.*pinned Powers-of-Tau transcript/is);
+  assert.match(model, /quarantined/i);
   assert.match(model, /Mainnet rejects/i);
-  assert.doesNotMatch(model, /development-only in this repository/i);
+  assert.doesNotMatch(model, /deployed testnet preview/i);
 });
 
 test("ceremony provenance matches the shipped proving artifacts", () => {
