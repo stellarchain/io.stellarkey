@@ -52,9 +52,9 @@ test('private backup restores only staged validated sensitive state and requires
       lastVerifiedActionIndex: 0,
       updatedAt: 1,
     },
-    privateAddress: `tks1${'q'.repeat(115)}`,
+    privateAddress: `tks1${'q'.repeat(166)}`,
     recentPrivateRecipients: [{
-      address: `tks1${'p'.repeat(115)}`,
+      address: `tks1${'p'.repeat(166)}`,
       fingerprint: 'ABCD EF01',
       lastUsedAt: 1,
     }],

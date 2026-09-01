@@ -170,6 +170,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   const setup = read("protocol/private-balance/circuits/scripts/setup-dev.mjs");
   const transcript = read("protocol/private-balance/circuits/scripts/powers-of-tau.mjs");
   const verify = read("protocol/private-balance/circuits/scripts/verify-proving-key.mjs");
+  const manifestValidator = read("src/lib/private-balance-manifest.ts");
   const ci = read(".github/workflows/ci.yml");
   const release = read(".github/workflows/release.yml");
 
@@ -177,10 +178,13 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
   assert.match(circuits.scripts["gate:a"], /verify:zkey/);
   assert.match(setup, /ensurePowersOfTau/);
-  assert.match(transcript, /cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357/);
+  assert.match(transcript, /3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f/);
   assert.match(verify, /zkey["',\s]+verify/);
-  assert.match(verify, /status !== 'development'/);
-  assert.match(verify, /zkeyVerified !== false/);
+  assert.match(manifestValidator, /parsed\.status !== 'development'/);
+  assert.match(manifestValidator, /parsed\.release\.zkeyVerified !== true/);
+  assert.match(manifestValidator, /parsed\.release\.ceremonyTranscriptRoot === '0'\.repeat\(64\)/);
+  assert.match(manifestValidator, /parsed\.release\.auditReports\.length === 0/);
+  assert.match(manifestValidator, /parsed\.release\.deploymentTransactions\.length === 0/);
   assert.match(generatedCheck, /protocol\/private-balance\/packages\/browser\/dist/);
   for (const workflow of [ci, release]) {
     assert.match(workflow, /npm run private:check-generated/);
