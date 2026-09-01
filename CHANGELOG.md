@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Made the exact hash-pinned development Private Payments deployment available from production-hosted StellarKey on Testnet; Mainnet remains refused and the single-party proving setup remains explicitly disclosed.
+
 ### Fixed
 
 - Identified the authenticated primary account in the destructive backup-restore review so users can distinguish wallets before replacement.
