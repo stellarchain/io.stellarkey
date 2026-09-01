@@ -1297,6 +1297,7 @@ export interface VaultRestoreResult {
 
 export interface VaultBackupInfo {
   accountCount: number;
+  primaryAccountPublicKey: string;
   contactCount: number;
   hasMnemonic: boolean;
   hasSettings: boolean;
@@ -1489,8 +1490,13 @@ export async function inspectVaultBackup(
 ): Promise<VaultBackupInfo> {
   const { payload } = await decodeBackup(json, password);
   await prepareDecodedBackup(payload, password as string);
+  const primaryAccount = payload.vault.accounts.find(
+    account => account.id === payload.vault.activeAccountId,
+  ) ?? payload.vault.accounts[0];
+  if (!primaryAccount) throw new Error("Backup contains no accounts.");
   return {
     accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
+    primaryAccountPublicKey: primaryAccount.publicKey,
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
     hasMnemonic: Boolean(payload.vault.mnemonic),
     hasSettings: Boolean(payload.settings),

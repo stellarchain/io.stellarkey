@@ -16,6 +16,7 @@ import {
 } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import { NETWORKS } from "@/lib/stellar";
+import { formatTrezorAddress } from "@/lib/address-display";
 import {
   loadBackupHealth,
   markBackupExported,
@@ -719,6 +720,15 @@ function WizardInner({ onClose }: { onClose: () => void }) {
           {step === "restore-confirm" && restoreInfo && (
             <div>
               <div className="panel-inset divide-y divide-white/[0.08] px-4 text-[13px]">
+                <div className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="shrink-0 text-neutral-400">Primary wallet</span>
+                  <span
+                    className="mono text-right text-[12px] text-white"
+                    title={restoreInfo.primaryAccountPublicKey}
+                  >
+                    {formatTrezorAddress(restoreInfo.primaryAccountPublicKey)}
+                  </span>
+                </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="shrink-0 text-neutral-400">Accounts inside</span>
                   <span className="text-right font-semibold text-white">
