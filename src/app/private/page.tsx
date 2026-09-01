@@ -240,16 +240,16 @@ export default function PrivatePaymentsPage() {
   return (
     <LegalPage
       current="private"
-      eyebrow="private payments // a testnet preview"
+      eyebrow="private payments // development research"
       title="Private payments, explained."
       summary="A private balance inside the same wallet. The amount, the recipient, and the memo of a private transfer stay encrypted; the proof is built on your device and verified against the public Stellar ledger."
       highlights={highlights}
       sections={sections}
-      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · testnet-only preview`}
+      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · production unavailable`}
     >
         <section id="private-what"><h2><DocShieldDots />What it is</h2>
         <p>Private Payments is a shielded pool for configured XLM and USDC, driven from the wallet you already have. Funds you move into it are held as encrypted notes on this device and can change hands without publishing the amount, the recipient, or the memo; a zero-knowledge proof convinces a contract on the public Stellar ledger that every rule held, without showing it the contents. That one sentence is the whole promise. The rest of this page is the mechanism.</p>
-        <p>Release {APPLICATION_VERSION} ships it as a testnet-only preview, enforced in code at every boundary — the artifact manifest, preparation, review, and the transaction builder each refuse any network other than Stellar testnet, and a production build refuses the development-status proving artifacts outright. Mainnet comes after the release gates named in the trust story. Not before.</p></section>
+        <p>Release {APPLICATION_VERSION} keeps it unavailable in production. The checked-in development key failed verification against the recorded Powers-of-Tau transcript, so the manifest is quarantined. A newly verified proving key, public multi-party ceremony, independent review, and fresh testnet deployment must bind to the same hashes before another preview can be enabled.</p></section>
 
         <section id="private-pockets"><h2><DocCoin />One wallet, two pockets</h2>
         <p>Your Stellar account is a public pocket: anyone can look up its balance and history, and that openness is what makes the ledger checkable. The private balance is a second pocket beside it. Crossings between the two — deposits in, withdrawals out — are ordinary public transactions by design; only life inside the pocket is encrypted.</p>
@@ -298,7 +298,7 @@ export default function PrivatePaymentsPage() {
         <p>The receive screen also offers a reusable stealth address (<span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tsm1…</span>): a two-key meta-address, one scan key and one spend key, from which a sender derives a fresh one-time destination per payment. Only your scan key can link those destinations back together. It is the same discipline — publish nothing that connects your payments — applied to a different receiving pattern.</p></section>
 
         <section id="private-screens"><h2><DocFile />What it looks like</h2>
-        <p>The surfaces below are drawn to the app&apos;s own geometry with representative values: the deal as the setup sheet states it, a shielded receive with its verification code, and a private send review. The real thing is release {APPLICATION_VERSION}, running against Stellar testnet, one click away.</p>
+        <p>The surfaces below are representative design records of the development prototype: the setup disclosure, a shielded receive with its verification code, and a private send review. They are not available in the production wallet while the proving material is quarantined.</p>
         <div className="panel-grid">
         <PanelDeal />
         <PanelReceive />
@@ -324,7 +324,7 @@ export default function PrivatePaymentsPage() {
         <li>Obscurity. What stays public — fees, timing, deposits, withdrawals — is written on this page so you can plan around it.</li>
         </ul></div>
         </div>
-        <p>The bar for Mainnet is written down and enforced in code: reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same artifact hashes. Today the record reads: independent audit, not yet recorded; trusted setup, not yet recorded. The app shows you that same status table, because a privacy feature that grades its own homework would not deserve the name.</p></section>
+        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current key fails that first check, so production availability is off.</p></section>
 
         <section id="private-faq"><h2><DocQuestion />The awkward questions</h2>
         <div className="faq">
