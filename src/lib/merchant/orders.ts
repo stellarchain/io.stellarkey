@@ -157,8 +157,12 @@ export function buildOrder(store: MerchantStore, input: BuildOrderInput): Order 
   const number = store.nextOrderNumber;
   const reference = orderReference(store.settings.profile.name || "Till", number);
   assertPaymentReferenceAvailable(store, reference);
+  const shiftId = store.shifts.find(
+    (shift) => shift.closedAt === null && shift.network === input.network,
+  )?.id ?? null;
   return {
     id: input.id,
+    shiftId,
     number,
     reference,
     network: input.network,

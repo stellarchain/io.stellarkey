@@ -266,6 +266,51 @@ test("an X-report derives exact tender, refund, adjustment, tax, and staff total
   ]);
 });
 
+test("an order remains in its immutable shift when the device clock moves backwards", async () => {
+  const { buildShiftReport, openShift } = await shiftDomain();
+  const { buildOrder, settleNewOrder } = await import("../src/lib/merchant/orders.ts");
+  const { member, store } = openedStore();
+  const opened = openShift(store, {
+    id: "shift-clock",
+    actor: member,
+    terminalName: "Front till",
+    network: "mainnet",
+    floatMinor: 0,
+    now: NOW,
+  });
+  const order = buildOrder(opened.store, {
+    id: "order-clock",
+    network: "mainnet",
+    lines: [{
+      id: "line-1",
+      itemId: null,
+      name: "Coffee",
+      quantity: 1,
+      unitPriceMinor: 500,
+      taxRateId: "standard",
+      modifiers: [],
+      adjustmentMinor: 0,
+    }],
+    discountMinor: 0,
+    tipMinor: 0,
+    staffId: member.id,
+    staffName: member.name,
+    now: NOW - 60_000,
+  });
+  assert.equal(order.shiftId, opened.shift.id);
+  const committed = settleNewOrder(
+    opened.store,
+    order,
+    [{ kind: "cash", amountMinor: order.totals.totalMinor, receivedMinor: order.totals.totalMinor, changeMinor: 0 }],
+    [],
+    NOW - 30_000,
+  );
+
+  const report = buildShiftReport(committed.store, opened.shift.id, NOW + 1_000);
+  assert.equal(report.orderCount, 1);
+  assert.equal(report.grossMinor, order.totals.totalMinor);
+});
+
 test("unresolved tender and approval flows block blind close", async () => {
   const { closeShift, openShift, unresolvedShiftFlows } = await shiftDomain();
   const { member, store } = openedStore();

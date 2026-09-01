@@ -233,7 +233,9 @@ const order = objectOf<Merchant.Order>({
   stockExceptions: arrayOf(inventoryException),
   payerAddress: nullableString,
   note: nullableString,
-}, {});
+}, {
+  shiftId: nullableString,
+});
 
 const chargeQuote = objectOf<Merchant.ChargeQuote>({
   unitPriceMinorE6: nonNegativeInteger,

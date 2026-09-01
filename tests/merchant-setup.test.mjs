@@ -178,6 +178,34 @@ test("an existing merchant cannot be reconfigured without its active owner", () 
   );
 });
 
+test("reconfiguration updates the active owner when a store has multiple owners", () => {
+  const initial = completeMerchantSetup(emptyStore(), validSetup(), {
+    now: 100,
+    ownerId: "owner-1",
+  });
+  const secondOwner = {
+    ...initial.staff[0],
+    id: "owner-2",
+    name: "Bea",
+  };
+  const multiOwner = {
+    ...initial,
+    staff: [initial.staff[0], secondOwner],
+    activeStaffId: secondOwner.id,
+    onShiftStaffIds: [initial.staff[0].id, secondOwner.id],
+  };
+
+  const updated = completeMerchantSetup(
+    multiOwner,
+    validSetup({ ownerName: "Beatrice" }),
+    { now: 200, ownerId: "ignored", authorizedOwnerId: secondOwner.id },
+  );
+
+  assert.equal(updated.staff[0].name, "Ari");
+  assert.equal(updated.staff[1].name, "Beatrice");
+  assert.equal(updated.staff[1].pinSetAt, 200);
+});
+
 test("merchant receiving accounts must be locally spend-capable", () => {
   assert.doesNotThrow(() => assertMerchantReceivingAccount(
     [{ publicKey: PUBLIC_KEY, watchOnly: false }],

@@ -189,11 +189,16 @@ export function completeMerchantSetup(
   const defaultTaxRateId = taxRates.some((rate) => rate.id === store.settings.defaultTaxRateId)
     ? store.settings.defaultTaxRateId
     : taxRates[0].id;
-  const existingOwner = store.staff.find((member) => member.role === "owner");
+  const hasExistingOwner = store.staff.some((member) => member.role === "owner");
+  const existingOwner = store.staff.find(
+    (member) => member.id === store.activeStaffId && member.role === "owner",
+  );
+  if (hasExistingOwner && !existingOwner) {
+    throw new Error("Unlock the active owner before reconfiguring Merchant Mode.");
+  }
   if (
     existingOwner &&
     (!existingOwner.active ||
-      store.activeStaffId !== existingOwner.id ||
       metadata.authorizedOwnerId !== existingOwner.id)
   ) {
     throw new Error("Unlock the active owner before reconfiguring Merchant Mode.");
