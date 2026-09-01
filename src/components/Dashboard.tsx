@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { useWallet } from "@/hooks/useWallet";
 import { useMerchantRuntime, useMerchantShell } from "@/hooks/useMerchantRuntime";
@@ -1488,8 +1489,11 @@ export function Dashboard() {
       className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden"
     >
       {/* Privacy Shield */}
-      {appHidden && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-2xl transition-opacity">
+      {appHidden && typeof document !== "undefined" && createPortal(
+        <div
+          data-privacy-shield
+          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/95 backdrop-blur-2xl"
+        >
           <div className="flex flex-col items-center gap-3 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-white shadow-2xl">
               <IconShield size={32} />
@@ -1497,7 +1501,8 @@ export function Dashboard() {
             <p className="text-[17px] font-bold text-white tracking-tight">Wallet Privacy Shield</p>
             <p className="text-[13px] text-neutral-400">Balances hidden while multitasking</p>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Pull-to-refresh indicator */}

@@ -215,6 +215,29 @@ test("active fixed-code payments reconcile once at their publication quote", asy
   assert.equal(replay.store.counterPayments.length, 1);
 });
 
+test("counter codes from a previous receiving account cannot settle current takings", async () => {
+  const { createCounterCode, reconcileCounterPayments } = await counterDomain();
+  const { member, store } = merchantStore();
+  const created = createCounterCode(store, fixedInput(member));
+  const rotated = {
+    ...created.store,
+    settings: {
+      ...created.store.settings,
+      receivingPublicKey: ISSUER,
+    },
+  };
+  const observed = payment("old-destination", "10.0000000", USDC, created.code.routingId);
+  const reconciled = reconcileCounterPayments(rotated, {
+    network: "mainnet",
+    payments: [observed],
+    rates: [],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed.map((entry) => entry.id), [observed.id]);
+  assert.equal(reconciled.store.counterPayments.length, 0);
+});
+
 test("a counter-code payment created before expiry files after delayed observation", async () => {
   const { createCounterCode, reconcileCounterPayments } = await counterDomain();
   const { member, store } = merchantStore();

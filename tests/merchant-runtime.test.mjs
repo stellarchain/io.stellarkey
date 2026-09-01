@@ -138,6 +138,14 @@ test("screen awake protection is scoped to an active checkout", () => {
   assert.match(checkout, /wakeLock\.retry/);
   assert.doesNotMatch(offlineStates, /Foreground monitoring active/);
   assert.doesNotMatch(offlineStates, /Screen awake protection is on/);
+  assert.doesNotMatch(checkout, /dispatchEvent\(new Event\("pointerdown"\)\)/);
+});
+
+test("the privacy shield portals above secret-bearing dialogs", () => {
+  const dashboard = source("src/components/Dashboard.tsx");
+  assert.match(dashboard, /createPortal/);
+  assert.match(dashboard, /data-privacy-shield/);
+  assert.match(dashboard, /z-\[2147483647\]/);
 });
 
 test("merchant blockers offer direct recovery actions", () => {

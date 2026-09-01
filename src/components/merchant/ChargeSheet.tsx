@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import {
-  useMerchantConfiguration,
   useMerchantRecords,
   useMerchantStatus,
 } from "@/hooks/useMerchant";
@@ -23,10 +22,6 @@ import { IconAlert, IconCheck, IconRefresh } from "../icons";
 
 /** Seconds below which the countdown turns amber. */
 const URGENT_SECONDS = 60;
-
-/** How often the open sheet nudges the wallet's idle timer. Well inside the
- *  shortest auto-lock the wallet offers, which is one minute. */
-const HOLD_LOCK_PING_MS = 20_000;
 
 function formatCountdown(total: number): string {
   const minutes = Math.floor(total / 60);
@@ -62,7 +57,6 @@ export function ChargeSheet({ charge, onClose }: { charge: Charge | null; onClos
 }
 
 function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => void }) {
-  const { settings } = useMerchantConfiguration();
   const { payUriFor, voidCharge, orderFor } = useMerchantRecords();
   const { watchedLedger, watchError, pollNow } = useMerchantStatus();
   const { toast } = useToast();
@@ -93,24 +87,6 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const shownQuote = !awaiting && paidQuote ? paidQuote : quote;
   /** The window this charge actually held, not whatever the setting says today. */
   const heldMinutes = Math.max(1, Math.round((charge.expiresAt - charge.createdAt) / 60_000));
-
-  /* Hold the wallet open while the customer pays.
-
-     useWallet's idle timer only resets on a real `pointerdown` or `keydown` on the
-     window, and a customer-facing charge screen is handed over untouched: nobody
-     taps the till for the whole expiry, so the vault locks mid-payment and takes
-     the payment watcher down with it. A synthetic `pointerdown` is exactly the
-     event that timer bumps on, so one every twenty seconds keeps the session alive
-     for as long as — and no longer than — a charge is actually in flight, and only
-     when the shop has asked for it in Merchant settings. */
-  const holdLock = settings.holdAutoLockDuringCharge;
-  useEffect(() => {
-    if (!awaiting || !holdLock) return;
-    const timer = window.setInterval(() => {
-      window.dispatchEvent(new Event("pointerdown"));
-    }, HOLD_LOCK_PING_MS);
-    return () => window.clearInterval(timer);
-  }, [awaiting, holdLock]);
 
   /* The QR is a real encoding of the SEP-7 request, regenerated per asset. */
   useEffect(() => {

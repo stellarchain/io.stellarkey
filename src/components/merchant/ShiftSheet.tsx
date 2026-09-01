@@ -9,6 +9,7 @@ import {
 import { FIAT_SYMBOLS, type FiatCurrency } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor, toMinor } from "@/lib/merchant/money";
+import { neutralizeSpreadsheetFormula } from "@/lib/merchant/reporting";
 import type { Adjustment, AdjustmentKind, Minor, ShiftReport, TaxRate } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
 import { Avatar, Button, Modal, ModalHeader, Notice } from "../ui";
@@ -70,7 +71,7 @@ function taxRows(report: ShiftReport, rates: TaxRate[]) {
 }
 
 function csvCell(value: string | number): string {
-  const text = String(value);
+  const text = neutralizeSpreadsheetFormula(value);
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
