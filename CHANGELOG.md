@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rejected common and wallet-themed new vault passwords with a maintained offline guessability estimator while preserving existing vault compatibility.
 - Required Multi-Send to present and sign an immutable per-recipient review snapshot instead of broadcasting directly from the editable form.
 - Cleared backup authentication and revealed material at narrower lifecycle boundaries, required fresh authorization for nested encrypted exports, and moved paper-wallet printing out of CSP-blocked inline code.
+- Corrected Private Payments preview and ceremony provenance to the shipped artifact hashes and removed an unused per-nullifier RPC lookup that could weaken spend unlinkability if activated.
 
 ## [1.4.1] - 2026-09-01
 
