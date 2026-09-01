@@ -65,6 +65,9 @@ import {
   type MerchantRevisionChannel,
 } from "@/lib/merchant/coordination";
 import type { StorageIssue } from "@/lib/storage-load";
+
+const MERCHANT_PRICE_REFRESH_MS = 60_000;
+const MERCHANT_PRICE_MAX_AGE_MS = 5 * 60_000;
 import {
   inspectStorageHealth,
   requestPersistentStorage as requestBrowserPersistentStorage,
@@ -708,6 +711,8 @@ export function MerchantProvider({
   });
   const [activeChargeId, setActiveChargeId] = useState<string | null>(null);
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
+  const [assetPricesObservedAt, setAssetPricesObservedAt] = useState<number | null>(null);
+  const [assetPricesScope, setAssetPricesScope] = useState("");
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
@@ -728,6 +733,10 @@ export function MerchantProvider({
   useEffect(() => {
     onRuntimeMounted?.();
   }, [onRuntimeMounted]);
+
+  useEffect(() => () => {
+    repositoryRef.current.clearDecryptedSnapshot();
+  }, []);
 
   const updateStaffSessionId = useCallback((memberId: string | null) => {
     staffSessionIdRef.current = memberId;
@@ -810,6 +819,7 @@ export function MerchantProvider({
       await Promise.resolve();
       if (!alive) return;
       if (phase !== "unlocked") {
+        repositoryRef.current.clearDecryptedSnapshot();
         const fresh = emptyStore();
         storeRef.current = fresh;
         setStore(fresh);
@@ -1561,21 +1571,42 @@ export function MerchantProvider({
 
   /* ---------------- prices ---------------- */
 
+  const currentAssetPricesScope = useMemo(() => `${network}:${settings.acceptedAssets
+    .filter((asset) => !isNative(asset))
+    .map((asset) => assetKey(asset))
+    .sort()
+    .join("|")}`, [network, settings.acceptedAssets]);
+
   useEffect(() => {
     if (!enabled) return;
     const credit = settings.acceptedAssets.filter((a) => !isNative(a));
     if (credit.length === 0) return;
     let alive = true;
-    void (async () => {
+    const refreshPrices = async () => {
       const prices = await fetchAssetPrices(
         credit.map((a) => ({ network, code: a.code, issuer: a.issuer })),
       );
-      if (alive) setAssetPrices(prices);
-    })();
+      if (!alive) return;
+      setAssetPrices(prices);
+      setAssetPricesObservedAt(Object.keys(prices).length > 0 ? Date.now() : null);
+      setAssetPricesScope(currentAssetPricesScope);
+    };
+    void refreshPrices();
+    const interval = setInterval(() => {
+      void fetchAssetPrices(
+        credit.map((a) => ({ network, code: a.code, issuer: a.issuer })),
+      ).then((prices) => {
+        if (!alive) return;
+        setAssetPrices(prices);
+        setAssetPricesObservedAt(Object.keys(prices).length > 0 ? Date.now() : null);
+        setAssetPricesScope(currentAssetPricesScope);
+      });
+    }, MERCHANT_PRICE_REFRESH_MS);
     return () => {
       alive = false;
+      clearInterval(interval);
     };
-  }, [enabled, network, settings.acceptedAssets]);
+  }, [currentAssetPricesScope, enabled, network, settings.acceptedAssets]);
 
   const fiatRate = settings.currency === "USD" ? 1 : fiatRates[settings.currency];
 
@@ -1598,6 +1629,15 @@ export function MerchantProvider({
   const rateFor = useCallback(
     (asset: AcceptedAsset): number | null => {
       if (effectiveFiatRate === undefined) return null;
+      if (
+        !onTestnet &&
+        !isNative(asset) &&
+        (assetPricesScope !== currentAssetPricesScope ||
+          assetPricesObservedAt === null ||
+          Date.now() - assetPricesObservedAt > MERCHANT_PRICE_MAX_AGE_MS)
+      ) {
+        return null;
+      }
       const live = getUnitPrice(
         asset.code,
         asset.issuer,
@@ -1615,7 +1655,16 @@ export function MerchantProvider({
       if (usd === null || usd <= 0) return null;
       return usd * effectiveFiatRate;
     },
-    [assetPrices, effectiveFiatRate, network, onTestnet, xlmPriceUsd],
+    [
+      assetPrices,
+      assetPricesObservedAt,
+      assetPricesScope,
+      currentAssetPricesScope,
+      effectiveFiatRate,
+      network,
+      onTestnet,
+      xlmPriceUsd,
+    ],
   );
 
   const quotableAssets = useMemo(
@@ -2420,6 +2469,11 @@ export function MerchantProvider({
         const latestActor = requirePaymentActor(latest);
         if (!latestActor.permissions.void) {
           throw new Error(`${latestActor.name} is not allowed to void charges.`);
+        }
+        const currentCharge = latest.charges.find((charge) => charge.id === id);
+        if (!currentCharge) throw new Error("This charge no longer exists.");
+        if (currentCharge.status !== "awaiting") {
+          throw new Error("Only an awaiting charge can be voided.");
         }
         return {
           ...latest,

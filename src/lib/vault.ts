@@ -1656,9 +1656,6 @@ export async function exportVaultBackup(password: string): Promise<string> {
   } finally {
     zeroKey(verified.masterKey);
   }
-  const vault = readVault();
-  if (!vault) throw new Error("No wallet to back up.");
-
   const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
   const merchantBootstrap = readMerchantBootstrapState();
@@ -1681,7 +1678,7 @@ export async function exportVaultBackup(password: string): Promise<string> {
   }
   const payload: FullBackupPayload = {
     exportedAt: new Date().toISOString(),
-    vault,
+    vault: storedVault,
     contacts,
     settings: {
       network: loadNetworkPref(),
@@ -1703,7 +1700,23 @@ export async function exportVaultBackup(password: string): Promise<string> {
     merchantStore,
     privateBalanceStore,
   };
+  const currentVault = readVault();
+  if (
+    !currentVault ||
+    currentVault.revision !== storedVault.revision ||
+    backupVaultIdentity(currentVault) !== backupVaultIdentity(storedVault)
+  ) {
+    throw new Error("The wallet changed while the backup was being prepared. Try again.");
+  }
   const crypto = await encryptString(JSON.stringify(payload), password);
+  const finalVault = readVault();
+  if (
+    !finalVault ||
+    finalVault.revision !== storedVault.revision ||
+    backupVaultIdentity(finalVault) !== backupVaultIdentity(storedVault)
+  ) {
+    throw new Error("The wallet changed while the backup was being prepared. Try again.");
+  }
   return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
 }
 

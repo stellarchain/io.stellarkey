@@ -95,4 +95,18 @@ test("every wallet transaction signer passes through the shared authorization bo
   assert.match(prompt, /autoComplete="current-password"/);
   assert.match(prompt, />\s*Continue on Trezor\s*</);
   assert.match(wallet, /requestSigningAuthorization\(label, Boolean\(hardwareSigner\)\)/);
+  assert.match(
+    wallet,
+    /requestSigningAuthorization[\s\S]{0,500}isSigningPasswordRequired\(\)/,
+    "authorization must re-read the persisted cross-tab policy",
+  );
+  assert.match(wallet, /authorizeTransactionSigning/);
+
+  const privateProvider = readFileSync(
+    new URL("../src/features/private-balance/runtime/provider.tsx", import.meta.url),
+    "utf8",
+  );
+  const sweep = privateProvider.split("const submitStealthSweep = useCallback")[1]
+    ?.split("const prepareChainedSend")[0] ?? "";
+  assert.match(sweep, /authorizeTransactionSigning\("Move reusable private receipt"\)/);
 });

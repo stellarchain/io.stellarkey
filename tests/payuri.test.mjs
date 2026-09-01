@@ -168,6 +168,14 @@ test("fails closed for unsupported SEP-7 and federation memo types", () => {
     () => normalizeFederationMemo("abc", "future"),
     /memo type.*not supported/i,
   );
+  assert.throws(
+    () => normalizeFederationMemo(42, "text"),
+    /federation memo.*string/i,
+  );
+  assert.throws(
+    () => normalizeFederationMemo("abc", 7),
+    /federation memo type.*string/i,
+  );
 });
 
 test("memo review presentation includes the exact memo type", () => {

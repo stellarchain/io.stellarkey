@@ -29,6 +29,7 @@ import {
   createSessionRevocationGuard,
   initializeVault,
   initializeHardwareVault,
+  isSigningPasswordRequired,
   isUnlocked,
   loadAutoLockPref,
   loadNetworkPref,
@@ -349,6 +350,8 @@ interface WalletContextValue {
     /** Revalidate an external authorization immediately before signing. */
     authorizeBeforeSigning?: () => void;
   }) => Promise<SubmissionResult>;
+  /** Apply the persisted transaction-signing policy to a non-standard signer. */
+  authorizeTransactionSigning: (label: string) => Promise<void>;
   prepareStealthPayment: (params: {
     metaAddress: string;
     amount: string;
@@ -485,6 +488,7 @@ type WalletTransactionsContextValue = Pick<
   WalletContextValue,
   | "refresh"
   | "send"
+  | "authorizeTransactionSigning"
   | "prepareStealthPayment"
   | "submitStealthPayment"
   | "sendBatch"
@@ -646,10 +650,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     label: string,
     requiresUserGestureContinuation = false,
   ) => {
-    if (!signingPasswordRequiredRef.current) return;
+    const required = isSigningPasswordRequired();
+    if (required !== signingPasswordRequiredRef.current) {
+      commitSigningPasswordRequired(required);
+    }
+    if (!required) return;
     verifiedSigningAuthorizationRef.current = null;
     await signingAuthorizationGate.request(label, { requiresUserGestureContinuation });
-  }, [signingAuthorizationGate]);
+  }, [commitSigningPasswordRequired, signingAuthorizationGate]);
+
+  const authorizeTransactionSigning = useCallback(
+    (label: string) => requestSigningAuthorization(label),
+    [requestSigningAuthorization],
+  );
 
   const authorizeSensitiveAction = useCallback(async (label: string) => {
     verifiedSigningAuthorizationRef.current = null;
@@ -1619,12 +1632,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       onPrepared: SubmissionPreparedCallback;
       onRejected?: SubmissionPreparedCallback;
     },
+    beforeSubmit?: () => void,
   ): Promise<T> => {
+    const sessionRevocationGuard = createSessionRevocationGuard();
     return runPreparedBroadcast({
       broadcast,
       prepare: async (identity) => {
         prepareSubmissionTracking(identity, label, action);
         await journal?.onPrepared(identity);
+        const assertSessionCurrent = sessionRevocationGuard;
+        assertSessionCurrent();
+        beforeSubmit?.();
       },
       discard: async (identity) => {
         discardPreparedSubmission(identity, action);
@@ -2253,6 +2271,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }),
         (result) => result,
         params.submissionJournal,
+        params.authorizeBeforeSigning,
       ));
     },
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
@@ -2747,10 +2766,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       restoreArchivedAccount,
       restoreAccountByIndex,
       switchNetwork,
-      refresh,
-      loadMoreActivity,
-      send,
-      prepareStealthPayment,
+    refresh,
+    loadMoreActivity,
+    send,
+    authorizeTransactionSigning,
+    prepareStealthPayment,
       submitStealthPayment,
       sendBatch,
       claimAirdrop,
@@ -2829,6 +2849,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      authorizeTransactionSigning,
       prepareStealthPayment,
       submitStealthPayment,
       sendBatch,
@@ -3000,6 +3021,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const transactionsValue = useMemo<WalletTransactionsContextValue>(() => ({
     refresh,
     send,
+    authorizeTransactionSigning,
     prepareStealthPayment,
     submitStealthPayment,
     sendBatch,
@@ -3017,6 +3039,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     fundFromFriendbot,
   }), [
     applyMultisigConfig,
+    authorizeTransactionSigning,
     claimAirdrop,
     claimAirdrops,
     cosignTransaction,

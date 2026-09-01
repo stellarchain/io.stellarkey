@@ -290,6 +290,19 @@ test("ordinary local commits reuse the authenticated snapshot without loading re
   assert.equal(driver.readPrefixCalls, 0, "retained history must not be loaded for a local write");
 });
 
+test("clearing the repository snapshot removes its decrypted fast path", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  await repository.commit({ ...emptyStore(), revision: 1, writerId: "tab-a", updatedAt: 10 }, KEY, null);
+  repository.clearDecryptedSnapshot();
+  driver.readPrefixCalls = 0;
+
+  assert.equal((await repository.loadCommitBasis(KEY)).kind, "ready");
+  assert.equal(driver.readPrefixCalls, 1);
+});
+
 test("an external revision forces a complete authenticated repository reload", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
   globalThis.window = { localStorage: memoryStorage() };

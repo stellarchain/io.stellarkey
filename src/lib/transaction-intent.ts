@@ -178,9 +178,15 @@ export interface DestinationMemoState {
 }
 
 export function normalizeFederationMemo(
-  memo: string,
-  memoType?: string,
+  memo: unknown,
+  memoType?: unknown,
 ): DestinationMemoState {
+  if (typeof memo !== "string") {
+    throw new Error("Federation memo must be a string.");
+  }
+  if (memoType !== undefined && typeof memoType !== "string") {
+    throw new Error("Federation memo type must be a string.");
+  }
   const normalizedType = memoType?.trim().toLowerCase();
   if (
     normalizedType &&
@@ -189,7 +195,7 @@ export function normalizeFederationMemo(
     normalizedType !== "hash" &&
     normalizedType !== "return"
   ) {
-    throw new Error(`Federation memo type ${memoType} is not supported.`);
+    throw new Error(`Federation memo type ${memoType as string} is not supported.`);
   }
   const type = (normalizedType || "text") as StellarMemoInput["type"];
   return { memo, memoType: type, federationBound: true };
