@@ -463,7 +463,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "abacf6e546e8207ec297f341ceba139453cc9bf1b2f85a44384fa5915bc374f3"
+                              "bytes": "84c5359b100cc0c2cf3c99f27042cd9efe7d7e16c4dbaf8e3398ad89feb3e7f3"
                             }
                           },
                           {
@@ -576,7 +576,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "77aeff6cf126ccbb63fedd547eb75cd7efedf0ff7eb7ba22072b8647da6924c3"
+                              "bytes": "9c683c16ead705cdc63c5694c3615617a3bcecfe02532ecd58a3e4d03c4b679f"
                             }
                           }
                         ]

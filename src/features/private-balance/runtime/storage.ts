@@ -1,3 +1,4 @@
+import { decodePrivateAddress } from '@stellarkey/private-balance';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import {
@@ -18,7 +19,7 @@ import type {
 
 const RECORD_KIND = 'stellarkey-private-balance-state';
 const RECORD_VERSION = 1;
-const PRIVATE_ADDRESS_PATTERN = /^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/;
+const PRIVATE_ADDRESS_PATTERN = /^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/;
 // Accept the former 32-bit code only for already-encrypted local preview data;
 // newly derived codes use a 128-bit SHA-256 prefix.
 const RECIPIENT_FINGERPRINT_PATTERN = /^(?:[0-9A-F]{4} ){1,7}[0-9A-F]{4}$/;
@@ -66,6 +67,28 @@ function isTimestamp(value: unknown): value is number {
 
 function isSafeIndex(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function hexBytes(value: string): Uint8Array {
+  return Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
+}
+
+async function assertPrivateAddress(
+  address: string,
+  context: PrivateStorageContext,
+): Promise<void> {
+  if (!PRIVATE_ADDRESS_PATTERN.test(address)) {
+    throw new Error('Private Balance address is invalid.');
+  }
+  try {
+    await decodePrivateAddress(
+      address,
+      address.slice(0, 3),
+      hexBytes(context.deploymentBindingHash),
+    );
+  } catch (error) {
+    throw new Error('Private Balance address is invalid.', { cause: error });
+  }
 }
 
 function validateContext(context: PrivateStorageContext): void {
@@ -647,9 +670,7 @@ export async function recordPrivateBalanceAddress(
   privateAddress: string,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
-  if (!PRIVATE_ADDRESS_PATTERN.test(privateAddress)) {
-    throw new Error('Private Balance address is invalid.');
-  }
+  await assertPrivateAddress(privateAddress, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
@@ -674,6 +695,7 @@ export async function recordPrivateRecentRecipient(
   if (!isRecentRecipient(recipient)) {
     throw new Error('Private Balance recent recipient is invalid.');
   }
+  await assertPrivateAddress(recipient.address, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');

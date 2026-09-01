@@ -33,7 +33,7 @@ test('private proving-key checks pin and authenticate the pot15 ceremony input',
   assert.match(transcriptScript, /powersOfTau28_hez_final_15\.ptau/);
   assert.match(
     transcriptScript,
-    /cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357/,
+    /3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f/,
   );
   assert.match(transcriptScript, /assertPowersOfTau/);
   assert.match(transcriptScript, /rmSync\(path, \{ force: true \}\)/);

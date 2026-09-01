@@ -25,7 +25,7 @@
         }
       ],
       "manifestUrl": "/protocol/private-balance/v1/manifest.json",
-      "manifestSha256": "1ce71bd0899c16c895db4b623b7f166313ae3c8ed2f1486734e9859964ff4415"
+      "manifestSha256": "c5811387990962eb74b61c90659aca9ffc8a9abc4f7ff4d4af72d16851825db3"
     }
   ]
 }

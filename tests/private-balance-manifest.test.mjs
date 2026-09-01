@@ -4,6 +4,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Networks } from '@stellar/stellar-sdk';
+import {
+  PRIVATE_ADDRESS_ASCII_BYTES,
+  PRIVATE_ADDRESS_PAYLOAD_BYTES,
+} from '@stellarkey/private-balance';
 import * as manifestModule from '../src/lib/private-balance-manifest.ts';
 import * as assetsModule from '../src/lib/private-balance-assets.ts';
 
@@ -22,7 +26,8 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.equal(manifest.constants.pageCapacity, 32);
   assert.equal(manifest.constants.publicInputs, 13);
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
-  assert.equal(manifest.constants.addressAsciiBytes, 119);
+  assert.equal(manifest.constants.addressPayloadBytes, PRIVATE_ADDRESS_PAYLOAD_BYTES);
+  assert.equal(manifest.constants.addressAsciiBytes, PRIVATE_ADDRESS_ASCII_BYTES);
   assert.match(manifest.stealthAnnouncerAddress, /^G[A-Z2-7]{55}$/);
   assert.equal(manifest.artifacts.zkeyTransport.encoding, 'points-compressed');
   assert.match(manifest.artifacts.zkeyTransport.sha256, /^[0-9a-f]{64}$/);
@@ -31,9 +36,9 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.match(manifest.release.contractWasmSha256, /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.release.powersOfTauSha256,
-    'cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357',
+    '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
   );
-  assert.equal(manifest.release.zkeyVerified, false);
+  assert.equal(manifest.release.zkeyVerified, true);
   assert.equal(manifest.release.allowedEnvironment, 'testnet');
 });
 
