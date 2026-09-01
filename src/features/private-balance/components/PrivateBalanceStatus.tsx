@@ -110,7 +110,7 @@ export function PrivateBalanceStatus({ detailed = false }: { detailed?: boolean 
           <p className="text-[12.5px] font-semibold text-white">{label}</p>
           {deployment.latestLedger !== null ? (
             <p className="mt-0.5 text-[11px] text-neutral-500">
-              Verified through ledger {deployment.latestLedger.toLocaleString()}
+              Checked through ledger {deployment.latestLedger.toLocaleString()} via the selected RPC
             </p>
           ) : null}
         </div>

@@ -175,8 +175,10 @@ export function PrivateBalanceSetup({
                 className="mt-0.5 h-5 w-5 shrink-0 accent-[#0A84FF]"
               />
               <span className="text-[12.5px] leading-relaxed text-neutral-300">
-                Money moving in or out of my private balance is public, and restoring from my
-                recovery phrase can cost network fees. I understand.
+                Money moving in or out of my private balance is public, and recovery can cost
+                network fees. This testnet preview uses a single-party development proving key;
+                anyone who retained its setup secret could forge proofs and take testnet funds.
+                I understand and will use testnet funds only.
               </span>
             </label>
 
