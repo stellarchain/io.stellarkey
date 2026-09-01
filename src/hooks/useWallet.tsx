@@ -23,6 +23,7 @@ import {
   changeVaultPassword as changeVaultPasswordRecord,
   getArchivedAccounts,
   hasMnemonic,
+  invalidateWalletLifecycle,
   revealMnemonic as revealMnemonicVault,
   withSigningKeypair,
   createSessionRevocationGuard,
@@ -47,6 +48,7 @@ import {
   updateAccountLabel,
   verifyVaultPassword,
   wipeVault,
+  withWalletLifecycleLock,
   clearSessionSecrets,
   type InitializeOptions,
   type VaultRestoreResult,
@@ -1723,7 +1725,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const installUnlockedVault = useCallback(async (
     vault: Awaited<ReturnType<typeof unlockVault>>,
   ) => {
-    const privateContacts = await loadContacts();
+    const assertSessionCurrent = createSessionRevocationGuard();
+    let privateContacts: Contact[] = [];
+    try {
+      privateContacts = await loadContacts();
+    } catch (error) {
+      assertSessionCurrent();
+      toast(
+        "Wallet opened, but encrypted contacts are unavailable. The original record was kept for recovery.",
+        "error",
+      );
+    }
+    assertSessionCurrent();
     setAccounts(vault.accounts.map(stripSecret));
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
@@ -1735,7 +1748,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setContacts(privateContacts);
     commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
     setPhase("unlocked");
-  }, [commitSigningPasswordRequired]);
+  }, [commitSigningPasswordRequired, toast]);
 
   const unlock = useCallback(async (password: string) => {
     await installUnlockedVault(await unlockVault(password));
@@ -1755,44 +1768,48 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // can fail. A broken IndexedDB/service-worker implementation must never
     // leave an unlocked wallet or recoverable credentials behind.
     lockVaultAndReset(false);
-    wipeVault();
-    clearDurableMergeReconciliations(
-      window.localStorage,
-      MERGE_RECONCILIATION_STORAGE_KEY,
-    );
-    clearDurablePendingTransactions(
-      window.localStorage,
-      PENDING_TX_STORAGE_KEY,
-    );
-    try {
-      window.sessionStorage.clear();
-    } catch {
-      // Vault erasure above remains authoritative.
-    }
-    const cleanupTasks: Array<() => Promise<unknown>> = [];
-    if (typeof indexedDB !== "undefined") {
-      cleanupTasks.push(
-        () => getMerchantRepository().clear(),
-        () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
+    invalidateWalletLifecycle();
+    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+    await withWalletLifecycleLock(async () => {
+      wipeVault();
+      clearDurableMergeReconciliations(
+        window.localStorage,
+        MERGE_RECONCILIATION_STORAGE_KEY,
       );
-    }
-    if ("serviceWorker" in navigator) {
-      cleanupTasks.push(async () => {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.allSettled(registrations.map((registration) => registration.unregister()));
-      });
-    }
-    if ("caches" in globalThis) {
-      cleanupTasks.push(async () => {
-        const names = await globalThis.caches.keys();
-        await Promise.allSettled(
-          names
-            .filter((name) => name.startsWith("stellarkey-"))
-            .map((name) => globalThis.caches.delete(name)),
+      clearDurablePendingTransactions(
+        window.localStorage,
+        PENDING_TX_STORAGE_KEY,
+      );
+      try {
+        window.sessionStorage.clear();
+      } catch {
+        // Vault erasure above remains authoritative.
+      }
+      const cleanupTasks: Array<() => Promise<unknown>> = [];
+      if (typeof indexedDB !== "undefined") {
+        cleanupTasks.push(
+          () => getMerchantRepository().clear(),
+          () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
         );
-      });
-    }
-    await Promise.allSettled(cleanupTasks.map((task) => Promise.resolve().then(task)));
+      }
+      if ("serviceWorker" in navigator) {
+        cleanupTasks.push(async () => {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.allSettled(registrations.map((registration) => registration.unregister()));
+        });
+      }
+      if ("caches" in globalThis) {
+        cleanupTasks.push(async () => {
+          const names = await globalThis.caches.keys();
+          await Promise.allSettled(
+            names
+              .filter((name) => name.startsWith("stellarkey-"))
+              .map((name) => globalThis.caches.delete(name)),
+          );
+        });
+      }
+      await Promise.allSettled(cleanupTasks.map((task) => Promise.resolve().then(task)));
+    });
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -1810,7 +1827,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setVaultStorageIssue(null);
     commitSigningPasswordRequired(false);
     setPhase("empty");
-    if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
     window.location.reload();
   }, [
     commitMergeReconciliations,

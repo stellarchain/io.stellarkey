@@ -62,10 +62,59 @@ const VAULT_KEY = "stellarkey.vault.v1";
 const PASSWORD_ATTEMPT_KEY = "stellarkey.vault.password-attempts.v1";
 const NETWORK_KEY = "stellarkey.network.v1";
 const AUTOLOCK_KEY = "stellarkey.autolock.v1";
+const WALLET_LIFECYCLE_EPOCH_KEY = "stellarkey.lifecycle-epoch.v1";
+const WALLET_LIFECYCLE_LOCK = "stellarkey.wallet-lifecycle.v1";
 
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
 let sessionGeneration = 0;
+let fallbackLifecycleEpoch = 0;
+
+function readWalletLifecycleEpoch(): number {
+  try {
+    const raw = typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem(WALLET_LIFECYCLE_EPOCH_KEY);
+    if (raw !== null && /^\d+$/.test(raw)) {
+      const value = Number(raw);
+      if (Number.isSafeInteger(value) && value >= 0) {
+        fallbackLifecycleEpoch = Math.max(fallbackLifecycleEpoch, value);
+      }
+    }
+  } catch {
+    // The in-process epoch still revokes this tab when storage is unavailable.
+  }
+  return fallbackLifecycleEpoch;
+}
+
+export function invalidateWalletLifecycle(): number {
+  const next = readWalletLifecycleEpoch() + 1;
+  fallbackLifecycleEpoch = next;
+  try {
+    window.localStorage.setItem(WALLET_LIFECYCLE_EPOCH_KEY, String(next));
+  } catch {
+    // BroadcastChannel and the in-process epoch remain effective fallbacks.
+  }
+  return next;
+}
+
+export async function withWalletLifecycleLock<T>(operation: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks) return operation();
+  return locks.request(WALLET_LIFECYCLE_LOCK, { mode: "exclusive" }, operation);
+}
+
+function assertWalletLifecycleEpoch(expected: number): void {
+  if (readWalletLifecycleEpoch() !== expected) {
+    throw new VaultLockedError("Wallet replacement was cancelled by a lock or reset.");
+  }
+}
+
+function assertUnlockGeneration(expected: number): void {
+  if (expected !== sessionGeneration) {
+    throw new VaultLockedError("Vault unlock authority was revoked.");
+  }
+}
 
 function assertSessionGeneration(expected: number): void {
   if (!sessionMasterKey || expected !== sessionGeneration) {
@@ -88,11 +137,20 @@ function requireSessionMasterKey(): Uint8Array {
 async function establishVaultSession(
   masterKey: Uint8Array,
   vault: VaultFile,
+  expectedGeneration?: number,
 ): Promise<void> {
   const merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
   if (merchantKey.byteLength !== 32) {
     zeroKey(merchantKey);
     throw new Error("Encrypted merchant key is invalid.");
+  }
+  if (expectedGeneration !== undefined) {
+    try {
+      assertUnlockGeneration(expectedGeneration);
+    } catch (error) {
+      zeroKey(merchantKey);
+      throw error;
+    }
   }
   zeroKey(sessionMasterKey);
   zeroKey(sessionMerchantKey);
@@ -251,7 +309,13 @@ export function wipeVault(): void {
     const keys: string[] = [];
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
-      if (key && (key.startsWith("stellarkey.") || key.startsWith("wallet."))) keys.push(key);
+      if (
+        key &&
+        key !== WALLET_LIFECYCLE_EPOCH_KEY &&
+        (key.startsWith("stellarkey.") || key.startsWith("wallet."))
+      ) {
+        keys.push(key);
+      }
     }
     for (const key of keys) window.localStorage.removeItem(key);
   }
@@ -753,11 +817,11 @@ export async function unlockVault(password: string): Promise<VaultFile> {
   }
   requireWebCrypto();
   lockVault();
+  const unlockGeneration = sessionGeneration;
   const unlocked = await masterKeyForPassword(vault, password);
   try {
-    await readPrivateContacts(unlocked.masterKey);
-    await readPrivateTxNotes(unlocked.masterKey);
-    await establishVaultSession(unlocked.masterKey, unlocked.vault);
+    assertUnlockGeneration(unlockGeneration);
+    await establishVaultSession(unlocked.masterKey, unlocked.vault, unlockGeneration);
     return unlocked.vault;
   } finally {
     zeroKey(unlocked.masterKey);
@@ -777,8 +841,6 @@ export async function enablePasskeyUnlock(
   requireWebCrypto();
   const unlocked = await masterKeyForPassword(vault, password);
   try {
-    await readPrivateContacts(unlocked.masterKey);
-    await readPrivateTxNotes(unlocked.masterKey);
     await registerPasskeyMasterKey(unlocked.masterKey, dependencies);
   } finally {
     zeroKey(unlocked.masterKey);
@@ -795,12 +857,13 @@ export async function unlockVaultWithPasskey(
   }
   requireWebCrypto();
   lockVault();
+  const unlockGeneration = sessionGeneration;
   const masterKey = await unwrapPasskeyMasterKey(undefined, dependencies);
   try {
     // AES-GCM authentication of wrappedMerchantKey proves that the passkey
     // unwrapped the exact master key belonging to this vault.
-    await readPrivateContacts(masterKey);
-    await establishVaultSession(masterKey, vault);
+    assertUnlockGeneration(unlockGeneration);
+    await establishVaultSession(masterKey, vault, unlockGeneration);
     return vault;
   } finally {
     zeroKey(masterKey);
@@ -1584,6 +1647,7 @@ export async function restoreVaultBackup(
   json: string,
   password?: string,
 ): Promise<VaultRestoreResult> {
+  const lifecycleEpoch = readWalletLifecycleEpoch();
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
   const { encryptedContacts, preparedPrivateBalanceStore } = await prepareDecodedBackup(
@@ -1631,37 +1695,44 @@ export async function restoreVaultBackup(
     writes.set(PRIVACY_KEY, settings.privacy ? "1" : "0");
     writes.set(SOUND_KEY, settings.sound ? "1" : "0");
   }
-  await replaceBackupStorage({
-    storage: window.localStorage,
-    keys: restoreKeys,
-    writes,
-    archives: [
-      ...(merchantRepository ? [{
-        archive: {
-          read: () => merchantRepository.snapshotEncryptedArchive(),
-          replace: async (value: string | null) => {
-            if (value) await merchantRepository.importEncryptedArchive(value);
-            else await merchantRepository.clear();
+  await withWalletLifecycleLock(async () => {
+    assertWalletLifecycleEpoch(lifecycleEpoch);
+    await replaceBackupStorage({
+      storage: window.localStorage,
+      keys: restoreKeys,
+      writes,
+      archives: [
+        ...(merchantRepository ? [{
+          archive: {
+            read: () => merchantRepository.snapshotEncryptedArchive(),
+            replace: async (value: string | null) => {
+              if (value) await merchantRepository.importEncryptedArchive(value);
+              else await merchantRepository.clear();
+            },
           },
-        },
-        value: payload.merchantStore ?? null,
-      }] : []),
-      ...(privateBalanceArchive ? [{
-        archive: {
-          read: async () => JSON.stringify(
-            await privateBalanceArchive.exportPrivateBalanceBackupArchive(),
-          ),
-          replace: async (value: string | null) => {
-            await privateBalanceArchive.replacePrivateBalanceBackupArchive(
-              value ?? { schemaVersion: 1, records: [] },
-            );
+          value: payload.merchantStore ?? null,
+        }] : []),
+        ...(privateBalanceArchive ? [{
+          archive: {
+            read: async () => JSON.stringify(
+              await privateBalanceArchive.exportPrivateBalanceBackupArchive(),
+            ),
+            replace: async (value: string | null) => {
+              await privateBalanceArchive.replacePrivateBalanceBackupArchive(
+                value ?? { schemaVersion: 1, records: [] },
+              );
+            },
           },
-        },
-        value: preparedPrivateBalanceStore,
-      }] : []),
-    ],
+          value: preparedPrivateBalanceStore,
+        }] : []),
+      ],
+    });
+    if (readWalletLifecycleEpoch() !== lifecycleEpoch) {
+      wipeVault();
+      throw new VaultLockedError("Wallet replacement was cancelled by a lock or reset.");
+    }
+    lockVault();
   });
-  lockVault();
 
   return {
     accountCount: vault.accounts.length,
