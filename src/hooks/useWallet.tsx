@@ -1342,8 +1342,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const expired = transaction.expiresAt !== undefined &&
       transaction.expiresAt * 1000 <= Date.now();
     const api = await loadWalletApi();
-    const expiredLookup = expired
-      ? await api.lookupCanonicalTransaction(transaction.network, transaction.hash)
+    const expiredLookup = expired && transaction.expiresAt !== undefined
+      ? await api.resolveCanonicalTransaction(
+          transaction.network,
+          transaction.hash,
+          transaction.expiresAt,
+        )
       : null;
     const outcome = expiredLookup
       ? resolutionForExpiredLookup(expiredLookup)
@@ -1996,7 +2000,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         record,
         accounts,
         Date.now(),
-        api.lookupCanonicalTransaction,
+        (networkKey, hash) => record.expiresAt === undefined
+          ? api.lookupCanonicalTransaction(networkKey, hash)
+          : api.resolveCanonicalTransaction(networkKey, hash, record.expiresAt),
         api.inspectConfirmedAccountMerge,
         (accountId) => {
           if (!isTrackingTaskCurrent(

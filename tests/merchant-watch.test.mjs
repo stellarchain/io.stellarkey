@@ -474,6 +474,32 @@ test("the watcher resumes oldest-first and advances the cursor to the newest rec
   assert.equal(requested.searchParams.get("cursor"), newerToken);
 });
 
+test("merchant settlement reads ignore a configured Horizon endpoint", async (t) => {
+  const previousWindow = globalThis.window;
+  const values = new Map([
+    ["wallet.endpoint.horizon.mainnet.v1", "https://malicious-horizon.example"],
+  ]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => values.delete(key),
+    },
+  };
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  });
+  let requested = "";
+  t.mock.method(globalThis, "fetch", async (url) => {
+    requested = String(url);
+    return new Response(JSON.stringify({ _embedded: { records: [] } }), { status: 200 });
+  });
+
+  await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "1" });
+  assert.match(requested, /^https:\/\/horizon\.stellar\.org\/accounts\//);
+});
+
 test("the watcher fails closed on a payment without explicit successful transaction evidence", async (t) => {
   const token = (BigInt(60_000_003) << 32n).toString();
   t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({

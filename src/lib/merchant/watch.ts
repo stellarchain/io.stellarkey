@@ -1,5 +1,4 @@
-import { getHorizonUrl } from "../stellar-endpoints";
-import type { NetworkKey } from "../stellar";
+import { NETWORKS, type NetworkKey } from "../stellar";
 import { getHorizonJson } from "../horizon";
 import { amountToStroops } from "../stellar-domain";
 import { isValidPaymentAddress, isValidPublicAddress } from "../vault";
@@ -143,7 +142,7 @@ export async function fetchIncomingPayments({
   limit = 50,
   signal,
 }: FetchPaymentsInput): Promise<WatchResult> {
-  const url = new URL(`${getHorizonUrl(network)}/accounts/${publicKey}/payments`);
+  const url = new URL(`${NETWORKS[network].horizonUrl}/accounts/${publicKey}/payments`);
   url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 200)));
   url.searchParams.set("join", "transactions");
   // Ascending from the cursor keeps paging forward; without one, start at the

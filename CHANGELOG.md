@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound transaction finality, merge recovery, expiry decisions, and merchant settlement reads to canonical SDF Horizon; configurable endpoints can still submit transactions but cannot fabricate confirmation or unlock retries.
 - Made the exact hash-pinned development Private Payments deployment available from production-hosted StellarKey on Testnet; Mainnet remains refused and the single-party proving setup remains explicitly disclosed.
 - Moved offline XDR signing into the vault's generation-revocable, key-wiping signer scope while retaining fresh password and live authority checks.
 - Rejected imported transaction envelopes with a zero maximum time so cosigner authorization cannot be retained indefinitely.
