@@ -825,8 +825,6 @@ export async function submitSignedTx(
   form.set("tx", tx.toXdr());
   await onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
 
-
-  let submissionError: unknown = null;
   try {
     const body = await getHorizonJson<SubmitFailureBody & { hash?: unknown }>(
       `${horizonUrl}/transactions`,
@@ -840,13 +838,7 @@ export async function submitSignedTx(
     if (typeof body.hash === "string" && body.hash.toLowerCase() === hash) {
       return { hash, network, status: "accepted" };
     }
-    submissionError = new HorizonRequestError(
-      "Horizon returned a malformed transaction submission response.",
-      { kind: "unknown", status: 200, body },
-    );
-  } catch (error) {
-    submissionError = error;
-  }
+  } catch {}
 
   // Once the signed envelope has been handed to a configurable endpoint, even
   // a validation-shaped 4xx is not proof that the transaction was rejected.
