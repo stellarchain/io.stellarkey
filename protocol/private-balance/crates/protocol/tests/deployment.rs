@@ -14,7 +14,7 @@ fn binding() -> DeploymentBinding {
         root_window_ledgers: 1_440,
         page_capacity: 32,
         private_address_payload_bytes: 68,
-        private_address_ascii_bytes: 119,
+        private_address_ascii_bytes: 170,
         address_context_tag_bytes: 0,
         address_checksum_bytes: 6,
         hpke_kem_id: 0x0020,
@@ -28,7 +28,7 @@ fn deployment_binding_is_deterministic_and_binds_every_field() {
     let expected = binding().hash().expect("valid binding");
     assert_eq!(
         hex::encode(expected),
-        "4799eec5147a7125885023a212bb937e686fcae08c5a85a4b7e51d6707ca559d"
+        "18e8edf582ccd8ba73bb5c5a739ab735c97869342a08a9494bc5b0f6c7911c76"
     );
     assert_ne!(expected, [0; 32]);
 

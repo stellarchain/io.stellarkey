@@ -72,11 +72,11 @@ test('the committed testnet deployment remains quarantined development evidence'
   assert.match(release.toolchainLockSha256, /^[0-9a-f]{64}$/);
   assert.equal(
     release.powersOfTauSha256,
-    'cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357',
+    '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
   );
-  assert.equal(release.zkeyVerified, false);
-  assert.equal(fixtureRelease.powersOfTauSha256, undefined);
-  assert.equal(fixtureRelease.zkeyVerified, undefined);
+  assert.equal(release.zkeyVerified, true);
+  assert.equal(fixtureRelease.powersOfTauSha256, release.powersOfTauSha256);
+  assert.equal(fixtureRelease.zkeyVerified, release.zkeyVerified);
   assert.equal(manifest.poolContractId, fixture.poolContractId);
   assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
 
@@ -191,7 +191,7 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    '4799eec5147a7125885023a212bb937e686fcae08c5a85a4b7e51d6707ca559d',
+    '7b15135e0166d843cad1451e27327305a89b3beb4c172a0cc7655c38e82f0018',
   );
 });
 

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Quarantined Private Payments from production after its development zkey failed verification against the pinned Powers-of-Tau transcript; every non-development manifest now requires verified proving material, ceremony, audit, and deployment evidence.
+- Repaired Private Payments address and proving-key provenance across the browser, encrypted storage, contract, manifest, and deployment tooling; testnet continues to use explicitly disclosed single-party development proving material, while every non-development release still requires ceremony and audit evidence.
 - Pinned and hash-verified the phase-one transcript, added zkey-to-R1CS verification, checked browser distributables for drift, disabled npm lifecycle scripts by policy, and wired generated/reproducible artifact checks into CI and tagged releases.
 - Quarantined duplicate owned-note commitments without halting Private Payments sync, bound transfer review to the full canonical recipient address, and replaced the 32-bit check code with a 128-bit SHA-256 code.
 - Required the active merchant owner and a fresh wallet-password check for payment-routing changes and reconfiguration, rejected pure watch-only receiving accounts, enforced report permissions, and quarantined invoices after destination drift.

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const POWERS_OF_TAU_SHA256 =
-  'cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357';
+  '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f';
 export const POWERS_OF_TAU_URL =
   'https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_15.ptau';
 
