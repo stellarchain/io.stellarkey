@@ -31,7 +31,7 @@ import {
   readMerchantBootstrapState,
   writeMerchantBootstrapState,
 } from "./merchant/bootstrap";
-import { validateNewVaultPassword } from "./password-strength";
+import { validateNewVaultPasswordWithGuessability } from "./password-strength";
 import { replaceBackupStorage } from "./backup-storage";
 import {
   MAX_BACKUP_FILE_BYTES,
@@ -471,7 +471,7 @@ export async function initializeVault(
   opts: InitializeOptions = {},
 ): Promise<{ account: AccountMeta; revealed: string }> {
   assertVaultCreationAllowed();
-  const passwordPolicy = validateNewVaultPassword(password);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(password);
   if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
 
   if (opts.secret) {
@@ -580,7 +580,7 @@ export async function initializeHardwareVault(
   if (account.device !== "trezor") {
     throw new Error("Ledger is not supported in this build. No account was imported.");
   }
-  const passwordPolicy = validateNewVaultPassword(password);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(password);
   if (!passwordPolicy.valid) throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
   if (!isValidPublicAddress(account.publicKey)) {
     throw new Error("Invalid Stellar address read from device.");
@@ -717,7 +717,7 @@ export async function changeVaultPassword(
   newPassword: string,
 ): Promise<void> {
   requireSessionMasterKey();
-  const passwordPolicy = validateNewVaultPassword(newPassword);
+  const passwordPolicy = await validateNewVaultPasswordWithGuessability(newPassword);
   if (!passwordPolicy.valid) {
     throw new Error(passwordPolicy.message ?? "Choose a stronger password.");
   }
