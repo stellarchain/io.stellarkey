@@ -11,7 +11,9 @@ test('private balance documentation states exact privacy, recovery, and support 
   const support = read('private-balance-support.md');
   const combined = `${product}\n${recovery}\n${incident}\n${support}`;
 
-  assert.match(product, /development-only|not deployed/i);
+  assert.match(product, /unaudited, testnet-only preview/i);
+  assert.match(product, /single-party development setup/i);
+  assert.match(product, /Mainnet rejects/i);
   assert.match(product, /no application backend/i);
   assert.match(product, /fee-paying.*public|public.*fee-paying/is);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);

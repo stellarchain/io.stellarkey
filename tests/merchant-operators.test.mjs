@@ -218,7 +218,7 @@ test("merchant context exposes roster controls and enforces local operator locki
   assert.match(hook, /onShiftStaff: StaffMember\[\]/);
   assert.match(hook, /lockStaffSession: \(\) => Promise<void>/);
   assert.match(hook, /endStaffSession: \(memberId: string\) => Promise<void>/);
-  assert.match(hook, /activateVerifiedOperator\(latest, member\.id, expectedPinDigest\)/);
+  assert.match(hook, /activateVerifiedOperator\(throttled, memberId, expectedPinDigest\)/);
   assert.match(hook, /operatorTimeoutMs\(settings\)/);
   assert.match(hook, /addEventListener\("pointerdown", resetTimer/);
   assert.match(hook, /addEventListener\("keydown", resetTimer/);

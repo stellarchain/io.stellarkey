@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Rejected payment amounts outside Stellar's signed 64-bit stroop range before rendering or submission.
+- Kept Next.js telemetry disabled for local development and production builds without tracking an environment file.
 
 ### Security
 
