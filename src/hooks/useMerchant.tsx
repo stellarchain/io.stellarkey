@@ -1401,11 +1401,11 @@ export function MerchantProvider({
       }
       recordedAttempt = nextPinAttempt(pinAttemptFor(latest, memberId), verified, now);
       const throttled = storePinAttempt(latest, memberId, recordedAttempt.state);
-      return verified
+      return recordedAttempt.authorized
         ? activateVerifiedOperator(throttled, memberId, expectedPinDigest)
         : throttled;
     });
-    if (!verified) {
+    if (!recordedAttempt.authorized) {
       const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
         recordedAttempt.blocked
@@ -1501,7 +1501,7 @@ export function MerchantProvider({
       recordedAttempt = nextPinAttempt(pinAttemptFor(latest, member.id), verified, now);
       return storePinAttempt(latest, member.id, recordedAttempt.state);
     });
-    if (!verified) {
+    if (!recordedAttempt.authorized) {
       const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
         recordedAttempt.blocked

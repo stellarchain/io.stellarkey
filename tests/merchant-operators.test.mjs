@@ -9,6 +9,7 @@ import {
   lockOperator,
   shouldLockOperatorAfterSale,
 } from "../src/lib/merchant/operators.ts";
+import { nextPinAttempt } from "../src/lib/merchant/permissions.ts";
 
 function member(id, name = id) {
   return {
@@ -165,6 +166,19 @@ test("a verified switch is rejected if the PIN changed while verification was pe
   );
 });
 
+test("a PIN verified before a concurrent lockout cannot authorize after the block commits", () => {
+  const blockedUntil = 50_000;
+  const completed = nextPinAttempt({
+    failures: 5,
+    blockedUntil,
+    lockoutLevel: 1,
+  }, true, 20_000);
+
+  assert.equal(completed.blocked, true);
+  assert.equal(completed.authorized, false);
+  assert.equal(completed.state.blockedUntil, blockedUntil);
+});
+
 test("automatic reconciliation locks only when the current operator's sale becomes paid", () => {
   assert.equal(typeof operatorRules.applyCompletedSalePolicy, "function");
   const before = {
@@ -219,6 +233,7 @@ test("merchant context exposes roster controls and enforces local operator locki
   assert.match(hook, /lockStaffSession: \(\) => Promise<void>/);
   assert.match(hook, /endStaffSession: \(memberId: string\) => Promise<void>/);
   assert.match(hook, /activateVerifiedOperator\(throttled, memberId, expectedPinDigest\)/);
+  assert.ok((hook.match(/recordedAttempt\.authorized/g) ?? []).length >= 3);
   assert.match(hook, /operatorTimeoutMs\(settings\)/);
   assert.match(hook, /addEventListener\("pointerdown", resetTimer/);
   assert.match(hook, /addEventListener\("keydown", resetTimer/);
