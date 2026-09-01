@@ -380,3 +380,40 @@ test('worker client proves an opaque prepared action without exposing witness in
   assert.equal(proveMessage.preparedActionId, preparedActionId);
   assert.equal('circuitInputs' in proveMessage, false);
 });
+
+test('cancelling proof generation terminates the worker so witness buffers cannot linger', async () => {
+  const account = Keypair.random();
+  let terminated = 0;
+  const fakeWorker = {
+    onmessage: null,
+    postMessage(message) {
+      if (message.type !== 'INIT_SESSION') return;
+      queueMicrotask(() => this.onmessage({
+        data: {
+          messageVersion: message.messageVersion,
+          id: message.id,
+          sessionId: message.sessionId,
+          type: 'INIT_OK',
+          ownerCommitmentHex: '01'.repeat(32),
+          address: TEST_PRIVATE_ADDRESS,
+        },
+      }));
+    },
+    terminate() { terminated += 1; },
+  };
+  const client = new PrivateBalanceWorkerClient(fakeWorker);
+  await client.initSession(manifest, account.publicKey(), new Uint8Array(64).fill(9));
+  const controller = new AbortController();
+  const proving = client.generateProof(
+    'prepared-action-id',
+    new ArrayBuffer(8),
+    new ArrayBuffer(8),
+    {},
+    { signal: controller.signal },
+  );
+  controller.abort();
+
+  await assert.rejects(proving, /cancel|abort/i);
+  assert.equal(terminated, 1);
+  assert.equal(client.failed, true);
+});

@@ -114,7 +114,7 @@ test('worker lifecycle: proof progress is correlated without completing the requ
   assert.deepEqual(progress, [10, 80]);
 });
 
-test('worker lifecycle: cancellation targets the proof operation and keeps the session usable', async () => {
+test('worker lifecycle: proof cancellation destroys the worker and requires a fresh session', async () => {
   let terminated = false;
   const fakeWorker = {
     onmessage: null,
@@ -131,46 +131,20 @@ test('worker lifecycle: cancellation targets the proof operation and keeps the s
     {},
     { signal: controller.signal },
   );
-  const proofRequest = fakeWorker.messages.at(-1);
-
   controller.abort();
 
   await assert.rejects(proving, error => error?.name === 'AbortError');
-  assert.ok(fakeWorker.messages.some(message => (
-    message.type === 'CANCEL' && message.targetOperationId === proofRequest.id
-  )));
-  // Aborting one request must not kill the shared worker or wipe the session.
-  assert.equal(terminated, false);
-  assert.equal(fakeWorker.messages.some(message => message.type === 'LOCK'), false);
-
-  // A late result for the cancelled operation is ignored and the same client
-  // still serves subsequent operations without a full resync.
-  fakeWorker.onmessage({ data: responseFor(proofRequest, {
-    type: 'PROOF_OK',
-    proof: { pi_a: [], pi_b: [], pi_c: [] },
-    publicSignals: [],
-    sorobanProofHex: '',
-  }) });
-  const scanning = client.scanPage({
-    records: [],
-    expectedPriorRecordHash: new Uint8Array(32),
-  });
-  const scanRequest = fakeWorker.messages.at(-1);
-  assert.equal(scanRequest.type, 'SCAN_PAGE');
-  fakeWorker.onmessage({ data: responseFor(scanRequest, {
-    type: 'SCAN_OK',
-    notes: [],
-    activities: [],
-    tree: { nextIndex: 0, frontier: [], currentRoot: new Uint8Array(32) },
-    lastRecordHash: new Uint8Array(32),
-    spentNullifierHexes: [],
-    nullifiersByCommitment: [],
-  }) });
-  await scanning;
-
-  client.terminate();
+  assert.equal(client.failed, true);
   assert.equal(terminated, true);
-  assert.ok(fakeWorker.messages.some(message => message.type === 'LOCK'));
+  assert.equal(fakeWorker.messages.some(message => message.type === 'CANCEL'), false);
+  assert.equal(fakeWorker.messages.some(message => message.type === 'LOCK'), false);
+  await assert.rejects(
+    () => client.scanPage({
+      records: [],
+      expectedPriorRecordHash: new Uint8Array(32),
+    }),
+    error => error?.name === 'AbortError',
+  );
 });
 
 test('worker lifecycle: a crash rejects every pending request and fails the client', async () => {

@@ -28,6 +28,10 @@ const manifest = {
   realmId,
   poolContractId,
   deploymentBindingHash,
+  artifacts: {
+    r1csSha256: '0d'.repeat(32),
+    vkJsonSha256: '0e'.repeat(32),
+  },
   constants: { treeDepth: 32, pageCapacity: 32 },
 };
 
@@ -213,6 +217,10 @@ test('archive client reads manifest-bound state and canonical record storage key
   pauseResult = true;
   pauseReadOnly = false;
   await assert.rejects(() => client.readDepositsPaused(), /valid read-only result/);
+
+  manifest.artifacts.r1csSha256 = 'ff'.repeat(32);
+  await assert.rejects(() => client.readHead(), /configuration does not match the manifest/i);
+  manifest.artifacts.r1csSha256 = '0d'.repeat(32);
 
   const records = await client.readRecords(0, 1);
   assert.equal(records[0].actionIndex, 0);

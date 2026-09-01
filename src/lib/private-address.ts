@@ -23,32 +23,26 @@ export const PRIVATE_RECEIVE_REQUEST_EVENT = 'stellarkey.private.receive-request
 /** Fired for the wallet shell to open the PUBLIC send sheet, prefilled. */
 export const PUBLIC_SEND_REQUEST_EVENT = 'stellarkey.public.send-request';
 
-const SEND_INTENT_KEY = 'stellarkey.private.send-intent.v1';
-const ADD_INTENT_KEY = 'stellarkey.private.add-intent.v1';
-const RECEIVE_INTENT_KEY = 'stellarkey.private.receive-intent.v1';
+const SEND_INTENT_KEY = 'send';
+const ADD_INTENT_KEY = 'add';
+const RECEIVE_INTENT_KEY = 'receive';
+const INTENT_TTL_MS = 60_000;
+const pendingIntents = new Map<string, { value: string; expiresAt: number }>();
 
 function setIntent(key: string, value: string): void {
-  try {
-    window.sessionStorage.setItem(key, value);
-  } catch {
-    // Session storage may be unavailable; the live event still covers the
-    // already-mounted case.
-  }
+  pendingIntents.set(key, { value, expiresAt: Date.now() + INTENT_TTL_MS });
 }
 
 function consumeIntent(key: string): string | null {
-  try {
-    const value = window.sessionStorage.getItem(key);
-    if (value !== null) window.sessionStorage.removeItem(key);
-    return value;
-  } catch {
-    return null;
-  }
+  const intent = pendingIntents.get(key) ?? null;
+  pendingIntents.delete(key);
+  if (!intent || intent.expiresAt < Date.now()) return null;
+  return intent.value;
 }
 
 /**
  * Ask Private Payments to open its send flow for `recipient`. Works whether or
- * not the private surface is mounted yet: an intent is stored for the next
+ * not the private surface is mounted yet: an expiring intent is held for the next
  * mount, and a live event covers a card already on screen.
  */
 export function requestPrivateSend(recipient: string): void {
