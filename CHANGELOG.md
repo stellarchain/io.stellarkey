@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Reserved Merchant Mode enablement for its password-gated lifecycle action, rejected invalid merchant state before persistence, and stopped retention controls from reporting success before a durable save.
 - Prevented a PIN verification started before a concurrent merchant lockout from activating an operator or unlocking the customer display after the lockout commits.
 - New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
 - Public security and privacy guidance now accurately describes the production-hosted Testnet development fixture, its single-party setup risk, and the current private-address diversifier correlation limit.

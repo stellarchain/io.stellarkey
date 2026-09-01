@@ -56,6 +56,26 @@ test("merchant commits increment their revision and reject a stale tab", async (
   );
 });
 
+test("merchant commits reject an invalid candidate before persistence", async () => {
+  const { prepareMerchantCommit } = await coordinationDomain();
+  const current = emptyStore();
+  const invalid = {
+    ...current,
+    settings: { ...current.settings, operatorLockTimeoutMinutes: 3 },
+  };
+
+  assert.throws(
+    () => prepareMerchantCommit({
+      current,
+      candidate: invalid,
+      persisted: current,
+      writerId: "tab-a",
+      now: 500,
+    }),
+    /invalid merchant/i,
+  );
+});
+
 test("only strictly newer external merchant revisions replace local state", async () => {
   const { newerMerchantStore } = await coordinationDomain();
   const current = { ...emptyStore(), revision: 3, writerId: "tab-a", updatedAt: 300 };

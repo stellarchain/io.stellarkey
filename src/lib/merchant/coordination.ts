@@ -1,4 +1,5 @@
 import type { MerchantStore } from "./types";
+import { isCurrentMerchantStore } from "./schema";
 
 const WATCHER_LEASE_PREFIX = "stellarkey.merchant.watcher-lease.v1";
 
@@ -41,12 +42,16 @@ export function prepareMerchantCommit({
 }): MerchantStore {
   const persistedRevision = persisted?.revision ?? 0;
   if (persistedRevision !== current.revision) throw new MerchantRevisionConflictError();
-  return {
+  const next = {
     ...candidate,
     revision: current.revision + 1,
     writerId,
     updatedAt: now,
   };
+  if (!isCurrentMerchantStore(next)) {
+    throw new Error("Invalid merchant data cannot be persisted.");
+  }
+  return next;
 }
 
 export function newerMerchantStore(
