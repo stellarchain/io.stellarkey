@@ -1133,6 +1133,17 @@ test("multisig configuration explicitly writes every retained signer", async (t)
   );
 });
 
+test("multisig authority reads cannot be redirected to a custom Horizon", () => {
+  const source = readFileSync(
+    new URL("../src/lib/multisig.ts", import.meta.url),
+    "utf8",
+  );
+  const applySource = source.split("export async function applyMultisigConfig")[1]
+    ?.split("/** Remove every cosigner")[0] ?? "";
+  assert.match(applySource, /fetchCanonicalAccountSignerInfo\(accountPublicKey, network\)/);
+  assert.doesNotMatch(applySource, /fetchAccountSignerInfo\(accountPublicKey, network\)/);
+});
+
 test("multisig replaces a signer at full capacity without exceeding 20 additional signers", async (t) => {
   const account = Keypair.random();
   const currentCosigners = Array.from({ length: 20 }, () => Keypair.random());

@@ -56,6 +56,11 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
 test("full wallet reset also removes every private-payment IndexedDB record", () => {
   const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
   const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
+  assert.ok(
+    reset.indexOf("wipeVault()") >= 0 &&
+      reset.indexOf("wipeVault()") < reset.indexOf("getMerchantRepository().clear()"),
+    "reset must revoke the session and erase the vault before fallible IndexedDB cleanup",
+  );
   assert.match(reset, /getMerchantRepository\(\)\.clear\(\)/);
   assert.match(reset, /IndexedDbEncryptedRecordDriver\(\)\.removePrefix\("private:"\)/);
   assert.match(reset, /sessionStorage\.clear\(\)/);
