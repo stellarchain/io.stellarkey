@@ -190,7 +190,28 @@ async function createRealOutput(input: {
   actionNonce: Uint8Array;
   outputIndex: number;
   priorCommitments: Uint8Array[];
+  selfIdentity?: {
+    baseOwnerCommitment: Uint8Array;
+    incomingViewingKey: Uint8Array;
+  };
 }): Promise<OutputWitness> {
+  if (input.selfIdentity) {
+    const expected = await deriveDiversifiedAddressKeys(
+      input.selfIdentity.baseOwnerCommitment,
+      input.selfIdentity.incomingViewingKey,
+      input.diversifier,
+    );
+    try {
+      if (
+        !equalBytes(input.recipientOwnerCommitment, expected.ownerCommitment) ||
+        !equalBytes(input.recipientHpkePublicKey, expected.hpkePublicKey)
+      ) {
+        throw new Error('Private self-output keys do not match the stamped diversifier');
+      }
+    } finally {
+      expected.hpkePrivateKey.fill(0);
+    }
+  }
   const memo = memoBytes(input.memo);
   for (;;) {
     const rho = sampleNonzeroField();
@@ -356,19 +377,40 @@ export async function preparePrivateAction(
     diversifier: Uint8Array;
     value: bigint;
     memo?: Uint8Array;
+    selfIdentity?: {
+      baseOwnerCommitment: Uint8Array;
+      incomingViewingKey: Uint8Array;
+    };
   }>;
+
+  const selfOutput = async (value: bigint, memo?: Uint8Array) => {
+    const identity = await deriveDiversifiedAddressKeys(
+      input.esk.baseOwnerCommitment,
+      input.esk.hpkePrivateKey,
+      ZERO_DIVERSIFIER,
+    );
+    try {
+      return {
+        ownerCommitment: identity.ownerCommitment,
+        hpkePublicKey: identity.hpkePublicKey,
+        diversifier: ZERO_DIVERSIFIER,
+        value,
+        memo,
+        selfIdentity: {
+          baseOwnerCommitment: input.esk.baseOwnerCommitment,
+          incomingViewingKey: input.esk.hpkePrivateKey,
+        },
+      };
+    } finally {
+      identity.hpkePrivateKey.fill(0);
+    }
+  };
 
   if (input.intent.kind === 'deposit') {
     kind = ActionKind.Deposit;
     publicValue = parseValue(input.intent.publicValue, 'Deposit value');
     depositSource = input.intent.depositSource;
-    outputSpecs = [{
-      ownerCommitment: input.esk.ownerCommitment,
-      hpkePublicKey: input.esk.hpkePublicKey,
-      diversifier: ZERO_DIVERSIFIER,
-      value: publicValue,
-      memo: input.intent.memo,
-    }];
+    outputSpecs = [await selfOutput(publicValue, input.intent.memo)];
   } else if (input.intent.kind === 'transfer') {
     kind = ActionKind.PrivateTransfer;
     publicValue = 0n;
@@ -392,12 +434,7 @@ export async function preparePrivateAction(
     }];
     const change = preparedInputs.total - amount - relayerFee;
     if (change > 0n) {
-      outputSpecs.push({
-        ownerCommitment: input.esk.ownerCommitment,
-        hpkePublicKey: input.esk.hpkePublicKey,
-        diversifier: ZERO_DIVERSIFIER,
-        value: change,
-      });
+      outputSpecs.push(await selfOutput(change));
     }
   } else {
     kind = ActionKind.Withdraw;
@@ -410,12 +447,7 @@ export async function preparePrivateAction(
     relayer = input.intent.relayer;
     if (preparedInputs.total < publicValue + relayerFee) throw new Error('Private balance is insufficient');
     const change = preparedInputs.total - publicValue - relayerFee;
-    outputSpecs = change > 0n ? [{
-      ownerCommitment: input.esk.ownerCommitment,
-      hpkePublicKey: input.esk.hpkePublicKey,
-      diversifier: ZERO_DIVERSIFIER,
-      value: change,
-    }] : [];
+    outputSpecs = change > 0n ? [await selfOutput(change)] : [];
   }
 
   const outputWitnesses: OutputWitness[] = [];
@@ -432,6 +464,7 @@ export async function preparePrivateAction(
       actionNonce,
       outputIndex,
       priorCommitments: outputWitnesses.map(output => output.commitment),
+      selfIdentity: spec.selfIdentity,
     }));
   }
   while (outputWitnesses.length < 2) outputWitnesses.push(dummyOutput());

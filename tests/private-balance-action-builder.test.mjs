@@ -5,9 +5,11 @@ import {
   computeAssetField,
   computeContextField,
   computeContextHash,
+  deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
   encodePrivateAddress,
   bigintTo32Bytes,
+  openRecipientEnvelope,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
 import { preparePrivateAction } from '../src/features/private-balance/worker/action-builder.ts';
@@ -135,6 +137,52 @@ test('action builder creates a deposit with zero private witness lanes', async (
   assert.equal(prepared.circuitInputs.nk, '0');
   assert.deepEqual(prepared.circuitInputs.outputEnabled, ['1', '0']);
   assert.equal(prepared.publicSignals.length, 13);
+});
+
+test('rotating the receive address cannot corrupt canonical self outputs', async () => {
+  const { keyContext, owner, assetContractId, assetField } = await fixture();
+  const rotated = await deriveDiversifiedAddressKeys(
+    owner.baseOwnerCommitment,
+    owner.hpkePrivateKey,
+    Uint8Array.of(1, 2, 3, 4),
+  );
+  owner.ownerCommitment.set(rotated.ownerCommitment);
+  owner.hpkePublicKey.set(rotated.hpkePublicKey);
+  rotated.hpkePrivateKey.fill(0);
+
+  const prepared = await preparePrivateAction({
+    esk: owner,
+    keyContext,
+    availableNotes: [],
+    commitments: [],
+    intent: {
+      kind: 'deposit',
+      assetContractId,
+      publicValue: '5000000',
+      depositSource: { kind: 0, payload: keyContext.accountPublicKey },
+    },
+  });
+
+  const recovered = await openRecipientEnvelope(
+    owner.hpkePrivateKey,
+    prepared.action.outputs[0].recipientEnvelope,
+    computeContextHash(
+      keyContext.protocolVersion,
+      keyContext.networkId,
+      keyContext.realmId,
+      keyContext.poolId,
+    ),
+    keyContext.contextField,
+    assetField,
+    prepared.action.outputs[0].cm,
+    prepared.action.actionNonce,
+    0,
+    owner.baseOwnerCommitment,
+  );
+
+  assert.ok(recovered, 'canonical self-output must remain decryptable after address rotation');
+  assert.deepEqual(recovered.diversifier, new Uint8Array(4));
+  assert.equal(recovered.value, 5_000_000n);
 });
 
 test('action builder creates an exact one-note transfer witness with self change', async () => {

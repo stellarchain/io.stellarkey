@@ -91,8 +91,6 @@ async function selectAddressIdentity(
     diversifier,
   );
   try {
-    esk.ownerCommitment.set(identity.ownerCommitment);
-    esk.hpkePublicKey.set(identity.hpkePublicKey);
     currentAddressDiversifier?.fill(0);
     currentAddressDiversifier = identity.diversifier.slice();
     return {
