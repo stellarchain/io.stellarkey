@@ -33,7 +33,7 @@
     "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts --project=desktop-chromium",
     "test:e2e:private-ui": "E2E_NEXT_DEV=1 E2E_PRIVATE_UI_REQUIRED=1 playwright test e2e/public-private-continuity.spec.ts e2e/overlay-contract.spec.ts --project=desktop-chromium --project=iphone-webkit",
     "measure:ux": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs scripts/measure-ux.ts",
-    "release:verify": "node scripts/assert-clean-release.mjs && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run test:bundle && npm run check:bundle && playwright test"
+    "release:verify": "node scripts/assert-clean-release.mjs && npm run private:check-generated && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run test:bundle && npm run check:bundle && playwright test"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
@@ -59,21 +59,12 @@
     "@types/react-dom": "^19.2.5",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "snarkjs": "0.7.5",
     "tailwindcss": "^4",
     "typescript": "^6.0.3"
   },
   "overrides": {
     "protobufjs": "7.6.5",
     "underscore": "1.13.8"
-  },
-  "allowScripts": {
-    "@stellar/stellar-sdk@14.2.0": true,
-    "@stellar/stellar-sdk@17.0.1": true,
-    "blake-hash@2.0.0": true,
-    "fsevents@2.3.2": true,
-    "protobufjs@7.6.5": true,
-    "tiny-secp256k1@1.1.7": true,
-    "unrs-resolver@1.12.2": true,
-    "usb@2.18.0": true
   }
 }

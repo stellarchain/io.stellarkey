@@ -5,11 +5,12 @@
   "scripts": {
     "compile": "node scripts/compile.mjs",
     "setup:dev": "node scripts/setup-dev.mjs",
+    "verify:zkey": "node scripts/verify-proving-key.mjs",
     "export:vk": "node scripts/export-verifier-artifacts.mjs",
     "inspect:constraints": "node scripts/inspect-constraints.mjs",
     "inspect:circomspect": "node scripts/run-circomspect.mjs",
     "inspect:underconstraint": "node scripts/run-underconstraint.mjs",
-    "gate:a": "npm run inspect:circomspect && npm run inspect:underconstraint && npm test && npm run test:mutation",
+    "gate:a": "npm run inspect:circomspect && npm run inspect:underconstraint && npm run verify:zkey && npm test && npm run test:mutation",
     "test:mutation": "node scripts/run-mutation-tests.mjs",
     "test": "node --no-warnings --test --test-force-exit test/*.circuit.test.mjs"
   },

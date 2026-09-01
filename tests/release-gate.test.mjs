@@ -155,12 +155,37 @@ test("clean CI runs generated bundle assertions only after the static build", ()
 
 test("the toolchain and dependency lifecycle approvals are explicit", () => {
   const pkg = JSON.parse(read("package.json"));
+  const npmConfig = read(".npmrc");
   assert.match(pkg.packageManager, /^npm@\d+\.\d+\.\d+$/);
   assert.match(pkg.engines.node, /22\.22\.2/);
   assert.match(pkg.scripts["release:verify"], /check:bundle.*playwright test/);
-  assert.ok(Object.keys(pkg.allowScripts).length > 0);
-  assert.equal(Object.values(pkg.allowScripts).every((approved) => approved === true), true);
-  assert.equal(Object.keys(pkg.allowScripts).every((key) => /@\d/.test(key)), true);
+  assert.equal(pkg.allowScripts, undefined, "decorative allowScripts metadata must not imply enforcement");
+  assert.match(npmConfig, /^ignore-scripts=true$/m);
+});
+
+test("private proving artifacts are provenance-checked in local, CI, and release gates", () => {
+  const pkg = JSON.parse(read("package.json"));
+  const circuits = JSON.parse(read("protocol/private-balance/circuits/package.json"));
+  const generatedCheck = read("protocol/private-balance/scripts/check-generated.mjs");
+  const setup = read("protocol/private-balance/circuits/scripts/setup-dev.mjs");
+  const transcript = read("protocol/private-balance/circuits/scripts/powers-of-tau.mjs");
+  const verify = read("protocol/private-balance/circuits/scripts/verify-proving-key.mjs");
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
+
+  assert.match(pkg.scripts["release:verify"], /private:check-generated/);
+  assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
+  assert.match(circuits.scripts["gate:a"], /verify:zkey/);
+  assert.match(setup, /ensurePowersOfTau/);
+  assert.match(transcript, /cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357/);
+  assert.match(verify, /zkey["',\s]+verify/);
+  assert.match(verify, /status !== 'development'/);
+  assert.match(verify, /zkeyVerified !== false/);
+  assert.match(generatedCheck, /protocol\/private-balance\/packages\/browser\/dist/);
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, /npm run private:check-generated/);
+    assert.match(workflow, /npm run private:check-reproducible/);
+  }
 });
 
 test("browser verification is runner-owned instead of ad-hoc", () => {

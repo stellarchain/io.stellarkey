@@ -17,7 +17,7 @@ jobs:
   private-gate-a:
     name: Private Balance Gate A
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
@@ -39,10 +39,14 @@ jobs:
           cargo +1.97.1 build --manifest-path "$RUNNER_TEMP/circom_civer/Cargo.toml" --release -p civer_circom
       - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
+      - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
+      - run: rustup target add wasm32v1-none --toolchain 1.97.1
       - run: corepack npm --prefix protocol/private-balance/circuits ci
+      - run: corepack npm --prefix protocol/private-balance/circuits audit --audit-level=high
       - run: npm run private:gate-a
         env:
           CIVER_CIRCOM: ${{ runner.temp }}/circom_civer/target/release/civer_circom
+      - run: npm run private:check-reproducible
 
   release:
     needs: private-gate-a
@@ -58,6 +62,7 @@ jobs:
           cache: npm
       - run: corepack install
       - run: corepack npm ci
+      - run: npm run private:check-generated
       - run: npx playwright install --with-deps chromium webkit
       - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
       - run: npm run release:verify

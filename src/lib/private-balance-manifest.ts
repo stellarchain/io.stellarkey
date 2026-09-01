@@ -47,6 +47,8 @@ export interface PrivateBalanceReleaseProvenance {
   hpkePackageVersion: string;
   hpkeDependencyIntegritySha256: string;
   toolchainLockSha256: string;
+  powersOfTauSha256: string;
+  zkeyVerified: boolean;
   ceremonyTranscriptRoot: string;
   auditReports: Array<{ url: string; sha256: string }>;
   deploymentTransactions: Array<{ kind: string; hash: string; ledger: number }>;
@@ -209,6 +211,11 @@ function integer(value: unknown, name: string, maximum = Number.MAX_SAFE_INTEGER
     throw new Error(`${name} is invalid`);
   }
   return value as number;
+}
+
+function boolean(value: unknown, name: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${name} is invalid`);
+  return value;
 }
 
 function hex32(value: unknown, name: string): string {
@@ -387,6 +394,11 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
         'release.hpkeDependencyIntegritySha256',
       ),
       toolchainLockSha256: hex32(release.toolchainLockSha256, 'release.toolchainLockSha256'),
+      powersOfTauSha256: hex32(
+        release.powersOfTauSha256,
+        'release.powersOfTauSha256',
+      ),
+      zkeyVerified: boolean(release.zkeyVerified, 'release.zkeyVerified'),
       ceremonyTranscriptRoot: hex32(
         release.ceremonyTranscriptRoot,
         'release.ceremonyTranscriptRoot',
@@ -399,9 +411,10 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
   if (parsed.status !== 'development' && !parsed.release) {
     throw new Error('Release provenance is required outside development.');
   }
-  if (parsed.status === 'testnet-beta' || parsed.status === 'production') {
+  if (parsed.status !== 'development') {
     if (
       !parsed.release ||
+      parsed.release.zkeyVerified !== true ||
       parsed.release.ceremonyTranscriptRoot === '0'.repeat(64) ||
       parsed.release.auditReports.length === 0 ||
       parsed.release.deploymentTransactions.length === 0
