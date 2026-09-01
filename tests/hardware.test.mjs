@@ -118,6 +118,48 @@ test("serializes the complete Stellar transaction fee for device signing", async
   assert.equal(signingRequest.transaction.fee, Number(tx.fee));
 });
 
+test("hardware signing rejects approval completed after wallet authority is revoked", async () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "1"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      asset: Asset.native(),
+      amount: "1",
+    }))
+    .setTimeout(60)
+    .build();
+  let active = true;
+  let checks = 0;
+  mockTrezorMethod("stellarSignTransaction", async () => {
+    active = false;
+    return {
+      success: true,
+      payload: {
+        publicKey: rawPublicKeyHex(source.publicKey()),
+        signature: transactionSignatureHex(source, tx),
+      },
+    };
+  });
+
+  await assert.rejects(
+    hardware.signHardwareTx(tx, {
+      device: "trezor",
+      path: "m/44'/148'/0'",
+      publicKey: source.publicKey(),
+      assertSessionActive: () => {
+        checks += 1;
+        if (!active) throw new Error("Vault signing authority was revoked.");
+      },
+    }),
+    /authority was revoked/i,
+  );
+  assert.equal(checks, 2);
+  assert.equal(tx.signatures.length, 0);
+});
+
 test("cosigning rechecks expiry after asynchronous Trezor signing", async (t) => {
   const source = Keypair.random();
   const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {

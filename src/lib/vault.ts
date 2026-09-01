@@ -73,6 +73,13 @@ function assertSessionGeneration(expected: number): void {
   }
 }
 
+/** Capture the current unlocked session and reject use after lock/reset/restore. */
+export function createSessionRevocationGuard(): () => void {
+  const expected = sessionGeneration;
+  assertSessionGeneration(expected);
+  return () => assertSessionGeneration(expected);
+}
+
 function requireSessionMasterKey(): Uint8Array {
   if (!sessionMasterKey) throw new VaultLockedError();
   return sessionMasterKey;
