@@ -36,7 +36,9 @@ test("iPhone WebKit gates payment catch-up after a mobile reload", () => {
   const smoke = read("e2e/merchant-webkit.spec.ts");
   assert.match(smoke, /page\.reload/);
   assert.match(smoke, /incoming\.push/);
-  assert.match(smoke, /Paid in full/);
+  assert.match(smoke, /Payment received\. Till locked\./);
+  assert.match(smoke, /Unlock an authorized staff member to continue\./);
+  assert.match(smoke, /Switch to Imported Account/);
 });
 
 test("CI pins third-party actions and verifies the complete static release", () => {

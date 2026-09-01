@@ -1729,7 +1729,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     let privateContacts: Contact[] = [];
     try {
       privateContacts = await loadContacts();
-    } catch (error) {
+    } catch {
       assertSessionCurrent();
       toast(
         "Wallet opened, but encrypted contacts are unavailable. The original record was kept for recovery.",

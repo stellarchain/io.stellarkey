@@ -461,12 +461,19 @@ test(
       const cashTender = await openOtherTender(page);
       await cashTender.getByRole("button", { name: /Exact/ }).click();
       await cashTender.getByRole("button", { name: "Take € 1.00 cash" }).click();
-      await page.getByText("Order 1001 settled", { exact: true }).waitFor();
+      await page.getByText("Cash saved as exact money.", { exact: true }).waitFor();
+      await page.getByText("Unlock an authorized staff member to continue.", { exact: true }).waitFor();
 
       // Reload locks the vault but does not lose the shift, till, or settled order.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.getByPlaceholder("Enter password").fill(password);
       await page.getByRole("button", { name: "Unlock Vault" }).click();
+      await openMerchantMode(page);
+      await openStaffSettings(page);
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const reloadedOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await reloadedOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await reloadedOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await openMerchantMode(page);
       await page.getByText(/Shift 1 · Front counter/).waitFor();
       await page.getByRole("button", { name: "Orders", exact: true }).click();
@@ -475,6 +482,7 @@ test(
 
       // Staff is a local till role. Add a server and switch with its real PIN.
       await openStaffSettings(page);
+      await page.getByRole("button", { name: "Lock", exact: true }).click();
       const addStaffButton = page.getByRole("button", { name: "Add staff" });
       assert.equal(
         await addStaffButton.isDisabled(),
@@ -500,6 +508,11 @@ test(
       await addStaff.getByLabel("Confirm new staff PIN").fill("1357");
       await addStaff.getByRole("button", { name: "Add staff", exact: true }).click();
       await addStaff.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "Edit Counter Server" }).click();
+      const editServer = page.getByRole("dialog", { name: "Counter Server" });
+      await editServer.getByRole("switch", { name: "See reports" }).click();
+      await editServer.getByRole("button", { name: "Save", exact: true }).click();
+      await editServer.waitFor({ state: "hidden" });
       await page.getByRole("button", { name: "Add operator" }).click();
       const operatorPicker = page.getByRole("dialog", { name: "Add operator" });
       await operatorPicker.getByRole("button", { name: /Counter Server/ }).click();
@@ -752,6 +765,13 @@ test(
 
       const restoredArchive = await readIndexedMerchantArchive(page);
       assert.equal(restoredArchive, archiveBeforeBackup);
+      await openMerchantMode(page);
+      await page.getByRole("button", { name: "Choose staff" }).click();
+      await page.getByRole("heading", { name: "Staff & this device" }).waitFor();
+      await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+      const restoredArchiveOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+      await restoredArchiveOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+      await restoredArchiveOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
       await openMerchantMode(page);
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1001" }).waitFor();

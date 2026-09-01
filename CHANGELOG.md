@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept non-sensitive payment-received feedback visible when Merchant Mode locks the operator immediately after settlement.
 - Preserved the exact case of Stellar asset codes when adding and deduplicating trustlines.
 - Allowed the key-bearing wallet to unlock when non-signing contact or note records are corrupt, while preserving those records for recovery and surfacing contacts as unavailable.
 - Identified the authenticated primary account in the destructive backup-restore review so users can distinguish wallets before replacement.
