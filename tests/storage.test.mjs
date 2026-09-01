@@ -147,6 +147,24 @@ test("restored contacts are encrypted before the restored vault is exposed", asy
   lockVault();
 });
 
+test("backup inspection identifies the wallet before destructive restore", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const secret = Keypair.random().secret();
+  const publicKey = Keypair.fromSecret(secret).publicKey();
+  await initializeVault(password, { secret });
+
+  const info = await inspectVaultBackup(await exportVaultBackup(password), password);
+  assert.equal(info.primaryAccountPublicKey, publicKey);
+});
+
 test("full wallet backup preserves the validated Merchant Mode bootstrap state", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
