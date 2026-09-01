@@ -1976,6 +1976,31 @@ test("payment preserves an ID memo in the signed XDR", async (t) => {
   assert.equal(memo.value.toString(), "18446744073709551615");
 });
 
+test("payment authorization is rechecked at the signing boundary", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  const calls = mockPaymentHorizon(t, source.publicKey(), destination);
+  let checks = 0;
+
+  await assert.rejects(
+    sendPayment({
+      network: "testnet",
+      secretKey: source.secret(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+      beforeSign: () => {
+        checks += 1;
+        throw new Error("Operator authorization was revoked.");
+      },
+    }),
+    /authorization was revoked/i,
+  );
+
+  assert.equal(checks, 1);
+  assert.equal(calls.some(({ url }) => url.endsWith("/transactions")), false);
+});
+
 test("an issued asset named XLM stays a credit asset", async (t) => {
   const source = Keypair.random();
   const destination = Keypair.random().publicKey();

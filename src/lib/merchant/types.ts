@@ -781,6 +781,12 @@ export interface Peripheral {
 
 export type TillTextSize = "standard" | "large" | "xlarge";
 
+export interface MerchantPinAttemptState {
+  failures: number;
+  blockedUntil: number;
+  lockoutLevel: number;
+}
+
 /** Everything Merchant Mode keeps on this device, versioned for fail-closed schema detection. */
 export interface MerchantStore {
   version: 3;
@@ -799,6 +805,8 @@ export interface MerchantStore {
   unmatched: UnmatchedPayment[];
   paymentReconciliations: PaymentReconciliation[];
   staff: StaffMember[];
+  /** Encrypted cross-tab PIN throttle state, keyed by staff ID. */
+  pinAttempts?: Record<string, MerchantPinAttemptState>;
   activeStaffId: string | null;
   /** Staff currently rostered on this local till, independent of the selected operator. */
   onShiftStaffIds: string[];

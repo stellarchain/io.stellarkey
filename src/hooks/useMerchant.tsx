@@ -91,8 +91,11 @@ import {
   createRefundRequest,
   decideRefundRequest,
   nextPinAttempt,
+  pinAttemptFor,
+  requireActiveOwner,
+  requireRefundAuthorization,
+  storePinAttempt,
   updateStaffMember,
-  type PinAttemptState,
 } from "@/lib/merchant/permissions";
 import {
   activateVerifiedOperator,
@@ -706,7 +709,6 @@ export function MerchantProvider({
   const merchantWriterLockRef = useRef<"pending" | "held" | "fallback">("pending");
   const enableAttemptedRef = useRef(false);
   const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
-  const pinAttempts = useRef(new Map<string, PinAttemptState>());
   const polling = useRef(false);
   const pollRef = useRef<() => Promise<void>>(async () => {});
   const repositoryRef = useRef(getMerchantRepository());
@@ -1209,7 +1211,12 @@ export function MerchantProvider({
 
   const updateSettlementRule = useCallback(
     async (patch: Partial<SettlementRule>): Promise<void> => {
-      await commitStore(updatePersistedSettlementRule(storeRef.current, patch));
+      const actorId = staffSessionIdRef.current;
+      if (!actorId) throw new Error("Unlock the owner before changing treasury rules.");
+      await commitStore((latest) => {
+        requireActiveOwner(latest, actorId);
+        return updatePersistedSettlementRule(latest, patch);
+      });
     },
     [commitStore],
   );
@@ -1295,23 +1302,32 @@ export function MerchantProvider({
     if (!member?.pinDigest) throw new Error("This staff member does not have a PIN yet.");
     const expectedPinDigest = member.pinDigest;
     const now = Date.now();
-    const prior = pinAttempts.current.get(memberId) ?? { failures: 0, blockedUntil: 0 };
+    const prior = pinAttemptFor(current, memberId);
     if (now < prior.blockedUntil) {
       const seconds = Math.max(1, Math.ceil((prior.blockedUntil - now) / 1000));
       throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
     }
     const verified = await verifyMerchantPin(pin, expectedPinDigest);
-    const attempt = nextPinAttempt(prior, verified, now);
-    pinAttempts.current.set(memberId, attempt.state);
+    let recordedAttempt = nextPinAttempt(prior, verified, now);
+    await commitStore((latest) => {
+      const latestMember = latest.staff.find((entry) => entry.id === memberId && entry.active);
+      if (!latestMember || latestMember.pinDigest !== expectedPinDigest) {
+        throw new Error("That operator changed. Enter their current PIN and try again.");
+      }
+      recordedAttempt = nextPinAttempt(pinAttemptFor(latest, memberId), verified, now);
+      const throttled = storePinAttempt(latest, memberId, recordedAttempt.state);
+      return verified
+        ? activateVerifiedOperator(throttled, memberId, expectedPinDigest)
+        : throttled;
+    });
     if (!verified) {
+      const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
-        attempt.blocked
-          ? "Too many wrong PINs. Try again in 30 seconds."
+        recordedAttempt.blocked
+          ? `Too many wrong PINs. Try again in ${seconds} seconds.`
           : "That PIN is not correct.",
       );
     }
-    await commitStore((latest) =>
-      activateVerifiedOperator(latest, member.id, expectedPinDigest));
     updateStaffSessionId(member.id);
   }, [commitStore, updateStaffSessionId]);
 
@@ -1383,23 +1399,33 @@ export function MerchantProvider({
       throw new Error("The active staff session cannot unlock this display.");
     }
     const now = Date.now();
-    const prior = pinAttempts.current.get(member.id) ?? { failures: 0, blockedUntil: 0 };
+    const prior = pinAttemptFor(current, member.id);
     if (now < prior.blockedUntil) {
       const seconds = Math.max(1, Math.ceil((prior.blockedUntil - now) / 1000));
       throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
     }
     const verified = await verifyMerchantPin(pin, member.pinDigest);
-    const attempt = nextPinAttempt(prior, verified, now);
-    pinAttempts.current.set(member.id, attempt.state);
+    let recordedAttempt = nextPinAttempt(prior, verified, now);
+    await commitStore((latest) => {
+      const latestMember = latest.staff.find(
+        (entry) => entry.id === member.id && entry.active && entry.id === latest.activeStaffId,
+      );
+      if (!latestMember || latestMember.pinDigest !== member.pinDigest) {
+        throw new Error("The active operator changed. Unlock the display again.");
+      }
+      recordedAttempt = nextPinAttempt(pinAttemptFor(latest, member.id), verified, now);
+      return storePinAttempt(latest, member.id, recordedAttempt.state);
+    });
     if (!verified) {
+      const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
-        attempt.blocked
-          ? "Too many wrong PINs. Try again in 30 seconds."
+        recordedAttempt.blocked
+          ? `Too many wrong PINs. Try again in ${seconds} seconds.`
           : "That PIN is not correct.",
       );
     }
     return member;
-  }, [staffSessionId]);
+  }, [commitStore, staffSessionId]);
 
   const addStaff = useCallback(async ({
     name,
@@ -1436,11 +1462,14 @@ export function MerchantProvider({
     const actorId = staffSessionId;
     if (!actorId) throw new Error("Choose an owner before resetting a PIN.");
     const pinDigest = await createMerchantPinCredential(pin);
-    await commitStore(updateStaffMember(storeRef.current, actorId, memberId, {
-      pinDigest,
-      pinSetAt: Date.now(),
-    }));
-    pinAttempts.current.delete(memberId);
+    await commitStore((latest) => storePinAttempt(
+      updateStaffMember(latest, actorId, memberId, {
+        pinDigest,
+        pinSetAt: Date.now(),
+      }),
+      memberId,
+      nextPinAttempt(pinAttemptFor(latest, memberId), true, Date.now()).state,
+    ));
   }, [commitStore, staffSessionId]);
 
   /* ---------------- prices ---------------- */
@@ -2609,9 +2638,10 @@ export function MerchantProvider({
     }): Promise<Refund> => {
       const current = storeRef.current;
       const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
-      if (!canReleaseRefund(member, amountMinor)) {
+      if (!member || !canReleaseRefund(member, amountMinor)) {
         throw new Error("This refund needs approval from a staff member with a higher ceiling.");
       }
+      const authorizedStaffId = member.id;
       const existingApprovalRefund = approvalRequestId
         ? current.refunds.find(
             (refund) =>
@@ -2677,6 +2707,9 @@ export function MerchantProvider({
         assetCode: sourcePayment.asset.code,
         issuer: sourcePayment.asset.issuer,
         memo: { type: "text", value: `RF${order.number}` },
+        authorizeBeforeSigning: () => {
+          requireRefundAuthorization(storeRef.current, authorizedStaffId, amountMinor);
+        },
         submissionJournal: {
           onPrepared: async (prepared) => {
             const intent: Refund = {
@@ -2748,9 +2781,10 @@ export function MerchantProvider({
       throw new Error("That incoming payment is no longer available for refund.");
     }
     const amountMinor = reconciliation.amountMinor;
-    if (amountMinor === null || !canReleaseRefund(member, amountMinor)) {
+    if (amountMinor === null || !member || !canReleaseRefund(member, amountMinor)) {
       throw new Error("This payment refund needs approval from a staff member with a higher ceiling.");
     }
+    const authorizedStaffId = member.id;
     const existingApprovalRefund = approvalRequestId
       ? current.refunds.find(
           (refund) =>
@@ -2806,6 +2840,9 @@ export function MerchantProvider({
       memo: {
         type: "text",
         value: order ? `DP${order.number}` : `IP${invoice?.number ?? "SURPLUS"}`,
+      },
+      authorizeBeforeSigning: () => {
+        requireRefundAuthorization(storeRef.current, authorizedStaffId, amountMinor);
       },
       submissionJournal: {
         onPrepared: async (prepared) => {
@@ -3015,26 +3052,44 @@ export function MerchantProvider({
     [persist],
   );
   const updateSettings = useCallback(
-    (patch: Partial<MerchantSettings>) =>
-      persist((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } })),
-    [persist],
+    async (patch: Partial<MerchantSettings>) => {
+      const actorId = staffSessionIdRef.current;
+      if (!actorId) throw new Error("Unlock the owner before changing merchant settings.");
+      await commitStore((latest) => {
+        requireActiveOwner(latest, actorId);
+        return { ...latest, settings: { ...latest.settings, ...patch } };
+      });
+    },
+    [commitStore],
   );
   const upsertItem = useCallback(
-    (item: CatalogueItem) =>
-      commitStore((prev) => ({
-        ...prev,
-        catalogue: prev.catalogue.some((candidate) => candidate.id === item.id)
-          ? prev.catalogue.map((candidate) => (candidate.id === item.id ? item : candidate))
-          : [...prev.catalogue, item],
-      })),
+    async (item: CatalogueItem) => {
+      const actorId = staffSessionIdRef.current;
+      if (!actorId) throw new Error("Unlock the owner before changing the catalogue.");
+      await commitStore((prev) => {
+        requireActiveOwner(prev, actorId);
+        return {
+          ...prev,
+          catalogue: prev.catalogue.some((candidate) => candidate.id === item.id)
+            ? prev.catalogue.map((candidate) => (candidate.id === item.id ? item : candidate))
+            : [...prev.catalogue, item],
+        };
+      });
+    },
     [commitStore],
   );
   const removeItemFromCatalogue = useCallback(
-    (id: string) =>
-      commitStore((prev) => ({
-        ...prev,
-        catalogue: prev.catalogue.filter((item) => item.id !== id),
-      })),
+    async (id: string) => {
+      const actorId = staffSessionIdRef.current;
+      if (!actorId) throw new Error("Unlock the owner before changing the catalogue.");
+      await commitStore((prev) => {
+        requireActiveOwner(prev, actorId);
+        return {
+          ...prev,
+          catalogue: prev.catalogue.filter((item) => item.id !== id),
+        };
+      });
+    },
     [commitStore],
   );
   const invoicePayUriFor = useCallback(

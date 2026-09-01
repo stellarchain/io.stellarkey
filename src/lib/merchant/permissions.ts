@@ -2,6 +2,7 @@ import { isMerchantPinCredential } from "./pin";
 import { availableRefundMinor } from "./refunds";
 import type {
   MerchantStore,
+  MerchantPinAttemptState,
   RefundReason,
   RefundRequest,
   StaffMember,
@@ -52,10 +53,7 @@ const ROLE_PERMISSIONS: Record<StaffRole, StaffPermissions> = {
   },
 };
 
-export interface PinAttemptState {
-  failures: number;
-  blockedUntil: number;
-}
+export type PinAttemptState = MerchantPinAttemptState;
 
 export interface PinAttemptResult {
   state: PinAttemptState;
@@ -64,6 +62,7 @@ export interface PinAttemptResult {
 
 const MAX_PIN_FAILURES = 5;
 const PIN_LOCKOUT_MS = 30_000;
+const MAX_PIN_LOCKOUT_MS = 15 * 60_000;
 
 export function defaultPermissionsFor(role: StaffRole): StaffPermissions {
   return { ...ROLE_PERMISSIONS[role] };
@@ -75,12 +74,51 @@ export function canReleaseRefund(member: StaffMember | null | undefined, amountM
   return ceiling === null || (ceiling > 0 && amountMinor <= ceiling);
 }
 
-function activeOwner(store: MerchantStore, actorId: string): StaffMember {
+export function requireActiveOwner(store: MerchantStore, actorId: string): StaffMember {
   const actor = store.staff.find((member) => member.id === actorId);
-  if (!actor?.active || actor.role !== "owner") {
-    throw new Error("Only an active owner can manage staff on this device.");
+  if (!actor?.active || actor.role !== "owner" || store.activeStaffId !== actorId) {
+    throw new Error("Only the active owner can change merchant settings on this device.");
   }
   return actor;
+}
+
+export function requireRefundAuthorization(
+  store: MerchantStore,
+  actorId: string,
+  amountMinor: number,
+): StaffMember {
+  const actor = store.staff.find((member) => member.id === actorId);
+  if (!actor?.active || store.activeStaffId !== actorId) {
+    throw new Error("The active operator changed. Unlock the authorized operator and try again.");
+  }
+  if (!canReleaseRefund(actor, amountMinor)) {
+    throw new Error("This refund needs approval from a staff member with a higher ceiling.");
+  }
+  return actor;
+}
+
+const EMPTY_PIN_ATTEMPT: PinAttemptState = {
+  failures: 0,
+  blockedUntil: 0,
+  lockoutLevel: 0,
+};
+
+export function pinAttemptFor(store: MerchantStore, memberId: string): PinAttemptState {
+  return store.pinAttempts?.[memberId] ?? EMPTY_PIN_ATTEMPT;
+}
+
+export function storePinAttempt(
+  store: MerchantStore,
+  memberId: string,
+  state: PinAttemptState,
+): MerchantStore {
+  const pinAttempts = { ...(store.pinAttempts ?? {}) };
+  if (state.failures === 0 && state.blockedUntil === 0 && state.lockoutLevel === 0) {
+    delete pinAttempts[memberId];
+  } else {
+    pinAttempts[memberId] = state;
+  }
+  return { ...store, pinAttempts };
 }
 
 function cleanName(value: string): string {
@@ -125,7 +163,7 @@ export function addStaffMember(
     permissions?: StaffPermissions;
   },
 ): MerchantStore {
-  activeOwner(store, actorId);
+  requireActiveOwner(store, actorId);
   if (!input.id || store.staff.some((member) => member.id === input.id)) {
     throw new Error("A staff member with this ID already exists.");
   }
@@ -150,7 +188,7 @@ export function updateStaffMember(
   memberId: string,
   patch: Partial<Pick<StaffMember, "name" | "role" | "permissions" | "pinDigest" | "pinSetAt" | "active">>,
 ): MerchantStore {
-  activeOwner(store, actorId);
+  requireActiveOwner(store, actorId);
   const member = store.staff.find((entry) => entry.id === memberId);
   if (!member) throw new Error("That staff member no longer exists.");
   if (patch.role !== undefined && !validRole(patch.role)) throw new Error("Choose a supported staff role.");
@@ -193,15 +231,23 @@ export function nextPinAttempt(
   now: number,
 ): PinAttemptResult {
   if (now < prior.blockedUntil) return { state: prior, blocked: true };
-  if (success) return { state: { failures: 0, blockedUntil: 0 }, blocked: false };
+  if (success) return { state: EMPTY_PIN_ATTEMPT, blocked: false };
   const failures = (prior.blockedUntil > 0 ? 0 : prior.failures) + 1;
   if (failures >= MAX_PIN_FAILURES) {
+    const lockoutLevel = prior.lockoutLevel + 1;
+    const lockoutMs = Math.min(
+      PIN_LOCKOUT_MS * (2 ** Math.max(0, lockoutLevel - 1)),
+      MAX_PIN_LOCKOUT_MS,
+    );
     return {
-      state: { failures, blockedUntil: now + PIN_LOCKOUT_MS },
+      state: { failures, blockedUntil: now + lockoutMs, lockoutLevel },
       blocked: true,
     };
   }
-  return { state: { failures, blockedUntil: 0 }, blocked: false };
+  return {
+    state: { failures, blockedUntil: 0, lockoutLevel: prior.lockoutLevel },
+    blocked: false,
+  };
 }
 
 export function createRefundRequest(
