@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Made the exact hash-pinned development Private Payments deployment available from production-hosted StellarKey on Testnet; Mainnet remains refused and the single-party proving setup remains explicitly disclosed.
-
 ### Fixed
 
 - Identified the authenticated primary account in the destructive backup-restore review so users can distinguish wallets before replacement.
@@ -25,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Made the exact hash-pinned development Private Payments deployment available from production-hosted StellarKey on Testnet; Mainnet remains refused and the single-party proving setup remains explicitly disclosed.
 - Moved offline XDR signing into the vault's generation-revocable, key-wiping signer scope while retaining fresh password and live authority checks.
 - Rejected imported transaction envelopes with a zero maximum time so cosigner authorization cannot be retained indefinitely.
 - Closed secret-bearing paper-wallet print windows when their parent modal closes or the wallet locks, resets, or receives a peer-tab lock.
