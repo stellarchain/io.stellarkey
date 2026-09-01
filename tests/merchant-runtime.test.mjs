@@ -219,6 +219,27 @@ test("merchant authorization is enforced at mutation and signing boundaries", ()
   assert.match(hook, /authorizeBeforeSigning/);
   assert.match(wallet, /authorizeBeforeSigning/);
   assert.match(api, /beforeSign/);
+
+  const recoveryReset = hook.split("const resetRecoveryData = useCallback")[1]
+    ?.split("// The wallet owns canonical-hash tracking")[0] ?? "";
+  assert.match(recoveryReset, /requireActiveOwner/);
+  assert.match(recoveryReset, /authorizeSensitiveAction/);
+
+  const customerNote = hook.split("const updateCustomerNote = useCallback")[1]
+    ?.split("const startLoyaltyCard")[0] ?? "";
+  assert.match(customerNote, /requireCustomerActor/);
+  assert.match(customerNote, /commitStore\(\(latest\)/);
+
+  const chargeVoid = hook.split("const voidCharge = useCallback")[1]
+    ?.split("\/\*\* Expire anything")[0] ?? "";
+  assert.match(chargeVoid, /requirePaymentActor/);
+  assert.match(chargeVoid, /commitStore\(\(latest\)/);
+});
+
+test("locked or report-forbidden merchant sessions cannot render takings or customer PII", () => {
+  const page = source("src/components/merchant/MerchantPage.tsx");
+  assert.match(page, /const showTakings = canSeeReports && phase !== "locked"/);
+  assert.match(page, /sub === "customers" \? \(\s*canSeeReports && phase !== "locked"/);
 });
 
 test("printing, scanner input, and supported preferences execute real browser paths", () => {

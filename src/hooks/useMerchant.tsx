@@ -1035,6 +1035,10 @@ export function MerchantProvider({
     }
   }, [readMerchantKey]);
   const resetRecoveryData = useCallback(async () => {
+    const actorId = staffSessionIdRef.current ?? "";
+    requireActiveOwner(storeRef.current, actorId);
+    await authorizeSensitiveAction("Erase Merchant Mode recovery data");
+    requireActiveOwner(storeRef.current, actorId);
     try {
       await repositoryRef.current.clear();
     } catch (error) {
@@ -1050,7 +1054,7 @@ export function MerchantProvider({
     storeRef.current = fresh;
     setStore(fresh);
     revisionChannelRef.current?.postRevision(fresh);
-  }, []);
+  }, [authorizeSensitiveAction]);
 
   // The wallet owns canonical-hash tracking. Merchant state mirrors a final
   // resolution so an ambiguous outbound refund is never presented as complete.
@@ -1086,13 +1090,26 @@ export function MerchantProvider({
   const enabled = settings.enabled;
   const configured = !needsMerchantSetup(settings, store.staff);
   const setEnabled = useCallback(
-    (on: boolean) =>
-      commitStore((prev) =>
-        on && needsMerchantSetup(prev.settings, prev.staff)
-          ? prev
-          : { ...prev, settings: { ...prev.settings, enabled: on } },
-      ),
-    [commitStore],
+    async (on: boolean) => {
+      const before = storeRef.current;
+      if (before.settings.enabled === on) return;
+      if (on && needsMerchantSetup(before.settings, before.staff)) return;
+
+      const actorId = staffSessionIdRef.current ?? "";
+      if (!on) requireActiveOwner(before, actorId);
+      await authorizeSensitiveAction(on ? "Enable Merchant Mode" : "Disable Merchant Mode");
+
+      await commitStore((latest) => {
+        if (latest.settings.enabled === on) return latest;
+        if (on && needsMerchantSetup(latest.settings, latest.staff)) return latest;
+        if (!on) requireActiveOwner(latest, actorId);
+        if (on && !latest.staff.some((member) => member.active && member.role === "owner")) {
+          throw new Error("Merchant Mode needs an active owner before it can be enabled.");
+        }
+        return { ...latest, settings: { ...latest.settings, enabled: on } };
+      });
+    },
+    [authorizeSensitiveAction, commitStore],
   );
 
   // This sidecar contains no merchant content. It lets a disabled wallet avoid
@@ -2064,10 +2081,17 @@ export function MerchantProvider({
     address: string,
     note: string,
   ): Promise<CustomerRecord> => {
-    const next = updatePersistedCustomerNote(storeRef.current, address, note);
-    await commitStore(next);
-    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
-  }, [commitStore]);
+    requireCustomerActor(storeRef.current);
+    let updated: CustomerRecord | null = null;
+    await commitStore((latest) => {
+      requireCustomerActor(latest);
+      const next = updatePersistedCustomerNote(latest, address, note);
+      updated = next.customers.find((customer) => customer.address === address) ?? null;
+      return next;
+    });
+    if (!updated) throw new Error("That customer record is no longer available.");
+    return updated;
+  }, [commitStore, requireCustomerActor]);
 
   const startLoyaltyCard = useCallback(async (
     address: string,
@@ -2098,10 +2122,12 @@ export function MerchantProvider({
   }, [commitStore, requireCustomerActor]);
 
   const forgetCustomer = useCallback(async (address: string): Promise<void> => {
-    const current = storeRef.current;
-    const next = forgetPersistedCustomer(current, address);
-    if (next !== current) await commitStore(next);
-  }, [commitStore]);
+    requireCustomerActor(storeRef.current);
+    await commitStore((latest) => {
+      requireCustomerActor(latest);
+      return forgetPersistedCustomer(latest, address);
+    });
+  }, [commitStore, requireCustomerActor]);
 
   const customerHistory = useCallback(
     (address: string): CustomerHistoryEntry[] => buildCustomerHistory(storeRef.current, address),
@@ -2352,22 +2378,29 @@ export function MerchantProvider({
 
   const voidCharge = useCallback(
     async (id: string): Promise<void> => {
-      const current = storeRef.current;
-      await commitStore({
-        ...current,
-        charges: current.charges.map((charge) =>
-          charge.id === id ? { ...charge, status: "voided" } : charge,
-        ),
-        orders: current.orders.map((order) =>
-          current.charges.some((charge) => charge.id === id && charge.orderId === order.id) &&
-          order.status === "awaiting"
-            ? { ...order, status: "voided" }
-            : order,
-        ),
+      const actor = requirePaymentActor(storeRef.current);
+      if (!actor.permissions.void) throw new Error(`${actor.name} is not allowed to void charges.`);
+      await commitStore((latest) => {
+        const latestActor = requirePaymentActor(latest);
+        if (!latestActor.permissions.void) {
+          throw new Error(`${latestActor.name} is not allowed to void charges.`);
+        }
+        return {
+          ...latest,
+          charges: latest.charges.map((charge) =>
+            charge.id === id ? { ...charge, status: "voided" } : charge,
+          ),
+          orders: latest.orders.map((order) =>
+            latest.charges.some((charge) => charge.id === id && charge.orderId === order.id) &&
+            order.status === "awaiting"
+              ? { ...order, status: "voided" }
+              : order,
+          ),
+        };
       });
       setActiveChargeId((current) => (current === id ? null : current));
     },
-    [commitStore],
+    [commitStore, requirePaymentActor],
   );
 
   /** Expire anything past its window so the UI never shows a dead countdown. */
