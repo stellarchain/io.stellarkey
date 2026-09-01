@@ -958,6 +958,42 @@ export interface SendPaymentParams {
   beforeSign?: () => void;
 }
 
+interface HorizonMemoRequirementAccount {
+  sequence?: unknown;
+  data?: unknown;
+  /** SDK-normalized fixtures may use data_attr; raw Horizon uses data. */
+  data_attr?: unknown;
+}
+
+export function accountRequiresMemo(account: unknown): boolean {
+  if (!account || typeof account !== "object") return false;
+  const record = account as HorizonMemoRequirementAccount;
+  const data = record.data ?? record.data_attr;
+  return Boolean(
+    data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      (data as Record<string, unknown>)["config.memo_required"] === "MQ==",
+  );
+}
+
+export function assertDestinationMemoRequirement(input: {
+  destination: string;
+  muxedDestination: boolean;
+  destinationAccount: unknown;
+  hasMemo: boolean;
+}): void {
+  if (
+    !input.muxedDestination &&
+    !input.hasMemo &&
+    accountRequiresMemo(input.destinationAccount)
+  ) {
+    throw new SendError(
+      `Destination ${input.destination} requires a memo. Ask the recipient for the correct memo before sending.`,
+    );
+  }
+}
+
 export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
   const { network, secretKey, amount, assetCode, issuer, feeStroops } = params;
   const destination = params.destination.trim();
@@ -982,7 +1018,10 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = await getJson(`${horizonUrl}/accounts/${destinationAccount}`) !== null;
+  const destinationRecord = await getJson<HorizonMemoRequirementAccount>(
+    `${NETWORKS[network].horizonUrl}/accounts/${destinationAccount}`,
+  );
+  const destExists = destinationRecord !== null;
   const paymentAsset = toStellarAsset(assetCode, issuer);
   const isNative = paymentAsset.isNative();
 
@@ -995,6 +1034,14 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
     throw new SendError(
       "The account behind this muxed address does not exist yet. Ask for its G-address and activate that account with XLM first.",
     );
+  }
+  if (destExists) {
+    assertDestinationMemoRequirement({
+      destination,
+      muxedDestination,
+      destinationAccount: destinationRecord,
+      hasMemo: memo !== null,
+    });
   }
   const fee = await loadRecommendedBaseFee(network, feeStroops);
 
@@ -1093,10 +1140,12 @@ export async function sendBatchPayments(params: {
   const destinationEntries = await Promise.all(
     uniqueDestinations.map(async (destination) => [
       destination,
-      destination === publicKey || (await getJson(`${horizonUrl}/accounts/${destination}`)) !== null,
+      await getJson<HorizonMemoRequirementAccount>(
+        `${NETWORKS[network].horizonUrl}/accounts/${destination}`,
+      ),
     ] as const),
   );
-  const destinationExists = new Map(destinationEntries);
+  const destinationRecords = new Map(destinationEntries);
   const activatedInTransaction = new Set<string>();
 
   const builder = new TransactionBuilder(minimalAccount(publicKey, source.sequence), {
@@ -1105,7 +1154,8 @@ export async function sendBatchPayments(params: {
   });
 
   for (const payment of prepared) {
-    const exists = destinationExists.get(payment.destinationAccount) === true;
+    const destinationRecord = destinationRecords.get(payment.destinationAccount) ?? null;
+    const exists = destinationRecord !== null;
     if (!exists && !payment.asset.isNative()) {
       throw new SendError(
         `Destination ${payment.destination} must be activated with XLM before receiving ${payment.asset.getCode()}.`,
@@ -1115,6 +1165,14 @@ export async function sendBatchPayments(params: {
       throw new SendError(
         `The account behind ${payment.destination} must be activated through its G-address first.`,
       );
+    }
+    if (exists) {
+      assertDestinationMemoRequirement({
+        destination: payment.destination,
+        muxedDestination: payment.muxedDestination,
+        destinationAccount: destinationRecord,
+        hasMemo: memo !== null,
+      });
     }
     if (!exists && !activatedInTransaction.has(payment.destinationAccount)) {
       builder.addOperation(

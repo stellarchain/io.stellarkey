@@ -48,6 +48,7 @@ import {
   applyMultisigConfig,
   cosignTransaction,
   explainTransaction,
+  prepareCosignPayment,
   requiredWeightForTx,
 } from "../src/lib/multisig.ts";
 import * as multisig from "../src/lib/multisig.ts";
@@ -2030,6 +2031,139 @@ test("payment preserves an ID memo in the signed XDR", async (t) => {
   const memo = submittedTransaction(calls).memo;
   assert.equal(memo.type, "id");
   assert.equal(memo.value.toString(), "18446744073709551615");
+});
+
+test("SEP-29 blocks a non-muxed payment when the destination requires a memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) submitted = true;
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    sendPayment({
+      network: "testnet",
+      secretKey: source.secret(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+    }),
+    /requires a memo/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("SEP-29 accepts a required memo and exempts a muxed destination", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random();
+  const muxed = new MuxedAccount(new Account(destination.publicKey(), "0"), "42").accountId();
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    calls.push({ url: stringUrl, init });
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await sendPayment({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination: destination.publicKey(),
+    amount: "1",
+    assetCode: "XLM",
+    memo: { type: "id", value: "42" },
+  });
+  await sendPayment({
+    network: "testnet",
+    secretKey: source.secret(),
+    destination: muxed,
+    amount: "1",
+    assetCode: "XLM",
+  });
+  assert.equal(calls.filter(({ url }) => url.endsWith("/transactions")).length, 2);
+});
+
+test("SEP-29 blocks batch submission when any non-muxed destination requires a memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) submitted = true;
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    sendBatchPayments({
+      network: "testnet",
+      secretKey: source.secret(),
+      payments: [{ destination, amount: "1", assetCode: "XLM" }],
+    }),
+    /requires a memo/i,
+  );
+  assert.equal(submitted, false);
+});
+
+test("SEP-29 blocks exporting a co-signed payment without the required memo", async (t) => {
+  const source = Keypair.random();
+  const destination = Keypair.random().publicKey();
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${source.publicKey()}`)) {
+      return new Response(JSON.stringify({ sequence: "0" }), { status: 200 });
+    }
+    if (stringUrl.endsWith(`/accounts/${destination}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        data: { "config.memo_required": "MQ==" },
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    prepareCosignPayment({
+      network: "testnet",
+      sourcePublicKey: source.publicKey(),
+      destination,
+      amount: "1",
+      assetCode: "XLM",
+      secretKey: source.secret(),
+    }),
+    /requires a memo/i,
+  );
 });
 
 test("payment authorization is rechecked at the signing boundary", async (t) => {
