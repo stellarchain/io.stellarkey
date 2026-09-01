@@ -278,7 +278,7 @@ export function MerchantPage({
     say it is a sample. So the strip stands down on Insights instead, and the
     page keeps the figures it can qualify.
   */
-  const showTakings = sub !== "insights";
+  const showTakings = canSeeReports && phase !== "locked" && sub !== "insights";
 
   // Every sub-page clears the floating mobile tab bar itself — Orders, Catalogue
   // and Insights with their own bottom padding, the till with the sticky charge
@@ -394,7 +394,10 @@ export function MerchantPage({
             className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4"
           >
             <div className="flex w-max items-center gap-1.5 pr-2">
-              {NAV.filter((item) => item.value !== "insights" || canSeeReports).map((item) => {
+              {NAV.filter(
+                (item) =>
+                  (item.value !== "insights" && item.value !== "customers") || canSeeReports,
+              ).map((item) => {
                 const isActive = item.value === active;
                 return (
                   <button
@@ -462,7 +465,11 @@ export function MerchantPage({
       ) : sub === "links" ? (
         <PaymentLinksPage />
       ) : sub === "customers" ? (
-        <CustomersPage />
+        canSeeReports && phase !== "locked" ? (
+          <CustomersPage />
+        ) : (
+          <Notice tone="warn">Unlock an authorized staff member to view customer records.</Notice>
+        )
       ) : canSeeReports ? (
         <InsightsPage />
       ) : (
