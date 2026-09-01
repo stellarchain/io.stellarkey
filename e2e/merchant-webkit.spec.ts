@@ -113,6 +113,12 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByText("Staff & terminals", { exact: true }).click();
+  await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+  const restoredOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+  await restoredOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await restoredOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await page.getByRole("button", { name: "Show the payment request for order #1001" }).click();
@@ -120,15 +126,20 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await expect(restoredCharge.getByText("Watching for payment", { exact: true })).toBeVisible();
 
   incoming.push(paymentFor(charge, charge.amount));
-  const paidCharge = page.getByRole("dialog", { name: "Paid", exact: true });
-  await expect(paidCharge.getByText("Paid in full", { exact: true })).toBeVisible({
+  await expect(page.getByText("Payment received. Till locked.", { exact: true })).toBeVisible({
     timeout: 15_000,
   });
-  await paidCharge.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByText("Unlock an authorized staff member to continue.", { exact: true })).toBeVisible();
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+  await page.getByText("Staff & terminals", { exact: true }).click();
+  await page.getByRole("button", { name: "Switch to Imported Account" }).click();
+  const settledOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
+  await settledOwnerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await settledOwnerPin.getByRole("button", { name: "Select", exact: true }).click();
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Merchant" }).click();
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await expect(page.getByText(/^Paid ·/).first()).toBeVisible();

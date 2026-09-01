@@ -37,17 +37,18 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await second.getByPlaceholder("Enter password").fill(testPassword);
   await second.getByRole("button", { name: "Unlock Vault" }).click();
   await second.getByRole("button", { name: "Settings", exact: true }).click();
-  await second.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
-  const turnOff = second.getByRole("dialog", { name: "Turn off Merchant Mode?" });
-  const confirmTurnOff = turnOff.getByRole("button", { name: "Turn Off Merchant Mode" });
-  await confirmTurnOff.click();
+  await second.getByText("Staff & terminals", { exact: true }).click();
+  await second.getByRole("button", { name: "Switch to Imported Account" }).click();
+  const ownerPin = second.getByRole("dialog", { name: "Imported Account" });
+  await ownerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await ownerPin.getByRole("button", { name: "Select", exact: true }).click();
   await expect(
     second.getByText(
       "Merchant editing is active in another tab. Close it or wait for this tab to take over, then try again.",
       { exact: true },
     ),
   ).toBeVisible();
-  await expect(turnOff).toBeVisible();
+  await expect(ownerPin).toBeVisible();
 
   await page.close();
   await expect.poll(() => second.evaluate(async () => {
@@ -55,7 +56,17 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
     return state.held?.some((lock) => lock.name === "stellarkey.merchant.writer.v1") ?? false;
   })).toBe(true);
 
+  await ownerPin.getByLabel("PIN for Imported Account").fill("2468");
+  await ownerPin.getByRole("button", { name: "Select", exact: true }).click();
+  await expect(ownerPin).toBeHidden();
+  await second.getByRole("button", { name: "Settings", exact: true }).click();
+  await second.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
+  const turnOff = second.getByRole("dialog", { name: "Turn off Merchant Mode?" });
+  const confirmTurnOff = turnOff.getByRole("button", { name: "Turn Off Merchant Mode" });
   await confirmTurnOff.click();
+  const authorization = second.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password").fill(testPassword);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
   // Turning Merchant Mode off unloads its lazy runtime and returns Settings to
   // the wallet overview, so the switch intentionally leaves the DOM.
   await expect.poll(() => second.evaluate(() => {

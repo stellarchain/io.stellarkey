@@ -15,6 +15,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { Button, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconChevronDown, IconDownload } from "../icons";
 import { IconClock, IconInfo, IconReceiptStellar } from "./icons";
+import { useToast } from "../Toast";
 import { Stat, StatStrip } from "./Stat";
 import { ChargeSheet } from "./ChargeSheet";
 import { PosTerminal } from "./PosTerminal";
@@ -157,12 +158,16 @@ export function MerchantPage({
   const { activeShift } = useMerchantTill();
   const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
   const { phase } = useWalletPhase();
+  const { toast } = useToast();
 
   // Uncontrolled by default so the page works on its own; the shell passes both
   // props so the sidebar's shift row opens this very sheet.
   const [localShiftOpen, setLocalShiftOpen] = useState(false);
   const [connectionRestored, setConnectionRestored] = useState(false);
   const previousOnline = useRef(online);
+  const previousActiveCharge = useRef(
+    activeCharge ? { id: activeCharge.id, status: activeCharge.status } : null,
+  );
   const shiftShowing = shiftOpen ?? localShiftOpen;
   const setShiftShowing = onShiftOpenChange ?? setLocalShiftOpen;
 
@@ -179,6 +184,22 @@ export function MerchantPage({
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, [online]);
+
+  useEffect(() => {
+    const previous = previousActiveCharge.current;
+    previousActiveCharge.current = activeCharge
+      ? { id: activeCharge.id, status: activeCharge.status }
+      : null;
+    if (
+      activeCharge?.status === "paid" &&
+      previous?.id === activeCharge.id &&
+      previous.status !== "paid" &&
+      activeStaff === null
+    ) {
+      triggerHaptic("success");
+      toast("Payment received. Till locked.", "success");
+    }
+  }, [activeCharge, activeStaff, toast]);
 
   if (!ready) {
     return (
