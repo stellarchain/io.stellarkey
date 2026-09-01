@@ -1867,6 +1867,25 @@ test("review blocks imported envelopes without time bounds", () => {
   assert.match(review.blockingReasons.join(" "), /time bounds.*required.*Trezor/i);
 });
 
+test("review blocks imported envelopes whose time bounds never expire", () => {
+  const source = Keypair.random();
+  const tx = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+    timebounds: { minTime: "0", maxTime: "0" },
+  })
+    .addOperation(Operation.payment({
+      destination: Keypair.random().publicKey(),
+      amount: "1",
+      asset: Asset.native(),
+    }))
+    .build();
+  const review = reviewTransactionEnvelope(tx.toXdr(), "testnet");
+
+  assert.equal(review.signable, false);
+  assert.match(review.blockingReasons.join(" "), /finite expiry/i);
+});
+
 test("review blocks invalid UTF-8 text memo bytes and preserves their hex identity", () => {
   const source = Keypair.random();
   const tx = buildReviewTransaction(source, [
