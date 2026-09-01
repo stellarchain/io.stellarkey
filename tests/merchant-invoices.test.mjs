@@ -385,6 +385,33 @@ test("an invoice payment cannot file against another receiving account", async (
   assert.equal(reconciled.store.invoices[0].paidMinor, 0);
 });
 
+test("an issued invoice stops settling after the merchant receiving account changes", async () => {
+  const { createInvoiceDraft, issueInvoice, reconcileInvoicePayments } = await invoiceDomain();
+  const { member, store } = merchantStore();
+  const draft = createInvoiceDraft(store, draftInput(member));
+  const issued = issueInvoice(draft.store, {
+    invoiceId: draft.invoice.id,
+    actor: member,
+    network: "mainnet",
+    destination: TILL,
+    quotes: [{ asset: USDC, currencyPerUnit: 1 }],
+    now: NOW + 100,
+  });
+  const changed = {
+    ...issued.store,
+    settings: { ...issued.store.settings, receivingPublicKey: ISSUER },
+  };
+  const observed = payment("old-invoice-destination", "10.0000000", issued.invoice.routingId);
+  const reconciled = reconcileInvoicePayments(changed, {
+    network: "mainnet",
+    payments: [observed],
+    now: NOW + 2_000,
+  });
+
+  assert.deepEqual(reconciled.unclaimed, [observed]);
+  assert.equal(reconciled.store.invoices[0].paidMinor, 0);
+});
+
 test("manual settlement records the exact actor in the current persisted schema", async () => {
   const { createInvoiceDraft, issueInvoice, recordManualInvoicePayment } = await invoiceDomain();
   const { member, store } = merchantStore();

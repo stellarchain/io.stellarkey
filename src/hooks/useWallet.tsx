@@ -531,6 +531,8 @@ interface WalletSecurityContextValue {
   approveSigningAuthorization: (password: string) => Promise<"approved" | "continue">;
   continueSigningAuthorization: () => void;
   cancelSigningAuthorization: (message?: string) => void;
+  /** Require one fresh local wallet-password check for a security-sensitive setting. */
+  authorizeSensitiveAction: (label: string) => Promise<void>;
   changeWalletPassword: (currentPassword: string, newPassword: string) => Promise<void>;
   changeSigningPasswordRequired: (
     required: boolean,
@@ -642,6 +644,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!signingPasswordRequiredRef.current) return;
     verifiedSigningAuthorizationRef.current = null;
     await signingAuthorizationGate.request(label, { requiresUserGestureContinuation });
+  }, [signingAuthorizationGate]);
+
+  const authorizeSensitiveAction = useCallback(async (label: string) => {
+    verifiedSigningAuthorizationRef.current = null;
+    await signingAuthorizationGate.request(label, { purpose: "sensitive-setting" });
   }, [signingAuthorizationGate]);
 
   const approveSigningAuthorization = useCallback(async (password: string) => {
@@ -2793,10 +2800,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     approveSigningAuthorization,
     continueSigningAuthorization,
     cancelSigningAuthorization,
+    authorizeSensitiveAction,
     changeWalletPassword,
     changeSigningPasswordRequired,
   }), [
     approveSigningAuthorization,
+    authorizeSensitiveAction,
     cancelSigningAuthorization,
     changeSigningPasswordRequired,
     changeWalletPassword,

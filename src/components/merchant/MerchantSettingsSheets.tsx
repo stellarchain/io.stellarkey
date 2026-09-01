@@ -100,11 +100,13 @@ export function MerchantSettingsSheetContent({
   const symbol = FIAT_SYMBOLS[settings.currency] ?? "";
   const accountOptions = useMemo(
     () =>
-      accounts.map((account) => ({
+      accounts
+        .filter((account) => !account.watchOnly || Boolean(account.hardware))
+        .map((account) => ({
         value: account.publicKey,
-        label: account.label,
+        label: account.hardware ? `${account.label} · ${account.hardware}` : account.label,
         sublabel: formatTrezorAddress(account.publicKey),
-      })),
+        })),
     [accounts],
   );
   const receivingAccount = accounts.find(
@@ -297,8 +299,9 @@ export function MerchantSettingsSheetContent({
               />
             </SettingsRow>
             <NoteRow>
-              Issued requests keep their original receiving account and remain monitored until
-              resolved.
+              Changing this account requires your wallet password. Existing unpaid requests stop
+              accepting automatic settlement until they are replaced or the original account is
+              restored.
             </NoteRow>
             <SettingsRow
               icon={<span className="mono text-[12px] font-bold">{symbol}</span>}

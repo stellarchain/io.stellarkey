@@ -345,11 +345,13 @@ function SetupWizardInner({
 
   const accountOptions: SelectOption[] = useMemo(
     () =>
-      accounts.map((account) => ({
+      accounts
+        .filter((account) => !account.watchOnly || Boolean(account.hardware))
+        .map((account) => ({
         value: account.publicKey,
-        label: account.watchOnly ? `${account.label} · watch-only` : account.label,
+        label: account.hardware ? `${account.label} · ${account.hardware}` : account.label,
         sublabel: formatTrezorAddress(account.publicKey),
-      })),
+        })),
     [accounts],
   );
 

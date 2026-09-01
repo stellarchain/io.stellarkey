@@ -457,8 +457,12 @@ export function createReportExport(
   },
 ): { store: MerchantStore; file: ReportFile; record: ExportRecord } {
   const currentActor = store.staff.find((member) => member.id === input.actor.id);
-  if (!currentActor?.active || !currentActor.permissions.exportRecords) {
-    throw new Error("This staff member cannot export merchant records.");
+  if (
+    !currentActor?.active ||
+    store.activeStaffId !== currentActor.id ||
+    !currentActor.permissions.exportRecords
+  ) {
+    throw new Error("The active staff member cannot export merchant records.");
   }
   if (store.exportRecords.some((record) => record.id === input.id)) {
     throw new Error("This export has already been recorded.");

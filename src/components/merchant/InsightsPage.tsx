@@ -16,7 +16,7 @@ import { fmtMinor } from "@/lib/merchant/money";
 import { deriveInsightsHistory, startOfDay } from "@/lib/merchant/insights";
 import type { AcceptedAsset, Minor } from "@/lib/merchant/types";
 import { Sparkline } from "../Sparkline";
-import { IOSBackButton } from "../ui";
+import { IOSBackButton, Notice } from "../ui";
 import { MerchantDisclosure } from "./Disclosure";
 import { Stat, StatStrip } from "./Stat";
 
@@ -127,7 +127,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
   const { ready } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { orders, refunds } = useMerchantRecords();
-  const { today } = useMerchantReporting();
+  const { today, canSeeReports } = useMerchantReporting();
   const { network } = useWalletIdentity();
   const reportingNow = useLiveNow(LIVE_MINUTE_MS);
   const currency = settings.currency;
@@ -376,6 +376,15 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
 
   const tipShare = summary.takingsMinor > 0 ? (summary.tipsMinor / summary.takingsMinor) * 100 : 0;
   const netMinor = summary.takingsMinor - summary.refundedMinor;
+
+  if (!canSeeReports) {
+    return (
+      <section className="space-y-4">
+        {onBack && <IOSBackButton onClick={onBack} label="Back to Merchant Mode" />}
+        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
+      </section>
+    );
+  }
 
   return (
     <section className="fade-up w-full pb-[132px] md:pb-12">

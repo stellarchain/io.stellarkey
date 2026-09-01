@@ -415,6 +415,7 @@ export function reconcileInvoicePayments(
           (invoice) =>
             invoice.routingId === payment.routingId &&
             invoice.network === input.network &&
+            invoice.destination === store.settings.receivingPublicKey &&
             invoice.destination === payment.destination &&
             (invoice.status === "sent" ||
               invoice.status === "partially_paid" ||
