@@ -76,7 +76,7 @@ Deploy the exact artifact to an isolated preview origin first. Compare its relea
 
 Promote the same bytes to production. On physical iPhone/iPad and a desktop browser, verify install, safe areas, no form zoom, passkey capability handling, cross-origin popup behavior, and the optional hardware path. A Trezor test must use the registered production origin and a physical device.
 
-Private Payments may run as an explicitly unaudited `testnet-preview` only when the deployed static archive pins the exact manifest, proof artifacts, and Testnet contract IDs, the wallet is connected to Stellar Testnet, and the interface does not claim ceremony, audit, or production evidence that is absent. Mainnet must reject this state. A `testnet-beta` or `production` manifest remains disabled unless the same immutable archive contains the exact reviewed ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
+Private Payments must remain `development` and unavailable in production until `snarkjs zkey verify` succeeds against the pinned Powers-of-Tau transcript and the same immutable archive contains the reviewed ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Every non-development status, including a future testnet preview, is rejected without that evidence. Never create evidence records from a production build or substitute development hashes.
 
 ## 6. External probes and monitoring
 

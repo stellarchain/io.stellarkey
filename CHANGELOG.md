@@ -9,12 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Applied inactivity auto-lock while a newly created vault is still displaying its recovery phrase, and made idle timing monotonic across device-clock changes.
+- Required fresh wallet-password authorization before saving or resetting custom Stellar endpoints, and corrected public disclosures that wallet history uses SDF Horizon independently.
+- Made full reset clear wallet-owned IndexedDB, session storage, service workers, and executable caches before reloading, and stopped a new worker revision from serving lazy chunks from older caches.
 - Rejected payment amounts outside Stellar's signed 64-bit stroop range before rendering or submission.
 - Kept Next.js telemetry disabled for local development and production builds without tracking an environment file.
 - Loaded the offline password guessability dictionaries only when creating or changing a vault, keeping wallet startup within its existing JavaScript budget.
 
 ### Security
 
+- Quarantined Private Payments from production after its development zkey failed verification against the pinned Powers-of-Tau transcript; every non-development manifest now requires verified proving material, ceremony, audit, and deployment evidence.
+- Pinned and hash-verified the phase-one transcript, added zkey-to-R1CS verification, checked browser distributables for drift, disabled npm lifecycle scripts by policy, and wired generated/reproducible artifact checks into CI and tagged releases.
 - Quarantined duplicate owned-note commitments without halting Private Payments sync, bound transfer review to the full canonical recipient address, and replaced the 32-bit check code with a 128-bit SHA-256 code.
 - Required the active merchant owner and a fresh wallet-password check for payment-routing changes and reconfiguration, rejected pure watch-only receiving accounts, enforced report permissions, and quarantined invoices after destination drift.
 - Made multi-signature configuration transactions explicitly write every retained signer so threshold safety cannot depend on endpoint-reported signer state.

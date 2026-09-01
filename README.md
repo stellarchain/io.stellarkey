@@ -51,7 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
-| **Private Payments preview** | Testnet-only private XLM and USDC balances, reusable private addresses, encrypted memos, local proving, recovery, deposits, transfers, and withdrawals |
+| **Private Payments research** | Development-only private XLM and USDC prototype. Production availability is quarantined until its proving key, ceremony, audits, and deployment evidence pass the release gates. |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 
@@ -65,7 +65,7 @@ unsupported devices retain password unlock without a simulated biometric path.
 | --- | --- |
 | **Key material** | A random vault master key is password-wrapped. Sensitive records are encrypted beneath it, and secret bytes are scoped to the operation that requested them. |
 | **Browser storage** | The encrypted vault and preferences use browser storage. Merchant records use encrypted, transactional IndexedDB storage. Data is origin- and browser-profile-specific. |
-| **Network access** | Horizon and RPC requests go directly to HTTPS endpoints. Endpoint identity is checked against the selected Stellar network, reads are bounded, and retries are limited to safe requests. |
+| **Network access** | Operational Horizon and RPC requests go directly to verified HTTPS endpoints. Wallet activity/history deliberately uses SDF's public Horizon, independent of the custom endpoint setting. |
 | **Service worker** | Only the static application shell is cached. Wallet records, merchant data, prices, and Stellar responses do not enter the service-worker cache. |
 | **Passkeys** | Face ID or Touch ID can unwrap the existing local master key through an origin-bound WebAuthn PRF credential. The password and encrypted backup remain recovery paths. |
 | **Hardware wallets** | Trezor support is optional and lazy-loaded only after a hardware action. The browser sends the reviewed transaction to Trezor Connect for device approval. |
@@ -80,20 +80,22 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Payments is an experimental testnet-only preview and refuses Mainnet.
+Private Payments is a development-only testnet prototype and refuses production use and Mainnet.
 Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
 the fee-paying Stellar account, and timing remain public. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
-[Private Balance security model](docs/private-balance.md). The preview uses a
-single-party development proving key with no recorded independent audit or
-multi-contributor ceremony and must not hold funds of value.
+[Private Balance security model](docs/private-balance.md). The development key
+failed verification against the recorded Powers-of-Tau transcript and is
+quarantined. A new ceremony, independent review, and redeployment are required.
 
 ## Backend-free architecture
 
 - `npm run build` creates immutable static files in `out/`. There are no
   dynamic application routes or runtime server requirements.
 - Direct Horizon and RPC access keeps the wallet independent of a proprietary
-  application API. Users can select verified HTTPS endpoints in Settings.
+  application API. Users can select verified HTTPS operational endpoints in
+  Settings after fresh password authorization. Public wallet activity/history
+  remains on SDF Horizon by design.
 - Asset identity is always the complete `(network, code, issuer)` tuple. A
   matching code alone is never treated as verified or assigned a price.
 - Mainnet portfolio values require an exact verified asset-price mapping.

@@ -1,14 +1,13 @@
 # Private Balance security and privacy model
 
-Private Balance is deployed as an explicitly unaudited, testnet-only preview.
-The production-hosted wallet may load its hash-pinned artifacts only while the
-wallet is connected to Stellar Testnet and after the user opts in for the current
-session. Mainnet rejects the preview manifest. The proving key was produced by a
-single-party development setup with no recorded contribution transcript or
-independent audit; anyone who retained that setup secret could forge proofs and
-drain the preview pool. Do not treat the preview as a testnet beta or promote its
-artifacts until a public multi-party ceremony, independent verification, audit,
-deployment, and recovery evidence exist for the exact same hashes.
+Private Balance is a development-only testnet prototype. Production builds
+reject its development manifest, and Mainnet rejects it independently. The
+checked-in proving key was produced by a single-party setup and fails
+`snarkjs zkey verify` against the repository's pinned Powers-of-Tau transcript.
+It is therefore quarantined even for a production-hosted testnet preview. Do not
+use the deployed prototype pool or promote these artifacts. A newly generated
+key, public multi-party ceremony, independent verification and audit, fresh
+deployment, and recovery evidence must all bind to the same hashes first.
 
 ## What it is
 
