@@ -206,7 +206,7 @@ export function createEmptyStealthDiscoveryCache(
     schemaVersion: 1,
     revision: 0,
     cursor: null,
-    lowerBoundCreatedAt: Math.max(recoveryFloor, walletBirthday),
+    lowerBoundCreatedAt: walletBirthday,
     latestLedger: 0,
     payments: [],
     updatedAt: now,

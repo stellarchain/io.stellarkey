@@ -99,9 +99,9 @@ test('empty stealth cache uses a one-year lower bound and contains no legacy sta
   assert.equal('legacyCursor' in state, false);
 });
 
-test('empty stealth cache uses the wallet birthday when it is newer than the recovery floor', () => {
+test('empty stealth cache always uses the authenticated wallet birthday', () => {
   const now = Date.UTC(2026, 7, 30);
-  const walletCreatedAt = Date.UTC(2026, 7, 29, 12);
+  const walletCreatedAt = Date.UTC(2023, 7, 29, 12);
   const state = createEmptyStealthDiscoveryCache(now, walletCreatedAt);
   assert.equal(state.lowerBoundCreatedAt, walletCreatedAt);
 });

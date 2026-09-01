@@ -26,6 +26,7 @@ interface ArchiveManifest extends Pick<
   | 'poolContractId'
   | 'deploymentBindingHash'
 > {
+  artifacts: Pick<PrivateBalanceManifest['artifacts'], 'r1csSha256' | 'vkJsonSha256'>;
   constants: Pick<PrivateBalanceManifest['constants'], 'treeDepth' | 'pageCapacity'>;
 }
 
@@ -489,6 +490,14 @@ export class PrivateBalanceArchiveClient {
       !equalBytes(
         config.deploymentBindingHash,
         hex32(this.manifest.deploymentBindingHash, 'Manifest deployment binding hash'),
+      ) ||
+      !equalBytes(
+        config.circuitHash,
+        hex32(this.manifest.artifacts.r1csSha256, 'Manifest circuit hash'),
+      ) ||
+      !equalBytes(
+        config.verificationKeyHash,
+        hex32(this.manifest.artifacts.vkJsonSha256, 'Manifest verification key hash'),
       ) ||
       !equalBytes(config.contextHash, contextHash) ||
       !equalBytes(config.contextField, computeContextField(contextHash))

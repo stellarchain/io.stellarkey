@@ -90,10 +90,10 @@ export class PrivateBalanceWorkerClient {
     }
   }
 
-  private failWith(message: string): void {
+  private failWith(message: string, failure: Error = new Error(message)): void {
     if (this.dead) return;
     this.dead = true;
-    this.failure = new Error(message);
+    this.failure = failure;
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -197,6 +197,13 @@ export class PrivateBalanceWorkerClient {
       const abort = () => {
         const pending = this.pendingRequests.get(req.id);
         if (!pending || !this.worker) return;
+        if (req.type === 'GENERATE_PROOF') {
+          this.failWith(
+            'Private proof was cancelled. Sync again to restart the isolated worker.',
+            abortError(),
+          );
+          return;
+        }
         // Cancel only this operation. The worker drops the cancelled proof
         // and keeps its session key, so the shared client stays usable for
         // later scans and builds without a full resync.

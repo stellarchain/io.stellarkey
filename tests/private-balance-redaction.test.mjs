@@ -13,3 +13,9 @@ test('redaction: strips 32-byte hex keys and Stellar secret keys', () => {
   assert.equal(redacted.includes(hexKey), false);
   assert.equal(redacted.includes('[REDACTED]'), true);
 });
+
+test('redaction strips long decimal witness values without hiding ordinary error counts', () => {
+  const witness = '21888242871839275222246405745257275088548364400416034343698204186575808495617';
+  const redacted = redactSensitiveData(`constraint 12 failed for witness ${witness}`);
+  assert.equal(redacted, 'constraint 12 failed for witness [REDACTED]');
+});
