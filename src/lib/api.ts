@@ -848,17 +848,10 @@ export async function submitSignedTx(
     submissionError = error;
   }
 
-  const transactionCode = submissionError instanceof HorizonRequestError &&
-      submissionError.body &&
-      typeof submissionError.body === "object"
-    ? (submissionError.body as SubmitFailureBody).extras?.result_codes?.transaction
-    : undefined;
-  const definiteRejection = submissionError instanceof HorizonRequestError &&
-    submissionError.status !== null &&
-    submissionError.status >= 400 &&
-    submissionError.status < 500;
-  if (definiteRejection && transactionCode !== "tx_bad_seq") throw submissionError;
-
+  // Once the signed envelope has been handed to a configurable endpoint, even
+  // a validation-shaped 4xx is not proof that the transaction was rejected.
+  // Resolve only through the exact hash on canonical SDF Horizon; otherwise
+  // retain the prepared envelope as status_unknown so retry cannot double-pay.
   const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
   if (lookup === "confirmed") return { hash, network, status: "confirmed" };
   if (lookup === "failed") {
@@ -866,8 +859,6 @@ export async function submitSignedTx(
       kind: "validation",
     });
   }
-  if (definiteRejection && lookup === "not_found") throw submissionError;
-
   return { hash, network, status: "status_unknown" };
 }
 

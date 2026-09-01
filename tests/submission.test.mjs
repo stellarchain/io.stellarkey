@@ -348,7 +348,7 @@ test("POST timeout while reading the response body becomes status unknown", asyn
   assert.equal((await submitSignedTx(transaction, "testnet", 5)).status, "status_unknown");
 });
 
-test("a hanging 429 POST body remains a definite rejection", async (t) => {
+test("a hanging 429 POST body preserves the prepared transaction as status unknown", async (t) => {
   const transaction = buildSignedTransaction();
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
@@ -356,11 +356,8 @@ test("a hanging 429 POST body remains a definite rejection", async (t) => {
     return new Response(new ReadableStream({ pull() {} }), { status: 429 });
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet", 5),
-    (error) => error instanceof HorizonRequestError && error.status === 429,
-  );
-  assert.equal(calls, 1);
+  assert.equal((await submitSignedTx(transaction, "testnet", 5)).status, "status_unknown");
+  assert.equal(calls, 2);
 });
 
 test("canonical lookup is bounded while waiting for response headers", async (t) => {
@@ -399,50 +396,42 @@ test("canonical lookup is bounded while reading a response body", async (t) => {
 });
 
 for (const status of [404, 429]) {
-  test(`an explicit ${status} POST response is a definite rejection`, async (t) => {
+  test(`an untrusted explicit ${status} POST response preserves recovery state`, async (t) => {
     const transaction = buildSignedTransaction();
     let calls = 0;
     const body = { title: status === 404 ? "Not Found" : "Rate Limited" };
     t.mock.method(globalThis, "fetch", async () => {
       calls += 1;
-      return new Response(JSON.stringify(body), { status });
+      return calls === 1
+        ? new Response(JSON.stringify(body), { status })
+        : notFoundResponse();
     });
 
-    await assert.rejects(
-      submitSignedTx(transaction, "testnet"),
-      (error) =>
-        error instanceof HorizonRequestError &&
-        error.status === status &&
-        error.body.title === body.title,
-    );
-    assert.equal(calls, 1);
+    assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
+    assert.equal(calls, 2);
   });
 }
 
-test("clear Horizon validation rejection retains parsed result codes", async (t) => {
+test("a validation-shaped POST rejection cannot discard prepared recovery state", async (t) => {
   const transaction = buildSignedTransaction();
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
     calls += 1;
-    return new Response(JSON.stringify({
-      title: "Transaction Failed",
-      extras: {
-        result_codes: {
-          transaction: "tx_insufficient_fee",
-          operations: ["op_underfunded"],
+    return calls === 1
+      ? new Response(JSON.stringify({
+        title: "Transaction Failed",
+        extras: {
+          result_codes: {
+            transaction: "tx_insufficient_fee",
+            operations: ["op_underfunded"],
+          },
         },
-      },
-    }), { status: 400 });
+      }), { status: 400 })
+      : notFoundResponse();
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet"),
-    (error) =>
-      error instanceof HorizonRequestError &&
-      error.kind === "validation" &&
-      error.body.extras.result_codes.transaction === "tx_insufficient_fee",
-  );
-  assert.equal(calls, 1);
+  assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
+  assert.equal(calls, 2);
 });
 
 test("bodyless Horizon failures retain their safe error explanation", () => {
@@ -495,7 +484,7 @@ test("tx_bad_seq checks whether the canonical hash was accepted previously", asy
   assert.equal((await submitSignedTx(transaction, "testnet")).status, "confirmed");
 });
 
-test("tx_bad_seq remains a definite rejection when canonical lookup is not found", async (t) => {
+test("tx_bad_seq remains status unknown when canonical lookup has not found the hash", async (t) => {
   const transaction = buildSignedTransaction();
   let request = 0;
   t.mock.method(globalThis, "fetch", async () => {
@@ -508,12 +497,7 @@ test("tx_bad_seq remains a definite rejection when canonical lookup is not found
       : notFoundResponse();
   });
 
-  await assert.rejects(
-    submitSignedTx(transaction, "testnet"),
-    (error) =>
-      error instanceof HorizonRequestError &&
-      error.body.extras.result_codes.transaction === "tx_bad_seq",
-  );
+  assert.equal((await submitSignedTx(transaction, "testnet")).status, "status_unknown");
 });
 
 test("tx_bad_seq remains status unknown when canonical lookup is unavailable", async (t) => {
