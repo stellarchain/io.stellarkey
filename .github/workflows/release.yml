@@ -111,4 +111,4 @@ jobs:
           wranglerVersion: "4.127.1"
           command: >-
             pages deploy deploy --project-name=stellarkey --branch=main
-            --commit-hash=${{ github.sha }} --commit-message=${{ github.ref_name }}
+            --commit-hash=${{ github.sha }}
