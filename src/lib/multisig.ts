@@ -16,6 +16,7 @@ import {
 } from "@stellar/stellar-sdk";
 import {
   type AccountSignerInfo,
+  assertDestinationMemoRequirement,
   explainSubmitError,
   fetchCanonicalAccountSignerInfo,
   getJson,
@@ -374,13 +375,24 @@ export async function prepareCosignPayment(params: {
   );
   if (!source) throw new SendError("Your account does not exist on this network.");
 
-  const destExists = (await getJson(`${horizonUrl}/accounts/${destination}`)) !== null;
+  const destinationRecord = await getJson<unknown>(
+    `${NETWORKS[network].horizonUrl}/accounts/${destination}`,
+  );
+  const destExists = destinationRecord !== null;
   const paymentAsset = toStellarAsset(assetCode, issuer);
   const isNative = paymentAsset.isNative();
   if (!destExists && !isNative) {
     throw new SendError(
       "Destination account doesn't exist yet. New accounts must be activated with XLM.",
     );
+  }
+  if (destExists) {
+    assertDestinationMemoRequirement({
+      destination,
+      muxedDestination: false,
+      destinationAccount: destinationRecord,
+      hasMemo: memo !== null,
+    });
   }
 
   const builder = new TransactionBuilder(minimalAccount(params.sourcePublicKey, source.sequence), {
