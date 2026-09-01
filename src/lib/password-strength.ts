@@ -1,3 +1,6 @@
+import { ZxcvbnFactory } from "@zxcvbn-ts/core";
+import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
+
 export type PasswordStrengthScore = 0 | 1 | 2 | 3 | 4;
 
 export interface PasswordStrength {
@@ -35,6 +38,30 @@ const SEQUENCES = [
   "poiuytrewq",
 ];
 
+const WALLET_TERMS = new Set([
+  "crypto",
+  "lumens",
+  "mnemonic",
+  "password",
+  "phrase",
+  "private",
+  "recovery",
+  "secret",
+  "seed",
+  "stellar",
+  "stellarkey",
+  "vault",
+  "wallet",
+  "xlm",
+]);
+
+const offlineGuessabilityEstimator = new ZxcvbnFactory({ graphs: adjacencyGraphs, dictionary });
+
+function hasWalletTheme(password: string): boolean {
+  const terms = password.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return terms.filter((term) => WALLET_TERMS.has(term)).length >= 2;
+}
+
 function hasPredictablePattern(password: string): boolean {
   const normalized = password.toLowerCase().replace(/\s/g, "");
   if (/(.)\1{3,}/.test(normalized)) return true;
@@ -58,7 +85,7 @@ function result(
   return { score, label, color, feedback };
 }
 
-export function estimatePasswordStrength(password: string): PasswordStrength {
+function estimateStructuralStrength(password: string): PasswordStrength {
   if (!password) {
     return result(0, "Not rated", "#636366", "Use 12+ characters or four unrelated words.");
   }
@@ -98,6 +125,26 @@ export function estimatePasswordStrength(password: string): PasswordStrength {
   }
 
   return result(1, "Weak", "#FF453A", "Add length and make it less predictable.");
+}
+
+export function estimatePasswordStrength(password: string): PasswordStrength {
+  const structural = estimateStructuralStrength(password);
+  if (!password || structural.score <= 1) return structural;
+
+  if (hasWalletTheme(password)) {
+    return result(1, "Weak", "#FF453A", "Avoid wallet-related terms and predictable phrases.");
+  }
+
+  const guessabilityScore = offlineGuessabilityEstimator.check(password).score;
+  if (guessabilityScore <= 1) {
+    return result(1, "Weak", "#FF453A", "Avoid common passwords and predictable phrases.");
+  }
+
+  if (guessabilityScore === 2 && structural.score > 2) {
+    return result(2, "Fair", "#FF9F0A", "Add length or use four unrelated words.");
+  }
+
+  return structural;
 }
 
 export function validateNewVaultPassword(password: string): NewVaultPasswordValidation {

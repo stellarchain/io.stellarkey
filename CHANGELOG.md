@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added password-authorized, fee-capped restoration for exact archived Private Payments records before canonical recovery resumes.
 - Required explicit per-session Private Payments activation, removed exact balances from cross-tab broadcasts, labeled ledger progress as selected-RPC data, and added dev proving-key risk to testnet opt-in.
 - Patched high and moderate circuit-tooling advisories, enforced nested npm and Rust dependency policy in CI, removed unsafe release-tag interpolation, ignored all environment files, and corrected the installed Stellar SDK script allowlist.
+- Rejected common and wallet-themed new vault passwords with a maintained offline guessability estimator while preserving existing vault compatibility.
 
 ## [1.4.1] - 2026-09-01
 
