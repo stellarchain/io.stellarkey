@@ -1,6 +1,7 @@
 export interface SigningAuthorizationRequest {
   id: number;
   label: string;
+  purpose?: "sensitive-setting";
   requiresUserGestureContinuation?: boolean;
 }
 
@@ -20,7 +21,10 @@ export interface SigningAuthorizationGate {
   readonly pending: SigningAuthorizationRequest | null;
   request: (
     label: string,
-    options?: { requiresUserGestureContinuation?: boolean },
+    options?: {
+      purpose?: "sensitive-setting";
+      requiresUserGestureContinuation?: boolean;
+    },
   ) => Promise<void>;
   approve: (requestId: number) => void;
   cancel: (message?: string) => void;
@@ -41,6 +45,7 @@ export function createSigningAuthorizationGate(
     ? {
         id: pending.id,
         label: pending.label,
+        ...(pending.purpose ? { purpose: pending.purpose } : {}),
         ...(pending.requiresUserGestureContinuation
           ? { requiresUserGestureContinuation: true }
           : {}),
@@ -66,6 +71,7 @@ export function createSigningAuthorizationGate(
         pending = {
           id: nextId,
           label: normalizedLabel,
+          ...(options?.purpose ? { purpose: options.purpose } : {}),
           ...(options?.requiresUserGestureContinuation
             ? { requiresUserGestureContinuation: true }
             : {}),

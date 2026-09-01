@@ -220,6 +220,8 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const currency = invoice.currency;
   const shopName = settings.profile.name.trim();
   const destination = invoice.destination;
+  const receivingAccountChanged =
+    Boolean(destination) && destination !== settings.receivingPublicKey;
 
   const paidMinor = invoice.paidMinor;
   const balanceMinor = Math.max(0, invoice.totals.totalMinor - paidMinor);
@@ -763,8 +765,9 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               <Notice tone="warn">
                 <p className="font-semibold text-white">A payable request is unavailable.</p>
                 <p className="mt-1">
-                  This issued record has no complete destination and asset quote snapshot. It is
-                  preserved for audit, but the app will not invent payment details for it.
+                  {receivingAccountChanged
+                    ? "The merchant receiving account changed after this invoice was issued. Restore the original account or duplicate the invoice before sharing a new payment request."
+                    : "This issued record has no complete destination and asset quote snapshot. It is preserved for audit, but the app will not invent payment details for it."}
                 </p>
               </Notice>
             )}

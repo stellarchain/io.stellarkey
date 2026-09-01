@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
 import {
+  assertMerchantReceivingAccount,
   completeMerchantSetup,
   needsMerchantSetup,
 } from "../src/lib/merchant/setup.ts";
@@ -152,7 +153,7 @@ test("editing setup updates the owner without erasing operational records", () =
   const updated = completeMerchantSetup(
     withHistory,
     validSetup({ ownerName: "Alex", terminalName: "Back counter" }),
-    { now: 200, ownerId: "ignored-new-id" },
+    { now: 200, ownerId: "ignored-new-id", authorizedOwnerId: "owner-1" },
   );
   assert.equal(updated.staff.length, 2);
   assert.equal(updated.staff[0].id, "owner-1");
@@ -161,6 +162,34 @@ test("editing setup updates the owner without erasing operational records", () =
   assert.equal(updated.nextOrderNumber, 1234);
   assert.deepEqual(updated.adjustments, withHistory.adjustments);
   assert.deepEqual(updated.onShiftStaffIds, ["owner-1", "staff-2"]);
+});
+
+test("an existing merchant cannot be reconfigured without its active owner", () => {
+  const initial = completeMerchantSetup(emptyStore(), validSetup(), {
+    now: 100,
+    ownerId: "owner-1",
+  });
+  assert.throws(
+    () => completeMerchantSetup(initial, validSetup({ ownerName: "Takeover" }), {
+      now: 200,
+      ownerId: "new-owner",
+    }),
+    /active owner/i,
+  );
+});
+
+test("merchant receiving accounts must be locally spend-capable", () => {
+  assert.doesNotThrow(() => assertMerchantReceivingAccount(
+    [{ publicKey: PUBLIC_KEY, watchOnly: false }],
+    PUBLIC_KEY,
+  ));
+  assert.throws(
+    () => assertMerchantReceivingAccount(
+      [{ publicKey: PUBLIC_KEY, watchOnly: true }],
+      PUBLIC_KEY,
+    ),
+    /watch-only/i,
+  );
 });
 
 test("invalid setup is rejected before any store mutation", () => {

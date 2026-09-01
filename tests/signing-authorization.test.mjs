@@ -62,6 +62,21 @@ test("hardware signing can request a fresh post-verification user gesture", asyn
   await approval;
 });
 
+test("a sensitive setting approval is distinguished from transaction signing", async () => {
+  const gate = createSigningAuthorizationGate(() => undefined);
+  const approval = gate.request("Change merchant receiving account", {
+    purpose: "sensitive-setting",
+  });
+
+  assert.deepEqual(gate.pending, {
+    id: 1,
+    label: "Change merchant receiving account",
+    purpose: "sensitive-setting",
+  });
+  gate.approve(1);
+  await approval;
+});
+
 test("every wallet transaction signer passes through the shared authorization boundary", () => {
   const wallet = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
   const prompt = readFileSync(

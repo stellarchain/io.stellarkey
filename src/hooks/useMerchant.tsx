@@ -15,6 +15,7 @@ import {
   useWalletLedger,
   useWalletMarket,
   useWalletPhase,
+  useWalletSecurity,
   useWalletSubmission,
   useWalletTransactions,
 } from "./useWallet";
@@ -72,6 +73,7 @@ import {
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
 import {
+  assertMerchantReceivingAccount,
   completeMerchantSetup,
   needsMerchantSetup,
   type MerchantSetupInput,
@@ -424,6 +426,8 @@ interface MerchantContextValue {
 
   taxPeriods: TaxPeriod[];
   exportRecords: ExportRecord[];
+  canSeeReports: boolean;
+  canExportRecords: boolean;
   previewReportExport: (input: {
     from: number;
     to: number;
@@ -633,6 +637,8 @@ type MerchantReportingValue = Pick<
   | "today"
   | "taxPeriods"
   | "exportRecords"
+  | "canSeeReports"
+  | "canExportRecords"
   | "previewReportExport"
   | "createReportExport"
 >;
@@ -676,7 +682,8 @@ export function MerchantProvider({
   onRuntimeMounted?: () => void;
 }) {
   const { phase } = useWalletPhase();
-  const { network, activeAccount } = useWalletIdentity();
+  const { network, accounts, activeAccount } = useWalletIdentity();
+  const { authorizeSensitiveAction } = useWalletSecurity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const { xlmPriceUsd, fiatRates } = useWalletMarket();
   const { contacts } = useWalletContacts();
@@ -1132,17 +1139,30 @@ export function MerchantProvider({
   const completeSetup = useCallback(
     async (input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string }) => {
       const { pin, ...details } = input;
+      assertMerchantReceivingAccount(accounts, details.receivingPublicKey);
+      const before = storeRef.current;
+      const existingOwner = before.staff.find((member) => member.role === "owner");
+      const authorizedOwnerId = existingOwner?.id;
+      if (existingOwner) {
+        requireActiveOwner(before, staffSessionIdRef.current ?? "");
+        await authorizeSensitiveAction("Reconfigure Merchant Mode");
+      }
       const pinDigest = await createMerchantPinCredential(pin);
       const now = Date.now();
-      const next = completeMerchantSetup(
-        storeRef.current,
-        { ...details, pinDigest },
-        { now, ownerId: uid("staff") },
-      );
-      await commitStore(next);
-      updateStaffSessionId(next.activeStaffId);
+      let nextActiveStaffId: string | null = null;
+      await commitStore((latest) => {
+        if (authorizedOwnerId) requireActiveOwner(latest, authorizedOwnerId);
+        const next = completeMerchantSetup(
+          latest,
+          { ...details, pinDigest },
+          { now, ownerId: uid("staff"), authorizedOwnerId },
+        );
+        nextActiveStaffId = next.activeStaffId;
+        return next;
+      });
+      updateStaffSessionId(nextActiveStaffId);
     },
-    [commitStore, updateStaffSessionId],
+    [accounts, authorizeSensitiveAction, commitStore, updateStaffSessionId],
   );
 
   const activeStaff = useMemo(
@@ -1157,6 +1177,9 @@ export function MerchantProvider({
     const roster = new Set(store.onShiftStaffIds);
     return store.staff.filter((member) => member.active && roster.has(member.id));
   }, [store.onShiftStaffIds, store.staff]);
+
+  const canSeeReports = Boolean(activeStaff?.permissions.seeReports);
+  const canExportRecords = Boolean(activeStaff?.permissions.exportRecords);
 
   const taxPeriods = useMemo(
     () => deriveTaxPeriods(store, { network, now: reportingNow }),
@@ -1193,9 +1216,13 @@ export function MerchantProvider({
     }): Promise<{ file: ReportFile; record: ExportRecord }> => {
       const current = storeRef.current;
       const actor = current.staff.find(
-        (member) => member.id === staffSessionId && member.id === current.activeStaffId,
+        (member) =>
+          member.id === staffSessionId &&
+          member.id === current.activeStaffId &&
+          member.active &&
+          member.permissions.exportRecords,
       );
-      if (!actor) throw new Error("Choose an active staff member before exporting records.");
+      if (!actor) throw new Error("The active staff member cannot export merchant records.");
       const created = createPersistedReportExport(current, {
         ...input,
         id: uid("export"),
@@ -1213,12 +1240,19 @@ export function MerchantProvider({
     async (patch: Partial<SettlementRule>): Promise<void> => {
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing treasury rules.");
+      requireActiveOwner(storeRef.current, actorId);
+      const changesDestination =
+        patch.sweepDestination !== undefined &&
+        patch.sweepDestination !== storeRef.current.settlementRule.sweepDestination;
+      if (changesDestination) {
+        await authorizeSensitiveAction("Change merchant treasury destination");
+      }
       await commitStore((latest) => {
         requireActiveOwner(latest, actorId);
         return updatePersistedSettlementRule(latest, patch);
       });
     },
-    [commitStore],
+    [authorizeSensitiveAction, commitStore],
   );
 
   useEffect(() => {
@@ -3055,12 +3089,22 @@ export function MerchantProvider({
     async (patch: Partial<MerchantSettings>) => {
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing merchant settings.");
+      requireActiveOwner(storeRef.current, actorId);
+      const receivingPublicKey = patch.receivingPublicKey;
+      const changesReceivingAccount =
+        receivingPublicKey !== undefined &&
+        receivingPublicKey !== storeRef.current.settings.receivingPublicKey;
+      if (changesReceivingAccount) {
+        if (!receivingPublicKey) throw new Error("Choose a merchant receiving account.");
+        assertMerchantReceivingAccount(accounts, receivingPublicKey);
+        await authorizeSensitiveAction("Change merchant receiving account");
+      }
       await commitStore((latest) => {
         requireActiveOwner(latest, actorId);
         return { ...latest, settings: { ...latest.settings, ...patch } };
       });
     },
-    [commitStore],
+    [accounts, authorizeSensitiveAction, commitStore],
   );
   const upsertItem = useCallback(
     async (item: CatalogueItem) => {
@@ -3099,6 +3143,7 @@ export function MerchantProvider({
       transport: MerchantPaymentTransport = "muxed",
     ) => {
       try {
+        if (invoice.destination !== settings.receivingPublicKey) return null;
         return transport === "memo-id"
           ? invoiceCompatibilityPayUri(invoice, asset, settings.profile.name)
           : invoicePayUri(invoice, asset, settings.profile.name);
@@ -3106,7 +3151,7 @@ export function MerchantProvider({
         return null;
       }
     },
-    [settings.profile.name],
+    [settings.profile.name, settings.receivingPublicKey],
   );
   const counterCodePayUriFor = useCallback(
     (
@@ -3248,6 +3293,8 @@ export function MerchantProvider({
 
     taxPeriods,
     exportRecords: store.exportRecords,
+    canSeeReports,
+    canExportRecords,
     previewReportExport,
     createReportExport,
 
@@ -3299,6 +3346,8 @@ export function MerchantProvider({
     applyAdjustment,
     approveRefundRequest,
     attachPayment,
+    canExportRecords,
+    canSeeReports,
     chargeBlockedReason,
     clearTicket,
     closeCharge,
@@ -3648,10 +3697,20 @@ export function MerchantProvider({
       today,
       taxPeriods,
       exportRecords: store.exportRecords,
+      canSeeReports,
+      canExportRecords,
       previewReportExport,
       createReportExport,
     }),
-    [createReportExport, previewReportExport, store.exportRecords, taxPeriods, today],
+    [
+      canExportRecords,
+      canSeeReports,
+      createReportExport,
+      previewReportExport,
+      store.exportRecords,
+      taxPeriods,
+      today,
+    ],
   );
 
   const shellValue = useMemo<MerchantShellContextValue>(

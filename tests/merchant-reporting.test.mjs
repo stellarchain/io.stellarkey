@@ -264,6 +264,19 @@ test("export commits an actor audit only for truthful supported output", async (
   assert.equal(created.store.exportRecords[0].fileName, created.file.fileName);
   assert.throws(() => createReportExport(store, { ...input, id: "xero", format: "xero" }), /not available/i);
   assert.throws(() => createReportExport(store, { ...input, id: "settled", basis: "settlement" }), /settlement.*not available/i);
+
+  const anotherActiveMember = {
+    ...member,
+    id: "staff-other",
+    name: "Other",
+  };
+  assert.throws(
+    () => createReportExport(
+      { ...store, staff: [...store.staff, anotherActiveMember] },
+      { ...input, id: "wrong-session", actor: anotherActiveMember },
+    ),
+    /active staff member/i,
+  );
 });
 
 test("production reports contain no sample data and download only supported files", () => {

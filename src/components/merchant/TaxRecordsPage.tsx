@@ -98,7 +98,14 @@ function retentionLabel(months: number | null | undefined): string {
 export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const { settings, updateSettings } = useMerchantConfiguration();
   const { catalogue } = useMerchantTill();
-  const { taxPeriods, exportRecords, previewReportExport, createReportExport } =
+  const {
+    taxPeriods,
+    exportRecords,
+    canSeeReports,
+    canExportRecords,
+    previewReportExport,
+    createReportExport,
+  } =
     useMerchantReporting();
   const { exportEncryptedArchive } = useMerchantStatus();
   const { toast } = useToast();
@@ -219,6 +226,15 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
     }
   }
 
+  if (!canSeeReports) {
+    return (
+      <section className="space-y-4">
+        <IOSBackButton label="Back to Merchant settings" onClick={onBack} />
+        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
+      </section>
+    );
+  }
+
   return (
     <div className="fade-up w-full min-w-0 pb-[132px] md:pb-12">
       <div className="flex items-center justify-between pb-1 pt-2">
@@ -337,11 +353,13 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   icon={<IconDownload size={16} />}
                   tint="#30D158"
                   label="Export report"
-                  sub={period?.label ?? "Choose a date range"}
+                  sub={canExportRecords
+                    ? (period?.label ?? "Choose a date range")
+                    : "Owner or export permission required"}
                   value={format.toUpperCase()}
-                  chevron
-                  opensDialog
-                  onClick={() => openSheet("export")}
+                  chevron={canExportRecords}
+                  opensDialog={canExportRecords}
+                  onClick={canExportRecords ? () => openSheet("export") : undefined}
                 />
                 <SettingsRow
                   icon={<IconLock size={16} />}
@@ -582,7 +600,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 </SettingsSection>
 
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <Button onClick={handleExport} className="w-full">
+                  <Button onClick={handleExport} disabled={!canExportRecords} className="w-full">
                     <IconDownload size={15} />
                     Export file
                   </Button>

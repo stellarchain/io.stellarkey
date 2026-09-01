@@ -151,7 +151,7 @@ export function MerchantPage({
     pollNow,
   } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
-  const { today } = useMerchantReporting();
+  const { today, canSeeReports } = useMerchantReporting();
   const { activeShift } = useMerchantTill();
   const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
   const { phase } = useWalletPhase();
@@ -394,7 +394,7 @@ export function MerchantPage({
             className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4"
           >
             <div className="flex w-max items-center gap-1.5 pr-2">
-              {NAV.map((item) => {
+              {NAV.filter((item) => item.value !== "insights" || canSeeReports).map((item) => {
                 const isActive = item.value === active;
                 return (
                   <button
@@ -463,8 +463,10 @@ export function MerchantPage({
         <PaymentLinksPage />
       ) : sub === "customers" ? (
         <CustomersPage />
-      ) : (
+      ) : canSeeReports ? (
         <InsightsPage />
+      ) : (
+        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
       )}
 
       {/* The charge sheet hangs off the whole of Merchant Mode, not off the till:

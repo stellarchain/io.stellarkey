@@ -31,6 +31,7 @@ function SigningPasswordDialog({
   continueSigningAuthorization: () => void;
   cancelSigningAuthorization: (message?: string) => void;
 }) {
+  const sensitiveSetting = request.purpose === "sensitive-setting";
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,7 +80,7 @@ function SigningPasswordDialog({
       dismissable={!busy}
     >
       <ModalHeader
-        title="Confirm transaction"
+        title={sensitiveSetting ? "Confirm security change" : "Confirm transaction"}
         subtitle={request.label}
         onClose={busy ? undefined : cancel}
       />
@@ -108,10 +109,14 @@ function SigningPasswordDialog({
         ) : (
           <>
             <Notice>
-              Enter your wallet password before StellarKey signs this transaction. The password is
-              verified locally and is not stored after approval.
+              {sensitiveSetting
+                ? "Enter your wallet password to approve this sensitive change. The password is verified locally and is not stored after approval."
+                : "Enter your wallet password before StellarKey signs this transaction. The password is verified locally and is not stored after approval."}
             </Notice>
-            <Field label="Wallet Password" hint="Required for this signature only">
+            <Field
+              label="Wallet Password"
+              hint={sensitiveSetting ? "Required for this change only" : "Required for this signature only"}
+            >
               <input
                 className="input text-base sm:text-[14px]"
                 type="password"

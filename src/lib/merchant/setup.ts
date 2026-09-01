@@ -46,6 +46,19 @@ export interface MerchantSetupInput {
 export interface MerchantSetupMetadata {
   now: number;
   ownerId: string;
+  /** Required when an existing merchant owner is being replaced or updated. */
+  authorizedOwnerId?: string;
+}
+
+export function assertMerchantReceivingAccount(
+  accounts: Array<{ publicKey: string; watchOnly?: boolean; hardware?: string }>,
+  receivingPublicKey: string,
+): void {
+  const account = accounts.find((candidate) => candidate.publicKey === receivingPublicKey);
+  if (!account) throw new Error("Choose an account held by this wallet for merchant payments.");
+  if (account.watchOnly && !account.hardware) {
+    throw new Error("A watch-only account cannot be used as the merchant receiving account.");
+  }
 }
 
 function cleanAsset(asset: AcceptedAsset): AcceptedAsset {
@@ -177,6 +190,14 @@ export function completeMerchantSetup(
     ? store.settings.defaultTaxRateId
     : taxRates[0].id;
   const existingOwner = store.staff.find((member) => member.role === "owner");
+  if (
+    existingOwner &&
+    (!existingOwner.active ||
+      store.activeStaffId !== existingOwner.id ||
+      metadata.authorizedOwnerId !== existingOwner.id)
+  ) {
+    throw new Error("Unlock the active owner before reconfiguring Merchant Mode.");
+  }
   const owner: StaffMember = {
     id: existingOwner?.id ?? metadata.ownerId,
     name: ownerName,
