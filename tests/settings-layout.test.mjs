@@ -86,7 +86,7 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
   assert.match(merchantSheets, /sheet="rates"[\s\S]*settings\.taxRates\.map/);
   assert.match(
     merchantSheets,
-    /Issued requests keep their original receiving account and remain monitored until\s+resolved\./,
+    /Changing this account requires your wallet password\. Existing unpaid requests stop\s+accepting automatic settlement until they are replaced or the original account is\s+restored\./,
   );
   assert.match(merchantSettings, /title="Turn off Merchant Mode\?"/);
   assert.match(
