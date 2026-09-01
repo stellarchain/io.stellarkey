@@ -156,7 +156,7 @@ export function DraftInput({
   align = "right",
 }: {
   value: string;
-  onCommit: (next: string) => string;
+  onCommit: (next: string) => string | Promise<string>;
   ariaLabel: string;
   placeholder?: string;
   className?: string;
@@ -166,9 +166,18 @@ export function DraftInput({
   align?: "left" | "right";
 }) {
   const [draft, setDraft] = useState(value);
+  const [pending, setPending] = useState(false);
 
-  function commit() {
-    setDraft(onCommit(draft));
+  async function commit() {
+    if (pending) return;
+    setPending(true);
+    try {
+      setDraft(await onCommit(draft));
+    } catch {
+      setDraft(value);
+    } finally {
+      setPending(false);
+    }
   }
 
   if (multiline) {
@@ -178,6 +187,7 @@ export function DraftInput({
         aria-label={ariaLabel}
         placeholder={placeholder}
         value={draft}
+        aria-busy={pending}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         className={`input resize-none text-base sm:text-[13.5px] ${className}`}
@@ -192,6 +202,7 @@ export function DraftInput({
       placeholder={placeholder}
       inputMode={inputMode}
       value={draft}
+      aria-busy={pending}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {

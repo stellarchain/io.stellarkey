@@ -101,6 +101,11 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
     contrastRatio(dangerColor, "252527") >= 4.8,
     `destructive settings text needs contrast headroom, received #${dangerColor}`,
   );
+  assert.match(controls, /onCommit: \(next: string\) => string \| Promise<string>/);
+  assert.match(controls, /await onCommit\(draft\)/);
+  assert.match(controls, /catch[\s\S]*setDraft\(value\)/);
+  assert.match(merchantSheets, /async function saveSettings/);
+  assert.doesNotMatch(merchantSheets, /\n\s+updateSettings\(/);
 });
 
 test("tax records use a summary-first iOS hub with focused task sheets", () => {
