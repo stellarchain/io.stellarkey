@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Keypair } from "@stellar/stellar-sdk";
 import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
 import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
 import {
@@ -10,9 +9,10 @@ import {
   hasPasskeyUnlock,
   importKeystore,
   removePasskeyUnlock,
-  revealSecret,
   isValidPublicAddress,
   hasMnemonic as hasMnemonicAlias,
+  verifyVaultPassword,
+  withSigningKeypair,
 } from "@/lib/vault";
 import { canOfferPasskeyUnlock } from "@/lib/passkey-prf";
 import { networkFeeXlm } from "@/lib/api";
@@ -584,24 +584,24 @@ export function SettingsPage({
       if (requestGeneration !== airReviewGeneration.current) {
         throw new Error("The account or network changed. Review the envelope again before signing.");
       }
-      const secret = await revealSecret(activeAccount.id, airPw);
-      if (!secret) throw new Error("Incorrect password.");
-      const kp = Keypair.fromSecret(secret);
-      if (kp.publicKey() !== reviewedAccount) {
-        throw new Error("The unlocked key does not match the active account.");
-      }
-      await assertCanAddTransactionSignature({
-        transaction: currentReview.transaction,
-        network: reviewedNetwork,
-        signerPublicKey: reviewedAccount,
+      await verifyVaultPassword(airPw);
+      await withSigningKeypair(activeAccount.id, async (kp) => {
+        if (kp.publicKey() !== reviewedAccount) {
+          throw new Error("The unlocked key does not match the active account.");
+        }
+        await assertCanAddTransactionSignature({
+          transaction: currentReview.transaction,
+          network: reviewedNetwork,
+          signerPublicKey: reviewedAccount,
+        });
+        if (requestGeneration !== airReviewGeneration.current) {
+          throw new Error("The account or network changed. Review the envelope again before signing.");
+        }
+        const tx = currentReview.transaction;
+        assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
+        tx.sign(kp);
+        setSignedXdr(tx.toXdr());
       });
-      if (requestGeneration !== airReviewGeneration.current) {
-        throw new Error("The account or network changed. Review the envelope again before signing.");
-      }
-      const tx = currentReview.transaction;
-      assertReviewCanBeSigned(currentReview, airNetworkConfirmed);
-      tx.sign(kp);
-      setSignedXdr(tx.toXdr());
       triggerHaptic("success");
     } catch (e) {
       triggerHaptic("error");

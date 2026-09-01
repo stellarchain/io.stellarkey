@@ -835,14 +835,17 @@ test("local signer revalidates live authorization around password access", () =>
   assert.ok(handler, "expected the local signer handler");
 
   const firstAuthorization = handler.indexOf("await assertCanAddTransactionSignature");
-  const passwordAccess = handler.indexOf("await revealSecret");
+  const passwordAccess = handler.indexOf("await verifyVaultPassword");
+  const revocableSigner = handler.indexOf("await withSigningKeypair");
   const secondAuthorization = handler.indexOf(
     "await assertCanAddTransactionSignature",
     firstAuthorization + 1,
   );
   const signing = handler.indexOf("tx.sign(kp)");
   assert.ok(firstAuthorization >= 0 && firstAuthorization < passwordAccess);
-  assert.ok(passwordAccess < secondAuthorization && secondAuthorization < signing);
+  assert.ok(passwordAccess < revocableSigner && revocableSigner < secondAuthorization);
+  assert.ok(secondAuthorization < signing);
+  assert.doesNotMatch(handler, /revealSecret|Keypair\.fromSecret/);
 });
 
 test("local signer preserves decoded effects and offers authorization retry", () => {
