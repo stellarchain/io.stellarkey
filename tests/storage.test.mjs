@@ -183,6 +183,24 @@ test("restored contacts are encrypted before the restored vault is exposed", asy
   lockVault();
 });
 
+test("contact persistence enforces the same bounded visible-name policy as the editor", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { initializeVault } = await import("../src/lib/vault.ts");
+  const { saveContact, validateContact } = await import("../src/lib/contacts.ts");
+  const address = Keypair.random().publicKey();
+  await initializeVault("correct horse battery staple", { secret: Keypair.random().secret() });
+
+  for (const name of ["x".repeat(25), "Alice\u202e@example.com", "Ali\u200bce"]) {
+    assert.ok(validateContact(name, address));
+    await assert.rejects(
+      () => saveContact({ name, address }),
+      /invalid name|24 characters|unsupported character/i,
+    );
+  }
+});
+
 test("backup inspection identifies the wallet before destructive restore", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

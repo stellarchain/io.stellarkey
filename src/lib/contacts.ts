@@ -12,11 +12,19 @@ export interface Contact {
   favorite?: boolean;
 }
 
+const UNSAFE_CONTACT_NAME = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/u;
+
+function normalizeContactName(value: string): string | null {
+  const name = value.trim().normalize("NFC");
+  if (!name || [...name].length > 24 || UNSAFE_CONTACT_NAME.test(name)) return null;
+  return name;
+}
+
 function normalizeContact(value: unknown): Contact | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<Contact>;
   if (typeof candidate.name !== "string" || typeof candidate.address !== "string") return null;
-  const name = candidate.name.trim();
+  const name = normalizeContactName(candidate.name);
   const address = candidate.address.trim();
   if (!name || !isValidPublicAddress(address)) return null;
   return { name, address, favorite: candidate.favorite === true };
@@ -79,7 +87,8 @@ export function deleteContact(address: string): Promise<Contact[]> {
 
 export function validateContact(name: string, address: string): string | null {
   if (!name.trim()) return "Give the contact a name.";
-  if (name.trim().length > 24) return "Name must be 24 characters or fewer.";
+  if ([...name.trim().normalize("NFC")].length > 24) return "Name must be 24 characters or fewer.";
+  if (UNSAFE_CONTACT_NAME.test(name)) return "Name contains an unsupported invisible or directional character.";
   if (!isValidPublicAddress(address)) return "Not a valid Stellar address.";
   return null;
 }

@@ -1,4 +1,5 @@
 import type { NetworkKey } from "../stellar";
+import { csvField } from "../csv";
 import { assetKey } from "./charge";
 import { distribute, linePayableMinor } from "./money";
 import { indexMerchantRecords, type MerchantRecordIndex } from "./selectors";
@@ -363,16 +364,7 @@ export function deriveTaxPeriods(
   return periods;
 }
 
-export function neutralizeSpreadsheetFormula(value: string | number | null): string {
-  if (value === null) return "";
-  const text = String(value);
-  return typeof value === "string" && /^[\t\r\n ]*[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
-function csvField(value: string | number | null): string {
-  const text = neutralizeSpreadsheetFormula(value);
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
+export { neutralizeSpreadsheetFormula } from "../csv";
 
 function assetText(asset: AcceptedAsset | null): string {
   return asset ? (asset.issuer ? `${asset.code}:${asset.issuer}` : asset.code) : "";

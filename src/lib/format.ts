@@ -1,4 +1,5 @@
 import type { ActivityItem } from "./types";
+import { csvField } from "./csv";
 import { amountToStroops } from "./stellar-domain";
 import { activityAssetPresentation } from "./transaction-intent";
 
@@ -244,7 +245,7 @@ export function generateActivityCsv(items: ActivityItem[], network = "mainnet"):
     const status = item.pending ? "PENDING" : item.successful ? "SUCCESS" : "FAILED";
     const hash = item.hash;
     const link = network === "mainnet" ? `https://stellarchain.io/tx/${hash}` : `https://testnet.stellarchain.io/tx/${hash}`;
-    return [d, type, dir, amt, asset, cp, status, hash, link].map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",");
+    return [d, type, dir, amt, asset, cp, status, hash, link].map(csvField).join(",");
   });
   return [headers.join(","), ...rows].join("\n");
 }

@@ -116,9 +116,64 @@
 4. Run typecheck, lint, full application tests, private browser/circuit/Rust gates as applicable, production build, bundle checks, and Playwright suites.
 5. Record any human hardware, screen-reader, and live-ledger checks that remain external/manual.
 
+## Task 7: Audit follow-up data integrity and truthful state
+
+**Files:** shared CSV formatting, merchant settings controls, merchant setup/shifts,
+asset balance parsing/presentation, contacts, password policy, Testnet privacy copy,
+focused tests, `CHANGELOG.md`.
+
+1. Move spreadsheet-formula neutralization into the shared CSV boundary and apply
+   it to both activity and merchant exports. Quote escaping alone is insufficient.
+2. Make merchant settings commits awaitable. Keep the last persisted value when
+   authorization or storage rejects a change and expose the safe error in context.
+3. Permit Merchant Mode reconfiguration by the currently active owner rather than
+   selecting the first owner record.
+4. Stamp new orders with an immutable shift identifier. Use that identifier for
+   reports so wall-clock rollback and terminal renames cannot detach a sale; keep a
+   bounded legacy timestamp fallback for older stored orders.
+5. Preserve Horizon trustline authorization and clawback flags. Treat a trustline
+   without full authorization as non-spendable, block sends before signing, and
+   disclose clawback authority in asset details.
+6. Centralize contact-name validation, including the 24-character bound and unsafe
+   control/bidirectional/zero-width characters, so imports cannot bypass the UI.
+7. Raise the guessability threshold for newly created or changed passwords while
+   preserving unlock compatibility. Reject non-NFC new passwords instead of
+   silently changing their bytes. Defer a versioned Argon2id migration until it is
+   benchmarked on supported mobile browsers and has a rollback-safe format.
+8. Correct every public document and Testnet UI statement: the pinned development
+   zkey verifies for circuit compatibility, but it came from a single-party setup;
+   the production-hosted app intentionally permits that exact Testnet fixture and
+   independently refuses Mainnet.
+9. Disclose the current four-byte private-address diversifier correlation limit.
+   Defer removing it to a versioned protocol migration with compatibility and
+   adversarial privacy tests.
+10. Warn users that copied recovery material can remain in clipboard managers and
+    provide an explicit, user-initiated clear action. Do not use a timer that may
+    overwrite unrelated clipboard content or fail without user activation.
+
+### Findings already closed or not changed
+
+- Auxiliary contact/note corruption no longer prevents the key-bearing vault from
+  unlocking, and raw damaged records remain untouched for recovery.
+- A locally expired transaction is not released for retry until canonical Horizon
+  also reports it absent and authoritative ledger close time is past `maxTime`.
+- Cross-tab reset messages remain defense in depth: a same-origin script already
+  has storage authority, while peer confirmation would weaken reliable erasure.
+- Password changes continue to rewrap the randomly generated vault master key.
+  Full master-key rotation is a separate recovery/re-encryption feature, not a
+  password-change vulnerability fix.
+- Private Payments remains available for explicitly opted-in Testnet use only.
+
 ## Research ledger
 
 - Next.js 16.3 installed docs, accessed 2026-09-01: client boundaries and lazy Client Components informed keeping security actions in existing client contexts without widening server/client boundaries.
 - Stellar SEP-29, accessed 2026-09-01: non-muxed memo-required accounts must be blocked without a transaction memo; confirmed existing behavior.
 - GitHub artifact attestation and immutable release docs, accessed 2026-09-01: verify downloaded artifacts with GitHub CLI and enable release immutability as a repository control.
 - MDN Web Locks API, accessed 2026-09-01: an exclusive named lock serializes same-origin tabs/workers; informed restore/reset commit serialization.
+- OWASP CSV Injection, accessed 2026-09-01: quoted CSV cells can still be formulas;
+  informed neutralization at the shared export boundary.
+- MDN Clipboard API, accessed 2026-09-01: clipboard writes can require transient
+  user activation and differ by browser; informed the explicit clear action.
+- Stellar asset authorization and clawback documentation, accessed 2026-09-01:
+  only fully authorized trustlines may make payments, while clawback-enabled
+  balances remain revocable by the issuer; informed spendability and disclosure.

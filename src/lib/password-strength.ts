@@ -179,12 +179,18 @@ async function estimatePasswordStrengthWithGuessability(
 }
 
 export function validateNewVaultPassword(password: string): NewVaultPasswordValidation {
+  if (password.normalize("NFC") !== password) {
+    return {
+      valid: false,
+      message: "Use a Unicode-normalized password. Retype accented characters directly.",
+    };
+  }
   const strength = estimatePasswordStrength(password);
   if (password.length < 12) {
     return { valid: false, message: "Password must be at least 12 characters." };
   }
-  if (strength.score <= 1) {
-    return { valid: false, message: strength.feedback };
+  if (strength.score < 3) {
+    return { valid: false, message: strength.feedback || "Use a Good or Strong password." };
   }
   return { valid: true, message: null };
 }
@@ -196,8 +202,8 @@ export async function validateNewVaultPasswordWithGuessability(
   if (!immediate.valid) return immediate;
 
   const strength = await estimatePasswordStrengthWithGuessability(password);
-  if (strength.score <= 1) {
-    return { valid: false, message: strength.feedback };
+  if (strength.score < 3) {
+    return { valid: false, message: strength.feedback || "Use a Good or Strong password." };
   }
   return { valid: true, message: null };
 }

@@ -68,6 +68,7 @@ test("new vault password policy rejects guessable passwords and accepts strong s
     "password123",
     "aaaaaaaaaaaaaaaa",
     "abcd1234abcd1234",
+    "aurorariver2",
   ]) {
     assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
   }
@@ -79,6 +80,14 @@ test("new vault password policy rejects guessable passwords and accepts strong s
   ]) {
     assert.equal(validateNewVaultPassword(candidate).valid, true, candidate);
   }
+});
+
+test("new passwords must use a stable NFC Unicode representation", () => {
+  const decomposed = "Caf\u0065\u0301!River27";
+  assert.equal(decomposed.normalize("NFC") === decomposed, false);
+  const result = validateNewVaultPassword(decomposed);
+  assert.equal(result.valid, false);
+  assert.match(result.message, /unicode|normal/i);
 });
 
 test("onboarding uses the shared new-vault password policy", () => {
