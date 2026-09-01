@@ -17,7 +17,7 @@ import {
 import {
   type AccountSignerInfo,
   explainSubmitError,
-  fetchAccountSignerInfo,
+  fetchCanonicalAccountSignerInfo,
   getJson,
   loadRecommendedBaseFee,
   minimalAccount,
@@ -163,7 +163,7 @@ export async function applyMultisigConfig(params: {
   const { kp } = resolveSource(params.secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(`${horizonUrl}/accounts/${accountPublicKey}`);
   if (!source) throw new SendError("Account does not exist on this network.");
-  const current = await fetchAccountSignerInfo(accountPublicKey, network);
+  const current = await fetchCanonicalAccountSignerInfo(accountPublicKey, network);
   if (!current) throw new SendError("Account signer configuration could not be loaded.");
   if (current.signers.some((signer) => signer.type !== "ed25519_public_key")) {
     throw new SendError(
@@ -544,7 +544,7 @@ async function loadAuthorizationContext(
   const requirements = authorizationRequirements(tx);
   const entries = await Promise.all(
     [...requirements.keys()].map(async (source) => {
-      const info = await fetchAccountSignerInfo(source, network);
+      const info = await fetchCanonicalAccountSignerInfo(source, network);
       if (!info) throw new SendError(`Required source account ${source} was not found on ${NETWORKS[network].label}.`);
       if (info.signers.some((signer) => signer.type !== "ed25519_public_key")) {
         throw new SendError(

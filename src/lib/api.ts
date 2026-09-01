@@ -406,6 +406,22 @@ export async function fetchAccountSignerInfo(
   return parseAccountSignerInfo(data, publicKey);
 }
 
+/**
+ * Load account authority from SDF's network Horizon, never a user-configured
+ * operational endpoint. Signer omissions are security-sensitive: a custom
+ * endpoint must not be able to hide a key during threshold reconfiguration.
+ */
+export async function fetchCanonicalAccountSignerInfo(
+  publicKey: string,
+  network: NetworkKey,
+): Promise<AccountSignerInfo | null> {
+  const data = await getJson<unknown>(
+    `${NETWORKS[network].horizonUrl}/accounts/${publicKey}`,
+  );
+  if (!data) return null;
+  return parseAccountSignerInfo(data, publicKey);
+}
+
 interface RawOperation {
   id: string;
   type: string;
