@@ -294,7 +294,7 @@ export function PrivateBalanceProvider({
 }: PrivateBalanceProviderProps) {
   const { recommendedBaseFeeStroops, balances } = useWalletLedger();
   const { phase: walletPhase } = useWalletPhase();
-  const { signPrivateBalanceEnvelope } = useWalletTransactions();
+  const { authorizeTransactionSigning, signPrivateBalanceEnvelope } = useWalletTransactions();
   const [state, dispatch] = useReducer(privateBalanceReducer, initialPrivateBalanceState);
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(() => ({
     phase: encryptedStateExists ? 'reading-meta' : 'disabled',
@@ -1511,6 +1511,7 @@ export function PrivateBalanceProvider({
     if (asset.kind !== 'native') {
       throw new Error('Reusable private receipts currently support XLM only.');
     }
+    await authorizeTransactionSigning("Move reusable private receipt");
     const current = stealthSnapshot.payments.find(candidate =>
       candidate.transactionHash === sweep.payment.transactionHash &&
       candidate.destinationPublicKey === sweep.payment.destinationPublicKey);
@@ -1581,7 +1582,15 @@ export function PrivateBalanceProvider({
     } finally {
       actionBusyRef.current = false;
     }
-  }, [asset.kind, manifest.deploymentBindingHash, network, storageScope, stealthSnapshot.payments, submitActionInternal]);
+  }, [
+    asset.kind,
+    authorizeTransactionSigning,
+    manifest.deploymentBindingHash,
+    network,
+    storageScope,
+    stealthSnapshot.payments,
+    submitActionInternal,
+  ]);
 
   const prepareChainedSend = useCallback(async (
     draft: PrivateChainedSendDraft,

@@ -326,6 +326,10 @@ export class MerchantRepository {
     this.driver = driver;
   }
 
+  clearDecryptedSnapshot(): void {
+    this.snapshot = null;
+  }
+
   private decodeRecordSet(
     metaRaw: string,
     recordRaws: ReadonlyMap<string, string>,

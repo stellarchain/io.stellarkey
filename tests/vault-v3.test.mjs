@@ -444,6 +444,38 @@ test("password-sensitive exports verify the password at the point of use", async
   assert.match(await exportVaultBackup(password), /stellar-wallet-backup/);
 });
 
+test("backup export rejects a vault revision changed after password verification", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    changeVaultPassword,
+    exportVaultBackup,
+    initializeVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const oldVault = localStorage.getItem("stellarkey.vault.v1");
+  const replacement = "violet glacier orbit lantern harbor";
+  await changeVaultPassword(password, replacement);
+  const changedVault = localStorage.getItem("stellarkey.vault.v1");
+  localStorage.setItem("stellarkey.vault.v1", oldVault);
+
+  const originalGetItem = localStorage.getItem.bind(localStorage);
+  let vaultReads = 0;
+  localStorage.getItem = (key) => {
+    if (key === "stellarkey.vault.v1" && ++vaultReads === 2) {
+      localStorage.setItem(key, changedVault);
+    }
+    return originalGetItem(key);
+  };
+
+  await assert.rejects(
+    () => exportVaultBackup(password),
+    /wallet changed.*backup|backup.*wallet changed/i,
+  );
+});
+
 test("account keystores accept only the current format marker", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

@@ -234,6 +234,24 @@ test("merchant authorization is enforced at mutation and signing boundaries", ()
     ?.split("\/\*\* Expire anything")[0] ?? "";
   assert.match(chargeVoid, /requirePaymentActor/);
   assert.match(chargeVoid, /commitStore\(\(latest\)/);
+  assert.match(chargeVoid, /status\s*!==\s*["']awaiting["']/);
+
+  const trackedBroadcast = wallet.split("const runTrackedBroadcast = useCallback")[1]
+    ?.split("const retryPendingTransaction")[0] ?? "";
+  assert.match(trackedBroadcast, /createSessionRevocationGuard\(\)/);
+  assert.ok(
+    trackedBroadcast.indexOf("journal?.onPrepared") < trackedBroadcast.indexOf("assertSessionCurrent"),
+    "session authority must be checked after durable preparation",
+  );
+  assert.match(trackedBroadcast, /beforeSubmit\?\.\(\)/);
+});
+
+test("merchant pricing is refreshed and expires before it can quote Mainnet sales", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  assert.match(hook, /MERCHANT_PRICE_MAX_AGE_MS/);
+  assert.match(hook, /assetPricesObservedAt/);
+  assert.match(hook, /setInterval[\s\S]{0,500}fetchAssetPrices/);
+  assert.match(hook, /Date\.now\(\)\s*-\s*assetPricesObservedAt\s*>\s*MERCHANT_PRICE_MAX_AGE_MS/);
 });
 
 test("locked or report-forbidden merchant sessions cannot render takings or customer PII", () => {
