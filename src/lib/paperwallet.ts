@@ -150,7 +150,6 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
       <div class="strip">Anyone holding this certificate controls 100% of the funds on this account</div>
     </div>
   </div>
-  <script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 250); });</script>
 </body>
 </html>`;
 }
@@ -174,9 +173,16 @@ export function openPaperWalletPrint(doc: PaperWalletDoc): void {
     return;
   }
 
-  // Once the same-origin blob document has loaded it retains its DOM, while
-  // revoking here prevents any other same-origin script from fetching the
-  // secret-bearing URL for an arbitrary grace period.
-  win.addEventListener("load", revoke, { once: true });
-  if (win.document.readyState === "complete") revoke();
+  // Invoke printing from the trusted parent application rather than an inline
+  // child script, which the production CSP correctly blocks. Once loaded, the
+  // blob document retains its DOM; revoke its secret-bearing URL immediately.
+  const printAndRevoke = () => {
+    try {
+      win.print();
+    } finally {
+      revoke();
+    }
+  };
+  win.addEventListener("load", printAndRevoke, { once: true });
+  if (win.document.readyState === "complete") printAndRevoke();
 }

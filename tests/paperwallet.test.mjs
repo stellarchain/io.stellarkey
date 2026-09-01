@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openPaperWalletPrint } from "../src/lib/paperwallet.ts";
+import { buildPaperWalletHtml, openPaperWalletPrint } from "../src/lib/paperwallet.ts";
 
 const paperWallet = {
   accountLabel: "Savings",
@@ -14,6 +14,7 @@ const paperWallet = {
 
 test("paper wallet blob URL is revoked as soon as the child document loads", (t) => {
   let loadHandler = null;
+  let printCalls = 0;
   const revoked = [];
   const child = {
     document: { readyState: "loading" },
@@ -21,6 +22,9 @@ test("paper wallet blob URL is revoked as soon as the child document loads", (t)
       assert.equal(type, "load");
       assert.deepEqual(options, { once: true });
       loadHandler = listener;
+    },
+    print() {
+      printCalls += 1;
     },
   };
   t.mock.method(URL, "createObjectURL", () => "blob:https://stellarkey.io/private-paper-wallet");
@@ -32,7 +36,12 @@ test("paper wallet blob URL is revoked as soon as the child document loads", (t)
   assert.equal(typeof loadHandler, "function");
 
   loadHandler();
+  assert.equal(printCalls, 1);
   assert.deepEqual(revoked, ["blob:https://stellarkey.io/private-paper-wallet"]);
+});
+
+test("paper wallet HTML contains no CSP-blocked inline script", () => {
+  assert.doesNotMatch(buildPaperWalletHtml(paperWallet), /<script\b/i);
 });
 
 test("paper wallet blob URL is revoked immediately when the popup is blocked", (t) => {

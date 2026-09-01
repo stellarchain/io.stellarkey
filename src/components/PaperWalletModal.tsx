@@ -19,7 +19,6 @@ export function PaperWalletModal({
   kind,
   path,
   accountId,
-  password,
   networkLabel,
 }: {
   open: boolean;
@@ -31,12 +30,13 @@ export function PaperWalletModal({
   path?: string;
   /** Enables the encrypted keystore export for secret-key certificates. */
   accountId?: string;
-  /** Verified at the parent password gate and used only for this export action. */
-  password: string;
   networkLabel?: string;
 }) {
   const [pubQr, setPubQr] = useState<string | null>(null);
   const [secQr, setSecQr] = useState<string | null>(null);
+  const [showEncryptedExport, setShowEncryptedExport] = useState(false);
+  const [exportPassword, setExportPassword] = useState("");
+  const [exportBusy, setExportBusy] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -86,13 +86,15 @@ export function PaperWalletModal({
   }
 
   async function handleEncryptedExport() {
+    if (!exportPassword || exportBusy) return;
     triggerHaptic("selection");
+    setExportBusy(true);
     try {
       let json: string;
       let filename: string;
       if (kind === "secret") {
         if (!accountId) return;
-        const keystore = await exportKeystoreWithPassword(accountId, password);
+        const keystore = await exportKeystoreWithPassword(accountId, exportPassword);
         if (!keystore) {
           triggerHaptic("error");
           toast("Encrypted export unavailable for this account type", "error");
@@ -101,7 +103,7 @@ export function PaperWalletModal({
         json = keystore;
         filename = `stellarkey-${accountLabel.toLowerCase().replace(/\s+/g, "-")}-keystore.json`;
       } else {
-        json = await exportVaultBackup(password);
+        json = await exportVaultBackup(exportPassword);
         filename = `stellarkey-backup-${new Date().toISOString().slice(0, 10)}.json`;
       }
       const blob = new Blob([json], { type: "application/json" });
@@ -122,17 +124,26 @@ export function PaperWalletModal({
     } catch (e) {
       triggerHaptic("error");
       toast(e instanceof Error ? e.message : "Encrypted export failed.", "error");
+    } finally {
+      setExportPassword("");
+      setExportBusy(false);
     }
+  }
+
+  function handleClose() {
+    setExportPassword("");
+    setShowEncryptedExport(false);
+    onClose();
   }
 
   if (!open) return null;
 
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal open onClose={handleClose} wide>
       <ModalHeader
         title="Cold Storage Paper Wallet"
         subtitle="Printable physical backup certificate"
-        onClose={onClose}
+        onClose={handleClose}
       />
       <div className="p-4 sm:p-6">
         {/* Certificate Container formatted for print and screen */}
@@ -216,30 +227,60 @@ export function PaperWalletModal({
 
         {/* Export Actions */}
         <div className="mt-6 grid grid-cols-2 gap-3 print:hidden">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={handleClose}>
             Close
           </Button>
           <Button onClick={handleExportPdf} disabled={!pubQr || !secQr}>
             Export PDF Certificate
           </Button>
         </div>
-        <button
-          type="button"
-          data-encrypted-export-action="true"
-          onClick={() => void handleEncryptedExport()}
-          className="group mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
-        >
-          <IconLock size={16} className="shrink-0 text-neutral-400" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] font-semibold text-neutral-200 transition-colors group-hover:text-[#0A84FF]">
-              Download encrypted file instead
+        {showEncryptedExport ? (
+          <form
+            className="mt-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] p-3.5 print:hidden"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleEncryptedExport();
+            }}
+          >
+            <label className="field-label" htmlFor="paper-wallet-export-password">
+              Confirm wallet password
+            </label>
+            <div className="mt-2 flex gap-2">
+              <input
+                id="paper-wallet-export-password"
+                type="password"
+                autoComplete="current-password"
+                value={exportPassword}
+                onChange={(event) => setExportPassword(event.target.value)}
+                className="input min-w-0 flex-1"
+                autoFocus
+              />
+              <Button type="submit" loading={exportBusy} disabled={!exportPassword || exportBusy}>
+                Download
+              </Button>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+              Re-enter it only for this encrypted export. It is cleared immediately afterward.
+            </p>
+          </form>
+        ) : (
+          <button
+            type="button"
+            data-encrypted-export-action="true"
+            onClick={() => setShowEncryptedExport(true)}
+            className="group mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
+          >
+            <IconLock size={16} className="shrink-0 text-neutral-400" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-neutral-200 transition-colors group-hover:text-[#0A84FF]">
+                Download encrypted file instead
+              </span>
+              <span className="mt-0.5 block text-[12px] font-normal leading-snug text-neutral-500">
+                {kind === "secret" ? "Keystore .json" : "Vault backup .json"} · fresh password confirmation required
+              </span>
             </span>
-            <span className="mt-0.5 block text-[12px] font-normal leading-snug text-neutral-500">
-              {kind === "secret" ? "Keystore .json" : "Vault backup .json"} · locked by your
-              wallet password
-            </span>
-          </span>
-        </button>
+          </button>
+        )}
       </div>
     </Modal>
   );

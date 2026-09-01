@@ -96,6 +96,8 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     else if (step === "password") setStep("method");
     else if (step === "secure") {
       setPreparedBackup(null);
+      setRevealed(null);
+      setPassword("");
       setStep("password");
     }
     else if (step === "restore-password") setStep("restore-pick");
@@ -128,6 +130,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
         material = await revealSecret(activeAccount.id, password);
       }
       setRevealed(material);
+      setPassword("");
       triggerHaptic("success");
       setStep("secure");
     } catch (e) {
@@ -799,7 +802,6 @@ function WizardInner({ onClose }: { onClose: () => void }) {
           kind={hasPhrase ? "mnemonic" : "secret"}
           path={activeAccount.path}
           accountId={activeAccount.id}
-          password={password}
           networkLabel={NETWORKS[network].label}
         />
       )}
