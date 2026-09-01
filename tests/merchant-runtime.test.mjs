@@ -239,7 +239,37 @@ test("merchant authorization is enforced at mutation and signing boundaries", ()
 test("locked or report-forbidden merchant sessions cannot render takings or customer PII", () => {
   const page = source("src/components/merchant/MerchantPage.tsx");
   assert.match(page, /const showTakings = canSeeReports && phase !== "locked"/);
-  assert.match(page, /sub === "customers" \? \(\s*canSeeReports && phase !== "locked"/);
+  assert.match(page, /const hasActiveOperator = activeStaff !== null && phase !== "locked"/);
+  assert.match(page, /const canAccessRecords = hasActiveOperator && canSeeReports/);
+  for (const route of ["orders", "invoices", "links", "customers", "insights"]) {
+    assert.match(page, new RegExp(`sub === "${route}"[\\s\\S]{0,180}canAccessRecords`));
+  }
+  assert.match(page, /hasActiveOperator && activeCharge/);
+});
+
+test("leaving Merchant Mode and exporting retained records revalidate current authority", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const dashboard = source("src/components/Dashboard.tsx");
+  const runtime = source("src/hooks/useMerchantRuntime.tsx");
+  assert.match(runtime, /authorizeWalletExit: \(\) => Promise<void>/);
+  assert.match(hook, /const authorizeWalletExit = useCallback/);
+  assert.match(hook, /authorizeSensitiveAction\("Leave Merchant Mode"\)/);
+  assert.match(dashboard, /await merchantAuthorizeWalletExit\(\)/);
+
+  const archive = hook.split("const exportEncryptedArchive = useCallback")[1]
+    ?.split("const resetRecoveryData")[0] ?? "";
+  assert.ok((archive.match(/requireExportingStaff/g) ?? []).length >= 2);
+  assert.match(hook, /const exportInvoiceRecord = useCallback/);
+  assert.match(hook, /requireExportingStaff/);
+  assert.match(source("src/components/merchant/InvoiceDetailModal.tsx"), /exportInvoiceRecord\(invoice\.id\)/);
+});
+
+test("terminal identity cannot change during an open shift", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const settings = hook.split("const updateSettings = useCallback")[1]
+    ?.split("const upsertItem")[0] ?? "";
+  assert.match(settings, /activeShiftForTerminal/);
+  assert.match(settings, /Close the current shift before renaming this terminal/i);
 });
 
 test("printing, scanner input, and supported preferences execute real browser paths", () => {

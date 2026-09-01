@@ -5,6 +5,7 @@ import {
   useMerchantConfiguration,
   useMerchantRecords,
   useMerchantReporting,
+  useMerchantStaff,
   useMerchantStatus,
   useMerchantTill,
 } from "@/hooks/useMerchant";
@@ -152,6 +153,7 @@ export function MerchantPage({
   } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { today, canSeeReports } = useMerchantReporting();
+  const { activeStaff } = useMerchantStaff();
   const { activeShift } = useMerchantTill();
   const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
   const { phase } = useWalletPhase();
@@ -265,6 +267,15 @@ export function MerchantPage({
   const showAlerts = Boolean(storageError) || showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
   const onBilling = sub === "invoices" || sub === "links";
+  const hasActiveOperator = activeStaff !== null && phase !== "locked";
+  const canAccessRecords = hasActiveOperator && canSeeReports;
+  const operatorNotice = (
+    <Notice tone="warn">
+      {hasActiveOperator
+        ? "This staff member cannot view retained merchant records."
+        : "Unlock an authorized staff member to continue."}
+    </Notice>
+  );
 
   /*
     The takings strip carries today's three figures to the screens that do not
@@ -455,35 +466,31 @@ export function MerchantPage({
       )}
 
       {sub === "pos" ? (
-        <PosTerminal onOpenShift={() => setShiftShowing(true)} />
+        hasActiveOperator ? <PosTerminal onOpenShift={() => setShiftShowing(true)} /> : operatorNotice
       ) : sub === "orders" ? (
-        <OrdersPage />
+        canAccessRecords ? <OrdersPage /> : operatorNotice
       ) : sub === "catalogue" ? (
-        <CataloguePage />
+        hasActiveOperator ? <CataloguePage /> : operatorNotice
       ) : sub === "invoices" ? (
-        <InvoicesPage />
+        canAccessRecords ? <InvoicesPage /> : operatorNotice
       ) : sub === "links" ? (
-        <PaymentLinksPage />
+        canAccessRecords ? <PaymentLinksPage /> : operatorNotice
       ) : sub === "customers" ? (
-        canSeeReports && phase !== "locked" ? (
-          <CustomersPage />
-        ) : (
-          <Notice tone="warn">Unlock an authorized staff member to view customer records.</Notice>
-        )
-      ) : canSeeReports ? (
-        <InsightsPage />
+        canAccessRecords ? <CustomersPage /> : operatorNotice
+      ) : sub === "insights" ? (
+        canAccessRecords ? <InsightsPage /> : operatorNotice
       ) : (
-        <Notice tone="warn">This staff member cannot view merchant reports.</Notice>
+        operatorNotice
       )}
 
       {/* The charge sheet hangs off the whole of Merchant Mode, not off the till:
           a request stays on screen while the staff member steps over to Orders,
           and Orders can put a live one back on screen from its own list. */}
-      <ChargeSheet charge={activeCharge} onClose={closeCharge} />
+      <ChargeSheet charge={hasActiveOperator && activeCharge ? activeCharge : null} onClose={closeCharge} />
 
       {/* The shift belongs to the counter, not to any one tab: it opens over
           whatever is on screen and closes back onto it. */}
-      <ShiftSheet open={shiftShowing} onClose={() => setShiftShowing(false)} />
+      <ShiftSheet open={hasActiveOperator && shiftShowing} onClose={() => setShiftShowing(false)} />
     </section>
   );
 }

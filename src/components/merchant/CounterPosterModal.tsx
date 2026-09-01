@@ -277,10 +277,13 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
   const printedAmount = asset
     ? code.quotes.find((quote) => assetKey(quote.asset) === assetKey(asset))?.amount ?? null
     : null;
-  const uri = asset ? counterCodePayUriFor(code, asset, requestTransport) : null;
   const availability = counterCodeAvailability(code, now);
   const receivingAccountChanged = settings.receivingPublicKey !== code.destination;
-  const canShare = availability === "active" && !receivingAccountChanged && uri !== null;
+  const canRenderPaymentArtifact = availability === "active" && !receivingAccountChanged;
+  const uri = canRenderPaymentArtifact && asset
+    ? counterCodePayUriFor(code, asset, requestTransport)
+    : null;
+  const canShare = canRenderPaymentArtifact && uri !== null;
 
   /* A real encoding, at a resolution that still has ink at 44 mm and 300 dpi. */
   useEffect(() => {
@@ -319,7 +322,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
       ? code.suggestedMinor.map((minor) => fmtMinor(minor, code.currency)).join("  ·  ")
       : null;
 
-  const face = (
+  const face = canRenderPaymentArtifact ? (
     <PosterFace
       shopName={shopName}
       addressLines={settings.profile.addressLines}
@@ -339,7 +342,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
         "Payments go straight to this shop's own Stellar account. Nothing is held by anyone in between, and a refund is an ordinary payment back."
       }
     />
-  );
+  ) : null;
 
   return (
     <>
@@ -358,7 +361,13 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
               className="w-full max-w-[248px] shrink-0 overflow-hidden rounded-[10px] shadow-[0_18px_40px_-16px_rgba(0,0,0,0.9)] ring-1 ring-white/15"
               style={{ aspectRatio: `${A6_WIDTH_MM} / ${A6_HEIGHT_MM}` }}
             >
-              {face}
+              {canRenderPaymentArtifact ? (
+                face
+              ) : (
+                <div className="flex h-full items-center justify-center bg-white p-6 text-center text-[13px] font-semibold text-neutral-700">
+                  This payment code is no longer shareable.
+                </div>
+              )}
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
@@ -513,7 +522,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
       </Modal>
 
       {/* The print copy: hidden on screen, and the only thing left on paper. */}
-      {mounted &&
+      {mounted && canRenderPaymentArtifact && face &&
         createPortal(
           <div data-counter-poster-print="">
             <style>{PRINT_CSS}</style>

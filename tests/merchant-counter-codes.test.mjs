@@ -371,6 +371,9 @@ test("production counter-code surfaces use persisted state, live quotes, and rea
   assert.match(page, /counterCodes|setCounterCodeActive/);
   assert.match(editor, /createCounterCode|updateCounterCode/);
   assert.match(poster, /counterCodePayUriFor|window\.print/);
+  assert.match(poster, /const canRenderPaymentArtifact =/);
+  assert.match(poster, /canRenderPaymentArtifact && face/);
+  assert.match(poster, /canRenderPaymentArtifact \? \(/);
   assert.doesNotMatch(page, /setCodes\(|on this screen/);
   assert.doesNotMatch(editor, /on this screen only|illustrative rate|example rate/);
 });
