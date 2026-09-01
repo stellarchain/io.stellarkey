@@ -67,14 +67,12 @@ test("the supported type toolchain matches Node 22 and typescript-eslint", () =>
 });
 
 test("Next.js telemetry is disabled for local and automated project commands", () => {
-  const environmentPath = new URL(".env", root);
-  assert.equal(existsSync(environmentPath), true, "the repository must carry its telemetry opt-out");
-  const activeEnvironment = read(".env")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
-  assert.deepEqual(activeEnvironment, ["NEXT_TELEMETRY_DISABLED=1"]);
-  assert.match(read(".gitignore"), /^!\.env$/m);
+  const packageJson = JSON.parse(read("package.json"));
+  assert.match(packageJson.scripts.dev, /^NEXT_TELEMETRY_DISABLED=1 next dev$/);
+  assert.match(packageJson.scripts.build, /^NEXT_TELEMETRY_DISABLED=1 next build\b/);
+  assert.match(read(".gitignore"), /^\.env\*$/m);
+  assert.doesNotMatch(read(".gitignore"), /^!\.env$/m);
+  assert.equal(existsSync(new URL(".env", root)), false, "environment files must stay untracked");
 
   for (const workflow of ["ci.yml", "release.yml"]) {
     assert.match(

@@ -13,8 +13,8 @@
     "npm": ">=11.19.0 <13"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build && node scripts/generate-static-headers.mjs && node scripts/generate-service-worker.mjs",
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build && node scripts/generate-static-headers.mjs && node scripts/generate-service-worker.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "icons:render": "node scripts/render-app-icons.mjs",
     "start": "node scripts/static-server.mjs",

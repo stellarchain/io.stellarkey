@@ -36,7 +36,11 @@ test('the tracked changelog documents the current release', () => {
     document.releases.map(({ version }) => version),
     ['Unreleased', '1.4.1', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0']
   );
-  assert.deepEqual(document.releases[0].categories, []);
+  assert.deepEqual(
+    document.releases[0].categories.map(({ name }) => name),
+    ['Fixed', 'Security']
+  );
+  assert.ok(document.releases[0].categories.every(({ entries }) => entries.length > 0));
   assert.deepEqual(
     document.releases[1].categories.map(({ name }) => name),
     ['Changed', 'Fixed', 'Security']
