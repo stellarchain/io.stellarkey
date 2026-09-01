@@ -252,6 +252,61 @@ test("an in-flight software signer is revoked before signing when the vault lock
   await assert.rejects(operation, /locked|revoked/i);
 });
 
+test("a lock issued during password unlock cannot be undone by the stale unlock", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, isUnlocked, lockVault, unlockVault } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  lockVault();
+
+  const unlocking = unlockVault(password);
+  lockVault();
+  await assert.rejects(unlocking, /locked|revoked/i);
+  assert.equal(isUnlocked(), false);
+});
+
+test("a lock issued during passkey unlock cannot be undone by the stale assertion", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    enablePasskeyUnlock,
+    initializeVault,
+    isUnlocked,
+    lockVault,
+    unlockVaultWithPasskey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const base = passkeyDependencies(localStorage);
+  await enablePasskeyUnlock(password, base);
+  lockVault();
+  let release;
+  let requested;
+  const requestStarted = new Promise((resolve) => { requested = resolve; });
+  const paused = new Promise((resolve) => { release = resolve; });
+  const dependencies = {
+    ...base,
+    credentials: {
+      ...base.credentials,
+      get: async (...args) => {
+        requested();
+        await paused;
+        return base.credentials.get(...args);
+      },
+    },
+  };
+
+  const unlocking = unlockVaultWithPasskey(dependencies);
+  await requestStarted;
+  lockVault();
+  release();
+  await assert.rejects(unlocking, /locked|revoked/i);
+  assert.equal(isUnlocked(), false);
+});
+
 test("encrypted account payloads stay bound to their public identities", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

@@ -93,13 +93,13 @@ test("every user-controlled JSON file is bounded before file.text", () => {
   }
 });
 
-test("POC plaintext contacts are rejected and never rewritten", async () => {
+test("corrupt ancillary contacts do not block unlock and are never rewritten", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
   const { Keypair } = await import("@stellar/stellar-sdk");
   const alice = Keypair.random().publicKey();
   const password = "correct horse battery staple";
-  const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  const { initializeVault, isUnlocked, lockVault, unlockVault } = await import("../src/lib/vault.ts");
   await initializeVault(password, { secret: Keypair.random().secret() });
   lockVault();
   localStorage.setItem(
@@ -111,9 +111,45 @@ test("POC plaintext contacts are rejected and never rewritten", async () => {
   await assert.rejects(() => loadContacts(), /locked/i);
 
   const raw = localStorage.getItem("stellarkey.contacts.v1");
-  await assert.rejects(() => unlockVault(password), /contacts.*unsupported|unsupported.*contacts/i);
+  await unlockVault(password);
+  assert.equal(isUnlocked(), true);
   assert.equal(localStorage.getItem("stellarkey.contacts.v1"), raw);
-  await assert.rejects(() => saveContact({ name: "Alice", address: alice }), /locked/i);
+  await assert.rejects(() => loadContacts(), /contacts.*unsupported|unsupported.*contacts/i);
+  await assert.rejects(
+    () => saveContact({ name: "Alice", address: alice }),
+    /contacts.*unsupported|unsupported.*contacts/i,
+  );
+});
+
+test("a reset epoch invalidates backup restore before it can replace storage", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    invalidateWalletLifecycle,
+    loadVault,
+    restoreVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  await initializeVault("correct horse battery staple", {
+    secret: Keypair.random().secret(),
+  });
+  const backup = await exportVaultBackup("correct horse battery staple");
+  const identity = loadVault().accounts[0].publicKey;
+
+  const restoring = restoreVaultBackup(backup, "correct horse battery staple");
+  invalidateWalletLifecycle();
+  await assert.rejects(restoring, /reset|cancelled|changed/i);
+  assert.equal(loadVault().accounts[0].publicKey, identity);
+});
+
+test("wallet reset broadcasts intent and invalidates restore before fallible cleanup", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
+  assert.ok(reset.indexOf("invalidateWalletLifecycle()") >= 0);
+  assert.ok(reset.indexOf('post("wallet-reset")') >= 0);
+  assert.ok(reset.indexOf('post("wallet-reset")') < reset.indexOf("getMerchantRepository().clear()"));
 });
 
 test("restored contacts are encrypted before the restored vault is exposed", async () => {
