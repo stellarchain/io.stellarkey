@@ -31,6 +31,24 @@ interface RecipientRow {
   amount: string;
 }
 
+type BatchStage = "form" | "review";
+
+interface BatchReview {
+  sourcePublicKey: string;
+  assetKey: string;
+  assetCode: string;
+  issuer?: string;
+  payments: Array<{
+    destination: string;
+    amount: string;
+    assetCode: string;
+    issuer?: string;
+  }>;
+  memo?: { type: "text"; value: string };
+  totalAmount: string;
+  feeXlm: string;
+}
+
 export function BatchSendModal({
   open,
   onClose,
@@ -59,6 +77,8 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
   ]);
   const [csvInput, setCsvInput] = useState("");
   const [showCsvInput, setShowCsvInput] = useState(false);
+  const [stage, setStage] = useState<BatchStage>("form");
+  const [review, setReview] = useState<BatchReview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submission, setSubmission] = useState<SubmissionResult | null>(null);
@@ -101,12 +121,14 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
       ? spendableAssetBalance(selectedAsset)
       : "0";
 
-  const canSubmit =
+  const canReview =
     validRows.length > 0 &&
     validRows.length === rows.filter((r) => r.destination.trim() || r.amount.trim()).length &&
     compareStellarAmounts(totalAmount, maxSendable) <= 0 &&
     memoByteLength(memo) <= 28 &&
     !busy;
+
+  const recipientCount = review?.payments.length ?? validRows.length;
 
   function handleAddRow() {
     if (rows.length >= 100) {
@@ -167,19 +189,50 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
     }
   }
 
+  function handleReview() {
+    if (!selectedAsset || !activeAccount || !canReview) return;
+    const payments = validRows.map((row) => ({
+      destination: row.destination.trim(),
+      amount: row.amount.trim(),
+      assetCode: selectedAsset.code,
+      issuer: selectedAsset.issuer ?? undefined,
+    }));
+    setReview({
+      sourcePublicKey: activeAccount.publicKey,
+      assetKey: selectedAsset.key,
+      assetCode: selectedAsset.code,
+      issuer: selectedAsset.issuer ?? undefined,
+      payments,
+      memo: memo.trim() ? { type: "text", value: memo.trim() } : undefined,
+      totalAmount,
+      feeXlm,
+    });
+    setStage("review");
+    setError(null);
+    triggerHaptic("selection");
+  }
+
   async function handleBatchSend() {
-    if (!selectedAsset || validRows.length === 0) return;
+    if (!review) return;
+    const currentAsset = options.find((asset) => asset.key === review.assetKey);
+    if (
+      activeAccount?.publicKey !== review.sourcePublicKey ||
+      !currentAsset ||
+      currentAsset.code !== review.assetCode ||
+      (currentAsset.issuer ?? undefined) !== review.issuer
+    ) {
+      setStage("form");
+      setReview(null);
+      setError("The active account or asset changed. Review the batch again before signing.");
+      triggerHaptic("error");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const result = await sendBatch({
-        payments: validRows.map((r) => ({
-          destination: r.destination.trim(),
-          amount: r.amount.trim(),
-          assetCode: selectedAsset.code,
-          issuer: selectedAsset.issuer,
-        })),
-        memo: memo.trim() ? { type: "text", value: memo.trim() } : undefined,
+        payments: review.payments,
+        memo: review.memo,
       });
       setSubmission(result);
       triggerHaptic(result.status === "status_unknown" ? "warning" : "success");
@@ -200,16 +253,20 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
             ? "Batch Status Unknown"
             : submission
               ? trackedSubmissionStatus === "confirmed" ? "Batch Confirmed" : "Batch Accepted"
-              : "Multi-Send Disperse"
+              : stage === "review"
+                ? "Review Multi-Send"
+                : "Multi-Send Disperse"
         }
         subtitle={
           trackedSubmissionStatus === "status_unknown"
             ? "Do not resubmit blindly — canonical hash tracking is active"
             : submission
               ? trackedSubmissionStatus === "confirmed"
-                ? `Confirmed for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
-                : `Accepted for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} in 1 atomic transaction`
-            : "Send payments to multiple recipients in 1 transaction"
+                ? `Confirmed for ${recipientCount} recipient${recipientCount > 1 ? "s" : ""} in 1 atomic transaction`
+                : `Accepted for ${recipientCount} recipient${recipientCount > 1 ? "s" : ""} in 1 atomic transaction`
+              : stage === "review"
+                ? "Check every recipient and amount before signing"
+                : "Send payments to multiple recipients in 1 transaction"
         }
         onClose={busy ? undefined : onClose}
       />
@@ -234,8 +291,8 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
               {trackedSubmissionStatus === "status_unknown"
                 ? "Horizon did not confirm acceptance. Do not resubmit blindly; the wallet will keep polling this hash."
                 : trackedSubmissionStatus === "confirmed"
-                  ? `The atomic payment for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""} is confirmed on-chain.`
-                  : `Horizon accepted the atomic payment for ${validRows.length} recipient${validRows.length > 1 ? "s" : ""}. Confirmation tracking continues.`}
+                  ? `The atomic payment for ${recipientCount} recipient${recipientCount > 1 ? "s" : ""} is confirmed on-chain.`
+                  : `Horizon accepted the atomic payment for ${recipientCount} recipient${recipientCount > 1 ? "s" : ""}. Confirmation tracking continues.`}
             </p>
             <p className="mt-4 w-full break-all rounded-xl bg-white/[0.04] p-3 font-mono text-[10.5px] text-neutral-300">
               {submission.network} · {submission.hash}
@@ -246,6 +303,87 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <div className="space-y-4">
+            {stage === "review" && review ? (
+              <>
+                <div className="rounded-xl border border-[#0A84FF]/25 bg-[#0A84FF]/10 p-3 text-[12px] leading-relaxed text-[#A7D4FF]">
+                  Nothing has been signed or sent. Confirm only after checking every recipient.
+                </div>
+
+                <div className="max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                  {review.payments.map((payment, index) => (
+                    <div
+                      key={`${payment.destination}:${index}`}
+                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[11px] font-bold text-neutral-400">
+                          Recipient #{index + 1}
+                        </span>
+                        <span className="mono shrink-0 text-[13px] font-semibold text-white">
+                          {fmtAmount(payment.amount)} {payment.assetCode}
+                        </span>
+                      </div>
+                      <p className="mono mt-1 truncate text-[11px] text-neutral-300" title={payment.destination}>
+                        {formatTrezorAddress(payment.destination)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="panel-inset space-y-1 p-3 text-[12px]">
+                  <div className="flex justify-between gap-3 text-neutral-300">
+                    <span>Total</span>
+                    <span className="mono font-semibold text-white">
+                      {fmtAmount(review.totalAmount)} {review.assetCode}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-neutral-300">
+                    <span>Network fee</span>
+                    <span className="mono">{review.feeXlm} XLM</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-neutral-300">
+                    <span>Transaction memo</span>
+                    <span className="max-w-[65%] truncate text-right text-white">
+                      {review.memo?.value ?? "None"}
+                    </span>
+                  </div>
+                </div>
+
+                {activeAccount?.hardware && (
+                  <div className="flex items-center gap-2 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 text-[12px] text-[#0A84FF]">
+                    {activeAccount.hardware === "ledger" ? (
+                      <IconLedger size={15} className="text-[#64D2FF]" />
+                    ) : (
+                      <IconTrezor size={15} className="text-emerald-400" />
+                    )}
+                    <span className="font-semibold">
+                      Final approval happens on your {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} device.
+                    </span>
+                  </div>
+                )}
+
+                {error && <ErrorText message={error} />}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setStage("form");
+                      setReview(null);
+                      setError(null);
+                      triggerHaptic("selection");
+                    }}
+                  >
+                    Back
+                  </Button>
+                  <Button loading={busy} onClick={() => void handleBatchSend()}>
+                    {busy ? "Broadcasting…" : "Confirm and Send"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
               {/* Asset picker */}
               <div>
                 <span className="field-label">Asset</span>
@@ -448,12 +586,13 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
 
               <Button
                 className="!mt-6 w-full"
-                loading={busy}
-                disabled={!canSubmit}
-                onClick={() => void handleBatchSend()}
+                disabled={!canReview}
+                onClick={handleReview}
               >
-                {busy ? "Broadcasting…" : `Disperse to ${validRows.length} Recipient${validRows.length > 1 ? "s" : ""}`}
+                {`Review ${validRows.length} Recipient${validRows.length > 1 ? "s" : ""}`}
               </Button>
+              </>
+            )}
           </div>
         )}
       </div>
