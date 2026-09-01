@@ -26,6 +26,8 @@ export interface PrivateReviewDraft {
   amount: string;
   /** Recipient fingerprint shown while composing (transfers). */
   fingerprint?: string | null;
+  /** Full canonical private recipient shown and bound on review. */
+  recipientAddress?: string | null;
   /** Public G or C recipient (withdrawals). */
   publicRecipient?: string | null;
   memo?: string;
@@ -117,6 +119,9 @@ export function PrivateActionReview({
     }
     if (draft.kind === 'transfer' && (review.recipientFingerprint ?? '') !== (draft.fingerprint ?? '')) {
       return new PrivateReviewMismatchError('recipient fingerprint changed');
+    }
+    if (draft.kind === 'transfer' && (review.recipientAddress ?? '') !== (draft.recipientAddress ?? '')) {
+      return new PrivateReviewMismatchError('recipient address changed');
     }
     if (draft.kind === 'withdraw' && (review.publicRecipient ?? '') !== (draft.publicRecipient ?? '')) {
       return new PrivateReviewMismatchError('public recipient changed');
@@ -215,10 +220,17 @@ export function PrivateActionReview({
 
       <dl className="panel-inset divide-y divide-white/[0.08] px-4">
         {draft.kind === 'transfer' && draft.fingerprint ? (
-          <ReviewRow label="To">
+          <ReviewRow label="Check code">
             <span className="inline-flex items-center gap-2">
               <AccountMark publicKey={draft.fingerprint} size={20} />
               <span className="font-mono text-[12.5px]">{draft.fingerprint}</span>
+            </span>
+          </ReviewRow>
+        ) : null}
+        {draft.kind === 'transfer' && draft.recipientAddress ? (
+          <ReviewRow label="Address">
+            <span className="max-w-[min(62vw,430px)] break-all font-mono text-[10.5px] leading-relaxed text-white">
+              {draft.recipientAddress}
             </span>
           </ReviewRow>
         ) : null}

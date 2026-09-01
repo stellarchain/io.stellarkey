@@ -19,7 +19,9 @@ import type {
 const RECORD_KIND = 'stellarkey-private-balance-state';
 const RECORD_VERSION = 1;
 const PRIVATE_ADDRESS_PATTERN = /^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/;
-const RECIPIENT_FINGERPRINT_PATTERN = /^[0-9A-F]{4} [0-9A-F]{4}$/;
+// Accept the former 32-bit code only for already-encrypted local preview data;
+// newly derived codes use a 128-bit SHA-256 prefix.
+const RECIPIENT_FINGERPRINT_PATTERN = /^(?:[0-9A-F]{4} ){1,7}[0-9A-F]{4}$/;
 export const MAX_RECENT_PRIVATE_RECIPIENTS = 5;
 export const PRIVATE_BUILD_RESERVATION_TTL_MS = 10 * 60_000;
 // Must exceed the 15-minute chained approval window so a live chain's
@@ -192,7 +194,7 @@ function isActivity(value: unknown): value is ShieldedActivityRecord {
     Array.isArray(activity.outputCommitments) &&
     activity.outputCommitments.every(item => isHex(item, 32)) &&
     (activity.transactionHash === undefined || isHex(activity.transactionHash, 32)) &&
-    (activity.recipientFingerprint === undefined || /^[0-9A-F]{4} [0-9A-F]{4}$/.test(activity.recipientFingerprint)) &&
+    (activity.recipientFingerprint === undefined || RECIPIENT_FINGERPRINT_PATTERN.test(activity.recipientFingerprint)) &&
     (activity.memoHex === undefined || /^(?:[0-9a-f]{2}){1,32}$/.test(activity.memoHex)) &&
     (activity.actionKind === 'transfer' || (
       activity.recipientFingerprint === undefined && activity.memoHex === undefined
@@ -277,7 +279,7 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     (action.journalId === undefined || (
       typeof action.journalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(action.journalId)
     )) &&
-    (action.recipientFingerprint === undefined || /^[0-9A-F]{4} [0-9A-F]{4}$/.test(action.recipientFingerprint)) &&
+    (action.recipientFingerprint === undefined || RECIPIENT_FINGERPRINT_PATTERN.test(action.recipientFingerprint)) &&
     (action.memoHex === undefined || /^(?:[0-9a-f]{2}){1,32}$/.test(action.memoHex)) &&
     (action.kind === 'transfer' || (
       action.recipientFingerprint === undefined && action.memoHex === undefined
