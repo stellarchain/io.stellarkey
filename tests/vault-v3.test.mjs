@@ -351,6 +351,65 @@ test("concurrent imported-account writes reject a stale vault revision instead o
   assert.equal(stored.accounts.length, 2);
 });
 
+test("archived derived accounts keep their HD index and are reactivated instead of duplicated", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    addStoredAccount,
+    initializeVault,
+    loadVault,
+    lockVault,
+    removeStoredAccount,
+    restoreAccountByIndex,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, {
+    mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  });
+  const merged = await addStoredAccount();
+  assert.equal(merged.index, 1);
+  removeStoredAccount(merged.id);
+
+  const addedAfterMerge = await addStoredAccount();
+  assert.equal(addedAfterMerge.index, 2);
+
+  const restored = await restoreAccountByIndex(1);
+  const vault = loadVault();
+  assert.equal(restored.id, merged.id);
+  assert.deepEqual(vault.accounts.map((account) => account.index), [0, 2, 1]);
+  assert.equal(vault.archivedAccounts?.length ?? 0, 0);
+  assert.equal(new Set(vault.accounts.map((account) => account.publicKey)).size, 3);
+});
+
+test("loading a vault repairs duplicate mnemonic-derived account metadata", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { addStoredAccount, initializeVault, loadVault, lockVault } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  await initializeVault(password, {
+    mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  });
+  const original = await addStoredAccount();
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  const duplicate = {
+    ...stored.accounts.find((account) => account.id === original.id),
+    id: "selected-duplicate",
+    label: "Selected account",
+    createdAt: Date.now() + 1,
+  };
+  stored.accounts.push(duplicate);
+  stored.activeAccountId = duplicate.id;
+  localStorage.setItem("stellarkey.vault.v1", JSON.stringify(stored));
+
+  const repaired = loadVault();
+  assert.equal(repaired.accounts.length, 2);
+  assert.equal(repaired.accounts.find((account) => account.index === 1)?.id, duplicate.id);
+  assert.equal(repaired.activeAccountId, duplicate.id);
+  assert.equal(new Set(repaired.accounts.map((account) => account.publicKey)).size, 2);
+});
+
 test("password verification applies persisted cross-tab backoff after repeated failures", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
