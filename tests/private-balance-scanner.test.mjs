@@ -369,8 +369,14 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     },
     expectedPriorRecordHash: priorRecordHash,
   });
-  assert.equal(duplicateResult.notes.length, 1, 'the first canonical note remains authoritative');
-  assert.equal(duplicateResult.activities.length, 1, 'a duplicate does not invent a second inflow');
+  assert.equal(duplicateResult.notes.length, 2, 'each authenticated leaf remains independently spendable');
+  assert.equal(duplicateResult.activities.length, 2, 'each value-backed deposit remains visible');
+  assert.notEqual(duplicateResult.notes[0].id, duplicateResult.notes[1].id);
+  assert.equal(duplicateResult.notes[0].commitment, duplicateResult.notes[1].commitment);
+  assert.notEqual(
+    duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[0].id),
+    duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[1].id),
+  );
   assert.equal(duplicateResult.tree.nextIndex, 4, 'every on-chain output still advances the tree');
 
   await assert.rejects(
