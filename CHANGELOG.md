@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Removed private recipient and amount handoffs from browser storage, restored reusable-receipt discovery to the authenticated wallet birthday, terminated proof workers on cancellation, bound live contract circuit hashes to the manifest, and added Rust policy checks to tagged releases.
+- Prevented issuer-logo referrer leakage, fully redacted long witness values, and escaped paper-wallet QR attributes before constructing print HTML.
+- Revalidated wallet and merchant refund authority after durable transaction journaling, prevented settled charges from being voided, expired stale Mainnet issued-asset quotes, and cleared decrypted merchant snapshots on lock and unmount.
+- Re-read the persisted signing-password policy at every signing boundary, required the same authorization for reusable private-receipt sweeps, rejected malformed federation memos, and rejected backup exports if the vault changes after password verification.
 - Cleared transient mnemonic seed, SLIP-10 key, chain-code, and derivation buffers after constructing each Stellar account keypair.
 - Reserved Merchant Mode enablement for its password-gated lifecycle action, rejected invalid merchant state before persistence, and stopped retention controls from reporting success before a durable save.
 - Prevented a PIN verification started before a concurrent merchant lockout from activating an operator or unlocking the customer display after the lockout commits.

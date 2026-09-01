@@ -136,13 +136,13 @@ export function buildPaperWalletHtml(doc: PaperWalletDoc): string {
         <div class="panel">
           <p class="ptitle">Public Address</p>
           <p class="psub">Shareable — receive funds</p>
-          <img class="qr" src="${doc.pubQrDataUrl}" alt="Public address QR" />
+          <img class="qr" src="${escapeHtml(doc.pubQrDataUrl)}" alt="Public address QR" />
           <p class="mono">${chunk4(escapeHtml(doc.publicKey))}</p>
         </div>
         <div class="panel secret">
           <p class="ptitle">${doc.kind === "mnemonic" ? "Recovery Phrase" : "Secret Key"}</p>
           <p class="psub">Do not share — withdrawal authority</p>
-          <img class="qr" src="${doc.secQrDataUrl}" alt="Secret material QR" />
+          <img class="qr" src="${escapeHtml(doc.secQrDataUrl)}" alt="Secret material QR" />
           ${secretBlock}
         </div>
       </main>

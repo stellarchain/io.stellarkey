@@ -203,6 +203,7 @@ export function AssetDetailModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}
+              referrerPolicy="no-referrer"
               alt=""
               width={56}
               height={56}

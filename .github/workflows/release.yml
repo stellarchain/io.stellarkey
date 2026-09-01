@@ -40,6 +40,9 @@ jobs:
       - run: cargo +1.97.1 install --git https://github.com/iden3/circom.git --tag v2.2.3 --locked circom
       - run: cargo +1.97.1 install circomspect --version 0.9.0 --locked
       - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
+      - run: cargo +1.97.1 install cargo-deny --version 0.20.2 --locked
+      - run: cargo +1.97.1 deny check
+        working-directory: protocol/private-balance
       - run: rustup target add wasm32v1-none --toolchain 1.97.1
       - run: corepack npm --prefix protocol/private-balance/circuits ci
       - run: corepack npm --prefix protocol/private-balance/circuits audit --audit-level=high

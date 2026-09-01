@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+test("remote issuer logos do not receive a wallet-page referrer", () => {
+  for (const path of ["src/components/Dashboard.tsx", "src/components/AssetDetailModal.tsx"]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    const image = source.match(/<img[\s\S]{0,500}?>/g) ?? [];
+    assert.ok(image.length > 0, `${path} should render an issuer logo`);
+    for (const tag of image) assert.match(tag, /referrerPolicy="no-referrer"/);
+  }
+});
+
 class MemoryStorage {
   #items = new Map();
 
