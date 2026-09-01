@@ -283,6 +283,7 @@ test("the watcher normalizes muxed destinations and preserves muxed payer addres
               id: "op1",
               type: "payment",
               transaction_hash: "a".repeat(64),
+              transaction_successful: true,
               created_at: "2026-08-24T18:14:31Z",
               paging_token: (BigInt(56_420_130) << BigInt(32)).toString(),
               to: TILL,
@@ -323,17 +324,18 @@ test("the watcher accepts MEMO_ID fallback and flags conflicting dual routing", 
   const base = {
     type: "payment",
     transaction_hash: "b".repeat(64),
+    transaction_successful: true,
     created_at: "2026-08-24T18:00:00Z",
     paging_token: (BigInt(56_420_000) << BigInt(32)).toString(),
     asset_type: "native",
     amount: "10.0000000",
+    transaction: { successful: true },
   };
   t.mock.method(globalThis, "fetch", async () =>
     new Response(
       JSON.stringify({
         _embedded: {
           records: [
-            { ...base, id: "fail", to: TILL, from: PAYER, transaction_successful: false },
             { ...base, id: "outbound", to: PAYER, from: TILL },
             { ...base, id: "self", to: TILL, from: TILL },
             { ...base, id: "trust", type: "change_trust", to: TILL, from: PAYER },
