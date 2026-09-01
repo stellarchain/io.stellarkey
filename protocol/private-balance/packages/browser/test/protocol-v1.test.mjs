@@ -64,17 +64,19 @@ test('Poseidon2 matches every pinned Rust/Soroban vector', async () => {
 
 test('V2 private address uses strict network HRP, Bech32m checksum, and exact length', async () => {
   const diversifier = Uint8Array.of(1, 2, 3, 4);
+  const deploymentBindingHash = new Uint8Array(32).fill(0x42);
   const ownerCommitment = new Uint8Array(32);
   ownerCommitment[31] = 7;
   const hpkePublicKey = new Uint8Array(32).fill(0x22);
   const encoded = encodePrivateAddress(
-    { diversifier, ownerCommitment, hpkePublicKey },
+    { deploymentBindingHash, diversifier, ownerCommitment, hpkePublicKey },
     'tks',
   );
 
-  assert.equal(encoded.length, 119);
-  assert.match(encoded, /^tks1[02-9ac-hj-np-z]{115}$/);
+  assert.equal(encoded.length, 170);
+  assert.match(encoded, /^tks1[02-9ac-hj-np-z]{166}$/);
   assert.deepEqual(await decodePrivateAddress(encoded, 'tks'), {
+    deploymentBindingHash,
     diversifier,
     ownerCommitment,
     hpkePublicKey,
@@ -82,6 +84,10 @@ test('V2 private address uses strict network HRP, Bech32m checksum, and exact le
   await assert.rejects(() => decodePrivateAddress(`${encoded}=`, 'tks'));
   await assert.rejects(() => decodePrivateAddress(`sks1${encoded.slice(4)}`, 'tks'));
   await assert.rejects(() => decodePrivateAddress(encoded.toUpperCase(), 'tks'));
+  await assert.rejects(
+    () => decodePrivateAddress(encoded, 'tks', new Uint8Array(32).fill(0x43)),
+    /deployment/i,
+  );
 });
 
 test('V2 note encoding binds a diversifier in the normative 128-byte layout', () => {

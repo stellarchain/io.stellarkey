@@ -56,6 +56,7 @@ const hex = (value) => Uint8Array.from(
   (byte) => Number.parseInt(byte, 16),
 );
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
+  deploymentBindingHash: hex(manifest.deploymentBindingHash),
   diversifier: new Uint8Array(4),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
@@ -157,11 +158,13 @@ test('worker client restores and rotates diversified receive addresses without e
   const account = Keypair.random();
   const diversifier = Uint8Array.of(1, 2, 3, 4);
   const restoredAddress = encodePrivateAddress({
+    deploymentBindingHash: hex(manifest.deploymentBindingHash),
     diversifier,
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
   }, 'tks');
   const freshAddress = encodePrivateAddress({
+    deploymentBindingHash: hex(manifest.deploymentBindingHash),
     diversifier: Uint8Array.of(5, 6, 7, 8),
     ownerCommitment: Uint8Array.from([3, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(4),

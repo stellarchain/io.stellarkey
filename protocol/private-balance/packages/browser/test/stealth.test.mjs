@@ -33,18 +33,25 @@ test('stealth roots are domain-separated 32-byte children of the private session
 });
 
 test('stealth meta-addresses are strict, checksummed, and network-bound', async () => {
-  const keys = deriveStealthMetaKeys(bytes(7), 'testnet');
+  const deploymentBindingHash = bytes(6);
+  const keys = deriveStealthMetaKeys(bytes(7), 'testnet', deploymentBindingHash);
   const encoded = encodeStealthMetaAddress({
+    deploymentBindingHash,
     scanPublicKey: keys.scanPublicKey,
     spendPublicKey: keys.spendPublicKey,
   }, 'testnet');
 
   assert.match(encoded, /^tsm1[023456789acdefghjklmnpqrstuvwxyz]+$/u);
   assert.deepEqual(await decodeStealthMetaAddress(encoded, 'testnet'), {
+    deploymentBindingHash,
     scanPublicKey: keys.scanPublicKey,
     spendPublicKey: keys.spendPublicKey,
   });
   await assert.rejects(decodeStealthMetaAddress(encoded, 'mainnet'), /network|prefix/i);
+  await assert.rejects(
+    decodeStealthMetaAddress(encoded, 'testnet', bytes(8)),
+    /deployment/i,
+  );
   await assert.rejects(decodeStealthMetaAddress(encoded.toUpperCase(), 'testnet'), /spelling/i);
 
   const altered = `${encoded.slice(0, -1)}${encoded.endsWith('q') ? 'p' : 'q'}`;
@@ -52,12 +59,14 @@ test('stealth meta-addresses are strict, checksummed, and network-bound', async 
 });
 
 test('sender and recipient derive the same unlinkable one-time account', async () => {
-  const recipient = deriveStealthMetaKeys(bytes(11), 'testnet');
+  const recipient = deriveStealthMetaKeys(bytes(11), 'testnet', bytes(10));
   const first = await deriveStealthRecipient({
+    deploymentBindingHash: recipient.deploymentBindingHash,
     scanPublicKey: recipient.scanPublicKey,
     spendPublicKey: recipient.spendPublicKey,
   }, bytes(21), 'testnet', 'portable');
   const second = await deriveStealthRecipient({
+    deploymentBindingHash: recipient.deploymentBindingHash,
     scanPublicKey: recipient.scanPublicKey,
     spendPublicKey: recipient.spendPublicKey,
   }, bytes(22), 'testnet', 'portable');
@@ -77,9 +86,10 @@ test('sender and recipient derive the same unlinkable one-time account', async (
 });
 
 test('a different scan key cannot recover the one-time account', async () => {
-  const recipient = deriveStealthMetaKeys(bytes(31), 'testnet');
-  const wrongRecipient = deriveStealthMetaKeys(bytes(32), 'testnet');
+  const recipient = deriveStealthMetaKeys(bytes(31), 'testnet', bytes(30));
+  const wrongRecipient = deriveStealthMetaKeys(bytes(32), 'testnet', bytes(30));
   const payment = await deriveStealthRecipient({
+    deploymentBindingHash: recipient.deploymentBindingHash,
     scanPublicKey: recipient.scanPublicKey,
     spendPublicKey: recipient.spendPublicKey,
   }, bytes(33), 'testnet', 'portable');
@@ -94,8 +104,9 @@ test('a different scan key cannot recover the one-time account', async () => {
 });
 
 test('raw-scalar signatures verify strictly and reject mutations', async () => {
-  const recipient = deriveStealthMetaKeys(bytes(41), 'testnet');
+  const recipient = deriveStealthMetaKeys(bytes(41), 'testnet', bytes(40));
   const payment = await deriveStealthRecipient({
+    deploymentBindingHash: recipient.deploymentBindingHash,
     scanPublicKey: recipient.scanPublicKey,
     spendPublicKey: recipient.spendPublicKey,
   }, bytes(42), 'testnet', 'portable');
@@ -114,7 +125,7 @@ test('raw-scalar signatures verify strictly and reject mutations', async () => {
 
   assert.equal(
     encodeStealthMetaAddress(recipient, 'testnet'),
-    'tsm19lhfqg9p5lguav93fhje98qdlvyqxmkpsdem7qjxe6jn27z35s0hwxtv6fpuv2he72gkunwmt4sksmclajdtjale009l6efktxedqnqqhwvuj',
+    'tsm19q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zlm5syzs605wwkzc5mevjnsxlkzqrdmqcxualqfrvaff40pg6g8mhr9kdys7x9tul9ytwfhd46ctgdu07ex4ewluhhjlav5m9nvksfs35rek8',
   );
   assert.equal(
     hex(recipient.scanPublicKey),
@@ -130,11 +141,11 @@ test('raw-scalar signatures verify strictly and reject mutations', async () => {
   );
   assert.equal(
     hex(payment.publicKey),
-    '7d5b50a382a80dee2eb95fc2bca4b2205f3caf7b225e19c148a5fed224702244',
+    '4155f2f0c6f6ba8f1364cde1251b1d50199a151c495413390171e4720f645b63',
   );
   assert.equal(
     hex(signature),
-    'ef43a7573d808b0ffa71201d93a78149ed01a73df54d3c85c888fb8c991cc683b92a54591f1f81c063000b2be38352be043ef269146f91b75c7404e46109b30e',
+    'ce70ae0ffcec06caa669dd4fb90b7a60302715ce495b9af7dea76b3a5001389b4fe06dd4c1e9bc0b1e83a34cdb86e53e06591855c9b147a1be20946f699c170c',
   );
 
   assert.equal(ed25519.verify(signature, message, payment.publicKey, { zip215: false }), true);

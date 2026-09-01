@@ -1498,6 +1498,10 @@ export function PrivateBalanceProvider({
               rootKey: stealthRoot,
               payment: sweep.payment,
               network,
+              deploymentBindingHash: hex32(
+                manifest.deploymentBindingHash,
+                'Private Balance deployment binding hash',
+              ),
               networkPassphrase: request.networkPassphrase,
               envelopeXdr: request.envelopeXdr,
               expectedTransactionHash: request.transactionHash,
@@ -1517,7 +1521,7 @@ export function PrivateBalanceProvider({
     } finally {
       actionBusyRef.current = false;
     }
-  }, [asset.kind, network, storageScope, stealthSnapshot.payments, submitActionInternal]);
+  }, [asset.kind, manifest.deploymentBindingHash, network, storageScope, stealthSnapshot.payments, submitActionInternal]);
 
   const prepareChainedSend = useCallback(async (
     draft: PrivateChainedSendDraft,

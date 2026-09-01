@@ -23,6 +23,7 @@ export interface PrivateBalanceKeyContext {
   poolId: Uint8Array;
   accountPublicKey: Uint8Array;
   contextField: Uint8Array;
+  deploymentBindingHash: Uint8Array;
   addressPrefix: 'tks' | 'sks';
 }
 

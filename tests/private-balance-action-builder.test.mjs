@@ -35,6 +35,7 @@ async function fixture() {
   );
   const keyContext = {
     ...context,
+    deploymentBindingHash: bytes(9),
     contextField: computeContextField(contextHash),
     addressPrefix: 'tks',
   };
@@ -57,11 +58,12 @@ async function fixture() {
     keyContext.contextField,
   );
   const recipientAddress = encodePrivateAddress({
+    deploymentBindingHash: keyContext.deploymentBindingHash,
     diversifier: new Uint8Array(4),
     ownerCommitment: recipient.ownerCommitment,
     hpkePublicKey: recipient.hpkePublicKey,
   }, 'tks');
-  return { keyContext, owner, recipientAddress, assetContractId, assetField };
+  return { keyContext, owner, recipient, recipientAddress, assetContractId, assetField };
 }
 
 test('action flow snapshots selected durable notes for a fresh worker session', () => {
@@ -136,7 +138,7 @@ test('action builder creates a deposit with zero private witness lanes', async (
 });
 
 test('action builder creates an exact one-note transfer witness with self change', async () => {
-  const { keyContext, owner, recipientAddress, assetContractId, assetField } = await fixture();
+  const { keyContext, owner, recipient, recipientAddress, assetContractId, assetField } = await fixture();
   const rho = bigintTo32Bytes(11n);
   const commitment = computeCommitment(keyContext.contextField, assetField, owner.ownerCommitment, 10n, rho);
   const noteId = hex(commitment);
@@ -207,5 +209,31 @@ test('action builder creates an exact one-note transfer witness with self change
       },
     }),
     /another asset/i,
+  );
+  const foreignDeploymentAddress = encodePrivateAddress({
+    deploymentBindingHash: bytes(10),
+    diversifier: new Uint8Array(4),
+    ownerCommitment: recipient.ownerCommitment,
+    hpkePublicKey: recipient.hpkePublicKey,
+  }, 'tks');
+  await assert.rejects(
+    () => preparePrivateAction({
+      esk: owner,
+      keyContext,
+      availableNotes: [note],
+      commitments: [commitment],
+      intent: {
+        kind: 'transfer',
+        assetContractId,
+        amount: '6',
+        recipientAddress: foreignDeploymentAddress,
+        selectedNoteIds: [noteId],
+        anchorRoot: tree.currentRoot,
+        anchorExpiresAtLedger: 1234,
+        relayerFee: '0',
+        relayer: { kind: 0, payload: keyContext.accountPublicKey },
+      },
+    }),
+    /deployment/i,
   );
 });

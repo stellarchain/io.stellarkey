@@ -49,9 +49,10 @@ function assertRootKey(rootKey: Uint8Array): void {
 export function deriveStealthRuntimeIdentity(
   rootKey: Uint8Array,
   network: StealthNetwork,
+  deploymentBindingHash: Uint8Array,
 ): StealthRuntimeIdentity {
   assertRootKey(rootKey);
-  const keys = deriveStealthMetaKeys(rootKey, network);
+  const keys = deriveStealthMetaKeys(rootKey, network, deploymentBindingHash);
   try {
     return {
       metaAddress: encodeStealthMetaAddress(keys, network),
@@ -71,7 +72,14 @@ export async function syncStealthRuntime(
   if (!(input.storageKey instanceof Uint8Array) || input.storageKey.length !== 32) {
     throw new Error('Stealth runtime storage key must be 32 bytes');
   }
-  const keys = deriveStealthMetaKeys(input.rootKey, input.network);
+  const deploymentBindingHash = Uint8Array.from(
+    input.context.deploymentBindingHash.match(/../gu) ?? [],
+    byte => Number.parseInt(byte, 16),
+  );
+  if (deploymentBindingHash.length !== 32) {
+    throw new Error('Stealth runtime deployment binding hash must be 32 bytes');
+  }
+  const keys = deriveStealthMetaKeys(input.rootKey, input.network, deploymentBindingHash);
   try {
     const metaAddress = encodeStealthMetaAddress(keys, input.network);
     input.onIdentity?.(metaAddress);
@@ -95,6 +103,7 @@ export async function syncStealthRuntime(
     });
     return { metaAddress, cache };
   } finally {
+    deploymentBindingHash.fill(0);
     keys.scanPrivateKey.fill(0);
     keys.nonceKey.fill(0);
     keys.scanPublicKey.fill(0);

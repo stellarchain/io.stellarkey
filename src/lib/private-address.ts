@@ -7,13 +7,13 @@
 /** Cheap shape check for a v2 Bech32m private address (tks testnet, sks mainnet). */
 export function isPrivateReceiveAddressLike(value: string): boolean {
   const trimmed = value.trim();
-  return /^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/.test(trimmed);
+  return /^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/.test(trimmed);
 }
 
 /** Cheap shape check for a v2 reusable stealth handle (tsm testnet, ssm mainnet). */
 export function isStealthMetaAddressLike(value: string): boolean {
   const trimmed = value.trim();
-  return /^(?:tsm1|ssm1)[02-9ac-hj-np-z]{109}$/.test(trimmed);
+  return /^(?:tsm1|ssm1)[02-9ac-hj-np-z]{160}$/.test(trimmed);
 }
 
 /** Fired for a mounted Private Payments card to open a flow immediately. */

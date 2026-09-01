@@ -29,6 +29,7 @@ export interface BuildStealthPaymentTransactionInput {
   sourceAccount: Account;
   metaAddress: string;
   network: StealthNetwork;
+  deploymentBindingHash: Uint8Array;
   networkPassphrase: string;
   announcerPublicKey: string;
   amount: string;
@@ -95,7 +96,11 @@ export async function buildStealthPaymentTransaction(
   if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
     throw new Error('Stealth payment clock is invalid');
   }
-  const metaAddress = await decodeStealthMetaAddress(input.metaAddress, input.network);
+  const metaAddress = await decodeStealthMetaAddress(
+    input.metaAddress,
+    input.network,
+    input.deploymentBindingHash,
+  );
   const ephemeralPrivateKey = Uint8Array.from(input.ephemeralPrivateKey ?? randomBytes32());
   if (ephemeralPrivateKey.length !== 32) throw new Error('Stealth ephemeral private key must be 32 bytes');
 

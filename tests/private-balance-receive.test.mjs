@@ -17,6 +17,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('receive payload contains only the canonical private address', () => {
   const address = encodePrivateAddress({
+    deploymentBindingHash: new Uint8Array(32).fill(6),
     diversifier: Uint8Array.of(1, 2, 3, 4),
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
@@ -29,7 +30,11 @@ test('receive payload contains only the canonical private address', () => {
 
 test('reusable receive payload validates the canonical network-bound meta address', () => {
   const address = encodeStealthMetaAddress(
-    deriveStealthMetaKeys(new Uint8Array(32).fill(7), 'testnet'),
+    deriveStealthMetaKeys(
+      new Uint8Array(32).fill(7),
+      'testnet',
+      new Uint8Array(32).fill(6),
+    ),
     'testnet',
   );
   assert.equal(stealthReceivePayload(address, 'tsm'), address);

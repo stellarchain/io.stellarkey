@@ -2204,12 +2204,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadStealthPaymentApi(),
       loadWalletApi(),
     ]);
-    const announcerPublicKey = await stealth.loadStealthPaymentAnnouncer(network);
+    const deployment = await stealth.loadStealthPaymentDeployment(network);
     return stealth.prepareStealthPayment({
       sourcePublicKey: activeAccount.publicKey,
       metaAddress: params.metaAddress,
       network,
-      announcerPublicKey,
+      announcerPublicKey: deployment.announcerPublicKey,
+      deploymentBindingHash: deployment.deploymentBindingHash,
       amount: params.amount,
       baseFeeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
       loadSourceSequence: async (sourcePublicKey, selectedNetwork) => {

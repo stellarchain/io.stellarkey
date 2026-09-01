@@ -8,11 +8,12 @@ import {
 import { buildStealthPaymentTransaction } from '../src/features/private-balance/runtime/stealth-transaction.ts';
 
 const bytes = value => new Uint8Array(32).fill(value);
+const deploymentBindingHash = bytes(50);
 const source = Keypair.fromRawEd25519Seed(bytes(51)).publicKey();
 const announcer = Keypair.fromRawEd25519Seed(bytes(52)).publicKey();
-const recipient = deriveStealthMetaKeys(bytes(53), 'testnet');
+const recipient = deriveStealthMetaKeys(bytes(53), 'testnet', deploymentBindingHash);
 const address = encodeStealthMetaAddress(recipient, 'testnet');
-const mainnetRecipient = deriveStealthMetaKeys(bytes(58), 'mainnet');
+const mainnetRecipient = deriveStealthMetaKeys(bytes(58), 'mainnet', deploymentBindingHash);
 const mainnetAddress = encodeStealthMetaAddress(mainnetRecipient, 'mainnet');
 
 test('stealth payment builder emits the exact reserve, value, and announcement operations', async () => {
@@ -20,6 +21,7 @@ test('stealth payment builder emits the exact reserve, value, and announcement o
     sourceAccount: new Account(source, '123'),
     metaAddress: address,
     network: 'testnet',
+    deploymentBindingHash,
     networkPassphrase: Networks.TESTNET,
     announcerPublicKey: announcer,
     amount: '2.5',
@@ -60,6 +62,7 @@ test('stealth payment builder creates a fresh account for fresh sender randomnes
     sourceAccount: new Account(source, '123'),
     metaAddress: address,
     network: 'testnet',
+    deploymentBindingHash,
     networkPassphrase: Networks.TESTNET,
     announcerPublicKey: announcer,
     amount: '1',
@@ -76,6 +79,7 @@ test('stealth payment builder rejects wrong-network handles and invalid amounts'
   const common = {
     sourceAccount: new Account(source, '123'),
     network: 'mainnet',
+    deploymentBindingHash,
     networkPassphrase: Networks.PUBLIC,
     announcerPublicKey: announcer,
     amount: '1',
@@ -99,6 +103,7 @@ test('stealth payment builder rejects mainnet before constructing a transaction'
       sourceAccount: new Account(source, '123'),
       metaAddress: mainnetAddress,
       network: 'mainnet',
+      deploymentBindingHash,
       networkPassphrase: Networks.PUBLIC,
       announcerPublicKey: announcer,
       amount: '1',
@@ -107,5 +112,23 @@ test('stealth payment builder rejects mainnet before constructing a transaction'
       ephemeralPrivateKey: bytes(59),
     }),
     /testnet only/i,
+  );
+});
+
+test('stealth payment builder rejects a handle from another deployment', async () => {
+  await assert.rejects(
+    buildStealthPaymentTransaction({
+      sourceAccount: new Account(source, '123'),
+      metaAddress: address,
+      network: 'testnet',
+      deploymentBindingHash: bytes(49),
+      networkPassphrase: Networks.TESTNET,
+      announcerPublicKey: announcer,
+      amount: '1',
+      baseReserveStroops: '5000000',
+      baseFeeStroops: '100',
+      ephemeralPrivateKey: bytes(60),
+    }),
+    /deployment/i,
   );
 });

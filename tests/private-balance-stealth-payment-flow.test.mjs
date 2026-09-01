@@ -11,14 +11,16 @@ import {
 } from '../src/features/private-balance/runtime/stealth-payment.ts';
 
 const bytes = value => new Uint8Array(32).fill(value);
+const deploymentBindingHash = bytes(70);
+const deploymentBindingHex = Buffer.from(deploymentBindingHash).toString('hex');
 const sender = Keypair.fromRawEd25519Seed(bytes(71));
 const announcer = Keypair.fromRawEd25519Seed(bytes(72)).publicKey();
 const recipient = encodeStealthMetaAddress(
-  deriveStealthMetaKeys(bytes(73), 'testnet'),
+  deriveStealthMetaKeys(bytes(73), 'testnet', deploymentBindingHash),
   'testnet',
 );
 const mainnetRecipient = encodeStealthMetaAddress(
-  deriveStealthMetaKeys(bytes(76), 'mainnet'),
+  deriveStealthMetaKeys(bytes(76), 'mainnet', deploymentBindingHash),
   'mainnet',
 );
 
@@ -28,6 +30,7 @@ test('stealth payment review binds the one-time destination and complete public 
     metaAddress: recipient,
     network: 'testnet',
     announcerPublicKey: announcer,
+    deploymentBindingHash: deploymentBindingHex,
     amount: '2.5',
     baseFeeStroops: 100,
     loadSourceSequence: async () => '123',
@@ -54,6 +57,7 @@ test('stealth payment review rejects tampering, expiry, account changes, and net
     metaAddress: recipient,
     network: 'testnet',
     announcerPublicKey: announcer,
+    deploymentBindingHash: deploymentBindingHex,
     amount: '1',
     baseFeeStroops: 100,
     loadSourceSequence: async () => '123',
@@ -87,6 +91,7 @@ test('stealth payment preparation rejects mainnet before reading network state',
       metaAddress: mainnetRecipient,
       network: 'mainnet',
       announcerPublicKey: announcer,
+      deploymentBindingHash: deploymentBindingHex,
       amount: '1',
       baseFeeStroops: 100,
       loadSourceSequence: async () => {

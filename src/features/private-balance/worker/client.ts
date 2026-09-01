@@ -45,6 +45,7 @@ export class PrivateBalanceWorkerClient {
   private worker: Worker | null = null;
   private sessionId: string | null = null;
   private addressPrefix: 'tks' | 'sks' | null = null;
+  private deploymentBindingHash: Uint8Array | null = null;
   private currentAddress: string | null = null;
   private nextOperation = 0;
   private dead = false;
@@ -99,6 +100,8 @@ export class PrivateBalanceWorkerClient {
     }
     this.sessionId = null;
     this.addressPrefix = null;
+    this.deploymentBindingHash?.fill(0);
+    this.deploymentBindingHash = null;
     this.currentAddress = null;
     for (const pending of this.pendingRequests.values()) {
       pending.cleanup?.();
@@ -278,8 +281,9 @@ export class PrivateBalanceWorkerClient {
     const addressPrefix = parsedManifest.networkPassphrase === MAINNET_PASSPHRASE
       ? 'sks'
       : 'tks';
+    const deploymentBindingHash = hex32(parsedManifest.deploymentBindingHash);
     const addressDiversifier = currentAddress
-      ? (await decodePrivateAddress(currentAddress, addressPrefix)).diversifier
+      ? (await decodePrivateAddress(currentAddress, addressPrefix, deploymentBindingHash)).diversifier
       : undefined;
     const transferredRoot = sessionRoot.buffer;
     const sessionId = this.createId('session');
@@ -296,6 +300,7 @@ export class PrivateBalanceWorkerClient {
         poolId,
         accountPublicKey: accountPublicKeyBytes,
         contextField: computeContextField(contextHash),
+        deploymentBindingHash,
         addressPrefix,
       },
       sessionRoot: transferredRoot,
@@ -307,7 +312,7 @@ export class PrivateBalanceWorkerClient {
         req,
         [transferredRoot],
       );
-      const decoded = await decodePrivateAddress(response.address, addressPrefix);
+      const decoded = await decodePrivateAddress(response.address, addressPrefix, deploymentBindingHash);
       if (
         addressDiversifier &&
         decoded.diversifier.some((byte, index) => byte !== addressDiversifier[index])
@@ -315,11 +320,15 @@ export class PrivateBalanceWorkerClient {
         throw new Error('Private Balance worker restored the wrong receive address.');
       }
       this.addressPrefix = addressPrefix;
+      this.deploymentBindingHash?.fill(0);
+      this.deploymentBindingHash = deploymentBindingHash.slice();
       this.currentAddress = response.address;
       return { ownerCommitmentHex: response.ownerCommitmentHex, address: response.address };
     } catch (error) {
       if (this.sessionId === sessionId) this.sessionId = null;
       this.addressPrefix = null;
+      this.deploymentBindingHash?.fill(0);
+      this.deploymentBindingHash = null;
       this.currentAddress = null;
       throw error;
     }
@@ -337,7 +346,9 @@ export class PrivateBalanceWorkerClient {
       type: 'GENERATE_ADDRESS',
     };
     const response = await this.request<Extract<WorkerResponse, { type: 'ADDRESS_OK' }>>(req);
-    await decodePrivateAddress(response.address, this.addressPrefix);
+    const binding = this.deploymentBindingHash;
+    if (!binding) throw new Error('Private Balance worker deployment is unavailable.');
+    await decodePrivateAddress(response.address, this.addressPrefix, binding);
     if (response.address === this.currentAddress) {
       throw new Error('Private Balance worker returned the current receive address.');
     }
@@ -451,6 +462,8 @@ export class PrivateBalanceWorkerClient {
     }
     this.sessionId = null;
     this.addressPrefix = null;
+    this.deploymentBindingHash?.fill(0);
+    this.deploymentBindingHash = null;
     this.currentAddress = null;
     for (const pending of this.pendingRequests.values()) {
       pending.cleanup?.();

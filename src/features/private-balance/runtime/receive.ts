@@ -1,4 +1,5 @@
 import { PRIVATE_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
+import { STEALTH_META_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
 
 export type PrivateAddressPrefix = 'tks' | 'sks';
 export type StealthAddressPrefix = 'tsm' | 'ssm';
@@ -17,7 +18,7 @@ export function privateReceivePayload(
   if (!address.startsWith(`${expectedPrefix}1`)) {
     throw new Error('Private receive address is for another network.');
   }
-  if (!/^(?:tks1|sks1)[02-9ac-hj-np-z]{115}$/u.test(address)) {
+  if (!/^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/u.test(address)) {
     throw new Error('Private receive address is not canonical.');
   }
   return address;
@@ -34,7 +35,7 @@ export function stealthReceivePayload(
   expectedPrefix: StealthAddressPrefix = 'tsm',
 ): string {
   if (
-    address.length !== 113 ||
+    address.length !== STEALTH_META_ADDRESS_ASCII_BYTES ||
     /\s/u.test(address) ||
     address !== address.toLowerCase()
   ) {
@@ -43,7 +44,7 @@ export function stealthReceivePayload(
   if (!address.startsWith(`${expectedPrefix}1`)) {
     throw new Error('Reusable receive address is for another network.');
   }
-  if (!/^(?:tsm1|ssm1)[02-9ac-hj-np-z]{109}$/u.test(address)) {
+  if (!/^(?:tsm1|ssm1)[02-9ac-hj-np-z]{160}$/u.test(address)) {
     throw new Error('Reusable receive address is not canonical.');
   }
   return address;

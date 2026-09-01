@@ -82,6 +82,7 @@ test('fixed protocol conformance snapshots match every v2 primitive', async () =
 
   const addressVector = load('addresses');
   const addressInput = {
+    deploymentBindingHash: fromHex(addressVector.input.deploymentBindingHash),
     diversifier: fromHex(addressVector.input.diversifier),
     ownerCommitment: fromHex(addressVector.input.ownerCommitment),
     hpkePublicKey: fromHex(addressVector.input.hpkePublicKey),
@@ -248,6 +249,7 @@ test('address: encode and decode roundtrip', async () => {
   const hpkePk = new Uint8Array(32).fill(0x33);
 
   const addrObj = {
+    deploymentBindingHash: new Uint8Array(32).fill(0x44),
     diversifier,
     ownerCommitment: owner,
     hpkePublicKey: hpkePk,
@@ -255,9 +257,10 @@ test('address: encode and decode roundtrip', async () => {
 
   const encoded = encodePrivateAddress(addrObj, 'tks');
   assert.equal(encoded.startsWith('tks1'), true);
-  assert.equal(encoded.length, 119);
+  assert.equal(encoded.length, 170);
 
   const decoded = await decodePrivateAddress(encoded, 'tks');
+  assert.deepEqual(decoded.deploymentBindingHash, addrObj.deploymentBindingHash);
   assert.deepEqual(decoded.diversifier, diversifier);
   assert.deepEqual(decoded.ownerCommitment, owner);
   assert.deepEqual(decoded.hpkePublicKey, hpkePk);
