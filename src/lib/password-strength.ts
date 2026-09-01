@@ -1,6 +1,3 @@
-import { ZxcvbnFactory } from "@zxcvbn-ts/core";
-import { adjacencyGraphs, dictionary } from "@zxcvbn-ts/language-common";
-
 export type PasswordStrengthScore = 0 | 1 | 2 | 3 | 4;
 
 export interface PasswordStrength {
@@ -55,7 +52,21 @@ const WALLET_TERMS = new Set([
   "xlm",
 ]);
 
-const offlineGuessabilityEstimator = new ZxcvbnFactory({ graphs: adjacencyGraphs, dictionary });
+interface OfflineGuessabilityEstimator {
+  check(password: string): { score: number };
+}
+
+let offlineGuessabilityEstimatorPromise: Promise<OfflineGuessabilityEstimator> | null = null;
+
+function loadOfflineGuessabilityEstimator(): Promise<OfflineGuessabilityEstimator> {
+  offlineGuessabilityEstimatorPromise ??= Promise.all([
+    import("@zxcvbn-ts/core"),
+    import("@zxcvbn-ts/language-common"),
+  ]).then(([{ ZxcvbnFactory }, { adjacencyGraphs, dictionary }]) =>
+    new ZxcvbnFactory({ graphs: adjacencyGraphs, dictionary }),
+  );
+  return offlineGuessabilityEstimatorPromise;
+}
 
 function hasWalletTheme(password: string): boolean {
   const terms = password.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -135,7 +146,27 @@ export function estimatePasswordStrength(password: string): PasswordStrength {
     return result(1, "Weak", "#FF453A", "Avoid wallet-related terms and predictable phrases.");
   }
 
-  const guessabilityScore = offlineGuessabilityEstimator.check(password).score;
+  return structural;
+}
+
+async function estimatePasswordStrengthWithGuessability(
+  password: string,
+): Promise<PasswordStrength> {
+  const structural = estimatePasswordStrength(password);
+  if (!password || structural.score <= 1) return structural;
+
+  let guessabilityScore: number;
+  try {
+    guessabilityScore = (await loadOfflineGuessabilityEstimator()).check(password).score;
+  } catch {
+    return result(
+      1,
+      "Weak",
+      "#FF453A",
+      "Password safety check is unavailable. Reload and try again.",
+    );
+  }
+
   if (guessabilityScore <= 1) {
     return result(1, "Weak", "#FF453A", "Avoid common passwords and predictable phrases.");
   }
@@ -152,6 +183,19 @@ export function validateNewVaultPassword(password: string): NewVaultPasswordVali
   if (password.length < 12) {
     return { valid: false, message: "Password must be at least 12 characters." };
   }
+  if (strength.score <= 1) {
+    return { valid: false, message: strength.feedback };
+  }
+  return { valid: true, message: null };
+}
+
+export async function validateNewVaultPasswordWithGuessability(
+  password: string,
+): Promise<NewVaultPasswordValidation> {
+  const immediate = validateNewVaultPassword(password);
+  if (!immediate.valid) return immediate;
+
+  const strength = await estimatePasswordStrengthWithGuessability(password);
   if (strength.score <= 1) {
     return { valid: false, message: strength.feedback };
   }

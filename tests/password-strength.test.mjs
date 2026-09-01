@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   estimatePasswordStrength,
   validateNewVaultPassword,
+  validateNewVaultPasswordWithGuessability,
 } from "../src/lib/password-strength.ts";
 
 test("empty passwords are not rated", () => {
@@ -40,10 +41,13 @@ test("wallet-themed phrases remain too guessable for a new vault", () => {
   }
 });
 
-test("the offline guessability estimator catches long common patterns", () => {
+test("the offline guessability estimator catches long common patterns", async () => {
   for (const candidate of ["iloveyouforever", "footballpassword", "monkeymonkey123"]) {
-    assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
-    assert.ok(estimatePasswordStrength(candidate).score <= 1, candidate);
+    assert.equal(
+      (await validateNewVaultPasswordWithGuessability(candidate)).valid,
+      false,
+      candidate,
+    );
   }
 });
 
@@ -81,4 +85,20 @@ test("onboarding uses the shared new-vault password policy", () => {
   const source = readFileSync(new URL("../src/components/Onboarding.tsx", import.meta.url), "utf8");
   assert.match(source, /validateNewVaultPassword\(password\)/);
   assert.doesNotMatch(source, /password\.length\s*>=\s*8/);
+});
+
+test("the mature estimator stays off startup and is enforced at every vault write boundary", () => {
+  const policy = readFileSync(
+    new URL("../src/lib/password-strength.ts", import.meta.url),
+    "utf8",
+  );
+  const vault = readFileSync(new URL("../src/lib/vault.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(policy, /^import .*@zxcvbn-ts/m);
+  assert.match(policy, /import\("@zxcvbn-ts\/core"\)/);
+  assert.match(policy, /import\("@zxcvbn-ts\/language-common"\)/);
+  assert.equal(
+    vault.match(/await validateNewVaultPasswordWithGuessability\(/g)?.length,
+    3,
+  );
 });
