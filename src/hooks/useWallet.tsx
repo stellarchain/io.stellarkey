@@ -25,6 +25,7 @@ import {
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
   withSigningKeypair,
+  createSessionRevocationGuard,
   initializeVault,
   initializeHardwareVault,
   isUnlocked,
@@ -202,6 +203,7 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
     device: "trezor",
     publicKey: acc.publicKey,
     path: acc.path ?? "m/44'/148'/0'",
+    assertSessionActive: createSessionRevocationGuard(),
   };
 }
 

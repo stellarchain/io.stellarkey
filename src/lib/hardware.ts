@@ -32,6 +32,8 @@ export interface HardwareSigner {
   device: HardwareDeviceType;
   publicKey: string;
   path: string;
+  /** Local-only guard captured from the unlocked vault session. */
+  assertSessionActive?: () => void;
 }
 
 /**
@@ -459,9 +461,17 @@ export async function signTrezorTransaction(
  * hardware wallet account.
  */
 export async function signHardwareTx(tx: Transaction, signer: HardwareSigner): Promise<void> {
+  const signatureCount = tx.signatures.length;
+  signer.assertSessionActive?.();
   if (signer.device === "trezor") {
     await signTrezorTransaction(tx, signer.path, signer.publicKey);
-    return;
+    try {
+      signer.assertSessionActive?.();
+      return;
+    } catch (error) {
+      tx.signatures.splice(signatureCount);
+      throw error;
+    }
   }
   throw new Error("Ledger transaction signing is not yet supported in this build.");
 }
