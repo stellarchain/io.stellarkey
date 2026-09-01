@@ -51,7 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
-| **Private Payments research** | Development-only private XLM and USDC prototype. Production availability is quarantined until its proving key, ceremony, audits, and deployment evidence pass the release gates. |
+| **Private Payments research** | Production-hosted Testnet-only XLM and USDC development preview using explicitly disclosed single-party proving material; Mainnet remains blocked. |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 

@@ -311,7 +311,7 @@ export interface TrustlineSelectionUpdate {
 }
 
 function trustlineSelectionKey(selection: TrustlineSelection): string {
-  return `${selection.code.toUpperCase()}:${selection.issuer}`;
+  return `${selection.code}:${selection.issuer}`;
 }
 
 export function addTrustlineSelection(

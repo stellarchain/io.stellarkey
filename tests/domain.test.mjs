@@ -583,6 +583,20 @@ test("trustline selection rejects the 101st unique operation without breaking fe
   assert.match(source, /setError\(update\.error\)/);
 });
 
+test("trustline selection preserves Stellar asset-code case", () => {
+  const issuer = Keypair.random().publicKey();
+  const lower = addTrustlineSelection([], { code: "yXLM", issuer });
+  const distinct = addTrustlineSelection(lower.selected, { code: "YXLM", issuer });
+  assert.equal(distinct.error, null);
+  assert.deepEqual(distinct.selected.map((asset) => asset.code), ["yXLM", "YXLM"]);
+
+  const source = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /asset\.code\.toUpperCase\(\)/);
+  assert.doesNotMatch(source, /code\.trim\(\)\.toUpperCase\(\)/);
+  assert.doesNotMatch(source, /setCode\(e\.target\.value\.toUpperCase\(\)\)/);
+  assert.match(source, /\^\[A-Za-z0-9\]\{1,12\}\$/);
+});
+
 test("batch payments activate an unfunded native destination", async (t) => {
   const source = Keypair.random();
   const destination = Keypair.random().publicKey();

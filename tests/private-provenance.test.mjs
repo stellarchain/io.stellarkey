@@ -7,14 +7,21 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url));
 const text = (path) => read(path).toString("utf8");
 const sha256 = (path) => createHash("sha256").update(read(path)).digest("hex");
 
-test("private-payment documentation describes the quarantined development prototype", () => {
+test("private-payment documentation describes the deployed Testnet development preview", () => {
   const model = text("docs/private-balance.md");
-  assert.match(model, /development-only testnet prototype/i);
+  assert.match(model, /production-hosted.*Testnet.*development preview/is);
   assert.match(model, /single-party setup/i);
-  assert.match(model, /fails.*pinned Powers-of-Tau transcript/is);
-  assert.match(model, /quarantined/i);
-  assert.match(model, /Mainnet rejects/i);
-  assert.doesNotMatch(model, /deployed testnet preview/i);
+  assert.match(model, /passes.*pinned Powers-of-Tau transcript/is);
+  assert.match(model, /does not make.*safe for real value/is);
+  assert.match(model, /Mainnet.*reject/is);
+});
+
+test("HPKE operations clear locally owned secret and plaintext buffers", () => {
+  const encryption = text("protocol/private-balance/packages/browser/src/encryption.ts");
+  assert.match(encryption, /ephemeralPrivateKey\?\.fill\(0\)/);
+  assert.match(encryption, /sharedSecret\?\.fill\(0\)/);
+  assert.match(encryption, /plaintextBytes\?\.fill\(0\)/);
+  assert.match(encryption, /diversified\?\.hpkePrivateKey\.fill\(0\)/);
 });
 
 test("ceremony provenance matches the shipped proving artifacts", () => {

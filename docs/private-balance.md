@@ -1,13 +1,14 @@
 # Private Balance security and privacy model
 
-Private Balance is a development-only testnet prototype. Production builds
-reject its development manifest, and Mainnet rejects it independently. The
-checked-in proving key was produced by a single-party setup and fails
-`snarkjs zkey verify` against the repository's pinned Powers-of-Tau transcript.
-It is therefore quarantined even for a production-hosted testnet preview. Do not
-use the deployed prototype pool or promote these artifacts. A newly generated
-key, public multi-party ceremony, independent verification and audit, fresh
-deployment, and recovery evidence must all bind to the same hashes first.
+Private Balance is a production-hosted Testnet-only development preview. The
+wallet intentionally accepts the exact hash-pinned development deployment on
+Testnet, while Mainnet independently rejects Private Payments. Its proving key
+was produced by a single-party setup and passes `snarkjs zkey verify` against
+the repository's pinned Powers-of-Tau transcript. That verifies consistency; it
+does not make the setup safe for real value. Anyone who retained the setup
+secret could forge proofs and take testnet funds. A public multi-party ceremony,
+independent verification and audit, fresh deployment, and recovery evidence
+must all bind to the same hashes before any Mainnet or real-value promotion.
 
 ## What it is
 
