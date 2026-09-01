@@ -23,6 +23,7 @@ import {
   fetchBalances,
   mergeAccount,
   networkFeeXlm,
+  parseFeeStats,
   selectRecommendedBaseFee,
   sendBatchPayments,
   sendPayment,
@@ -534,6 +535,24 @@ test("active transaction UIs use the selected fee for display and native reserve
     /networkFeeXlm\([\s\S]*Math\.min\(selected\.length, MAX_TRUSTLINE_SELECTIONS\)/,
   );
   assert.match(settings, /networkFeeXlm\(recommendedBaseFeeStroops, 1\)/);
+});
+
+test("fee statistics reject values that cannot be rendered or signed safely", () => {
+  assert.deepEqual(parseFeeStats({
+    last_ledger_base_fee: "NaN",
+    fee_charged: {
+      min: "-1",
+      mode: "1.5",
+      p90: "999999999999999999999999",
+      p99: "200",
+    },
+  }), {
+    lastLedgerBaseFee: 100,
+    minAcceptedFee: 100,
+    modeAcceptedFee: 100,
+    p90AcceptedFee: 150,
+    p99AcceptedFee: 200,
+  });
 });
 
 test("trustline selection rejects the 101st unique operation without breaking fee display", () => {
