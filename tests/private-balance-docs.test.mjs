@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const read = name => readFileSync(new URL(`../docs/${name}`, import.meta.url), 'utf8');
+const readSource = name => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 
 test('private balance documentation states exact privacy, recovery, and support boundaries', () => {
   const product = read('private-balance.md');
@@ -30,4 +31,10 @@ test('private balance documentation states exact privacy, recovery, and support 
     assert.match(support, new RegExp(secret, 'i'));
   }
   assert.doesNotMatch(combined, /anonymous|untraceable|guaranteed private/i);
+});
+
+test('the public private-payments page describes hosted Testnet availability consistently', () => {
+  const page = readSource('src/app/private/page.tsx');
+  assert.match(page, /production-hosted.*Testnet.*development preview/is);
+  assert.doesNotMatch(page, /current key fails.*production availability is off/is);
 });

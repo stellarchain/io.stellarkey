@@ -324,7 +324,7 @@ export default function PrivatePaymentsPage() {
         <li>Obscurity. What stays public — fees, timing, deposits, withdrawals — is written on this page so you can plan around it.</li>
         </ul></div>
         </div>
-        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current key fails that first check, so production availability is off.</p></section>
+        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current development key passes circuit and transcript compatibility checks but has no public ceremony or independent audit evidence, so hosted availability remains Testnet-only and Mainnet stays refused.</p></section>
 
         <section id="private-faq"><h2><DocQuestion />The awkward questions</h2>
         <div className="faq">
