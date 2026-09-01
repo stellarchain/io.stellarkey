@@ -404,6 +404,7 @@ export function reconcileCounterPayments(
           (code) =>
             code.routingId === payment.routingId &&
             code.network === input.network &&
+            code.destination === store.settings.receivingPublicKey &&
             code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
             counterCodeAvailability(code, paymentAt) === "active",

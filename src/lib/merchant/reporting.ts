@@ -363,8 +363,14 @@ export function deriveTaxPeriods(
   return periods;
 }
 
+export function neutralizeSpreadsheetFormula(value: string | number | null): string {
+  if (value === null) return "";
+  const text = String(value);
+  return typeof value === "string" && /^[\t\r\n ]*[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
 function csvField(value: string | number | null): string {
-  const text = value === null ? "" : String(value);
+  const text = neutralizeSpreadsheetFormula(value);
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
