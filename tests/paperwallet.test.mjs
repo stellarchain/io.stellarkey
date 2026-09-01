@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPaperWalletHtml, openPaperWalletPrint } from "../src/lib/paperwallet.ts";
+import {
+  buildPaperWalletHtml,
+  closePaperWalletPrints,
+  openPaperWalletPrint,
+} from "../src/lib/paperwallet.ts";
 
 const paperWallet = {
   accountLabel: "Savings",
@@ -42,6 +46,25 @@ test("paper wallet blob URL is revoked as soon as the child document loads", (t)
 
 test("paper wallet HTML contains no CSP-blocked inline script", () => {
   assert.doesNotMatch(buildPaperWalletHtml(paperWallet), /<script\b/i);
+});
+
+test("tracked paper wallet windows close when the sensitive session ends", () => {
+  let closeCalls = 0;
+  const child = {
+    closed: false,
+    document: { readyState: "loading" },
+    addEventListener() {},
+    print() {},
+    close() {
+      closeCalls += 1;
+      this.closed = true;
+    },
+  };
+  globalThis.window = { open: () => child };
+
+  openPaperWalletPrint(paperWallet);
+  closePaperWalletPrints();
+  assert.equal(closeCalls, 1);
 });
 
 test("paper wallet blob URL is revoked immediately when the popup is blocked", (t) => {

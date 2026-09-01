@@ -60,6 +60,7 @@ import { IndexedDbEncryptedRecordDriver } from "@/lib/indexed-db";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
+import { closePaperWalletPrints } from "@/lib/paperwallet";
 import type { FiatCurrency } from "@/lib/format";
 import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
@@ -1276,6 +1277,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const lockVaultAndReset = useCallback((notifyPeers = true) => {
     cancelSigningAuthorization("Wallet locked before signing.");
+    closePaperWalletPrints();
     lockVault();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
