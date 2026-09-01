@@ -76,7 +76,7 @@ Deploy the exact artifact to an isolated preview origin first. Compare its relea
 
 Promote the same bytes to production. On physical iPhone/iPad and a desktop browser, verify install, safe areas, no form zoom, passkey capability handling, cross-origin popup behavior, and the optional hardware path. A Trezor test must use the registered production origin and a physical device.
 
-Private Payments must remain `development` and unavailable in production until `snarkjs zkey verify` succeeds against the pinned Powers-of-Tau transcript and the same immutable archive contains the reviewed ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Every non-development status, including a future testnet preview, is rejected without that evidence. Never create evidence records from a production build or substitute development hashes.
+Private Payments must remain `development`, Testnet-only, and explicitly disclosed while production-hosted builds permit the exact pinned development fixture. `snarkjs zkey verify` confirms circuit/Powers-of-Tau compatibility; it does not make the single-party setup ceremony-secure. Mainnet and any real-value promotion remain blocked until the same immutable archive contains a reviewed public ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
 
 ## 6. External probes and monitoring
 

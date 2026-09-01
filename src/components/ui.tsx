@@ -963,11 +963,13 @@ export function CopyButton({
   label,
   className,
   iconSize = 13,
+  sensitive = false,
 }: {
   value: string;
   label?: string;
   className?: string;
   iconSize?: number;
+  sensitive?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -983,17 +985,33 @@ export function CopyButton({
     }
   }
 
+  async function handleClick(e: React.MouseEvent) {
+    if (!sensitive || !copied) {
+      await handleCopy(e);
+      return;
+    }
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText("");
+      setCopied(false);
+      triggerHaptic("selection");
+    } catch {
+      // Clipboard writes can require a fresh user gesture or be unavailable.
+    }
+  }
+
   return (
     <button
       type="button"
-      onClick={handleCopy}
+      onClick={(event) => void handleClick(event)}
       className={className ?? "chip"}
-      aria-label={label ?? "Copy to clipboard"}
+      aria-label={sensitive && copied ? "Clear copied secret from clipboard" : label ?? "Copy to clipboard"}
+      title={sensitive ? "Clipboard managers may retain copied recovery material." : undefined}
     >
       {copied ? (
         <>
           <IconCheck size={iconSize} className="text-[#30D158]" />
-          <span>Copied</span>
+          <span>{sensitive ? "Clear clipboard" : "Copied"}</span>
         </>
       ) : (
         <>

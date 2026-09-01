@@ -531,7 +531,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                         12-Word Recovery Phrase
                       </span>
-                      <CopyButton value={revealed} label="Copy" />
+                      <CopyButton value={revealed} label="Copy" sensitive />
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       {revealed.split(" ").map((word, i) => (
@@ -559,7 +559,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                       <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                         Secret Key
                       </span>
-                      <CopyButton value={revealed} label="Copy" />
+                      <CopyButton value={revealed} label="Copy" sensitive />
                     </div>
                     <HashValue
                       full

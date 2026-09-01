@@ -245,11 +245,11 @@ export default function PrivatePaymentsPage() {
       summary="A private balance inside the same wallet. The amount, the recipient, and the memo of a private transfer stay encrypted; the proof is built on your device and verified against the public Stellar ledger."
       highlights={highlights}
       sections={sections}
-      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · production unavailable`}
+      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · Testnet development preview`}
     >
         <section id="private-what"><h2><DocShieldDots />What it is</h2>
         <p>Private Payments is a shielded pool for configured XLM and USDC, driven from the wallet you already have. Funds you move into it are held as encrypted notes on this device and can change hands without publishing the amount, the recipient, or the memo; a zero-knowledge proof convinces a contract on the public Stellar ledger that every rule held, without showing it the contents. That one sentence is the whole promise. The rest of this page is the mechanism.</p>
-        <p>Release {APPLICATION_VERSION} keeps it unavailable in production. The checked-in development key failed verification against the recorded Powers-of-Tau transcript, so the manifest is quarantined. A newly verified proving key, public multi-party ceremony, independent review, and fresh testnet deployment must bind to the same hashes before another preview can be enabled.</p></section>
+        <p>Release {APPLICATION_VERSION} permits the exact hash-pinned development fixture from production-hosted builds on Testnet only and refuses Mainnet independently. The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge Testnet proofs and take Testnet pool funds. A public multi-party ceremony, independent review, and fresh deployment are required before real-value use.</p></section>
 
         <section id="private-pockets"><h2><DocCoin />One wallet, two pockets</h2>
         <p>Your Stellar account is a public pocket: anyone can look up its balance and history, and that openness is what makes the ledger checkable. The private balance is a second pocket beside it. Crossings between the two — deposits in, withdrawals out — are ordinary public transactions by design; only life inside the pocket is encrypted.</p>
@@ -292,13 +292,13 @@ export default function PrivatePaymentsPage() {
         <p>A SHA-256 mismatch on any artifact stops the feature rather than degrading it, and the content-security policy that limits WebAssembly to this hash-verified prover is documented on the Security page.</p></section>
 
         <section id="private-receiving"><h2><DocFingerprint />Receiving privately</h2>
-        <p>A shielded address is 119 characters of bech32m — <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tks1…</span> on testnet, <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>sks1…</span> on Mainnet — encoding a 68-byte payload with a 6-character checksum, so a mistyped address fails loudly instead of paying quietly. It never appears as an account on the public ledger, and there is no on-chain registration step, because registering an address would publish it.</p>
-        <p>Addresses are diversified: from one incoming viewing key, the wallet derives a practically unlimited family of distinct addresses, one per 4-byte diversifier, all spendable by the same wallet and none linkable to each other by sight. Hand different addresses to different relationships and each counterparty can only ever recognize their own. One address for everyone is convenient; separate addresses reveal less. The wallet supports both, and the trade is yours.</p>
+        <p>A deployment-bound shielded address is 170 characters of bech32m — <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tks1…</span> on Testnet — with a checksum, so a mistyped or wrong-deployment address fails instead of paying quietly. It never appears as an account on the public ledger, and there is no on-chain registration step.</p>
+        <p>Addresses are diversified: from one incoming viewing key, the wallet derives many addresses, one per four-byte diversifier, all spendable by the same wallet. The current recipient envelope publishes that diversifier, so repeated payments to the same address can be correlated on-chain and the zero diversifier used for self/change is distinguishable from a rotated recipient address. Separate addresses still reduce counterparty-level reuse, but they are not unlinkable by sight in this protocol version.</p>
         <p>Sharing happens out of band, over a channel you already trust. Beside the QR code the wallet shows a short verification code derived from the address — the drawn panel below shows one, FC42 C9CF — and the sender&apos;s wallet derives the same code from whatever it is about to pay. Matching codes mean the address survived the copy intact.</p>
         <p>The receive screen also offers a reusable stealth address (<span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tsm1…</span>): a two-key meta-address, one scan key and one spend key, from which a sender derives a fresh one-time destination per payment. Only your scan key can link those destinations back together. It is the same discipline — publish nothing that connects your payments — applied to a different receiving pattern.</p></section>
 
         <section id="private-screens"><h2><DocFile />What it looks like</h2>
-        <p>The surfaces below are representative design records of the development prototype: the setup disclosure, a shielded receive with its verification code, and a private send review. They are not available in the production wallet while the proving material is quarantined.</p>
+        <p>The surfaces below show the production-hosted Testnet development preview: the setup disclosure, a shielded receive with its verification code, and a private send review. Mainnet remains unavailable.</p>
         <div className="panel-grid">
         <PanelDeal />
         <PanelReceive />

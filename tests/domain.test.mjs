@@ -2595,6 +2595,9 @@ test("preserves selling liabilities and excludes them from spendable balance", a
           balance: "20",
           limit: "100",
           selling_liabilities: "4.5",
+          is_authorized: true,
+          is_authorized_to_maintain_liabilities: false,
+          is_clawback_enabled: true,
         },
       ],
     }), { status: 200 }),
@@ -2603,6 +2606,9 @@ test("preserves selling liabilities and excludes them from spendable balance", a
   const balances = await fetchBalances(publicKey, "mainnet");
   assert.equal(balances[0].sellingLiabilities, "1.25");
   assert.equal(balances[1].sellingLiabilities, "4.5");
+  assert.equal(balances[1].isAuthorized, true);
+  assert.equal(balances[1].isAuthorizedToMaintainLiabilities, false);
+  assert.equal(balances[1].isClawbackEnabled, true);
   assert.equal(spendableAssetBalance(balances[0], ["3", "0.00001"]), "5.74999");
   assert.equal(spendableAssetBalance(balances[1]), "15.5");
   assert.deepEqual(assetDetailBalanceSummary(balances[1], null), {
@@ -2611,6 +2617,27 @@ test("preserves selling liabilities and excludes them from spendable balance", a
     minimumBalance: null,
     spendable: "15.5",
   });
+
+  assert.equal(spendableAssetBalance({ ...balances[1], isAuthorized: false }), "0");
+  assert.equal(
+    spendableAssetBalance({ ...balances[1], isAuthorizedToMaintainLiabilities: true }),
+    "0",
+  );
+});
+
+test("issued balances fail closed when Horizon omits trustline authorization", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    balances: [{
+      asset_type: "credit_alphanum4",
+      asset_code: "USDC",
+      asset_issuer: USDC_ISSUER,
+      balance: "20",
+      selling_liabilities: "0",
+    }],
+  }), { status: 200 }));
+  const [balance] = await fetchBalances(Keypair.random().publicKey(), "mainnet");
+  assert.equal(balance.isAuthorized, false);
+  assert.equal(spendableAssetBalance(balance), "0");
 });
 
 test("maps path payments to the destination asset code and issuer", async (t) => {

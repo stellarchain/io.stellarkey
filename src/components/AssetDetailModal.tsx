@@ -309,6 +309,26 @@ export function AssetDetailModal({
           </div>
         )}
 
+        {!asset.isNative && asset.isAuthorized !== true && (
+          <div className="mt-4 rounded-2xl border border-[#FF9F0A]/35 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FFD18A]">
+            <p className="font-semibold text-white">
+              {asset.isAuthorizedToMaintainLiabilities
+                ? "Maintain liabilities only"
+                : "Frozen by issuer"}
+            </p>
+            <p className="mt-1">
+              This balance cannot be sent until the issuer grants full authorization.
+            </p>
+          </div>
+        )}
+
+        {!asset.isNative && asset.isClawbackEnabled && (
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 text-[12px] leading-relaxed text-neutral-300">
+            <p className="font-semibold text-white">Clawback enabled</p>
+            <p className="mt-1">The issuer can remove and burn some or all of this balance.</p>
+          </div>
+        )}
+
         <div className="panel-inset mt-5 divide-y divide-white/[0.08]">
           <Row label="Type">
             <span className="text-[13px] text-white">
