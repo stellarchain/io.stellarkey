@@ -212,7 +212,13 @@ export async function applyMultisigConfig(params: {
   for (const s of config.signers) {
     if (s.key === accountPublicKey) continue;
     const currentWeight = currentByKey.get(s.key) ?? 0;
-    if (currentWeight <= 0 || s.weight <= currentWeight) continue;
+    // Write every signer Horizon claims already exists, including an unchanged
+    // weight. The transaction must guarantee the desired signer set itself;
+    // otherwise a dishonest endpoint could invent a retained signer and make
+    // the final thresholds lock the account. A false report now produces an
+    // atomic setOptions failure (for example at real capacity), never a
+    // successful configuration whose safety depended on the report.
+    if (currentWeight <= 0 || s.weight < currentWeight) continue;
     builder.addOperation(
       Operation.setOptions({ signer: { ed25519PublicKey: s.key, weight: s.weight } }),
     );
