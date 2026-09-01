@@ -218,6 +218,7 @@ export function SettingsPage({
   const { toast } = useToast();
   const {
     signingPasswordRequired,
+    authorizeSensitiveAction,
     changeSigningPasswordRequired,
     changeWalletPassword,
   } = useWalletSecurity();
@@ -304,6 +305,7 @@ export function SettingsPage({
   const [horizonDraft, setHorizonDraft] = useState(() => getHorizonUrl(network));
   const [rpcDraft, setRpcDraft] = useState(() => getRpcUrl(network) ?? "");
   const [endpointTesting, setEndpointTesting] = useState<StellarEndpointKind | null>(null);
+  const [endpointResetting, setEndpointResetting] = useState(false);
   const [endpointHealth, setEndpointHealth] = useState<Partial<Record<StellarEndpointKind, EndpointHealth>>>({});
   const [endpointError, setEndpointError] = useState<string | null>(null);
 
@@ -338,6 +340,7 @@ export function SettingsPage({
       const health = kind === "horizon"
         ? await testHorizonEndpoint(network, value)
         : await testRpcEndpoint(network, value);
+      await authorizeSensitiveAction(`Change ${NETWORKS[network].label} ${kind === "horizon" ? "Horizon" : "RPC"} endpoint`);
       saveCustomEndpoint(network, kind, health.url);
       if (kind === "horizon") {
         setHorizonDraft(health.url);
@@ -355,9 +358,11 @@ export function SettingsPage({
     }
   }
 
-  function handleResetEndpoints() {
+  async function handleResetEndpoints() {
+    setEndpointResetting(true);
     setEndpointError(null);
     try {
+      await authorizeSensitiveAction(`Reset ${NETWORKS[network].label} network endpoints`);
       resetCustomEndpoints(network);
       setHorizonDraft(NETWORKS[network].horizonUrl);
       setRpcDraft(NETWORKS[network].rpcUrl ?? "");
@@ -367,6 +372,8 @@ export function SettingsPage({
     } catch (cause) {
       triggerHaptic("error");
       setEndpointError(cause instanceof Error ? cause.message : "Could not reset the endpoint settings.");
+    } finally {
+      setEndpointResetting(false);
     }
   }
 
@@ -2077,7 +2084,7 @@ export function SettingsPage({
                 variant="secondary"
                 className="mt-2 w-full"
                 loading={endpointTesting === "horizon"}
-                disabled={!horizonDraft.trim() || endpointTesting !== null}
+                disabled={!horizonDraft.trim() || endpointTesting !== null || endpointResetting}
                 onClick={() => void handleTestAndSaveEndpoint("horizon")}
               >
                 {"Test & Save Horizon"}
@@ -2122,7 +2129,7 @@ export function SettingsPage({
                 variant="secondary"
                 className="mt-2 w-full"
                 loading={endpointTesting === "rpc"}
-                disabled={!rpcDraft.trim() || endpointTesting !== null}
+                disabled={!rpcDraft.trim() || endpointTesting !== null || endpointResetting}
                 onClick={() => void handleTestAndSaveEndpoint("rpc")}
               >
                 {"Test & Save RPC"}
@@ -2134,10 +2141,10 @@ export function SettingsPage({
             <button
               type="button"
               className="block min-h-11 w-full text-center text-[13px] font-medium text-[#0A84FF]"
-              onClick={handleResetEndpoints}
-              disabled={endpointTesting !== null}
+              onClick={() => void handleResetEndpoints()}
+              disabled={endpointTesting !== null || endpointResetting}
             >
-              Reset to Defaults
+              {endpointResetting ? "Authorizing…" : "Reset to Defaults"}
             </button>
             <p className="text-[11.5px] leading-relaxed text-neutral-500">
               Endpoints are stored only in this browser. The app accepts HTTPS URLs only and verifies
