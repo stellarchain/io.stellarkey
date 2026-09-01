@@ -53,6 +53,7 @@ import {
 } from "./passkey-prf";
 
 const VAULT_KEY = "stellarkey.vault.v1";
+const PASSWORD_ATTEMPT_KEY = "stellarkey.vault.password-attempts.v1";
 const NETWORK_KEY = "stellarkey.network.v1";
 const AUTOLOCK_KEY = "stellarkey.autolock.v1";
 
@@ -163,7 +164,28 @@ function readVault(): VaultFile | null {
   return result.kind === "ready" ? result.value : null;
 }
 
-function persist(vault: VaultFile): void {
+export class VaultRevisionConflictError extends Error {
+  constructor() {
+    super("The wallet changed in another tab. Reload it and retry your change.");
+    this.name = "VaultRevisionConflictError";
+  }
+}
+
+function vaultRevision(vault: VaultFile): number {
+  return vault.revision ?? 0;
+}
+
+function persist(vault: VaultFile, options: { create?: boolean } = {}): void {
+  const live = readVault();
+  if (options.create) {
+    if (live) throw new VaultRevisionConflictError();
+    vault.revision = 0;
+  } else {
+    if (!live || vaultRevision(live) !== vaultRevision(vault)) {
+      throw new VaultRevisionConflictError();
+    }
+    vault.revision = vaultRevision(vault) + 1;
+  }
   const serialized = JSON.stringify(vault);
   window.localStorage.setItem(VAULT_KEY, serialized);
   if (window.localStorage.getItem(VAULT_KEY) !== serialized) {
@@ -172,18 +194,8 @@ function persist(vault: VaultFile): void {
 }
 
 function replacePersistedVault(previous: VaultFile, next: VaultFile): void {
-  const previousSerialized = JSON.stringify(previous);
-  try {
-    persist(next);
-  } catch (error) {
-    try {
-      window.localStorage.setItem(VAULT_KEY, previousSerialized);
-    } catch {
-      // The original persistence error remains authoritative. The next load
-      // still validates the record before granting any vault authority.
-    }
-    throw error;
-  }
+  if (vaultRevision(previous) !== vaultRevision(next)) throw new VaultRevisionConflictError();
+  persist(next);
 }
 
 export function loadVault(): VaultFile | null {
@@ -457,7 +469,7 @@ export async function initializeVault(
         activeAccountId: account.id,
         requirePasswordForSigning: opts.requirePasswordForSigning ?? false,
       };
-      persist(vault);
+      persist(vault, { create: true });
       writeMerchantBootstrapState({ enabled: false, configured: false });
       await writePrivateContacts([], masterKey);
       await writePrivateTxNotes({}, masterKey);
@@ -508,7 +520,7 @@ async function createDerivedVault(
       activeAccountId: account.id,
       requirePasswordForSigning,
     };
-    persist(vault);
+    persist(vault, { create: true });
     writeMerchantBootstrapState({ enabled: false, configured: false });
     await writePrivateContacts([], masterKey);
     await writePrivateTxNotes({}, masterKey);
@@ -564,7 +576,7 @@ export async function initializeHardwareVault(
       activeAccountId: stored.id,
       requirePasswordForSigning: security.requirePasswordForSigning ?? false,
     };
-    persist(vault);
+    persist(vault, { create: true });
     writeMerchantBootstrapState({ enabled: false, configured: false });
     await writePrivateContacts([], masterKey);
     await writePrivateTxNotes({}, masterKey);
@@ -579,9 +591,60 @@ async function masterKeyForPassword(vault: VaultFile, password: string): Promise
   vault: VaultFile;
   masterKey: Uint8Array;
 }> {
+  const now = Date.now();
+  const vaultId = `${vault.wrappedMasterKey.salt}:${vault.wrappedMasterKey.ciphertext.slice(0, 48)}`;
+  const attempts = (() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(PASSWORD_ATTEMPT_KEY) ?? "null") as unknown;
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        (parsed as { version?: unknown }).version !== 1 ||
+        (parsed as { vaultId?: unknown }).vaultId !== vaultId
+      ) {
+        return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+      }
+      const record = parsed as {
+        failures?: unknown;
+        blockedUntil?: unknown;
+        lockoutLevel?: unknown;
+      };
+      if (
+        !Number.isSafeInteger(record.failures) ||
+        !Number.isSafeInteger(record.blockedUntil) ||
+        !Number.isSafeInteger(record.lockoutLevel) ||
+        (record.failures as number) < 0 ||
+        (record.blockedUntil as number) < 0 ||
+        (record.lockoutLevel as number) < 0
+      ) {
+        return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+      }
+      return record as { failures: number; blockedUntil: number; lockoutLevel: number };
+    } catch {
+      return { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
+    }
+  })();
+  if (now < attempts.blockedUntil) {
+    const seconds = Math.max(1, Math.ceil((attempts.blockedUntil - now) / 1000));
+    throw new Error(`Too many password attempts. Try again in ${seconds} seconds.`);
+  }
   try {
-    return { vault, masterKey: await unwrapVaultMasterKey(vault.wrappedMasterKey, password) };
+    const masterKey = await unwrapVaultMasterKey(vault.wrappedMasterKey, password);
+    window.localStorage.removeItem(PASSWORD_ATTEMPT_KEY);
+    return { vault, masterKey };
   } catch {
+    const failures = (attempts.blockedUntil > 0 ? 0 : attempts.failures) + 1;
+    const lockoutLevel = failures >= 5 ? attempts.lockoutLevel + 1 : attempts.lockoutLevel;
+    const lockoutMs = failures >= 5
+      ? Math.min(30_000 * (2 ** Math.max(0, lockoutLevel - 1)), 15 * 60_000)
+      : 0;
+    window.localStorage.setItem(PASSWORD_ATTEMPT_KEY, JSON.stringify({
+      version: 1,
+      vaultId,
+      failures,
+      blockedUntil: lockoutMs > 0 ? now + lockoutMs : 0,
+      lockoutLevel,
+    }));
     throw new Error("Incorrect password.");
   }
 }

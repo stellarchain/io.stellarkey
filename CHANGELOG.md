@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revoked in-flight software signers on lock, reset, or session replacement; bound transaction confirmation to the requested canonical hash; and erased Private Payments IndexedDB records during a full wallet reset.
 - Bound encrypted merchant metadata to the exact stored-record ciphertext set and required explicit, schema-valid successful Horizon operations before settling orders.
 - Enforced active-owner checks inside merchant settings writes, revalidated refund permissions at the signing boundary, and persisted cross-tab exponential PIN backoff in encrypted merchant storage.
+- Added monotonic vault revisions to reject stale cross-tab account writes and vault-bound exponential backoff for repeated password verification failures.
 
 ## [1.4.1] - 2026-09-01
 

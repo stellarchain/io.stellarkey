@@ -81,6 +81,12 @@ export function decodeVaultFile(value: unknown): VaultFile | null {
     return null;
   }
   if (!Array.isArray(value.accounts) || value.accounts.length === 0) return null;
+  if (
+    value.revision !== undefined &&
+    (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0)
+  ) {
+    return null;
+  }
   if (!value.accounts.every(isStoredAccount)) {
     return null;
   }

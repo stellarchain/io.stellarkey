@@ -275,6 +275,45 @@ test("encrypted account payloads stay bound to their public identities", async (
   );
 });
 
+test("concurrent imported-account writes reject a stale vault revision instead of losing a key", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { addStoredAccount, initializeVault, lockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+
+  const [first, second] = await Promise.allSettled([
+    addStoredAccount({ secret: Keypair.random().secret(), label: "Concurrent A" }),
+    addStoredAccount({ secret: Keypair.random().secret(), label: "Concurrent B" }),
+  ]);
+  const outcomes = [first, second];
+  assert.equal(outcomes.filter((result) => result.status === "fulfilled").length, 1);
+  const rejected = outcomes.find((result) => result.status === "rejected");
+  assert.match(String(rejected?.reason), /changed in another tab|retry/i);
+
+  const stored = JSON.parse(localStorage.getItem("stellarkey.vault.v1"));
+  assert.equal(stored.revision, 1);
+  assert.equal(stored.accounts.length, 2);
+});
+
+test("password verification applies persisted cross-tab backoff after repeated failures", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault, unlockVault } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  lockVault();
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await assert.rejects(() => unlockVault("definitely wrong password"), /incorrect password|try again/i);
+  }
+  await assert.rejects(() => unlockVault(password), /try again/i);
+  const throttle = JSON.parse(localStorage.getItem("stellarkey.vault.password-attempts.v1"));
+  assert.equal(throttle.failures, 5);
+  assert.equal(throttle.lockoutLevel, 1);
+  assert.ok(throttle.blockedUntil > Date.now());
+});
+
 test("password-sensitive exports verify the password at the point of use", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
