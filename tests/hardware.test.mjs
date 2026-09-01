@@ -61,6 +61,26 @@ test("rejects a malformed public address returned by Trezor", async () => {
   }));
 });
 
+test("receive-address verification requires an exact Trezor match", async () => {
+  const expected = Keypair.random().publicKey();
+  let request;
+  mockTrezorMethod("stellarGetAddress", async (nextRequest) => {
+    request = nextRequest;
+    return { success: true, payload: { address: expected } };
+  });
+  await hardware.verifyTrezorAddress("m/44'/148'/7'", expected);
+  assert.deepEqual(request, { path: "m/44'/148'/7'", showOnTrezor: true });
+
+  mockTrezorMethod("stellarGetAddress", async () => ({
+    success: true,
+    payload: { address: Keypair.random().publicKey() },
+  }));
+  await assert.rejects(
+    hardware.verifyTrezorAddress("m/44'/148'/7'", expected),
+    /does not match/i,
+  );
+});
+
 test("rejects Ledger connection instead of creating a simulated account", async () => {
   const previousNavigator = globalThis.navigator;
   Object.defineProperty(globalThis, "navigator", {
