@@ -535,11 +535,12 @@ test("tx_bad_seq remains status unknown when canonical lookup is unavailable", a
 
 test("canonical hash lookup reports an on-chain failed transaction", async (t) => {
   const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
   let request = 0;
   t.mock.method(globalThis, "fetch", async () => {
     request += 1;
     if (request === 1) throw new TypeError("connection reset");
-    return new Response(JSON.stringify({ successful: false }), { status: 200 });
+    return new Response(JSON.stringify({ hash: expectedHash, successful: false }), { status: 200 });
   });
 
   await assert.rejects(
@@ -549,6 +550,26 @@ test("canonical hash lookup reports an on-chain failed transaction", async (t) =
       error.kind === "validation" &&
       /found on-chain but failed/i.test(error.message),
   );
+});
+
+test("canonical lookup rejects a successful response for a different or missing hash", async (t) => {
+  const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  for (const record of [
+    { successful: true },
+    { hash: "f".repeat(64), successful: true },
+  ]) {
+    globalThis.fetch = async () => new Response(JSON.stringify(record), { status: 200 });
+    assert.equal(
+      await walletApi.lookupCanonicalTransaction("testnet", expectedHash, 20),
+      "unavailable",
+    );
+  }
 });
 
 test("pending transaction insertion preserves accepted certainty for a canonical hash", () => {

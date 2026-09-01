@@ -215,6 +215,7 @@ export async function fetchClaimableBalances(
 export async function claimClaimableBalance(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   balanceId: string;
   feeStroops?: number;
@@ -230,6 +231,7 @@ export async function claimClaimableBalance(params: {
 export async function claimClaimableBalances(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   balanceIds: string[];
   feeStroops?: number;
@@ -251,7 +253,7 @@ export async function claimClaimableBalances(params: {
   }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -281,6 +283,7 @@ export async function claimClaimableBalances(params: {
 export async function mergeAccount(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   destination: string;
   feeStroops?: number;
@@ -292,7 +295,7 @@ export async function mergeAccount(params: {
   }
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -712,8 +715,13 @@ export function explainSubmitError(err: unknown): string {
 export function resolveSource(
   secretKey: string | undefined,
   hardwareSigner?: HardwareSigner,
+  softwareSigner?: Keypair,
 ): { kp: Keypair | null; publicKey: string } {
   if (hardwareSigner) return { kp: null, publicKey: hardwareSigner.publicKey };
+  if (softwareSigner) {
+    if (!softwareSigner.canSign()) throw new SendError("Software signing credential is unavailable.");
+    return { kp: softwareSigner, publicKey: softwareSigner.publicKey() };
+  }
   if (!secretKey) throw new SendError("No signing credential available.");
   const kp = Keypair.fromSecret(secretKey);
   return { kp, publicKey: kp.publicKey() };
@@ -763,11 +771,17 @@ export async function lookupCanonicalTransaction(
 ): Promise<CanonicalLookupStatus> {
   if (!/^[0-9a-f]{64}$/i.test(hash)) return "unavailable";
   try {
-    const record = await getHorizonJson<{ successful?: unknown }>(
+    const record = await getHorizonJson<{ hash?: unknown; successful?: unknown }>(
       `${getHorizonUrl(network)}/transactions/${hash.toLowerCase()}`,
       undefined,
       requestTimeoutMs,
     );
+    if (
+      typeof record.hash !== "string" ||
+      record.hash.toLowerCase() !== hash.toLowerCase()
+    ) {
+      return "unavailable";
+    }
     if (record.successful === true) return "confirmed";
     if (record.successful === false) return "failed";
     return "unavailable";
@@ -910,6 +924,7 @@ export async function inspectConfirmedAccountMerge(
 export interface SendPaymentParams {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   destination: string;
   amount: string;
@@ -938,7 +953,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -996,6 +1011,7 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
 export async function sendBatchPayments(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   payments: Array<{
     destination: string;
@@ -1036,7 +1052,7 @@ export async function sendBatchPayments(params: {
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1103,6 +1119,7 @@ export async function sendBatchPayments(params: {
 export async function changeTrust(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   code: string;
   issuer: string;
@@ -1120,7 +1137,7 @@ export async function changeTrust(params: {
     throw new SendError("Issuer is not a valid Stellar address.");
   }
 
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1155,6 +1172,7 @@ export async function changeTrust(params: {
 export async function changeTrustBatch(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   assets: Array<{ code: string; issuer: string }>;
   feeStroops?: number;
@@ -1181,7 +1199,7 @@ export async function changeTrustBatch(params: {
     seen.add(key);
   }
 
-  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -1356,17 +1374,11 @@ export async function waitForTransaction(
   hash: string,
   timeoutMs = 25_000,
 ): Promise<boolean | null> {
-  const horizonUrl = getHorizonUrl(network);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try {
-      const tx = await getJson<{ successful: boolean }>(
-        `${horizonUrl}/transactions/${hash}`,
-      );
-      if (tx) return tx.successful;
-    } catch {
-      void 0;
-    }
+    const outcome = await lookupCanonicalTransaction(network, hash);
+    if (outcome === "confirmed") return true;
+    if (outcome === "failed") return false;
     await delay(1200);
   }
   return null;

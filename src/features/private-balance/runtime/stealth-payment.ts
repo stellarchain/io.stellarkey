@@ -1,6 +1,7 @@
 import {
   Account,
   FeeBumpTransaction,
+  type Keypair,
   Transaction,
   TransactionBuilder,
 } from '@stellar/stellar-sdk';
@@ -174,6 +175,7 @@ export async function submitPreparedStealthPayment(input: {
   sourcePublicKey: string;
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<SubmissionResult> {
@@ -182,7 +184,11 @@ export async function submitPreparedStealthPayment(input: {
     input.sourcePublicKey,
     input.network,
   );
-  const { kp, publicKey } = resolveSource(input.secretKey, input.hardwareSigner);
+  const { kp, publicKey } = resolveSource(
+    input.secretKey,
+    input.hardwareSigner,
+    input.softwareSigner,
+  );
   if (publicKey !== input.sourcePublicKey) {
     throw new Error('Stealth payment signer changed. Review the payment again.');
   }

@@ -34,6 +34,7 @@ import {
   activityAmountLines,
   formatActivityAmount,
   generateActivityCsv,
+  isValidAmount,
   normalizeAmount,
 } from "../src/lib/format.ts";
 import {
@@ -73,6 +74,12 @@ import {
 import * as transactionReview from "../src/lib/transaction-review.ts";
 
 const { knownAssetIssuer, lookupKnownAsset, POPULAR_ASSETS } = assetDirectory;
+
+test("amount validation rejects values outside Stellar's signed int64 range", () => {
+  assert.equal(isValidAmount("922337203685.4775807"), true);
+  assert.equal(isValidAmount("922337203685.4775808"), false);
+  assert.equal(isValidAmount("9".repeat(10_000)), false);
+});
 
 const USDC_ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const TESTNET_USDC_ISSUER = "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";

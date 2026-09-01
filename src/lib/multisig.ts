@@ -120,6 +120,7 @@ export async function applyMultisigConfig(params: {
   accountPublicKey: string;
   config: MultisigConfig;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
@@ -159,7 +160,7 @@ export async function applyMultisigConfig(params: {
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp } = resolveSource(params.secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(`${horizonUrl}/accounts/${accountPublicKey}`);
   if (!source) throw new SendError("Account does not exist on this network.");
   const current = await fetchAccountSignerInfo(accountPublicKey, network);
@@ -317,6 +318,7 @@ export async function disableMultisig(params: {
   network: NetworkKey;
   accountPublicKey: string;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
@@ -347,6 +349,7 @@ export async function prepareCosignPayment(params: {
   memo?: StellarMemoInput;
   feeStroops?: number;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
 }): Promise<{ xdr: string }> {
   const { network, destination, amount, assetCode, issuer } = params;
@@ -359,7 +362,7 @@ export async function prepareCosignPayment(params: {
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
-  const { kp } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp } = resolveSource(params.secretKey, params.hardwareSigner, params.softwareSigner);
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${params.sourcePublicKey}`,
   );
@@ -782,6 +785,7 @@ export async function cosignTransaction(params: {
   xdr: string;
   signerPublicKey: string;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   onPrepared?: SubmissionPreparedCallback;
 }): Promise<CosignOutcome> {
@@ -818,7 +822,11 @@ export async function cosignTransaction(params: {
         "The selected signer does not contribute weight to any unsatisfied source account.",
       );
     }
-    const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
+    const { kp, publicKey } = resolveSource(
+      params.secretKey,
+      params.hardwareSigner,
+      params.softwareSigner,
+    );
     if (publicKey !== params.signerPublicKey) {
       throw new SendError("Signing credential does not match the selected account.");
     }
