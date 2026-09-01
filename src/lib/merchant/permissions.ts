@@ -58,6 +58,7 @@ export type PinAttemptState = MerchantPinAttemptState;
 export interface PinAttemptResult {
   state: PinAttemptState;
   blocked: boolean;
+  authorized: boolean;
 }
 
 const MAX_PIN_FAILURES = 5;
@@ -230,8 +231,12 @@ export function nextPinAttempt(
   success: boolean,
   now: number,
 ): PinAttemptResult {
-  if (now < prior.blockedUntil) return { state: prior, blocked: true };
-  if (success) return { state: EMPTY_PIN_ATTEMPT, blocked: false };
+  if (now < prior.blockedUntil) {
+    return { state: prior, blocked: true, authorized: false };
+  }
+  if (success) {
+    return { state: EMPTY_PIN_ATTEMPT, blocked: false, authorized: true };
+  }
   const failures = (prior.blockedUntil > 0 ? 0 : prior.failures) + 1;
   if (failures >= MAX_PIN_FAILURES) {
     const lockoutLevel = prior.lockoutLevel + 1;
@@ -242,11 +247,13 @@ export function nextPinAttempt(
     return {
       state: { failures, blockedUntil: now + lockoutMs, lockoutLevel },
       blocked: true,
+      authorized: false,
     };
   }
   return {
     state: { failures, blockedUntil: 0, lockoutLevel: prior.lockoutLevel },
     blocked: false,
+    authorized: false,
   };
 }
 
