@@ -43,7 +43,14 @@ import {
   useWalletTransactions,
 } from '../../../hooks/useWallet';
 import { PrivateBalanceWorkerClient } from '../worker/client';
-import { PrivateBalanceArchiveClient } from './archive-client';
+import {
+  ArchiveRecordUnavailableError,
+  PrivateBalanceArchiveClient,
+} from './archive-client';
+import {
+  preparePrivateArchiveRestoration,
+  submitPrivateArchiveRestoration,
+} from './archive-restoration';
 import {
   claimPrivateBalanceLease,
   forceClaimPrivateBalanceLease,
@@ -153,6 +160,7 @@ interface RuntimeSnapshot {
   verifiedBalanceStroops: string;
   lastVerifiedActionIndex: number | null;
   error: string | null;
+  restoreRequiredActionIndex: number | null;
   deployment: PrivateBalanceDeploymentSummary;
 }
 
@@ -297,6 +305,7 @@ export function PrivateBalanceProvider({
     verifiedBalanceStroops: '0',
     lastVerifiedActionIndex: null,
     error: null,
+    restoreRequiredActionIndex: null,
     deployment,
   }));
   const [encryptedStorageBytes, setEncryptedStorageBytes] = useState<number | null>(null);
@@ -490,6 +499,7 @@ export function PrivateBalanceProvider({
         syncProgress: null,
         ...next,
         error: null,
+        restoreRequiredActionIndex: null,
       }));
       onDurableStateChange?.(
         runtimeKey,
@@ -856,6 +866,9 @@ export function PrivateBalanceProvider({
             verifiedBalanceStroops: '0',
             lastVerifiedActionIndex: null,
             error: message,
+            restoreRequiredActionIndex: error instanceof ArchiveRecordUnavailableError
+              ? error.actionIndex
+              : null,
             deployment,
           });
       } finally {
@@ -918,6 +931,7 @@ export function PrivateBalanceProvider({
         verifiedBalanceStroops: update.verifiedBalanceStroops,
         lastVerifiedActionIndex: update.lastVerifiedActionIndex,
         error: null,
+        restoreRequiredActionIndex: null,
         deployment,
       });
     });
@@ -1032,6 +1046,54 @@ export function PrivateBalanceProvider({
     if (!performSync) throw new Error('Private Balance runtime is not ready.');
     await performSync(false);
   }, []);
+
+  const restorePrivateHistory = useCallback(async () => {
+    const actionIndex = snapshot.restoreRequiredActionIndex;
+    if (actionIndex === null) {
+      throw new Error('Private history does not require restoration.');
+    }
+    if (!leaderRef.current) {
+      throw new Error('Restore private history in the active Private Payments tab.');
+    }
+    if (actionBusyRef.current) {
+      throw new Error('Another Private Balance operation is already running.');
+    }
+    const rpcUrl = getRpcUrl(network);
+    if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Balance.');
+    const endpoint = new URL(rpcUrl);
+    const allowHttp = endpoint.protocol === 'http:' &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+    const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    actionBusyRef.current = true;
+    try {
+      await mutexRef.current.runExclusive(async () => {
+        const prepared = await preparePrivateArchiveRestoration({
+          rpc,
+          manifest,
+          source: accountPublicKey,
+          actionIndex,
+          classicFeeStroops: BigInt(recommendedBaseFeeStroops),
+          maximumResourceFeeStroops: MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
+        });
+        await submitPrivateArchiveRestoration({
+          review: prepared.review,
+          networkPassphrase: manifest.networkPassphrase,
+          sign: signPrivateBalanceEnvelope,
+          rpc,
+        });
+      });
+      await performSyncRef.current?.(false);
+    } finally {
+      actionBusyRef.current = false;
+    }
+  }, [
+    accountPublicKey,
+    manifest,
+    network,
+    recommendedBaseFeeStroops,
+    signPrivateBalanceEnvelope,
+    snapshot.restoreRequiredActionIndex,
+  ]);
 
   const reflectDurableState = useCallback((durable: PrivateBalanceDurableState) => {
     dispatch({ type: 'SET_NOTES', notes: durable.notes });
@@ -1784,6 +1846,7 @@ export function PrivateBalanceProvider({
         verifiedBalanceStroops: '0',
         lastVerifiedActionIndex: null,
         error: null,
+        restoreRequiredActionIndex: null,
       }));
       onDurableStateChange?.(
         runtimeKey,
@@ -1869,6 +1932,7 @@ export function PrivateBalanceProvider({
     stealthError: stealthSnapshot.error,
     optIn,
     refreshSync,
+    restorePrivateHistory,
     refreshStealth,
     prepareStealthSweep,
     submitStealthSweep,
@@ -1897,6 +1961,7 @@ export function PrivateBalanceProvider({
     prepareChainedSend,
     prepareStealthSweep,
     refreshSync,
+    restorePrivateHistory,
     refreshStealth,
     rotatePrivateAddress,
     runFullVerification,

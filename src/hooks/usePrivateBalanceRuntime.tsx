@@ -106,6 +106,7 @@ export interface PrivateBalanceRuntimeDataValue {
   verifiedBalanceStroops: string;
   lastVerifiedActionIndex: number | null;
   error: string | null;
+  restoreRequiredActionIndex: number | null;
   deployment: PrivateBalanceDeploymentSummary;
   privateAddress: string | null;
   publicAddress: string | null;
@@ -126,6 +127,7 @@ export interface PrivateBalanceRuntimeDataValue {
   stealthError: string | null;
   optIn(): Promise<void>;
   refreshSync(): Promise<void>;
+  restorePrivateHistory(): Promise<void>;
   refreshStealth(): Promise<void>;
   prepareStealthSweep(
     payment: StealthOwnedPayment,
@@ -205,6 +207,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   verifiedBalanceStroops: '0',
   lastVerifiedActionIndex: null,
   error: null,
+  restoreRequiredActionIndex: null,
   privateAddress: null,
   publicAddress: null,
   networkLabel: 'Testnet',
@@ -243,6 +246,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   },
   optIn: unavailable,
   refreshSync: unavailable,
+  restorePrivateHistory: unavailable,
   refreshStealth: unavailable,
   prepareStealthSweep: unavailableStealthSweep,
   submitStealthSweep: unavailableSubmission,
