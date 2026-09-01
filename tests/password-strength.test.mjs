@@ -29,6 +29,24 @@ test("repeated and sequential passwords stay weak despite their length", () => {
   assert.match(estimatePasswordStrength("abcd1234abcd1234").feedback, /predictable/i);
 });
 
+test("wallet-themed phrases remain too guessable for a new vault", () => {
+  for (const candidate of [
+    "stellarkey wallet recovery phrase",
+    "stellar wallet lumens recovery",
+    "my crypto wallet password 2026",
+  ]) {
+    assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
+    assert.ok(estimatePasswordStrength(candidate).score <= 1, candidate);
+  }
+});
+
+test("the offline guessability estimator catches long common patterns", () => {
+  for (const candidate of ["iloveyouforever", "footballpassword", "monkeymonkey123"]) {
+    assert.equal(validateNewVaultPassword(candidate).valid, false, candidate);
+    assert.ok(estimatePasswordStrength(candidate).score <= 1, candidate);
+  }
+});
+
 test("the scorer distinguishes fair, good, and strong vault passwords", () => {
   assert.equal(estimatePasswordStrength("aurorariver2").score, 2);
   assert.equal(estimatePasswordStrength("Aurora!River27").score, 3);
