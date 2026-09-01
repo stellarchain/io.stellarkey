@@ -326,6 +326,53 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     'the recipient activity must retain the memo decrypted from its owned note',
   );
 
+  const duplicateNonce = bytes(22);
+  const duplicateEnvelope = await createOutputPackage(
+    receiveKeys.hpkePublicKey,
+    note.diversifier,
+    encodeNotePlaintext(note),
+    contextHash,
+    commitment,
+    duplicateNonce,
+    0,
+  );
+  const duplicateOutputs = [
+    { cm: commitment, recipientEnvelope: duplicateEnvelope.recipientEnvelope },
+    { cm: zero(32), recipientEnvelope: zero(181) },
+  ];
+  const duplicateTree = await createEmptyTree();
+  await appendCommitments(duplicateTree, outputs.map(output => output.cm));
+  const duplicateTreeRootAfter = await appendCommitments(
+    duplicateTree,
+    duplicateOutputs.map(output => output.cm),
+  );
+  const duplicateRecord = {
+    ...record,
+    actionIndex: 1,
+    ledgerSequence: 124,
+    startingLeafIndex: 2,
+    actionNonce: duplicateNonce,
+    treeRootAfter: duplicateTreeRootAfter,
+    outputs: duplicateOutputs,
+  };
+  const duplicateResult = await scanArchiveRecords({
+    records: [record, duplicateRecord],
+    viewingKey: toViewingKey(keys),
+    context: {
+      protocolVersion: 1,
+      networkId,
+      realmId,
+      poolId,
+      contextHash,
+      contextField,
+      accountAddress: { kind: 0, payload: accountPublicKey },
+    },
+    expectedPriorRecordHash: priorRecordHash,
+  });
+  assert.equal(duplicateResult.notes.length, 1, 'the first canonical note remains authoritative');
+  assert.equal(duplicateResult.activities.length, 1, 'a duplicate does not invent a second inflow');
+  assert.equal(duplicateResult.tree.nextIndex, 4, 'every on-chain output still advances the tree');
+
   await assert.rejects(
     () => scanArchiveRecords({
       records: [{ ...record, actionIndex: 1 }],

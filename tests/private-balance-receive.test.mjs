@@ -23,7 +23,10 @@ test('receive payload contains only the canonical private address', () => {
     hpkePublicKey: new Uint8Array(32).fill(2),
   }, 'tks');
   assert.equal(privateReceivePayload(address), address);
-  assert.match(privateAddressFingerprint(address), /^[A-F0-9]{4} [A-F0-9]{4}$/);
+  assert.match(
+    privateAddressFingerprint(address),
+    /^(?:[A-F0-9]{4} ){7}[A-F0-9]{4}$/,
+  );
   assert.throws(() => privateReceivePayload(` ${address}`), /canonical/);
   assert.throws(() => privateReceivePayload(`sks1${address.slice(4)}`), /network/);
 });
@@ -38,7 +41,10 @@ test('reusable receive payload validates the canonical network-bound meta addres
     'testnet',
   );
   assert.equal(stealthReceivePayload(address, 'tsm'), address);
-  assert.match(stealthAddressFingerprint(address), /^[A-F0-9]{4} [A-F0-9]{4}$/);
+  assert.match(
+    stealthAddressFingerprint(address),
+    /^(?:[A-F0-9]{4} ){7}[A-F0-9]{4}$/,
+  );
   assert.throws(() => stealthReceivePayload(` ${address}`, 'tsm'), /canonical/);
   assert.throws(() => stealthReceivePayload(`ssm1${address.slice(4)}`, 'tsm'), /network/);
 });

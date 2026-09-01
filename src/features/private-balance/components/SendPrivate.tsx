@@ -267,6 +267,7 @@ export function SendPrivate({
             kind: 'transfer',
             amount: amount.trim(),
             fingerprint,
+            recipientAddress: trimmedRecipient,
             ...(memo.trim() ? { memo: memo.trim() } : {}),
           }}
           review={flow.review}

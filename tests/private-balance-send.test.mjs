@@ -20,6 +20,13 @@ test('private send validates the private address and shows the fingerprint mark'
   assert.doesNotMatch(source, /clipboardError/);
 });
 
+test('private transfer review displays the full canonical destination', () => {
+  const source = read('src/features/private-balance/components/PrivateActionReview.tsx');
+  assert.match(source, /recipientAddress/);
+  assert.match(source, /HashValue/);
+  assert.match(source, /recipient address changed/);
+});
+
 test('private send mirrors the public form: max, quick chips, fiat, memo presets, QR paste', () => {
   const source = read('src/features/private-balance/components/SendPrivate.tsx');
   const amountField = read('src/features/private-balance/components/PrivateAmountField.tsx');

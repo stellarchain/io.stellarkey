@@ -219,7 +219,12 @@ export async function scanArchiveRecords(
       if (!note) continue;
 
       const commitment = hex(output.cm);
-      if (notesByCommitment.has(commitment)) throw new Error('Duplicate owned note commitment');
+      // A commitment uniquely binds the note plaintext. A sender can reseal
+      // that same note into another valid envelope, but it must not create a
+      // second local balance entry or halt future synchronization. Keep the
+      // first canonical leaf/note and continue; the on-chain duplicate leaf is
+      // still appended to the Merkle frontier below.
+      if (notesByCommitment.has(commitment)) continue;
       const memoHex = hex(note.memo.slice(0, note.memoLength));
       const recovered: ShieldedNoteRecord = {
         id: commitment,

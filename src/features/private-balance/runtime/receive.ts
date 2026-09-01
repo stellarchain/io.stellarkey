@@ -1,5 +1,6 @@
 import { PRIVATE_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
 import { STEALTH_META_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
+import { hash } from '@stellar/stellar-sdk';
 
 export type PrivateAddressPrefix = 'tks' | 'sks';
 export type StealthAddressPrefix = 'tsm' | 'ssm';
@@ -56,11 +57,8 @@ export function stealthAddressFingerprint(address: string): string {
 }
 
 function verificationCode(canonical: string): string {
-  let fingerprint = 0x811c9dc5;
-  for (const character of canonical) {
-    fingerprint ^= character.charCodeAt(0);
-    fingerprint = Math.imul(fingerprint, 0x01000193) >>> 0;
-  }
-  const compact = fingerprint.toString(16).padStart(8, '0').toUpperCase();
-  return `${compact.slice(0, 4)} ${compact.slice(4)}`;
+  const compact = Array.from(hash(new TextEncoder().encode(canonical)).slice(0, 16), byte =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('').toUpperCase();
+  return compact.match(/.{4}/g)?.join(' ') ?? compact;
 }
