@@ -16,14 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New merchant orders retain an immutable shift identity, so a device-clock rollback cannot remove sales from shift reports.
 - Issued-asset balances now retain Horizon authorization and clawback flags, block locally known frozen sends, and disclose issuer clawback authority.
 - Copied recovery phrases and secret keys now offer an explicit clipboard-clear action and warn that clipboard managers may retain them.
-
-### Security
-
-- New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
-- Public security and privacy guidance now accurately describes the production-hosted Testnet development fixture, its single-party setup risk, and the current private-address diversifier correlation limit.
-
-### Fixed
-
 - Prevented merged mnemonic-derived accounts from being recreated at an archived HD index or appearing twice after account recovery; existing duplicate derived metadata is repaired on load while preserving the selected account.
 - Kept non-sensitive payment-received feedback visible when Merchant Mode locks the operator immediately after settlement.
 - Preserved the exact case of Stellar asset codes when adding and deduplicating trustlines.
@@ -40,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
+- Public security and privacy guidance now accurately describes the production-hosted Testnet development fixture, its single-party setup risk, and the current private-address diversifier correlation limit.
 - Corrected Private Payments documentation to describe the production-hosted Testnet development fixture accurately, cleared locally owned HPKE secret/plaintext buffers, and required immutable attested release artifacts before deployment.
 - Bound public payment signing to an immutable account, network, destination, asset, amount, memo, fee, and signer-path review snapshot, and added exact on-device Trezor receive-address verification.
 - Required current staff authority for retained merchant views and exports, fresh owner authorization before leaving Merchant Mode, writer ownership before settlement polling, and active counter-code status before constructing printable payment artifacts.
