@@ -188,4 +188,7 @@ test("asset details distinguish curated assets from issuer self-declarations", (
   assert.match(source, /Issuer-declared/);
   assert.match(source, /not independent verification/);
   assert.doesNotMatch(source, />\s*Asset declared\s*</);
+  assert.match(source, /Frozen by issuer/);
+  assert.match(source, /Maintain liabilities only/);
+  assert.match(source, /Clawback enabled/);
 });

@@ -54,6 +54,9 @@ interface RawBalance {
   balance: string;
   selling_liabilities?: string;
   limit?: string;
+  is_authorized?: boolean;
+  is_authorized_to_maintain_liabilities?: boolean;
+  is_clawback_enabled?: boolean;
 }
 
 interface RawAccountSnapshot {
@@ -87,6 +90,10 @@ function parseBalances(balances: RawBalance[] | undefined): AssetBalance[] {
       sellingLiabilities: b.selling_liabilities ?? "0",
       limit: b.limit ?? null,
       isNative,
+      isAuthorized: isNative ? true : b.is_authorized === true,
+      isAuthorizedToMaintainLiabilities:
+        !isNative && b.is_authorized_to_maintain_liabilities === true,
+      isClawbackEnabled: !isNative && b.is_clawback_enabled === true,
     };
     if (isNative) nativeBal = item;
     else list.push(item);

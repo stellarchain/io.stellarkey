@@ -472,7 +472,13 @@ function SendInner({
   const stealthAssetError = stealthDestination && selectedAsset && !selectedAsset.isNative
     ? "Reusable private recipients currently support XLM only. Choose XLM to continue."
     : null;
-  const sendError = effectiveError ?? stealthAssetError;
+  const trustlineAuthorizationError =
+    selectedAsset && !selectedAsset.isNative && selectedAsset.isAuthorized !== true
+      ? selectedAsset.isAuthorizedToMaintainLiabilities
+        ? `${selectedAsset.code} is authorized to maintain liabilities only and cannot be sent.`
+        : `${selectedAsset.code} is frozen or not authorized by its issuer and cannot be sent.`
+      : null;
+  const sendError = effectiveError ?? stealthAssetError ?? trustlineAuthorizationError;
   const canReview =
     (destOk || Boolean(fedResolvedAddr)) &&
     amountOk &&

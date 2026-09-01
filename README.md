@@ -80,13 +80,14 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Payments is a development-only testnet prototype and refuses production use and Mainnet.
+Private Payments is a production-hosted, development-material preview for Testnet only; Mainnet is refused independently.
 Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
 the fee-paying Stellar account, and timing remain public. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
-[Private Balance security model](docs/private-balance.md). The development key
-failed verification against the recorded Powers-of-Tau transcript and is
-quarantined. A new ceremony, independent review, and redeployment are required.
+[Private Balance security model](docs/private-balance.md). The single-party
+development key passes circuit/Powers-of-Tau compatibility verification, but
+that does not make its setup ceremony-secure. A public multi-party ceremony,
+independent review, and redeployment are required before real-value or Mainnet use.
 
 ## Backend-free architecture
 

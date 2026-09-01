@@ -215,6 +215,12 @@ export function spendableAssetBalance(
   asset: AssetBalance,
   deductions: readonly string[] = [],
 ): string {
+  if (
+    !asset.isNative &&
+    (asset.isAuthorized !== true || asset.isAuthorizedToMaintainLiabilities === true)
+  ) {
+    return "0";
+  }
   return subtractStellarAmounts(asset.balance, [
     asset.sellingLiabilities || "0",
     ...deductions,

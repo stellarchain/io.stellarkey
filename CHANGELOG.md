@@ -14,10 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merchant setting fields now wait for durable authorization and storage, restore the last saved value after rejection, and show the failure.
 - Merchant reconfiguration now updates the currently active owner in multi-owner stores.
 - New merchant orders retain an immutable shift identity, so a device-clock rollback cannot remove sales from shift reports.
+- Issued-asset balances now retain Horizon authorization and clawback flags, block locally known frozen sends, and disclose issuer clawback authority.
+- Copied recovery phrases and secret keys now offer an explicit clipboard-clear action and warn that clipboard managers may retain them.
 
 ### Security
 
 - New and changed vault passwords now require a Good or Strong guessability rating and a stable NFC Unicode representation; existing password unlock remains compatible.
+- Public security and privacy guidance now accurately describes the production-hosted Testnet development fixture, its single-party setup risk, and the current private-address diversifier correlation limit.
 
 ### Fixed
 
