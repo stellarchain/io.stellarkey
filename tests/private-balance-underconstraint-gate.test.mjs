@@ -120,6 +120,6 @@ test('the circuit Gate A runs static analysis, weak safety, vectors, and mutatio
   );
   assert.equal(
     packageJson.scripts['gate:a'],
-    'npm run inspect:circomspect && npm run inspect:underconstraint && npm test && npm run test:mutation',
+    'npm run inspect:circomspect && npm run inspect:underconstraint && npm run verify:zkey && npm test && npm run test:mutation',
   );
 });
