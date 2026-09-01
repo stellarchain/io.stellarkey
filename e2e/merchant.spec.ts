@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { MuxedAccount, Networks, TransactionBuilder } from "@stellar/stellar-sdk";
 import {
@@ -232,7 +233,7 @@ function incomingPayment(
   return {
     id,
     type: "payment",
-    transaction_hash: id.padEnd(64, "a").slice(0, 64),
+    transaction_hash: createHash("sha256").update(id).digest("hex"),
     transaction_successful: true,
     created_at: new Date().toISOString(),
     paging_token: String((BigInt(ledger) << BigInt(32)) + BigInt(1)),
@@ -642,11 +643,44 @@ test(
       await page.getByText("Install App", { exact: true }).click();
       await page.getByRole("heading", { name: "Back up before installing" }).waitFor();
       await page.getByRole("button", { name: "Close" }).click();
-      await page.evaluate(() => {
+      await page.evaluate(async () => {
+        const rawVault = localStorage.getItem("stellarkey.vault.v1");
+        if (!rawVault) throw new Error("Expected a persisted vault before marking backup health.");
+        const vault = JSON.parse(rawVault) as {
+          wrappedMasterKey: unknown;
+          wrappedMerchantKey: unknown;
+          mnemonic?: unknown;
+          accounts: Array<Record<string, unknown>>;
+          archivedAccounts?: Array<Record<string, unknown>>;
+        };
+        const credentialState = {
+          wrappedMasterKey: vault.wrappedMasterKey,
+          wrappedMerchantKey: vault.wrappedMerchantKey,
+          mnemonic: vault.mnemonic ?? null,
+          accounts: [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+            .map((account) => ({
+              id: account.id,
+              publicKey: account.publicKey,
+              index: account.index ?? null,
+              path: account.path ?? null,
+              secret: account.secret ?? null,
+              watchOnly: account.watchOnly === true,
+              hardware: account.hardware ?? null,
+            }))
+            .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+        };
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(credentialState)),
+        );
+        const vaultId = [...new Uint8Array(digest)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
         localStorage.setItem(
           "wallet.backup-health.v1",
           JSON.stringify({
-            version: 1,
+            version: 2,
+            vaultId,
             lastExportedAt: new Date().toISOString(),
             lastVerifiedAt: null,
           }),
