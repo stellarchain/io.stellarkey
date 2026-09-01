@@ -794,7 +794,7 @@ export async function lookupCanonicalTransaction(
   if (!/^[0-9a-f]{64}$/i.test(hash)) return "unavailable";
   try {
     const record = await getHorizonJson<{ hash?: unknown; successful?: unknown }>(
-      `${getHorizonUrl(network)}/transactions/${hash.toLowerCase()}`,
+      `${NETWORKS[network].horizonUrl}/transactions/${hash.toLowerCase()}`,
       undefined,
       requestTimeoutMs,
     );
@@ -811,6 +811,47 @@ export async function lookupCanonicalTransaction(
     if (error instanceof HorizonRequestError && error.kind === "not_found") return "not_found";
     return "unavailable";
   }
+}
+
+export async function lookupCanonicalLedgerCloseTime(
+  network: NetworkKey,
+  requestTimeoutMs = 15_000,
+): Promise<number | null> {
+  try {
+    const page = await getHorizonJson<{
+      _embedded?: { records?: Array<{ closed_at?: unknown }> };
+    }>(
+      `${NETWORKS[network].horizonUrl}/ledgers?order=desc&limit=1`,
+      undefined,
+      requestTimeoutMs,
+    );
+    const closedAt = page._embedded?.records?.[0]?.closed_at;
+    if (typeof closedAt !== "string") return null;
+    const milliseconds = Date.parse(closedAt);
+    return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1_000) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves a time-bound transaction without trusting the browser clock or a
+ * configurable endpoint. Canonical absence becomes definitive only once the
+ * canonical ledger close time is past the envelope's maximum time.
+ */
+export async function resolveCanonicalTransaction(
+  network: NetworkKey,
+  hash: string,
+  expiresAt: number,
+  requestTimeoutMs = 15_000,
+): Promise<CanonicalLookupStatus> {
+  const lookup = await lookupCanonicalTransaction(network, hash, requestTimeoutMs);
+  if (lookup !== "not_found") return lookup;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt < 0) return "unavailable";
+  const ledgerCloseTime = await lookupCanonicalLedgerCloseTime(network, requestTimeoutMs);
+  return ledgerCloseTime !== null && ledgerCloseTime > expiresAt
+    ? "not_found"
+    : "unavailable";
 }
 
 export async function submitSignedTx(
@@ -871,7 +912,7 @@ export async function inspectConfirmedAccountMerge(
 ): Promise<ConfirmedAccountMergeInspection | null> {
   if (!/^[0-9a-f]{64}$/i.test(hash)) return null;
   const normalizedHash = hash.toLowerCase();
-  const horizonUrl = getHorizonUrl(network);
+  const horizonUrl = NETWORKS[network].horizonUrl;
   const record = await getHorizonJson<{
     hash?: unknown;
     successful?: unknown;

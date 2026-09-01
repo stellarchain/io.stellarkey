@@ -556,6 +556,93 @@ test("canonical lookup rejects a successful response for a different or missing 
   }
 });
 
+test("canonical finality and merge inspection ignore a configured Horizon endpoint", async (t) => {
+  const transaction = buildSignedTransaction();
+  const expectedHash = canonicalHash(transaction);
+  const source = Keypair.random();
+  const merge = new TransactionBuilder(new Account(source.publicKey(), "0"), {
+    fee: "100",
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(Operation.accountMerge({ destination: Keypair.random().publicKey() }))
+    .setTimeout(180)
+    .build();
+  merge.sign(source);
+  const mergeHash = canonicalHash(merge);
+  const urls = [];
+  const previousWindow = globalThis.window;
+  const storage = memoryStorage({
+    "wallet.endpoint.horizon.testnet.v1": "https://malicious-horizon.example",
+  });
+  globalThis.window = { localStorage: storage };
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.endsWith(`/transactions/${expectedHash}`)) {
+      return new Response(JSON.stringify({ hash: expectedHash, successful: true }), { status: 200 });
+    }
+    if (value.endsWith(`/transactions/${mergeHash}`)) {
+      return new Response(JSON.stringify({
+        hash: mergeHash,
+        successful: true,
+        envelope_xdr: merge.toXdr(),
+      }), { status: 200 });
+    }
+    if (value.endsWith(`/accounts/${source.publicKey()}`)) return notFoundResponse();
+    throw new Error(`Unexpected URL: ${value}`);
+  });
+
+  assert.equal(
+    await walletApi.lookupCanonicalTransaction("testnet", expectedHash, 20),
+    "confirmed",
+  );
+  assert.deepEqual(
+    await walletApi.inspectConfirmedAccountMerge("testnet", mergeHash, 20),
+    { sourcePublicKey: source.publicKey(), sourceAccountExists: false },
+  );
+  assert.ok(urls.every((url) => url.startsWith("https://horizon-testnet.stellar.org/")));
+});
+
+test("an expired not-found transaction remains unknown until canonical ledger time passes", async (t) => {
+  const hash = "ab".repeat(32);
+  const urls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.endsWith(`/transactions/${hash}`)) return notFoundResponse();
+    if (value.includes("/ledgers?")) {
+      return new Response(JSON.stringify({
+        _embedded: { records: [{ sequence: 123, closed_at: "2026-09-01T12:00:00Z" }] },
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected URL: ${value}`);
+  });
+
+  assert.equal(
+    await walletApi.resolveCanonicalTransaction(
+      "testnet",
+      hash,
+      Date.parse("2026-09-01T12:00:01Z") / 1000,
+      20,
+    ),
+    "unavailable",
+  );
+  assert.equal(
+    await walletApi.resolveCanonicalTransaction(
+      "testnet",
+      hash,
+      Date.parse("2026-09-01T11:59:59Z") / 1000,
+      20,
+    ),
+    "not_found",
+  );
+  assert.ok(urls.every((url) => url.startsWith("https://horizon-testnet.stellar.org/")));
+});
+
 test("pending transaction insertion preserves accepted certainty for a canonical hash", () => {
   assert.equal(typeof submission.pendingTransactionFromSubmission, "function");
   assert.equal(typeof submission.upsertPendingTransaction, "function");
