@@ -686,13 +686,22 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                       ariaLabel="How long records are kept on this device"
                       value={String(settings.recordRetentionMonths ?? 0)}
                       options={RETENTION_OPTIONS}
-                      onChange={(next) => {
-                        updateSettings({
-                          recordRetentionMonths: next === "0" ? null : Number(next),
-                        });
-                        const label =
-                          RETENTION_OPTIONS.find((option) => option.value === next)?.label ?? next;
-                        toast(`Record retention set to ${label.toLowerCase()}`, "success");
+                      onChange={async (next) => {
+                        try {
+                          await updateSettings({
+                            recordRetentionMonths: next === "0" ? null : Number(next),
+                          });
+                          const label =
+                            RETENTION_OPTIONS.find((option) => option.value === next)?.label ?? next;
+                          toast(`Record retention set to ${label.toLowerCase()}`, "success");
+                        } catch (error) {
+                          toast(
+                            error instanceof Error
+                              ? error.message
+                              : "Record retention could not be saved.",
+                            "error",
+                          );
+                        }
                       }}
                     />
                   </div>

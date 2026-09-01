@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import * as setupDomain from "../src/lib/merchant/setup.ts";
 import {
   assertMerchantReceivingAccount,
   completeMerchantSetup,
@@ -56,6 +57,20 @@ test("an unconfigured store needs setup and cancelling leaves it disabled", () =
   assert.equal(needsMerchantSetup(store.settings, store.staff), true);
   assert.equal(store.settings.enabled, false);
   assert.deepEqual(store, before);
+});
+
+test("generic merchant settings patches cannot change Merchant Mode enablement", () => {
+  assert.equal(typeof setupDomain.applyMerchantSettingsPatch, "function");
+  const settings = emptyStore().settings;
+
+  assert.throws(
+    () => setupDomain.applyMerchantSettingsPatch(settings, { enabled: true }),
+    /setEnabled|enablement|Merchant Mode/i,
+  );
+  assert.deepEqual(
+    setupDomain.applyMerchantSettingsPatch(settings, { recordRetentionMonths: 24 }),
+    { ...settings, recordRetentionMonths: 24 },
+  );
 });
 
 test("setup asset choices merge exact identities without duplicating native or issued assets", async () => {

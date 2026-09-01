@@ -73,9 +73,11 @@ import {
 import { emptyStore, TESTNET_DEMO_USD } from "@/lib/merchant/defaults";
 import { createMerchantPinCredential, verifyMerchantPin } from "@/lib/merchant/pin";
 import {
+  applyMerchantSettingsPatch,
   assertMerchantReceivingAccount,
   completeMerchantSetup,
   needsMerchantSetup,
+  type MerchantSettingsPatch,
   type MerchantSetupInput,
 } from "@/lib/merchant/setup";
 import {
@@ -304,7 +306,7 @@ interface MerchantContextValue {
   settings: MerchantSettings;
   tillTextSize: MerchantStore["tillTextSize"];
   setTillTextSize: (size: MerchantStore["tillTextSize"]) => Promise<void>;
-  updateSettings: (patch: Partial<MerchantSettings>) => Promise<void>;
+  updateSettings: (patch: MerchantSettingsPatch) => Promise<void>;
   completeSetup: (
     input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string },
   ) => Promise<void>;
@@ -3159,11 +3161,12 @@ export function MerchantProvider({
     [persist],
   );
   const updateSettings = useCallback(
-    async (patch: Partial<MerchantSettings>) => {
+    async (patch: MerchantSettingsPatch) => {
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing merchant settings.");
       const before = storeRef.current;
       requireActiveOwner(before, actorId);
+      applyMerchantSettingsPatch(before.settings, patch);
       const changesTerminalName =
         patch.terminalName !== undefined && patch.terminalName !== before.settings.terminalName;
       if (changesTerminalName && activeShiftForTerminal(before)) {
@@ -3187,7 +3190,7 @@ export function MerchantProvider({
         ) {
           throw new Error("Close the current shift before renaming this terminal.");
         }
-        return { ...latest, settings: { ...latest.settings, ...patch } };
+        return { ...latest, settings: applyMerchantSettingsPatch(latest.settings, patch) };
       });
     },
     [accounts, authorizeSensitiveAction, commitStore],

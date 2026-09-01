@@ -144,4 +144,11 @@ test("tax records use a summary-first iOS hub with focused task sheets", () => {
     taxRecords,
     /<Button\s+className="w-full min-w-0 !px-3"[^>]*>[\s\S]*?<span className="min-w-0 whitespace-normal text-center leading-tight">\s*Download encrypted archive\s*<\/span>/,
   );
+  const retentionSave = taxRecords.slice(
+    taxRecords.indexOf('ariaLabel="How long records are kept on this device"'),
+    taxRecords.indexOf("Export before the window closes"),
+  );
+  assert.match(retentionSave, /onChange=\{async \(next\)/);
+  assert.ok(retentionSave.indexOf("await updateSettings") < retentionSave.indexOf("toast("));
+  assert.match(retentionSave, /catch \(error\)/);
 });

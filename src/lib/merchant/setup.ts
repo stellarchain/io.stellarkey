@@ -50,6 +50,19 @@ export interface MerchantSetupMetadata {
   authorizedOwnerId?: string;
 }
 
+export type MerchantSettingsPatch = Partial<Omit<MerchantSettings, "enabled">>;
+
+/** Merchant Mode enablement has its own password-gated lifecycle boundary. */
+export function applyMerchantSettingsPatch(
+  settings: MerchantSettings,
+  patch: MerchantSettingsPatch,
+): MerchantSettings {
+  if (Object.prototype.hasOwnProperty.call(patch, "enabled")) {
+    throw new Error("Use setEnabled to change Merchant Mode enablement.");
+  }
+  return { ...settings, ...patch };
+}
+
 export function assertMerchantReceivingAccount(
   accounts: Array<{ publicKey: string; watchOnly?: boolean; hardware?: string }>,
   receivingPublicKey: string,
