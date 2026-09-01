@@ -222,6 +222,36 @@ test("secret access is scoped to one async operation and lock zeroes session aut
   await assert.rejects(() => withSecretKey(account.id, () => null), /locked/i);
 });
 
+test("an in-flight software signer is revoked before signing when the vault locks", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { initializeVault, lockVault, withSigningKeypair } = await import(
+    "../src/lib/vault.ts"
+  );
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  let release;
+  const paused = new Promise((resolve) => {
+    release = resolve;
+  });
+  let signerReady;
+  const ready = new Promise((resolve) => {
+    signerReady = resolve;
+  });
+  const operation = withSigningKeypair(account.id, async (signer) => {
+    signerReady();
+    await paused;
+    return signer.sign(Buffer.from("prepared transaction"));
+  });
+
+  await ready;
+  lockVault();
+  release();
+  await assert.rejects(operation, /locked|revoked/i);
+});
+
 test("encrypted account payloads stay bound to their public identities", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };

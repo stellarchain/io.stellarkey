@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 class MemoryStorage {
@@ -50,6 +51,13 @@ test("destructive reset removes every wallet-owned storage key and preserves unr
 
   for (const key of walletKeys) assert.equal(localStorage.getItem(key), null, `${key} was not erased`);
   assert.equal(localStorage.getItem("unrelated.application"), "keep");
+});
+
+test("full wallet reset also removes every private-payment IndexedDB record", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
+  assert.match(reset, /getMerchantRepository\(\)\.clear\(\)/);
+  assert.match(reset, /IndexedDbEncryptedRecordDriver\(\)\.removePrefix\("private:"\)/);
 });
 
 test("POC plaintext contacts are rejected and never rewritten", async () => {

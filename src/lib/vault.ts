@@ -58,6 +58,13 @@ const AUTOLOCK_KEY = "stellarkey.autolock.v1";
 
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
+let sessionGeneration = 0;
+
+function assertSessionGeneration(expected: number): void {
+  if (!sessionMasterKey || expected !== sessionGeneration) {
+    throw new VaultLockedError("Vault signing authority was revoked.");
+  }
+}
 
 function requireSessionMasterKey(): Uint8Array {
   if (!sessionMasterKey) throw new VaultLockedError();
@@ -75,6 +82,7 @@ async function establishVaultSession(
   }
   zeroKey(sessionMasterKey);
   zeroKey(sessionMerchantKey);
+  sessionGeneration += 1;
   sessionMasterKey = masterKey.slice();
   sessionMerchantKey = merchantKey;
 }
@@ -202,6 +210,7 @@ export function wipeVault(): void {
 }
 
 export function lockVault(): void {
+  sessionGeneration += 1;
   sessionMasterKey?.fill(0);
   sessionMerchantKey?.fill(0);
   sessionMasterKey = null;
@@ -210,6 +219,7 @@ export function lockVault(): void {
 
 /** Wipe in-memory secrets after a full-vault restore (old ids no longer exist) */
 export function clearSessionSecrets(): void {
+  sessionGeneration += 1;
   sessionMasterKey?.fill(0);
   sessionMerchantKey?.fill(0);
   sessionMasterKey = null;
@@ -262,6 +272,50 @@ export async function withSecretKey<T>(
   } finally {
     secret = "";
   }
+}
+
+export function revocableKeypairFromSecret(secret: string): Keypair {
+  const generation = sessionGeneration;
+  assertSessionGeneration(generation);
+  const keypair = Keypair.fromSecret(secret);
+  return new Proxy(keypair, {
+    get(target, property, receiver) {
+      if (
+        property === "sign" ||
+        property === "signDecorated" ||
+        property === "signPayloadDecorated" ||
+        property === "signatureHint"
+      ) {
+        const method = Reflect.get(target, property, target) as (...args: unknown[]) => unknown;
+        return (...args: unknown[]) => {
+          assertSessionGeneration(generation);
+          return Reflect.apply(method, target, args);
+        };
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+/**
+ * Give one operation a signer whose secret bytes are erased on return and whose
+ * signing methods fail after any lock, reset, or replacement vault session.
+ * Transaction code must use this instead of retaining a decrypted secret string.
+ */
+export async function withSigningKeypair<T>(
+  accountId: string,
+  operation: (signer: Keypair) => T | Promise<T>,
+): Promise<T> {
+  const generation = sessionGeneration;
+  return withSecretKey(accountId, async (secret) => {
+    assertSessionGeneration(generation);
+    const guarded = revocableKeypairFromSecret(secret);
+    try {
+      return await operation(guarded);
+    } finally {
+      guarded.rawSecretKey().fill(0);
+    }
+  });
 }
 
 function decodePrivacyContextHex(value: string, name: string): Uint8Array {

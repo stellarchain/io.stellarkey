@@ -1,4 +1,5 @@
 import type { ActivityItem } from "./types";
+import { amountToStroops } from "./stellar-domain";
 import { activityAssetPresentation } from "./transaction-intent";
 
 export type FiatCurrency = "USD" | "EUR" | "GBP" | "JPY" | "CAD" | "AUD" | "CHF";
@@ -180,7 +181,11 @@ export function timeAgo(iso: string): string {
 }
 
 export function isValidAmount(raw: string): boolean {
-  return /^\d+(\.\d{1,7})?$/.test(raw.trim()) && parseFloat(raw) > 0;
+  try {
+    return amountToStroops(raw) > BigInt(0);
+  } catch {
+    return false;
+  }
 }
 
 export function memoByteLength(raw: string): number {

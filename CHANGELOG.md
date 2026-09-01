@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Rejected payment amounts outside Stellar's signed 64-bit stroop range before rendering or submission.
+
+### Security
+
+- Revoked in-flight software signers on lock, reset, or session replacement; bound transaction confirmation to the requested canonical hash; and erased Private Payments IndexedDB records during a full wallet reset.
+
 ## [1.4.1] - 2026-09-01
 
 ### Changed

@@ -14,7 +14,8 @@ export interface ExactPrivateBalanceSigningRequest {
   expectedTransactionHash: string;
   expectedSource: string;
   networkPassphrase: string;
-  secretKey: string;
+  secretKey?: string;
+  softwareSigner?: Keypair;
 }
 
 export function signExactPrivateBalanceEnvelope(
@@ -36,7 +37,12 @@ export function signExactPrivateBalanceEnvelope(
   if (hex(parsed.hash()) !== request.expectedTransactionHash) {
     throw new Error('Private Balance envelope does not match the reviewed hash.');
   }
-  const signer = Keypair.fromSecret(request.secretKey);
+  const signer = request.softwareSigner ?? (
+    request.secretKey ? Keypair.fromSecret(request.secretKey) : null
+  );
+  if (!signer?.canSign()) {
+    throw new Error('Private Balance signing credential is unavailable.');
+  }
   if (signer.publicKey() !== request.expectedSource) {
     throw new Error('Private Balance signing key does not match the active account.');
   }

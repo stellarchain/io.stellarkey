@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Asset } from "@stellar/stellar-sdk";
+import type { Asset, Keypair } from "@stellar/stellar-sdk";
 import type { ClaimableBalanceItem, PriceRange, PriceSeries } from "@/lib/api";
 import type {
   CosignOutcome,
@@ -25,6 +25,7 @@ import {
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
   withSecretKey,
+  withSigningKeypair,
   initializeVault,
   initializeHardwareVault,
   loadAutoLockPref,
@@ -54,6 +55,7 @@ import {
   type SigningAuthorizationRequest,
 } from "@/lib/signing-authorization";
 import { getMerchantRepository } from "@/lib/merchant/repository";
+import { IndexedDbEncryptedRecordDriver } from "@/lib/indexed-db";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
@@ -206,11 +208,11 @@ function hardwareSignerFor(acc: AccountMeta | null): HardwareSigner | undefined 
 function withSigningSecret<T>(
   account: AccountMeta,
   hardwareSigner: HardwareSigner | undefined,
-  operation: (secretKey: string | undefined) => T | Promise<T>,
+  operation: (softwareSigner: Keypair | undefined) => T | Promise<T>,
 ): Promise<T> {
   return hardwareSigner
     ? Promise.resolve(operation(undefined))
-    : withSecretKey(account.id, operation);
+    : withSigningKeypair(account.id, operation);
 }
 
 const PENDING_TX_STORAGE_KEY = "wallet.pending-transactions.v2";
@@ -684,7 +686,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     label: string,
     account: AccountMeta,
     hardwareSigner: HardwareSigner | undefined,
-    operation: (secretKey: string | undefined) => T | Promise<T>,
+    operation: (softwareSigner: Keypair | undefined) => T | Promise<T>,
   ): Promise<T> => {
     await requestSigningAuthorization(label, Boolean(hardwareSigner));
     return withSigningSecret(account, hardwareSigner, operation);
@@ -1731,7 +1733,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const resetWallet = useCallback(async (notifyPeers = true): Promise<void> => {
     cancelSigningAuthorization("Wallet reset before signing.");
     invalidateTrackingTasks();
-    if (typeof indexedDB !== "undefined") await getMerchantRepository().clear();
+    if (typeof indexedDB !== "undefined") {
+      await getMerchantRepository().clear();
+      await new IndexedDbEncryptedRecordDriver().removePrefix("private:");
+    }
     wipeVault();
     clearDurableMergeReconciliations(
       window.localStorage,
@@ -2167,12 +2172,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Payment",
         undefined,
         (onPrepared) => api.sendPayment({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
@@ -2225,14 +2230,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     const stealth = await loadStealthPaymentApi();
     const hw = hardwareSignerFor(activeAccount);
-    return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, secretKey => runTrackedBroadcast(
+    return withAuthorizedSigningSecret("Send private payment", activeAccount, hw, softwareSigner => runTrackedBroadcast(
       "Reusable private payment",
       undefined,
       onPrepared => stealth.submitPreparedStealthPayment({
         review,
         sourcePublicKey: activeAccount.publicKey,
         network,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
         onPrepared,
       }),
@@ -2256,12 +2261,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Send multiple payments", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Batch Payment",
         undefined,
         (onPrepared) => api.sendBatchPayments({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: recommendedBaseFeeStroops,
@@ -2278,12 +2283,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Claim pending asset", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Airdrop claim",
         undefined,
         (onPrepared) => api.claimClaimableBalances({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           balanceIds,
           feeStroops: recommendedBaseFeeStroops,
@@ -2305,12 +2310,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Merge account", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Account merge",
         { kind: "reconcile_account_merge" },
         (onPrepared) => api.mergeAccount({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           destination,
           feeStroops: recommendedBaseFeeStroops,
@@ -2327,12 +2332,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret(params.add ? "Add asset trustline" : "Remove asset trustline", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         params.add ? "Trustline" : "Trustline removal",
         undefined,
         (onPrepared) => api.changeTrust({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           ...params,
           feeStroops: recommendedBaseFeeStroops,
@@ -2349,12 +2354,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Add asset trustlines", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         `${assets.length} trustlines`,
         undefined,
         (onPrepared) => api.changeTrustBatch({
           network,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           assets,
           feeStroops: recommendedBaseFeeStroops,
@@ -2389,13 +2394,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const swapLib = await loadSwapApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Swap assets", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Swap",
         undefined,
         (onPrepared) => params.mode === "strict-receive"
           ? swapLib.swapStrictReceive({
               network,
-              secretKey,
+              softwareSigner,
               hardwareSigner: hw,
               sendCode: params.sendCode,
               sendIssuer: params.sendIssuer,
@@ -2409,7 +2414,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             })
           : swapLib.swapStrictSend({
               network,
-              secretKey,
+              softwareSigner,
               hardwareSigner: hw,
               sendCode: params.sendCode,
               sendIssuer: params.sendIssuer,
@@ -2442,14 +2447,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      const result = await withAuthorizedSigningSecret("Update multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Multi-sig update",
         undefined,
         (onPrepared) => msig.applyMultisigConfig({
           network,
           accountPublicKey: activeAccount.publicKey,
           config,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           feeStroops: recommendedBaseFeeStroops,
           onPrepared,
@@ -2471,13 +2476,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     const msig = await loadMultisigApi();
     const hw = hardwareSignerFor(activeAccount);
-    const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+    const result = await withAuthorizedSigningSecret("Disable multi-signature settings", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
       "Multi-sig disabled",
       undefined,
       (onPrepared) => msig.disableMultisig({
         network,
         accountPublicKey: activeAccount.publicKey,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
         feeStroops: recommendedBaseFeeStroops,
         onPrepared,
@@ -2502,10 +2507,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (secretKey) => msig.prepareCosignPayment({
+      return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (softwareSigner) => msig.prepareCosignPayment({
         network,
         sourcePublicKey: activeAccount.publicKey,
-        secretKey,
+        softwareSigner,
         hardwareSigner: hw,
         ...params,
         feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
@@ -2519,7 +2524,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!activeAccount) throw new Error("No active account");
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
-      return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (secretKey) => runTrackedBroadcast(
+      return withAuthorizedSigningSecret("Co-sign transaction", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Co-signed transaction",
         undefined,
         (onPrepared) => msig.cosignTransaction({
@@ -2527,7 +2532,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           confirmedNetwork,
           xdr,
           signerPublicKey: activeAccount.publicKey,
-          secretKey,
+          softwareSigner,
           hardwareSigner: hw,
           onPrepared,
         }),
@@ -2551,10 +2556,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     await requestSigningAuthorization("Sign private balance transaction");
     const signing = await loadPrivateBalanceSigningApi();
-    return withSecretKey(activeAccount.id, secretKey => signing.signExactPrivateBalanceEnvelope({
+    return withSigningKeypair(activeAccount.id, softwareSigner => signing.signExactPrivateBalanceEnvelope({
       ...request,
       expectedSource: activeAccount.publicKey,
-      secretKey,
+      softwareSigner,
     }));
   }, [activeAccount, network, requestSigningAuthorization]);
 

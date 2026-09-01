@@ -3,6 +3,7 @@
 import {
   Account,
   Asset,
+  type Keypair,
   Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
@@ -143,6 +144,7 @@ export async function findStrictReceiveRoute(params: {
 export async function swapStrictSend(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   sendCode: string;
   sendIssuer?: string | null;
@@ -157,7 +159,11 @@ export async function swapStrictSend(params: {
   const { network } = params;
   const cfg = NETWORKS[network];
   const horizonUrl = getHorizonUrl(network);
-  const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(
+    params.secretKey,
+    params.hardwareSigner,
+    params.softwareSigner,
+  );
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
@@ -191,6 +197,7 @@ export async function swapStrictSend(params: {
 export async function swapStrictReceive(params: {
   network: NetworkKey;
   secretKey?: string;
+  softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
   sendCode: string;
   sendIssuer?: string | null;
@@ -205,7 +212,11 @@ export async function swapStrictReceive(params: {
   const { network } = params;
   const cfg = NETWORKS[network];
   const horizonUrl = getHorizonUrl(network);
-  const { kp, publicKey } = resolveSource(params.secretKey, params.hardwareSigner);
+  const { kp, publicKey } = resolveSource(
+    params.secretKey,
+    params.hardwareSigner,
+    params.softwareSigner,
+  );
   const source = await getJson<{ sequence: string }>(
     `${horizonUrl}/accounts/${publicKey}`,
   );
