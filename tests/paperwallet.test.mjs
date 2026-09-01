@@ -48,6 +48,16 @@ test("paper wallet HTML contains no CSP-blocked inline script", () => {
   assert.doesNotMatch(buildPaperWalletHtml(paperWallet), /<script\b/i);
 });
 
+test("paper wallet HTML escapes QR image attribute values", () => {
+  const html = buildPaperWalletHtml({
+    ...paperWallet,
+    pubQrDataUrl: 'x" onerror="alert(1)',
+    secQrDataUrl: 'y" onerror="alert(2)',
+  });
+  assert.doesNotMatch(html, /src="x" onerror=/);
+  assert.doesNotMatch(html, /src="y" onerror=/);
+});
+
 test("tracked paper wallet windows close when the sensitive session ends", () => {
   let closeCalls = 0;
   const child = {

@@ -2775,6 +2775,7 @@ export function Dashboard() {
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
                                     src={logoUrl}
+                                    referrerPolicy="no-referrer"
                                     alt=""
                                     width={36}
                                     height={36}

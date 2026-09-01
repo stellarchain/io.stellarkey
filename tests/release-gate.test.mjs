@@ -192,6 +192,8 @@ test("private proving artifacts are provenance-checked in local, CI, and release
     assert.match(workflow, /npm run private:check-generated/);
     assert.match(workflow, /npm run private:check-reproducible/);
   }
+  assert.match(release, /cargo \+1\.97\.1 install cargo-deny --version 0\.20\.2 --locked/);
+  assert.match(release, /cargo \+1\.97\.1 deny check/);
 });
 
 test("browser verification is runner-owned instead of ad-hoc", () => {
