@@ -90,7 +90,7 @@ export function AddAssetPublicPanel({
   }, [onClose, refresh, trackedSubmissionStatus]);
 
   const existingAssets = useMemo(
-    () => new Set((balances ?? []).filter((b) => b.issuer).map((b) => `${b.code.toUpperCase()}:${b.issuer}`)),
+    () => new Set((balances ?? []).filter((b) => b.issuer).map((b) => `${b.code}:${b.issuer}`)),
     [balances],
   );
 
@@ -110,10 +110,8 @@ export function AddAssetPublicPanel({
     triggerHaptic("selection");
     const iss = knownAssetIssuer(asset, network) ?? "";
     if (!iss) return;
-    // Codes in the directory can be mixed-case (e.g. "yXLM"); the queue stores
-    // them uppercased, so the dedupe key must be normalized the same way.
     const update = toggleTrustlineSelection(selected, {
-      code: asset.code.toUpperCase(),
+      code: asset.code,
       issuer: iss,
     });
     setSelected(update.selected);
@@ -122,9 +120,9 @@ export function AddAssetPublicPanel({
 
   function queueCustom() {
     triggerHaptic("medium");
-    const c = code.trim().toUpperCase();
+    const c = code.trim();
     const iss = issuer.trim();
-    if (!/^[A-Z0-9]{1,12}$/.test(c) || !isValidPublicAddress(iss)) {
+    if (!/^[A-Za-z0-9]{1,12}$/.test(c) || !isValidPublicAddress(iss)) {
       setError("Enter a valid asset code and issuer first.");
       return;
     }
@@ -192,9 +190,9 @@ export function AddAssetPublicPanel({
         <div className="grid max-h-[180px] grid-cols-2 gap-2.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
           {filteredPopular.map((asset) => {
             const iss = knownAssetIssuer(asset, network) ?? "";
-            const alreadyAdded = existingAssets.has(`${asset.code.toUpperCase()}:${iss}`);
+            const alreadyAdded = existingAssets.has(`${asset.code}:${iss}`);
             const isSelected = selected.some(
-              (s) => `${s.code}:${s.issuer}` === `${asset.code.toUpperCase()}:${iss}`,
+              (s) => `${s.code}:${s.issuer}` === `${asset.code}:${iss}`,
             );
             const available = Boolean(iss);
 
@@ -256,7 +254,7 @@ export function AddAssetPublicPanel({
             placeholder="CODE"
             maxLength={12}
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onChange={(e) => setCode(e.target.value)}
           />
           <label htmlFor={issuerInputId} className="sr-only">Custom asset issuer address</label>
           <input
@@ -269,7 +267,7 @@ export function AddAssetPublicPanel({
           <Button
             variant="secondary"
             className="!h-11 shrink-0 !px-3 !text-[12px] md:!h-9"
-            disabled={!/^[A-Z0-9]{1,12}$/.test(code.trim().toUpperCase()) || !isValidPublicAddress(issuer)}
+            disabled={!/^[A-Za-z0-9]{1,12}$/.test(code.trim()) || !isValidPublicAddress(issuer)}
             onClick={queueCustom}
           >
             Queue

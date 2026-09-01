@@ -30,43 +30,51 @@ export async function createOutputPackage(recipientHpkePk, diversifier, noteByte
         throw new Error('Invalid output index');
     const info = deriveHpkeInfo(2, contextHash);
     const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
-    const pkR = await suite.kem.deserializePublicKey(recipientHpkePk);
-    const ephemeralKeyPair = await suite.kem.generateKeyPair();
-    const senderContext = await suite.createSenderContext({
-        recipientPublicKey: pkR,
-        info,
-        ekm: ephemeralKeyPair,
-    });
-    const ct = await senderContext.seal(noteBytes, aad);
-    const encPk = new Uint8Array(senderContext.enc);
-    const ctBytes = new Uint8Array(ct);
-    const ephemeralPrivateKey = new Uint8Array(await suite.kem.serializePrivateKey(ephemeralKeyPair.privateKey));
-    const sharedSecret = await deriveX25519SharedSecret(ephemeralPrivateKey, recipientHpkePk);
-    const recipientEnvelope = new Uint8Array(RECIPIENT_ENVELOPE_BYTES);
-    recipientEnvelope[0] = deriveViewTag(sharedSecret, contextHash, encPk, recipientHpkePk);
-    recipientEnvelope.set(diversifier, 1);
-    recipientEnvelope.set(encPk, 5);
-    recipientEnvelope.set(ctBytes, 37);
-    const outputPackage = new Uint8Array(OUTPUT_PACKAGE_BYTES);
-    outputPackage.set(cm, 0);
-    outputPackage.set(recipientEnvelope, 32);
-    return {
-        recipientEnvelope,
-        outputPackage,
-    };
+    let ephemeralPrivateKey = null;
+    let sharedSecret = null;
+    try {
+        const pkR = await suite.kem.deserializePublicKey(recipientHpkePk);
+        const ephemeralKeyPair = await suite.kem.generateKeyPair();
+        const senderContext = await suite.createSenderContext({
+            recipientPublicKey: pkR,
+            info,
+            ekm: ephemeralKeyPair,
+        });
+        const ct = await senderContext.seal(noteBytes, aad);
+        const encPk = new Uint8Array(senderContext.enc);
+        const ctBytes = new Uint8Array(ct);
+        ephemeralPrivateKey = new Uint8Array(await suite.kem.serializePrivateKey(ephemeralKeyPair.privateKey));
+        sharedSecret = await deriveX25519SharedSecret(ephemeralPrivateKey, recipientHpkePk);
+        const recipientEnvelope = new Uint8Array(RECIPIENT_ENVELOPE_BYTES);
+        recipientEnvelope[0] = deriveViewTag(sharedSecret, contextHash, encPk, recipientHpkePk);
+        recipientEnvelope.set(diversifier, 1);
+        recipientEnvelope.set(encPk, 5);
+        recipientEnvelope.set(ctBytes, 37);
+        const outputPackage = new Uint8Array(OUTPUT_PACKAGE_BYTES);
+        outputPackage.set(cm, 0);
+        outputPackage.set(recipientEnvelope, 32);
+        return { recipientEnvelope, outputPackage };
+    }
+    finally {
+        ephemeralPrivateKey?.fill(0);
+        sharedSecret?.fill(0);
+    }
 }
 export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, contextHash, contextField, assetField, cm, actionNonce, outputIndex, baseOwnerCommitment) {
     if (recipientEnvelope.length !== RECIPIENT_ENVELOPE_BYTES) {
         return null;
     }
+    let diversified = null;
+    let sharedSecret = null;
+    let plaintextBytes = null;
     try {
         const viewTag = recipientEnvelope[0];
         const diversifier = recipientEnvelope.subarray(1, 5);
         const encPk = recipientEnvelope.subarray(5, 37);
         const ct = recipientEnvelope.subarray(37, 181);
-        const diversified = await deriveDiversifiedAddressKeys(baseOwnerCommitment, recipientHpkeSk, diversifier);
+        diversified = await deriveDiversifiedAddressKeys(baseOwnerCommitment, recipientHpkeSk, diversifier);
         const recipientPublicKey = diversified.hpkePublicKey;
-        const sharedSecret = await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk);
+        sharedSecret = await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk);
         if (viewTag !== deriveViewTag(sharedSecret, contextHash, encPk, recipientPublicKey))
             return null;
         const info = deriveHpkeInfo(2, contextHash);
@@ -78,7 +86,8 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
             info,
         });
         const pt = await recipientContext.open(ct, aad);
-        const note = decodeNotePlaintext(new Uint8Array(pt));
+        plaintextBytes = new Uint8Array(pt);
+        const note = decodeNotePlaintext(plaintextBytes);
         if (!equalBytes(note.diversifier, diversifier))
             return null;
         if (!equalBytes(note.ownerCommitment, diversified.ownerCommitment))
@@ -88,5 +97,10 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
     }
     catch {
         return null;
+    }
+    finally {
+        diversified?.hpkePrivateKey.fill(0);
+        sharedSecret?.fill(0);
+        plaintextBytes?.fill(0);
     }
 }

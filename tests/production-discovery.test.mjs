@@ -221,6 +221,9 @@ test("production deploys the exact published release archive to Cloudflare Pages
   assert.match(workflow, /environment:\s*\n\s*name: production\s*\n\s*url: https:\/\/stellarkey\.io/);
   assert.match(workflow, /gh release download "\$GITHUB_REF_NAME"/);
   assert.match(workflow, /sha256sum --check SHA256SUMS/);
+  assert.match(workflow, /gh attestation verify "\$archive"/);
+  assert.match(workflow, /--signer-workflow "\$GITHUB_REPOSITORY\/.github\/workflows\/release\.yml"/);
+  assert.match(workflow, /gh release view "\$GITHUB_REF_NAME"[\s\S]{0,100}--json isImmutable/);
   assert.match(workflow, /tar -xzf .* --strip-components=1 -C deploy/);
   assert.match(workflow, /cloudflare\/wrangler-action@[0-9a-f]{40}/);
   assert.match(workflow, /wranglerVersion: "4\.[0-9.]+"/);

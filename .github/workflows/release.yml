@@ -104,6 +104,11 @@ jobs:
             --pattern "stellarkey-${version}.cdx.json" \
             --pattern "release-files.json" \
             --pattern "SHA256SUMS"
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isImmutable --jq .isImmutable)" = "true"
+          gh attestation verify "$archive" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-digest "$GITHUB_SHA"
           sha256sum --check SHA256SUMS
           mkdir deploy
           tar -xzf "$archive" --strip-components=1 -C deploy
