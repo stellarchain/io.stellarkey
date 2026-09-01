@@ -217,7 +217,8 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
         message: `This wallet was created by a newer app version (${parsed.version}).`,
       };
     }
-    const vault = decodeVaultFile(parsed);
+    const decodedVault = decodeVaultFile(parsed);
+    const vault = decodedVault ? repairDuplicateDerivedAccounts(decodedVault) : null;
     return vault
       ? { kind: "ready", value: vault }
       : {
@@ -228,6 +229,61 @@ export function loadVaultResult(): StorageLoadResult<VaultFile> {
   } catch {
     return { kind: "corrupt", raw, message: "The encrypted wallet record is not valid JSON." };
   }
+}
+
+function derivedAccountIdentity(vault: VaultFile, account: StoredAccount): string | null {
+  if (
+    !vault.mnemonic ||
+    account.index === undefined ||
+    account.secret ||
+    account.watchOnly ||
+    account.hardware
+  ) {
+    return null;
+  }
+  return `${account.index}:${account.publicKey}`;
+}
+
+/**
+ * Collapse legacy duplicate metadata for the same mnemonic-derived identity.
+ * The selected active record wins, followed by the first active record, so an
+ * archived copy can never displace the account the user is currently using.
+ */
+function repairDuplicateDerivedAccounts(vault: VaultFile): VaultFile {
+  if (!vault.mnemonic) return vault;
+  const records = [
+    ...vault.accounts.map((account) => ({ account, active: true })),
+    ...(vault.archivedAccounts ?? []).map((account) => ({ account, active: false })),
+  ];
+  const groups = new Map<string, typeof records>();
+  for (const record of records) {
+    const identity = derivedAccountIdentity(vault, record.account);
+    if (!identity) continue;
+    const group = groups.get(identity) ?? [];
+    group.push(record);
+    groups.set(identity, group);
+  }
+
+  const discarded = new Set<StoredAccount>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const selected = group.find(
+      (record) => record.active && record.account.id === vault.activeAccountId,
+    );
+    const canonical = selected ?? group.find((record) => record.active) ?? group[0];
+    for (const record of group) {
+      if (record !== canonical) discarded.add(record.account);
+    }
+  }
+  if (discarded.size === 0) return vault;
+
+  return {
+    ...vault,
+    accounts: vault.accounts.filter((account) => !discarded.has(account)),
+    ...(vault.archivedAccounts
+      ? { archivedAccounts: vault.archivedAccounts.filter((account) => !discarded.has(account)) }
+      : {}),
+  };
 }
 
 function readVault(): VaultFile | null {
@@ -957,7 +1013,7 @@ export async function addStoredAccount(
   }
 
   let nextIndex = 0;
-  for (const a of vault.accounts) {
+  for (const a of [...vault.accounts, ...(vault.archivedAccounts ?? [])]) {
     if (a.index !== undefined && a.index >= nextIndex) {
       nextIndex = a.index + 1;
     }
@@ -1127,16 +1183,30 @@ export async function restoreAccountByIndex(
   const masterKey = requireSessionMasterKey();
   if (!vault.mnemonic) throw new Error("Wallet has no recovery phrase");
 
-  const existing = vault.accounts.find((a) => a.index === index);
-  if (existing) return stripSecret(existing);
-
   let mnemonic = await decryptVaultString(vault.mnemonic, masterKey);
   const kp = await keypairFromMnemonicIndex(mnemonic, index);
   mnemonic = "";
+  const publicKey = kp.publicKey();
+  const existing = vault.accounts.find(
+    (account) => derivedAccountIdentity(vault, account) === `${index}:${publicKey}`,
+  );
+  if (existing) return stripSecret(existing);
+
+  const archivedIndex = (vault.archivedAccounts ?? []).findIndex(
+    (account) => derivedAccountIdentity(vault, account) === `${index}:${publicKey}`,
+  );
+  if (archivedIndex >= 0 && vault.archivedAccounts) {
+    const [account] = vault.archivedAccounts.splice(archivedIndex, 1);
+    vault.accounts.push(account);
+    vault.activeAccountId = account.id;
+    persist(vault);
+    return stripSecret(account);
+  }
+
   const account: StoredAccount = {
     id: randomHex(8),
     label: label?.trim() || `Account ${index + 1}`,
-    publicKey: kp.publicKey(),
+    publicKey,
     createdAt: Date.now(),
     index,
     path: stellarAccountPath(index),
