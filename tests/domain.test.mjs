@@ -1088,6 +1088,51 @@ test("multisig configuration returns a partial envelope when current high thresh
   assert.equal(calls.some((call) => call.url.endsWith("/transactions")), false);
 });
 
+test("multisig configuration explicitly writes every retained signer", async (t) => {
+  const account = Keypair.random();
+  const reportedCosigner = Keypair.random();
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify({
+        sequence: "0",
+        thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        signers: [
+          { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+          { key: reportedCosigner.publicKey(), weight: 1, type: "ed25519_public_key" },
+        ],
+      }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  const outcome = await applyMultisigConfig({
+    network: "testnet",
+    accountPublicKey: account.publicKey(),
+    secretKey: account.secret(),
+    config: {
+      signers: [
+        { key: account.publicKey(), weight: 1 },
+        { key: reportedCosigner.publicKey(), weight: 1 },
+      ],
+      low: 1,
+      medium: 1,
+      high: 1,
+    },
+  });
+
+  const tx = TransactionBuilder.fromXdr(outcome.xdr, Networks.TESTNET);
+  assert.ok(
+    tx.operations.some(
+      (operation) =>
+        operation.type === "setOptions" &&
+        operation.signer?.ed25519PublicKey === reportedCosigner.publicKey() &&
+        operation.signer.weight === 1,
+    ),
+    "the envelope must guarantee a retained signer instead of trusting Horizon",
+  );
+});
+
 test("multisig replaces a signer at full capacity without exceeding 20 additional signers", async (t) => {
   const account = Keypair.random();
   const currentCosigners = Array.from({ length: 20 }, () => Keypair.random());
