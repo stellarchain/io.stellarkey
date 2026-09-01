@@ -200,6 +200,19 @@ test("customer display exit verifies a real staff PIN and does not show an amoun
   assert.match(display, /Same-device display/);
 });
 
+test("merchant authorization is enforced at mutation and signing boundaries", () => {
+  const hook = source("src/hooks/useMerchant.tsx");
+  const wallet = source("src/hooks/useWallet.tsx");
+  const api = source("src/lib/api.ts");
+
+  assert.doesNotMatch(hook, /useRef\(new Map<string, PinAttemptState>/);
+  assert.match(hook, /pinAttemptFor\(latest,/);
+  assert.match(hook, /requireActiveOwner\(latest,/);
+  assert.match(hook, /authorizeBeforeSigning/);
+  assert.match(wallet, /authorizeBeforeSigning/);
+  assert.match(api, /beforeSign/);
+});
+
 test("printing, scanner input, and supported preferences execute real browser paths", () => {
   const peripherals = source("src/components/merchant/PeripheralsPage.tsx");
   const terminal = source("src/components/merchant/PosTerminal.tsx");

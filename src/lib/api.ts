@@ -733,10 +733,16 @@ export async function signAndSubmit(
   kp: Keypair | null,
   hardwareSigner?: HardwareSigner,
   onPrepared?: SubmissionPreparedCallback,
+  beforeSign?: () => void,
 ): Promise<SubmissionResult> {
   if (hardwareSigner) {
+    beforeSign?.();
     await signHardwareTx(tx, hardwareSigner);
+    // Hardware approval can take long enough for an operator or wallet session
+    // to be revoked. Recheck before the signed envelope leaves this device.
+    beforeSign?.();
   } else if (kp) {
+    beforeSign?.();
     tx.sign(kp);
   } else {
     throw new SendError("No signing credential available.");
@@ -933,6 +939,7 @@ export interface SendPaymentParams {
   memo?: StellarMemoInput;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  beforeSign?: () => void;
 }
 
 export async function sendPayment(params: SendPaymentParams): Promise<SubmissionResult> {
@@ -1002,7 +1009,14 @@ export async function sendPayment(params: SendPaymentParams): Promise<Submission
   const tx = builder.setTimeout(180).build();
 
   try {
-    return await signAndSubmit(tx, network, kp, params.hardwareSigner, params.onPrepared);
+    return await signAndSubmit(
+      tx,
+      network,
+      kp,
+      params.hardwareSigner,
+      params.onPrepared,
+      params.beforeSign,
+    );
   } catch (err) {
     throw new SendError(explainSubmitError(err));
   }

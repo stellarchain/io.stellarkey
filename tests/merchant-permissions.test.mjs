@@ -15,6 +15,10 @@ import {
   createRefundRequest,
   decideRefundRequest,
   defaultPermissionsFor,
+  pinAttemptFor,
+  requireActiveOwner,
+  requireRefundAuthorization,
+  storePinAttempt,
   nextPinAttempt,
   updateStaffMember,
 } from "../src/lib/merchant/permissions.ts";
@@ -158,7 +162,7 @@ test("staff creation validates identity, credential, and uniqueness", () => {
 });
 
 test("five wrong PINs impose a timed lockout and success clears failures", () => {
-  let state = { failures: 0, blockedUntil: 0 };
+  let state = { failures: 0, blockedUntil: 0, lockoutLevel: 0 };
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     const result = nextPinAttempt(state, false, 1_000 + attempt);
     state = result.state;
@@ -174,7 +178,47 @@ test("five wrong PINs impose a timed lockout and success clears failures", () =>
 
   const success = nextPinAttempt(fifth.state, true, 32_000);
   assert.equal(success.blocked, false);
-  assert.deepEqual(success.state, { failures: 0, blockedUntil: 0 });
+  assert.deepEqual(success.state, { failures: 0, blockedUntil: 0, lockoutLevel: 0 });
+});
+
+test("PIN lockout state persists in the merchant store and backs off exponentially", () => {
+  let store = staffedStore();
+  let state = pinAttemptFor(store, "server");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    state = nextPinAttempt(state, false, 1_000 + attempt).state;
+  }
+  store = storePinAttempt(store, "server", state);
+  assert.deepEqual(pinAttemptFor(store, "server"), state);
+  assert.equal(state.blockedUntil, 31_004);
+  assert.equal(state.lockoutLevel, 1);
+
+  let afterExpiry = state;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    afterExpiry = nextPinAttempt(afterExpiry, false, 32_000 + attempt).state;
+  }
+  assert.equal(afterExpiry.blockedUntil, 92_004);
+  assert.equal(afterExpiry.lockoutLevel, 2);
+});
+
+test("owner and refund authorization are bound to the active operator at mutation time", () => {
+  const store = staffedStore();
+  assert.equal(requireActiveOwner(store, "owner").id, "owner");
+  assert.throws(
+    () => requireActiveOwner({ ...store, activeStaffId: "server" }, "owner"),
+    /active owner/i,
+  );
+  assert.throws(() => requireActiveOwner(store, "server"), /active owner/i);
+
+  const serverStore = { ...store, activeStaffId: "server", onShiftStaffIds: ["server"] };
+  assert.equal(requireRefundAuthorization(serverStore, "server", 2_000).id, "server");
+  assert.throws(
+    () => requireRefundAuthorization({ ...serverStore, activeStaffId: null }, "server", 2_000),
+    /active operator/i,
+  );
+  assert.throws(
+    () => requireRefundAuthorization(serverStore, "server", 2_001),
+    /approval/i,
+  );
 });
 
 test("over-ceiling refunds become immutable pending requests", () => {

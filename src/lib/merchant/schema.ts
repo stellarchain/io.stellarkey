@@ -727,7 +727,13 @@ const merchantStoreShape = objectOf<Merchant.MerchantStore>({
   nextShiftNumber: positiveInteger,
   nextInvoiceNumber: positiveInteger,
   cursors: validCursors,
-}, {});
+}, {
+  pinAttempts: recordOf(objectOf<Merchant.MerchantPinAttemptState>({
+    failures: nonNegativeInteger,
+    blockedUntil: timestamp,
+    lockoutLevel: nonNegativeInteger,
+  }, {})),
+});
 
 function nextInvoiceNumberIsCurrent(store: Merchant.MerchantStore): boolean {
   const afterHighest = store.invoices.reduce((next, invoice) => {

@@ -341,6 +341,8 @@ interface WalletContextValue {
       onPrepared: SubmissionPreparedCallback;
       onRejected?: SubmissionPreparedCallback;
     };
+    /** Revalidate an external authorization immediately before signing. */
+    authorizeBeforeSigning?: () => void;
   }) => Promise<SubmissionResult>;
   prepareStealthPayment: (params: {
     metaAddress: string;
@@ -2165,6 +2167,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         onPrepared: SubmissionPreparedCallback;
         onRejected?: SubmissionPreparedCallback;
       };
+      authorizeBeforeSigning?: () => void;
     }) => {
       if (!activeAccount) throw new Error("No active account");
       if (activeAccount.watchOnly) {
@@ -2182,6 +2185,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           ...params,
           feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
           onPrepared,
+          beforeSign: params.authorizeBeforeSigning,
         }),
         (result) => result,
         params.submissionJournal,

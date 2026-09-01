@@ -142,6 +142,7 @@ export function emptyStore(): MerchantStore {
     unmatched: [],
     paymentReconciliations: [],
     staff: [],
+    pinAttempts: {},
     activeStaffId: null,
     onShiftStaffIds: [],
     shifts: [],
