@@ -1,15 +1,16 @@
-use crate::constants::{
-    ADDRESS_DIVERSIFIER_BYTES, PRIVATE_ADDRESS_ASCII_BYTES, PRIVATE_ADDRESS_PAYLOAD_BYTES,
-};
+use crate::constants::ADDRESS_DIVERSIFIER_BYTES;
 use crate::field::is_canonical_field;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 const CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 const BECH32M_CONSTANT: u32 = 0x2bc8_30a3;
+pub const DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES: usize = 100;
+pub const DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES: usize = 170;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateAddress {
+    pub deployment_binding_hash: [u8; 32],
     pub diversifier: [u8; ADDRESS_DIVERSIFIER_BYTES],
     pub owner_commitment: [u8; 32],
     pub hpke_public_key: [u8; 32],
@@ -141,11 +142,12 @@ fn charset_value(character: u8) -> Option<u8> {
 }
 
 impl PrivateAddress {
-    fn payload(&self) -> [u8; PRIVATE_ADDRESS_PAYLOAD_BYTES] {
-        let mut payload = [0u8; PRIVATE_ADDRESS_PAYLOAD_BYTES];
-        payload[0..4].copy_from_slice(&self.diversifier);
-        payload[4..36].copy_from_slice(&self.owner_commitment);
-        payload[36..68].copy_from_slice(&self.hpke_public_key);
+    fn payload(&self) -> [u8; DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES] {
+        let mut payload = [0u8; DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES];
+        payload[0..32].copy_from_slice(&self.deployment_binding_hash);
+        payload[32..36].copy_from_slice(&self.diversifier);
+        payload[36..68].copy_from_slice(&self.owner_commitment);
+        payload[68..100].copy_from_slice(&self.hpke_public_key);
         payload
     }
 
@@ -178,7 +180,7 @@ impl PrivateAddress {
         for index in 0..6 {
             output.push(CHARSET[((checksum >> (5 * (5 - index))) & 31) as usize] as char);
         }
-        if output.len() != PRIVATE_ADDRESS_ASCII_BYTES {
+        if output.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES {
             return Err(AddressError::InvalidLength);
         }
         Ok(output)
@@ -186,7 +188,7 @@ impl PrivateAddress {
 
     pub fn decode(encoded: &str, expected_prefix: &str) -> Result<Self, AddressError> {
         validate_prefix(expected_prefix)?;
-        if encoded.len() != PRIVATE_ADDRESS_ASCII_BYTES
+        if encoded.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES
             || encoded.bytes().any(|byte| byte.is_ascii_uppercase())
         {
             return Err(AddressError::InvalidLength);
@@ -205,16 +207,19 @@ impl PrivateAddress {
             return Err(AddressError::ChecksumMismatch);
         }
         let payload = convert_bits(&words[..words.len() - 6], 5, 8, false)?;
-        if payload.len() != PRIVATE_ADDRESS_PAYLOAD_BYTES {
+        if payload.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES {
             return Err(AddressError::InvalidLength);
         }
         let mut diversifier = [0u8; 4];
-        diversifier.copy_from_slice(&payload[0..4]);
+        let mut deployment_binding_hash = [0u8; 32];
+        deployment_binding_hash.copy_from_slice(&payload[0..32]);
+        diversifier.copy_from_slice(&payload[32..36]);
         let mut owner_commitment = [0u8; 32];
-        owner_commitment.copy_from_slice(&payload[4..36]);
+        owner_commitment.copy_from_slice(&payload[36..68]);
         let mut hpke_public_key = [0u8; 32];
-        hpke_public_key.copy_from_slice(&payload[36..68]);
+        hpke_public_key.copy_from_slice(&payload[68..100]);
         let address = Self {
+            deployment_binding_hash,
             diversifier,
             owner_commitment,
             hpke_public_key,

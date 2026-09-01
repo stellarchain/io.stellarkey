@@ -20,7 +20,7 @@ import { signStealthSweepEnvelope } from '../src/features/private-balance/runtim
 const bytes = value => new Uint8Array(32).fill(value);
 
 async function fixture() {
-  const metaKeys = deriveStealthMetaKeys(bytes(71), 'testnet');
+  const metaKeys = deriveStealthMetaKeys(bytes(71), 'testnet', bytes(70));
   const recipient = await deriveStealthRecipient(metaKeys, bytes(72), 'testnet', 'portable');
   const recovered = await deriveStealthRecipientKey(
     metaKeys,
@@ -63,7 +63,7 @@ test('stealth scalar signer adds one valid decorated signature with the correct 
 
 test('stealth scalar signer rejects a mismatched source or pre-signed transaction', async () => {
   const { transaction, recovered } = await fixture();
-  const wrongKeys = deriveStealthMetaKeys(bytes(74), 'testnet');
+  const wrongKeys = deriveStealthMetaKeys(bytes(74), 'testnet', bytes(70));
   const wrongRecipient = await deriveStealthRecipient(wrongKeys, bytes(75), 'testnet', 'portable');
   const wrongRecovered = await deriveStealthRecipientKey(
     wrongKeys,
@@ -81,7 +81,7 @@ test('stealth scalar signer rejects a mismatched source or pre-signed transactio
 
 test('stealth sweep signer binds the encrypted root, announcement, source, network, and review hash', async () => {
   const rootKey = bytes(81);
-  const metaKeys = deriveStealthMetaKeys(rootKey, 'testnet');
+  const metaKeys = deriveStealthMetaKeys(rootKey, 'testnet', bytes(80));
   const ephemeralPrivateKey = bytes(82);
   const recipient = await deriveStealthRecipient(
     metaKeys,
@@ -106,6 +106,7 @@ test('stealth sweep signer binds the encrypted root, announcement, source, netwo
 
   const signedXdr = await signStealthSweepEnvelope({
     rootKey,
+    deploymentBindingHash: bytes(80),
     payment,
     network: 'testnet',
     networkPassphrase: Networks.TESTNET,
@@ -126,6 +127,7 @@ test('stealth sweep signer binds the encrypted root, announcement, source, netwo
   await assert.rejects(
     signStealthSweepEnvelope({
       rootKey,
+      deploymentBindingHash: bytes(80),
       payment: { ...payment, destinationPublicKey: destination },
       network: 'testnet',
       networkPassphrase: Networks.TESTNET,

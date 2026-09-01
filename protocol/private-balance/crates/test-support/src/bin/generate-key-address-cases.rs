@@ -18,6 +18,7 @@ struct KeyAddressCase {
     context_hash: String,
     context_field: String,
     base_owner_commitment: String,
+    deployment_binding_hash: String,
     diversifier: String,
     ask: String,
     nk: String,
@@ -61,8 +62,10 @@ fn main() {
             &context_field,
         );
         let diversifier = [0u8; 4];
+        let deployment_binding_hash = random_bytes(&mut rng);
         let prefix = if index % 2 == 0 { "tks" } else { "sks" };
         let address = PrivateAddress {
+            deployment_binding_hash,
             diversifier,
             owner_commitment: keys.owner_commitment,
             hpke_public_key: keys.hpke_public_key,
@@ -79,6 +82,7 @@ fn main() {
             context_hash: hex::encode(context_hash),
             context_field: hex::encode(context_field),
             base_owner_commitment: hex::encode(keys.base_owner_commitment),
+            deployment_binding_hash: hex::encode(deployment_binding_hash),
             diversifier: hex::encode(diversifier),
             ask: hex::encode(keys.ask),
             nk: hex::encode(keys.nk),

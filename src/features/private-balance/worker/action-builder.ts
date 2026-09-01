@@ -381,6 +381,7 @@ export async function preparePrivateAction(
     const recipient = await decodePrivateAddress(
       input.intent.recipientAddress,
       input.keyContext.addressPrefix,
+      input.keyContext.deploymentBindingHash,
     );
     outputSpecs = [{
       ownerCommitment: recipient.ownerCommitment,

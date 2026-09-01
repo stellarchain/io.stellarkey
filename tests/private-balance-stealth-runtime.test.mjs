@@ -37,7 +37,7 @@ test('stealth runtime publishes its reusable identity before incremental discove
   const rootKey = bytes(11);
   const storageKey = bytes(12);
   const recipient = await deriveStealthRecipient(
-    deriveStealthMetaKeys(rootKey, 'testnet'),
+    deriveStealthMetaKeys(rootKey, 'testnet', bytes(4)),
     bytes(13),
     'testnet',
     'portable',
@@ -92,9 +92,15 @@ test('stealth runtime publishes its reusable identity before incremental discove
   assert.equal(discoveryInput.lowerBoundCreatedAt, 1);
   assert.equal(result.cache.payments.length, 1);
   assert.equal(result.cache.payments[0].amountStroops, '25000000');
-  assert.equal(result.metaAddress, deriveStealthRuntimeIdentity(rootKey, 'testnet').metaAddress);
+  assert.equal(
+    result.metaAddress,
+    deriveStealthRuntimeIdentity(rootKey, 'testnet', bytes(4)).metaAddress,
+  );
 });
 
 test('stealth runtime rejects mismatched meta-key networks', () => {
-  assert.match(deriveStealthRuntimeIdentity(bytes(21), 'mainnet').metaAddress, /^ssm1/u);
+  assert.match(
+    deriveStealthRuntimeIdentity(bytes(21), 'mainnet', bytes(4)).metaAddress,
+    /^ssm1/u,
+  );
 });

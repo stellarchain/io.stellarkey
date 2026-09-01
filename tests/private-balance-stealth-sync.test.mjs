@@ -35,10 +35,10 @@ const context = {
 const storageKey = bytes(5);
 
 async function fixture() {
-  const keys = deriveStealthMetaKeys(bytes(11), 'testnet');
+  const keys = deriveStealthMetaKeys(bytes(11), 'testnet', bytes(4));
   const owned = await deriveStealthRecipient(keys, bytes(21), 'testnet', 'portable');
   const second = await deriveStealthRecipient(keys, bytes(22), 'testnet', 'portable');
-  const foreignKeys = deriveStealthMetaKeys(bytes(12), 'testnet');
+  const foreignKeys = deriveStealthMetaKeys(bytes(12), 'testnet', bytes(4));
   const foreign = await deriveStealthRecipient(foreignKeys, bytes(23), 'testnet', 'portable');
   const announcement = (token, transactionByte, payment, amount, ledger, createdAt) => ({
     pagingToken: token,

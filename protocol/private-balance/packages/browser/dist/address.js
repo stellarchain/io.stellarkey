@@ -2,9 +2,9 @@ import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { decodeBech32m, encodeBech32m, groupBech32m } from './bech32m.js';
 import { isCanonicalField } from './field.js';
 import { equalBytes } from './hash.js';
-export const PRIVATE_ADDRESS_PAYLOAD_BYTES = 68;
+export const PRIVATE_ADDRESS_PAYLOAD_BYTES = 100;
 export const ADDRESS_DIVERSIFIER_BYTES = 4;
-export const PRIVATE_ADDRESS_ASCII_BYTES = 119;
+export const PRIVATE_ADDRESS_ASCII_BYTES = 170;
 function validatePrefix(prefix) {
     if (prefix !== 'tks' && prefix !== 'sks')
         throw new Error('Unsupported private address prefix');
@@ -14,6 +14,7 @@ function requireLength(name, bytes, length) {
         throw new Error(`${name} must be ${length} bytes`);
 }
 function validateAddressFields(address) {
+    requireLength('Deployment binding hash', address.deploymentBindingHash, 32);
     requireLength('Address diversifier', address.diversifier, ADDRESS_DIVERSIFIER_BYTES);
     requireLength('Owner commitment', address.ownerCommitment, 32);
     requireLength('HPKE public key', address.hpkePublicKey, 32);
@@ -27,15 +28,16 @@ export function encodePrivateAddress(address, prefix) {
     validatePrefix(prefix);
     validateAddressFields(address);
     const payload = new Uint8Array(PRIVATE_ADDRESS_PAYLOAD_BYTES);
-    payload.set(address.diversifier, 0);
-    payload.set(address.ownerCommitment, 4);
-    payload.set(address.hpkePublicKey, 36);
+    payload.set(address.deploymentBindingHash, 0);
+    payload.set(address.diversifier, 32);
+    payload.set(address.ownerCommitment, 36);
+    payload.set(address.hpkePublicKey, 68);
     const encoded = encodeBech32m(prefix, payload);
     if (encoded.length !== PRIVATE_ADDRESS_ASCII_BYTES)
         throw new Error('Unexpected private address length');
     return encoded;
 }
-export async function decodePrivateAddress(encoded, expectedPrefix) {
+export async function decodePrivateAddress(encoded, expectedPrefix, expectedDeploymentBindingHash) {
     validatePrefix(expectedPrefix);
     if (encoded.length !== PRIVATE_ADDRESS_ASCII_BYTES || encoded !== encoded.toLowerCase() || /\s/u.test(encoded)) {
         throw new Error('Invalid private address spelling');
@@ -48,11 +50,18 @@ export async function decodePrivateAddress(encoded, expectedPrefix) {
         throw new Error(error instanceof Error ? error.message.replace('Bech32m', 'private address') : 'Invalid private address', { cause: error });
     }
     const address = {
-        diversifier: payload.slice(0, 4),
-        ownerCommitment: payload.slice(4, 36),
-        hpkePublicKey: payload.slice(36, 68),
+        deploymentBindingHash: payload.slice(0, 32),
+        diversifier: payload.slice(32, 36),
+        ownerCommitment: payload.slice(36, 68),
+        hpkePublicKey: payload.slice(68, 100),
     };
     validateAddressFields(address);
+    if (expectedDeploymentBindingHash) {
+        requireLength('Expected deployment binding hash', expectedDeploymentBindingHash, 32);
+        if (!equalBytes(address.deploymentBindingHash, expectedDeploymentBindingHash)) {
+            throw new Error('Private address belongs to another Private Payments deployment');
+        }
+    }
     try {
         const kem = new DhkemX25519HkdfSha256();
         const imported = await kem.deserializePublicKey(address.hpkePublicKey);

@@ -52,6 +52,7 @@ test('1,000 seeded Rust and TypeScript key/address derivations agree byte-for-by
     );
     const address = encodePrivateAddress(
       {
+        deploymentBindingHash: fromHex(item.deploymentBindingHash),
         diversifier: fromHex(item.diversifier),
         ownerCommitment: keys.ownerCommitment,
         hpkePublicKey: keys.hpkePublicKey,

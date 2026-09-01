@@ -1,10 +1,11 @@
 use private_balance_protocol::address::{AddressError, PrivateAddress};
-use private_balance_protocol::constants::PRIVATE_ADDRESS_ASCII_BYTES;
+use private_balance_protocol::address::DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES;
 
 fn address() -> PrivateAddress {
     let mut owner_commitment = [0u8; 32];
     owner_commitment[31] = 7;
     PrivateAddress {
+        deployment_binding_hash: [0x42; 32],
         diversifier: [1, 2, 3, 4],
         owner_commitment,
         hpke_public_key: [0x22; 32],
@@ -15,7 +16,7 @@ fn address() -> PrivateAddress {
 fn bech32m_address_round_trips_with_exact_network_hrp() {
     let expected = address();
     let encoded = expected.encode("tks").unwrap();
-    assert_eq!(encoded.len(), PRIVATE_ADDRESS_ASCII_BYTES);
+    assert_eq!(encoded.len(), DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES);
     assert!(encoded.starts_with("tks1"));
     assert_eq!(PrivateAddress::decode(&encoded, "tks").unwrap(), expected);
     assert_eq!(

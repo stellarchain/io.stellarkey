@@ -98,6 +98,7 @@ async function selectAddressIdentity(
     return {
       ownerCommitmentHex: toHex(identity.ownerCommitment),
       address: encodePrivateAddress({
+        deploymentBindingHash: keyContext.deploymentBindingHash,
         diversifier: identity.diversifier,
         ownerCommitment: identity.ownerCommitment,
         hpkePublicKey: identity.hpkePublicKey,

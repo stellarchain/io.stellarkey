@@ -12,7 +12,7 @@ const announcer = Keypair.fromRawEd25519Seed(bytes(61)).publicKey();
 const sender = Keypair.fromRawEd25519Seed(bytes(62)).publicKey();
 
 async function paymentFixture() {
-  const keys = deriveStealthMetaKeys(bytes(11), 'testnet');
+  const keys = deriveStealthMetaKeys(bytes(11), 'testnet', bytes(10));
   const payment = await deriveStealthRecipient(keys, bytes(21), 'testnet', 'portable');
   return {
     destination: StrKey.encodeEd25519PublicKey(payment.publicKey),

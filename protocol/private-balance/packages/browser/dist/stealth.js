@@ -4,8 +4,8 @@ import { sha512 } from '@noble/hashes/sha2.js';
 import { decodeBech32m, encodeBech32m, groupBech32m } from './bech32m.js';
 import { concatBytes, hmacSha512, sha512Bytes, utf8 } from './hash.js';
 import { deriveX25519SharedSecret, } from './x25519.js';
-export const STEALTH_META_ADDRESS_PAYLOAD_BYTES = 64;
-export const STEALTH_META_ADDRESS_ASCII_BYTES = 113;
+export const STEALTH_META_ADDRESS_PAYLOAD_BYTES = 96;
+export const STEALTH_META_ADDRESS_ASCII_BYTES = 164;
 const DOMAIN_META_ROOT = utf8('SK_STEALTH_META_ROOT_V1');
 const DOMAIN_STEALTH_ROOT_KEY = utf8('SK_STEALTH_ROOT_KEY_V1');
 const DOMAIN_SCAN_KEY = utf8('SK_STEALTH_SCAN_KEY_V1');
@@ -84,7 +84,7 @@ function validateScanPoint(publicKey) {
     }
 }
 function deriveTweak(sharedSecret, ephemeralPublicKey, address, network) {
-    return nonzeroScalar(DOMAIN_TWEAK, networkBytes(network), ephemeralPublicKey, sharedSecret, address.scanPublicKey, address.spendPublicKey);
+    return nonzeroScalar(DOMAIN_TWEAK, networkBytes(network), ephemeralPublicKey, sharedSecret, address.deploymentBindingHash, address.scanPublicKey, address.spendPublicKey);
 }
 function deriveOneTimePublicKey(spendPublicKey, tweak) {
     const point = ed25519.Point.fromBytes(spendPublicKey, false)
@@ -93,8 +93,9 @@ function deriveOneTimePublicKey(spendPublicKey, tweak) {
         throw new Error('Derived an invalid zero one-time account; retry with fresh randomness');
     return point.toBytes();
 }
-export function deriveStealthMetaKeys(rootKey, network) {
+export function deriveStealthMetaKeys(rootKey, network, deploymentBindingHash) {
     assertBytes(rootKey, 32, 'Stealth root key');
+    assertBytes(deploymentBindingHash, 32, 'Deployment binding hash');
     const networkContext = networkBytes(network);
     const salt = sha512Bytes(DOMAIN_META_ROOT, networkContext);
     const scanPrivateKey = hkdf(sha512, rootKey, salt, DOMAIN_SCAN_KEY, 32);
@@ -105,6 +106,7 @@ export function deriveStealthMetaKeys(rootKey, network) {
     if (spendScalar === 0n)
         throw new Error('Derived an invalid zero spend scalar');
     return {
+        deploymentBindingHash: deploymentBindingHash.slice(),
         scanPrivateKey,
         scanPublicKey: x25519.getPublicKey(scanPrivateKey),
         spendScalar,
@@ -114,15 +116,16 @@ export function deriveStealthMetaKeys(rootKey, network) {
     };
 }
 export function encodeStealthMetaAddress(address, network) {
+    assertBytes(address.deploymentBindingHash, 32, 'Deployment binding hash');
     validateScanPoint(address.scanPublicKey);
     validateSpendPoint(address.spendPublicKey);
-    const encoded = encodeBech32m(networkPrefix(network), concatBytes(address.scanPublicKey, address.spendPublicKey));
+    const encoded = encodeBech32m(networkPrefix(network), concatBytes(address.deploymentBindingHash, address.scanPublicKey, address.spendPublicKey));
     if (encoded.length !== STEALTH_META_ADDRESS_ASCII_BYTES) {
         throw new Error('Unexpected stealth meta-address length');
     }
     return encoded;
 }
-export async function decodeStealthMetaAddress(encoded, network) {
+export async function decodeStealthMetaAddress(encoded, network, expectedDeploymentBindingHash) {
     if (encoded.length !== STEALTH_META_ADDRESS_ASCII_BYTES) {
         throw new Error('Invalid stealth meta-address spelling');
     }
@@ -137,9 +140,16 @@ export async function decodeStealthMetaAddress(encoded, network) {
         throw new Error(message.replace('Bech32m', 'stealth meta-address'), { cause: error });
     }
     const address = {
-        scanPublicKey: payload.slice(0, 32),
-        spendPublicKey: payload.slice(32, 64),
+        deploymentBindingHash: payload.slice(0, 32),
+        scanPublicKey: payload.slice(32, 64),
+        spendPublicKey: payload.slice(64, 96),
     };
+    if (expectedDeploymentBindingHash) {
+        assertBytes(expectedDeploymentBindingHash, 32, 'Expected deployment binding hash');
+        if (!address.deploymentBindingHash.every((byte, index) => byte === expectedDeploymentBindingHash[index])) {
+            throw new Error('Stealth meta-address belongs to another Private Payments deployment');
+        }
+    }
     validateScanPoint(address.scanPublicKey);
     validateSpendPoint(address.spendPublicKey);
     return address;

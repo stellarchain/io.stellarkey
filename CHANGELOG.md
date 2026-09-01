@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enforced active-owner checks inside merchant settings writes, revalidated refund permissions at the signing boundary, and persisted cross-tab exponential PIN backoff in encrypted merchant storage.
 - Added monotonic vault revisions to reject stale cross-tab account writes and vault-bound exponential backoff for repeated password verification failures.
 - Bound backup-health status to the recoverable wallet credential set, deeply authenticated every nested credential and archive before restore, and enforced file, decoded-data, collection, and keystore identity limits on imports.
+- Bound one-time and reusable Private Payments addresses to the exact pool deployment and rejected legacy or cross-deployment recipients before proof or transaction construction.
 
 ## [1.4.1] - 2026-09-01
 

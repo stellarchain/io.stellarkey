@@ -4,7 +4,9 @@ import { Keypair } from '@stellar/stellar-sdk';
 import { encodePrivateAddress } from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
 
+const DEPLOYMENT_BINDING = new Uint8Array(32).fill(0x05);
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
+  deploymentBindingHash: DEPLOYMENT_BINDING,
   diversifier: new Uint8Array(4),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
@@ -23,7 +25,7 @@ const manifest = {
   assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-  deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  deploymentBindingHash: Buffer.from(DEPLOYMENT_BINDING).toString('hex'),
   artifacts: {
     r1csSha256: 'a1'.repeat(32),
     r1csConstraints: 57_838,
