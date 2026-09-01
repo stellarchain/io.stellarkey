@@ -1384,8 +1384,7 @@ async function prepareDecodedBackup(
 
     for (const account of [...vault.accounts, ...(vault.archivedAccounts ?? [])]) {
       if (account.watchOnly || account.hardware) continue;
-      let secret = await decryptAccountSecret(vault, account, masterKey);
-      secret = "";
+      await decryptAccountSecret(vault, account, masterKey);
     }
 
     const encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);

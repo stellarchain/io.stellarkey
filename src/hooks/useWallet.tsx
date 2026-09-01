@@ -24,10 +24,10 @@ import {
   getArchivedAccounts,
   hasMnemonic,
   revealMnemonic as revealMnemonicVault,
-  withSecretKey,
   withSigningKeypair,
   initializeVault,
   initializeHardwareVault,
+  isUnlocked,
   loadAutoLockPref,
   loadNetworkPref,
   loadVault,
@@ -1285,23 +1285,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [cancelSigningAuthorization]);
 
   useEffect(() => {
-    if (phase !== "unlocked" || autoLockMs <= 0) return;
-    let lastActivity = Date.now();
+    const sensitiveSessionOpen =
+      phase === "unlocked" || (phase === "empty" && isUnlocked());
+    if (!sensitiveSessionOpen || autoLockMs <= 0) return;
+    let lastActivity = performance.now();
     let timer: number;
     const schedule = () => {
       window.clearTimeout(timer);
-      const remaining = Math.max(0, autoLockMs - (Date.now() - lastActivity));
+      const remaining = Math.max(0, autoLockMs - (performance.now() - lastActivity));
       timer = window.setTimeout(checkExpired, remaining);
     };
     const checkExpired = () => {
-      if (Date.now() - lastActivity >= autoLockMs) {
+      if (performance.now() - lastActivity >= autoLockMs) {
         lockVaultAndReset();
         return;
       }
       schedule();
     };
     const bump = () => {
-      lastActivity = Date.now();
+      lastActivity = performance.now();
       schedule();
     };
     const onVisibilityOrFocus = () => {
@@ -1319,7 +1321,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", onVisibilityOrFocus);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, [phase, autoLockMs, lockVaultAndReset]);
+  }, [phase, accounts.length, autoLockMs, lockVaultAndReset]);
 
   const pollPendingRef = useRef<(transaction: PendingTransaction) => Promise<void>>(async () => {});
   const pollPending = useCallback(async (transaction: PendingTransaction) => {
@@ -1755,6 +1757,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.localStorage,
       PENDING_TX_STORAGE_KEY,
     );
+    window.sessionStorage.clear();
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.allSettled(registrations.map((registration) => registration.unregister()));
+    }
+    if ("caches" in globalThis) {
+      const names = await globalThis.caches.keys();
+      await Promise.allSettled(
+        names
+          .filter((name) => name.startsWith("stellarkey-"))
+          .map((name) => globalThis.caches.delete(name)),
+      );
+    }
     setAccounts([]);
     setArchivedAccounts([]);
     setActiveId(null);
@@ -1773,6 +1788,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     commitSigningPasswordRequired(false);
     setPhase("empty");
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-reset");
+    window.location.reload();
   }, [
     cancelSigningAuthorization,
     commitMergeReconciliations,

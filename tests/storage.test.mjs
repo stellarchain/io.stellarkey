@@ -58,6 +58,20 @@ test("full wallet reset also removes every private-payment IndexedDB record", ()
   const reset = source.split("const resetWallet = useCallback")[1]?.split("useEffect(() => {")[0] ?? "";
   assert.match(reset, /getMerchantRepository\(\)\.clear\(\)/);
   assert.match(reset, /IndexedDbEncryptedRecordDriver\(\)\.removePrefix\("private:"\)/);
+  assert.match(reset, /sessionStorage\.clear\(\)/);
+  assert.match(reset, /serviceWorker\.getRegistrations\(\)/);
+  assert.match(reset, /registration\.unregister\(\)/);
+  assert.match(reset, /caches\.keys\(\)/);
+  assert.match(reset, /caches\.delete\(name\)/);
+  assert.match(reset, /location\.reload\(\)/);
+});
+
+test("auto-lock covers the live onboarding vault session and uses a monotonic clock", () => {
+  const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
+  const autoLock = source.split("const lockVaultAndReset")[1]?.split("const pollPendingRef")[0] ?? "";
+  assert.match(autoLock, /phase === "empty" && isUnlocked\(\)/);
+  assert.match(autoLock, /performance\.now\(\)/);
+  assert.doesNotMatch(autoLock, /Date\.now\(\)/);
 });
 
 test("every user-controlled JSON file is bounded before file.text", () => {
