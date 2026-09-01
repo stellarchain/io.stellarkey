@@ -26,12 +26,20 @@ test('private reproducibility rebuild pins the same O2 compiler mode', () => {
   assert.match(invocation[1], /['"]--O2['"]/, 'reproducibility must rebuild the shipped O2 circuit');
 });
 
-test('private development setup pins the smallest sufficient pot15 ceremony input', () => {
-  const setupScript = readFileSync(join(circuitsDir, 'scripts/setup-dev.mjs'), 'utf8');
+test('private proving-key checks pin and authenticate the pot15 ceremony input', () => {
+  const transcriptScript = readFileSync(join(circuitsDir, 'scripts/powers-of-tau.mjs'), 'utf8');
+  const verifier = readFileSync(join(circuitsDir, 'scripts/verify-proving-key.mjs'), 'utf8');
 
-  assert.match(setupScript, /pot15_final\.ptau/);
-  assert.match(setupScript, /powersOfTau28_hez_final_15\.ptau/);
-  assert.doesNotMatch(setupScript, /pot17|final_17/);
+  assert.match(transcriptScript, /powersOfTau28_hez_final_15\.ptau/);
+  assert.match(
+    transcriptScript,
+    /cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357/,
+  );
+  assert.match(transcriptScript, /assertPowersOfTau/);
+  assert.match(transcriptScript, /rmSync\(path, \{ force: true \}\)/);
+  assert.match(verifier, /ensurePowersOfTau/);
+  assert.match(verifier, /'zkey', 'verify'/);
+  assert.doesNotMatch(transcriptScript, /pot17|final_17/);
 });
 
 test('private artifact generation refreshes and checks proving-key-bound proof vectors', () => {

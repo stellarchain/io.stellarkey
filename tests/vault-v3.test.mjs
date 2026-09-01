@@ -418,7 +418,8 @@ test("wallet runtime retains only key bytes, never passwords, mnemonics, or acco
   assert.doesNotMatch(vault, /sessionPassword|sessionMnemonic|sessionSecrets/);
   assert.doesNotMatch(walletHook, /getSecretKey/);
   assert.match(vault, /sessionMasterKey\?\.fill\(0\)/);
-  assert.match(walletHook, /withSecretKey/);
+  assert.match(walletHook, /withSigningKeypair/);
+  assert.doesNotMatch(walletHook, /withSecretKey/);
   assert.ok((merchantHook.match(/key\.fill\(0\)/g) ?? []).length >= 3);
 
   const key = new Uint8Array([1, 2, 3, 4]);

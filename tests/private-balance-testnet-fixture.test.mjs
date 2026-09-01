@@ -23,7 +23,7 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the committed testnet deployment remains the preview manifest and catalogue source of truth', () => {
+test('the committed testnet deployment remains quarantined development evidence', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
@@ -51,8 +51,8 @@ test('the committed testnet deployment remains the preview manifest and catalogu
   } = fixture.manifest;
 
   assert.deepEqual(deploymentManifest, fixtureDeploymentManifest);
-  assert.equal(artifactVersion, '1.0.2-testnet-preview');
-  assert.equal(status, 'testnet-preview');
+  assert.equal(artifactVersion, '1.0.2-dev-fixture');
+  assert.equal(status, 'development');
   assert.equal(fixtureArtifactVersion, '1.0.2-dev-fixture');
   assert.equal(fixtureStatus, 'development');
   for (const key of [
@@ -70,6 +70,13 @@ test('the committed testnet deployment remains the preview manifest and catalogu
   }
   assert.match(release.contractSourceCommit, /^[0-9a-f]{40}$/);
   assert.match(release.toolchainLockSha256, /^[0-9a-f]{64}$/);
+  assert.equal(
+    release.powersOfTauSha256,
+    'cc9b7fdc5f632d1d5f9fccc58b9d01a8bf6a4ff26400ea8224fc20ee7e13e357',
+  );
+  assert.equal(release.zkeyVerified, false);
+  assert.equal(fixtureRelease.powersOfTauSha256, undefined);
+  assert.equal(fixtureRelease.zkeyVerified, undefined);
   assert.equal(manifest.poolContractId, fixture.poolContractId);
   assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
 
