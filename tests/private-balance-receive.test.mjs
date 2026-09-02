@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   deriveStealthMetaKeys,
+  derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
   encodeStealthMetaAddress,
 } from '@stellarkey/private-balance';
@@ -17,18 +18,21 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('receive payload contains only the canonical private address', () => {
   const address = encodePrivateAddress({
-    deploymentBindingHash: new Uint8Array(32).fill(6),
+    deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(6)),
     diversifier: Uint8Array.of(1, 2, 3, 4),
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
-  }, 'tks');
+  }, 'tskpay_');
   assert.equal(privateReceivePayload(address), address);
   assert.match(
     privateAddressFingerprint(address),
     /^(?:[A-F0-9]{4} ){7}[A-F0-9]{4}$/,
   );
   assert.throws(() => privateReceivePayload(` ${address}`), /canonical/);
-  assert.throws(() => privateReceivePayload(`sks1${address.slice(4)}`), /network/);
+  assert.throws(
+    () => privateReceivePayload(`skpay_${address.slice('tskpay_'.length)}`),
+    /network/,
+  );
 });
 
 test('reusable receive payload validates the canonical network-bound meta address', () => {

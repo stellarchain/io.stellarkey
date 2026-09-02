@@ -1,5 +1,5 @@
 use private_balance_protocol::{
-    address::PrivateAddress,
+    address::{PrivateAddress, derive_private_address_deployment_tag},
     encoding::{compute_context_field, compute_context_hash},
     keys::derive_keys_from_seed,
 };
@@ -63,9 +63,9 @@ fn main() {
         );
         let diversifier = [0u8; 4];
         let deployment_binding_hash = random_bytes(&mut rng);
-        let prefix = if index % 2 == 0 { "tks" } else { "sks" };
+        let prefix = if index % 2 == 0 { "tskpay_" } else { "skpay_" };
         let address = PrivateAddress {
-            deployment_binding_hash,
+            deployment_tag: derive_private_address_deployment_tag(&deployment_binding_hash),
             diversifier,
             owner_commitment: keys.owner_commitment,
             hpke_public_key: keys.hpke_public_key,

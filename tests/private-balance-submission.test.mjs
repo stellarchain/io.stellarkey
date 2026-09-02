@@ -679,7 +679,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
     () => preparePrivateBalanceActionFlow({
       manifest: {},
       accountPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-      privateAddress: `tks1${'q'.repeat(115)}`,
+      privateAddress: `tskpay_${'2'.repeat(121)}`,
       storageContext: context,
       storageKey,
       storageDriver: driver,
@@ -689,7 +689,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
       assetContractId: ASSET_CONTRACT_ID,
       assetCode: 'XLM',
       assetDecimals: 7,
-      draft: { kind: 'transfer', amount: '1', recipientAddress: `tks1${'p'.repeat(115)}` },
+      draft: { kind: 'transfer', amount: '1', recipientAddress: `tskpay_${'3'.repeat(121)}` },
     }),
     PrivateActionInFlightError,
   );

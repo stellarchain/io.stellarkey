@@ -5,6 +5,7 @@ import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import {
   computeContextField,
   computeContextHash,
+  derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
 } from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
@@ -39,10 +40,10 @@ const manifest = {
       notePlaintextBytes: 128,
       recipientEnvelopeBytes: 181,
       outputPackageBytes: 213,
-      addressPayloadBytes: 100,
-      addressAsciiBytes: 170,
-      addressContextTagBytes: 0,
-      addressChecksumBytes: 6,
+      addressPayloadBytes: 84,
+      addressAsciiBytes: 128,
+      addressContextTagBytes: 16,
+      addressChecksumBytes: 4,
     },
     hpke: {
       kemId: '0x0020',
@@ -56,11 +57,11 @@ const hex = (value) => Uint8Array.from(
   (byte) => Number.parseInt(byte, 16),
 );
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
-  deploymentBindingHash: hex(manifest.deploymentBindingHash),
+  deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
   diversifier: new Uint8Array(4),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
-}, 'tks');
+}, 'tskpay_');
 
 test('worker client: rejects operations when worker is uninitialized', async () => {
   const client = new PrivateBalanceWorkerClient();
@@ -137,7 +138,7 @@ test('worker client: transfers the exact standalone root with public derivation 
     message.keyContext.poolId,
   );
   assert.deepEqual(message.keyContext.contextField, computeContextField(contextHash));
-  assert.equal(message.keyContext.addressPrefix, 'tks');
+  assert.equal(message.keyContext.addressPrefix, 'tskpay_');
 
   const scan = await client.scanPage({
     records: [],
@@ -158,17 +159,17 @@ test('worker client restores and rotates diversified receive addresses without e
   const account = Keypair.random();
   const diversifier = Uint8Array.of(1, 2, 3, 4);
   const restoredAddress = encodePrivateAddress({
-    deploymentBindingHash: hex(manifest.deploymentBindingHash),
+    deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
     diversifier,
     ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(2),
-  }, 'tks');
+  }, 'tskpay_');
   const freshAddress = encodePrivateAddress({
-    deploymentBindingHash: hex(manifest.deploymentBindingHash),
+    deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
     diversifier: Uint8Array.of(5, 6, 7, 8),
     ownerCommitment: Uint8Array.from([3, ...new Uint8Array(31)]),
     hpkePublicKey: new Uint8Array(32).fill(4),
-  }, 'tks');
+  }, 'tskpay_');
   const posted = [];
   const fakeWorker = {
     onmessage: null,
@@ -210,7 +211,7 @@ test('worker client restores and rotates diversified receive addresses without e
   assert.equal(fresh.address, freshAddress);
   assert.notEqual(fresh.address, restored.address);
 
-  const wrongNetwork = `sks1${restoredAddress.slice(4)}`;
+  const wrongNetwork = `skpay_${restoredAddress.slice('tskpay_'.length)}`;
   await assert.rejects(
     () => client.initSession(
       manifest,

@@ -353,7 +353,7 @@ export function SendPrivate({
               ref={recipientFieldRef}
               type="text"
               className="input mono text-base sm:text-[13px]"
-              placeholder="tks1… or sks1…"
+              placeholder="tskpay_… or skpay_…"
               autoCapitalize="none"
               autoCorrect="off"
               autoComplete="off"

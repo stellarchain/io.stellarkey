@@ -2,15 +2,25 @@ use crate::constants::ADDRESS_DIVERSIFIER_BYTES;
 use crate::field::is_canonical_field;
 use alloc::string::String;
 use alloc::vec::Vec;
+use sha2::{Digest, Sha256};
 
-const CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-const BECH32M_CONSTANT: u32 = 0x2bc8_30a3;
-pub const DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES: usize = 100;
-pub const DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES: usize = 170;
+const BASE58_ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const PRIVATE_ADDRESS_FORMAT: u8 = 1;
+const MAINNET_PREFIX: &str = "skpay_";
+const TESTNET_PREFIX: &str = "tskpay_";
+const DEPLOYMENT_TAG_DOMAIN: &[u8] = b"StellarKey private payment address deployment tag v1";
+const CHECKSUM_DOMAIN: &[u8] = b"StellarKey private payment address checksum v1";
+
+pub const PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES: usize = 16;
+pub const PRIVATE_ADDRESS_PAYLOAD_BYTES: usize = 84;
+pub const PRIVATE_ADDRESS_CHECKSUM_BYTES: usize = 4;
+pub const PRIVATE_ADDRESS_DECODED_BYTES: usize = 89;
+pub const PRIVATE_ADDRESS_MAINNET_ASCII_BYTES: usize = 127;
+pub const PRIVATE_ADDRESS_TESTNET_ASCII_BYTES: usize = 128;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrivateAddress {
-    pub deployment_binding_hash: [u8; 32],
+    pub deployment_tag: [u8; PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES],
     pub diversifier: [u8; ADDRESS_DIVERSIFIER_BYTES],
     pub owner_commitment: [u8; 32],
     pub hpke_public_key: [u8; 32],
@@ -21,7 +31,7 @@ pub enum AddressError {
     InvalidLength,
     InvalidPrefix,
     InvalidCharacter,
-    InvalidPadding,
+    InvalidFormat,
     ChecksumMismatch,
     NonCanonicalOwner,
     ZeroOwner,
@@ -68,87 +78,114 @@ fn invalid_x25519_key(key: &[u8; 32]) -> bool {
 }
 
 fn validate_prefix(prefix: &str) -> Result<(), AddressError> {
-    if prefix == "tks" || prefix == "sks" {
+    if prefix == MAINNET_PREFIX || prefix == TESTNET_PREFIX {
         Ok(())
     } else {
         Err(AddressError::InvalidPrefix)
     }
 }
 
-fn polymod(values: impl IntoIterator<Item = u8>) -> u32 {
-    let mut checksum = 1u32;
-    for value in values {
-        let top = checksum >> 25;
-        checksum = ((checksum & 0x01ff_ffff) << 5) ^ u32::from(value);
-        if top & 1 != 0 {
-            checksum ^= 0x3b6a_57b2;
-        }
-        if top & 2 != 0 {
-            checksum ^= 0x2650_8e6d;
-        }
-        if top & 4 != 0 {
-            checksum ^= 0x1ea1_19fa;
-        }
-        if top & 8 != 0 {
-            checksum ^= 0x3d42_33dd;
-        }
-        if top & 16 != 0 {
-            checksum ^= 0x2a14_62b3;
-        }
+fn expected_ascii_bytes(prefix: &str) -> usize {
+    if prefix == TESTNET_PREFIX {
+        PRIVATE_ADDRESS_TESTNET_ASCII_BYTES
+    } else {
+        PRIVATE_ADDRESS_MAINNET_ASCII_BYTES
     }
+}
+
+pub fn derive_private_address_deployment_tag(
+    deployment_binding_hash: &[u8; 32],
+) -> [u8; PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES] {
+    let mut hasher = Sha256::new();
+    hasher.update(DEPLOYMENT_TAG_DOMAIN);
+    hasher.update(deployment_binding_hash);
+    let digest = hasher.finalize();
+    let mut tag = [0u8; PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES];
+    tag.copy_from_slice(&digest[..PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES]);
+    tag
+}
+
+fn checksum(prefix: &str, body: &[u8]) -> [u8; PRIVATE_ADDRESS_CHECKSUM_BYTES] {
+    let mut hasher = Sha256::new();
+    hasher.update(CHECKSUM_DOMAIN);
+    hasher.update(prefix.as_bytes());
+    hasher.update(body);
+    let digest = hasher.finalize();
+    let mut checksum = [0u8; PRIVATE_ADDRESS_CHECKSUM_BYTES];
+    checksum.copy_from_slice(&digest[..PRIVATE_ADDRESS_CHECKSUM_BYTES]);
     checksum
 }
 
-fn expand_hrp(hrp: &str) -> Vec<u8> {
-    let mut output = Vec::with_capacity(hrp.len() * 2 + 1);
-    output.extend(hrp.bytes().map(|byte| byte >> 5));
-    output.push(0);
-    output.extend(hrp.bytes().map(|byte| byte & 31));
+fn encode_base58(input: &[u8]) -> String {
+    let leading_zeroes = input.iter().take_while(|byte| **byte == 0).count();
+    let mut digits: Vec<u8> = Vec::new();
+    for byte in input.iter().skip(leading_zeroes) {
+        let mut carry = u32::from(*byte);
+        for digit in &mut digits {
+            carry += u32::from(*digit) << 8;
+            *digit = (carry % 58) as u8;
+            carry /= 58;
+        }
+        while carry > 0 {
+            digits.push((carry % 58) as u8);
+            carry /= 58;
+        }
+    }
+
+    let mut output = String::with_capacity(leading_zeroes + digits.len());
+    for _ in 0..leading_zeroes {
+        output.push('1');
+    }
+    for digit in digits.iter().rev() {
+        output.push(BASE58_ALPHABET[*digit as usize] as char);
+    }
     output
 }
 
-fn convert_bits(values: &[u8], from: u32, to: u32, pad: bool) -> Result<Vec<u8>, AddressError> {
-    let mut accumulator = 0u32;
-    let mut bits = 0u32;
-    let maximum = (1u32 << to) - 1;
-    let max_accumulator = (1u32 << (from + to - 1)) - 1;
-    let mut output = Vec::new();
-    for value in values {
-        if u32::from(*value) >> from != 0 {
-            return Err(AddressError::InvalidCharacter);
-        }
-        accumulator = ((accumulator << from) | u32::from(*value)) & max_accumulator;
-        bits += from;
-        while bits >= to {
-            bits -= to;
-            output.push(((accumulator >> bits) & maximum) as u8);
-        }
-    }
-    if pad {
-        if bits > 0 {
-            output.push(((accumulator << (to - bits)) & maximum) as u8);
-        }
-    } else if bits >= from || ((accumulator << (to - bits)) & maximum) != 0 {
-        return Err(AddressError::InvalidPadding);
-    }
-    Ok(output)
-}
-
-fn charset_value(character: u8) -> Option<u8> {
-    CHARSET
+fn base58_value(character: u8) -> Option<u8> {
+    BASE58_ALPHABET
         .iter()
         .position(|candidate| *candidate == character)
         .map(|index| index as u8)
 }
 
+fn decode_base58(encoded: &str) -> Result<Vec<u8>, AddressError> {
+    if encoded.is_empty() {
+        return Err(AddressError::InvalidLength);
+    }
+    let leading_zeroes = encoded.bytes().take_while(|byte| *byte == b'1').count();
+    let mut bytes: Vec<u8> = Vec::new();
+    for character in encoded.bytes().skip(leading_zeroes) {
+        let mut carry = u32::from(base58_value(character).ok_or(AddressError::InvalidCharacter)?);
+        for byte in &mut bytes {
+            carry += u32::from(*byte) * 58;
+            *byte = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.push((carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+
+    let mut decoded = Vec::with_capacity(leading_zeroes + bytes.len());
+    decoded.resize(leading_zeroes, 0);
+    decoded.extend(bytes.iter().rev());
+    if encode_base58(&decoded) != encoded {
+        return Err(AddressError::InvalidCharacter);
+    }
+    Ok(decoded)
+}
+
 impl PrivateAddress {
-    fn payload(&self) -> [u8; DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES] {
-        let mut payload = [0u8; DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES];
-        payload[0..32].copy_from_slice(&self.deployment_binding_hash);
-        payload[32..36].copy_from_slice(&self.diversifier);
-        payload[36..68].copy_from_slice(&self.owner_commitment);
-        payload[68..100].copy_from_slice(&self.hpke_public_key);
-        payload
+    fn body(&self) -> [u8; PRIVATE_ADDRESS_DECODED_BYTES - PRIVATE_ADDRESS_CHECKSUM_BYTES] {
+        let mut body = [0u8; PRIVATE_ADDRESS_DECODED_BYTES - PRIVATE_ADDRESS_CHECKSUM_BYTES];
+        body[0] = PRIVATE_ADDRESS_FORMAT;
+        body[1..17].copy_from_slice(&self.deployment_tag);
+        body[17..21].copy_from_slice(&self.diversifier);
+        body[21..53].copy_from_slice(&self.owner_commitment);
+        body[53..85].copy_from_slice(&self.hpke_public_key);
+        body
     }
 
     fn validate(&self) -> Result<(), AddressError> {
@@ -167,59 +204,47 @@ impl PrivateAddress {
     pub fn encode(&self, prefix: &str) -> Result<String, AddressError> {
         validate_prefix(prefix)?;
         self.validate()?;
-        let words = convert_bits(&self.payload(), 8, 5, true)?;
-        let mut checksum_input = expand_hrp(prefix);
-        checksum_input.extend_from_slice(&words);
-        checksum_input.extend_from_slice(&[0u8; 6]);
-        let checksum = polymod(checksum_input) ^ BECH32M_CONSTANT;
-        let mut output = String::from(prefix);
-        output.push('1');
-        for word in &words {
-            output.push(CHARSET[*word as usize] as char);
-        }
-        for index in 0..6 {
-            output.push(CHARSET[((checksum >> (5 * (5 - index))) & 31) as usize] as char);
-        }
-        if output.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES {
+        let body = self.body();
+        let mut decoded = Vec::with_capacity(PRIVATE_ADDRESS_DECODED_BYTES);
+        decoded.extend_from_slice(&body);
+        decoded.extend_from_slice(&checksum(prefix, &body));
+        let encoded = String::from(prefix) + &encode_base58(&decoded);
+        if encoded.len() != expected_ascii_bytes(prefix) {
             return Err(AddressError::InvalidLength);
         }
-        Ok(output)
+        Ok(encoded)
     }
 
     pub fn decode(encoded: &str, expected_prefix: &str) -> Result<Self, AddressError> {
         validate_prefix(expected_prefix)?;
-        if encoded.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_ASCII_BYTES
-            || encoded.bytes().any(|byte| byte.is_ascii_uppercase())
+        if encoded.len() != expected_ascii_bytes(expected_prefix)
+            || !encoded.starts_with(expected_prefix)
         {
-            return Err(AddressError::InvalidLength);
-        }
-        let expected_start = alloc::format!("{expected_prefix}1");
-        if !encoded.starts_with(&expected_start) {
             return Err(AddressError::InvalidPrefix);
         }
-        let words = encoded.as_bytes()[expected_start.len()..]
-            .iter()
-            .map(|byte| charset_value(*byte).ok_or(AddressError::InvalidCharacter))
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut checksum_input = expand_hrp(expected_prefix);
-        checksum_input.extend_from_slice(&words);
-        if polymod(checksum_input) != BECH32M_CONSTANT {
-            return Err(AddressError::ChecksumMismatch);
-        }
-        let payload = convert_bits(&words[..words.len() - 6], 5, 8, false)?;
-        if payload.len() != DEPLOYMENT_BOUND_PRIVATE_ADDRESS_PAYLOAD_BYTES {
+        let body_text = &encoded[expected_prefix.len()..];
+        let decoded = decode_base58(body_text)?;
+        if decoded.len() != PRIVATE_ADDRESS_DECODED_BYTES {
             return Err(AddressError::InvalidLength);
         }
-        let mut diversifier = [0u8; 4];
-        let mut deployment_binding_hash = [0u8; 32];
-        deployment_binding_hash.copy_from_slice(&payload[0..32]);
-        diversifier.copy_from_slice(&payload[32..36]);
+        if decoded[0] != PRIVATE_ADDRESS_FORMAT {
+            return Err(AddressError::InvalidFormat);
+        }
+        let checksum_offset = PRIVATE_ADDRESS_DECODED_BYTES - PRIVATE_ADDRESS_CHECKSUM_BYTES;
+        if decoded[checksum_offset..] != checksum(expected_prefix, &decoded[..checksum_offset]) {
+            return Err(AddressError::ChecksumMismatch);
+        }
+
+        let mut deployment_tag = [0u8; PRIVATE_ADDRESS_DEPLOYMENT_TAG_BYTES];
+        deployment_tag.copy_from_slice(&decoded[1..17]);
+        let mut diversifier = [0u8; ADDRESS_DIVERSIFIER_BYTES];
+        diversifier.copy_from_slice(&decoded[17..21]);
         let mut owner_commitment = [0u8; 32];
-        owner_commitment.copy_from_slice(&payload[36..68]);
+        owner_commitment.copy_from_slice(&decoded[21..53]);
         let mut hpke_public_key = [0u8; 32];
-        hpke_public_key.copy_from_slice(&payload[68..100]);
+        hpke_public_key.copy_from_slice(&decoded[53..85]);
         let address = Self {
-            deployment_binding_hash,
+            deployment_tag,
             diversifier,
             owner_commitment,
             hpke_public_key,

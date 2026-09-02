@@ -359,7 +359,7 @@ export function PanelReceive() {
         <div className="qr"><img src="/marketing/demo-qr.svg" alt="Shielded address QR code" width={148} height={148} loading="lazy" decoding="async" /></div>
         <div className="vcode"><em>Verification code</em><b>FC42 C9CF</b></div>
         <div className="sub" style={{ textAlign: "center", marginTop: ".45rem" }}>the sender sees the same code before paying</div>
-        <div className="addr"><span>tks1 … n8d6</span></div>
+        <div className="addr"><span>tskpay_ … n8d6</span></div>
       </div>
     </Pane>
   );

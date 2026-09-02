@@ -3,6 +3,7 @@ import {
   proveAction,
   verifyProofLocally,
   encodePrivateAddress,
+  derivePrivateAddressDeploymentTag,
   deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
   randomBytes32,
@@ -96,7 +97,7 @@ async function selectAddressIdentity(
     return {
       ownerCommitmentHex: toHex(identity.ownerCommitment),
       address: encodePrivateAddress({
-        deploymentBindingHash: keyContext.deploymentBindingHash,
+        deploymentTag: derivePrivateAddressDeploymentTag(keyContext.deploymentBindingHash),
         diversifier: identity.diversifier,
         ownerCommitment: identity.ownerCommitment,
         hpkePublicKey: identity.hpkePublicKey,

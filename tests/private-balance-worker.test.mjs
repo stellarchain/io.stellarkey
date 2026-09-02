@@ -1,16 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Keypair } from '@stellar/stellar-sdk';
-import { encodePrivateAddress } from '@stellarkey/private-balance';
+import {
+  derivePrivateAddressDeploymentTag,
+  encodePrivateAddress,
+} from '@stellarkey/private-balance';
 import { PrivateBalanceWorkerClient } from '../src/features/private-balance/worker/client.ts';
 
 const DEPLOYMENT_BINDING = new Uint8Array(32).fill(0x05);
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
-  deploymentBindingHash: DEPLOYMENT_BINDING,
+  deploymentTag: derivePrivateAddressDeploymentTag(DEPLOYMENT_BINDING),
   diversifier: new Uint8Array(4),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
-}, 'tks');
+}, 'tskpay_');
 
 const manifest = {
   schemaVersion: 1,
@@ -43,10 +46,10 @@ const manifest = {
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outputPackageBytes: 213,
-    addressPayloadBytes: 100,
-    addressAsciiBytes: 170,
-    addressContextTagBytes: 0,
-    addressChecksumBytes: 6,
+    addressPayloadBytes: 84,
+    addressAsciiBytes: 128,
+    addressContextTagBytes: 16,
+    addressChecksumBytes: 4,
   },
   hpke: { kemId: '0x0020', kdfId: '0x0001', aeadId: '0x0001' },
 };

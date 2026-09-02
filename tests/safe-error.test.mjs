@@ -7,7 +7,7 @@ const sensitiveMessage = [
   'secret SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   'phrase apple banana cherry dolphin eagle forest galaxy harbor island jungle kiwi lemon',
   'password Correct-Horse-2026!',
-  'private tks1_AAEAAIOpWWwID-xqa5vUlTl87Zg',
+  'private tskpay_4ZrPF7dJYQvR9nW2Kx8mA3bC6eF5gH',
   'xdr AAAAAgAAAAA=',
 ].join(' · ');
 
@@ -23,7 +23,7 @@ test('unexpected errors never expose the thrown message or object', () => {
   assert.equal(rendered.includes('SAAAA'), false);
   assert.equal(rendered.includes('apple banana'), false);
   assert.equal(rendered.includes('Correct-Horse'), false);
-  assert.equal(rendered.includes('tks1_'), false);
+  assert.equal(rendered.includes('tskpay_'), false);
   assert.equal(rendered.includes('AAAAAg'), false);
   assert.equal(rendered.includes('112233'), false);
   assert.equal(safe.reference, 'render_7F3-ux');

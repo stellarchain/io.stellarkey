@@ -44,7 +44,7 @@ function zeroAttachedBuffer(buffer: ArrayBuffer): void {
 export class PrivateBalanceWorkerClient {
   private worker: Worker | null = null;
   private sessionId: string | null = null;
-  private addressPrefix: 'tks' | 'sks' | null = null;
+  private addressPrefix: 'tskpay_' | 'skpay_' | null = null;
   private deploymentBindingHash: Uint8Array | null = null;
   private currentAddress: string | null = null;
   private nextOperation = 0;
@@ -286,8 +286,8 @@ export class PrivateBalanceWorkerClient {
       poolId,
     );
     const addressPrefix = parsedManifest.networkPassphrase === MAINNET_PASSPHRASE
-      ? 'sks'
-      : 'tks';
+      ? 'skpay_'
+      : 'tskpay_';
     const deploymentBindingHash = hex32(parsedManifest.deploymentBindingHash);
     const addressDiversifier = currentAddress
       ? (await decodePrivateAddress(currentAddress, addressPrefix, deploymentBindingHash)).diversifier

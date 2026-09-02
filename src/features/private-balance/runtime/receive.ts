@@ -1,32 +1,38 @@
-import { PRIVATE_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
+import {
+  PRIVATE_ADDRESS_MAINNET_ASCII_BYTES,
+  PRIVATE_ADDRESS_TESTNET_ASCII_BYTES,
+} from '@stellarkey/private-balance';
 import { STEALTH_META_ADDRESS_ASCII_BYTES } from '@stellarkey/private-balance';
 import { hash } from '@stellar/stellar-sdk';
 
-export type PrivateAddressPrefix = 'tks' | 'sks';
+export type PrivateAddressPrefix = 'tskpay_' | 'skpay_';
 export type StealthAddressPrefix = 'tsm' | 'ssm';
 
 export function privateReceivePayload(
   address: string,
-  expectedPrefix: PrivateAddressPrefix = 'tks',
+  expectedPrefix: PrivateAddressPrefix = 'tskpay_',
 ): string {
+  const alternatePrefix: PrivateAddressPrefix = expectedPrefix === 'tskpay_' ? 'skpay_' : 'tskpay_';
+  if (address.startsWith(alternatePrefix)) {
+    throw new Error('Private receive address is for another network.');
+  }
+  const expectedLength = expectedPrefix === 'tskpay_'
+    ? PRIVATE_ADDRESS_TESTNET_ASCII_BYTES
+    : PRIVATE_ADDRESS_MAINNET_ASCII_BYTES;
   if (
-    address.length !== PRIVATE_ADDRESS_ASCII_BYTES ||
-    /\s/u.test(address) ||
-    address !== address.toLowerCase()
+    address.length !== expectedLength ||
+    /\s/u.test(address)
   ) {
     throw new Error('Private receive address is not canonical.');
   }
-  if (!address.startsWith(`${expectedPrefix}1`)) {
-    throw new Error('Private receive address is for another network.');
-  }
-  if (!/^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/u.test(address)) {
+  if (!/^(?:tskpay_|skpay_)[1-9A-HJ-NP-Za-km-z]+$/u.test(address)) {
     throw new Error('Private receive address is not canonical.');
   }
   return address;
 }
 
 export function privateAddressFingerprint(address: string): string {
-  const prefix: PrivateAddressPrefix = address.startsWith('sks1') ? 'sks' : 'tks';
+  const prefix: PrivateAddressPrefix = address.startsWith('skpay_') ? 'skpay_' : 'tskpay_';
   const canonical = privateReceivePayload(address, prefix);
   return verificationCode(canonical);
 }

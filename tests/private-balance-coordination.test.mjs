@@ -47,7 +47,7 @@ test('private follower updates accept only a redacted exact schema', () => {
   };
   assert.deepEqual(decodePrivateBalanceFollowerUpdate(JSON.stringify(update)), update);
   for (const extra of [
-    { privateAddress: `tks1${'q'.repeat(115)}` },
+    { privateAddress: `tskpay_${'2'.repeat(121)}` },
     { notes: [] },
     { commitments: [] },
     { memo: 'secret' },

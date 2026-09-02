@@ -4,13 +4,13 @@
  * its lazy boundary (release-gate enforced) — shape checks only, no decoding.
  */
 
-/** Cheap shape check for a v2 Bech32m private address (tks testnet, sks mainnet). */
+/** Cheap shape check for a compact shareable Private Payments address. */
 export function isPrivateReceiveAddressLike(value: string): boolean {
   const trimmed = value.trim();
-  return /^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/.test(trimmed);
+  return /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9A-HJ-NP-Za-km-z]{121})$/.test(trimmed);
 }
 
-/** Cheap shape check for a v2 reusable stealth handle (tsm testnet, ssm mainnet). */
+/** Cheap shape check for a reusable stealth handle (tsm testnet, ssm mainnet). */
 export function isStealthMetaAddressLike(value: string): boolean {
   const trimmed = value.trim();
   return /^(?:tsm1|ssm1)[02-9ac-hj-np-z]{160}$/.test(trimmed);

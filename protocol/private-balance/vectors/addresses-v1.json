@@ -7,7 +7,7 @@
     "hpkePublicKey": "803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634"
   },
   "expected": {
-    "testnet": "tks1gfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpqqqqqqqf7hu5facpsyzasnxf59su4qv7xxfhn9rn0nx9csf4ws4elu7q5eqpul7eqrle4al07gdqu5hlanh7axd9d473xl6u9k98purmnaa35h8aunu",
-    "mainnet": "sks1gfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpqqqqqqqf7hu5facpsyzasnxf59su4qv7xxfhn9rn0nx9csf4ws4elu7q5eqpul7eqrle4al07gdqu5hlanh7axd9d473xl6u9k98purmnaa357qzg5y"
+    "testnet": "tskpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVvJaMYBs4U7TamLn98SHkCSZdvNW8ujfEouZurKzkZMvm5NrWyUTUgnRZXiQsEgy2MCFxGtjYAVjbjNAWAjrAnkXMs81fy",
+    "mainnet": "skpay_4g8Tt13VSvQHNipaxPx3SKxdMxFVvJaMYBs4U7TamLn98SHkCSZdvNW8ujfEouZurKzkZMvm5NrWyUTUgnRZXiQsEgy2MCFxGtjYAVjbjNAWAjrAnkXMTyHio"
   }
 }

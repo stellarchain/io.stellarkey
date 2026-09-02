@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { encodePrivateAddress } from '@stellarkey/private-balance';
+import {
+  derivePrivateAddressDeploymentTag,
+  encodePrivateAddress,
+} from '@stellarkey/private-balance';
 import * as storage from '../src/features/private-balance/runtime/storage.ts';
 import {
   advancePrivateChainedApprovalFee,
@@ -607,13 +610,13 @@ test('the private address and recent recipients persist under schema validation'
     byte => Number.parseInt(byte, 16),
   );
   const address = index => encodePrivateAddress({
-    deploymentBindingHash: fromHex(context.deploymentBindingHash),
+    deploymentTag: derivePrivateAddressDeploymentTag(fromHex(context.deploymentBindingHash)),
     diversifier: Uint8Array.of(0, 0, 0, index),
     ownerCommitment: fromHex('13ebf289ee03020bb0999342c395033c6326f328e6f998b8826ae8573fe7814c'),
     hpkePublicKey: fromHex('803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634'),
-  }, 'tks');
+  }, 'tskpay_');
 
-  assert.equal(address(0).length, 170);
+  assert.equal(address(0).length, 128);
   await assert.rejects(
     () => recordPrivateBalanceAddress(context, key, 0, `tks1${'q'.repeat(115)}`, driver),
     /address is invalid/,

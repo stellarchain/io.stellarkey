@@ -59,8 +59,8 @@ function developmentManifest() {
       treeDepth: 32, treeArity: 2, rootWindowLedgers: 1440,
       pageCapacity: 32, maxPagesPerTouch: 4, publicInputs: 13,
       notePlaintextBytes: 128, recipientEnvelopeBytes: 181, outputPackageBytes: 213,
-      addressPayloadBytes: 100, addressAsciiBytes: 170,
-      addressContextTagBytes: 0, addressChecksumBytes: 6,
+      addressPayloadBytes: 84, addressAsciiBytes: 128,
+      addressContextTagBytes: 16, addressChecksumBytes: 4,
     },
     hpke: { kemId: '0x0020', kdfId: '0x0001', aeadId: '0x0001' },
   });
