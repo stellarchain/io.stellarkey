@@ -50,6 +50,21 @@ test("the accessibility journey waits for asynchronous send readiness", () => {
   );
 });
 
+test("the Private Payments manifest-tamper browser gate cannot silently skip", () => {
+  const security = source("e2e/private-manifest-security.spec.ts");
+  const pkg = JSON.parse(source("package.json"));
+  const ci = source(".github/workflows/ci.yml");
+  const release = source(".github/workflows/release.yml");
+
+  assert.doesNotMatch(security, /PRIVATE_BALANCE_E2E|privateBalanceE2eEnabled|test\.skip/);
+  assert.doesNotMatch(security, /if\s*\(await .*isVisible/);
+  assert.match(security, /Private Balance manifest hash mismatch/);
+  assert.match(security, /Open private XLM/);
+  assert.match(pkg.scripts["test:e2e:private-ui"], /private-manifest-security\.spec\.ts/);
+  assert.match(ci, /npm run test:e2e:private-ui/);
+  assert.match(release, /npm run release:verify/);
+});
+
 test("accessibility coverage uses bounded wallet and merchant scenarios", () => {
   const accessibility = source("e2e/accessibility.spec.ts");
 

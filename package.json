@@ -31,7 +31,7 @@
     "private:check-reproducible": "node protocol/private-balance/scripts/build-private-balance-artifacts.mjs --check-reproducible",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:merchant": "npm run build && playwright test e2e/merchant.spec.ts --project=desktop-chromium",
-    "test:e2e:private-ui": "E2E_NEXT_DEV=1 E2E_PRIVATE_UI_REQUIRED=1 playwright test e2e/public-private-continuity.spec.ts e2e/overlay-contract.spec.ts --project=desktop-chromium --project=iphone-webkit",
+    "test:e2e:private-ui": "E2E_NEXT_DEV=1 E2E_PRIVATE_UI_REQUIRED=1 playwright test e2e/public-private-continuity.spec.ts e2e/overlay-contract.spec.ts e2e/private-manifest-security.spec.ts --project=desktop-chromium --project=iphone-webkit",
     "measure:ux": "node --no-warnings --experimental-strip-types --loader ./tests/ts-resolve-loader.mjs scripts/measure-ux.ts",
     "release:verify": "node scripts/assert-clean-release.mjs && npm run private:check-generated && npm run typecheck && npm test && npm run lint && npm run audit:prod && npm run build && npm run test:bundle && npm run check:bundle && playwright test"
   },

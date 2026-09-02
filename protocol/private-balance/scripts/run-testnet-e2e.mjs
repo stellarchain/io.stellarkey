@@ -174,6 +174,7 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'playwright',
       'test',
       'e2e/private-balance',
+      'e2e/private-manifest-security.spec.ts',
       '--project=desktop-chromium',
       '--reporter=line',
     ],

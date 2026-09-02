@@ -51,13 +51,19 @@ test('testnet E2E runner restores release files and never records browser secret
 });
 
 test('minimal testnet E2E suite keeps every required Task 26 surface', () => {
-  for (const name of ['setup', 'payments', 'recovery', 'security', 'accessibility', 'browser-smoke']) {
+  for (const name of ['setup', 'payments', 'recovery', 'accessibility', 'browser-smoke']) {
     assert.equal(
       existsSync(new URL(`../e2e/private-balance/${name}.spec.ts`, import.meta.url)),
       true,
       `${name}.spec.ts must exist`,
     );
   }
+  assert.equal(
+    existsSync(new URL('../e2e/private-manifest-security.spec.ts', import.meta.url)),
+    true,
+    'fixture-independent manifest security spec must exist',
+  );
+  assert.match(source, /private-manifest-security\.spec\.ts/);
 });
 
 test('testnet E2E follows the integrated private-assets UI', () => {
