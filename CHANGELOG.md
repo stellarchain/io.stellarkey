@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Accepted the wallet's canonical Private Payments activity keys in encrypted transaction-note backups, rejected invalid note writes, omitted malformed optional note entries with a restore warning, and verified fresh backup bytes before returning them.
 - Made merchant integrity manifests and wallet backup identities independent of browser locale, while transparently resealing authenticated stores created under legacy affected collations.
 - Prevented account-label writes from creating a vault that the wallet's own decoder refuses, and kept rename failures visible without reporting success.
 - Corrected the remaining Private Payments page copy that contradicted the hosted Testnet-only development preview policy.

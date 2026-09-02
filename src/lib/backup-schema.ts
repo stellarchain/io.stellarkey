@@ -21,6 +21,7 @@ export interface FullBackupPayload {
   contacts: Array<{ name: string; address: string; favorite?: boolean }>;
   settings?: BackupSettings;
   txNotes: Record<string, unknown>;
+  txNoteOmissions?: number;
   merchantStore?: string | null;
   privateBalanceStore?: string | null;
 }
@@ -30,6 +31,20 @@ const MAX_ACCOUNTS = 1_000;
 const MAX_CONTACTS = 5_000;
 const MAX_MERCHANT_ARCHIVE_CHARS = 32 * 1024 * 1024;
 export const MAX_ACCOUNT_LABEL_CHARS = 256;
+export const MAX_TRANSACTION_NOTE_CHARS = 10_000;
+
+const PUBLIC_TRANSACTION_NOTE_KEY = /^[0-9a-f]{1,128}$/i;
+const PRIVATE_ACTIVITY_NOTE_KEY =
+  /^private:[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?:[0-9a-f]{64}$/i;
+const PRIVATE_PENDING_NOTE_KEY = /^private-pending:[A-Za-z0-9._:-]{1,128}$/;
+
+export function isTransactionNoteKey(value: unknown): value is string {
+  return typeof value === "string" && (
+    PUBLIC_TRANSACTION_NOTE_KEY.test(value) ||
+    PRIVATE_ACTIVITY_NOTE_KEY.test(value) ||
+    PRIVATE_PENDING_NOTE_KEY.test(value)
+  );
+}
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -218,6 +233,12 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
   if (value.settings !== undefined && !isBackupSettings(value.settings)) return null;
   if (!isTxNotes(value.txNotes)) return null;
   if (
+    value.txNoteOmissions !== undefined &&
+    (!Number.isSafeInteger(value.txNoteOmissions) || (value.txNoteOmissions as number) < 0)
+  ) {
+    return null;
+  }
+  if (
     value.merchantStore !== undefined &&
     value.merchantStore !== null &&
     typeof value.merchantStore !== "string"
@@ -246,6 +267,7 @@ export function decodeFullBackupPayload(value: unknown): FullBackupPayload | nul
     contacts: value.contacts,
     settings: value.settings,
     txNotes: value.txNotes,
+    txNoteOmissions: value.txNoteOmissions as number | undefined,
     merchantStore: value.merchantStore,
     privateBalanceStore: value.privateBalanceStore,
   };

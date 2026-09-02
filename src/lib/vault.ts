@@ -23,7 +23,9 @@ import {
   isEncryptedPayloadValue,
   isRawKeyEncryptedPayloadValue,
   isRecord,
+  isTransactionNoteKey,
   MAX_ACCOUNT_LABEL_CHARS,
+  MAX_TRANSACTION_NOTE_CHARS,
   type FullBackupPayload,
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
@@ -1376,44 +1378,88 @@ interface TxNoteEnvelope {
   crypto: RawKeyEncryptedPayload;
 }
 
+interface NormalizedTransactionNotes {
+  notes: Record<string, string>;
+  omittedCount: number;
+}
+
+class BackupTransactionNotesError extends Error {}
+
 function isTxNoteEnvelope(value: unknown): value is TxNoteEnvelope {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<TxNoteEnvelope>;
   return candidate.version === 3 && isRawKeyEncryptedPayloadValue(candidate.crypto);
 }
 
-async function writePrivateTxNotes(
+async function encodePrivateTxNotes(
   notes: Record<string, string>,
   masterKey: Uint8Array,
-): Promise<void> {
+): Promise<string> {
   const envelope: TxNoteEnvelope = {
     version: 3,
     crypto: await encryptVaultString(JSON.stringify(notes), masterKey),
   };
-  window.localStorage.setItem(TX_NOTES_KEY, JSON.stringify(envelope));
+  return JSON.stringify(envelope);
 }
 
-function decodeNotes(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
+async function writePrivateTxNotes(
+  notes: Record<string, string>,
+  masterKey: Uint8Array,
+): Promise<void> {
+  window.localStorage.setItem(TX_NOTES_KEY, await encodePrivateTxNotes(notes, masterKey));
+}
+
+function normalizeTransactionNotes(value: unknown): NormalizedTransactionNotes | null {
+  if (!isRecord(value)) return null;
+  const notes: Record<string, string> = {};
+  let omittedCount = 0;
+  for (const [key, note] of Object.entries(value)) {
+    if (
+      isTransactionNoteKey(key) &&
+      typeof note === "string" &&
+      note.length <= MAX_TRANSACTION_NOTE_CHARS
+    ) {
+      notes[key] = note;
+    } else {
+      omittedCount += 1;
+    }
+  }
+  return { notes, omittedCount };
+}
+
+async function readPrivateTxNotesResult(
+  masterKey: Uint8Array,
+): Promise<NormalizedTransactionNotes> {
+  const raw = window.localStorage.getItem(TX_NOTES_KEY);
+  if (raw === null) return { notes: {}, omittedCount: 0 };
+  let stored: unknown;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    throw new Error("Private transaction notes are malformed.");
+  }
+  if (!isTxNoteEnvelope(stored)) {
+    throw new Error("Private transaction notes use an unsupported POC format.");
+  }
+  try {
+    const normalized = normalizeTransactionNotes(
+      JSON.parse(await decryptVaultString(stored.crypto, masterKey)) as unknown,
+    );
+    if (!normalized) throw new Error("Private transaction notes are malformed.");
+    return normalized;
+  } catch {
+    throw new Error("Private transaction notes could not be decrypted.");
+  }
 }
 
 async function readPrivateTxNotes(masterKey: Uint8Array): Promise<Record<string, string>> {
-  const stored = readLocalJson(TX_NOTES_KEY);
-  if (stored === null) return {};
-  if (isTxNoteEnvelope(stored)) {
-    try {
-      return decodeNotes(JSON.parse(await decryptVaultString(stored.crypto, masterKey)) as unknown);
-    } catch {
-      throw new Error("Private transaction notes could not be decrypted.");
-    }
-  }
-  throw new Error("Private transaction notes use an unsupported POC format.");
+  return (await readPrivateTxNotesResult(masterKey)).notes;
 }
 
 export async function loadPrivateTxNote(transactionHash: string): Promise<string> {
+  if (!isTransactionNoteKey(transactionHash)) {
+    throw new Error("Transaction note identifier is invalid.");
+  }
   const masterKey = requireSessionMasterKey();
   const notes = await readPrivateTxNotes(masterKey);
   return notes[transactionHash] ?? "";
@@ -1425,9 +1471,12 @@ export async function savePrivateTxNote(
 ): Promise<void> {
   const masterKey = requireSessionMasterKey();
   const key = transactionHash.trim();
-  if (!key) throw new Error("Transaction hash is required.");
+  if (!isTransactionNoteKey(key)) throw new Error("Transaction note identifier is invalid.");
   const notes = await readPrivateTxNotes(masterKey);
   const value = note.trim();
+  if (value.length > MAX_TRANSACTION_NOTE_CHARS) {
+    throw new Error(`Transaction notes must be ${MAX_TRANSACTION_NOTE_CHARS} characters or fewer.`);
+  }
   if (value) notes[key] = value;
   else delete notes[key];
   await writePrivateTxNotes(notes, masterKey);
@@ -1437,6 +1486,7 @@ export interface VaultRestoreResult {
   accountCount: number;
   hasMnemonic: boolean;
   contactCount: number;
+  warnings: string[];
 }
 
 export interface VaultBackupInfo {
@@ -1447,12 +1497,21 @@ export interface VaultBackupInfo {
   hasSettings: boolean;
   hasMerchantArchive: boolean;
   hasPrivateBalanceArchive: boolean;
+  warnings: string[];
   exportedAt?: string;
 }
 
 interface PreparedBackupPayload {
   encryptedContacts: string;
+  encryptedTxNotes: string;
   preparedPrivateBalanceStore: string | null;
+  warnings: string[];
+}
+
+function transactionNoteOmissionWarning(count: number): string {
+  return `${count} private transaction note${count === 1 ? " was" : "s were"} omitted because ${
+    count === 1 ? "its identifier or value was" : "their identifiers or values were"
+  } invalid.`;
 }
 
 function readLocalJson(key: string): unknown {
@@ -1540,22 +1599,25 @@ async function prepareDecodedBackup(
     }
 
     const encryptedContacts = await encodePrivateContacts(payload.contacts, masterKey);
+    let normalizedNotes: NormalizedTransactionNotes;
     try {
       if (!isTxNoteEnvelope(payload.txNotes)) {
         throw new Error("Private transaction notes are malformed.");
       }
       const notes = JSON.parse(await decryptVaultString(payload.txNotes.crypto, masterKey)) as unknown;
-      if (!notes || typeof notes !== "object" || Array.isArray(notes)) {
+      const normalized = normalizeTransactionNotes(notes);
+      if (!normalized) {
         throw new Error("Private transaction notes are malformed.");
       }
-      for (const [hash, note] of Object.entries(notes)) {
-        if (!/^[0-9a-f]{1,128}$/i.test(hash) || typeof note !== "string" || note.length > 10_000) {
-          throw new Error("Private transaction notes are malformed.");
-        }
-      }
+      normalizedNotes = normalized;
     } catch {
-      throw new Error("Private transaction notes could not be decrypted or authenticated.");
+      throw new BackupTransactionNotesError(
+        "Private transaction notes could not be decrypted or authenticated.",
+      );
     }
+    const encryptedTxNotes = await encodePrivateTxNotes(normalizedNotes.notes, masterKey);
+    const txNoteOmissions = (payload.txNoteOmissions ?? 0) + normalizedNotes.omittedCount;
+    const warnings = txNoteOmissions > 0 ? [transactionNoteOmissionWarning(txNoteOmissions)] : [];
 
     merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
     if (merchantKey.byteLength !== 32) throw new Error("Merchant recovery key is invalid.");
@@ -1618,8 +1680,9 @@ async function prepareDecodedBackup(
     } else if (typeof indexedDB !== "undefined") {
       preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
     }
-    return { encryptedContacts, preparedPrivateBalanceStore };
-  } catch {
+    return { encryptedContacts, encryptedTxNotes, preparedPrivateBalanceStore, warnings };
+  } catch (error) {
+    if (error instanceof BackupTransactionNotesError) throw error;
     throw new Error("The backup could not unlock or validate its encrypted wallet data.");
   } finally {
     zeroKey(merchantKey);
@@ -1633,7 +1696,7 @@ export async function inspectVaultBackup(
   password?: string,
 ): Promise<VaultBackupInfo> {
   const { payload } = await decodeBackup(json, password);
-  await prepareDecodedBackup(payload, password as string);
+  const prepared = await prepareDecodedBackup(payload, password as string);
   const primaryAccount = payload.vault.accounts.find(
     account => account.id === payload.vault.activeAccountId,
   ) ?? payload.vault.accounts[0];
@@ -1647,6 +1710,7 @@ export async function inspectVaultBackup(
     hasMerchantArchive: typeof payload.merchantStore === "string" && Boolean(payload.merchantStore),
     hasPrivateBalanceArchive:
       typeof payload.privateBalanceStore === "string" && Boolean(payload.privateBalanceStore),
+    warnings: prepared.warnings,
     exportedAt: payload.exportedAt || undefined,
   };
 }
@@ -1662,12 +1726,17 @@ export async function exportVaultBackup(password: string): Promise<string> {
   if (!storedVault) throw new Error("No wallet to back up.");
   const verified = await masterKeyForPassword(storedVault, password);
   let contacts: PrivateContactRecord[];
+  let txNotes: Record<string, unknown>;
+  let txNoteOmissions = 0;
   try {
     contacts = await readPrivateContacts(verified.masterKey);
+    const normalizedNotes = await readPrivateTxNotesResult(verified.masterKey);
+    txNotes = JSON.parse(await encodePrivateTxNotes(normalizedNotes.notes, verified.masterKey)) as
+      Record<string, unknown>;
+    txNoteOmissions = normalizedNotes.omittedCount;
   } finally {
     zeroKey(verified.masterKey);
   }
-  const notesRaw = readLocalJson(TX_NOTES_KEY);
   const autoLockRaw = window.localStorage.getItem(AUTOLOCK_KEY);
   const merchantBootstrap = readMerchantBootstrapState();
   let merchantKey: Uint8Array | null = null;
@@ -1704,10 +1773,8 @@ export async function exportVaultBackup(password: string): Promise<string> {
         },
       } : {}),
     },
-    txNotes:
-      notesRaw && typeof notesRaw === "object" && !Array.isArray(notesRaw)
-        ? (notesRaw as Record<string, unknown>)
-        : {},
+    txNotes,
+    ...(txNoteOmissions > 0 ? { txNoteOmissions } : {}),
     merchantStore,
     privateBalanceStore,
   };
@@ -1720,6 +1787,8 @@ export async function exportVaultBackup(password: string): Promise<string> {
     throw new Error("The wallet changed while the backup was being prepared. Try again.");
   }
   const crypto = await encryptString(JSON.stringify(payload), password);
+  const backup = JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
+  await inspectVaultBackup(backup, password);
   const finalVault = readVault();
   if (
     !finalVault ||
@@ -1728,7 +1797,7 @@ export async function exportVaultBackup(password: string): Promise<string> {
   ) {
     throw new Error("The wallet changed while the backup was being prepared. Try again.");
   }
-  return JSON.stringify({ kind: BACKUP_KIND, version: 2, crypto }, null, 2);
+  return backup;
 }
 
 /**
@@ -1744,7 +1813,12 @@ export async function restoreVaultBackup(
   const lifecycleEpoch = readWalletLifecycleEpoch();
   const { payload } = await decodeBackup(json, password);
   const vault = payload.vault;
-  const { encryptedContacts, preparedPrivateBalanceStore } = await prepareDecodedBackup(
+  const {
+    encryptedContacts,
+    encryptedTxNotes,
+    preparedPrivateBalanceStore,
+    warnings,
+  } = await prepareDecodedBackup(
     payload,
     password as string,
   );
@@ -1770,7 +1844,7 @@ export async function restoreVaultBackup(
   const writes = new Map<string, string | null>([
     [VAULT_KEY, JSON.stringify(vault)],
     [CONTACTS_KEY, encryptedContacts],
-    [TX_NOTES_KEY, JSON.stringify(payload.txNotes)],
+    [TX_NOTES_KEY, encryptedTxNotes],
   ]);
   // A passkey wraps one exact vault master key and is never portable in a
   // backup, so replacing the vault must revoke the previous local wrapper.
@@ -1832,6 +1906,7 @@ export async function restoreVaultBackup(
     accountCount: vault.accounts.length,
     hasMnemonic: Boolean(vault.mnemonic),
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
+    warnings,
   };
 }
 

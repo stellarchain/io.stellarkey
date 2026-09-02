@@ -778,6 +778,11 @@ function WizardInner({ onClose }: { onClose: () => void }) {
                   restored wallet with the backup&rsquo;s <strong>original password</strong>.
                 </Notice>
               </div>
+              {restoreInfo.warnings.map((warning) => (
+                <div className="mt-3.5" key={warning}>
+                  <Notice tone="warn">{warning}</Notice>
+                </div>
+              ))}
               {error && (
                 <div className="mt-3">
                   <ErrorText message={error} />
