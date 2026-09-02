@@ -7,6 +7,7 @@ import {
 import { StrKey } from '@stellar/stellar-sdk';
 import {
   commitStealthDiscoveryCache,
+  compactStealthDiscoveryPayments,
   createEmptyStealthDiscoveryCache,
   loadStealthDiscoveryCache,
   type StealthCacheDriver,
@@ -213,7 +214,7 @@ export async function syncStealthAnnouncements(
       revision: expectedRevision === null ? 0 : expectedRevision + 1,
       cursor: page.nextCursor,
       latestLedger: page.latestLedger,
-      payments: [...state.payments, ...additions],
+      payments: compactStealthDiscoveryPayments([...state.payments, ...additions]),
       updatedAt: now,
     };
     await commitStealthDiscoveryCache(

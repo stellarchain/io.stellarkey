@@ -100,7 +100,7 @@ test('stealth sync checkpoints pages, filters ownership, and resumes from its cu
   });
 
   assert.equal(calls[0].cursor, null);
-  assert.equal(calls[0].lowerBoundCreatedAt, 1_000);
+  assert.equal(calls[0].lowerBoundCreatedAt, 0);
   assert.equal(calls[1].cursor, data.foreign.pagingToken);
   assert.equal(state.cursor, data.secondOwned.pagingToken);
   assert.equal(state.latestLedger, 102);

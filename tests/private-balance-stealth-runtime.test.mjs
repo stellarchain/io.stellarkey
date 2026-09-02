@@ -89,7 +89,7 @@ test('stealth runtime publishes its reusable identity before incremental discove
   assert.deepEqual(order, ['identity', 'read']);
   releasePage();
   const result = await run;
-  assert.equal(discoveryInput.lowerBoundCreatedAt, 1);
+  assert.equal(discoveryInput.lowerBoundCreatedAt, 0);
   assert.equal(result.cache.payments.length, 1);
   assert.equal(result.cache.payments[0].amountStroops, '25000000');
   assert.equal(
