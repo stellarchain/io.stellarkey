@@ -2439,8 +2439,9 @@ export function MerchantProvider({
     }
 
     if (result.totals.totalMinor === 0) {
+      const paymentActor = requirePaymentActor(current);
       const adjustedTicket: Ticket = { ...result.ticket, adjustments };
-      const order = buildTicketOrder(current, adjustedTicket, actor, now);
+      const order = buildTicketOrder(current, adjustedTicket, paymentActor, now);
       const committed = settleNewOrder(current, order, [], adjustments, now);
       const securedStore = applyOperatorSalePolicy(committed.store);
       await commitStore(securedStore);
@@ -2451,7 +2452,15 @@ export function MerchantProvider({
 
     setTicket({ ...result.ticket, adjustments });
     return null;
-  }, [buildTicketOrder, clearTicket, commitStore, staffSessionId, ticket, updateStaffSessionId]);
+  }, [
+    buildTicketOrder,
+    clearTicket,
+    commitStore,
+    requirePaymentActor,
+    staffSessionId,
+    ticket,
+    updateStaffSessionId,
+  ]);
 
   const applyAdjustment = useCallback((input: {
     lineId: string | null;
