@@ -11,6 +11,7 @@ import {
 } from "@/hooks/useMerchant";
 import { useWalletPhase } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
+import { merchantPageAccess } from "@/lib/merchant/security-boundaries";
 import { triggerHaptic } from "@/lib/haptics";
 import { Button, ErrorText, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconChevronDown, IconDownload } from "../icons";
@@ -153,7 +154,7 @@ export function MerchantPage({
     pollNow,
   } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
-  const { today, canSeeReports } = useMerchantReporting();
+  const { today } = useMerchantReporting();
   const { activeStaff } = useMerchantStaff();
   const { activeShift } = useMerchantTill();
   const { unmatched, activeCharge, closeCharge } = useMerchantRecords();
@@ -319,8 +320,10 @@ export function MerchantPage({
   const showAlerts = Boolean(storageError) || showChargeBlock || showTray || showRuntime;
   const active = navKey(sub);
   const onBilling = sub === "invoices" || sub === "links";
-  const hasActiveOperator = activeStaff !== null && phase !== "locked";
-  const canAccessRecords = hasActiveOperator && canSeeReports;
+  const { hasActiveOperator, canAccessRecords, canSeeReports } = merchantPageAccess({
+    activeStaff,
+    vaultPhase: phase,
+  });
   const operatorNotice = (
     <Notice tone="warn">
       {hasActiveOperator

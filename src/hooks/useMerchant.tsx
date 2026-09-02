@@ -188,6 +188,11 @@ import {
 import { BROWSER_PERIPHERALS, merchantRuntimeState } from "@/lib/merchant/runtime";
 import { resetMerchantRecoveryStore } from "@/lib/merchant/recovery";
 import {
+  authorizeMerchantWalletExit,
+  requireMerchantPaymentActor,
+  voidAwaitingMerchantCharge,
+} from "@/lib/merchant/security-boundaries";
+import {
   expireAwaitingCharges,
   indexMerchantRecords,
   nextAwaitingChargeExpiry,
@@ -1268,10 +1273,11 @@ export function MerchantProvider({
   }, [requireExportingStaff]);
 
   const authorizeWalletExit = useCallback(async (): Promise<void> => {
-    const actorId = staffSessionIdRef.current ?? "";
-    requireActiveOwner(storeRef.current, actorId);
-    await authorizeSensitiveAction("Leave Merchant Mode");
-    requireActiveOwner(storeRef.current, actorId);
+    await authorizeMerchantWalletExit({
+      getStore: () => storeRef.current,
+      getActorId: () => staffSessionIdRef.current,
+      authorizeWalletOwner: () => authorizeSensitiveAction("Leave Merchant Mode"),
+    });
   }, [authorizeSensitiveAction]);
 
   const taxPeriods = useMemo(
@@ -1895,22 +1901,10 @@ export function MerchantProvider({
   }, []);
 
   const requirePaymentActor = useCallback((current: MerchantStore): StaffMember => {
-    const actor = current.staff.find(
-      (member) =>
-        member.id === staffSessionId &&
-        member.id === current.activeStaffId &&
-        member.active,
-    );
-    if (!actor) throw new Error("Choose an active staff member before taking a payment.");
-    if (!actor.permissions.takePayment) {
-      throw new Error(`${actor.name} is not allowed to take payments.`);
-    }
-    const shift = activeShiftForTerminal(current);
-    if (!shift) throw new Error(`Open a shift on ${current.settings.terminalName} before taking a payment.`);
-    if (shift.network !== network) {
-      throw new Error(`Shift ${shift.number} is open on ${shift.network}; switch network or close it first.`);
-    }
-    return actor;
+    return requireMerchantPaymentActor(current, {
+      actorId: staffSessionId,
+      network,
+    });
   }, [network, staffSessionId]);
 
   const buildTicketOrder = useCallback((
@@ -2564,34 +2558,17 @@ export function MerchantProvider({
 
   const voidCharge = useCallback(
     async (id: string): Promise<void> => {
-      const actor = requirePaymentActor(storeRef.current);
-      if (!actor.permissions.void) throw new Error(`${actor.name} is not allowed to void charges.`);
+      const actorId = staffSessionIdRef.current;
       await commitStore((latest) => {
-        const latestActor = requirePaymentActor(latest);
-        if (!latestActor.permissions.void) {
-          throw new Error(`${latestActor.name} is not allowed to void charges.`);
-        }
-        const currentCharge = latest.charges.find((charge) => charge.id === id);
-        if (!currentCharge) throw new Error("This charge no longer exists.");
-        if (currentCharge.status !== "awaiting") {
-          throw new Error("Only an awaiting charge can be voided.");
-        }
-        return {
-          ...latest,
-          charges: latest.charges.map((charge) =>
-            charge.id === id ? { ...charge, status: "voided" } : charge,
-          ),
-          orders: latest.orders.map((order) =>
-            latest.charges.some((charge) => charge.id === id && charge.orderId === order.id) &&
-            order.status === "awaiting"
-              ? { ...order, status: "voided" }
-              : order,
-          ),
-        };
+        return voidAwaitingMerchantCharge(latest, {
+          chargeId: id,
+          actorId,
+          network,
+        });
       });
       setActiveChargeId((current) => (current === id ? null : current));
     },
-    [commitStore, requirePaymentActor],
+    [commitStore, network],
   );
 
   /** Expire anything past its window so the UI never shows a dead countdown. */
