@@ -427,11 +427,20 @@ records machine-readable results. The accepted replacement measures:
 | Pool Wasm | 66,377 bytes raw; 57,042 bytes after `stellar contract optimize` |
 
 In the recorded three-trial Node.js run on an Apple M3 Max, native X25519 p50
-fell from 460.417 microseconds with JWK import to 102.125 microseconds with
-PKCS#8 import, a 77.82% median improvement. The complete RFC 9180-compatible
-scan path measured 4.487x faster than the prior path, and a bounded 64-envelope
-batch measured 2.681x the sequential throughput. These are local
-microbenchmarks, not physical-phone latency evidence.
+fell from 371.708 microseconds with JWK import to 84.792 microseconds with
+PKCS#8 import, a 77.19% median improvement. The complete RFC 9180-compatible
+scan path measured 4.57x faster than the prior path. The configured
+8-envelope cap measured a 2.323x paired median against adjacent sequential
+controls over nine rotated trials. The cap is fixed conservatively from
+repeated exploratory runs; the locally fastest candidate is diagnostic, not a
+production selector. These are local microbenchmarks, not physical-phone
+latency evidence.
+
+The pool size comparison is also like-for-like: baseline revision `69335bd`
+and the replacement were built with Stellar CLI 27.0.0, Rust 1.97.1, locked
+dependencies, and identical optimization commands. Raw Wasm fell from 93,504
+to 66,377 bytes (29.01%), while optimized Wasm fell from 80,245 to 57,042
+bytes (28.92%).
 
 A standalone additional depth-17 association-set membership path compiled to
 4,573 constraints. It would raise the current action to at least 19,147

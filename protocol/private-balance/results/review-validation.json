@@ -1,12 +1,14 @@
 {
   "schemaVersion": 3,
-  "revision": "b1e6e5f40cae616db9dee53d83ed4951cebbf91e",
-  "generatedAt": "2026-09-02T21:37:11.552Z",
+  "revision": "00efbc4a2c54532bb155212a9311d3dff9dade9f",
+  "generatedAt": "2026-09-02T22:05:39.722Z",
   "environment": {
     "node": "v26.7.0",
     "platform": "darwin",
     "osRelease": "25.5.0",
-    "cpu": "Apple M3 Max"
+    "cpu": "Apple M3 Max",
+    "stellarCli": "27.0.0",
+    "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)"
   },
   "x25519": {
     "trials": 3,
@@ -14,78 +16,78 @@
     "warmups": 20,
     "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
     "nativeJwk": {
-      "p50Microseconds": 460.417,
-      "p95Microseconds": 944.916,
+      "p50Microseconds": 371.708,
+      "p95Microseconds": 474.958,
       "trialResults": [
         {
-          "p50Microseconds": 365.916,
-          "p95Microseconds": 488.167
+          "p50Microseconds": 371.042,
+          "p95Microseconds": 651.083
         },
         {
-          "p50Microseconds": 460.417,
-          "p95Microseconds": 944.916
+          "p50Microseconds": 371.708,
+          "p95Microseconds": 474.958
         },
         {
-          "p50Microseconds": 652.416,
-          "p95Microseconds": 1068.292
+          "p50Microseconds": 395.125,
+          "p95Microseconds": 532.042
         }
       ]
     },
     "nativePkcs8Prototype": {
-      "p50Microseconds": 102.125,
-      "p95Microseconds": 1081.333,
+      "p50Microseconds": 84.792,
+      "p95Microseconds": 186.291,
       "trialResults": [
         {
-          "p50Microseconds": 93.208,
-          "p95Microseconds": 301.125
+          "p50Microseconds": 82.958,
+          "p95Microseconds": 205.125
         },
         {
-          "p50Microseconds": 102.125,
-          "p95Microseconds": 1081.333
+          "p50Microseconds": 84.792,
+          "p95Microseconds": 186.291
         },
         {
-          "p50Microseconds": 239.916,
-          "p95Microseconds": 1283.958
+          "p50Microseconds": 94.291,
+          "p95Microseconds": 228.541
         }
       ]
     },
     "portable": {
-      "p50Microseconds": 914.5,
-      "p95Microseconds": 1720.25,
+      "p50Microseconds": 812.459,
+      "p95Microseconds": 929.625,
       "trialResults": [
         {
-          "p50Microseconds": 910.125,
-          "p95Microseconds": 1615.916
+          "p50Microseconds": 766.791,
+          "p95Microseconds": 923.5
         },
         {
-          "p50Microseconds": 914.5,
-          "p95Microseconds": 1720.25
+          "p50Microseconds": 812.459,
+          "p95Microseconds": 929.625
         },
         {
-          "p50Microseconds": 996.125,
-          "p95Microseconds": 2213.333
+          "p50Microseconds": 833.875,
+          "p95Microseconds": 957.708
         }
       ]
     },
     "diversifiedAddress": {
-      "p50Microseconds": 290.166,
-      "p95Microseconds": 807.25,
+      "p50Microseconds": 695.25,
+      "p95Microseconds": 2107.792,
       "trialResults": [
         {
-          "p50Microseconds": 271.708,
-          "p95Microseconds": 396.208
+          "p50Microseconds": 669.042,
+          "p95Microseconds": 2678.042
         },
         {
-          "p50Microseconds": 290.166,
-          "p95Microseconds": 807.25
+          "p50Microseconds": 695.25,
+          "p95Microseconds": 2107.792
         },
         {
-          "p50Microseconds": 499.916,
-          "p95Microseconds": 1083.084
+          "p50Microseconds": 726.875,
+          "p95Microseconds": 2070.542
         }
       ]
     },
-    "pkcs8MedianImprovementPercent": 77.82
+    "pkcs8MedianImprovementPercent": 77.19
   },
   "scanPath": {
     "trials": 3,
@@ -100,147 +102,414 @@
     },
     "variants": {
       "current": {
-        "p50Microseconds": 1872.917,
-        "p95Microseconds": 4448.208,
+        "p50Microseconds": 1141.833,
+        "p95Microseconds": 3068.542,
         "trialResults": [
           {
-            "p50Microseconds": 1114.75,
-            "p95Microseconds": 2463
+            "p50Microseconds": 1109.208,
+            "p95Microseconds": 3457.459
           },
           {
-            "p50Microseconds": 1872.917,
-            "p95Microseconds": 4448.208
+            "p50Microseconds": 1141.833,
+            "p95Microseconds": 3068.542
           },
           {
-            "p50Microseconds": 2230.625,
-            "p95Microseconds": 3901.084
+            "p50Microseconds": 3130.125,
+            "p95Microseconds": 6941
           }
         ]
       },
       "reordered": {
-        "p50Microseconds": 1323.125,
-        "p95Microseconds": 3925.542,
+        "p50Microseconds": 990.083,
+        "p95Microseconds": 3430.333,
         "trialResults": [
           {
-            "p50Microseconds": 961.542,
-            "p95Microseconds": 1798.416
+            "p50Microseconds": 929.291,
+            "p95Microseconds": 3265.084
           },
           {
-            "p50Microseconds": 1323.125,
-            "p95Microseconds": 3925.542
+            "p50Microseconds": 990.083,
+            "p95Microseconds": 3430.333
           },
           {
-            "p50Microseconds": 1975.125,
-            "p95Microseconds": 4660.583
+            "p50Microseconds": 2723.416,
+            "p95Microseconds": 6675.25
           }
         ]
       },
       "webcrypto": {
-        "p50Microseconds": 417.417,
-        "p95Microseconds": 1861.333,
+        "p50Microseconds": 249.875,
+        "p95Microseconds": 1153.75,
         "trialResults": [
           {
-            "p50Microseconds": 224.542,
-            "p95Microseconds": 725.583
+            "p50Microseconds": 243.167,
+            "p95Microseconds": 1103.959
           },
           {
-            "p50Microseconds": 417.417,
-            "p95Microseconds": 1861.333
+            "p50Microseconds": 249.875,
+            "p95Microseconds": 1153.75
           },
           {
-            "p50Microseconds": 606.25,
-            "p95Microseconds": 2888.25
+            "p50Microseconds": 957.375,
+            "p95Microseconds": 3666.625
           }
         ]
       },
       "ideal": {
-        "p50Microseconds": 102,
-        "p95Microseconds": 618.541,
+        "p50Microseconds": 64.25,
+        "p95Microseconds": 270.875,
         "trialResults": [
           {
-            "p50Microseconds": 55.459,
-            "p95Microseconds": 167.375
+            "p50Microseconds": 62.584,
+            "p95Microseconds": 443.917
           },
           {
-            "p50Microseconds": 102,
-            "p95Microseconds": 618.541
+            "p50Microseconds": 64.25,
+            "p95Microseconds": 270.875
           },
           {
-            "p50Microseconds": 131.125,
-            "p95Microseconds": 1167.083
+            "p50Microseconds": 302.417,
+            "p95Microseconds": 1814.583
           }
         ]
       }
     },
     "ratios": {
-      "currentOverReordered": 1.416,
-      "currentOverWebcrypto": 4.487,
-      "currentOverIdeal": 18.362
+      "currentOverReordered": 1.153,
+      "currentOverWebcrypto": 4.57,
+      "currentOverIdeal": 17.772
     }
   },
   "scanBatch": {
-    "trials": 3,
+    "trials": 9,
     "candidatesPerTrial": 128,
     "variants": {
       "1": {
-        "p50MicrosecondsPerEnvelope": 234.604,
-        "p95MicrosecondsPerEnvelope": 246.093,
+        "p50MicrosecondsPerEnvelope": 241.349,
+        "p95MicrosecondsPerEnvelope": 975.43,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 309.555,
+        "pairedMedianThroughputRatio": 1.166,
         "trialResults": [
-          198.341,
-          234.604,
-          246.093
+          {
+            "sequentialMicrosecondsPerEnvelope": 636.291,
+            "candidateMicrosecondsPerEnvelope": 975.43,
+            "throughputRatio": 0.652
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 326.473,
+            "candidateMicrosecondsPerEnvelope": 241.349,
+            "throughputRatio": 1.353
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 269.708,
+            "candidateMicrosecondsPerEnvelope": 221.731,
+            "throughputRatio": 1.216
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 281.073,
+            "candidateMicrosecondsPerEnvelope": 241.029,
+            "throughputRatio": 1.166
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 173.956,
+            "candidateMicrosecondsPerEnvelope": 191.702,
+            "throughputRatio": 0.907
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 302.23,
+            "candidateMicrosecondsPerEnvelope": 302.082,
+            "throughputRatio": 1
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 805.094,
+            "candidateMicrosecondsPerEnvelope": 390.918,
+            "throughputRatio": 2.059
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 639.98,
+            "candidateMicrosecondsPerEnvelope": 723.862,
+            "throughputRatio": 0.884
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 309.555,
+            "candidateMicrosecondsPerEnvelope": 233.26,
+            "throughputRatio": 1.327
+          }
         ]
       },
       "4": {
-        "p50MicrosecondsPerEnvelope": 130.148,
-        "p95MicrosecondsPerEnvelope": 138.998,
+        "p50MicrosecondsPerEnvelope": 122.408,
+        "p95MicrosecondsPerEnvelope": 723.334,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 304.532,
+        "pairedMedianThroughputRatio": 1.699,
         "trialResults": [
-          107.464,
-          130.148,
-          138.998
+          {
+            "sequentialMicrosecondsPerEnvelope": 791.062,
+            "candidateMicrosecondsPerEnvelope": 595.123,
+            "throughputRatio": 1.329
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 357.533,
+            "candidateMicrosecondsPerEnvelope": 122.408,
+            "throughputRatio": 2.921
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 194.727,
+            "candidateMicrosecondsPerEnvelope": 114.602,
+            "throughputRatio": 1.699
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 184.664,
+            "candidateMicrosecondsPerEnvelope": 120.999,
+            "throughputRatio": 1.526
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 171.981,
+            "candidateMicrosecondsPerEnvelope": 121.02,
+            "throughputRatio": 1.421
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 304.532,
+            "candidateMicrosecondsPerEnvelope": 158.034,
+            "throughputRatio": 1.927
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1076.641,
+            "candidateMicrosecondsPerEnvelope": 107.715,
+            "throughputRatio": 9.995
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 901.035,
+            "candidateMicrosecondsPerEnvelope": 723.334,
+            "throughputRatio": 1.246
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 255.415,
+            "candidateMicrosecondsPerEnvelope": 135.043,
+            "throughputRatio": 1.891
+          }
         ]
       },
       "8": {
-        "p50MicrosecondsPerEnvelope": 102.973,
-        "p95MicrosecondsPerEnvelope": 103.192,
+        "p50MicrosecondsPerEnvelope": 109.314,
+        "p95MicrosecondsPerEnvelope": 870.321,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 300.274,
+        "pairedMedianThroughputRatio": 2.323,
         "trialResults": [
-          95.755,
-          102.973,
-          103.192
+          {
+            "sequentialMicrosecondsPerEnvelope": 425.603,
+            "candidateMicrosecondsPerEnvelope": 127.575,
+            "throughputRatio": 3.336
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 389.234,
+            "candidateMicrosecondsPerEnvelope": 109.314,
+            "throughputRatio": 3.561
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 249.476,
+            "candidateMicrosecondsPerEnvelope": 107.391,
+            "throughputRatio": 2.323
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 209.042,
+            "candidateMicrosecondsPerEnvelope": 139.292,
+            "throughputRatio": 1.501
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 168.794,
+            "candidateMicrosecondsPerEnvelope": 98.713,
+            "throughputRatio": 1.71
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 300.274,
+            "candidateMicrosecondsPerEnvelope": 99.882,
+            "throughputRatio": 3.006
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1288.428,
+            "candidateMicrosecondsPerEnvelope": 505.357,
+            "throughputRatio": 2.55
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 738.608,
+            "candidateMicrosecondsPerEnvelope": 870.321,
+            "throughputRatio": 0.849
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 168.421,
+            "candidateMicrosecondsPerEnvelope": 85.701,
+            "throughputRatio": 1.965
+          }
         ]
       },
       "16": {
-        "p50MicrosecondsPerEnvelope": 103.04,
-        "p95MicrosecondsPerEnvelope": 107.479,
+        "p50MicrosecondsPerEnvelope": 97.726,
+        "p95MicrosecondsPerEnvelope": 353.936,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 252.553,
+        "pairedMedianThroughputRatio": 2.282,
         "trialResults": [
-          91.241,
-          103.04,
-          107.479
+          {
+            "sequentialMicrosecondsPerEnvelope": 205.157,
+            "candidateMicrosecondsPerEnvelope": 119.856,
+            "throughputRatio": 1.712
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 255.672,
+            "candidateMicrosecondsPerEnvelope": 97.726,
+            "throughputRatio": 2.616
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 208.359,
+            "candidateMicrosecondsPerEnvelope": 95.067,
+            "throughputRatio": 2.192
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 400.159,
+            "candidateMicrosecondsPerEnvelope": 104.028,
+            "throughputRatio": 3.847
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 223.73,
+            "candidateMicrosecondsPerEnvelope": 92.232,
+            "throughputRatio": 2.426
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 252.553,
+            "candidateMicrosecondsPerEnvelope": 83.611,
+            "throughputRatio": 3.021
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 775.209,
+            "candidateMicrosecondsPerEnvelope": 353.936,
+            "throughputRatio": 2.19
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 289.876,
+            "candidateMicrosecondsPerEnvelope": 292.031,
+            "throughputRatio": 0.993
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 194.762,
+            "candidateMicrosecondsPerEnvelope": 85.352,
+            "throughputRatio": 2.282
+          }
         ]
       },
       "32": {
-        "p50MicrosecondsPerEnvelope": 87.594,
-        "p95MicrosecondsPerEnvelope": 123.944,
+        "p50MicrosecondsPerEnvelope": 103.643,
+        "p95MicrosecondsPerEnvelope": 237.124,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 325.298,
+        "pairedMedianThroughputRatio": 2.597,
         "trialResults": [
-          87.469,
-          87.594,
-          123.944
+          {
+            "sequentialMicrosecondsPerEnvelope": 363.535,
+            "candidateMicrosecondsPerEnvelope": 116.16,
+            "throughputRatio": 3.13
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 543.809,
+            "candidateMicrosecondsPerEnvelope": 177.491,
+            "throughputRatio": 3.064
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 190.651,
+            "candidateMicrosecondsPerEnvelope": 88.266,
+            "throughputRatio": 2.16
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 254.556,
+            "candidateMicrosecondsPerEnvelope": 103.643,
+            "throughputRatio": 2.456
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 226.664,
+            "candidateMicrosecondsPerEnvelope": 87.296,
+            "throughputRatio": 2.597
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1129.63,
+            "candidateMicrosecondsPerEnvelope": 79.884,
+            "throughputRatio": 14.141
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1162.085,
+            "candidateMicrosecondsPerEnvelope": 237.124,
+            "throughputRatio": 4.901
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 325.298,
+            "candidateMicrosecondsPerEnvelope": 150.112,
+            "throughputRatio": 2.167
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 163.174,
+            "candidateMicrosecondsPerEnvelope": 72.581,
+            "throughputRatio": 2.248
+          }
         ]
       },
       "64": {
-        "p50MicrosecondsPerEnvelope": 87.511,
-        "p95MicrosecondsPerEnvelope": 88.55,
+        "p50MicrosecondsPerEnvelope": 102.553,
+        "p95MicrosecondsPerEnvelope": 259.484,
+        "pairedSequentialP50MicrosecondsPerEnvelope": 337.458,
+        "pairedMedianThroughputRatio": 3.013,
         "trialResults": [
-          80.393,
-          87.511,
-          88.55
+          {
+            "sequentialMicrosecondsPerEnvelope": 308.999,
+            "candidateMicrosecondsPerEnvelope": 102.553,
+            "throughputRatio": 3.013
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 342.788,
+            "candidateMicrosecondsPerEnvelope": 94.097,
+            "throughputRatio": 3.643
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 211.737,
+            "candidateMicrosecondsPerEnvelope": 86.451,
+            "throughputRatio": 2.449
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 337.458,
+            "candidateMicrosecondsPerEnvelope": 193.028,
+            "throughputRatio": 1.748
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 801.239,
+            "candidateMicrosecondsPerEnvelope": 113.126,
+            "throughputRatio": 7.083
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 245.641,
+            "candidateMicrosecondsPerEnvelope": 94.349,
+            "throughputRatio": 2.604
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 2034.6,
+            "candidateMicrosecondsPerEnvelope": 167.606,
+            "throughputRatio": 12.139
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 1355.26,
+            "candidateMicrosecondsPerEnvelope": 259.484,
+            "throughputRatio": 5.223
+          },
+          {
+            "sequentialMicrosecondsPerEnvelope": 207.21,
+            "candidateMicrosecondsPerEnvelope": 77.15,
+            "throughputRatio": 2.686
+          }
         ]
       }
     },
-    "selectedBatchSize": 64,
-    "sequentialP50MicrosecondsPerEnvelope": 234.604,
-    "selectedP50MicrosecondsPerEnvelope": 87.511,
-    "throughputRatio": 2.681,
+    "selectionPolicy": "fixed conservative 8-output cap from repeated exploratory runs; paired median must exceed 1.20x sequential",
+    "bestBatchSize": 64,
+    "bestPairedMedianThroughputRatio": 3.013,
+    "selectedBatchSize": 8,
+    "sequentialP50MicrosecondsPerEnvelope": 300.274,
+    "selectedP50MicrosecondsPerEnvelope": 109.314,
+    "throughputRatio": 2.323,
     "acceptanceThreshold": 1.2
   },
   "circuit": {
@@ -292,17 +561,19 @@
       "baselineInstructions": 39614514,
       "currentInstructions": 29287953,
       "reductionPercent": 26.07,
-      "method": "Soroban test budget for the two-input transfer proof vector. The baseline used the prior 13-signal verifier loop; the current measurement uses one MSM and the accepted 11-signal statement."
+      "method": "Parsed the maximum Soroban test budget from all three current proof vectors. The baseline used the prior 13-signal verifier loop; the current implementation uses one MSM and the accepted 11-signal statement."
     },
     "poolWasm": {
       "reviewMisidentifiedBytes": 154609,
       "reviewMisidentifiedArtifact": "protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)",
-      "trackedPoolWasmBytes": 93504,
-      "measuredBaselineOptimizedBytes": 121675,
+      "baselineRevision": "69335bd893e6c2739043ddae9434161b2c22a6ce",
+      "baselineRawBytes": 93504,
+      "baselineOptimizedBytes": 80245,
       "currentRawBytes": 66377,
       "currentOptimizedBytes": 57042,
-      "reductionPercent": 53.12,
-      "method": "Built the private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize. The current measurement includes fixed-width field arithmetic, 11 public signals, and removal of dead paging configuration."
+      "rawReductionPercent": 29.01,
+      "optimizedReductionPercent": 28.92,
+      "method": "Built baseline revision 69335bd893e6c2739043ddae9434161b2c22a6ce and the current private-balance-pool source with the same pinned CLI, Cargo version, locked dependencies, unoptimized build mode, and isolated target directories; then optimized each resulting Wasm with the same command."
     }
   },
   "decisions": {
@@ -316,11 +587,11 @@
     },
     "3": {
       "status": "accept",
-      "reason": "The RFC 9180-compatible WebCrypto path is byte-identical to the existing implementation and measured 4.49x current; view-tag-first hashing removes Poseidon work from misses."
+      "reason": "The RFC 9180-compatible WebCrypto path is byte-identical to the existing implementation and measured 4.57x current; view-tag-first hashing removes Poseidon work from misses."
     },
     "4": {
       "status": "accept",
-      "reason": "Bounded batch 64 measured 2.68x sequential throughput on the deterministic corpus."
+      "reason": "The configured bounded batch 8 delivered 2.32x the paired median of its adjacent sequential controls on the deterministic corpus."
     },
     "5": {
       "status": "accept",
@@ -336,7 +607,7 @@
     },
     "8": {
       "status": "accept",
-      "reason": "Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 57042 bytes after all accepted contract changes; the review had measured the witness generator instead."
+      "reason": "Ten thousand-case differential tests match BigUint; like-for-like builds reduced raw pool Wasm from 93504 to 66377 bytes and optimized Wasm from 80245 to 57042 bytes."
     },
     "9": {
       "status": "accept",
