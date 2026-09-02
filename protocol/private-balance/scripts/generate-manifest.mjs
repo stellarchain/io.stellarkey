@@ -68,8 +68,10 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     process.cwd(),
     'protocol/private-balance/results/fixtures',
   );
-  const fixtureNames = readdirSync(fixtureDir)
-    .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
+  const fixtureNames = existsSync(fixtureDir)
+    ? readdirSync(fixtureDir)
+      .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
+    : [];
   if (fixtureNames.length !== 2) {
     throw new Error(
       `Expected exactly two current per-asset testnet deployment evidence files, found ${fixtureNames.length}.`,

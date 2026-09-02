@@ -299,6 +299,7 @@ test('manifest: generator binds exact toolchains and defaults to an undeployed b
   assert.doesNotMatch(source, /artifactVersion: '1\.0\.2-testnet-preview'/);
   assert.doesNotMatch(source, /status: 'testnet-preview'/);
   assert.match(source, /process\.argv\.includes\('--publish-deployment'\)/);
+  assert.match(source, /existsSync\(fixtureDir\)/);
   assert.match(source, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = false/);
   assert.match(source, /deployments: \[\]/);
 });

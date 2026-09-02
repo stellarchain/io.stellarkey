@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 
@@ -22,17 +22,16 @@ const source = readFileSync(
   'utf8',
 );
 
-test('retired testnet evidence is not published as the replacement protocol', () => {
+test('the replacement protocol has no stale deployment evidence or published pools', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
   );
-  const fixtureNames = readdirSync(fixtureDirectory)
-    .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
-  assert.equal(fixtureNames.length, 2, 'retain the two historical deployment records');
-  const fixtures = fixtureNames.map(name =>
-    JSON.parse(readFileSync(new URL(name, fixtureDirectory), 'utf8')),
-  );
+  const fixtureNames = existsSync(fixtureDirectory)
+    ? readdirSync(fixtureDirectory)
+      .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
+    : [];
+  assert.deepEqual(fixtureNames, []);
 
   const catalogue = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/catalogue.json', import.meta.url),
@@ -45,9 +44,6 @@ test('retired testnet evidence is not published as the replacement protocol', ()
   ));
   assert.equal(manifest.status, 'development');
   assert.equal(manifest.deploymentCheckpoint.ledger, 0);
-  for (const fixture of fixtures) {
-    assert.notEqual(fixture.wasmSha256, manifest.release.contractWasmSha256);
-  }
 });
 
 test('testnet fixture defaults to a non-mutating plan and requires explicit live consent', () => {
