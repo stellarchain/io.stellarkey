@@ -81,6 +81,55 @@ test("main and tagged releases require the pinned Private Payments Gate A", () =
   assert.match(workflows[1], /release:\s*\n\s*needs:\s*private-gate-a/);
 });
 
+test("CI, releases, and the scheduled Gate B execute the private Rust models", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
+  const gateB = read(".github/workflows/private-gate-b.yml");
+  const modelEvidence = JSON.parse(read("protocol/private-balance/results/model-100k.json"));
+  const workspaceCommand = /cargo \+1\.97\.1 test --workspace --locked/;
+
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, workspaceCommand);
+    assert.match(
+      workflow,
+      /cargo \+1\.97\.1 test --workspace --locked\s*\n\s*working-directory: protocol\/private-balance/,
+    );
+  }
+  assert.match(gateB, /schedule:\s*\n\s*- cron:/);
+  assert.match(gateB, /workflow_dispatch:/);
+  assert.match(gateB, /cargo \+1\.97\.1 test --release --locked/);
+  assert.match(gateB, /one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption/);
+  assert.match(gateB, /--ignored --exact/);
+  assert.match(gateB, /working-directory: protocol\/private-balance/);
+  assert.doesNotMatch(gateB, /uses:\s+[^\n]+@v\d+/);
+  assert.equal(modelEvidence.passed, true);
+  assert.equal(modelEvidence.dataset.randomizedActions, 100_000);
+  assert.match(modelEvidence.sourceCommit, /^[0-9a-f]{40}$/);
+  assert.match(modelEvidence.command, /cargo \+1\.97\.1 test --release --locked/);
+  assert.match(
+    modelEvidence.command,
+    /one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption -- --ignored --exact/,
+  );
+});
+
+test("generated-artifact checks install their complete toolchain in the same job", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const release = read(".github/workflows/release.yml");
+  const ciVerify = ci.split("\n  verify:")[1];
+  const releaseJob = release.split("\n  release:")[1].split("\n  deploy:")[0];
+
+  assert.match(ciVerify, /fetch-depth: 0/);
+  for (const job of [ciVerify, releaseJob]) {
+    assert.match(job, /rustup toolchain install 1\.97\.1 --profile minimal/);
+    assert.match(job, /cargo \+1\.97\.1 install stellar-cli --version 27\.0\.0 --locked/);
+    assert.match(job, /corepack npm --prefix protocol\/private-balance\/circuits ci/);
+    assert.match(
+      job,
+      /corepack npm --prefix protocol\/private-balance\/circuits ci[\s\S]*npm run private:check-generated/,
+    );
+  }
+});
+
 test("the isolated Private Payments Gate A installs its internal browser package", () => {
   const circuits = JSON.parse(
     read("protocol/private-balance/circuits/package.json"),

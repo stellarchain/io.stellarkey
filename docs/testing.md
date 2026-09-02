@@ -5,6 +5,7 @@ StellarKey has one deterministic release path: `npm run release:verify`. Browser
 ## Coverage map
 
 - `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, current wallet and merchant storage schemas, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.
+- `cargo test --workspace --locked` in `protocol/private-balance/` gates the pool contract, verifier, protocol crate, and deterministic recovery model in both CI and tagged releases.
 - `e2e/wallet.spec.ts` covers onboarding, corrupt-data recovery, endpoint preferences, unlock, send and swap review, and watch-only safety.
 - `e2e/merchant.spec.ts` covers setup, operators and shifts, cash/crypto/split settlement, reload reconciliation, refunds, invoices, counter codes, customers, reports, full IndexedDB backup/wipe/restore, offline recovery, install handoff, and mobile overflow.
 - `e2e/merchant-webkit.spec.ts` gates iPhone reload and payment catch-up.
@@ -17,6 +18,10 @@ StellarKey has one deterministic release path: `npm run release:verify`. Browser
 Physical Trezor signing, passkey prompts, and installed iOS behavior remain manual release boundaries because a headless browser cannot prove the hardware or operating-system interaction. Follow [the release checklist](release-checklist.md) for those checks.
 
 Private Balance unit tests cover protocol encodings, circuit/contract parity, archive verification, encrypted storage, isolated workers, exact transaction review, durable submission recovery, bounded restoration, mirrors, public-cache root verification, coordination, and factual privacy copy. The production gate must keep the development manifest unmounted. Full setup/payment/recovery journeys, archive-expiry drills, ceremony hashes, and physical-device proof memory/background behavior remain release evidence and cannot be replaced by mocked unit tests.
+
+The ignored 100,000-action deterministic recovery model is Gate B. GitHub runs it weekly and it can
+also be started manually through the `Private Balance Gate B` workflow; it remains separate from the
+bounded pull-request suite.
 
 ## Isolated Private Balance testnet fixture
 

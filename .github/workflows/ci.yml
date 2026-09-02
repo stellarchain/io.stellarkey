@@ -56,21 +56,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install 1.97.1 --profile minimal
+      - run: cargo +1.97.1 test --workspace --locked
+        working-directory: protocol/private-balance
       - run: cargo +1.97.1 install cargo-deny --version 0.20.2 --locked
       - run: cargo +1.97.1 deny --config deny.toml check
         working-directory: protocol/private-balance
 
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.22.2
           cache: npm
       - run: corepack install
       - run: corepack npm ci
+      - run: corepack npm --prefix protocol/private-balance/circuits ci
+      - run: rustup toolchain install 1.97.1 --profile minimal
+      - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
       - run: npm run private:check-generated
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run typecheck
