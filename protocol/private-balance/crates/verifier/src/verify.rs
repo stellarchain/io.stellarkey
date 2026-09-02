@@ -70,7 +70,7 @@ mod tests {
 pub fn verify_groth16_proof(
     env: &Env,
     proof: &Proof,
-    public_signals: &[[u8; 32]; 13],
+    public_signals: &[[u8; 32]; 11],
 ) -> Result<bool, &'static str> {
     let vk = get_embedded_vk();
     verify_groth16_proof_with_vk(env, &vk, proof, public_signals)
@@ -79,7 +79,7 @@ pub fn verify_groth16_proof(
 pub fn verify_groth16_proof_bytes(
     env: &Env,
     proof: &ProofBytes,
-    public_signals: &[[u8; 32]; 13],
+    public_signals: &[[u8; 32]; 11],
 ) -> Result<bool, &'static str> {
     let vk = get_embedded_vk();
     let contract_proof = proof.to_contract_proof(env);
@@ -90,7 +90,7 @@ pub fn verify_groth16_proof_with_vk(
     env: &Env,
     vk: &VerificationKey,
     proof: &Proof,
-    public_signals: &[[u8; 32]; 13],
+    public_signals: &[[u8; 32]; 11],
 ) -> Result<bool, &'static str> {
     // 1. Validate public signals are canonical Fr elements
     for signal in public_signals.iter() {

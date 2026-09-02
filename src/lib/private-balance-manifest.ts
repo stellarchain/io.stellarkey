@@ -21,8 +21,6 @@ export interface PrivateBalanceConstants {
   treeDepth: number;
   treeArity: number;
   rootWindowLedgers: number;
-  pageCapacity: number;
-  maxPagesPerTouch: number;
   publicInputs: number;
   notePlaintextBytes: number;
   recipientEnvelopeBytes: number;
@@ -101,9 +99,7 @@ const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   treeDepth: 17,
   treeArity: 3,
   rootWindowLedgers: 1440,
-  pageCapacity: 32,
-  maxPagesPerTouch: 4,
-  publicInputs: 13,
+  publicInputs: 11,
   notePlaintextBytes: 128,
   recipientEnvelopeBytes: 181,
   outgoingEnvelopeBytes: 157,

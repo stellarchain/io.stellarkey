@@ -1,11 +1,8 @@
 import { encodeDomain, encodeU16Be, encodeU64Be } from './encoding.js';
 import { fieldId, bigintTo32Bytes, isCanonicalField } from './field.js';
 import { equalBytes } from './hash.js';
-import { p2 } from './poseidon2.js';
 export const DOMAIN_ACTION = 'SKSB_ACTION_V1';
-export const DOMAIN_ACTION_BINDING = 'SKSB_ACTION_BINDING_V1';
 export const DOMAIN_ASSET = 'SKSB_ASSET_V1';
-export const DOMAIN_RELAYER = 'SKSB_RELAYER_V1';
 const MAX_PUBLIC_VALUE = (1n << 63n) - 1n;
 export var ActionKind;
 (function (ActionKind) {
@@ -162,15 +159,6 @@ export function serializeCanonicalActionBytes(action, networkId, realmId, poolId
     encodeOptionalAddress(action.publicRecipient, buf);
     return Uint8Array.from(buf);
 }
-export function computeRelayerField(action) {
-    if (!action.relayer)
-        return new Uint8Array(32);
-    validateAddress(action.relayer, 'Relayer');
-    const bytes = new Uint8Array(33);
-    bytes[0] = action.relayer.kind;
-    bytes.set(action.relayer.payload, 1);
-    return fieldId(DOMAIN_RELAYER, bytes);
-}
 export function computeAssetField(asset) {
     validateAddress(asset, 'Asset');
     if (asset.kind !== 1)
@@ -184,23 +172,13 @@ export function computeActionField(action, networkId, realmId, poolId) {
     const bytes = serializeCanonicalActionBytes(action, networkId, realmId, poolId);
     return fieldId(DOMAIN_ACTION, bytes);
 }
-export async function computeActionBinding(contextField, actionField) {
-    requireLength('Context field', contextField, 32);
-    requireLength('Action field', actionField, 32);
-    if (!isCanonicalField(contextField) || !isCanonicalField(actionField)) {
-        throw new Error('Action binding fields must be canonical');
-    }
-    return p2(DOMAIN_ACTION_BINDING, [contextField, actionField]);
-}
 export async function computePublicSignals(action, contextField, networkId, realmId, poolId) {
     const assetField = computeAssetField(action.asset);
     const actionField = computeActionField(action, networkId, realmId, poolId);
-    const actionBinding = await computeActionBinding(contextField, actionField);
     const kindField = new Uint8Array(32);
     kindField[31] = action.kind;
     const valField = bigintTo32Bytes(action.publicValue);
     const relayerFeeField = bigintTo32Bytes(action.relayerFee);
-    const relayerField = computeRelayerField(action);
     return [
         contextField,
         assetField,
@@ -208,9 +186,7 @@ export async function computePublicSignals(action, contextField, networkId, real
         action.anchorRoot,
         valField,
         relayerFeeField,
-        relayerField,
         actionField,
-        actionBinding,
         action.nullifiers[0],
         action.nullifiers[1],
         action.outputs[0].cm,

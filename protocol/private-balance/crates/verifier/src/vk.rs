@@ -2,7 +2,7 @@ use crate::types::VerificationKey;
 use sha2::{Digest, Sha256};
 
 pub const EMBEDDED_VK_BYTES: &[u8] = include_bytes!("verifying_key.bin");
-const PUBLIC_SIGNAL_COUNT: usize = 13;
+const PUBLIC_SIGNAL_COUNT: usize = 11;
 const IC_POINT_COUNT: usize = PUBLIC_SIGNAL_COUNT + 1;
 const VK_HEADER_BYTES: usize = 452;
 const EMBEDDED_VK_SIZE: usize = VK_HEADER_BYTES + IC_POINT_COUNT * 64;

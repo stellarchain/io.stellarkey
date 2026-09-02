@@ -68,10 +68,10 @@ fn test_adversarial_mutated_public_signal() {
     let item = &file.proofs[0];
     let proof = proof_from_snarkjs(&item.proof);
 
-    for i in 0..13 {
+    for i in 0..11 {
         println!("Testing mutation on public signal index {}", i);
         env.cost_estimate().budget().reset_unlimited();
-        let mut signals = [[0u8; 32]; 13];
+        let mut signals = [[0u8; 32]; 11];
         for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
             *signal = field_str_to_bytes(value);
         }
@@ -97,7 +97,7 @@ fn test_adversarial_non_canonical_signal_rejection() {
     let item = &file.proofs[0];
     let proof = proof_from_snarkjs(&item.proof);
 
-    let mut signals = [[0u8; 32]; 13];
+    let mut signals = [[0u8; 32]; 11];
     for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
         *signal = field_str_to_bytes(value);
     }
@@ -122,7 +122,7 @@ fn test_adversarial_corrupted_proof_points() {
     let item = &file.proofs[0];
     let mut proof = proof_from_snarkjs(&item.proof);
 
-    let mut signals = [[0u8; 32]; 13];
+    let mut signals = [[0u8; 32]; 11];
     for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
         *signal = field_str_to_bytes(value);
     }

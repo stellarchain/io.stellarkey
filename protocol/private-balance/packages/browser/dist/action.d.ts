@@ -1,7 +1,5 @@
 export declare const DOMAIN_ACTION = "SKSB_ACTION_V1";
-export declare const DOMAIN_ACTION_BINDING = "SKSB_ACTION_BINDING_V1";
 export declare const DOMAIN_ASSET = "SKSB_ASSET_V1";
-export declare const DOMAIN_RELAYER = "SKSB_RELAYER_V1";
 export declare enum ActionKind {
     Deposit = 1,
     PrivateTransfer = 2,
@@ -39,11 +37,9 @@ export interface ActionModel {
     };
 }
 export declare function serializeCanonicalActionBytes(action: ActionModel, networkId: Uint8Array, realmId: Uint8Array, poolId: Uint8Array): Uint8Array;
-export declare function computeRelayerField(action: ActionModel): Uint8Array;
 export declare function computeAssetField(asset: {
     kind: number;
     payload: Uint8Array;
 }): Uint8Array;
 export declare function computeActionField(action: ActionModel, networkId: Uint8Array, realmId: Uint8Array, poolId: Uint8Array): Uint8Array;
-export declare function computeActionBinding(contextField: Uint8Array, actionField: Uint8Array): Promise<Uint8Array>;
 export declare function computePublicSignals(action: ActionModel, contextField: Uint8Array, networkId: Uint8Array, realmId: Uint8Array, poolId: Uint8Array): Promise<Uint8Array[]>;

@@ -51,7 +51,6 @@ const DOMAIN = Object.freeze({
   diversifiedOwner: 14648730730437137655665581460901063522972457499366870315302424102560973417853n,
   note: 12305356573583967990145829509939363390395175012772578063495555266515310494866n,
   dummyNullifier: 11079287110993094273924039464477300343037036643499336743423997609200409937317n,
-  actionBinding: 17365170631394812078082042073070794658064087641845391218072061672105615249472n,
 });
 
 const CORPUS_DESCRIPTOR = Object.freeze({
@@ -424,11 +423,6 @@ function benchmarkWitness(curve) {
     CORPUS_DESCRIPTOR.contextField,
     secret,
   ]));
-  const actionBinding = hash([
-    DOMAIN.actionBinding,
-    CORPUS_DESCRIPTOR.contextField,
-    CORPUS_DESCRIPTOR.actionField,
-  ]);
   const zeroPositions = new Array(17).fill('0');
   const zeroSiblings = Array.from({ length: 17 }, () => ['0', '0']);
   return {
@@ -438,9 +432,7 @@ function benchmarkWitness(curve) {
     anchorRoot: '0',
     publicValueField: CORPUS_DESCRIPTOR.publicValueField,
     relayerFeeField: '0',
-    relayerField: '0',
     actionField: CORPUS_DESCRIPTOR.actionField,
-    actionBinding,
     nullifier: nullifiers,
     outputCommitment: outputCommitments,
     ask: '0',

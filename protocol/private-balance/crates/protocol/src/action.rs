@@ -1,11 +1,10 @@
-use crate::constants::{DOMAIN_ACTION, DOMAIN_ACTION_BINDING, DOMAIN_ASSET, DOMAIN_RELAYER};
+use crate::constants::{DOMAIN_ACTION, DOMAIN_ASSET};
 use crate::encoding::{
     encode_address, encode_domain, encode_optional_address, encode_u16_be, encode_u64_be,
 };
 use crate::encryption::OutputPackage;
 use crate::field::field_id;
 use crate::field::is_canonical_field;
-use crate::poseidon2::p2;
 use alloc::vec::Vec;
 
 pub fn compute_asset_field(asset: (u8, [u8; 32])) -> [u8; 32] {
@@ -163,19 +162,6 @@ impl Action {
         field_id(DOMAIN_ACTION, &bytes)
     }
 
-    pub fn compute_action_binding(context_field: &[u8; 32], action_field: &[u8; 32]) -> [u8; 32] {
-        p2(DOMAIN_ACTION_BINDING, &[*context_field, *action_field])
-    }
-
-    pub fn compute_relayer_field(&self) -> [u8; 32] {
-        let Some((kind, payload)) = self.relayer else {
-            return [0; 32];
-        };
-        let mut bytes = Vec::with_capacity(33);
-        encode_address(kind, &payload, &mut bytes).unwrap();
-        field_id(DOMAIN_RELAYER, &bytes)
-    }
-
     pub fn compute_asset_field(&self) -> [u8; 32] {
         compute_asset_field(self.asset)
     }
@@ -186,7 +172,7 @@ impl Action {
         network_id: &[u8; 32],
         realm_id: &[u8; 32],
         pool_id: &[u8; 32],
-    ) -> [[u8; 32]; 13] {
+    ) -> [[u8; 32]; 11] {
         let asset_field = self.compute_asset_field();
         self.compute_public_signals_with_asset_field(
             context_field,
@@ -204,9 +190,8 @@ impl Action {
         realm_id: &[u8; 32],
         pool_id: &[u8; 32],
         asset_field: &[u8; 32],
-    ) -> [[u8; 32]; 13] {
+    ) -> [[u8; 32]; 11] {
         let action_field = self.compute_action_field(network_id, realm_id, pool_id);
-        let action_binding = Self::compute_action_binding(context_field, &action_field);
 
         let mut kind_field = [0u8; 32];
         kind_field[31] = self.kind as u8;
@@ -215,7 +200,6 @@ impl Action {
         val_field[24..32].copy_from_slice(&self.public_value.to_be_bytes());
         let mut relayer_fee_field = [0u8; 32];
         relayer_fee_field[24..32].copy_from_slice(&self.relayer_fee.to_be_bytes());
-        let relayer_field = self.compute_relayer_field();
 
         [
             *context_field,
@@ -224,9 +208,7 @@ impl Action {
             self.anchor_root,
             val_field,
             relayer_fee_field,
-            relayer_field,
             action_field,
-            action_binding,
             self.nullifiers[0],
             self.nullifiers[1],
             self.outputs[0].cm,

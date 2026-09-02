@@ -12,7 +12,7 @@ use crate::storage::*;
 use crate::{nullifier, token};
 use private_balance_protocol::action::{Action as ProtocolAction, ActionKind, compute_asset_field};
 use private_balance_protocol::constants::{
-    ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY, PRIVATE_ADDRESS_ASCII_BYTES,
+    ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PRIVATE_ADDRESS_ASCII_BYTES,
     PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_ARITY,
     TREE_CAPACITY, TREE_DEPTH, TREE_FRONTIER_WIDTH,
 };
@@ -233,7 +233,6 @@ impl PrivateBalancePool {
         verification_key_hash: BytesN<32>,
         tree_depth: u32,
         root_window_ledgers: u32,
-        page_capacity: u32,
         deployment_binding_hash: BytesN<32>,
     ) {
         if protocol_version != u32::from(PROTOCOL_VERSION) {
@@ -245,8 +244,7 @@ impl PrivateBalancePool {
             && circuit_hash.to_array() == EXPECTED_CIRCUIT_HASH
             && verification_key_hash.to_array() == EXPECTED_VERIFICATION_KEY_HASH
             && tree_depth == TREE_DEPTH as u32
-            && root_window_ledgers == ROOT_WINDOW_LEDGERS
-            && page_capacity == PAGE_CAPACITY as u32;
+            && root_window_ledgers == ROOT_WINDOW_LEDGERS;
         if !configuration_matches {
             panic_with_error!(&env, PoolError::InvalidConfiguration);
         }
@@ -276,7 +274,6 @@ impl PrivateBalancePool {
             verification_key_hash: EXPECTED_VERIFICATION_KEY_HASH,
             tree_depth,
             root_window_ledgers,
-            page_capacity,
             private_address_payload_bytes: PRIVATE_ADDRESS_PAYLOAD_BYTES as u32,
             private_address_ascii_bytes: PRIVATE_ADDRESS_ASCII_BYTES as u32,
             address_context_tag_bytes: ADDRESS_CONTEXT_TAG_BYTES as u32,
@@ -327,7 +324,6 @@ impl PrivateBalancePool {
             verification_key_hash,
             tree_depth,
             root_window_ledgers,
-            page_capacity,
             deployment_binding_hash,
             context_hash: BytesN::from_array(&env, &context_hash),
             context_field: BytesN::from_array(&env, &context_field),

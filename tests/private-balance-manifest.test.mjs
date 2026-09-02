@@ -72,8 +72,7 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.equal(manifest.status, 'development');
   assert.equal(manifest.constants.treeDepth, 17);
   assert.equal(manifest.constants.treeArity, 3);
-  assert.equal(manifest.constants.pageCapacity, 32);
-  assert.equal(manifest.constants.publicInputs, 13);
+  assert.equal(manifest.constants.publicInputs, 11);
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
   assert.equal(manifest.constants.addressPayloadBytes, PRIVATE_ADDRESS_PAYLOAD_BYTES);
   assert.equal(manifest.constants.addressAsciiBytes, PRIVATE_ADDRESS_TESTNET_ASCII_BYTES);
@@ -200,8 +199,8 @@ test('manifest: requires a clean independent witness URL and deployment checkpoi
 test('manifest: rejects consensus constant drift', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
   assert.throws(
-    () => validateManifest({ ...raw, constants: { ...raw.constants, pageCapacity: 256 } }),
-    /pageCapacity/,
+    () => validateManifest({ ...raw, constants: { ...raw.constants, publicInputs: 13 } }),
+    /publicInputs/,
   );
 });
 

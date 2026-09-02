@@ -36,7 +36,7 @@ fn test_action_canonical_bytes_and_signals() {
     let context_field = bytes_to_field(&[0x99u8; 32]);
 
     let signals = action.compute_public_signals(&context_field, &net_id, &realm_id, &pool_id);
-    assert_eq!(signals.len(), 13);
+    assert_eq!(signals.len(), 11);
     assert_eq!(signals[0], context_field);
     assert_eq!(signals[1], action.compute_asset_field());
     assert_eq!(signals[3], action.anchor_root);

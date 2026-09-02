@@ -38,8 +38,7 @@ const manifest = {
     },
     constants: {
       treeDepth: 17,
-      pageCapacity: 32,
-      publicInputs: 13,
+      publicInputs: 11,
       notePlaintextBytes: 128,
       recipientEnvelopeBytes: 181,
       outgoingEnvelopeBytes: 157,
@@ -323,7 +322,6 @@ test('worker client proves an opaque prepared action without exposing witness in
             depositSource: { kind: 0, payload: message.intent.depositSource.payload },
           },
           actionFieldHex: '02'.repeat(32),
-          actionBindingHex: '03'.repeat(32),
           reservedNoteIds: [],
           inputValue: '0',
           changeValue: '0',

@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
 - Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
-- Reduced the Private Payments circuit from 23,437 to 14,876 constraints by removing the dummy lane input and duplicate total range check, deriving output roles, and using the ternary tree; development proving now fits the pinned `pot14` transcript.
+- Reduced the Private Payments circuit from 23,437 to 14,574 constraints and 11 public inputs by removing redundant lane, range, relayer, and action-binding constraints, deriving output roles, using a ternary tree, and explicitly proof-binding the contract-derived canonical action hash; development proving now fits the pinned `pot14` transcript.
 - Retired the incompatible Testnet Private Payments pools and fixture evidence, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 64-output parallel batches that retain record-order state updates.
@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed support for the previous `tks1` and `sks1` Private Payments address encodings; existing testnet private state must be recreated.
 - Removed compatibility with the previous binary-tree Private Payments state and deployment artifacts.
+- Removed retired archive-page constants from Private Payments constructors, deployment bindings, manifests, runtime validation, and generated clients now that every archive record occupies its own persistent entry.
 
 ### Fixed
 
@@ -70,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Retained audited RFC 9180 note encryption, asset-pinned pool isolation, and Soroban-native Poseidon2 hashing after rejecting unreviewed consensus alternatives in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
+- Bound the reduced eleven-signal Groth16 statement to the exact canonical action field and added a proof-mutation regression for that public input.
 - Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.
 - Persisted one replay nullifier for deposits instead of two while keeping exact proof replay impossible; transfers and withdrawals continue to persist both.
 - Shared the canonical ternary Merkle hash and empty roots between the protocol crate and pool contract, with Poseidon2 length-IV separation documented as a consensus rule.

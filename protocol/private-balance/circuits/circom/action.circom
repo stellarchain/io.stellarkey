@@ -5,7 +5,6 @@ include "owner.circom";
 include "note.circom";
 include "nullifier.circom";
 include "merkle.circom";
-include "action_binding.circom";
 
 template IsZero() {
     signal input in;
@@ -31,16 +30,14 @@ template CheckBits(BITS) {
 }
 
 template ActionCircuit() {
-    // The verifier receives exactly these thirteen public signals, in this order.
+    // The verifier receives exactly these eleven public signals, in this order.
     signal input contextField;
     signal input assetField;
     signal input actionKindField;
     signal input anchorRoot;
     signal input publicValueField;
     signal input relayerFeeField;
-    signal input relayerField;
     signal input actionField;
-    signal input actionBinding;
     signal input nullifier[2];
     signal input outputCommitment[2];
 
@@ -62,10 +59,13 @@ template ActionCircuit() {
     signal input outputValue[2];
     signal input outputRho[2];
 
-    component binding = ActionBinding();
-    binding.contextField <== contextField;
-    binding.actionField <== actionField;
-    binding.out === actionBinding;
+    // A public input that appears in no constraint gets a zero IC coefficient
+    // and would not be proof-bound. Prove actionField is nonzero so the proof
+    // binds the exact contract-derived canonical action hash without publishing
+    // a redundant Poseidon2 image of it.
+    component actionFieldZero = IsZero();
+    actionFieldZero.in <== actionField;
+    actionFieldZero.out === 0;
 
     component assetZero = IsZero();
     assetZero.in <== assetField;
@@ -101,9 +101,7 @@ template ActionCircuit() {
     publicValueRange.in <== publicValueField;
     publicValueZero.in <== publicValueField;
     component relayerFeeRange = CheckBits(63);
-    component relayerFieldZero = IsZero();
     relayerFeeRange.in <== relayerFeeField;
-    relayerFieldZero.in <== relayerField;
 
     // Shared owner authorization is computed once and selected by every real input.
     component actionOwner = OwnerCommitment();
@@ -160,7 +158,6 @@ template ActionCircuit() {
         for (var l = 0; l < 17; l++) {
             inputDummy[i] * inputSiblings[i][l][0] === 0;
             inputDummy[i] * inputSiblings[i][l][1] === 0;
-            inputDummy[i] * inputPositions[i][l] === 0;
         }
 
         // A real lane has nonzero note fields and the shared owner.
@@ -290,20 +287,17 @@ template ActionCircuit() {
     isDeposit * (1 - hasRealOutput) === 0;
     isDeposit * publicValueZero.out === 0;
     isDeposit * relayerFeeField === 0;
-    isDeposit * relayerField === 0;
 
     // Transfer: nonzero anchor, at least one real input/output, and no public value.
     isTransfer * anchorZero.out === 0;
     isTransfer * (1 - hasRealInput) === 0;
     isTransfer * (1 - hasRealOutput) === 0;
     isTransfer * publicValueField === 0;
-    isTransfer * relayerFieldZero.out === 0;
 
     // Withdraw: nonzero anchor/real input and a positive public withdrawal amount.
     isWithdraw * anchorZero.out === 0;
     isWithdraw * (1 - hasRealInput) === 0;
     isWithdraw * publicValueZero.out === 0;
-    isWithdraw * relayerFieldZero.out === 0;
 }
 
-component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, relayerFeeField, relayerField, actionField, actionBinding, nullifier, outputCommitment]} = ActionCircuit();
+component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, relayerFeeField, actionField, nullifier, outputCommitment]} = ActionCircuit();

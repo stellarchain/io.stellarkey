@@ -205,7 +205,7 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
     outgoingFlags.push(decodeOutgoingPlaintext(plaintext).flags);
   }
   assert.deepEqual(outgoingFlags.sort(), [0, 1]);
-  assert.equal(prepared.publicSignals.length, 13);
+  assert.equal(prepared.publicSignals.length, 11);
 });
 
 test('rotating the receive address cannot corrupt canonical self outputs', async () => {
@@ -310,7 +310,7 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.action.outputs[0].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);
-  assert.equal(prepared.publicSignals.length, 13);
+  assert.equal(prepared.publicSignals.length, 11);
   const tamperedPath = {
     ...merklePath,
     siblings: merklePath.siblings.map((siblings, index) => (

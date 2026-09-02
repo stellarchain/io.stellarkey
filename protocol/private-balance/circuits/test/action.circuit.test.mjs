@@ -50,7 +50,7 @@ async function getActionCalculator() {
   return actionCalculator;
 }
 
-async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings(), actionField = '0' }) {
+async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings() }) {
   const helper = await getHelper();
   const wtns = await helper.calculateWitness({
     contextField: contextField.toString(),
@@ -63,14 +63,12 @@ async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0
     leafIndex: leafIndex.toString(),
     siblings: siblings.map(level => level.map(String)),
     positions: positionsFor(leafIndex),
-    actionField: actionField.toString(),
   });
   return {
     ownerCommitment: wtns[1].toString(),
     noteCommitment: wtns[2].toString(),
     nullifier: wtns[3].toString(),
-    actionBinding: wtns[4].toString(),
-    merkleRoot: wtns[5].toString(),
+    merkleRoot: wtns[4].toString(),
   };
 }
 
@@ -109,9 +107,7 @@ test('action circuit: every deposit exposes two nonzero nullifiers and commitmen
     anchorRoot: '0',
     publicValueField: '5000000',
     relayerFeeField: '0',
-    relayerField: '0',
     actionField,
-    actionBinding: realOutput.actionBinding,
     nullifier: nullifiers,
     outputCommitment: commitments,
     ask: '0',
@@ -172,9 +168,7 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
     anchorRoot: input.merkleRoot,
     publicValueField: '0',
     relayerFeeField: '0',
-    relayerField: '9',
     actionField,
-    actionBinding: input.actionBinding,
     nullifier: atLane(
       input.nullifier,
       dummyNullifier(contextField, dummySecret),
@@ -290,9 +284,7 @@ test('action circuit: two-input consolidation accepts both input permutations', 
       anchorRoot: first.merkleRoot,
       publicValueField: '0',
       relayerFeeField: '0',
-      relayerField: '9',
       actionField,
-      actionBinding: first.actionBinding,
       nullifier: lane.nullifier,
       outputCommitment: [realOutput.noteCommitment, dummyOutput.noteCommitment],
       ask,
@@ -386,8 +378,6 @@ test('action circuit: deposit proof generation and verification', async () => {
     rho: '77777',
     value: '5000000',
   });
-
-  const actionBinding = helperRes.actionBinding;
   const outOwner0 = helperRes.ownerCommitment;
   const outVal0 = '5000000';
   const outRho0 = '77777';
@@ -408,9 +398,7 @@ test('action circuit: deposit proof generation and verification', async () => {
     anchorRoot,
     publicValueField,
     relayerFeeField: '0',
-    relayerField: '0',
     actionField,
-    actionBinding,
     nullifier: [
       dummyNullifier(contextField, '901'),
       dummyNullifier(contextField, '902'),
@@ -435,7 +423,7 @@ test('action circuit: deposit proof generation and verification', async () => {
   };
 
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(circuitInputs, wasmPath, zkeyPath);
-  assert.equal(publicSignals.length, 13);
+  assert.equal(publicSignals.length, 11);
   assert.equal(publicSignals[0], contextField);
   assert.equal(publicSignals[1], '84');
   assert.equal(publicSignals[2], actionKindField);
@@ -448,6 +436,14 @@ test('action circuit: deposit proof generation and verification', async () => {
   badSignals[3] = '5000001';
   const badVerified = await snarkjs.groth16.verify(vk, badSignals, proof);
   assert.ok(!badVerified, 'Mutated proof must fail verification');
+
+  const mutatedActionSignals = [...publicSignals];
+  mutatedActionSignals[6] = (BigInt(mutatedActionSignals[6]) + 1n).toString();
+  assert.equal(
+    await snarkjs.groth16.verify(vk, mutatedActionSignals, proof),
+    false,
+    'The nonzero actionField constraint must give it a nonzero proof-binding IC coefficient',
+  );
 });
 
 test('action circuit: private transfer proof generation and verification', async () => {
@@ -480,7 +476,6 @@ test('action circuit: private transfer proof generation and verification', async
   });
 
   const anchorRoot = in0Res.merkleRoot;
-  const actionBinding = in0Res.actionBinding;
   const inOwner0 = in0Res.ownerCommitment;
   const inNf0 = in0Res.nullifier;
 
@@ -517,9 +512,7 @@ test('action circuit: private transfer proof generation and verification', async
     anchorRoot,
     publicValueField,
     relayerFeeField: '1000',
-    relayerField: '9',
     actionField,
-    actionBinding,
     nullifier: [inNf0, dummyNullifier(contextField, '903')],
     outputCommitment: [outCm0, outCm1],
 
@@ -578,7 +571,6 @@ test('action circuit: withdrawal proof generation and verification', async () =>
   });
 
   const anchorRoot = in0Res.merkleRoot;
-  const actionBinding = in0Res.actionBinding;
   const inOwner0 = in0Res.ownerCommitment;
   const inNf0 = in0Res.nullifier;
 
@@ -610,9 +602,7 @@ test('action circuit: withdrawal proof generation and verification', async () =>
     anchorRoot,
     publicValueField,
     relayerFeeField: '2000',
-    relayerField: '9',
     actionField,
-    actionBinding,
     nullifier: [inNf0, dummyNullifier(contextField, '904')],
     outputCommitment: [outCm0, dummyOutput.noteCommitment],
 
@@ -670,9 +660,7 @@ test('action circuit rejects a deposit bound to a nonzero anchor root', async ()
       anchorRoot: '1',
       publicValueField: '5000000',
       relayerFeeField: '0',
-      relayerField: '0',
       actionField,
-      actionBinding: output.actionBinding,
       nullifier: [
         dummyNullifier(contextField, '905'),
         dummyNullifier(contextField, '906'),
@@ -769,9 +757,7 @@ test('action circuit rejects inputs controlled by different spending keys', asyn
       anchorRoot: firstWithPath.merkleRoot,
       publicValueField: '0',
       relayerFeeField: '0',
-      relayerField: '9',
       actionField,
-      actionBinding: first.actionBinding,
       nullifier: [firstWithPath.nullifier, secondNullifierUnderSharedNk],
       outputCommitment: [output.noteCommitment, dummyOutput.noteCommitment],
       ask: '11111',
@@ -824,9 +810,7 @@ test('action circuit rejects duplicate real output commitments', async () => {
       anchorRoot: input.merkleRoot,
       publicValueField: '0',
       relayerFeeField: '0',
-      relayerField: '9',
       actionField,
-      actionBinding: input.actionBinding,
       nullifier: [input.nullifier, dummyNullifier(contextField, '907')],
       outputCommitment: [output.noteCommitment, output.noteCommitment],
       ask: '11111',

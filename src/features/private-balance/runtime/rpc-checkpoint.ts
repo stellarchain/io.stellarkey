@@ -125,7 +125,6 @@ function headFingerprint(head: ArchiveHeadState, name: string): string {
       ),
       treeDepth: u32(config.treeDepth, `${name} tree depth`),
       rootWindowLedgers: u32(config.rootWindowLedgers, `${name} root window`),
-      pageCapacity: u32(config.pageCapacity, `${name} page capacity`),
       deploymentBindingHash: bytes32(
         config.deploymentBindingHash,
         `${name} deployment binding hash`,

@@ -13,7 +13,6 @@ fn binding() -> DeploymentBinding {
         verification_key_hash: [8; 32],
         tree_depth: 32,
         root_window_ledgers: 1_440,
-        page_capacity: 32,
         private_address_payload_bytes: 68,
         private_address_ascii_bytes: 170,
         address_context_tag_bytes: 0,
@@ -29,7 +28,7 @@ fn deployment_binding_is_deterministic_and_binds_every_field() {
     let expected = binding().hash().expect("valid binding");
     assert_eq!(
         hex::encode(expected),
-        "a9b54219c36d025efca8406abbe16f793ca5ab1f6bb84f7b2e40208c2294996c"
+        "19f51231f2765343b9247d0fc6178aa4bcb50e80a6f423d99c8ccf2ab6082608"
     );
     assert_ne!(expected, [0; 32]);
 
@@ -66,9 +65,6 @@ fn deployment_binding_is_deterministic_and_binds_every_field() {
     mutations.push(value);
     let mut value = binding();
     value.root_window_ledgers += 1;
-    mutations.push(value);
-    let mut value = binding();
-    value.page_capacity += 1;
     mutations.push(value);
     let mut value = binding();
     value.private_address_payload_bytes += 1;
