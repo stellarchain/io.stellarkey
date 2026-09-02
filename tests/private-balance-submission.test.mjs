@@ -75,8 +75,7 @@ function reviewedFixture() {
   }).addOperation(operation).setSorobanData(data).build();
   const review = reviewPrivateBalanceTransaction({
     envelopeXdr: transaction.toXdr(),
-    manifest: { networkPassphrase, poolContractId },
-    assetContractId: ASSET_CONTRACT_ID,
+    manifest: { networkPassphrase, poolContractId, assetContractId: ASSET_CONTRACT_ID },
     source: signer.publicKey(),
     sequence: '8',
     timeBounds: { minTime: '1', maxTime: '2000000000' },

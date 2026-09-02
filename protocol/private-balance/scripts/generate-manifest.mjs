@@ -69,12 +69,15 @@ function loadTestnetDeploymentEvidence(baseManifest) {
   );
   const fixtureNames = readdirSync(fixtureDir)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
-  if (fixtureNames.length !== 1) {
+  if (fixtureNames.length !== 2) {
     throw new Error(
-      `Expected exactly one current testnet deployment evidence file, found ${fixtureNames.length}.`,
+      `Expected exactly two current per-asset testnet deployment evidence files, found ${fixtureNames.length}.`,
     );
   }
-  const evidence = JSON.parse(readFileSync(join(fixtureDir, fixtureNames[0]), 'utf8'));
+  const evidenceSet = fixtureNames.map(name =>
+    JSON.parse(readFileSync(join(fixtureDir, name), 'utf8')),
+  );
+  for (const evidence of evidenceSet) {
   const deployed = evidence.manifest;
   if (!evidence.fixtureOnly || !deployed || deployed.status !== 'development') {
     throw new Error('Testnet deployment evidence must be a development-only fixture.');
@@ -105,6 +108,8 @@ function loadTestnetDeploymentEvidence(baseManifest) {
 
   assertEqual(evidence.networkPassphrase, baseManifest.networkPassphrase, 'network passphrase');
   assertEqual(evidence.poolContractId, deployed.poolContractId, 'pool contract ID');
+  assertEqual(evidence.assetContractId, deployed.assetContractId, 'asset contract ID');
+  assertEqual(evidence.pinnedAsset, deployed.assetContractId, 'contract pinned asset');
   assertEqual(evidence.wasmSha256, baseManifest.release.contractWasmSha256, 'pool Wasm hash');
   assertEqual(evidence.deploymentBindingHash, deployed.deploymentBindingHash, 'deployment binding');
   assertEqual(evidence.config?.deployment_binding_hash, deployed.deploymentBindingHash, 'contract binding');
@@ -122,13 +127,23 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     baseManifest.release.poseidonParametersSha256,
     'contract Poseidon parameter hash',
   );
-  if (evidence.asset?.kind !== 'native' || !/^C[A-Z2-7]{55}$/.test(evidence.assetContractId)) {
-    throw new Error('Testnet deployment evidence must record the canonical native XLM SAC.');
+  if (!['native', 'stellar'].includes(evidence.asset?.kind) || !/^C[A-Z2-7]{55}$/.test(evidence.assetContractId)) {
+    throw new Error('Testnet deployment evidence must record one canonical Stellar SAC.');
   }
   if (evidence.depositsPaused !== false || evidence.treeState?.next_index !== 0) {
     throw new Error('Testnet deployment evidence must record a fresh, deposit-enabled pool.');
   }
-  return evidence;
+  }
+  const native = evidenceSet.find(evidence => evidence.asset.kind === 'native');
+  const usdc = evidenceSet.find(evidence =>
+    evidence.asset.kind === 'stellar' &&
+    evidence.asset.code === 'USDC' &&
+    evidence.asset.issuer === 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
+  );
+  if (!native || !usdc || native.poolContractId === usdc.poolContractId) {
+    throw new Error('Testnet evidence must contain distinct XLM and USDC pool deployments.');
+  }
+  return [native, usdc];
 }
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -197,6 +212,7 @@ const baseManifest = {
   networkId: sha256(Buffer.from(TESTNET_PASSPHRASE, 'utf8')),
   realmId: '02'.repeat(32),
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
+  assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
@@ -284,55 +300,57 @@ if (prepareDeployment) {
   );
 } else {
 const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);
-const manifest = {
-  ...deploymentEvidence.manifest,
-  release: baseManifest.release,
-};
-
-const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
-const manifestHash = sha256(Buffer.from(manifestJson));
+const generated = deploymentEvidence.map(evidence => {
+  const slug = evidence.asset.kind === 'native' ? 'xlm' : 'usdc';
+  const manifest = {
+    ...evidence.manifest,
+    release: baseManifest.release,
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  return {
+    evidence,
+    slug,
+    manifest,
+    manifestJson,
+    manifestHash: sha256(Buffer.from(manifestJson)),
+  };
+});
 const catalogue = {
   schemaVersion: 1,
-  deployments: [{
-    id: 'testnet-private-pool-v2',
+  deployments: generated.map(({ evidence, slug, manifestHash }) => ({
+    id: `testnet-private-${slug}`,
     network: 'testnet',
-    assets: [
-      {
-        kind: 'native',
-        code: 'XLM',
-        issuer: null,
-        name: 'Stellar Lumens',
-        decimals: 7,
-        displayDecimals: 7,
-        contractId: deploymentEvidence.assetContractId,
-      },
-      {
-        kind: 'stellar',
-        code: 'USDC',
-        issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-        name: 'USD Coin',
-        decimals: 7,
-        displayDecimals: 2,
-        contractId: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
-      },
-    ],
-    manifestUrl: '/protocol/private-balance/v1/manifest.json',
+    asset: {
+      kind: evidence.asset.kind,
+      code: evidence.asset.code,
+      issuer: evidence.asset.issuer,
+      name: evidence.asset.name,
+      decimals: evidence.asset.decimals,
+      displayDecimals: evidence.asset.displayDecimals,
+      contractId: evidence.assetContractId,
+    },
+    manifestUrl: `/protocol/private-balance/v1/${slug}/manifest.json`,
     manifestSha256: manifestHash,
-  }],
+  })),
 };
 const catalogueJson = `${JSON.stringify(catalogue, null, 2)}\n`;
 const catalogueHash = sha256(Buffer.from(catalogueJson));
 writeFileSync(
   join(process.cwd(), 'protocol/private-balance/manifests/development.json'),
-  `${JSON.stringify(deploymentEvidence.manifest, null, 2)}\n`,
+  `${JSON.stringify(generated[0].evidence.manifest, null, 2)}\n`,
 );
-writeFileSync(join(publicDir, 'manifest.json'), manifestJson);
+for (const deployment of generated) {
+  const deploymentDirectory = join(publicDir, deployment.slug);
+  mkdirSync(deploymentDirectory, { recursive: true });
+  writeFileSync(join(deploymentDirectory, 'manifest.json'), deployment.manifestJson);
+}
+writeFileSync(join(publicDir, 'manifest.json'), generated[0].manifestJson);
 writeFileSync(join(publicDir, 'catalogue.json'), catalogueJson);
 writeFileSync(
   expectedManifestModule,
   `/** Generated by protocol/private-balance/scripts/generate-manifest.mjs. */\n` +
     `export const EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256 =\n` +
-    `  '${manifestHash}';\n` +
+    `  '${generated[0].manifestHash}';\n` +
     `// The exact hash-pinned development deployment is intentionally available\n` +
     `// from production-hosted builds on Stellar Testnet. Availability still\n` +
     `// refuses Mainnet before consulting this opt-in.\n` +

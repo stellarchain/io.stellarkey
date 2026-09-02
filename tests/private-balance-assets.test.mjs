@@ -26,16 +26,16 @@ const usdc = () => ({
 
 function poolDeployment(overrides = {}) {
   return {
-    id: 'testnet-private-pool-v2',
+    id: 'testnet-private-xlm',
     network: 'testnet',
-    assets: [xlm(), usdc()],
-    manifestUrl: '/protocol/private-balance/v1/manifest.json',
+    asset: xlm(),
+    manifestUrl: '/protocol/private-balance/v1/xlm/manifest.json',
     manifestSha256: HASH_A,
     ...overrides,
   };
 }
 
-function developmentManifest() {
+function developmentManifest(assetContractId = XLM_CONTRACT) {
   return validateManifest({
     schemaVersion: 1,
     protocolVersion: 1,
@@ -46,6 +46,7 @@ function developmentManifest() {
     networkId: 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472',
     realmId: '02'.repeat(32),
     poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
+    assetContractId,
     guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     deploymentBindingHash: '33'.repeat(32),
@@ -67,31 +68,43 @@ function developmentManifest() {
   });
 }
 
-test('private asset catalogue validates one pool with canonical XLM and issued assets', () => {
+test('private asset catalogue validates exactly one asset per pool', () => {
   const catalogue = validatePrivateBalanceCatalogue({
     schemaVersion: 1,
-    deployments: [poolDeployment()],
+    deployments: [
+      poolDeployment(),
+      poolDeployment({
+        id: 'testnet-private-usdc',
+        asset: usdc(),
+        manifestUrl: '/protocol/private-balance/v1/usdc/manifest.json',
+      }),
+    ],
   });
-  assert.equal(catalogue.deployments.length, 1);
-  assert.equal(catalogue.deployments[0].assets.length, 2);
-  assert.equal(privateBalanceAssetKey(catalogue.deployments[0].assets[0]), 'native');
-  assert.equal(privateBalanceAssetKey(catalogue.deployments[0].assets[1]), `USDC:${USDC_ISSUER}`);
+  assert.equal(catalogue.deployments.length, 2);
+  assert.equal(privateBalanceAssetKey(catalogue.deployments[0].asset), 'native');
+  assert.equal(privateBalanceAssetKey(catalogue.deployments[1].asset), `USDC:${USDC_ISSUER}`);
+  assert.throws(
+    () => validatePrivateBalanceCatalogue({
+      schemaVersion: 1,
+      deployments: [{ ...poolDeployment(), asset: undefined, assets: [xlm(), usdc()] }],
+    }),
+    /asset/i,
+  );
 });
 
 test('private asset catalogue rejects duplicate identities and unsafe metadata', () => {
   const validate = deployments => validatePrivateBalanceCatalogue({ schemaVersion: 1, deployments });
-  assert.throws(() => validate([poolDeployment({ assets: [xlm(), xlm()] })]), /duplicate asset/i);
   assert.throws(
-    () => validate([poolDeployment(), poolDeployment({ id: 'other-pool', assets: [xlm()] })]),
+    () => validate([poolDeployment(), poolDeployment({ id: 'other-pool' })]),
     /duplicate asset/i,
   );
   assert.throws(
     () => validate([poolDeployment({ manifestUrl: 'https://evil.example/manifest.json' })]),
     /manifestUrl/i,
   );
-  assert.throws(() => validate([poolDeployment({ assets: [{ ...usdc(), issuer: null }] })]), /issuer/i);
+  assert.throws(() => validate([poolDeployment({ asset: { ...usdc(), issuer: null } })]), /issuer/i);
   assert.throws(
-    () => validate([poolDeployment({ assets: [{ ...usdc(), name: 'USD\nCoin' }] })]),
+    () => validate([poolDeployment({ asset: { ...usdc(), name: 'USD\nCoin' } })]),
     /name/i,
   );
 });
@@ -110,7 +123,7 @@ test('private asset catalogue authenticates exact bounded bytes before parsing',
     }),
   });
   assert.equal(loaded.catalogueHash, expectedHash);
-  assert.equal(loaded.catalogue.deployments[0].assets[0].code, 'XLM');
+  assert.equal(loaded.catalogue.deployments[0].asset.code, 'XLM');
   await assert.rejects(
     () => loadExpectedPrivateBalanceCatalogue({
       expectedHash,
@@ -120,7 +133,7 @@ test('private asset catalogue authenticates exact bounded bytes before parsing',
   );
 });
 
-test('one authenticated pool flattens approved assets into UI options', async () => {
+test('authenticated pools expose only their manifest-pinned asset', async () => {
   const manifest = developmentManifest();
   const manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
   const manifestHash = createHash('sha256').update(manifestBytes).digest('hex');
@@ -136,8 +149,25 @@ test('one authenticated pool flattens approved assets into UI options', async ()
       return new Response(manifestBytes, { status: 200 });
     },
   });
-  assert.equal(deployments.length, 2);
-  assert.deepEqual(deployments.map(option => option.asset.code), ['XLM', 'USDC']);
+  assert.equal(deployments.length, 1);
+  assert.deepEqual(deployments.map(option => option.asset.code), ['XLM']);
   assert.equal(new Set(deployments.map(option => option.poolDeploymentId)).size, 1);
   assert.equal(deployments[0].manifestHash, manifestHash);
+});
+
+test('authenticated pool rejects a catalogue asset that differs from its manifest pin', async () => {
+  const manifest = developmentManifest(XLM_CONTRACT);
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
+  const manifestHash = createHash('sha256').update(manifestBytes).digest('hex');
+  await assert.rejects(
+    () => loadPrivateBalanceDeployments({
+      catalogue: {
+        schemaVersion: 1,
+        deployments: [poolDeployment({ asset: usdc(), manifestSha256: manifestHash })],
+      },
+      network: 'testnet',
+      fetchImpl: async () => new Response(manifestBytes, { status: 200 }),
+    }),
+    /asset does not match its manifest/i,
+  );
 });

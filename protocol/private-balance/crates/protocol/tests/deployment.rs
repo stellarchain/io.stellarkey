@@ -6,6 +6,7 @@ fn binding() -> DeploymentBinding {
         network_id: [1; 32],
         realm_id: [2; 32],
         pool_id: [3; 32],
+        asset: (1, [4; 32]),
         guardian: (0, [5; 32]),
         poseidon2_parameter_hash: [6; 32],
         circuit_hash: [7; 32],
@@ -28,7 +29,7 @@ fn deployment_binding_is_deterministic_and_binds_every_field() {
     let expected = binding().hash().expect("valid binding");
     assert_eq!(
         hex::encode(expected),
-        "18e8edf582ccd8ba73bb5c5a739ab735c97869342a08a9494bc5b0f6c7911c76"
+        "a9b54219c36d025efca8406abbe16f793ca5ab1f6bb84f7b2e40208c2294996c"
     );
     assert_ne!(expected, [0; 32]);
 
@@ -44,6 +45,9 @@ fn deployment_binding_is_deterministic_and_binds_every_field() {
     mutations.push(value);
     let mut value = binding();
     value.pool_id[0] ^= 1;
+    mutations.push(value);
+    let mut value = binding();
+    value.asset.1[0] ^= 1;
     mutations.push(value);
     let mut value = binding();
     value.guardian.1[0] ^= 1;

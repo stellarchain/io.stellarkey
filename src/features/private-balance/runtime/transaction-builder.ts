@@ -14,7 +14,6 @@ export interface ContractOutputPackage {
 }
 
 interface CommonContractAction {
-  assetContractId: string;
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
@@ -93,7 +92,6 @@ function commonActionEntries(action: CommonContractAction): Array<readonly [stri
   }
   return [
     ['action_nonce', xdr.ScVal.scvBytes(action.actionNonce)],
-    ['asset', Address.fromString(action.assetContractId).toScVal()],
     ['anchor_root', xdr.ScVal.scvBytes(action.anchorRoot)],
     ['nullifier_0', xdr.ScVal.scvBytes(action.nullifiers[0])],
     ['nullifier_1', xdr.ScVal.scvBytes(action.nullifiers[1])],

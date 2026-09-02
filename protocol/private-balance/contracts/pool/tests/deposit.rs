@@ -104,7 +104,6 @@ fn test_pool_initialization_and_deposit() {
     assert!(!pool_client.deposits_paused());
 
     let action = DepositAction {
-        asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x11; 32]),
         anchor_root: BytesN::from_array(&env, &[0; 32]),
         nullifier_0: nf0,

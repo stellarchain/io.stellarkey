@@ -44,14 +44,6 @@
                     },
                     {
                       "key": {
-                        "symbol": "asset"
-                      },
-                      "val": {
-                        "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "deposit_source"
                       },
                       "val": {
@@ -647,6 +639,18 @@
                       "key": {
                         "vec": [
                           {
+                            "symbol": "Asset"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
                             "symbol": "Config"
                           }
                         ]
@@ -682,7 +686,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "09b24b97d241834b51a283a15aeebd5d49b787b05f33f3e0a3e601dd737f0a70"
+                              "bytes": "611569b171e49c90e9a3f8f2dec0f42ef8e79ff3e2dae923cb94a85acc6e8edc"
                             }
                           },
                           {
@@ -795,7 +799,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "12aed451b8aea5ea52c78d3ca35163b27ee95b6a83be5a1bd3499debd7d895dc"
+                              "bytes": "64e2e64a403760cb951294253032b398143aa5476fc86888450b60253db30b4a"
                             }
                           }
                         ]

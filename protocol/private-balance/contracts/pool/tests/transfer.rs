@@ -110,7 +110,6 @@ fn test_pool_private_transfer() {
     });
 
     let action = TransferAction {
-        asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x22; 32]),
         anchor_root,
         nullifier_0: nf0.clone(),

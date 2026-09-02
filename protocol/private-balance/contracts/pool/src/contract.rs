@@ -79,12 +79,12 @@ fn execute_action(
     env: &Env,
     config: &PoolConfig,
     action: &ProtocolAction,
-    asset: &Address,
     proof: &Proof,
     public_address: Option<&Address>,
     relayer_address: Option<&Address>,
 ) -> Result<u32, PoolError> {
-    if action.asset != address_payload(asset)? || contract_payload(asset)? != action.asset.1 {
+    let asset = get_asset(env).ok_or(PoolError::InvalidConfiguration)?;
+    if action.asset != address_payload(&asset)? || contract_payload(&asset)? != action.asset.1 {
         return Err(PoolError::NoncanonicalEncoding);
     }
     if action.kind == ActionKind::Deposit && deposits_paused(env) {
@@ -127,7 +127,7 @@ fn execute_action(
         env,
         config,
         action,
-        asset,
+        &asset,
         &BytesN::from_array(env, &signals[7]),
         starting_leaf_index,
         &tree.current_root,
@@ -139,7 +139,7 @@ fn execute_action(
     match action.kind {
         ActionKind::Deposit => {
             let source = public_address.ok_or(PoolError::InvalidActionShape)?;
-            token::deposit(env, asset, source, action.public_value);
+            token::deposit(env, &asset, source, action.public_value);
         }
         ActionKind::PrivateTransfer => {
             if public_address.is_some() {
@@ -147,15 +147,15 @@ fn execute_action(
             }
             let relayer = relayer_address.ok_or(PoolError::InvalidActionShape)?;
             if action.relayer_fee > 0 {
-                token::withdraw(env, asset, relayer, action.relayer_fee);
+                token::withdraw(env, &asset, relayer, action.relayer_fee);
             }
         }
         ActionKind::Withdraw => {
             let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
-            token::withdraw(env, asset, recipient, action.public_value);
+            token::withdraw(env, &asset, recipient, action.public_value);
             let relayer = relayer_address.ok_or(PoolError::InvalidActionShape)?;
             if action.relayer_fee > 0 {
-                token::withdraw(env, asset, relayer, action.relayer_fee);
+                token::withdraw(env, &asset, relayer, action.relayer_fee);
             }
         }
     }
@@ -172,6 +172,7 @@ impl PrivateBalancePool {
         network_id: BytesN<32>,
         realm_id: BytesN<32>,
         guardian: Address,
+        asset: Address,
         poseidon2_parameter_hash: BytesN<32>,
         circuit_hash: BytesN<32>,
         verification_key_hash: BytesN<32>,
@@ -204,11 +205,16 @@ impl PrivateBalancePool {
             Ok(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
             Err(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
         };
+        let asset_payload = match contract_payload(&asset) {
+            Ok(value) => (1, value),
+            Err(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
+        };
         let expected_deployment_binding = DeploymentBinding {
             protocol_version: PROTOCOL_VERSION,
             network_id: network_id.to_array(),
             realm_id: realm_id.to_array(),
             pool_id,
+            asset: asset_payload,
             guardian: guardian_payload,
             poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
             circuit_hash: EXPECTED_CIRCUIT_HASH,
@@ -274,6 +280,7 @@ impl PrivateBalancePool {
         };
 
         set_config(&env, &config);
+        set_asset(&env, &asset);
         crate::storage::set_deposits_paused(&env, false);
         set_tree(&env, &tree);
         set_meta(&env, &meta);
@@ -288,30 +295,29 @@ impl PrivateBalancePool {
             return Err(PoolError::DepositsPaused);
         }
         let source = action.deposit_source.clone();
-        let asset = action.asset.clone();
-        let action = from_deposit(&action)?;
-        execute_action(&env, &config, &action, &asset, &proof, Some(&source), None)
+        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let action = from_deposit(&action, &asset)?;
+        execute_action(&env, &config, &action, &proof, Some(&source), None)
     }
 
     pub fn transfer(env: Env, action: TransferAction, proof: Proof) -> Result<u32, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let relayer = action.relayer.clone();
-        let asset = action.asset.clone();
-        let action = from_transfer(&action)?;
-        execute_action(&env, &config, &action, &asset, &proof, None, Some(&relayer))
+        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let action = from_transfer(&action, &asset)?;
+        execute_action(&env, &config, &action, &proof, None, Some(&relayer))
     }
 
     pub fn withdraw(env: Env, action: WithdrawAction, proof: Proof) -> Result<u32, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let recipient = action.public_recipient.clone();
         let relayer = action.relayer.clone();
-        let asset = action.asset.clone();
-        let action = from_withdraw(&action)?;
+        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let action = from_withdraw(&action, &asset)?;
         execute_action(
             &env,
             &config,
             &action,
-            &asset,
             &proof,
             Some(&recipient),
             Some(&relayer),
@@ -320,6 +326,10 @@ impl PrivateBalancePool {
 
     pub fn config(env: Env) -> PoolConfig {
         get_config(&env).unwrap_or_else(|| panic_with_error!(&env, PoolError::InvalidConfiguration))
+    }
+
+    pub fn asset(env: Env) -> Address {
+        get_asset(&env).unwrap_or_else(|| panic_with_error!(&env, PoolError::InvalidConfiguration))
     }
 
     pub fn archive_meta(env: Env) -> ArchiveMeta {

@@ -162,6 +162,18 @@
                       "key": {
                         "vec": [
                           {
+                            "symbol": "Asset"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "address": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
                             "symbol": "Config"
                           }
                         ]
@@ -197,7 +209,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "09b24b97d241834b51a283a15aeebd5d49b787b05f33f3e0a3e601dd737f0a70"
+                              "bytes": "611569b171e49c90e9a3f8f2dec0f42ef8e79ff3e2dae923cb94a85acc6e8edc"
                             }
                           },
                           {
@@ -310,7 +322,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "8c987f3d6b0039c8a9542c5e7b19f8bbd877ae2b4df1b54e68e55235e133523e"
+                              "bytes": "d77269da36829081556ec3c8a0874a58c8b811b796a78d3082719dea36b3dd15"
                             }
                           }
                         ]

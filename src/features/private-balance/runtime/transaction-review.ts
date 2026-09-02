@@ -10,8 +10,7 @@ import type { PrivateBalanceManifest } from '../../../lib/private-balance-manife
 
 export interface PrivateBalanceTransactionReviewRequest {
   envelopeXdr: string;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId'>;
-  assetContractId: string;
+  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assetContractId'>;
   source: string;
   sequence: string;
   timeBounds: { minTime: string; maxTime: string };
@@ -119,7 +118,6 @@ function validateDepositAuthorization(
   const fields = action as Record<string, unknown>;
   if (
     fields.deposit_source !== request.source ||
-    fields.asset !== request.assetContractId ||
     typeof fields.public_value !== 'bigint'
   ) {
     throw new Error('Private deposit source or amount does not match the reviewed action');
@@ -129,7 +127,7 @@ function validateDepositAuthorization(
   const transfer = contractInvocation(transferInvocation);
   const transferArgs = transfer.args.map(value => scValToNative(value) as unknown);
   if (
-    Address.fromScAddress(transfer.contractAddress).toString() !== request.assetContractId ||
+    Address.fromScAddress(transfer.contractAddress).toString() !== request.manifest.assetContractId ||
     transfer.functionName.toString() !== 'transfer' ||
     transferInvocation.subInvocations.length !== 0 ||
     transferArgs.length !== 3 ||

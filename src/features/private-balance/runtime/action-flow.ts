@@ -140,7 +140,6 @@ function proofFromHex(value: string): ContractProof {
 
 function commonContractAction(action: ActionModel) {
   return {
-    assetContractId: StrKey.encodeContract(action.asset.payload),
     actionNonce: action.actionNonce,
     anchorRoot: action.anchorRoot,
     nullifiers: action.nullifiers,
@@ -302,6 +301,9 @@ export async function preparePrivateBalanceActionFlow(input: {
   const createdAt = now();
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
+  }
+  if (input.assetContractId !== input.manifest.assetContractId) {
+    throw new Error('Private Balance asset does not match the selected pool.');
   }
   let reserved = false;
   const progress = (stage: PrivateActionProgressStage) => {
@@ -535,7 +537,6 @@ export async function preparePrivateBalanceActionFlow(input: {
       rpc,
       operation,
       manifest: input.manifest,
-      assetContractId: input.assetContractId,
       source: input.accountPublicKey,
       classicFeeStroops: input.classicFeeStroops,
       maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS,

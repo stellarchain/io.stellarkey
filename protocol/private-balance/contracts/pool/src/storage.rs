@@ -43,12 +43,21 @@ pub struct KnownRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Config,
+    Asset,
     DepositPause,
     Tree,
     Meta,
     Nullifier(BytesN<32>),
     KnownRoot(BytesN<32>),
     ArchiveRecord(u32),
+}
+
+pub fn get_asset(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::Asset)
+}
+
+pub fn set_asset(env: &Env, asset: &Address) {
+    env.storage().instance().set(&DataKey::Asset, asset);
 }
 
 pub fn get_config(env: &Env) -> Option<PoolConfig> {
