@@ -12,6 +12,7 @@ StellarKey has one deterministic release path: `npm run release:verify`. Browser
 - `e2e/pwa.spec.ts` gates CSP, offline shell upgrades, and iOS Home Screen recovery guidance.
 - `e2e/public-release.spec.ts` gates every public route, canonical metadata, the protected contact surfaces, 320px overflow, install metadata, and branded 404s in Chromium, iPhone WebKit, and iPad WebKit.
 - `e2e/accessibility.spec.ts` gates critical wallet and merchant surfaces in Chromium, iPhone WebKit, and iPad WebKit.
+- `e2e/private-manifest-security.spec.ts` unconditionally proves the shipped UI fails closed when the pinned Private Payments manifest bytes change; it needs no funded Testnet fixture.
 
 Physical Trezor signing, passkey prompts, and installed iOS behavior remain manual release boundaries because a headless browser cannot prove the hardware or operating-system interaction. Follow [the release checklist](release-checklist.md) for those checks.
 
@@ -58,7 +59,7 @@ node protocol/private-balance/scripts/run-testnet-e2e.mjs
 The journeys cover two isolated profiles, real deposits and canonical reconciliation, consolidation,
 private send with recipient output and sender change, withdrawal, lock/restart, ambiguous submission,
 encrypted-backup restore, seed-only recovery, endpoint switching, private receive validation,
-fail-closed manifest tampering, and critical accessibility. Firefox, desktop WebKit, iPhone WebKit,
+the fixture-independent fail-closed manifest gate, and critical accessibility. Firefox, desktop WebKit, iPhone WebKit,
 and iPad WebKit then repeat the setup/receive smoke path. The runner temporarily builds with an exact
 fixture-manifest hash and a generated development-fixture flag; both tracked release files are
 restored byte-for-byte even on failure. It writes only redacted public evidence to
