@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "revision": "cc45d237493a06b0257966da23413bad2c2579aa",
+  "generatedAt": "2026-09-02T12:59:41.967Z",
+  "environment": {
+    "node": "v26.7.0",
+    "platform": "darwin",
+    "osRelease": "25.5.0",
+    "cpu": "Apple M3 Max"
+  },
+  "x25519": {
+    "trials": 3,
+    "samplesPerTrial": 120,
+    "warmups": 20,
+    "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
+    "nativeJwk": {
+      "p50Microseconds": 380.958,
+      "p95Microseconds": 552.916,
+      "trialResults": [
+        {
+          "p50Microseconds": 323.167,
+          "p95Microseconds": 454.333
+        },
+        {
+          "p50Microseconds": 380.958,
+          "p95Microseconds": 552.916
+        },
+        {
+          "p50Microseconds": 438.834,
+          "p95Microseconds": 717.417
+        }
+      ]
+    },
+    "nativePkcs8Prototype": {
+      "p50Microseconds": 72.541,
+      "p95Microseconds": 90.542,
+      "trialResults": [
+        {
+          "p50Microseconds": 69.916,
+          "p95Microseconds": 84.875
+        },
+        {
+          "p50Microseconds": 72.541,
+          "p95Microseconds": 90.542
+        },
+        {
+          "p50Microseconds": 74.833,
+          "p95Microseconds": 107.833
+        }
+      ]
+    },
+    "portable": {
+      "p50Microseconds": 722.791,
+      "p95Microseconds": 817.958,
+      "trialResults": [
+        {
+          "p50Microseconds": 716.666,
+          "p95Microseconds": 807.5
+        },
+        {
+          "p50Microseconds": 722.791,
+          "p95Microseconds": 817.958
+        },
+        {
+          "p50Microseconds": 761.5,
+          "p95Microseconds": 849.083
+        }
+      ]
+    },
+    "diversifiedAddress": {
+      "p50Microseconds": 1080.125,
+      "p95Microseconds": 2844.334,
+      "trialResults": [
+        {
+          "p50Microseconds": 989.958,
+          "p95Microseconds": 2453.791
+        },
+        {
+          "p50Microseconds": 1080.125,
+          "p95Microseconds": 2844.334
+        },
+        {
+          "p50Microseconds": 1147.375,
+          "p95Microseconds": 4874.375
+        }
+      ]
+    },
+    "pkcs8MedianImprovementPercent": 80.96
+  },
+  "circuit": {
+    "baseline": {
+      "constraints": 23437,
+      "publicInputs": 13,
+      "privateInputs": 152
+    }
+  },
+  "decisions": {
+    "1": {
+      "status": "accept",
+      "reason": "PKCS#8 prototype preserves the shared secret and changes warm native median by 80.96%."
+    },
+    "2": {
+      "status": "defer",
+      "reason": "Lane-free dummy-nullifier constraint savings still require a fresh compiled R1CS comparison."
+    },
+    "3": {
+      "status": "defer",
+      "reason": "The ternary depth-17 tree still requires a full-circuit compile and cross-language root/path proof."
+    },
+    "4": {
+      "status": "defer",
+      "reason": "Measured diversification cost does not justify replacing RFC 9180 without a complete reviewed KEM specification."
+    },
+    "5": {
+      "status": "accept",
+      "reason": "Outgoing ciphertext is already paid into every archive record and has vectors but no runtime consumer."
+    },
+    "6": {
+      "status": "accept",
+      "reason": "Deposits can reduce two stored nullifiers to one while retaining a durable proof replay key."
+    },
+    "7": {
+      "status": "accept",
+      "reason": "The contract duplicates a consensus hash label as unchecked string literals instead of sharing the protocol primitive."
+    },
+    "8": {
+      "status": "accept",
+      "reason": "Input/output total equality makes the second 63-bit range decomposition logically redundant."
+    }
+  }
+}
