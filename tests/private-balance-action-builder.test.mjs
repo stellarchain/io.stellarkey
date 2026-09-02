@@ -126,6 +126,26 @@ test('public deposit preflight reports the exact asset balance shortfall', () =>
   );
 });
 
+test('one-time deposit preflight reserves the account minimum and full reviewed fee budget', () => {
+  assert.doesNotThrow(() => actionFlow.assertSufficientStealthSweepBalance({
+    available: 45_000_100n,
+    requested: 25_000_000n,
+    minimumBalance: 10_000_000n,
+    classicFee: 100n,
+    maximumResourceFee: 10_000_000n,
+  }));
+  assert.throws(
+    () => actionFlow.assertSufficientStealthSweepBalance({
+      available: 36_000_000n,
+      requested: 25_000_000n,
+      minimumBalance: 10_000_000n,
+      classicFee: 100n,
+      maximumResourceFee: 10_000_000n,
+    }),
+    /one-time account.*fee|insufficient/i,
+  );
+});
+
 test('action builder creates a fixed-shape deposit with private dummy lanes', async () => {
   const { keyContext, owner, assetContractId, assetField } = await fixture();
   const prepared = await preparePrivateAction({

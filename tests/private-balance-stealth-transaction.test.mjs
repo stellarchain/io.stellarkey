@@ -39,7 +39,7 @@ test('stealth payment builder emits the exact reserve, value, and announcement o
   assert.deepEqual(built.transaction.operations[0], {
     type: 'createAccount',
     destination: built.destinationPublicKey,
-    startingBalance: '1.1000000',
+    startingBalance: '2.0000100',
   });
   assert.equal(built.transaction.operations[1].destination, built.destinationPublicKey);
   assert.equal(built.transaction.operations[1].amount, '2.5000000');
@@ -50,11 +50,11 @@ test('stealth payment builder emits the exact reserve, value, and announcement o
   assert.equal(built.transaction.memo.type, 'hash');
   assert.deepEqual(new Uint8Array(built.transaction.memo.value), built.ephemeralPublicKey);
   assert.equal(built.reserveStroops, '10000000');
-  assert.equal(built.sweepFeeBufferStroops, '1000000');
+  assert.equal(built.sweepFeeBufferStroops, '10000100');
   assert.equal(built.amountStroops, '25000000');
   assert.equal(built.announcementStroops, '1');
   assert.equal(built.networkFeeStroops, '300');
-  assert.equal(built.totalDebitStroops, '36000301');
+  assert.equal(built.totalDebitStroops, '45000401');
 });
 
 test('stealth payment builder creates a fresh account for fresh sender randomness', async () => {

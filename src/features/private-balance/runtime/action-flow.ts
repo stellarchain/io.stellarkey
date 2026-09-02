@@ -35,8 +35,9 @@ import type {
   ShieldedNoteRecord,
 } from './types';
 import type { PrivateBalanceWorkerClient } from '../worker/client';
+import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 
-export const MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS = 10_000_000n;
+export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
 const ROOT_EXPIRY_SAFETY_LEDGERS = 12;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
@@ -212,6 +213,31 @@ export function assertSufficientPublicDepositBalance(input: {
   );
 }
 
+export function assertSufficientStealthSweepBalance(input: {
+  available: bigint;
+  requested: bigint;
+  minimumBalance: bigint;
+  classicFee: bigint;
+  maximumResourceFee: bigint;
+}): void {
+  if (
+    input.available < 0n ||
+    input.requested <= 0n ||
+    input.minimumBalance < 0n ||
+    input.classicFee <= 0n ||
+    input.maximumResourceFee < 0n
+  ) {
+    throw new Error('Reusable private payment balance inputs are invalid.');
+  }
+  const required = input.requested + input.minimumBalance +
+    input.classicFee + input.maximumResourceFee;
+  if (input.available < required) {
+    throw new Error(
+      'The one-time account has insufficient balance to preserve its minimum reserve and the reviewed Private Balance fee budget. This receipt cannot be signed safely.',
+    );
+  }
+}
+
 function consolidationSelection(notes: readonly ShieldedNoteRecord[]): {
   noteIds: string[];
   amount: bigint;
@@ -292,6 +318,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   worker: PrivateBalanceWorkerClient;
   rpcUrl: string;
   classicFeeStroops: bigint;
+  depositSourceMinimumBalanceStroops?: bigint;
   assetContractId: string;
   assetCode: string;
   assetDecimals: number;
@@ -353,6 +380,15 @@ export async function preparePrivateBalanceActionFlow(input: {
         assetCode: input.assetCode,
         assetDecimals: input.assetDecimals,
       });
+      if (input.depositSourceMinimumBalanceStroops !== undefined) {
+        assertSufficientStealthSweepBalance({
+          available: publicAssetBalance,
+          requested: depositAmount,
+          minimumBalance: input.depositSourceMinimumBalanceStroops,
+          classicFee: input.classicFeeStroops,
+          maximumResourceFee: MAX_RESOURCE_FEE_STROOPS,
+        });
+      }
     }
 
     let amount: bigint;

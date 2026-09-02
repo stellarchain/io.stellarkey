@@ -41,10 +41,10 @@ test('stealth payment review binds the one-time destination and complete public 
 
   assert.equal(review.amountStroops, '25000000');
   assert.equal(review.reserveStroops, '10000000');
-  assert.equal(review.sweepFeeBufferStroops, '1000000');
+  assert.equal(review.sweepFeeBufferStroops, '10000100');
   assert.equal(review.announcementStroops, '1');
   assert.equal(review.networkFeeStroops, '300');
-  assert.equal(review.totalDebitStroops, '36000301');
+  assert.equal(review.totalDebitStroops, '45000401');
   assert.equal(review.expiresAt, 1_180);
   assert.equal(validatePreparedStealthPayment(review, sender.publicKey(), 'testnet', 1_001).source, sender.publicKey());
   const transaction = TransactionBuilder.fromXdr(review.envelopeXdr, Networks.TESTNET);
