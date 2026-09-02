@@ -23,12 +23,37 @@ import {
   toViewingKey,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
-import { scanArchiveRecords } from '../src/features/private-balance/runtime/scanner.ts';
+import * as scannerModule from '../src/features/private-balance/runtime/scanner.ts';
 import { privateAddressFingerprint } from '../src/features/private-balance/runtime/receive.ts';
+
+const { scanArchiveRecords } = scannerModule;
 
 const zero = (length) => new Uint8Array(length);
 const bytes = (value, length = 32) => new Uint8Array(length).fill(value);
 const hex = value => Buffer.from(value).toString('hex');
+
+test('scanner maps envelope trials concurrently in bounded ordered batches', async () => {
+  assert.equal(typeof scannerModule.mapInBoundedBatches, 'function');
+  assert.equal(scannerModule.SCAN_ENVELOPE_BATCH_SIZE, 64);
+  let active = 0;
+  let peak = 0;
+  const values = Array.from({ length: 145 }, (_, index) => index);
+  const results = await scannerModule.mapInBoundedBatches(
+    values,
+    scannerModule.SCAN_ENVELOPE_BATCH_SIZE,
+    async (value) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, value % 3));
+      active -= 1;
+      return value * 2;
+    },
+  );
+
+  assert.ok(peak > 1, 'envelope trials should overlap');
+  assert.ok(peak <= scannerModule.SCAN_ENVELOPE_BATCH_SIZE, 'concurrency must remain bounded');
+  assert.deepEqual(results, values.map(value => value * 2), 'results must retain input order');
+});
 
 test('scanner recovers and authenticates an owned encrypted deposit', async () => {
   const networkId = bytes(1);

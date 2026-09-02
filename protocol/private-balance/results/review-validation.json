@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
-  "revision": "cc45d237493a06b0257966da23413bad2c2579aa",
-  "generatedAt": "2026-09-02T13:40:18.732Z",
+  "schemaVersion": 3,
+  "revision": "69335bd893e6c2739043ddae9434161b2c22a6ce",
+  "generatedAt": "2026-09-02T20:30:53.912Z",
   "environment": {
     "node": "v26.7.0",
     "platform": "darwin",
@@ -14,78 +14,234 @@
     "warmups": 20,
     "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
     "nativeJwk": {
-      "p50Microseconds": 435.583,
-      "p95Microseconds": 2239.5,
+      "p50Microseconds": 353.584,
+      "p95Microseconds": 490.541,
       "trialResults": [
         {
-          "p50Microseconds": 350.458,
-          "p95Microseconds": 435.625
+          "p50Microseconds": 341.458,
+          "p95Microseconds": 459.042
         },
         {
-          "p50Microseconds": 435.583,
-          "p95Microseconds": 2239.5
+          "p50Microseconds": 353.584,
+          "p95Microseconds": 490.541
         },
         {
-          "p50Microseconds": 1108.417,
-          "p95Microseconds": 2790.5
+          "p50Microseconds": 367.125,
+          "p95Microseconds": 569.5
         }
       ]
     },
     "nativePkcs8Prototype": {
-      "p50Microseconds": 85.75,
-      "p95Microseconds": 115.375,
+      "p50Microseconds": 81.25,
+      "p95Microseconds": 163.75,
       "trialResults": [
         {
-          "p50Microseconds": 83.584,
-          "p95Microseconds": 311.833
+          "p50Microseconds": 80.416,
+          "p95Microseconds": 135
         },
         {
-          "p50Microseconds": 85.75,
-          "p95Microseconds": 115.375
+          "p50Microseconds": 81.25,
+          "p95Microseconds": 163.75
         },
         {
-          "p50Microseconds": 98.708,
-          "p95Microseconds": 262.709
+          "p50Microseconds": 83.666,
+          "p95Microseconds": 131.292
         }
       ]
     },
     "portable": {
-      "p50Microseconds": 963.958,
-      "p95Microseconds": 1054.125,
+      "p50Microseconds": 767.708,
+      "p95Microseconds": 873.209,
       "trialResults": [
         {
-          "p50Microseconds": 903.709,
-          "p95Microseconds": 1677.458
+          "p50Microseconds": 758.5,
+          "p95Microseconds": 862.875
         },
         {
-          "p50Microseconds": 963.958,
-          "p95Microseconds": 1054.125
+          "p50Microseconds": 767.708,
+          "p95Microseconds": 873.209
         },
         {
-          "p50Microseconds": 1032.875,
-          "p95Microseconds": 1114.958
+          "p50Microseconds": 820.042,
+          "p95Microseconds": 911.917
         }
       ]
     },
     "diversifiedAddress": {
-      "p50Microseconds": 1434,
-      "p95Microseconds": 3273.125,
+      "p50Microseconds": 245.792,
+      "p95Microseconds": 292.292,
       "trialResults": [
         {
-          "p50Microseconds": 1296.25,
-          "p95Microseconds": 1902.958
+          "p50Microseconds": 240.875,
+          "p95Microseconds": 300.084
         },
         {
-          "p50Microseconds": 1434,
-          "p95Microseconds": 3273.125
+          "p50Microseconds": 245.792,
+          "p95Microseconds": 292.292
         },
         {
-          "p50Microseconds": 2148.083,
-          "p95Microseconds": 6800.917
+          "p50Microseconds": 448,
+          "p95Microseconds": 1193.542
         }
       ]
     },
-    "pkcs8MedianImprovementPercent": 80.31
+    "pkcs8MedianImprovementPercent": 77.02
+  },
+  "scanPath": {
+    "trials": 3,
+    "samplesPerTrial": 120,
+    "warmups": 20,
+    "corpusSize": 128,
+    "corpus": "Deterministic distinct diversifiers and X25519 ephemeral public keys; all variants process the same candidates.",
+    "toolVersions": {
+      "node": "v26.7.0",
+      "hpke": "1.8.0",
+      "nobleCurves": "2.3.0"
+    },
+    "variants": {
+      "current": {
+        "p50Microseconds": 2232.208,
+        "p95Microseconds": 4383.667,
+        "trialResults": [
+          {
+            "p50Microseconds": 1025.833,
+            "p95Microseconds": 3516.25
+          },
+          {
+            "p50Microseconds": 2232.208,
+            "p95Microseconds": 4383.667
+          },
+          {
+            "p50Microseconds": 2424.25,
+            "p95Microseconds": 4917.75
+          }
+        ]
+      },
+      "reordered": {
+        "p50Microseconds": 1997.375,
+        "p95Microseconds": 4657.75,
+        "trialResults": [
+          {
+            "p50Microseconds": 892.583,
+            "p95Microseconds": 2016.709
+          },
+          {
+            "p50Microseconds": 1997.375,
+            "p95Microseconds": 4657.75
+          },
+          {
+            "p50Microseconds": 2164.375,
+            "p95Microseconds": 4052.542
+          }
+        ]
+      },
+      "webcrypto": {
+        "p50Microseconds": 599.625,
+        "p95Microseconds": 2275.292,
+        "trialResults": [
+          {
+            "p50Microseconds": 206.167,
+            "p95Microseconds": 1057.5
+          },
+          {
+            "p50Microseconds": 599.625,
+            "p95Microseconds": 2275.292
+          },
+          {
+            "p50Microseconds": 640.542,
+            "p95Microseconds": 1920.709
+          }
+        ]
+      },
+      "ideal": {
+        "p50Microseconds": 133.333,
+        "p95Microseconds": 882.375,
+        "trialResults": [
+          {
+            "p50Microseconds": 49.333,
+            "p95Microseconds": 343.166
+          },
+          {
+            "p50Microseconds": 133.333,
+            "p95Microseconds": 882.375
+          },
+          {
+            "p50Microseconds": 171.167,
+            "p95Microseconds": 786.209
+          }
+        ]
+      }
+    },
+    "ratios": {
+      "currentOverReordered": 1.118,
+      "currentOverWebcrypto": 3.723,
+      "currentOverIdeal": 16.742
+    }
+  },
+  "scanBatch": {
+    "trials": 3,
+    "candidatesPerTrial": 128,
+    "variants": {
+      "1": {
+        "p50MicrosecondsPerEnvelope": 148.743,
+        "p95MicrosecondsPerEnvelope": 153.12,
+        "trialResults": [
+          148.026,
+          148.743,
+          153.12
+        ]
+      },
+      "4": {
+        "p50MicrosecondsPerEnvelope": 93.118,
+        "p95MicrosecondsPerEnvelope": 93.332,
+        "trialResults": [
+          90.627,
+          93.118,
+          93.332
+        ]
+      },
+      "8": {
+        "p50MicrosecondsPerEnvelope": 78.617,
+        "p95MicrosecondsPerEnvelope": 82.877,
+        "trialResults": [
+          78.31,
+          78.617,
+          82.877
+        ]
+      },
+      "16": {
+        "p50MicrosecondsPerEnvelope": 73.654,
+        "p95MicrosecondsPerEnvelope": 75.965,
+        "trialResults": [
+          72.272,
+          73.654,
+          75.965
+        ]
+      },
+      "32": {
+        "p50MicrosecondsPerEnvelope": 71.961,
+        "p95MicrosecondsPerEnvelope": 72.25,
+        "trialResults": [
+          67.01,
+          71.961,
+          72.25
+        ]
+      },
+      "64": {
+        "p50MicrosecondsPerEnvelope": 68.438,
+        "p95MicrosecondsPerEnvelope": 80.118,
+        "trialResults": [
+          67.361,
+          68.438,
+          80.118
+        ]
+      }
+    },
+    "selectedBatchSize": 64,
+    "sequentialP50MicrosecondsPerEnvelope": 148.743,
+    "selectedP50MicrosecondsPerEnvelope": 68.438,
+    "throughputRatio": 2.173,
+    "acceptanceThreshold": 1.2
   },
   "circuit": {
     "baseline": {
@@ -120,35 +276,83 @@
   "decisions": {
     "1": {
       "status": "accept",
-      "reason": "PKCS#8 prototype preserves the shared secret and changes warm native median by 80.31%."
+      "reason": "The reproducible scan corpus measures current, reordered, WebCrypto and ideal paths over 128 distinct envelopes."
     },
     "2": {
-      "status": "accept",
-      "reason": "The lane-free circuit compiled from 23,437 to 22,909 constraints, exactly the predicted 528-constraint reduction."
+      "status": "reject",
+      "reason": "A cached handle accelerates repeated derivations but distinct diversifiers produce distinct scalars; the full WebCrypto scan was only 3.72x current."
     },
     "3": {
       "status": "accept",
-      "reason": "The complete ternary circuit has 14,876 constraints, 13 public inputs, and fits the 2^14 Groth16 domain."
+      "reason": "Accept only the view-tag reorder (1.12x current); reject the custom WebCrypto key derivation because it was slower than the reorder and adds cryptographic code."
     },
     "4": {
-      "status": "defer",
-      "reason": "Measured diversification cost does not justify replacing RFC 9180 without a complete reviewed KEM specification."
+      "status": "accept",
+      "reason": "Bounded batch 64 measured 2.17x sequential throughput on the deterministic corpus."
     },
     "5": {
-      "status": "accept",
-      "reason": "The scanner now authenticates the already-paid outgoing ciphertext and recovers external recipient fingerprints and memos."
+      "status": "defer",
+      "reason": "The BN254 public-input MSM is accepted only if the Soroban resource meter decreases and adversarial verdicts remain unchanged."
     },
     "6": {
       "status": "accept",
-      "reason": "Deposits now store one durable proof replay key instead of two nullifiers; storing zero would permit exact proof replay."
+      "reason": "The contract currently derives the same 13 public signals twice; passing the verified vector into archival removes duplicate hashing."
     },
     "7": {
-      "status": "accept",
-      "reason": "The contract now imports the canonical ternary Merkle hash primitive and empty roots from the protocol crate."
+      "status": "defer",
+      "reason": "Precomputing the immutable asset field is sound, but host hashing is accepted only after a measured contract-budget reduction."
     },
     "8": {
+      "status": "defer",
+      "reason": "Removing runtime BigUint is accepted only if property tests agree and optimized contract Wasm size decreases."
+    },
+    "9": {
       "status": "accept",
-      "reason": "Removing the second total range decomposition compiled from 22,909 to 22,846 constraints, an exact 63-constraint reduction."
+      "reason": "The documented length-IV claim is false for same-arity hashes; an enforceable domain-slot invariant is required."
+    },
+    "10": {
+      "status": "accept",
+      "reason": "Consensus changes need explicit, repository-tested decisions before artifacts or deployment bindings move."
+    },
+    "11": {
+      "status": "defer",
+      "reason": "The 11-input circuit claim must be reproduced by compilation and negative mutation gates before acceptance."
+    },
+    "12": {
+      "status": "reject",
+      "reason": "A custom variable-base KEM is not justified by scan latency alone and lacks an independently reviewed specification."
+    },
+    "13": {
+      "status": "reject",
+      "reason": "A shared multi-asset pool conflicts with the implemented asset-pinned isolation and reintroduces shared spam and recovery costs."
+    },
+    "14": {
+      "status": "defer",
+      "reason": "The paging constants appear retired, but removal must pass deployment-binding and generated-artifact checks."
+    },
+    "15": {
+      "status": "defer",
+      "reason": "Capacity-domain separation is structurally sound but changes every tree and proof artifact and requires reproducible regeneration."
+    },
+    "16": {
+      "status": "defer",
+      "reason": "Artifact regeneration is required only for accepted consensus changes and must remain reproducible from authenticated inputs."
+    },
+    "17": {
+      "status": "defer",
+      "reason": "Relayer availability needs a separately validated submission and fee-sponsorship design before product claims change."
+    },
+    "18": {
+      "status": "defer",
+      "reason": "Cross-origin isolation cannot be accepted without a subresource audit and physical-browser proving measurements."
+    },
+    "19": {
+      "status": "defer",
+      "reason": "Association sets add policy and circuit scope; the constraint estimate and product requirement need validation before ceremony."
+    },
+    "20": {
+      "status": "accept",
+      "reason": "The ZK pool and Horizon stealth path are both live and need an explicit division of responsibility rather than accidental overlap."
     }
   }
 }

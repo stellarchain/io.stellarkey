@@ -161,6 +161,31 @@ function classifyActivity(
   return { actionKind, amount: amount.toString(), direction };
 }
 
+export const SCAN_ENVELOPE_BATCH_SIZE = 64;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+export async function mapInBoundedBatches<T, R>(
+  values: readonly T[],
+  batchSize: number,
+  map: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
+    throw new Error('Private scan batch size must be a positive safe integer');
+  }
+  const results: R[] = [];
+  for (let offset = 0; offset < values.length; offset += batchSize) {
+    const batch = values.slice(offset, offset + batchSize);
+    results.push(...await Promise.all(
+      batch.map((value, index) => map(value, offset + index)),
+    ));
+    if (offset + batchSize < values.length) await yieldToEventLoop();
+  }
+  return results;
+}
+
 export async function scanArchiveRecords(
   input: ScanArchiveRecordsInput,
 ): Promise<ScanArchiveRecordsResult> {
@@ -191,7 +216,54 @@ export async function scanArchiveRecords(
     notesByNullifier.set(nullifierHex, note);
   }
 
-  for (const record of input.records) {
+  const recordsPerBatch = SCAN_ENVELOPE_BATCH_SIZE / 2;
+  for (let recordOffset = 0; recordOffset < input.records.length; recordOffset += recordsPerBatch) {
+    const recordBatch = input.records.slice(recordOffset, recordOffset + recordsPerBatch);
+    const preparedRecords = recordBatch.map(record => ({
+      record,
+      assetField: computeAssetField(record.asset),
+      assetContractId: StrKey.encodeContract(record.asset.payload),
+    }));
+    const envelopeCandidates = preparedRecords.flatMap(prepared => (
+      prepared.record.outputs.map((output, outputIndex) => ({
+        prepared,
+        output,
+        outputIndex,
+      }))
+    ));
+    const envelopeTrials = await mapInBoundedBatches(
+      envelopeCandidates,
+      SCAN_ENVELOPE_BATCH_SIZE,
+      async ({ prepared, output, outputIndex }) => ({
+        note: await openRecipientEnvelope(
+          input.viewingKey.hpkePrivateKey,
+          output.recipientEnvelope,
+          input.context.contextHash,
+          input.context.contextField,
+          prepared.assetField,
+          output.cm,
+          prepared.record.actionNonce,
+          outputIndex,
+          input.viewingKey.baseOwnerCommitment,
+        ),
+        outgoingBytes: await openOutgoingEnvelope(
+          input.viewingKey.outgoingViewingKey,
+          output.recipientEnvelope.slice(5, 37),
+          output.outgoingEnvelope,
+          deriveOutgoingAad(
+            input.context.deploymentBindingHash,
+            input.context.contextHash,
+            prepared.assetField,
+            output.cm,
+            prepared.record.actionNonce,
+            outputIndex,
+          ),
+        ),
+      }),
+    );
+    let envelopeTrialIndex = 0;
+    try {
+      for (const { record, assetField, assetContractId } of preparedRecords) {
     if (record.actionIndex * 2 !== record.startingLeafIndex) {
       throw new Error('Archive action sequence mismatch');
     }
@@ -204,8 +276,6 @@ export async function scanArchiveRecords(
       input.context.realmId,
       input.context.poolId,
     );
-    const assetField = computeAssetField(record.asset);
-    const assetContractId = StrKey.encodeContract(record.asset.payload);
     const recordHash = computeRecordHash(
       record,
       input.context.protocolVersion,
@@ -229,17 +299,7 @@ export async function scanArchiveRecords(
     let receivedMemoHex: string | undefined;
     const recoveredRecipients: Array<{ fingerprint: string; memoHex?: string; value: bigint }> = [];
     for (const [outputIndex, output] of record.outputs.entries()) {
-      const note = await openRecipientEnvelope(
-        input.viewingKey.hpkePrivateKey,
-        output.recipientEnvelope,
-        input.context.contextHash,
-        input.context.contextField,
-        assetField,
-        output.cm,
-        record.actionNonce,
-        outputIndex,
-        input.viewingKey.baseOwnerCommitment,
-      );
+      const { note, outgoingBytes } = envelopeTrials[envelopeTrialIndex++];
       const ownedRealOutput = Boolean(note && note.flags === 0);
       if (note && note.flags === 0) {
         const commitment = hex(output.cm);
@@ -282,19 +342,6 @@ export async function scanArchiveRecords(
         if (memoHex) receivedMemoHex ??= memoHex;
       }
 
-      const outgoingBytes = await openOutgoingEnvelope(
-        input.viewingKey.outgoingViewingKey,
-        output.recipientEnvelope.slice(5, 37),
-        output.outgoingEnvelope,
-        deriveOutgoingAad(
-          input.context.deploymentBindingHash,
-          input.context.contextHash,
-          assetField,
-          output.cm,
-          record.actionNonce,
-          outputIndex,
-        ),
-      );
       if (outgoingBytes) {
         try {
           if (!ownedRealOutput) {
@@ -362,6 +409,11 @@ export async function scanArchiveRecords(
       });
     }
     expectedPriorRecordHash = Uint8Array.from(recordHash);
+      }
+    } finally {
+      for (const trial of envelopeTrials) trial.outgoingBytes?.fill(0);
+    }
+    if (recordOffset + recordsPerBatch < input.records.length) await yieldToEventLoop();
   }
 
   if (expectedFinalTreeRoot) {

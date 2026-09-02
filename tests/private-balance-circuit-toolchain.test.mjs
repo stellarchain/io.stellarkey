@@ -151,7 +151,7 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.equal(existsSync(evidencePath), true, 'review evidence must exist');
 
   const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
-  assert.equal(evidence.schemaVersion, 2);
+  assert.equal(evidence.schemaVersion, 3);
   assert.match(evidence.revision, /^[0-9a-f]{40}$/u);
   assert.equal(evidence.circuit.baseline.publicInputs, 13);
   assert.equal(evidence.circuit.baseline.constraints, 23_437);
@@ -175,8 +175,38 @@ test('protocol review decisions are backed by reproducible measurements', () => 
     assert.ok(measurement.p50Microseconds > 0);
     assert.ok(measurement.p95Microseconds >= measurement.p50Microseconds);
   }
+  assert.equal(evidence.scanPath.trials >= 3, true);
+  assert.equal(evidence.scanPath.samplesPerTrial >= 100, true);
+  assert.deepEqual(Object.keys(evidence.scanPath.variants).sort(), [
+    'current',
+    'ideal',
+    'reordered',
+    'webcrypto',
+  ]);
+  for (const measurement of Object.values(evidence.scanPath.variants)) {
+    assert.ok(Number.isFinite(measurement.p50Microseconds));
+    assert.ok(Number.isFinite(measurement.p95Microseconds));
+    assert.ok(measurement.p50Microseconds > 0);
+    assert.ok(measurement.p95Microseconds >= measurement.p50Microseconds);
+  }
+  assert.ok(
+    evidence.scanPath.ratios.currentOverWebcrypto > 1,
+    'the WebCrypto prototype must beat the current full miss path',
+  );
+  assert.ok(
+    evidence.scanPath.ratios.currentOverIdeal > 1,
+    'the ideal cached-key floor must beat the current full miss path',
+  );
+  assert.deepEqual(Object.keys(evidence.scanBatch.variants).sort(), [
+    '1', '16', '32', '4', '64', '8',
+  ]);
+  assert.ok([1, 4, 8, 16, 32, 64].includes(evidence.scanBatch.selectedBatchSize));
+  assert.ok(Number.isFinite(evidence.scanBatch.selectedP50MicrosecondsPerEnvelope));
+  assert.ok(Number.isFinite(evidence.scanBatch.sequentialP50MicrosecondsPerEnvelope));
+  assert.ok(evidence.scanBatch.throughputRatio > 0);
   assert.deepEqual(Object.keys(evidence.decisions).sort(), [
-    '1', '2', '3', '4', '5', '6', '7', '8',
+    '1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '2',
+    '20', '3', '4', '5', '6', '7', '8', '9',
   ]);
   for (const decision of Object.values(evidence.decisions)) {
     assert.match(decision.status, /^(accept|defer|reject)$/u);
