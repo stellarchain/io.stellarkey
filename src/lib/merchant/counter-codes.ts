@@ -14,6 +14,7 @@ import { minorForAssetAmount, unitPriceE6 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, counterReference } from "./payment-reference";
 import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
+import { isCurrentReceivingDestination } from "./destination";
 import { pendingReconciliationTray } from "./reconciliation";
 import {
   createMerchantRoutingId,
@@ -423,7 +424,7 @@ export function reconcileCounterPayments(
           (code) =>
             code.routingId === payment.routingId &&
             code.network === input.network &&
-            code.destination === store.settings.receivingPublicKey &&
+            isCurrentReceivingDestination(store.settings, code.destination) &&
             code.destination === payment.destination &&
             paymentAt >= code.createdAt &&
             counterCodeAvailability(code, paymentAt) === "active",

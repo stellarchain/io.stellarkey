@@ -15,6 +15,7 @@ import type {
 import type { NetworkKey } from "../stellar";
 import { canonicalPayerAddress } from "./payer";
 import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
+import { isCurrentReceivingDestination } from "./destination";
 
 export interface ReconcileIncomingInput {
   network: NetworkKey;
@@ -147,7 +148,10 @@ function reconcileOne(
   if (store.paymentReconciliations.some((entry) => entry.id === payment.id)) return store;
 
   const scoped = store.charges.filter(
-    (charge) => charge.network === network && charge.destination === payment.destination,
+    (charge) =>
+      charge.network === network &&
+      isCurrentReceivingDestination(store.settings, charge.destination) &&
+      charge.destination === payment.destination,
   );
   if (merchantPaymentIdentitySet(store).has(paymentTransactionIdentity(network, payment))) {
     const named = payment.routingId

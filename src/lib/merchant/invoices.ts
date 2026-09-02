@@ -20,6 +20,7 @@ import {
 import { parsePaymentCreatedAt } from "./payment-time";
 import { canonicalPayerAddress } from "./payer";
 import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
+import { isCurrentReceivingDestination } from "./destination";
 import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
 import { pendingReconciliationTray } from "./reconciliation";
 import {
@@ -434,7 +435,7 @@ export function reconcileInvoicePayments(
           (invoice) =>
             invoice.routingId === payment.routingId &&
             invoice.network === input.network &&
-            invoice.destination === store.settings.receivingPublicKey &&
+            isCurrentReceivingDestination(store.settings, invoice.destination) &&
             invoice.destination === payment.destination &&
             (invoice.status === "sent" ||
               invoice.status === "partially_paid" ||
