@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Made wallet inactivity locking use the larger of monotonic and forward wall-clock elapsed time, with focus, visibility, and page-resume checks so device suspend cannot preserve an unlocked session.
 - Applied one current-receiving-account quarantine to charges, invoices, and counter codes; stale charges no longer settle or regenerate requests, and printed invoices replace stale, void, paid, draft, or incomplete payment instructions with a withdrawal notice.
 - Enforced customer-note and customer-erasure authority inside the merchant domain, limited irreversible erasure to active owners, and retained actor-attributed hashed-address audit events after deletion.
 - Centralized Merchant Mode exit authorization in the shared navigation transition, covering the mode switcher, mobile tabs, keyboard shortcuts, command actions, and in-flow redirects.
