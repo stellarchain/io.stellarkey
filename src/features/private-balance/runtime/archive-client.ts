@@ -8,6 +8,7 @@ import {
 import {
   computeContextField,
   computeContextHash,
+  TREE_FRONTIER_SIZE,
   type ArchiveRecordModel,
 } from '@stellarkey/private-balance';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -242,7 +243,7 @@ function decodeTree(value: unknown): ArchiveTreeState {
   const tree = object(value, 'Archive tree');
   const nextIndex = u64(tree.next_index, 'Archive tree next_index');
   if (nextIndex > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Archive tree next_index is too large');
-  if (!Array.isArray(tree.frontier) || tree.frontier.length !== 32) {
+  if (!Array.isArray(tree.frontier) || tree.frontier.length !== TREE_FRONTIER_SIZE) {
     throw new Error('Archive tree frontier is invalid');
   }
   return {

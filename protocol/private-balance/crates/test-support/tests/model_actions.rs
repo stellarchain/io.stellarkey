@@ -5,7 +5,7 @@ use private_balance_protocol::{
 };
 use private_balance_test_support::{
     model::{ModelContext, PoolModel},
-    native_poseidon2::{NativeTreeHashContext, native_p2},
+    native_poseidon2::{NativeTreeHashContext, native_poseidon2_hash},
     recovery::recover_public_transcript_with_tree_hash_context,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -124,11 +124,12 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
 fn native_poseidon2_oracle_matches_canonical_protocol_hashes() {
     for value in 0..8u32 {
         assert_eq!(
-            native_p2("SKSB_MERKLE_NODE_V1", &[field(value), field(value + 1)]),
-            private_balance_protocol::poseidon2::p2(
-                "SKSB_MERKLE_NODE_V1",
-                &[field(value), field(value + 1)]
-            )
+            native_poseidon2_hash(&[field(value), field(value + 1), field(value + 2)]),
+            private_balance_protocol::poseidon2::poseidon2_hash(&[
+                field(value),
+                field(value + 1),
+                field(value + 2),
+            ])
         );
     }
 
@@ -144,13 +145,6 @@ fn native_poseidon2_oracle_matches_canonical_protocol_hashes() {
             .expect("canonical append");
         assert_eq!(native.root, canonical.root);
         assert_eq!(native.next_leaf_index, canonical.next_leaf_index);
-        for level in 0..private_balance_protocol::constants::TREE_DEPTH {
-            if (canonical.next_leaf_index >> level) & 1 == 1 {
-                assert_eq!(
-                    native.frontier[level], canonical.frontier[level],
-                    "live frontier subtree differs at level {level}"
-                );
-            }
-        }
+        assert_eq!(native.frontier, canonical.frontier);
     }
 }

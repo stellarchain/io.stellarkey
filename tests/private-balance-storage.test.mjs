@@ -76,7 +76,7 @@ const checkpoint = {
   lastActionIndex: 0,
   lastRecordHash: '0a'.repeat(32),
   treeRoot: '0b'.repeat(32),
-  treeFrontier: Array.from({ length: 32 }, () => '00'.repeat(32)),
+  treeFrontier: Array.from({ length: 34 }, () => '00'.repeat(32)),
   deploymentBindingHash: context.deploymentBindingHash,
   manifestHash,
   latestLedger: 100,

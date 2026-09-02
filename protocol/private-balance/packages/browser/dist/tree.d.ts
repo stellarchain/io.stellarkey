@@ -1,5 +1,11 @@
-export declare const TREE_DEPTH = 32;
-export declare const DOMAIN_MERKLE = "SKSB_MERKLE_NODE_V1";
+export declare const TREE_ARITY = 3;
+export declare const TREE_DEPTH = 17;
+export declare const TREE_CAPACITY: number;
+export declare const TREE_FRONTIER_WIDTH: number;
+export declare const TREE_FRONTIER_SIZE: number;
+export type MerkleChildren = readonly [Uint8Array, Uint8Array, Uint8Array];
+export type MerkleSiblings = readonly [Uint8Array, Uint8Array];
+export declare function hashMerkleNode(children: MerkleChildren): Uint8Array;
 export declare const EMPTY_ROOTS: readonly Uint8Array[];
 export interface MerkleTree {
     nextIndex: number;
@@ -9,11 +15,11 @@ export interface MerkleTree {
 export interface MerklePathWitness {
     leaf: Uint8Array;
     leafIndex: number;
-    siblings: Uint8Array[];
-    directionBits: number[];
+    siblings: [Uint8Array, Uint8Array][];
+    positions: number[];
     root: Uint8Array;
 }
-export type MerkleHash = (left: Uint8Array, right: Uint8Array) => Uint8Array | Promise<Uint8Array>;
+export type MerkleHash = (children: MerkleChildren) => Uint8Array | Promise<Uint8Array>;
 export declare function getEmptyRoots(): Promise<Uint8Array[]>;
 export declare function createEmptyTree(): Promise<MerkleTree>;
 export declare function appendFrontier(tree: MerkleTree, leaf: Uint8Array, hash?: MerkleHash): Promise<void>;

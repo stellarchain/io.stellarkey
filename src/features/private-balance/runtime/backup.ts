@@ -83,7 +83,7 @@ function validateEncryptedRecord(value: string): void {
   }
   if (
     parsed.kind !== 'stellarkey-private-balance-state' ||
-    parsed.version !== 1 ||
+    parsed.version !== 2 ||
     !Number.isSafeInteger(parsed.revision) ||
     (parsed.revision as number) < 0 ||
     typeof parsed.crypto.iv !== 'string' ||

@@ -350,8 +350,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     const nullifierSecret0 = u64Field(options.actionCount * 2 + actionIndex * 2 + 1);
     const nullifierSecret1 = u64Field(options.actionCount * 2 + actionIndex * 2 + 2);
     const nullifiers = [
-      computeDummyNullifier(contextField, nullifierSecret0, 0),
-      computeDummyNullifier(contextField, nullifierSecret1, 1),
+      computeDummyNullifier(contextField, nullifierSecret0),
+      computeDummyNullifier(contextField, nullifierSecret1),
     ];
     nullifierSecret0.fill(0);
     nullifierSecret1.fill(0);

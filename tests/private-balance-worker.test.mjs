@@ -42,7 +42,7 @@ const manifest = {
     vkBinSha256: 'a5'.repeat(32),
   },
   constants: {
-    treeDepth: 32,
+    treeDepth: 17,
     pageCapacity: 32,
     publicInputs: 13,
     notePlaintextBytes: 128,

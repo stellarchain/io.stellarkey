@@ -13,17 +13,21 @@ use crate::{nullifier, token};
 use private_balance_protocol::action::{Action as ProtocolAction, ActionKind};
 use private_balance_protocol::constants::{
     ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY, PRIVATE_ADDRESS_ASCII_BYTES,
-    PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_DEPTH,
+    PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_ARITY,
+    TREE_CAPACITY, TREE_DEPTH, TREE_FRONTIER_WIDTH,
 };
 use private_balance_protocol::deployment::DeploymentBinding;
 use private_balance_protocol::encoding::{compute_context_field, compute_context_hash};
-use private_balance_protocol::poseidon2::p2;
-use private_balance_protocol::tree::EMPTY_ROOTS;
+use private_balance_protocol::tree::{EMPTY_ROOTS, hash_merkle_node};
 use private_balance_verifier::{Proof, verify_groth16_proof};
 use soroban_sdk::{Address, BytesN, Env, Vec, contract, contractimpl, panic_with_error};
 
 #[contract]
 pub struct PrivateBalancePool;
+
+fn frontier_offset(level: usize, position: usize) -> u32 {
+    (level * TREE_FRONTIER_WIDTH + position) as u32
+}
 
 fn append_leaf_to_frontier(
     env: &Env,
@@ -31,7 +35,7 @@ fn append_leaf_to_frontier(
     leaf: &BytesN<32>,
 ) -> Result<(), PoolError> {
     let index = tree.next_index;
-    if index >= (1u64 << TREE_DEPTH) {
+    if index >= TREE_CAPACITY {
         return Err(PoolError::TreeFull);
     }
 
@@ -40,16 +44,35 @@ fn append_leaf_to_frontier(
     let mut next_frontier = tree.frontier.clone();
 
     let mut level = 0usize;
-    while node_index & 1 == 1 {
-        let left = next_frontier.get(level as u32).unwrap().to_array();
-        cur = p2("SKSB_MERKLE_NODE_V1", &[left, cur]);
-        node_index >>= 1;
-        level += 1;
-    }
-    if level < TREE_DEPTH {
-        next_frontier.set(level as u32, BytesN::from_array(env, &cur));
-    } else {
-        tree.current_root = BytesN::from_array(env, &cur);
+    loop {
+        match node_index % TREE_ARITY as u64 {
+            0 => {
+                next_frontier.set(frontier_offset(level, 0), BytesN::from_array(env, &cur));
+                break;
+            }
+            1 => {
+                next_frontier.set(frontier_offset(level, 1), BytesN::from_array(env, &cur));
+                break;
+            }
+            2 => {
+                let first = next_frontier
+                    .get(frontier_offset(level, 0))
+                    .unwrap()
+                    .to_array();
+                let second = next_frontier
+                    .get(frontier_offset(level, 1))
+                    .unwrap()
+                    .to_array();
+                cur = hash_merkle_node(&[first, second, cur]);
+                node_index /= TREE_ARITY as u64;
+                level += 1;
+                if level == TREE_DEPTH {
+                    tree.current_root = BytesN::from_array(env, &cur);
+                    break;
+                }
+            }
+            _ => unreachable!(),
+        }
     }
 
     tree.next_index += 1;
@@ -58,19 +81,38 @@ fn append_leaf_to_frontier(
 }
 
 fn compute_tree_root(env: &Env, tree: &TreeStorage) -> BytesN<32> {
-    if tree.next_index == (1u64 << TREE_DEPTH) {
+    if tree.next_index == TREE_CAPACITY {
         return tree.current_root.clone();
     }
     let mut current = EMPTY_ROOTS[0];
     let mut node_index = tree.next_index;
     for (level, empty_root) in EMPTY_ROOTS.iter().enumerate().take(TREE_DEPTH) {
-        current = if node_index & 1 == 1 {
-            let left = tree.frontier.get(level as u32).unwrap().to_array();
-            p2("SKSB_MERKLE_NODE_V1", &[left, current])
-        } else {
-            p2("SKSB_MERKLE_NODE_V1", &[current, *empty_root])
+        current = match node_index % TREE_ARITY as u64 {
+            0 => hash_merkle_node(&[current, *empty_root, *empty_root]),
+            1 => {
+                let first = tree
+                    .frontier
+                    .get(frontier_offset(level, 0))
+                    .unwrap()
+                    .to_array();
+                hash_merkle_node(&[first, current, *empty_root])
+            }
+            2 => {
+                let first = tree
+                    .frontier
+                    .get(frontier_offset(level, 0))
+                    .unwrap()
+                    .to_array();
+                let second = tree
+                    .frontier
+                    .get(frontier_offset(level, 1))
+                    .unwrap()
+                    .to_array();
+                hash_merkle_node(&[first, second, current])
+            }
+            _ => unreachable!(),
         };
-        node_index >>= 1;
+        node_index /= TREE_ARITY as u64;
     }
     BytesN::from_array(env, &current)
 }
@@ -102,11 +144,14 @@ fn execute_action(
         }
         known_root(env, &anchor_root)?;
     }
-    for nullifier in &action.nullifiers {
+    // Deposits have no real inputs. One durable dummy nullifier is sufficient
+    // to reject proof replay; the second public slot remains for fixed arity.
+    let persistent_nullifier_count = if action.kind == ActionKind::Deposit { 1 } else { 2 };
+    for nullifier in action.nullifiers.iter().take(persistent_nullifier_count) {
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
-    if tree_before.next_index > (1u64 << TREE_DEPTH) - 2 {
+    if tree_before.next_index > TREE_CAPACITY - 2 {
         return Err(PoolError::TreeFull);
     }
 
@@ -117,7 +162,7 @@ fn execute_action(
     }
 
     let action_index = get_meta(env).action_count;
-    for nullifier in &action.nullifiers {
+    for nullifier in action.nullifiers.iter().take(persistent_nullifier_count) {
         nullifier::mark_spent(env, &BytesN::from_array(env, nullifier), action_index);
     }
 
@@ -257,7 +302,9 @@ impl PrivateBalancePool {
 
         let mut frontier_vec = Vec::new(&env);
         for empty_root in EMPTY_ROOTS.iter().take(TREE_DEPTH) {
-            frontier_vec.push_back(BytesN::from_array(&env, empty_root));
+            for _ in 0..TREE_FRONTIER_WIDTH {
+                frontier_vec.push_back(BytesN::from_array(&env, empty_root));
+            }
         }
 
         let tree = TreeStorage {

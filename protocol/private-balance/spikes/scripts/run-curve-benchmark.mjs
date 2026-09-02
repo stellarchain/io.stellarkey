@@ -419,18 +419,18 @@ function benchmarkWitness(curve) {
     CORPUS_DESCRIPTOR.outputValues[index],
     CORPUS_DESCRIPTOR.outputRhos[index],
   ]));
-  const nullifiers = CORPUS_DESCRIPTOR.inputDummySecrets.map((secret, lane) => hash([
+  const nullifiers = CORPUS_DESCRIPTOR.inputDummySecrets.map(secret => hash([
     DOMAIN.dummyNullifier,
     CORPUS_DESCRIPTOR.contextField,
     secret,
-    lane,
   ]));
   const actionBinding = hash([
     DOMAIN.actionBinding,
     CORPUS_DESCRIPTOR.contextField,
     CORPUS_DESCRIPTOR.actionField,
   ]);
-  const zeroPath = new Array(32).fill('0');
+  const zeroPositions = new Array(17).fill('0');
+  const zeroSiblings = Array.from({ length: 17 }, () => ['0', '0']);
   return {
     contextField: CORPUS_DESCRIPTOR.contextField,
     assetField: CORPUS_DESCRIPTOR.assetField,
@@ -452,9 +452,8 @@ function benchmarkWitness(curve) {
     inputValue: ['0', '0'],
     inputRho: ['0', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [zeroPath, zeroPath],
-    inputDirectionBits: [zeroPath, zeroPath],
-    outputReal: ['1', '0'],
+    inputSiblings: [zeroSiblings, zeroSiblings],
+    inputPositions: [zeroPositions, zeroPositions],
     outputOwnerCommitment: outputOwners,
     outputValue: CORPUS_DESCRIPTOR.outputValues,
     outputRho: CORPUS_DESCRIPTOR.outputRhos,

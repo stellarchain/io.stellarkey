@@ -1,7 +1,9 @@
-use private_balance_protocol::{constants::DOMAIN_MERKLE_NODE, poseidon2::domain_field, tree::*};
+use private_balance_protocol::{constants::{TREE_ARITY, TREE_DEPTH}, tree::*};
 
 #[test]
 fn test_tree_empty_and_append() {
+    assert_eq!(TREE_ARITY, 3);
+    assert_eq!(TREE_DEPTH, 17);
     let mut tree = TreeState::new();
     let empty_root = tree.root;
     assert_ne!(empty_root, [0u8; 32]);
@@ -39,14 +41,12 @@ fn frontier_append_matches_legacy_roots_and_defers_the_final_fold() {
 }
 
 #[test]
-fn empty_roots_and_merkle_domain_are_compile_time_constants() {
+fn ternary_empty_roots_are_compile_time_constants() {
     assert_eq!(compute_empty_roots(), EMPTY_ROOTS);
-    assert_eq!(
-        domain_field(DOMAIN_MERKLE_NODE),
-        [
-            0x28, 0x5f, 0xf6, 0x78, 0x05, 0x15, 0x87, 0xf5, 0x8b, 0x40, 0x61, 0xd5, 0xca, 0xe6,
-            0x41, 0x8f, 0x89, 0xd9, 0xe2, 0xdc, 0xfe, 0xda, 0x99, 0xa8, 0xf3, 0xaa, 0xf4, 0xfa,
-            0xa5, 0x37, 0x0e, 0x28,
-        ],
-    );
+    for level in 0..TREE_DEPTH {
+        assert_eq!(
+            hash_merkle_node(&[EMPTY_ROOTS[level]; TREE_ARITY]),
+            EMPTY_ROOTS[level + 1],
+        );
+    }
 }

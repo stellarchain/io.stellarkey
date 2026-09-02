@@ -106,8 +106,8 @@ fn test_pool_initialization_and_deposit() {
     let action = DepositAction {
         action_nonce: BytesN::from_array(&env, &[0x11; 32]),
         anchor_root: BytesN::from_array(&env, &[0; 32]),
-        nullifier_0: nf0,
-        nullifier_1: nf1,
+        nullifier_0: nf0.clone(),
+        nullifier_1: nf1.clone(),
         output_0: OutputPackage {
             commitment: out_cm0,
             recipient_envelope: BytesN::from_array(&env, &[0xaa; 181]),
@@ -158,4 +158,14 @@ fn test_pool_initialization_and_deposit() {
     assert!(env.as_contract(&fixture.pool_id, || {
         private_balance_pool::storage::known_root(&env, &tree.current_root).is_ok()
     }));
+    assert!(env.as_contract(&fixture.pool_id, || {
+        private_balance_pool::nullifier::is_spent(&env, &nf0)
+    }));
+    assert!(!env.as_contract(&fixture.pool_id, || {
+        private_balance_pool::nullifier::is_spent(&env, &nf1)
+    }));
+    assert!(
+        pool_client.try_deposit(&action, &proof).is_err(),
+        "the retained deposit replay key must reject the same proof",
+    );
 }

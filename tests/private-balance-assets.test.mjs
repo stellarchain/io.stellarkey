@@ -59,7 +59,7 @@ function developmentManifest(assetContractId = XLM_CONTRACT) {
       vkJsonSha256: '77'.repeat(32), vkBinSha256: '88'.repeat(32),
     },
     constants: {
-      treeDepth: 32, treeArity: 2, rootWindowLedgers: 1440,
+      treeDepth: 17, treeArity: 3, rootWindowLedgers: 1440,
       pageCapacity: 32, maxPagesPerTouch: 4, publicInputs: 13,
       notePlaintextBytes: 128, recipientEnvelopeBytes: 181,
       outgoingEnvelopeBytes: 157, outputPackageBytes: 370,

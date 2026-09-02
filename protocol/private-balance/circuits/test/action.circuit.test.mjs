@@ -14,18 +14,22 @@ const helperWasmPath = join(buildDir, 'gadgets_helper_js/gadgets_helper.wasm');
 
 let wcHelper;
 let actionCalculator;
-const directionBitsFor = (leafIndex) => {
-  const value = BigInt(leafIndex);
-  return Array.from({ length: 32 }, (_, index) => ((value >> BigInt(index)) & 1n).toString());
+const positionsFor = (leafIndex) => {
+  let value = BigInt(leafIndex);
+  return Array.from({ length: 17 }, () => {
+    const position = value % 3n;
+    value /= 3n;
+    return position.toString();
+  });
 };
+const emptySiblings = () => Array.from({ length: 17 }, () => ['0', '0']);
 const fieldBytes = value => Uint8Array.from(
   Buffer.from(BigInt(value).toString(16).padStart(64, '0'), 'hex'),
 );
 const fieldDecimal = value => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
-const dummyNullifier = (contextField, secret, lane) => fieldDecimal(computeDummyNullifier(
+const dummyNullifier = (contextField, secret) => fieldDecimal(computeDummyNullifier(
   fieldBytes(contextField),
   fieldBytes(secret),
-  Number(lane),
 ));
 
 async function getHelper() {
@@ -46,7 +50,7 @@ async function getActionCalculator() {
   return actionCalculator;
 }
 
-async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = new Array(32).fill('0'), actionField = '0' }) {
+async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings(), actionField = '0' }) {
   const helper = await getHelper();
   const wtns = await helper.calculateWitness({
     contextField: contextField.toString(),
@@ -57,8 +61,8 @@ async function evalGadgets({ contextField, assetField = '84', ask = '0', nk = '0
     rho: rho.toString(),
     value: value.toString(),
     leafIndex: leafIndex.toString(),
-    siblings: siblings.map(s => s.toString()),
-    directionBits: directionBitsFor(leafIndex),
+    siblings: siblings.map(level => level.map(String)),
+    positions: positionsFor(leafIndex),
     actionField: actionField.toString(),
   });
   return {
@@ -91,8 +95,8 @@ test('action circuit: every deposit exposes two nonzero nullifiers and commitmen
   });
   const calculator = await getActionCalculator();
   const nullifiers = [
-    dummyNullifier(contextField, '901', '0'),
-    dummyNullifier(contextField, '902', '1'),
+    dummyNullifier(contextField, '901'),
+    dummyNullifier(contextField, '902'),
   ];
   const commitments = [realOutput.noteCommitment, dummyOutput.noteCommitment];
   assert.ok(nullifiers.every(value => value !== '0'));
@@ -119,9 +123,8 @@ test('action circuit: every deposit exposes two nonzero nullifiers and commitmen
     inputValue: ['0', '0'],
     inputRho: ['0', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
-    outputReal: ['1', '0'],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
     outputOwnerCommitment: [realOutput.ownerCommitment, dummyOutput.ownerCommitment],
     outputValue: ['5000000', '0'],
     outputRho: ['77777', '88888'],
@@ -174,7 +177,7 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
     actionBinding: input.actionBinding,
     nullifier: atLane(
       input.nullifier,
-      dummyNullifier(contextField, dummySecret, dummyInputLane.toString()),
+      dummyNullifier(contextField, dummySecret),
       inputLane,
     ),
     outputCommitment: atLane(
@@ -191,9 +194,8 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
     inputValue: atLane('10000000', '0', inputLane),
     inputRho: atLane('33333', '0', inputLane),
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
-    outputReal: atLane('1', '0', outputLane),
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
     outputOwnerCommitment: atLane(
       realOutput.ownerCommitment,
       dummyOutput.ownerCommitment,
@@ -235,7 +237,7 @@ test('action circuit: two-input consolidation accepts both input permutations', 
     diversifier: '7',
     rho: '30001',
     value: '4000000',
-    siblings: [secondLeaf.noteCommitment, ...new Array(31).fill('0')],
+    siblings: [[secondLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
   });
   const second = await evalGadgets({
     contextField,
@@ -246,7 +248,7 @@ test('action circuit: two-input consolidation accepts both input permutations', 
     rho: '30002',
     value: '6000000',
     leafIndex: '1',
-    siblings: [firstLeaf.noteCommitment, ...new Array(31).fill('0')],
+    siblings: [[firstLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
   });
   assert.equal(first.merkleRoot, second.merkleRoot);
   const realOutput = await evalGadgets({
@@ -262,10 +264,10 @@ test('action circuit: two-input consolidation accepts both input permutations', 
       diversifier: ['7', '8'], value: ['4000000', '6000000'], rho: ['30001', '30002'],
       leafIndex: ['0', '1'],
       siblings: [
-        [secondLeaf.noteCommitment, ...new Array(31).fill('0')],
-        [firstLeaf.noteCommitment, ...new Array(31).fill('0')],
+        [[secondLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
+        [[firstLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
       ],
-      bits: [directionBitsFor(0), directionBitsFor(1)],
+      positions: [positionsFor(0), positionsFor(1)],
       nullifier: [first.nullifier, second.nullifier],
     },
     {
@@ -273,10 +275,10 @@ test('action circuit: two-input consolidation accepts both input permutations', 
       diversifier: ['8', '7'], value: ['6000000', '4000000'], rho: ['30002', '30001'],
       leafIndex: ['1', '0'],
       siblings: [
-        [firstLeaf.noteCommitment, ...new Array(31).fill('0')],
-        [secondLeaf.noteCommitment, ...new Array(31).fill('0')],
+        [[firstLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
+        [[secondLeaf.noteCommitment, '0'], ...emptySiblings().slice(1)],
       ],
-      bits: [directionBitsFor(1), directionBitsFor(0)],
+      positions: [positionsFor(1), positionsFor(0)],
       nullifier: [second.nullifier, first.nullifier],
     },
   ];
@@ -303,8 +305,7 @@ test('action circuit: two-input consolidation accepts both input permutations', 
       inputRho: lane.rho,
       inputLeafIndex: lane.leafIndex,
       inputSiblings: lane.siblings,
-      inputDirectionBits: lane.bits,
-      outputReal: ['1', '0'],
+      inputPositions: lane.positions,
       outputOwnerCommitment: [realOutput.ownerCommitment, dummyOutput.ownerCommitment],
       outputValue: ['10000000', '0'],
       outputRho: ['40001', '40002'],
@@ -333,7 +334,6 @@ test('action circuit: full withdrawal still emits two randomized dummy commitmen
   witness.actionKindField = '3';
   witness.publicValueField = '10000000';
   witness.outputCommitment = [firstDummy.noteCommitment, secondDummy.noteCommitment];
-  witness.outputReal = ['0', '0'];
   witness.outputOwnerCommitment = [firstDummy.ownerCommitment, secondDummy.ownerCommitment];
   witness.outputValue = ['0', '0'];
   witness.outputRho = ['70003', '70006'];
@@ -341,12 +341,11 @@ test('action circuit: full withdrawal still emits two randomized dummy commitmen
   await (await getActionCalculator()).calculateWitness(witness);
 });
 
-test('action circuit rejects malformed real/dummy selectors and lane witnesses', async () => {
+test('action circuit rejects malformed input selectors and lane witnesses', async () => {
   const calculator = await getActionCalculator();
   const canonical = await buildOneInputTransfer(0, 0);
   const cases = [
     { ...canonical, inputReal: ['2', '0'] },
-    { ...canonical, outputReal: ['1', '2'] },
     { ...canonical, inputValue: ['10000000', '1'] },
     { ...canonical, outputValue: ['10000000', '1'] },
     { ...canonical, inputValue: ['0', '0'] },
@@ -413,8 +412,8 @@ test('action circuit: deposit proof generation and verification', async () => {
     actionField,
     actionBinding,
     nullifier: [
-      dummyNullifier(contextField, '901', '0'),
-      dummyNullifier(contextField, '902', '1'),
+      dummyNullifier(contextField, '901'),
+      dummyNullifier(contextField, '902'),
     ],
     outputCommitment: [outCm0, dummyOutput.noteCommitment],
 
@@ -427,13 +426,9 @@ test('action circuit: deposit proof generation and verification', async () => {
     inputValue: ['0', '0'],
     inputRho: ['0', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [
-      new Array(32).fill('0'),
-      new Array(32).fill('0'),
-    ],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputReal: ['1', '0'],
     outputOwnerCommitment: [outOwner0, dummyOutput.ownerCommitment],
     outputValue: [outVal0, '0'],
     outputRho: [outRho0, '88888'],
@@ -470,7 +465,7 @@ test('action circuit: private transfer proof generation and verification', async
   const inRho0 = '33333';
   const inLeafIndex0 = '0';
   const inDiversifier0 = '7';
-  const siblings0 = new Array(32).fill('0');
+  const siblings0 = emptySiblings();
 
   const in0Res = await evalGadgets({
     contextField,
@@ -525,7 +520,7 @@ test('action circuit: private transfer proof generation and verification', async
     relayerField: '9',
     actionField,
     actionBinding,
-    nullifier: [inNf0, dummyNullifier(contextField, '903', '1')],
+    nullifier: [inNf0, dummyNullifier(contextField, '903')],
     outputCommitment: [outCm0, outCm1],
 
     ask: inAsk0,
@@ -539,11 +534,10 @@ test('action circuit: private transfer proof generation and verification', async
     inputLeafIndex: [inLeafIndex0, '0'],
     inputSiblings: [
       siblings0,
-      new Array(32).fill('0'),
+      emptySiblings(),
     ],
-    inputDirectionBits: [directionBitsFor(inLeafIndex0), directionBitsFor(0)],
+    inputPositions: [positionsFor(inLeafIndex0), positionsFor(0)],
 
-    outputReal: ['1', '1'],
     outputOwnerCommitment: [outOwner0, outOwner1],
     outputValue: [outVal0, outVal1],
     outputRho: [outRho0, outRho1],
@@ -569,7 +563,7 @@ test('action circuit: withdrawal proof generation and verification', async () =>
   const inRho0 = '33333';
   const inLeafIndex0 = '0';
   const inDiversifier0 = '11';
-  const siblings0 = new Array(32).fill('0');
+  const siblings0 = emptySiblings();
 
   const in0Res = await evalGadgets({
     contextField,
@@ -619,7 +613,7 @@ test('action circuit: withdrawal proof generation and verification', async () =>
     relayerField: '9',
     actionField,
     actionBinding,
-    nullifier: [inNf0, dummyNullifier(contextField, '904', '1')],
+    nullifier: [inNf0, dummyNullifier(contextField, '904')],
     outputCommitment: [outCm0, dummyOutput.noteCommitment],
 
     ask: inAsk0,
@@ -633,11 +627,10 @@ test('action circuit: withdrawal proof generation and verification', async () =>
     inputLeafIndex: [inLeafIndex0, '0'],
     inputSiblings: [
       siblings0,
-      new Array(32).fill('0'),
+      emptySiblings(),
     ],
-    inputDirectionBits: [directionBitsFor(inLeafIndex0), directionBitsFor(0)],
+    inputPositions: [positionsFor(inLeafIndex0), positionsFor(0)],
 
-    outputReal: ['1', '0'],
     outputOwnerCommitment: [outOwner0, dummyOutput.ownerCommitment],
     outputValue: [outVal0, '0'],
     outputRho: [outRho0, '77777'],
@@ -681,8 +674,8 @@ test('action circuit rejects a deposit bound to a nonzero anchor root', async ()
       actionField,
       actionBinding: output.actionBinding,
       nullifier: [
-        dummyNullifier(contextField, '905', '0'),
-        dummyNullifier(contextField, '906', '1'),
+        dummyNullifier(contextField, '905'),
+        dummyNullifier(contextField, '906'),
       ],
       outputCommitment: [output.noteCommitment, dummyOutput.noteCommitment],
       ask: '0',
@@ -694,9 +687,8 @@ test('action circuit rejects a deposit bound to a nonzero anchor root', async ()
       inputValue: ['0', '0'],
       inputRho: ['0', '0'],
       inputLeafIndex: ['0', '0'],
-      inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-      inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
-      outputReal: ['1', '0'],
+      inputSiblings: [emptySiblings(), emptySiblings()],
+      inputPositions: [positionsFor(0), positionsFor(0)],
       outputOwnerCommitment: [output.ownerCommitment, dummyOutput.ownerCommitment],
       outputValue: ['5000000', '0'],
       outputRho: ['77777', '88888'],
@@ -732,7 +724,7 @@ test('action circuit rejects inputs controlled by different spending keys', asyn
     nk: '22222',
     rho: '33333',
     value: '4000000',
-    siblings: [second.noteCommitment, ...new Array(31).fill('0')],
+    siblings: [[second.noteCommitment, '0'], ...emptySiblings().slice(1)],
   });
   const secondWithPath = await evalGadgets({
     contextField,
@@ -742,7 +734,7 @@ test('action circuit rejects inputs controlled by different spending keys', asyn
     rho: '44444',
     value: '6000000',
     leafIndex: '1',
-    siblings: [first.noteCommitment, ...new Array(31).fill('0')],
+    siblings: [[first.noteCommitment, '0'], ...emptySiblings().slice(1)],
   });
   const secondNullifierUnderSharedNk = fieldDecimal(computeNullifier(
     fieldBytes(contextField),
@@ -792,11 +784,10 @@ test('action circuit rejects inputs controlled by different spending keys', asyn
       inputRho: ['33333', '44444'],
       inputLeafIndex: ['0', '1'],
       inputSiblings: [
-        [second.noteCommitment, ...new Array(31).fill('0')],
-        [first.noteCommitment, ...new Array(31).fill('0')],
+        [[second.noteCommitment, '0'], ...emptySiblings().slice(1)],
+        [[first.noteCommitment, '0'], ...emptySiblings().slice(1)],
       ],
-      inputDirectionBits: [directionBitsFor(0), directionBitsFor(1)],
-      outputReal: ['1', '0'],
+      inputPositions: [positionsFor(0), positionsFor(1)],
       outputOwnerCommitment: [output.ownerCommitment, dummyOutput.ownerCommitment],
       outputValue: ['10000000', '0'],
       outputRho: ['55555', '66666'],
@@ -836,7 +827,7 @@ test('action circuit rejects duplicate real output commitments', async () => {
       relayerField: '9',
       actionField,
       actionBinding: input.actionBinding,
-      nullifier: [input.nullifier, dummyNullifier(contextField, '907', '1')],
+      nullifier: [input.nullifier, dummyNullifier(contextField, '907')],
       outputCommitment: [output.noteCommitment, output.noteCommitment],
       ask: '11111',
       nk: '22222',
@@ -847,9 +838,8 @@ test('action circuit rejects duplicate real output commitments', async () => {
       inputValue: ['10000000', '0'],
       inputRho: ['33333', '0'],
       inputLeafIndex: ['0', '0'],
-      inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-      inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
-      outputReal: ['1', '1'],
+      inputSiblings: [emptySiblings(), emptySiblings()],
+      inputPositions: [positionsFor(0), positionsFor(0)],
       outputOwnerCommitment: [output.ownerCommitment, output.ownerCommitment],
       outputValue: ['5000000', '5000000'],
       outputRho: ['44444', '44444'],
