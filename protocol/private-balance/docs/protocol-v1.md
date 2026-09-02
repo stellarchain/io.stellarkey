@@ -26,6 +26,11 @@ not real value or Mainnet.
 All byte encodings, field conversions, Poseidon2 parameters, envelope lengths, and deployment
 constants are pinned by the manifest and cross-language conformance vectors.
 
+Consensus-affecting review decisions are recorded in
+[`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
+[`0003-multi-asset-pool.md`](decisions/0003-multi-asset-pool.md), and
+[`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md).
+
 ## 3. Notes and commitments
 
 The 128-byte encrypted note plaintext contains its version and flags, value, diversifier, owner
