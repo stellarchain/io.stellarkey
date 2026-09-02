@@ -269,6 +269,102 @@ test("private transaction notes are encrypted at rest and require an unlocked va
   assert.throws(() => getMerchantEncryptionKey(), /locked/i);
 });
 
+test("journal-less private activity notes survive a verified backup round trip", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+    loadPrivateTxNote,
+    restoreVaultBackup,
+    savePrivateTxNote,
+    unlockVault,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const noteKey = `private:testnet-private-pool-v2:${"ab".repeat(32)}`;
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await savePrivateTxNote(noteKey, "Received privately");
+
+  const backup = await exportVaultBackup(password);
+  const info = await inspectVaultBackup(backup, password);
+  assert.deepEqual(info.warnings, []);
+  await restoreVaultBackup(backup, password);
+  await unlockVault(password);
+
+  assert.equal(await loadPrivateTxNote(noteKey), "Received privately");
+  await assert.rejects(
+    () => savePrivateTxNote("not a transaction identifier", "must not persist"),
+    /transaction.*identifier/i,
+  );
+});
+
+test("backup restore omits malformed optional transaction notes with a warning", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    encryptVaultString,
+    unwrapVaultMasterKey,
+    zeroKey,
+  } = await import("../src/lib/vault-keys.ts");
+  const {
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+    loadPrivateTxNote,
+    restoreVaultBackup,
+    unlockVault,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const validKey = `private:testnet-private-pool-v2:${"cd".repeat(32)}`;
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  const masterKey = await unwrapVaultMasterKey(payload.vault.wrappedMasterKey, password);
+  try {
+    payload.txNotes = {
+      version: 3,
+      crypto: await encryptVaultString(JSON.stringify({
+        [validKey]: "Keep this note",
+        "unknown optional key": "Drop this note",
+        deadbeef: 42,
+      }), masterKey),
+    };
+  } finally {
+    zeroKey(masterKey);
+  }
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+  const raw = JSON.stringify(backup);
+
+  const info = await inspectVaultBackup(raw, password);
+  assert.equal(info.warnings.length, 1);
+  assert.match(info.warnings[0], /2 private transaction notes.*omitted/i);
+  const restored = await restoreVaultBackup(raw, password);
+  assert.deepEqual(restored.warnings, info.warnings);
+  await unlockVault(password);
+
+  assert.equal(await loadPrivateTxNote(validKey), "Keep this note");
+  assert.equal(await loadPrivateTxNote("deadbeef"), "");
+});
+
+test("backup export refuses an unreadable encrypted transaction-note store", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const { exportVaultBackup, initializeVault } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  localStorage.setItem("wallet.tx-notes.v1", JSON.stringify({
+    version: 3,
+    crypto: { iv: "invalid", ciphertext: "invalid" },
+  }));
+
+  await assert.rejects(() => exportVaultBackup(password), /transaction notes|backup.*validate/i);
+});
+
 test("merchant session keys are unique to each vault even when passwords match", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
