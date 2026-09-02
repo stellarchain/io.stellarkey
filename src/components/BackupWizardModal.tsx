@@ -191,7 +191,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
         `stellarkey-backup-${new Date().toISOString().slice(0, 10)}.json`,
         preparedBackup,
       );
-      setBackupHealth(markBackupExported());
+      setBackupHealth(markBackupExported(preparedBackup));
       triggerHaptic("success");
       setStep("done");
     } catch (e) {
@@ -247,7 +247,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const result = await restoreWalletFromBackup(restoreFile, restorePw || undefined);
-      setBackupHealth(markBackupVerified());
+      setBackupHealth(markBackupVerified(restoreFile));
       triggerHaptic("success");
       toast(
         `Restored ${result.accountCount} account${result.accountCount === 1 ? "" : "s"}${
@@ -765,7 +765,13 @@ function WizardInner({ onClose }: { onClose: () => void }) {
             <div>
               <div className="panel-inset divide-y divide-white/[0.08] px-4 text-[13px]">
                 <div className="flex items-center justify-between gap-4 py-2.5">
-                  <span className="shrink-0 text-neutral-400">Primary wallet</span>
+                  <span className="shrink-0 text-neutral-400">
+                    {restoreInfo.primaryAccountAuthenticated
+                      ? "Authenticated account"
+                      : restoreInfo.primaryAccountKind === "watch-only"
+                        ? "Watch-only account"
+                        : `${restoreInfo.primaryAccountKind === "ledger" ? "Ledger" : "Trezor"} account`}
+                  </span>
                   <span
                     className="mono text-right text-[12px] text-white"
                     title={restoreInfo.primaryAccountPublicKey}

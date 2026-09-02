@@ -236,6 +236,32 @@ test("backup inspection identifies the wallet before destructive restore", async
 
   const info = await inspectVaultBackup(await exportVaultBackup(password), password);
   assert.equal(info.primaryAccountPublicKey, publicKey);
+  assert.equal(info.primaryAccountKind, "software");
+  assert.equal(info.primaryAccountAuthenticated, true);
+});
+
+test("backup inspection prefers an authenticated software account over an active watch-only address", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair } = await import("@stellar/stellar-sdk");
+  const {
+    addWatchOnlyAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const softwareSecret = Keypair.random().secret();
+  const softwarePublicKey = Keypair.fromSecret(softwareSecret).publicKey();
+  const watchOnlyPublicKey = Keypair.random().publicKey();
+  await initializeVault(password, { secret: softwareSecret });
+  await addWatchOnlyAccount(watchOnlyPublicKey, "Active watch-only decoy");
+
+  const info = await inspectVaultBackup(await exportVaultBackup(password), password);
+  assert.equal(info.primaryAccountPublicKey, softwarePublicKey);
+  assert.notEqual(info.primaryAccountPublicKey, watchOnlyPublicKey);
+  assert.equal(info.primaryAccountKind, "software");
+  assert.equal(info.primaryAccountAuthenticated, true);
 });
 
 test("full wallet backup preserves the validated Merchant Mode bootstrap state", async () => {

@@ -1492,6 +1492,8 @@ export interface VaultRestoreResult {
 export interface VaultBackupInfo {
   accountCount: number;
   primaryAccountPublicKey: string;
+  primaryAccountKind: "software" | "watch-only" | "ledger" | "trezor";
+  primaryAccountAuthenticated: boolean;
   contactCount: number;
   hasMnemonic: boolean;
   hasSettings: boolean;
@@ -1705,13 +1707,23 @@ export async function inspectVaultBackup(
 ): Promise<VaultBackupInfo> {
   const { payload } = await decodeBackup(json, password);
   const prepared = await prepareDecodedBackup(payload, password as string);
-  const primaryAccount = payload.vault.accounts.find(
+  const activeAccount = payload.vault.accounts.find(
     account => account.id === payload.vault.activeAccountId,
-  ) ?? payload.vault.accounts[0];
+  );
+  const isSoftwareAccount = (account: StoredAccount): boolean =>
+    !account.watchOnly && !account.hardware;
+  const authenticatedAccount = activeAccount && isSoftwareAccount(activeAccount)
+    ? activeAccount
+    : payload.vault.accounts.find(isSoftwareAccount);
+  const primaryAccount = authenticatedAccount ?? activeAccount ?? payload.vault.accounts[0];
   if (!primaryAccount) throw new Error("Backup contains no accounts.");
+  const primaryAccountKind = primaryAccount.hardware ??
+    (primaryAccount.watchOnly ? "watch-only" : "software");
   return {
     accountCount: Array.isArray(payload.vault.accounts) ? payload.vault.accounts.length : 0,
     primaryAccountPublicKey: primaryAccount.publicKey,
+    primaryAccountKind,
+    primaryAccountAuthenticated: primaryAccountKind === "software",
     contactCount: Array.isArray(payload.contacts) ? payload.contacts.length : 0,
     hasMnemonic: Boolean(payload.vault.mnemonic),
     hasSettings: Boolean(payload.settings),
