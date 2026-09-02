@@ -35,7 +35,7 @@ const trials = 3;
 const samplesPerTrial = 120;
 const warmups = 20;
 const scanBatchTrialCount = 5;
-const scanBatchSelectionTolerance = 0.10;
+const scanBatchSelectionTolerance = 0.25;
 const baselinePoolSourceRevision = '69335bd893e6c2739043ddae9434161b2c22a6ce';
 const expectedStellarCliVersion = '27.0.0';
 const stellarCliVersionOutput = execFileSync('stellar', ['--version'], { encoding: 'utf8' });
@@ -726,7 +726,7 @@ const evidence = {
     trials: scanBatchTrialCount,
     candidatesPerTrial: scanBatchCorpus.length,
     variants: scanBatchVariants,
-    selectionPolicy: 'smallest p50 within 10% of best p50',
+    selectionPolicy: 'smallest p50 within 25% of best p50',
     bestBatchSize,
     bestP50MicrosecondsPerEnvelope: bestBatchCost,
     selectedBatchSize,
@@ -818,7 +818,7 @@ const evidence = {
     4: {
       status: scanBatchThroughputRatio >= 1.2 ? 'accept' : 'reject',
       reason: scanBatchThroughputRatio >= 1.2
-        ? `Bounded batch ${selectedBatchSize}, the smallest p50 within 10 percent of the measured best, delivered ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput on the deterministic corpus.`
+        ? `Bounded batch ${selectedBatchSize}, the smallest p50 within 25 percent of the measured best, delivered ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput on the deterministic corpus.`
         : `The policy-selected bounded batch measured only ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput, below the 1.20x gate.`,
     },
     5: {
