@@ -48,6 +48,15 @@ type Step =
   | "restore-password"
   | "restore-confirm";
 
+interface PaperMaterial {
+  accountId: string;
+  accountLabel: string;
+  publicKey: string;
+  path?: string;
+  kind: "mnemonic" | "secret";
+  value: string;
+}
+
 export function BackupWizardModal({
   open,
   onClose,
@@ -76,15 +85,20 @@ function WizardInner({ onClose }: { onClose: () => void }) {
   const [restoreInfo, setRestoreInfo] = useState<VaultBackupInfo | null>(null);
   const [restorePw, setRestorePw] = useState("");
   const [paperOpen, setPaperOpen] = useState(false);
+  const [paperMaterial, setPaperMaterial] = useState<PaperMaterial | null>(null);
   const [preparedBackup, setPreparedBackup] = useState<string | null>(null);
   const [backupHealth, setBackupHealth] = useState(() => loadBackupHealth());
 
   const hasPhrase = hasMnemonic();
   const canReveal = activeAccount !== null && !activeAccount.watchOnly && !activeAccount.hardware;
+  const paperUsesMnemonic =
+    activeAccount !== null && activeAccount.index !== undefined && hasPhrase;
 
   function handleClose() {
     // Wipe sensitive state on close
     setRevealed(null);
+    setPaperMaterial(null);
+    setPaperOpen(false);
     setPassword("");
     setPreparedBackup(null);
     onClose();
@@ -98,6 +112,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
     else if (step === "secure") {
       setPreparedBackup(null);
       setRevealed(null);
+      setPaperMaterial(null);
       setPassword("");
       setStep("password");
     }
@@ -108,6 +123,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
   function pickMethod(m: Method) {
     triggerHaptic("selection");
     setMethod(m);
+    setPaperMaterial(null);
     setError(null);
     setStep("password");
   }
@@ -125,11 +141,25 @@ function WizardInner({ onClose }: { onClose: () => void }) {
         return;
       }
       let material: string;
-      if (method === "phrase" || (method === "paper" && hasPhrase)) {
+      if (method === "phrase") {
         material = await revealRecoveryPhrase(password);
+      } else if (method === "paper") {
+        const kind = paperUsesMnemonic ? "mnemonic" : "secret";
+        material = paperUsesMnemonic
+          ? await revealRecoveryPhrase(password)
+          : await revealSecret(activeAccount.id, password);
+        setPaperMaterial({
+          accountId: activeAccount.id,
+          accountLabel: activeAccount.label,
+          publicKey: activeAccount.publicKey,
+          path: activeAccount.path,
+          kind,
+          value: material,
+        });
       } else {
         material = await revealSecret(activeAccount.id, password);
       }
+      if (method !== "paper") setPaperMaterial(null);
       setRevealed(material);
       setPassword("");
       triggerHaptic("success");
@@ -270,7 +300,7 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               : "Your Secret Key",
       subtitle: "Store it somewhere safe and offline",
     },
-    done: { title: "Backup Complete", subtitle: "Your wallet is recoverable now" },
+    done: { title: "Backup Complete", subtitle: "Keep separate recovery material where required" },
     "restore-pick": { title: "Restore Wallet", subtitle: "Select your encrypted backup file" },
     "restore-password": {
       title: "Restore Wallet",
@@ -573,8 +603,18 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               {method === "paper" && revealed && (
                 <>
                   <Notice>
-                    Print a tamper-evident offline certificate with QR codes for the{" "}
-                    {activeAccount?.label ?? "current"} account. Store it like cash.
+                    {paperMaterial?.kind === "mnemonic" ? (
+                      <>
+                        This certificate pairs the selected derived account with the wallet recovery
+                        phrase. The phrase restores mnemonic-derived accounts; imported accounts need
+                        separate backups.
+                      </>
+                    ) : (
+                      <>
+                        This certificate contains the actual secret key for the selected imported
+                        account only. Store it like cash.
+                      </>
+                    )}
                   </Notice>
                   <Button className="mt-4 w-full" onClick={() => setPaperOpen(true)}>
                     <IconDownload size={15} /> Open Printable Certificate
@@ -625,15 +665,19 @@ function WizardInner({ onClose }: { onClose: () => void }) {
               <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
                 <IconCheck size={28} />
               </span>
-              <p className="display-h mt-4 text-xl font-light text-white">Wallet Protected</p>
+              <p className="display-h mt-4 text-xl font-light text-white">
+                {method === "file" || method === "phrase" ? "Wallet Protected" : "Account Backup Complete"}
+              </p>
               <p className="mt-1 max-w-[300px] text-[13px] leading-relaxed text-neutral-400">
                 {method === "file"
                   ? "Keep the backup file somewhere safe — you'll need your wallet password to restore it."
                   : method === "phrase"
                     ? "Your 12 words can recreate this wallet on any Stellar wallet, Ledger or Trezor."
                     : method === "paper"
-                      ? "Store the printed certificate offline — treat it like cash."
-                      : "Your secret key is safely stored. Never share it with anyone."}
+                      ? paperMaterial?.kind === "mnemonic"
+                        ? "The certificate restores mnemonic-derived accounts. Back up imported accounts separately."
+                        : `The certificate restores only ${paperMaterial?.accountLabel ?? "the selected account"}.`
+                      : `This secret key restores only ${activeAccount?.label ?? "the selected account"}. Never share it.`}
               </p>
               <Button variant="ghost" className="mt-6 w-full" onClick={handleClose}>
                 Done
@@ -807,16 +851,16 @@ function WizardInner({ onClose }: { onClose: () => void }) {
       </Modal>
 
       {/* Paper wallet certificate overlays the wizard (portal-stacked) */}
-      {paperOpen && revealed && activeAccount && (
+      {paperOpen && paperMaterial && (
         <PaperWalletModal
           open
           onClose={() => setPaperOpen(false)}
-          accountLabel={activeAccount.label}
-          publicKey={activeAccount.publicKey}
-          secretOrPhrase={revealed}
-          kind={hasPhrase ? "mnemonic" : "secret"}
-          path={activeAccount.path}
-          accountId={activeAccount.id}
+          accountLabel={paperMaterial.accountLabel}
+          publicKey={paperMaterial.publicKey}
+          secretOrPhrase={paperMaterial.value}
+          kind={paperMaterial.kind}
+          path={paperMaterial.path}
+          accountId={paperMaterial.accountId}
           networkLabel={NETWORKS[network].label}
         />
       )}
