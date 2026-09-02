@@ -149,7 +149,7 @@
                         "symbol": "a"
                       },
                       "val": {
-                        "bytes": "2700de61aaca589de0ce541a6fb1f9fe4e0c9d1e1adebb50057d012b6cd447072807170b376501505008021fcab5fb0480488666d7b962b4763c8f818a61b025"
+                        "bytes": "01b38976689c5e86f370325f1930016f0fc07c3a22a0255aae7194b82bb75cf918780a2daf3725639ccf574d7f8a4de6d7fd71bf947b4d8171f5dd0cc222151a"
                       }
                     },
                     {
@@ -157,7 +157,7 @@
                         "symbol": "b"
                       },
                       "val": {
-                        "bytes": "28d896261dfd791672fb3d0b5f9dd28033b3df485abed314360166dfa6e1199f2032e787940140d7712c484f2544cea6fd0b1f251a1d0a8f31d6bc604da049d403eaae0284af6bf88729f40acf3734cf2006dfefc91ef3364f3ab06ab5fc15b10a61cf91a13cb0ee9efeac2ff974651907426dac5d2e945e164a5049aa76de58"
+                        "bytes": "05c44a0912253fa4bff08652473c056d6749a0046d3307aea4edac46bc1617142ef640eccc0f80543a4700e5a765adc4e4ad4f86d977a79b7a8d5088254586100acd01174ddcb512df752074ae0374b50c378c6d63103c18bae5eecb0015ded31400d149d53e7c5da9827b38602d9e5b32f562501b9c077f6f79620bd70ada04"
                       }
                     },
                     {
@@ -165,7 +165,7 @@
                         "symbol": "c"
                       },
                       "val": {
-                        "bytes": "195fa43abce1e925e06c6a2fdf4e775a6c693296a3a9baad2018d8f1ed5625ec1c3c69455c090a4e98cc128f6340727fa8514e00757649afe99d18f45df7e19d"
+                        "bytes": "28956c16661faa5fea0de8ede4622c17080dfd48e9bc7633648837acfd9663062031f0b4474c3082d455bbdc630ac7af172a6d2714132846ab1bcf1fb5f0283f"
                       }
                     }
                   ]
@@ -629,7 +629,7 @@
                               "symbol": "circuit_hash"
                             },
                             "val": {
-                              "bytes": "844502934eb783db4ee1489219d3f953c055e59c0e1edbdbe95123935ccd2380"
+                              "bytes": "724f255668714f206aaa187521ae2ea723093034823446575bdb3bff7c57ec97"
                             }
                           },
                           {
@@ -653,7 +653,7 @@
                               "symbol": "deployment_binding_hash"
                             },
                             "val": {
-                              "bytes": "c3bfe2a48cf12598adef2865c85392eef051d87229819d4b76b02b602d5c4e3f"
+                              "bytes": "111e7fa8d77e2b95d531f9cc89f4c73568c878cf8fd8f56b47b880644f1fe55d"
                             }
                           },
                           {
@@ -670,14 +670,6 @@
                             },
                             "val": {
                               "bytes": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472"
-                            }
-                          },
-                          {
-                            "key": {
-                              "symbol": "page_capacity"
-                            },
-                            "val": {
-                              "u32": 32
                             }
                           },
                           {
@@ -725,7 +717,7 @@
                               "symbol": "verification_key_hash"
                             },
                             "val": {
-                              "bytes": "710015f547274d2a22d15d1c2ecf74d105953551e4e2a6f4a6c21776182561ed"
+                              "bytes": "3aa6114707047cee80e1005d2d20fad69d053ff2de9023d01bf8a830bfa4e2ad"
                             }
                           }
                         ]
@@ -766,7 +758,7 @@
                               "symbol": "transcript_head"
                             },
                             "val": {
-                              "bytes": "a3ad1bf5f19f7ab5ed58ea6404807c5da6a7bb688eba03cd94788a3c371e0530"
+                              "bytes": "3ffcc8f18ea6fe78602fb7dd85f40c501c5e1ba13f1defb29bbefef17eab9129"
                             }
                           }
                         ]

@@ -134,10 +134,10 @@ test('private proving-key checks pin and authenticate the pot14 ceremony input',
   const transcriptScript = readFileSync(join(circuitsDir, 'scripts/powers-of-tau.mjs'), 'utf8');
   const verifier = readFileSync(join(circuitsDir, 'scripts/verify-proving-key.mjs'), 'utf8');
 
-  assert.match(transcriptScript, /powersOfTau28_hez_final_14\.ptau/);
+  assert.match(transcriptScript, /ppot_0080_14\.ptau/);
   assert.match(
     transcriptScript,
-    /489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d/,
+    /3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db/,
   );
   assert.match(transcriptScript, /assertPowersOfTau/);
   assert.match(transcriptScript, /rmSync\(path, \{ force: true \}\)/);
@@ -273,12 +273,13 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.ok(Number.isFinite(evidence.scanBatch.sequentialP50MicrosecondsPerEnvelope));
   assert.ok(evidence.scanBatch.throughputRatio > 0);
   assert.equal(evidence.contractCosts.verifier.baselineInstructions, 39_614_514);
-  assert.equal(evidence.contractCosts.verifier.batchedMsmInstructions, 29_960_188);
-  assert.ok(evidence.contractCosts.verifier.reductionPercent > 24);
+  assert.equal(evidence.contractCosts.verifier.currentInstructions, 29_287_953);
+  assert.ok(evidence.contractCosts.verifier.reductionPercent > 26);
   assert.equal(evidence.contractCosts.poolWasm.reviewMisidentifiedBytes, 154_609);
   assert.equal(evidence.contractCosts.poolWasm.measuredBaselineOptimizedBytes, 121_675);
-  assert.equal(evidence.contractCosts.poolWasm.withoutRuntimeBigIntOptimizedBytes, 87_145);
-  assert.ok(evidence.contractCosts.poolWasm.reductionPercent > 28);
+  assert.equal(evidence.contractCosts.poolWasm.currentRawBytes, 66_377);
+  assert.equal(evidence.contractCosts.poolWasm.currentOptimizedBytes, 57_042);
+  assert.ok(evidence.contractCosts.poolWasm.reductionPercent > 53);
   assert.deepEqual(Object.keys(evidence.decisions).sort(), [
     '1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '2',
     '20', '3', '4', '5', '6', '7', '8', '9',
