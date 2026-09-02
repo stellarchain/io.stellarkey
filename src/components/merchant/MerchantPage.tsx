@@ -12,7 +12,7 @@ import {
 import { useWalletPhase } from "@/hooks/useWallet";
 import { fmtMinor } from "@/lib/merchant/money";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, Notice, SegmentedControl } from "../ui";
+import { Button, ErrorText, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconChevronDown, IconDownload } from "../icons";
 import { IconClock, IconInfo, IconReceiptStellar } from "./icons";
 import { useToast } from "../Toast";
@@ -164,6 +164,7 @@ export function MerchantPage({
   // props so the sidebar's shift row opens this very sheet.
   const [localShiftOpen, setLocalShiftOpen] = useState(false);
   const [connectionRestored, setConnectionRestored] = useState(false);
+  const [recoveryResetBusy, setRecoveryResetBusy] = useState(false);
   const previousOnline = useRef(online);
   const previousActiveCharge = useRef(
     activeCharge ? { id: activeCharge.id, status: activeCharge.status } : null,
@@ -201,6 +202,31 @@ export function MerchantPage({
     }
   }, [activeCharge, activeStaff, toast]);
 
+  async function handleRecoveryReset(): Promise<void> {
+    if (
+      recoveryResetBusy ||
+      !window.confirm("Erase this device's unreadable merchant data?")
+    ) {
+      return;
+    }
+    setRecoveryResetBusy(true);
+    try {
+      await resetRecoveryData();
+      triggerHaptic("success");
+      toast("Unreadable merchant data erased", "success");
+    } catch (cause) {
+      triggerHaptic("error");
+      toast(
+        cause instanceof Error
+          ? cause.message
+          : "Merchant recovery data could not be erased.",
+        "error",
+      );
+    } finally {
+      setRecoveryResetBusy(false);
+    }
+  }
+
   if (!ready) {
     return (
       <div
@@ -226,6 +252,11 @@ export function MerchantPage({
         <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">
           Till writes are blocked so the original record cannot be overwritten.
         </p>
+        {storageError && (
+          <div className="mt-4 text-left">
+            <ErrorText message={storageError} />
+          </div>
+        )}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button
             onClick={() => {
@@ -243,9 +274,9 @@ export function MerchantPage({
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
-              if (window.confirm("Erase this device's unreadable merchant data?")) resetRecoveryData();
-            }}
+            loading={recoveryResetBusy}
+            disabled={recoveryResetBusy}
+            onClick={() => void handleRecoveryReset()}
           >
             Erase merchant data
           </Button>
