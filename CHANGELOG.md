@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Derived Private Payments manifest proving-key verification evidence from a successful pinned `snarkjs zkey verify` run instead of a literal claim.
 - Required complete generated-artifact toolchains and the locked Private Payments Rust workspace in CI and tagged releases, and scheduled the ignored 100,000-action recovery model as a separate Gate B workflow.
 - Made the shipped Private Payments manifest-tamper browser test unconditional and fixture-independent so CI and release verification cannot silently skip the fail-closed UI assertion.
 - Made wallet inactivity locking use the larger of monotonic and forward wall-clock elapsed time, with focus, visibility, and page-resume checks so device suspend cannot preserve an unlocked session.
