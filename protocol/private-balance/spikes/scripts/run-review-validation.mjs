@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 import { createHash, createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { cpus, platform, release, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -27,6 +34,18 @@ const associationPathSource = join(
 const trials = 3;
 const samplesPerTrial = 120;
 const warmups = 20;
+const scanBatchTrialCount = 5;
+const scanBatchSelectionTolerance = 0.10;
+const baselinePoolSourceRevision = '69335bd893e6c2739043ddae9434161b2c22a6ce';
+const expectedStellarCliVersion = '27.0.0';
+const stellarCliVersionOutput = execFileSync('stellar', ['--version'], { encoding: 'utf8' });
+const stellarCliVersion = stellarCliVersionOutput.match(/^stellar ([^\s]+)/u)?.[1];
+if (stellarCliVersion !== expectedStellarCliVersion) {
+  throw new Error(
+    `Expected Stellar CLI ${expectedStellarCliVersion}, got ${stellarCliVersion ?? 'unknown'}.`,
+  );
+}
+const cargoVersion = execFileSync('cargo', ['+1.97.1', '--version'], { encoding: 'utf8' }).trim();
 const PKCS8_X25519_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
   0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20,
@@ -295,6 +314,105 @@ function equalBytes(left, right) {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
+function measureVerifierInstructions() {
+  const output = execFileSync(
+    'cargo',
+    [
+      '+1.97.1',
+      'test',
+      '-p',
+      'private-balance-verifier',
+      '--test',
+      'verifier',
+      'test_verify_vectors',
+      '--locked',
+      '--',
+      '--nocapture',
+    ],
+    {
+      cwd: join(root, 'protocol/private-balance'),
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  const measurements = [...output.matchAll(/Verifier CPU instructions: (\d+)/gu)]
+    .map(([, value]) => Number(value));
+  if (measurements.length !== 3 || measurements.some(value => !Number.isSafeInteger(value))) {
+    throw new Error('Expected three integer verifier instruction measurements.');
+  }
+  return Math.max(...measurements);
+}
+
+function measurePoolWasmSizes(sourceRoot) {
+  const directory = mkdtempSync(join(tmpdir(), 'stellarkey-review-pool-'));
+  const rawDirectory = join(directory, 'raw');
+  const rawPath = join(rawDirectory, 'private_balance_pool.wasm');
+  const optimizedPath = join(directory, 'private_balance_pool.optimized.wasm');
+  mkdirSync(rawDirectory, { recursive: true });
+  try {
+    execFileSync(
+      'stellar',
+      [
+        'contract',
+        'build',
+        '--manifest-path',
+        'protocol/private-balance/Cargo.toml',
+        '--package',
+        'private-balance-pool',
+        '--locked',
+        '--optimize=false',
+        '--out-dir',
+        rawDirectory,
+      ],
+      {
+        cwd: sourceRoot,
+        env: {
+          ...process.env,
+          CARGO_TARGET_DIR: join(directory, 'cargo-target'),
+          RUSTUP_TOOLCHAIN: '1.97.1',
+        },
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    execFileSync(
+      'stellar',
+      ['contract', 'optimize', '--wasm', rawPath, '--wasm-out', optimizedPath],
+      { cwd: sourceRoot, maxBuffer: 16 * 1024 * 1024 },
+    );
+    return {
+      rawBytes: statSync(rawPath).size,
+      optimizedBytes: statSync(optimizedPath).size,
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function measurePoolWasmAtRevision(revision) {
+  const checkoutDirectory = mkdtempSync(join(tmpdir(), 'stellarkey-review-baseline-'));
+  rmSync(checkoutDirectory, { recursive: true, force: true });
+  let worktreeAdded = false;
+  try {
+    execFileSync(
+      'git',
+      ['worktree', 'add', '--detach', checkoutDirectory, revision],
+      { cwd: root, stdio: 'ignore' },
+    );
+    worktreeAdded = true;
+    return measurePoolWasmSizes(checkoutDirectory);
+  } finally {
+    if (worktreeAdded) {
+      execFileSync(
+        'git',
+        ['worktree', 'remove', '--force', checkoutDirectory],
+        { cwd: root, stdio: 'ignore' },
+      );
+    } else {
+      rmSync(checkoutDirectory, { recursive: true, force: true });
+    }
+  }
+}
+
 const privateKey = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
 const peerPrivateKey = Uint8Array.from({ length: 32 }, (_, index) => 0xa0 + index);
 const peerPublicKey = x25519.getPublicKey(peerPrivateKey);
@@ -478,7 +596,7 @@ async function runScanBatch(batchSize) {
 
 for (const batchSize of scanBatchSizes) await runScanBatch(batchSize);
 const scanBatchTrials = Object.fromEntries(scanBatchSizes.map(size => [size, []]));
-for (let trial = 0; trial < trials; trial += 1) {
+for (let trial = 0; trial < scanBatchTrialCount; trial += 1) {
   for (let offset = 0; offset < scanBatchSizes.length; offset += 1) {
     const batchSize = scanBatchSizes[(trial + offset) % scanBatchSizes.length];
     scanBatchTrials[batchSize].push(await runScanBatch(batchSize));
@@ -487,17 +605,27 @@ for (let trial = 0; trial < trials; trial += 1) {
 const scanBatchVariants = Object.fromEntries(scanBatchSizes.map((batchSize) => {
   const values = scanBatchTrials[batchSize].sort((left, right) => left - right);
   return [batchSize, {
-    p50MicrosecondsPerEnvelope: Number(values[1].toFixed(3)),
-    p95MicrosecondsPerEnvelope: Number(values[2].toFixed(3)),
+    p50MicrosecondsPerEnvelope: Number(
+      values[Math.floor(values.length / 2)].toFixed(3),
+    ),
+    p95MicrosecondsPerEnvelope: Number(percentile(values, 0.95).toFixed(3)),
     trialResults: values.map(value => Number(value.toFixed(3))),
   }];
 }));
-const selectedBatchSize = scanBatchSizes.reduce((best, candidate) => (
+const bestBatchSize = scanBatchSizes.reduce((best, candidate) => (
   scanBatchVariants[candidate].p50MicrosecondsPerEnvelope
     < scanBatchVariants[best].p50MicrosecondsPerEnvelope
     ? candidate
     : best
 ));
+const bestBatchCost = scanBatchVariants[bestBatchSize].p50MicrosecondsPerEnvelope;
+const selectedBatchSize = scanBatchSizes.find(batchSize => (
+  scanBatchVariants[batchSize].p50MicrosecondsPerEnvelope
+    <= bestBatchCost * (1 + scanBatchSelectionTolerance)
+));
+if (selectedBatchSize === undefined) {
+  throw new Error('No scan batch satisfied the benchmark selection policy.');
+}
 const sequentialBatchCost = scanBatchVariants[1].p50MicrosecondsPerEnvelope;
 const selectedBatchCost = scanBatchVariants[selectedBatchSize].p50MicrosecondsPerEnvelope;
 const scanBatchThroughputRatio = sequentialBatchCost / selectedBatchCost;
@@ -523,6 +651,25 @@ try {
 }
 const pkcs8Improvement = 1 - pkcs8Measurement.p50Microseconds / jwkMeasurement.p50Microseconds;
 const baselineConstraints = 23_437;
+const baselineVerifierInstructions = 39_614_514;
+const currentVerifierInstructions = measureVerifierInstructions();
+const baselinePoolWasm = measurePoolWasmAtRevision(baselinePoolSourceRevision);
+const currentPoolWasm = measurePoolWasmSizes(root);
+const verifierReductionPercent = Number((
+  (baselineVerifierInstructions - currentVerifierInstructions)
+    / baselineVerifierInstructions
+    * 100
+).toFixed(2));
+const poolWasmRawReductionPercent = Number((
+  (baselinePoolWasm.rawBytes - currentPoolWasm.rawBytes)
+    / baselinePoolWasm.rawBytes
+    * 100
+).toFixed(2));
+const poolWasmOptimizedReductionPercent = Number((
+  (baselinePoolWasm.optimizedBytes - currentPoolWasm.optimizedBytes)
+    / baselinePoolWasm.optimizedBytes
+    * 100
+).toFixed(2));
 const evidence = {
   schemaVersion: 3,
   revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
@@ -532,6 +679,8 @@ const evidence = {
     platform: platform(),
     osRelease: release(),
     cpu: cpus()[0]?.model ?? 'unknown',
+    stellarCli: stellarCliVersion,
+    cargo: cargoVersion,
   },
   x25519: {
     trials,
@@ -574,9 +723,12 @@ const evidence = {
     },
   },
   scanBatch: {
-    trials,
+    trials: scanBatchTrialCount,
     candidatesPerTrial: scanBatchCorpus.length,
     variants: scanBatchVariants,
+    selectionPolicy: 'smallest p50 within 10% of best p50',
+    bestBatchSize,
+    bestP50MicrosecondsPerEnvelope: bestBatchCost,
     selectedBatchSize,
     sequentialP50MicrosecondsPerEnvelope: sequentialBatchCost,
     selectedP50MicrosecondsPerEnvelope: selectedBatchCost,
@@ -632,20 +784,22 @@ const evidence = {
   },
   contractCosts: {
     verifier: {
-      baselineInstructions: 39_614_514,
-      currentInstructions: 29_287_953,
-      reductionPercent: Number(((39_614_514 - 29_287_953) / 39_614_514 * 100).toFixed(2)),
-      method: 'Soroban test budget for the two-input transfer proof vector. The baseline used the prior 13-signal verifier loop; the current measurement uses one MSM and the accepted 11-signal statement.',
+      baselineInstructions: baselineVerifierInstructions,
+      currentInstructions: currentVerifierInstructions,
+      reductionPercent: verifierReductionPercent,
+      method: 'Parsed the maximum Soroban test budget from all three current proof vectors. The baseline used the prior 13-signal verifier loop; the current implementation uses one MSM and the accepted 11-signal statement.',
     },
     poolWasm: {
       reviewMisidentifiedBytes: 154_609,
       reviewMisidentifiedArtifact: 'protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)',
-      trackedPoolWasmBytes: 93_504,
-      measuredBaselineOptimizedBytes: 121_675,
-      currentRawBytes: 66_377,
-      currentOptimizedBytes: 57_042,
-      reductionPercent: Number(((121_675 - 57_042) / 121_675 * 100).toFixed(2)),
-      method: 'Built the private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize. The current measurement includes fixed-width field arithmetic, 11 public signals, and removal of dead paging configuration.',
+      baselineRevision: baselinePoolSourceRevision,
+      baselineRawBytes: baselinePoolWasm.rawBytes,
+      baselineOptimizedBytes: baselinePoolWasm.optimizedBytes,
+      currentRawBytes: currentPoolWasm.rawBytes,
+      currentOptimizedBytes: currentPoolWasm.optimizedBytes,
+      rawReductionPercent: poolWasmRawReductionPercent,
+      optimizedReductionPercent: poolWasmOptimizedReductionPercent,
+      method: `Built baseline revision ${baselinePoolSourceRevision} and the current private-balance-pool source with the same pinned CLI, Cargo version, locked dependencies, unoptimized build mode, and isolated target directories; then optimized each resulting Wasm with the same command.`,
     },
   },
   decisions: {
@@ -664,12 +818,12 @@ const evidence = {
     4: {
       status: scanBatchThroughputRatio >= 1.2 ? 'accept' : 'reject',
       reason: scanBatchThroughputRatio >= 1.2
-        ? `Bounded batch ${selectedBatchSize} measured ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput on the deterministic corpus.`
-        : `The best bounded batch measured only ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput, below the 1.20x gate.`,
+        ? `Bounded batch ${selectedBatchSize}, the smallest p50 within 10 percent of the measured best, delivered ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput on the deterministic corpus.`
+        : `The policy-selected bounded batch measured only ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput, below the 1.20x gate.`,
     },
     5: {
       status: 'accept',
-      reason: 'One BN254 MSM plus the accepted 11-signal statement reduced the measured verifier budget by 26.07 percent while every proof vector and adversarial rejection retained its verdict.',
+      reason: `One BN254 MSM plus the accepted 11-signal statement reduced the measured verifier budget by ${verifierReductionPercent} percent while every proof vector and adversarial rejection retained its verdict.`,
     },
     6: {
       status: 'accept',
@@ -681,7 +835,7 @@ const evidence = {
     },
     8: {
       status: 'accept',
-      reason: 'Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 57042 bytes after all accepted contract changes; the review had measured the witness generator instead.',
+      reason: `Ten thousand-case differential tests match BigUint; like-for-like builds reduced raw pool Wasm from ${baselinePoolWasm.rawBytes} to ${currentPoolWasm.rawBytes} bytes and optimized Wasm from ${baselinePoolWasm.optimizedBytes} to ${currentPoolWasm.optimizedBytes} bytes.`,
     },
     9: {
       status: 'accept',
