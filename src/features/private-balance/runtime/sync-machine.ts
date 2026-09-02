@@ -5,9 +5,20 @@ import {
 } from '@stellarkey/private-balance';
 import { MAX_ARCHIVE_RECORD_BATCH, type ArchiveHeadState } from './archive-client';
 import {
+  clearPrivateBalanceCommitmentCache,
+  loadPrivateBalanceCommitments,
   recordVerifiedPrivateBalanceCommitments,
   type PrivateBalancePublicCacheDriver,
 } from './public-cache';
+import {
+  clearPrivateBalanceMerkleCache,
+  loadPrivateBalanceMerkleCheckpoint,
+  rebuildPrivateBalanceMerkleCache,
+  recordVerifiedPrivateBalanceMerkleBatch,
+  requirePrivateBalanceMerkleCheckpoint,
+  type ExpectedPrivateBalanceMerkleCheckpoint,
+  type PrivateBalanceMerkleCacheDriver,
+} from './merkle-cache';
 import {
   commitPrivateBalanceState,
   loadPrivateBalanceState,
@@ -59,7 +70,7 @@ export interface SyncPrivateBalanceInput {
   storageContext: PrivateStorageContext;
   storageKey: Uint8Array;
   storageDriver?: PrivateRecordDriver;
-  publicCacheDriver?: PrivateBalancePublicCacheDriver;
+  publicCacheDriver?: PrivateBalancePublicCacheDriver & PrivateBalanceMerkleCacheDriver;
   onProgress?(progress: SyncPrivateBalanceProgress): void;
   now?: () => number;
 }
@@ -98,6 +109,68 @@ function reconstructTree(state: PrivateBalanceDurableState): MerkleTree | undefi
       hex32(node, `Checkpoint tree frontier ${index}`)),
     currentRoot: hex32(checkpoint.treeRoot, 'Checkpoint tree root'),
   };
+}
+
+function stateMerkleCheckpoint(
+  state: PrivateBalanceDurableState,
+): ExpectedPrivateBalanceMerkleCheckpoint | null {
+  if (!state.checkpoint) return null;
+  return {
+    deploymentBindingHash: state.checkpoint.deploymentBindingHash,
+    cursor: state.checkpoint.lastActionIndex + 1,
+    transcriptHead: state.checkpoint.lastRecordHash,
+    commitmentCount: (state.checkpoint.lastActionIndex + 1) * 2,
+    root: state.checkpoint.treeRoot,
+    frontier: [...state.checkpoint.treeFrontier],
+  };
+}
+
+function headMerkleCheckpoint(
+  head: ArchiveHeadState,
+  deploymentBindingHash: Uint8Array,
+): ExpectedPrivateBalanceMerkleCheckpoint | null {
+  if (head.meta.actionCount === 0) return null;
+  return {
+    deploymentBindingHash: hex(deploymentBindingHash),
+    cursor: head.meta.actionCount,
+    transcriptHead: hex(head.meta.transcriptHead),
+    commitmentCount: head.tree.nextIndex,
+    root: hex(head.tree.currentRoot),
+    frontier: head.tree.frontier.map(hex),
+  };
+}
+
+function sameMerkleCheckpoint(
+  left: ExpectedPrivateBalanceMerkleCheckpoint | null,
+  right: ExpectedPrivateBalanceMerkleCheckpoint | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function readAllArchiveCommitments(
+  archive: ArchiveReader,
+  actionCount: number,
+): Promise<Uint8Array[]> {
+  const commitments: Uint8Array[] = [];
+  for (let cursor = 0; cursor < actionCount;) {
+    const count = Math.min(MAX_ARCHIVE_RECORD_BATCH, actionCount - cursor);
+    const records = await archive.readRecords(cursor, count);
+    if (records.length !== count) {
+      throw new Error('Private Balance archive returned an incomplete Merkle rebuild batch');
+    }
+    for (const [offset, record] of records.entries()) {
+      if (
+        record.actionIndex !== cursor + offset ||
+        record.startingLeafIndex !== record.actionIndex * 2 ||
+        record.outputs.length !== 2
+      ) {
+        throw new Error('Private Balance archive Merkle rebuild records are not sequential');
+      }
+      commitments.push(...record.outputs.map(output => output.cm));
+    }
+    cursor += records.length;
+  }
+  return commitments;
 }
 
 function mergeActivities(
@@ -267,6 +340,66 @@ async function syncPrivateBalanceOnce(
     throw new Error('Private Balance notes exist without a chain checkpoint');
   }
 
+  const expectedStateMerkle = stateMerkleCheckpoint(state);
+  const expectedHeadMerkle = headMerkleCheckpoint(initialHead, input.deploymentBindingHash);
+  let merkleCheckpoint: ExpectedPrivateBalanceMerkleCheckpoint | null;
+  try {
+    merkleCheckpoint = await loadPrivateBalanceMerkleCheckpoint(
+      input.storageContext,
+      input.publicCacheDriver,
+    );
+  } catch {
+    await clearPrivateBalanceMerkleCache(input.storageContext, input.publicCacheDriver);
+    merkleCheckpoint = null;
+  }
+  if (
+    !sameMerkleCheckpoint(merkleCheckpoint, expectedHeadMerkle) &&
+    !sameMerkleCheckpoint(merkleCheckpoint, expectedStateMerkle) &&
+    !(merkleCheckpoint === null && expectedStateMerkle === null)
+  ) {
+    let commitments: Uint8Array[];
+    try {
+      commitments = await loadPrivateBalanceCommitments(
+        input.storageContext,
+        input.publicCacheDriver,
+      );
+    } catch {
+      commitments = [];
+    }
+    let rebuildTarget = expectedHeadMerkle && commitments.length >= expectedHeadMerkle.commitmentCount
+      ? expectedHeadMerkle
+      : expectedStateMerkle && commitments.length >= expectedStateMerkle.commitmentCount
+        ? expectedStateMerkle
+        : null;
+    if (!rebuildTarget && expectedHeadMerkle) {
+      commitments = await readAllArchiveCommitments(
+        input.archive,
+        initialHead.meta.actionCount,
+      );
+      rebuildTarget = expectedHeadMerkle;
+      await clearPrivateBalanceCommitmentCache(
+        input.storageContext,
+        input.publicCacheDriver,
+      );
+      await recordVerifiedPrivateBalanceCommitments(
+        input.storageContext,
+        0,
+        commitments,
+        input.publicCacheDriver,
+      );
+    }
+    if (!rebuildTarget) {
+      throw new Error('Private Balance Merkle cache cannot be rebuilt for the verified head');
+    }
+    await rebuildPrivateBalanceMerkleCache(
+      input.storageContext,
+      rebuildTarget,
+      commitments.slice(0, rebuildTarget.commitmentCount),
+      input.publicCacheDriver,
+    );
+    merkleCheckpoint = rebuildTarget;
+  }
+
   let tree = reconstructTree(state);
   let nextActionIndex = state.checkpoint ? state.checkpoint.lastActionIndex + 1 : 0;
   let expectedPriorRecordHash = state.checkpoint
@@ -331,6 +464,32 @@ async function syncPrivateBalanceOnce(
       records.flatMap(record => record.outputs.map(output => output.cm)),
       input.publicCacheDriver,
     );
+    const batchCursor = lastRecord.actionIndex + 1;
+    if ((merkleCheckpoint?.cursor ?? 0) < batchCursor) {
+      const priorCursor = records[0].actionIndex;
+      if ((merkleCheckpoint?.cursor ?? 0) !== priorCursor) {
+        throw new Error('Private Balance Merkle cache cursor is not contiguous with archive sync');
+      }
+      const commitments = records.flatMap(record => record.outputs.map(output => output.cm));
+      await recordVerifiedPrivateBalanceMerkleBatch(input.storageContext, {
+        deploymentBindingHash: input.deploymentBindingHash,
+        priorCursor,
+        cursor: batchCursor,
+        transcriptHead: scanned.lastRecordHash,
+        startIndex: records[0].startingLeafIndex,
+        commitments,
+        expectedRoot: scanned.tree.currentRoot,
+        expectedFrontier: scanned.tree.frontier,
+      }, input.publicCacheDriver);
+      merkleCheckpoint = {
+        deploymentBindingHash: hex(input.deploymentBindingHash),
+        cursor: batchCursor,
+        transcriptHead: hex(scanned.lastRecordHash),
+        commitmentCount: records[0].startingLeafIndex + commitments.length,
+        root: hex(scanned.tree.currentRoot),
+        frontier: scanned.tree.frontier.map(hex),
+      };
+    }
     tree = scanned.tree;
     notes = scanned.notes;
     activities = mergeActivities(
@@ -393,6 +552,13 @@ async function syncPrivateBalanceOnce(
     ) {
       throw new Error('Private Balance reconstructed state does not match the contract head');
     }
+    await requirePrivateBalanceMerkleCheckpoint(
+      input.storageContext,
+      expectedHeadMerkle!,
+      input.publicCacheDriver,
+    );
+  } else if (merkleCheckpoint !== null) {
+    throw new Error('Private Balance Merkle checkpoint exists for an empty pool');
   }
 
   const completedAt = now();

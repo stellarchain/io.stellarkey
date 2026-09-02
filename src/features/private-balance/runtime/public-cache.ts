@@ -2,6 +2,7 @@ import {
   IndexedDbEncryptedRecordDriver,
   type EncryptedRecordDriver,
 } from '../../../lib/indexed-db';
+import { clearPrivateBalanceMerkleCache } from './merkle-cache';
 
 const RECORD_KIND = 'public-commitment-chunk';
 const RECORD_VERSION = 1;
@@ -195,7 +196,17 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return difference === 0;
 }
 
-export function clearPrivateBalancePublicCache(
+export async function clearPrivateBalancePublicCache(
+  context: PrivateBalancePublicCacheContext,
+  candidate?: PrivateBalancePublicCacheDriver,
+): Promise<void> {
+  await Promise.all([
+    clearPrivateBalanceCommitmentCache(context, candidate),
+    clearPrivateBalanceMerkleCache(context, candidate),
+  ]);
+}
+
+export function clearPrivateBalanceCommitmentCache(
   context: PrivateBalancePublicCacheContext,
   candidate?: PrivateBalancePublicCacheDriver,
 ): Promise<void> {

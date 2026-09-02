@@ -235,7 +235,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           esk,
           keyContext,
           availableNotes: req.availableNotes,
-          commitments: req.commitments,
+          merklePaths: req.merklePaths,
           intent: req.intent,
         });
         const preparedActionId = toHex(randomBytes32());

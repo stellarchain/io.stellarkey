@@ -1,4 +1,9 @@
-import type { ActionModel, ArchiveRecordModel, MerkleTree } from '@stellarkey/private-balance';
+import type {
+  ActionModel,
+  ArchiveRecordModel,
+  MerklePathWitness,
+  MerkleTree,
+} from '@stellarkey/private-balance';
 import type { ShieldedActivityRecord, ShieldedNoteRecord } from '../runtime/types';
 import type { BuildActionIntent } from './action-builder';
 
@@ -49,7 +54,7 @@ export type WorkerRequest =
       type: 'BUILD_ACTION';
       reservationId: string;
       intent: BuildActionIntent;
-      commitments: Uint8Array[];
+      merklePaths: MerklePathWitness[];
       availableNotes: ShieldedNoteRecord[];
     })
   | (WorkerMessage & {

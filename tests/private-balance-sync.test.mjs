@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { StrKey } from '@stellar/stellar-sdk';
 import {
+  appendFrontier,
   computeGenesisRecordHash,
   computeRecordHash,
+  createEmptyTree,
+  refreshTreeRoot,
 } from '@stellarkey/private-balance';
 import {
   commitPrivateBalanceState,
@@ -18,6 +21,7 @@ import {
   MAX_CONTRACT_ADVANCE_RESUMES,
 } from '../src/features/private-balance/runtime/sync-machine.ts';
 import { loadPrivateBalanceCommitments } from '../src/features/private-balance/runtime/public-cache.ts';
+import { loadPrivateBalanceMerkleCheckpoint } from '../src/features/private-balance/runtime/merkle-cache.ts';
 
 const bytes = (value, length = 32) => new Uint8Array(length).fill(value);
 const hex = value => Buffer.from(value).toString('hex');
@@ -37,7 +41,16 @@ class MemoryDriver {
     this.records.set(key, value);
     return { ok: true, current: value };
   }
-  async removePrefix() {}
+  async compareAndSetMany(key, expectedRevision, entries) {
+    const current = this.records.get(key) ?? null;
+    const revision = current === null ? null : JSON.parse(current).revision;
+    if (revision !== expectedRevision) return { ok: false, current };
+    for (const [entryKey, value] of entries) this.records.set(entryKey, value);
+    return { ok: true, current: entries.get(key) ?? null };
+  }
+  async removePrefix(prefix) {
+    for (const key of this.records.keys()) if (key.startsWith(prefix)) this.records.delete(key);
+  }
 }
 
 test('verified activity keeps encrypted local recipient and memo metadata only when its action matches', () => {
@@ -77,6 +90,10 @@ test('sync commits verified record progress and marks current only after head re
   const deploymentBindingHash = bytes(2);
   const manifestHash = hex(bytes(3));
   const priorRecordHash = computeGenesisRecordHash(contextHash, deploymentBindingHash);
+  const verifiedTree = await createEmptyTree();
+  await appendFrontier(verifiedTree, bytes(6));
+  await appendFrontier(verifiedTree, bytes(7));
+  await refreshTreeRoot(verifiedTree);
   const record = {
     actionIndex: 0,
     ledgerSequence: 123,
@@ -85,11 +102,11 @@ test('sync commits verified record progress and marks current only after head re
     asset: ASSET,
     actionNonce: bytes(4),
     anchorRoot: bytes(0),
-    treeRootAfter: bytes(5),
-    nullifiers: [bytes(0), bytes(0)],
+    treeRootAfter: verifiedTree.currentRoot,
+    nullifiers: [bytes(18), bytes(19)],
     outputs: [
-      { cm: bytes(6), recipientEnvelope: bytes(7, 181) },
-      { cm: bytes(0), recipientEnvelope: bytes(0, 181) },
+      { cm: bytes(6), recipientEnvelope: bytes(7, 181), outgoingEnvelope: bytes(8, 157) },
+      { cm: bytes(7), recipientEnvelope: bytes(9, 181), outgoingEnvelope: bytes(10, 157) },
     ],
     publicValue: 5_000_000n,
     relayerFee: 0n,
@@ -107,7 +124,7 @@ test('sync commits verified record progress and marks current only after head re
     },
     tree: {
       nextIndex: 2,
-      frontier: Array.from({ length: 32 }, () => bytes(0)),
+      frontier: verifiedTree.frontier,
       currentRoot: record.treeRootAfter,
     },
   };
@@ -281,6 +298,28 @@ test('sync commits verified record progress and marks current only after head re
   assert.deepEqual(
     (await loadPrivateBalanceCommitments(storageContext, driver)).map(hex),
     record.outputs.map(output => hex(output.cm)),
+  );
+
+  const merkleCheckpointKey = [...driver.records.keys()].find(key => key.endsWith(':checkpoint'));
+  const corrupted = JSON.parse(driver.records.get(merkleCheckpointKey));
+  corrupted.root = 'ff'.repeat(32);
+  driver.records.set(merkleCheckpointKey, JSON.stringify(corrupted));
+  const recovered = await syncPrivateBalance({
+    archive,
+    worker,
+    contextHash,
+    deploymentBindingHash,
+    manifestHash,
+    storageContext,
+    storageKey,
+    storageDriver: driver,
+    publicCacheDriver: driver,
+    now: () => 3,
+  });
+  assert.equal(recovered.account.syncStatus, 'current');
+  assert.equal(
+    (await loadPrivateBalanceMerkleCheckpoint(storageContext, driver)).root,
+    hex(record.treeRootAfter),
   );
 });
 

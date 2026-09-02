@@ -5,6 +5,7 @@ import {
 import {
   decodePrivateAddress,
   type ActionModel,
+  type MerklePathWitness,
 } from '@stellarkey/private-balance';
 import { loadCircuitArtifacts, computeSha256 } from '../../../lib/private-balance-artifacts';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -12,7 +13,10 @@ import type { PrivateBalanceStorageScope } from '../../../lib/private-balance-bo
 import { privateAddressFingerprint } from './receive';
 import { parsePrivateAmount, selectPrivateNotes } from './coin-selection';
 import { PrivateBalanceArchiveClient } from './archive-client';
-import { loadPrivateBalanceCommitments } from './public-cache';
+import {
+  clearPrivateBalanceMerkleCache,
+  loadPrivateBalanceMerklePaths,
+} from './merkle-cache';
 import {
   commitPrivateBuildReservation,
   loadPrivateBalanceState,
@@ -358,7 +362,7 @@ export async function preparePrivateBalanceActionFlow(input: {
     let localMemoHex: string | undefined;
     let publicRecipient: string | null = null;
     let intent: Parameters<PrivateBalanceWorkerClient['buildAction']>[1] | null = null;
-    let commitments: Uint8Array[] = [];
+    let merklePaths: MerklePathWitness[] = [];
     const selfRelayer = publicAddressPayload(input.accountPublicKey);
 
     if (input.draft.kind === 'deposit') {
@@ -378,14 +382,6 @@ export async function preparePrivateBalanceActionFlow(input: {
         throw new PrivateStaleChainStateError('Private Balance root is too close to expiry. Sync and review again.');
       }
       anchorExpiresAtLedger = root.validUntilLedger;
-      commitments = await loadPrivateBalanceCommitments(
-        input.storageContext,
-        input.storageDriver,
-      );
-      if (commitments.length !== head.tree.nextIndex) {
-        throw new PrivateStaleChainStateError('Private Balance commitment cache is incomplete. Sync and review again.');
-      }
-
       if (input.draft.kind === 'consolidate') {
         const selected = consolidationSelection(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
@@ -465,6 +461,33 @@ export async function preparePrivateBalanceActionFlow(input: {
       selectedNoteIds,
       input.assetContractId,
     );
+    if (selectedNoteIds.length > 0) {
+      const checkpoint = state.checkpoint;
+      if (!checkpoint) {
+        throw new PrivateStaleChainStateError('Private Balance Merkle checkpoint is unavailable. Sync and review again.');
+      }
+      try {
+        merklePaths = await loadPrivateBalanceMerklePaths(
+          input.storageContext,
+          {
+            deploymentBindingHash: checkpoint.deploymentBindingHash,
+            cursor: checkpoint.lastActionIndex + 1,
+            transcriptHead: checkpoint.lastRecordHash,
+            commitmentCount: (checkpoint.lastActionIndex + 1) * 2,
+            root: checkpoint.treeRoot,
+            frontier: [...checkpoint.treeFrontier],
+          },
+          availableNotes.map(note => note.leafIndex),
+          input.storageDriver,
+        );
+      } catch {
+        await clearPrivateBalanceMerkleCache(
+          input.storageContext,
+          input.storageDriver,
+        ).catch(() => undefined);
+        throw new PrivateStaleChainStateError('Private Balance Merkle cache is invalid. Sync and review again.');
+      }
+    }
     progress('reserving-inputs');
     const reservationKind = input.draft.kind === 'consolidate' ? 'transfer' : input.draft.kind;
     let durable = await reservePrivateBuildReservation(
@@ -486,7 +509,7 @@ export async function preparePrivateBalanceActionFlow(input: {
     const prepared = await input.worker.buildAction(
       actionId,
       intent,
-      commitments,
+      merklePaths,
       availableNotes,
     );
     if (prepared.reservationId !== actionId) {
