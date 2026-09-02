@@ -139,3 +139,19 @@ test('the public private-payments page describes the undeployed Testnet candidat
   assert.match(page, /fresh Testnet pools/is);
   assert.doesNotMatch(page, /current key fails.*production availability is off/is);
 });
+
+test('consensus-affecting protocol review decisions are explicit and linked', () => {
+  const spec = readSource('protocol/private-balance/docs/protocol-v1.md');
+  const decisions = [
+    ['0002-private-note-key-agreement.md', /RFC 9180.*retain|retain.*RFC 9180/is],
+    ['0003-multi-asset-pool.md', /asset-pinned.*retain|retain.*asset-pinned/is],
+    ['0004-poseidon2-capacity-domain.md', /Soroban.*host|host.*Soroban/is],
+  ];
+
+  for (const [file, expectedDecision] of decisions) {
+    const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);
+    assert.match(decision, /## Status\s+Rejected/is);
+    assert.match(decision, expectedDecision);
+    assert.match(spec, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
+  }
+});

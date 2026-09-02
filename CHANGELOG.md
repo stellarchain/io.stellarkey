@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Retained audited RFC 9180 note encryption, asset-pinned pool isolation, and Soroban-native Poseidon2 hashing after rejecting unreviewed consensus alternatives in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
 - Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.
 - Persisted one replay nullifier for deposits instead of two while keeping exact proof replay impossible; transfers and withdrawals continue to persist both.
