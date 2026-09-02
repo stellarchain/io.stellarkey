@@ -49,6 +49,8 @@ function developmentManifest(assetContractId = XLM_CONTRACT) {
     assetContractId,
     guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    witnessRpcUrl: 'https://witness.example.test',
+    deploymentCheckpoint: { ledger: 0, hash: '00'.repeat(32) },
     deploymentBindingHash: '33'.repeat(32),
     artifacts: {
       r1csSha256: '44'.repeat(32), r1csConstraints: 1,

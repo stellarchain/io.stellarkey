@@ -56,10 +56,18 @@ function reviewedFixture() {
       assetContractId: ASSET_CONTRACT_ID,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
-      nullifiers: [bytes(32, 3), bytes(32, 0)],
+      nullifiers: [bytes(32, 3), bytes(32, 4)],
       outputs: [
-        { commitment: bytes(32, 4), recipientEnvelope: bytes(181, 5) },
-        { commitment: bytes(32, 6), recipientEnvelope: bytes(181, 7) },
+        {
+          commitment: bytes(32, 4),
+          recipientEnvelope: bytes(181, 5),
+          outgoingEnvelope: bytes(157, 6),
+        },
+        {
+          commitment: bytes(32, 7),
+          recipientEnvelope: bytes(181, 8),
+          outgoingEnvelope: bytes(157, 9),
+        },
       ],
       publicValue: 0n,
       relayerFee: 0n,
@@ -676,7 +684,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
 
   await assert.rejects(
     () => preparePrivateBalanceActionFlow({
-      manifest: {},
+      manifest: { assetContractId: ASSET_CONTRACT_ID },
       accountPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       privateAddress: `tskpay_${'2'.repeat(121)}`,
       storageContext: context,
