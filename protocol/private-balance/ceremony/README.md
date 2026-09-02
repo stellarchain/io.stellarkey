@@ -18,7 +18,8 @@ The current development candidate is:
 | Public inputs | 13 |
 | R1CS SHA-256 | `e9dc8f37a8ffde400c7ed5cd9735857a63f361d183e985fcaaf893b7d62ee199` |
 | Development zkey SHA-256 | `61f74662d0661bbc6efbc7175cdba6d49578a9cc7b45ab930cde672537b8a0b0` |
-| Development verifying-key SHA-256 | `fe28fdd58948e01802fb622768fdf1c77231068225fe92df245fb45e499b443b` |
+| Development verifying-key JSON SHA-256 | `4be924102456ae754069a8d4d24523ed2a76a9e7ca1fffa7238ebefbf0b2f7fd` |
+| Embedded verifying-key binary SHA-256 | `fe28fdd58948e01802fb622768fdf1c77231068225fe92df245fb45e499b443b` |
 
 These values identify the hash-pinned testnet-preview candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
