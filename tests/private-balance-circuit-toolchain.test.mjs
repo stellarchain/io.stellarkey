@@ -94,3 +94,42 @@ test('curve benchmark ships a browser harness, schema, and provisional evidence'
   assert.match(browserHarness, /provingKeyStreaming/);
   assert.match(browserHarness, /nativeMobileProver/);
 });
+
+test('protocol review decisions are backed by reproducible measurements', () => {
+  const evidencePath = join(
+    process.cwd(),
+    'protocol/private-balance/results/review-validation.json',
+  );
+  const harnessPath = join(
+    process.cwd(),
+    'protocol/private-balance/spikes/scripts/run-review-validation.mjs',
+  );
+  assert.equal(existsSync(harnessPath), true, 'review benchmark harness must exist');
+  assert.equal(existsSync(evidencePath), true, 'review evidence must exist');
+
+  const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
+  assert.equal(evidence.schemaVersion, 1);
+  assert.match(evidence.revision, /^[0-9a-f]{40}$/u);
+  assert.equal(evidence.circuit.baseline.publicInputs, 13);
+  assert.equal(evidence.circuit.baseline.constraints, 23_437);
+  assert.ok(evidence.x25519.trials >= 3);
+  assert.ok(evidence.x25519.samplesPerTrial >= 100);
+  for (const measurement of [
+    evidence.x25519.nativeJwk,
+    evidence.x25519.nativePkcs8Prototype,
+    evidence.x25519.portable,
+    evidence.x25519.diversifiedAddress,
+  ]) {
+    assert.ok(Number.isFinite(measurement.p50Microseconds));
+    assert.ok(Number.isFinite(measurement.p95Microseconds));
+    assert.ok(measurement.p50Microseconds > 0);
+    assert.ok(measurement.p95Microseconds >= measurement.p50Microseconds);
+  }
+  assert.deepEqual(Object.keys(evidence.decisions).sort(), [
+    '1', '2', '3', '4', '5', '6', '7', '8',
+  ]);
+  for (const decision of Object.values(evidence.decisions)) {
+    assert.match(decision.status, /^(accept|defer|reject)$/u);
+    assert.ok(decision.reason.length >= 20);
+  }
+});
