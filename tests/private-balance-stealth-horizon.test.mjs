@@ -6,6 +6,7 @@ import {
   deriveStealthRecipient,
 } from '@stellarkey/private-balance';
 import { HorizonStealthAnnouncementReader } from '../src/features/private-balance/runtime/stealth-horizon.ts';
+import { HorizonRequestError } from '../src/lib/horizon.ts';
 
 const bytes = value => new Uint8Array(32).fill(value);
 const announcer = Keypair.fromRawEd25519Seed(bytes(61)).publicKey();
@@ -38,7 +39,7 @@ test('Horizon reader validates the stealth transaction shape and separates reser
     if (parsed.pathname === `/accounts/${announcer}/payments`) {
       assert.equal(parsed.searchParams.get('cursor'), '123');
       assert.equal(parsed.searchParams.get('order'), 'asc');
-      assert.equal(parsed.searchParams.get('join'), 'transactions');
+      assert.equal(parsed.searchParams.has('join'), false);
       return {
         _embedded: {
           records: [{
@@ -52,13 +53,15 @@ test('Horizon reader validates the stealth transaction shape and separates reser
             to: announcer,
             asset_type: 'native',
             amount: '0.0000001',
-            transaction: {
-              successful: true,
-              memo_type: 'hash',
-              memo: Buffer.from(fixture.ephemeralPublicKey).toString('base64'),
-            },
           }],
         },
+      };
+    }
+    if (parsed.pathname === `/transactions/${transactionHash}`) {
+      return {
+        successful: true,
+        memo_type: 'hash',
+        memo: Buffer.from(fixture.ephemeralPublicKey).toString('base64'),
       };
     }
     if (parsed.pathname === `/transactions/${transactionHash}/operations`) {
@@ -104,7 +107,7 @@ test('Horizon reader validates the stealth transaction shape and separates reser
 
   assert.equal(page.hasMore, false);
   assert.equal(page.latestLedger, 500);
-  assert.equal(page.nextCursor, (500n << 32n | 0xffffffffn).toString());
+  assert.equal(page.nextCursor, pagingToken);
   assert.equal(page.announcements.length, 1);
   assert.deepEqual(page.announcements[0], {
     pagingToken,
@@ -115,10 +118,10 @@ test('Horizon reader validates the stealth transaction shape and separates reser
     ledger: 499,
     createdAt: Date.parse('2026-08-30T11:59:00Z'),
   });
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
 });
 
-test('Horizon reader skips malformed announcer spam but advances its high-water cursor', async () => {
+test('Horizon reader skips malformed announcer spam but advances to its returned token', async () => {
   const transactionHash = 'cd'.repeat(32);
   const request = async url => {
     const parsed = new URL(url);
@@ -136,10 +139,12 @@ test('Horizon reader skips malformed announcer spam but advances its high-water 
             to: announcer,
             asset_type: 'native',
             amount: '0.0000001',
-            transaction: { successful: true, memo_type: 'text', memo: 'not-an-ephemeral-key' },
           }],
         },
       };
+    }
+    if (parsed.pathname === `/transactions/${transactionHash}`) {
+      return { successful: true, memo_type: 'text', memo: 'not-an-ephemeral-key' };
     }
     throw new Error('Operations must not be fetched for an invalid memo');
   };
@@ -150,10 +155,10 @@ test('Horizon reader skips malformed announcer spam but advances its high-water 
   }).readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200 });
 
   assert.deepEqual(page.announcements, []);
-  assert.equal(page.nextCursor, (500n << 32n | 0xffffffffn).toString());
+  assert.equal(page.nextCursor, (499n << 32n | 8n).toString());
 });
 
-test('Horizon reader binary-searches the first ledger inside the one-year window', async () => {
+test('Horizon reader binary-searches the first ledger inside the requested recovery window', async () => {
   const requestedLedgers = [];
   let paymentsCursor = null;
   const request = async url => {
@@ -182,7 +187,7 @@ test('Horizon reader binary-searches the first ledger inside the one-year window
 
   assert.ok(requestedLedgers.length <= 4);
   assert.equal(paymentsCursor, (4n << 32n | 0xffffffffn).toString());
-  assert.equal(page.nextCursor, (10n << 32n | 0xffffffffn).toString());
+  assert.equal(page.nextCursor, paymentsCursor);
   assert.equal(page.latestLedger, 10);
 });
 
@@ -227,6 +232,51 @@ test('Horizon reader never probes ledgers before the retained history boundary',
 
   assert.deepEqual(requestedLedgers, []);
   assert.equal(paymentsCursor, (127n << 32n | 0xffffffffn).toString());
-  assert.equal(page.nextCursor, (500n << 32n | 0xffffffffn).toString());
+  assert.equal(page.nextCursor, paymentsCursor);
   assert.equal(page.latestLedger, latestSequence);
+});
+
+test('Horizon reader shrinks an oversized unjoined page and advances only to returned data', async () => {
+  const limits = [];
+  const returnedToken = (499n << 32n | 9n).toString();
+  const request = async url => {
+    const parsed = new URL(url);
+    if (parsed.pathname === '/ledgers') return latestLedgers;
+    if (parsed.pathname.includes('/payments')) {
+      assert.equal(parsed.searchParams.has('join'), false);
+      const limit = Number(parsed.searchParams.get('limit'));
+      limits.push(limit);
+      if (limit > 25) {
+        throw new HorizonRequestError('Horizon response body exceeded the safe byte limit.', {
+          kind: 'response_too_large',
+        });
+      }
+      return {
+        _embedded: {
+          records: [{
+            type: 'payment',
+            transaction_hash: 'ef'.repeat(32),
+            transaction_successful: true,
+            created_at: '2026-08-30T11:59:00Z',
+            paging_token: returnedToken,
+            from: sender,
+            to: announcer,
+            asset_type: 'native',
+            amount: '1.0000000',
+          }],
+        },
+      };
+    }
+    throw new Error('Non-announcement records must not trigger transaction lookups');
+  };
+
+  const page = await new HorizonStealthAnnouncementReader({
+    network: 'testnet',
+    announcerPublicKey: announcer,
+    request,
+  }).readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200 });
+
+  assert.deepEqual(limits, [200, 100, 50, 25]);
+  assert.equal(page.nextCursor, returnedToken);
+  assert.equal(page.hasMore, false);
 });

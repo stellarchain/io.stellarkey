@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Removed Horizon transaction joins from reusable-payment discovery, retried oversized pages at smaller limits, and advanced its durable cursor only to paging tokens the payments response actually returned.
 - Made reusable private-payment recovery rescan retained chain history after seed import, and compacted terminal receipt history without dropping newly actionable payments at the encrypted cache limit.
 - Preserved transaction max-time evidence when upgrading durable submission records, bounded polling for legacy records without an expiry, and kept merchant payment reversals actionable until their refund is canonically confirmed.
 - Restored Private Payments records belonging to archived accounts, omitted records for genuinely unavailable accounts with a warning, and added account-scoped sensitive-record cleanup for new archival.
