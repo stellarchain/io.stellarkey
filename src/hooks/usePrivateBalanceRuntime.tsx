@@ -26,6 +26,7 @@ import type {
   ShieldedActivityRecord,
   ShieldedCheckpoint,
 } from '@/features/private-balance/runtime/types';
+import type { PrivateArchiveRestorationProgress } from '@/features/private-balance/runtime/archive-restoration';
 import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
 import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
@@ -127,7 +128,10 @@ export interface PrivateBalanceRuntimeDataValue {
   stealthError: string | null;
   optIn(): Promise<void>;
   refreshSync(): Promise<void>;
-  restorePrivateHistory(): Promise<void>;
+  restorePrivateHistory(
+    onProgress?: (progress: PrivateArchiveRestorationProgress) => void,
+    signal?: AbortSignal,
+  ): Promise<void>;
   refreshStealth(): Promise<void>;
   prepareStealthSweep(
     payment: StealthOwnedPayment,
