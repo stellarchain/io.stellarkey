@@ -104,12 +104,12 @@ test("iPhone reload catches up and settles an awaiting merchant charge", async (
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
     return raw ? JSON.parse(raw) : null;
-  })).toEqual({ version: 1, enabled: true, configured: true });
+  })).toEqual({ version: 1, enabled: true, configured: true, recoveryRequired: false });
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem("stellarkey.merchant-bootstrap.v1");
     return raw ? JSON.parse(raw) : null;
-  })).toEqual({ version: 1, enabled: true, configured: true });
+  })).toEqual({ version: 1, enabled: true, configured: true, recoveryRequired: false });
   await page.getByPlaceholder("Enter password").fill(testPassword);
   await page.getByRole("button", { name: "Unlock Vault" }).click();
   await expect(page.getByText("Your Assets", { exact: true })).toBeVisible();
