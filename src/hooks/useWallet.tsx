@@ -64,6 +64,7 @@ import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type C
 import { useToast } from "@/components/Toast";
 import { triggerHaptic } from "@/lib/haptics";
 import { closePaperWalletPrints } from "@/lib/paperwallet";
+import { idleElapsedMs, type IdleClockSample } from "@/lib/idle-time";
 import type { FiatCurrency } from "@/lib/format";
 import { fetchFiatRates, type FiatRates } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
@@ -1308,37 +1309,44 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     const sensitiveSessionOpen =
       phase === "unlocked" || (phase === "empty" && isUnlocked());
     if (!sensitiveSessionOpen || autoLockMs <= 0) return;
-    let lastActivity = performance.now();
+    const clockSample = (): IdleClockSample => ({
+      monotonicMs: performance.now(),
+      wallMs: Date.now(),
+    });
+    let lastActivity = clockSample();
     let timer: number;
     const schedule = () => {
       window.clearTimeout(timer);
-      const remaining = Math.max(0, autoLockMs - (performance.now() - lastActivity));
+      const remaining = Math.max(0, autoLockMs - idleElapsedMs(lastActivity, clockSample()));
       timer = window.setTimeout(checkExpired, remaining);
     };
     const checkExpired = () => {
-      if (performance.now() - lastActivity >= autoLockMs) {
+      if (idleElapsedMs(lastActivity, clockSample()) >= autoLockMs) {
         lockVaultAndReset();
         return;
       }
       schedule();
     };
     const bump = () => {
-      lastActivity = performance.now();
+      lastActivity = clockSample();
       schedule();
     };
     const onVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") checkExpired();
     };
+    const onResume = () => checkExpired();
     schedule();
     window.addEventListener("pointerdown", bump);
     window.addEventListener("keydown", bump);
     window.addEventListener("focus", onVisibilityOrFocus);
+    window.addEventListener("pageshow", onResume);
     document.addEventListener("visibilitychange", onVisibilityOrFocus);
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("pointerdown", bump);
       window.removeEventListener("keydown", bump);
       window.removeEventListener("focus", onVisibilityOrFocus);
+      window.removeEventListener("pageshow", onResume);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
   }, [phase, accounts.length, autoLockMs, lockVaultAndReset]);

@@ -71,13 +71,32 @@ test("full wallet reset also removes every private-payment IndexedDB record", ()
   assert.match(reset, /location\.reload\(\)/);
 });
 
-test("auto-lock covers the live onboarding vault session and uses a monotonic clock", () => {
+test("auto-lock covers onboarding and checks monotonic plus suspend-aware wall time", () => {
   const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
   const autoLock = source.split("const lockVaultAndReset")[1]?.split("const pollPendingRef")[0] ?? "";
   assert.match(autoLock, /phase === "empty" && isUnlocked\(\)/);
   assert.match(autoLock, /performance\.now\(\)/);
-  assert.doesNotMatch(autoLock, /Date\.now\(\)/);
+  assert.match(autoLock, /Date\.now\(\)/);
+  assert.match(autoLock, /idleElapsedMs/);
+  assert.match(autoLock, /addEventListener\("pageshow", onResume\)/);
   assert.match(autoLock, /closePaperWalletPrints\(\)/);
+});
+
+test("idle elapsed time survives suspend and ignores backward clock movement", async () => {
+  const { idleElapsedMs } = await import("../src/lib/idle-time.ts");
+
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 150, wallMs: 61_000 },
+  ), 60_000);
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 600, wallMs: 500 },
+  ), 500);
+  assert.equal(idleElapsedMs(
+    { monotonicMs: 100, wallMs: 1_000 },
+    { monotonicMs: 50, wallMs: 500 },
+  ), 0);
 });
 
 test("every user-controlled JSON file is bounded before file.text", () => {
