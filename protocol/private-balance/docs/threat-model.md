@@ -34,9 +34,13 @@ consistency, not absence of retained setup toxic waste. A holder of that secret 
 Real-value use requires a public ceremony, independent transcript verification, circuit and contract
 review, reproducible artifacts, and deployment evidence bound to the same hashes.
 
-Merkle parents are raw three-input Poseidon2 hashes. Their separation from longer protocol hashes
-depends on the pinned Poseidon2 length IV, not a string domain. Tree arity, child ordering, depth,
-empty roots, and the length IV are consensus inputs and must not change independently.
+Merkle parents are raw three-input Poseidon2 hashes. The pinned Poseidon2 length IV separates hashes
+by arity only, including their separation from longer protocol hashes. Every other arity-three
+protocol hash reserves rate slot zero for a distinct domain constant. Separation from a
+raw Merkle parent additionally assumes Poseidon2 preimage and collision resistance, so an attacker
+cannot engineer a reachable note commitment or parent equal to a fixed domain constant. Tree arity,
+child ordering, depth, empty roots, the length IV, and the domain-slot convention are consensus
+inputs and must not change independently.
 
 Recipient and outgoing encryption is constructed outside the circuit. The proof binds note
 commitments but does not prove that ciphertext is decryptable or addressed honestly. A malicious

@@ -44,9 +44,12 @@ independent witness data. The wallet randomizes recipient/change and real/dummy 
 
 `MerkleParent(left, middle, right)` is the raw three-input Poseidon2 hash. It intentionally has no
 string domain field because all three rate elements are occupied by children. Poseidon2's length IV
-separates this three-input construction from the six-input note commitment and other protocol
-hashes. This is a protocol decision: changing arity, child order, depth, IV, or empty roots changes
-consensus.
+separates hashes by arity only: it separates this construction from the six-input note commitment,
+but not from another three-input hash. Every other arity-three protocol hash must therefore put its
+distinct domain constant in rate slot zero. The raw Merkle construction relies on Poseidon2 preimage
+and collision resistance: making a valid note commitment or parent equal one of those fixed domain
+constants must remain computationally infeasible. This is a protocol decision; changing arity,
+child order, depth, IV, domain-slot convention, or empty roots changes consensus.
 
 Each input witness carries 17 pairs of sibling nodes and one position trit per level. Position must
 be 0, 1, or 2 and selects the leaf/node's ordered place among the two siblings. The leaf index is

@@ -3,7 +3,10 @@ pragma circom 2.1.6;
 include "poseidon2.circom";
 
 // A Merkle node occupies the full three-element Poseidon2 rate. The sponge's
-// input-length IV separates this primitive from protocol hashes of other arities.
+// length IV separates by arity only. Every other arity-three protocol hash must
+// reserve rate slot zero for its domain constant; this raw construction relies
+// on Poseidon2 preimage and collision resistance to keep those constants from
+// being engineered as reachable leaves or nodes.
 template MerkleParent() {
     signal input children[3];
     signal output out;

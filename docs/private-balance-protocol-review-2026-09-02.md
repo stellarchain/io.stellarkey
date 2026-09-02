@@ -109,9 +109,11 @@ It also cuts the contract from roughly 35 host Poseidon2 calls per action to abo
 ### The cost of this change
 
 The ternary node must drop the domain constant to fit three children in the rate.
-That is safe here — the sponge length IV already separates a 3-input node from the 6-input
-note commitment, and landing on `DOMAIN_DIVERSIFIED_OWNER` in slot 0 requires a Poseidon2
-preimage — but it is a real hygiene trade and should be recorded as a decision.
+The length IV separates the 3-input node from the 6-input note commitment, but it does not
+separate the node from another 3-input hash. Every other arity-three protocol hash therefore
+uses its domain constant in slot 0. Security of the raw parent additionally relies on Poseidon2
+preimage and collision resistance: engineering a reachable leaf or node equal to one of those
+fixed domain constants must remain infeasible. This is a real hygiene trade.
 
 **The domain cannot instead be folded into the capacity IV.** `poseidon2_hash` calls
 `soroban_p2_hash::<4, Bn254Fr>` (`crates/protocol/src/poseidon2.rs`), which owns the sponge and
