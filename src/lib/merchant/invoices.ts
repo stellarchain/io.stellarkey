@@ -22,7 +22,7 @@ import { canonicalPayerAddress } from "./payer";
 import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
 import { isCurrentReceivingDestination } from "./destination";
 import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
-import { pendingReconciliationTray } from "./reconciliation";
+import { pendingReconciliationTray } from "./reconciliation-tray";
 import {
   createMerchantRoutingId,
   merchantPaymentTransport,

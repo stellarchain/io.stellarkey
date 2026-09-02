@@ -7,7 +7,7 @@ import type {
 } from "./types";
 import { sameAsset } from "./charge";
 import { toStroops } from "./money";
-import { pendingReconciliationTray } from "./reconciliation";
+import { pendingReconciliationTray } from "./reconciliation-tray";
 
 const FINAL_SUBMISSION_STATUSES = new Set<RefundSubmissionStatus>(["confirmed", "failed"]);
 

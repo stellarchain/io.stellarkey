@@ -58,7 +58,6 @@ import {
   createSigningAuthorizationGate,
   type SigningAuthorizationRequest,
 } from "@/lib/signing-authorization";
-import { getMerchantRepository } from "@/lib/merchant/repository";
 import { IndexedDbEncryptedRecordDriver } from "@/lib/indexed-db";
 import { deleteContact, loadContacts, saveContact, toggleFavoriteContact, type Contact } from "@/lib/contacts";
 import { useToast } from "@/components/Toast";
@@ -1821,7 +1820,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const cleanupTasks: Array<() => Promise<unknown>> = [];
       if (typeof indexedDB !== "undefined") {
         cleanupTasks.push(
-          () => getMerchantRepository().clear(),
+          async () => {
+            const { getMerchantRepository } = await import("@/lib/merchant/repository");
+            return getMerchantRepository().clear();
+          },
           () => new IndexedDbEncryptedRecordDriver().removePrefix("private:"),
         );
       }
