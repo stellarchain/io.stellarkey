@@ -4,8 +4,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   createOutputPackage,
+  computeCommitment,
+  computeContextField,
+  deriveDiversifiedScanningKeys,
   deriveKeysFromSeed,
+  deriveX25519PublicKey,
   deriveX25519SharedSecret,
+  encodeNotePlaintext,
   openRecipientEnvelope,
   RECIPIENT_ENVELOPE_BYTES,
   OUTPUT_PACKAGE_BYTES,
@@ -91,6 +96,92 @@ test('X25519 native and portable scan paths derive the same secret', async () =>
 
   assert.deepEqual(automatic, portable);
   assert.equal(automatic.length, 32);
+});
+
+test('diversified scanning drops an unusable native handle and keeps portable keys', async () => {
+  const subtle = globalThis.crypto.subtle;
+  const originalDeriveBits = subtle.deriveBits.bind(subtle);
+  subtle.deriveBits = async () => {
+    throw new Error('simulated partial WebCrypto X25519 failure');
+  };
+  try {
+    const incomingViewingKey = bytes(31);
+    const diversifier = Uint8Array.of(0, 0, 0, 7);
+    const keys = await deriveDiversifiedScanningKeys(incomingViewingKey, diversifier);
+    assert.equal(keys.nativePrivateKey, undefined);
+    assert.deepEqual(keys.hpkePublicKey, deriveX25519PublicKey(keys.hpkePrivateKey));
+    keys.hpkePrivateKey.fill(0);
+  } finally {
+    subtle.deriveBits = originalDeriveBits;
+  }
+});
+
+test('recipient opening retries portable X25519 after a native deriveBits failure', async () => {
+  const keys = await deriveKeysFromSeed(
+    bytes(40), 1, bytes(41), bytes(42), bytes(43), bytes(44), bytes(45), bytes(46),
+  );
+  const contextHash = bytes(47);
+  const contextField = computeContextField(contextHash);
+  const assetField = bytes(48);
+  const actionNonce = bytes(49);
+  const diversifier = new Uint8Array(4);
+  const rho = Uint8Array.from([...new Uint8Array(31), 1]);
+  const plaintext = encodeNotePlaintext({
+    protocolVersion: 1,
+    flags: 0,
+    value: 25n,
+    diversifier,
+    ownerCommitment: keys.ownerCommitment,
+    rho,
+    memoLength: 0,
+    memo: new Uint8Array(32),
+    reserved: new Uint8Array(15),
+  });
+  const commitment = computeCommitment(
+    contextField,
+    assetField,
+    keys.ownerCommitment,
+    25n,
+    rho,
+  );
+  const created = await createOutputPackage(
+    keys.hpkePublicKey,
+    diversifier,
+    plaintext,
+    contextHash,
+    commitment,
+    actionNonce,
+    0,
+  );
+
+  const subtle = globalThis.crypto.subtle;
+  const originalDeriveBits = subtle.deriveBits.bind(subtle);
+  let x25519Derivations = 0;
+  subtle.deriveBits = async (...args) => {
+    x25519Derivations += 1;
+    if (x25519Derivations === 2) {
+      throw new Error('simulated native shared-secret failure');
+    }
+    return originalDeriveBits(...args);
+  };
+  try {
+    const opened = await openRecipientEnvelope(
+      keys.hpkePrivateKey,
+      created.recipientEnvelope,
+      contextHash,
+      contextField,
+      assetField,
+      commitment,
+      actionNonce,
+      0,
+      keys.baseOwnerCommitment,
+    );
+    assert.notEqual(opened, null);
+    assert.equal(opened?.value, 25n);
+    assert.ok(x25519Derivations >= 2);
+  } finally {
+    subtle.deriveBits = originalDeriveBits;
+  }
 });
 
 test('X25519 rejects low-order public keys before tag comparison', async () => {

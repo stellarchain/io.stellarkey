@@ -168,9 +168,19 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
         const ct = recipientEnvelope.subarray(37, 181);
         diversified = await deriveDiversifiedScanningKeys(recipientHpkeSk, diversifier);
         const recipientPublicKey = diversified.hpkePublicKey;
-        sharedSecret = diversified.nativePrivateKey
-            ? await deriveX25519SharedSecretFromHandle(diversified.nativePrivateKey, encPk)
-            : await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk, 'portable');
+        if (diversified.nativePrivateKey) {
+            try {
+                sharedSecret = await deriveX25519SharedSecretFromHandle(diversified.nativePrivateKey, encPk);
+            }
+            catch {
+                // Native X25519 can be present but incomplete or fail transiently. The
+                // still-owned scalar keeps scanning lossless through the reviewed path.
+                sharedSecret = await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk, 'portable');
+            }
+        }
+        else {
+            sharedSecret = await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk, 'portable');
+        }
         if (viewTag !== deriveViewTag(sharedSecret, contextHash, encPk, recipientPublicKey))
             return null;
         const ownerCommitment = computeDiversifiedOwnerCommitment(baseOwnerCommitment, diversifier);

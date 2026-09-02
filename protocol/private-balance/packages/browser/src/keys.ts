@@ -179,8 +179,11 @@ export async function deriveDiversifiedScanningKeys(
     let nativePrivateKey: X25519PrivateKeyHandle | undefined;
     let hpkePublicKey: Uint8Array;
     try {
-      nativePrivateKey = await importX25519PrivateKey(hpkePrivateKey);
-      hpkePublicKey = await deriveX25519PublicKeyFromHandle(nativePrivateKey);
+      const candidate = await importX25519PrivateKey(hpkePrivateKey);
+      hpkePublicKey = await deriveX25519PublicKeyFromHandle(candidate);
+      // Publish the handle only after both native operations succeed. A browser
+      // with partial X25519 support must stay entirely on the portable path.
+      nativePrivateKey = candidate;
     } catch {
       hpkePublicKey = deriveX25519PublicKey(hpkePrivateKey);
     }
