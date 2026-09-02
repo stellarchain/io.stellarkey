@@ -2,8 +2,9 @@
 
 ## Current status
 
-The deployed testnet preview uses single-party development proving material. No file in this
-directory is testnet-beta, audit, production, or mainnet approval. A public multi-contributor phase-2 ceremony and an
+The replacement protocol is not currently deployed. Its local candidate uses single-party
+development proving material. No file in this directory is testnet-beta, audit, production, or
+mainnet approval. A public multi-contributor phase-2 ceremony and an
 independent transcript verification are mandatory before a testnet beta can hold external funds.
 Mainnet requires a separate go/no-go record and a newly approved ceremony; testnet artifacts are
 never promoted automatically.
@@ -14,14 +15,14 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 23,437 (machine value: `23437`) |
+| R1CS constraints | 14,876 (machine value: `14876`) |
 | Public inputs | 13 |
-| R1CS SHA-256 | `e9dc8f37a8ffde400c7ed5cd9735857a63f361d183e985fcaaf893b7d62ee199` |
-| Development zkey SHA-256 | `61f74662d0661bbc6efbc7175cdba6d49578a9cc7b45ab930cde672537b8a0b0` |
-| Development verifying-key JSON SHA-256 | `4be924102456ae754069a8d4d24523ed2a76a9e7ca1fffa7238ebefbf0b2f7fd` |
-| Embedded verifying-key binary SHA-256 | `fe28fdd58948e01802fb622768fdf1c77231068225fe92df245fb45e499b443b` |
+| R1CS SHA-256 | `844502934eb783db4ee1489219d3f953c055e59c0e1edbdbe95123935ccd2380` |
+| Development zkey SHA-256 | `5db722e67850d1f980cf308c1d2ca6de70b8ab9265cb8d2ca2dfb951dda394ed` |
+| Development verifying-key JSON SHA-256 | `9a153d99ce8d388db385853e838c70bdad06c374a6c11ddeba007487f96a4a42` |
+| Embedded verifying-key binary SHA-256 | `710015f547274d2a22d15d1c2ecf74d105953551e4e2a6f4a6c21776182561ed` |
 
-These values identify the hash-pinned testnet-preview candidate; they do not make its zkey suitable
+These values identify the hash-pinned local candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
 
 ## Invalidation rule
@@ -100,20 +101,20 @@ Gate B/C contract, recovery, browser-crypto, vault/worker, and transaction-safet
 
 2. Obtain a sufficiently large, independently verified BN254 Powers of Tau transcript. Record its
    origin, download URL, byte length, and SHA-256. Verify it before use. The development setup used
-   the Hermez Powers of Tau 15 transcript, but the final coordinator must revalidate the source and
+   the Hermez Powers of Tau 14 transcript, but the final coordinator must revalidate the source and
    hash rather than trusting a filename.
 
 3. In `protocol/private-balance/circuits`, initialize phase 2 against the frozen R1CS:
 
    ```sh
-   npx --no-install snarkjs groth16 setup build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_0000.zkey
+   npx --no-install snarkjs groth16 setup build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_0000.zkey
    ```
 
 4. Pass each transcript to a contributor through an authenticated channel. Each contributor runs an
    interactive contribution locally and returns the result plus an attestation:
 
    ```sh
-   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_0000.zkey
+   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_0000.zkey
    npx --no-install snarkjs zkey contribute ../ceremony/v1/action_0000.zkey ../ceremony/v1/action_0001.zkey --name="<public contributor name>" -v
    ```
 
@@ -131,7 +132,7 @@ Gate B/C contract, recovery, browser-crypto, vault/worker, and transaction-safet
 6. Verify and export the final key:
 
    ```sh
-   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot15.ptau> ../ceremony/v1/action_final.zkey
+   npx --no-install snarkjs zkey verify build/action.r1cs <verified-pot14.ptau> ../ceremony/v1/action_final.zkey
    npx --no-install snarkjs zkey export verificationkey ../ceremony/v1/action_final.zkey ../ceremony/v1/verification_key.json
    ```
 

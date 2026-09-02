@@ -51,7 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
-| **Private Payments research** | Production-hosted Testnet-only XLM and USDC development preview using explicitly disclosed single-party proving material; Mainnet remains blocked. |
+| **Private Payments research** | Production-hosted replacement artifacts for asset-pinned Testnet XLM and USDC pools; deployment is disabled pending fresh evidence and Mainnet remains blocked. |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 
@@ -80,7 +80,8 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Payments is a production-hosted, development-material preview for Testnet only; Mainnet is refused independently.
+Private Payments has production-hosted development artifacts for Testnet, but no
+replacement pool is currently published; Mainnet is refused independently.
 Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
 the fee-paying Stellar account, and timing remain public. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the

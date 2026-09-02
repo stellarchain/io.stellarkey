@@ -37,8 +37,8 @@ test('hash-pinned development private payments remain behind a Testnet-only lazy
   assert.match(provider, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE/);
   assert.match(
     expectedManifest,
-    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true;$/m,
-    'the exact hash-pinned fixture must be available from production hosting on Testnet',
+    /^export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = false;$/m,
+    'an undeployed replacement protocol must remain unavailable',
   );
   assert.deepEqual(
     privateBalanceAvailability(validateManifest(manifest), 'testnet'),
@@ -60,7 +60,7 @@ test('hash-pinned development private payments remain behind a Testnet-only lazy
       allowDevelopmentFixture: true,
     }),
     { ready: true },
-    'the exact hash-pinned development fixture must be usable only when explicitly allowed',
+    'the availability helper remains testable without enabling the shipped build',
   );
   assert.deepEqual(
     privateBalanceAvailability(

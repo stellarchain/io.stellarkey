@@ -18,12 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated each Private Payments pool and catalogue deployment to one immutable asset, removing caller-selected asset fields from contract actions.
 - Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
-- Replaced the disposable Testnet Private Payments fixture with fresh asset-pinned XLM and USDC pools and regenerated every circuit, contract, client, catalogue, manifest, and proof-vector binding.
+- Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
+- Reduced the Private Payments circuit from 23,437 to 14,876 constraints by removing the dummy lane input and duplicate total range check, deriving output roles, and using the ternary tree; development proving now fits the pinned `pot14` transcript.
+- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
+- Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 
 ### Removed
 
 - Removed support for the previous `tks1` and `sks1` Private Payments address encodings; existing testnet private state must be recreated.
+- Removed compatibility with the previous binary-tree Private Payments state and deployment artifacts.
 
 ### Fixed
 
@@ -62,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.
+- Persisted one replay nullifier for deposits instead of two while keeping exact proof replay impossible; transfers and withdrawals continue to persist both.
+- Shared the canonical ternary Merkle hash and empty roots between the protocol crate and pool contract, with Poseidon2 length-IV separation documented as a consensus rule.
+- Disabled production-hosted Testnet Private Payments deployment use until fresh deployment evidence matches the replacement circuit, verifier, contract, and manifest hashes; Mainnet remains refused.
+
 - Replaced source-text merchant security assertions with executable boundaries covering charge voiding, retained-record access, owner reauthentication, and every Merchant-to-Wallet navigation decision.
 - Derived Private Payments manifest proving-key verification evidence from a successful pinned `snarkjs zkey verify` run instead of a literal claim.
 - Required complete generated-artifact toolchains and the locked Private Payments Rust workspace in CI and tagged releases, and scheduled the ignored 100,000-action recovery model as a separate Gate B workflow.
@@ -94,7 +103,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Required current staff authority for retained merchant views and exports, fresh owner authorization before leaving Merchant Mode, writer ownership before settlement polling, and active counter-code status before constructing printable payment artifacts.
 - Revoked password and passkey unlocks that finish after a lock, and serialized backup restore against an early, cross-tab reset epoch so erased credentials cannot be resurrected.
 - Bound transaction finality, merge recovery, expiry decisions, and merchant settlement reads to canonical SDF Horizon; configurable endpoints can still submit transactions but cannot fabricate confirmation or unlock retries.
-- Made the exact hash-pinned development Private Payments deployment available from production-hosted StellarKey on Testnet; Mainnet remains refused and the single-party proving setup remains explicitly disclosed.
 - Moved offline XDR signing into the vault's generation-revocable, key-wiping signer scope while retaining fresh password and live authority checks.
 - Rejected imported transaction envelopes with a zero maximum time so cosigner authorization cannot be retained indefinitely.
 - Closed secret-bearing paper-wallet print windows when their parent modal closes or the wallet locks, resets, or receives a peer-tab lock.

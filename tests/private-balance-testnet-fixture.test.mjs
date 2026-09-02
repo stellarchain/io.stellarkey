@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
@@ -23,14 +22,14 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the committed testnet deployment preserves exact deployment evidence with current release provenance', () => {
+test('retired testnet evidence is not published as the replacement protocol', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
   );
   const fixtureNames = readdirSync(fixtureDirectory)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
-  assert.equal(fixtureNames.length, 2, 'keep exactly one current deployment evidence file per asset');
+  assert.equal(fixtureNames.length, 2, 'retain the two historical deployment records');
   const fixtures = fixtureNames.map(name =>
     JSON.parse(readFileSync(new URL(name, fixtureDirectory), 'utf8')),
   );
@@ -39,61 +38,16 @@ test('the committed testnet deployment preserves exact deployment evidence with 
     new URL('../public/protocol/private-balance/v1/catalogue.json', import.meta.url),
     'utf8',
   ));
-  assert.equal(catalogue.deployments.length, 2);
-
-  for (const deployment of catalogue.deployments) {
-    const fixture = fixtures.find(candidate => candidate.assetContractId === deployment.asset.contractId);
-    assert.ok(fixture, `missing evidence for ${deployment.id}`);
-    const manifestBytes = readFileSync(
-      new URL(`../public${deployment.manifestUrl}`, import.meta.url),
-    );
-    const manifest = JSON.parse(manifestBytes);
-    const { release: publishedRelease, ...publishedDeployment } = manifest;
-    const { release: deployedRelease, ...recordedDeployment } = fixture.manifest;
-    assert.deepEqual(publishedDeployment, recordedDeployment);
-    for (const key of [
-      'contractWasmSha256',
-      'circuitSourceSha256',
-      'poseidonParametersSha256',
-      'hpkePackageVersion',
-      'hpkeDependencyIntegritySha256',
-      'powersOfTauSha256',
-      'ceremonyTranscriptRoot',
-      'auditReports',
-      'deploymentTransactions',
-      'allowedEnvironment',
-    ]) {
-      assert.deepEqual(
-        publishedRelease[key],
-        deployedRelease[key],
-        `published release must preserve deployed ${key}`,
-      );
-    }
-    assert.equal(manifest.artifactVersion, '1.0.2-dev-fixture');
-    assert.equal(manifest.status, 'development');
-    assert.equal(manifest.poolContractId, fixture.poolContractId);
-    assert.equal(manifest.assetContractId, fixture.assetContractId);
-    assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
-    assert.match(manifest.release.contractSourceCommit, /^[0-9a-f]{40}$/);
-    assert.match(manifest.release.toolchainLockSha256, /^[0-9a-f]{64}$/);
-    assert.equal(
-      manifest.release.powersOfTauSha256,
-      '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
-    );
-    assert.equal(manifest.release.zkeyVerified, true);
-    assert.equal(
-      deployment.manifestSha256,
-      createHash('sha256').update(manifestBytes).digest('hex'),
-    );
-  }
-
-  const rootManifest = readFileSync(
+  assert.deepEqual(catalogue.deployments, []);
+  const manifest = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
-  );
-  const xlmManifest = readFileSync(
-    new URL('../public/protocol/private-balance/v1/xlm/manifest.json', import.meta.url),
-  );
-  assert.deepEqual(rootManifest, xlmManifest, 'the compatibility manifest must identify the XLM pool');
+    'utf8',
+  ));
+  assert.equal(manifest.status, 'development');
+  assert.equal(manifest.deploymentCheckpoint.ledger, 0);
+  for (const fixture of fixtures) {
+    assert.notEqual(fixture.wasmSha256, manifest.release.contractWasmSha256);
+  }
 });
 
 test('testnet fixture defaults to a non-mutating plan and requires explicit live consent', () => {
@@ -188,13 +142,13 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
     poseidon2ParameterHash: '06'.repeat(32),
     circuitHash: '07'.repeat(32),
     verificationKeyHash: '08'.repeat(32),
-    treeDepth: 32,
+    treeDepth: 17,
     rootWindowLedgers: 1_440,
     pageCapacity: 32,
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    'd3a8883e40e91c86351999b1470e3a22d62e7584955ef63c5ed8b45a422b621c',
+    '0dd48d20786c04ce28e69351e0005dd40aaf68f5f1989f8311f2569065a86563',
   );
 });
 

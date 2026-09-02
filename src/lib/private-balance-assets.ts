@@ -128,7 +128,7 @@ export function privateBalanceAssetKey(
 export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCatalogue {
   const value = object(raw, 'Private Balance catalogue');
   if (value.schemaVersion !== 1) throw new Error('Unsupported Private Balance catalogue schemaVersion.');
-  if (!Array.isArray(value.deployments) || value.deployments.length === 0 || value.deployments.length > MAX_DEPLOYMENTS) {
+  if (!Array.isArray(value.deployments) || value.deployments.length > MAX_DEPLOYMENTS) {
     throw new Error('Private Balance catalogue deployments are invalid.');
   }
   const ids = new Set<string>();

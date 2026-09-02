@@ -19,14 +19,17 @@ the password, verify it in a fresh browser profile, and never send it to support
 
 The wallet seed can derive the same deployment-bound viewing key. Seed-only
 recovery reads the canonical on-chain archive from page zero, verifies every
-page and record hash, rebuilds the Merkle tree, opens owned ciphertext, and
-checks public nullifiers. It restores spendable value and exact owned amounts,
-but an external recipient address or local memo that existed only in a lost
-backup may remain unavailable.
+page and record hash, rebuilds the authenticated incremental Merkle store,
+opens owned ciphertext, authenticates outgoing envelopes, and checks public
+nullifiers. It restores spendable value and exact owned amounts. For outgoing
+transfers it also restores the external recipient fingerprint and memo from
+seed plus chain data; the full reusable private address is intentionally not
+retained as activity metadata.
 
 Old persistent archive pages may need a normal Stellar restore-footprint
-transaction. The wallet restores at most four sequential, exact page keys per
-batch, shows the restoration fee separately, applies a cumulative fee ceiling,
+transaction. The wallet freshly simulates contiguous exact keys and selects the
+largest safe prefix within the configured footprint and 80% resource margin,
+shows the restoration fee separately, applies a cumulative fee ceiling,
 waits for final status, rereads each page directly, and persists an encrypted
 resume cursor. It never restores temporary known-root entries.
 
