@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
 import { formatTrezorAddress } from "@/lib/address-display";
+import { MAX_ACCOUNT_LABEL_CHARS } from "@/lib/backup-schema";
 import type { AccountMeta } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, Field, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
 
 export function RenameAccountModal({
   account,
@@ -29,13 +30,19 @@ function RenameAccountInner({
   const { renameAccount } = useWalletIdentity();
   const { toast } = useToast();
   const [label, setLabel] = useState(account.label);
+  const [error, setError] = useState<string | null>(null);
 
   function handleSave() {
     if (label.trim()) {
-      renameAccount(account.id, label.trim());
-      triggerHaptic("success");
-      toast("Account renamed", "success");
-      onClose();
+      setError(null);
+      try {
+        renameAccount(account.id, label.trim());
+        triggerHaptic("success");
+        toast("Account renamed", "success");
+        onClose();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Account label could not be saved.");
+      }
     }
   }
 
@@ -83,12 +90,15 @@ function RenameAccountInner({
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. 💼 Treasury, ⚡ Trading"
+            maxLength={MAX_ACCOUNT_LABEL_CHARS}
             autoFocus
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSave();
             }}
           />
         </Field>
+
+        {error && <ErrorText message={error} />}
 
         <div className="grid grid-cols-2 gap-3 pt-2">
           <Button variant="ghost" onClick={onClose}>

@@ -23,6 +23,7 @@ import {
   isEncryptedPayloadValue,
   isRawKeyEncryptedPayloadValue,
   isRecord,
+  MAX_ACCOUNT_LABEL_CHARS,
   type FullBackupPayload,
 } from "./backup-schema";
 import { getMerchantRepository } from "./merchant/repository";
@@ -304,20 +305,26 @@ function vaultRevision(vault: VaultFile): number {
 
 function persist(vault: VaultFile, options: { create?: boolean } = {}): void {
   const live = readVault();
+  let nextRevision: number;
   if (options.create) {
     if (live) throw new VaultRevisionConflictError();
-    vault.revision = 0;
+    nextRevision = 0;
   } else {
     if (!live || vaultRevision(live) !== vaultRevision(vault)) {
       throw new VaultRevisionConflictError();
     }
-    vault.revision = vaultRevision(vault) + 1;
+    nextRevision = vaultRevision(vault) + 1;
   }
-  const serialized = JSON.stringify(vault);
+  const nextVault = { ...vault, revision: nextRevision };
+  if (!decodeVaultFile(nextVault)) {
+    throw new Error("The wallet change would create an unreadable vault and was not saved.");
+  }
+  const serialized = JSON.stringify(nextVault);
   window.localStorage.setItem(VAULT_KEY, serialized);
   if (window.localStorage.getItem(VAULT_KEY) !== serialized) {
     throw new Error("Browser storage did not retain the encrypted vault.");
   }
+  vault.revision = nextRevision;
 }
 
 function replacePersistedVault(previous: VaultFile, next: VaultFile): void {
@@ -1063,7 +1070,11 @@ export function updateAccountLabel(accountId: string, newLabel: string): VaultFi
   if (!vault) return null;
   const acc = vault.accounts.find((a) => a.id === accountId);
   if (!acc) return null;
-  acc.label = newLabel.trim() || acc.label;
+  const label = newLabel.trim();
+  if (label.length > MAX_ACCOUNT_LABEL_CHARS) {
+    throw new Error(`Account label must be ${MAX_ACCOUNT_LABEL_CHARS} characters or fewer.`);
+  }
+  acc.label = label || acc.label;
   persist(vault);
   return vault;
 }
