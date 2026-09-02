@@ -85,7 +85,7 @@ replacement pool is currently published; Mainnet is refused independently.
 Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
 the fee-paying Stellar account, and timing remain public. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
-[Private Balance security model](docs/private-balance.md). The single-party
+[Private Balance whitepaper](docs/private-balance.md). The single-party
 development key passes circuit/Powers-of-Tau compatibility verification, but
 that does not make its setup ceremony-secure. A public multi-party ceremony,
 independent review, and redeployment are required before real-value or Mainnet use.
@@ -220,7 +220,7 @@ disabled by product requirement and covered by the mobile release gate.
 | [Support](SUPPORT.md) | Help boundaries and recovery expectations |
 | [Contributing](CONTRIBUTING.md) | Development workflow, DCO, and review expectations |
 | [Merchant Mode operations](docs/merchant-mode.md) | Setup, daily operations, recovery, and limitations |
-| [Private Balance model](docs/private-balance.md) | Development status, privacy boundary, storage, recovery, and incident links |
+| [Private Balance whitepaper](docs/private-balance.md) | Implemented protocol, privacy boundary, measurements, recovery, and deployment status |
 | [Testing guide](docs/testing.md) | Automated and physical-device verification |
 | [Release checklist](docs/release-checklist.md) | Security, recovery, device, and mainnet release gates |
 | [Deployment runbook](docs/production-deployment.md) | Immutable Cloudflare Pages deployment and rollback |
