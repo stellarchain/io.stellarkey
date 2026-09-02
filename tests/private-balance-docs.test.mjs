@@ -25,7 +25,8 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.match(product, /does not make.*safe for real value/is);
   assert.match(product, /Mainnet.*reject/is);
   assert.match(product, /no application backend/i);
-  assert.match(product, /fee-paying.*public|public.*fee-paying/is);
+  assert.match(product, /transaction source.*public|public.*transaction source/is);
+  assert.match(product, /self-submits.*public Stellar account|public Stellar account.*self-submits/is);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);
   assert.match(product, /RPC.*IP|IP.*RPC/is);
   assert.match(recovery, /encrypted backup/i);
@@ -151,6 +152,18 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
   for (const [file, expectedDecision] of decisions) {
     const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);
     assert.match(decision, /## Status\s+Rejected/is);
+    assert.match(decision, expectedDecision);
+    assert.match(spec, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
+  }
+
+  const operationalDecisions = [
+    ['0005-relayer-availability.md', /fee-bump.*does not solve|does not solve.*fee-bump/is, /Accepted/i],
+    ['0006-association-sets.md', /4,573.*constraints/is, /Rejected/i],
+    ['0007-stealth-subsystem.md', /complementary/is, /Accepted/i],
+  ];
+  for (const [file, expectedDecision, status] of operationalDecisions) {
+    const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);
+    assert.match(decision, new RegExp(`## Status\\s+${status.source}`, 'is'));
     assert.match(decision, expectedDecision);
     assert.match(spec, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'));
   }

@@ -13,8 +13,8 @@ export function PrivacyDisclosure({ compact = false }: { compact?: boolean }) {
           <IconEyeOff size={17} />
         </span>
         <p className="text-[13px] leading-relaxed text-neutral-300">
-          <span className="font-semibold text-white">Private:</span> the amount, the recipient,
-          and the memo stay encrypted.
+          <span className="font-semibold text-white">Private internal sends:</span> the amount,
+          recipient, and memo stay encrypted.
         </p>
       </div>
       <div className="flex items-start gap-3">
@@ -22,9 +22,9 @@ export function PrivacyDisclosure({ compact = false }: { compact?: boolean }) {
           <IconEye size={16} />
         </span>
         <p className="text-[12.5px] leading-relaxed text-neutral-400">
-          <span className="font-semibold text-neutral-200">Public:</span> money moving in or out,
-          network fees paid by your Stellar account, and timing. Privacy grows with more
-          independent activity — it is context, not a guarantee.
+          <span className="font-semibold text-neutral-200">Public:</span> deposits and withdrawals,
+          timing, and the Stellar account that submits and pays network fees. Privacy grows with
+          more independent activity — it is context, not a guarantee.
         </p>
       </div>
     </div>

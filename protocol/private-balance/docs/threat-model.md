@@ -18,7 +18,10 @@
 ## 2. Public information and correlation
 
 The pool, pinned asset, action time, proof, anchor root, nullifiers, commitments, encrypted packages,
-and fee-paying Stellar account are public. Deposits and withdrawals also reveal amount and public
+and transaction source are public. The development client self-submits transfers and withdrawals,
+so that source is the user's public Stellar account and directly links the shielded action to it.
+A fee-bump sponsor changes only the outer fee source; it does not hide the inner transaction source.
+Deposits and withdrawals also reveal amount and public
 endpoint. Pool size, timing, repeated public endpoints, address reuse outside the chain, voluntary
 disclosure, or a small anonymity set can correlate activity. Fixed two-input/two-output actions hide
 lane roles; they do not hide the public action kind or guarantee anonymity.
@@ -62,7 +65,9 @@ migration exists for this replacement protocol.
 
 ## 5. Availability and recovery boundary
 
-The protocol has no StellarKey backend, relayer, or indexer. Availability depends on a usable
+The protocol has no StellarKey backend, operated relayer, or indexer. The contract accepts
+third-party submission and proof-bound relayer fees, but the current client does not use a relay.
+Availability depends on a usable
 Stellar RPC, retained or restorable ledger state, sufficient public XLM for fees, browser storage,
 and access to the proving artifacts. Independent RPC disagreement intentionally disables spending.
 
@@ -81,5 +86,6 @@ ledger confirmation.
 
 The protocol does not hide network metadata, protect against endpoint-wide traffic analysis,
 guarantee a minimum anonymity set, undo public deposits/withdrawals, recover a deliberately malformed
-ciphertext, recover a lost seed and lost encrypted backup together, or make Testnet development
+ciphertext, prove membership in a curated association set, recover a lost seed and lost encrypted
+backup together, or make Testnet development
 proving material safe for real funds.

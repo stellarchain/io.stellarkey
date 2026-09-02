@@ -15,7 +15,7 @@ not real value or Mainnet.
 
 - Field: BN254 scalar field `Fr`, modulus
   `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-- Proof: Groth16 with 13 public inputs. The current `--O2` circuit has 14,876 constraints and fits
+- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 14,574 constraints and fits
   a `2^14` Powers-of-Tau transcript.
 - Hash: Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5` S-box, 8 full rounds, 56
   partial rounds, and the implementation's length IV `N * 2^64`.
@@ -26,10 +26,14 @@ not real value or Mainnet.
 All byte encodings, field conversions, Poseidon2 parameters, envelope lengths, and deployment
 constants are pinned by the manifest and cross-language conformance vectors.
 
-Consensus-affecting review decisions are recorded in
+Consensus and operational review decisions are recorded in
 [`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
 [`0003-multi-asset-pool.md`](decisions/0003-multi-asset-pool.md), and
-[`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md).
+[`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md),
+with the relayer, association-set, and stealth-subsystem boundaries in
+[`0005-relayer-availability.md`](decisions/0005-relayer-availability.md),
+[`0006-association-sets.md`](decisions/0006-association-sets.md), and
+[`0007-stealth-subsystem.md`](decisions/0007-stealth-subsystem.md).
 
 ## 3. Notes and commitments
 
@@ -90,8 +94,12 @@ selects these external flows:
 - Transfer: value moves only between private notes; public deposit and withdrawal are zero.
 - Withdraw: public destination and amount leave the pool; one or two private inputs may be real.
 
-The proof also binds the network, realm, pool, asset, current/anchor root, action kind, action
-binding, commitments, and nullifiers. The contract independently validates canonical non-zero,
+The eleven public signals, in verifier order, are the deployment context field, pinned asset field,
+action kind, anchor root, public value, relayer fee, canonical action field, two nullifiers, and two
+output commitments. The action field is the canonical external hash of the network, realm, pool,
+asset, nonce, roots, complete output packages, public endpoints, and relayer data. Its explicit
+non-zero circuit constraint gives it a non-zero Groth16 input coefficient; mutating it invalidates a
+proof. The contract derives that field itself and independently validates canonical non-zero,
 distinct slots before accepting the proof.
 
 ## 7. Encryption and recovery transcript
@@ -114,8 +122,10 @@ record chain, root, and action count before treating a balance as current.
 
 Persistent archive entries can expire into Stellar state archival. Recovery discovers a contiguous
 missing prefix, simulates exact restore footprints, selects the largest safe batch within configured
-resource and fee margins, requires reviewed authorization, confirms the transaction hash, rereads
-the restored records, and saves an encrypted resume cursor. Restoration fees and RPC retention are
+resource and fee margins, requires reviewed authorization, confirms the transaction hash, and
+reports in-memory progress after every batch. The canonical sync then rereads the restored records
+and commits an authenticated encrypted checkpoint. Interruption before that sync causes a safe
+rescan rather than trusting a separately persisted restoration cursor. Restoration fees and RPC retention are
 therefore liveness dependencies, not confidentiality assumptions.
 
 The client corroborates the network, pinned deployment checkpoint, overlapping ledger hashes, and

@@ -78,6 +78,17 @@ Promote the same bytes to production. On physical iPhone/iPad and a desktop brow
 
 Private Payments must remain `development`, Testnet-only, and explicitly disclosed while production-hosted builds permit the exact pinned development fixture. `snarkjs zkey verify` confirms circuit/Powers-of-Tau compatibility; it does not make the single-party setup ceremony-secure. Mainnet and any real-value promotion remain blocked until the same immutable archive contains a reviewed public ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
 
+The development client also self-submits every shielded transfer and withdrawal from the user's
+public Stellar account. That source is visible on chain and can deanonymise the spend. Fee-bump
+sponsorship does not remove the inner source. Beta remains blocked until an operated relay has a
+reviewed request/retention policy, abuse limits, fee rules, submission-recovery protocol, and tested
+multi-operator availability; the client must never silently fall back to self-submission.
+
+Do not add `Cross-Origin-Embedder-Policy` based on desktop estimates. Cross-origin isolation may
+enable multithreaded proving, but it can also break wallet and hardware integrations whose resources
+do not opt into CORP. Adoption requires a complete subresource audit and before/after p50, p95, peak-
+memory, cancellation, popup, and hardware checks on the supported physical browser/device matrix.
+
 ## 6. External probes and monitoring
 
 Run external probes from more than one network for TLS validity, DNS resolution, redirect correctness, HTML availability, `release.json`, `manifest.webmanifest`, `sw.js`, static chunk availability, required response headers, and `security.txt` expiry. Alert on release-commit drift, certificate or domain expiry, changed nameservers, CSP report spikes where reporting is configured, and persistent Horizon/RPC reachability failures.

@@ -164,7 +164,7 @@ function SplitDiagram() {
         <rect x="24" y="236" width="312" height="148" rx="12" fill={ink.panel} stroke={ink.goldLine} />
         <text x="180" y="260" textAnchor="middle" fontSize="12.5" fill={ink.gold}>the public ledger sees</text>
         <text x="48" y="286" fontSize="11" fill={ink.dim}>· a contract interaction</text>
-        <text x="48" y="305" fontSize="11" fill={ink.dim}>· the fee account and its fee</text>
+        <text x="48" y="305" fontSize="11" fill={ink.dim}>· the transaction source and fee</text>
         <text x="48" y="324" fontSize="11" fill={ink.dim}>· timing</text>
         <text x="48" y="343" fontSize="11" fill={ink.dim}>· deposits and withdrawals, with amounts</text>
         <text x="48" y="362" fontSize="11" fill={ink.dim}>· an encrypted package it cannot open</text>
@@ -183,7 +183,7 @@ function SendPipelineDiagram() {
     {
       n: "02 · prove — on this device",
       a: "builds a Groth16 proof over BN254",
-      b: "22,408 constraints · nothing uploaded",
+      b: "14,574 constraints · nothing uploaded",
     },
     {
       n: "03 · verify — on Stellar",
@@ -265,7 +265,7 @@ export default function PrivatePaymentsPage() {
         <tr><td className="g">private memo</td><td>Encrypted. Up to 32 bytes, and it survives recovery.</td></tr>
         <tr><td className="g">which notes were spent</td><td>Encrypted. The ledger stores commitments and ciphertext; spend selection stays on the device.</td></tr>
         <tr><td className="g">money moving in or out</td><td>Public. Deposits and withdrawals show their amount, endpoint, and timing, like any Stellar payment.</td></tr>
-        <tr><td className="g">the fee account and its fee</td><td>Public. Every private send is submitted and paid for by a Stellar account.</td></tr>
+        <tr><td className="g">the transaction source and fee</td><td>Public. The development client self-submits from your Stellar account; fee sponsorship alone does not hide that inner source.</td></tr>
         <tr><td className="g">timing and activity</td><td>Public. When the shared pool was used, and how often, is visible to anyone.</td></tr>
         </tbody></table></div>
         <div className="tbl" style={{ padding: "1.25rem" }}><SplitDiagram /></div></section>
@@ -274,21 +274,21 @@ export default function PrivatePaymentsPage() {
         <p>The private balance is a set of notes — think unspent banknotes rather than an account balance. A note is a 128-byte record carrying a 63-bit value, its owner, a random seed, and an optional 32-byte memo. The vocabulary, defined once and used throughout:</p>
         <div className="deflist">
         <div><dt>commitment</dt><dd>A Poseidon2 hash of a note (BN254, width 4, domain-tagged). The ledger stores the hash; the note itself never appears on-chain.</dd></div>
-        <div><dt>Merkle tree</dt><dd>The pool&apos;s append-only binary tree of commitments, 32 levels deep — room for 2³² notes. Owning a note means being able to prove a path from its commitment to a recent root, without pointing at which leaf.</dd></div>
+        <div><dt>Merkle tree</dt><dd>The pool&apos;s append-only ternary tree of commitments, 17 levels deep — room for 129,140,163 notes. Owning a note means being able to prove a path from its commitment to a recent root, without pointing at which leaf.</dd></div>
         <div><dt>nullifier</dt><dd>A second domain-tagged Poseidon2 hash, derivable only by a note&apos;s owner and revealed exactly once, when the note is spent. The contract keeps every nullifier it has seen; a repeat is a double-spend and is refused. The nullifier cannot be linked back to its commitment by an observer.</dd></div>
         <div><dt>Groth16</dt><dd>The proof system: a succinct zero-knowledge proof over the BN254 pairing curve, small enough for a contract to verify cheaply. Zero-knowledge means the verifier learns that the statement is true and nothing else.</dd></div>
         <div><dt>recipient envelope</dt><dd>A 181-byte HPKE ciphertext (RFC 9180: X25519 key agreement, HKDF-SHA256, AES-128-GCM) that carries the new note to its owner. Only the matching viewing key can open it.</dd></div>
         </div>
-        <p>Every operation — deposit, private transfer, withdrawal — is one action with the same shape: up to two notes spent, up to two notes created, and a public value leg that is zero for a private transfer. That uniformity matters; an observer sees the same 213-byte output packages either way.</p>
+        <p>Every operation — deposit, private transfer, withdrawal — is one action with the same shape: two input lanes, two output lanes, and a public value leg that is zero for a private transfer. Real and randomized dummy notes occupy the same fixed 370-byte output packages.</p>
         <ol className="prose-list">
         <li>The wallet selects the notes to spend. The proof anchors to any pool root from the last 1,440 ledgers, roughly the last two hours, so the transaction does not reveal how fresh your notes are.</li>
-        <li>An isolated worker builds the Groth16 proof on this device: the spent notes sit in the tree under the anchor root, the nullifiers are correctly derived, values balance in and out, and both output commitments are well-formed. The circuit is 22,408 constraints with 13 public inputs, and nothing about the amount or the recipient leaves the device — there is no server to send it to.</li>
-        <li>The transaction goes straight to the Stellar RPC endpoint you configured. The pool contract verifies the proof, checks both nullifiers are unseen, appends both commitments to the tree, and records the encrypted output packages.</li>
+        <li>An isolated worker builds the Groth16 proof on this device: the spent notes sit in the tree under the anchor root, the nullifiers are correctly derived, values balance in and out, and both output commitments are well-formed. The circuit is 14,574 constraints with 11 public inputs, and no private proof witness is uploaded.</li>
+        <li>The development client self-submits the transaction through the Stellar RPC endpoint you configured. The public inner transaction source can link the action to your account; a fee-bump sponsor does not remove that link. The pool contract verifies the proof, checks both nullifiers are unseen, appends both commitments to the tree, and records the encrypted output packages.</li>
         <li>The recipient&apos;s wallet scans the pool&apos;s public record and trial-decrypts each envelope with its incoming viewing key. The one addressed to them opens; the rest are noise. There is no notification service, because a notification service would have to know.</li>
         </ol>
         <div className="tbl" style={{ padding: "1.25rem" }}><SendPipelineDiagram /></div>
         <p>None of the proving machinery is taken on trust. Every artifact is pinned by SHA-256 in a manifest the app ships publicly at <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>/protocol/private-balance/v1/manifest.json</span>, downloaded once, verified, kept locally, and reused. The shipped figures:</p>
-        <div className="spec"><div><DocChip /><b>Proof system</b><span>Groth16 over BN254 · 22,408 constraints · 13 public inputs</span></div><div><DocFile /><b>Hashing</b><span>Poseidon2 (BN254, t=4) commitments and nullifiers · depth-32 tree</span></div><div><DocKey /><b>Proving key</b><span>3,934,162 bytes compressed on the wire · 14,169,632 bytes kept locally</span></div><div><DocCheck /><b>Witness builder</b><span>183,221-byte WASM module, the only code the page may compile to WebAssembly</span></div></div>
+        <div className="spec"><div><DocChip /><b>Proof system</b><span>Groth16 over BN254 · 14,574 constraints · 11 public inputs</span></div><div><DocFile /><b>Hashing</b><span>Poseidon2 (BN254, t=4) commitments and nullifiers · ternary depth-17 tree</span></div><div><DocKey /><b>Proving key</b><span>2,427,581 bytes compressed on the wire · 8,971,612 bytes kept locally</span></div><div><DocCheck /><b>Witness builder</b><span>152,217-byte WASM module, the only code the page may compile to WebAssembly</span></div></div>
         <p>A SHA-256 mismatch on any artifact stops the feature rather than degrading it, and the content-security policy that limits WebAssembly to this hash-verified prover is documented on the Security page.</p></section>
 
         <section id="private-receiving"><h2><DocFingerprint />Receiving privately</h2>
@@ -307,8 +307,8 @@ export default function PrivatePaymentsPage() {
         <p className="cap-line">the deal, stated before you turn it on · a shielded receive · a private send review</p></section>
 
         <section id="private-recovery"><h2><DocCycle />Recovery</h2>
-        <p>Your recovery phrase is enough, because every private key in this feature is derived from it deterministically, via HKDF, and bound to the specific deployment — the network, realm, and pool contract are hashed into the derivation, so testnet keys are not Mainnet keys and a key can never be replayed against the wrong pool. On a new device the wallet rederives the viewing key, walks the pool&apos;s public record page by page, trial-decrypts every envelope, and rebuilds the balance while verifying each commitment and nullifier against the chain. No server holds a copy of anything.</p>
-        <p>Two caveats. Restoring can itself cost network fees, shown before you approve them. And the labels on payments you sent — which memo went to whom — live only in your encrypted local backup, not on the chain: the phrase recovers the money, the backup recovers the story. Export the backup.</p></section>
+        <p>Your recovery phrase is enough, because every private key in this feature is derived from it deterministically, via HKDF, and bound to the specific deployment — the network, realm, and pool contract are hashed into the derivation, so Testnet keys are not Mainnet keys and a key can never be replayed against the wrong pool. On a new device the wallet rederives the viewing keys, walks the pool&apos;s authenticated records in order, opens incoming and outgoing envelopes, and rebuilds the balance while checking the transcript, tree, commitments, and nullifiers against the chain.</p>
+        <p>Two caveats. Archived records may require a reviewed, fee-bearing restoration transaction before they can be read; the wallet batches only freshly simulated contiguous records within its safety margins. Seed recovery reconstructs sent-payment recipient fingerprints and memos from outgoing envelopes, but the full reusable recipient address remains local convenience data and still depends on the encrypted backup.</p></section>
 
         <section id="private-trust"><h2><DocScales />What you must trust, and what you must not</h2>
         <p>A privacy claim is a trust claim. Here is exactly where this one rests.</p>

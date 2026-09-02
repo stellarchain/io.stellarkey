@@ -13,7 +13,7 @@ test('private balance surfaces use factual privacy claims and exact amount forma
   const copy = `${card}\n${setup}\n${disclosure}\n${status}`;
 
   assert.doesNotMatch(copy, /anonymous|untraceable|100% confidential|metadata-free|secretly/i);
-  assert.match(disclosure, /network fees paid by your Stellar account/i);
+  assert.match(disclosure, /Stellar account that submits and pays network fees/i);
   assert.match(copy, /timing/i);
   assert.match(disclosure, /independent activity/i);
   assert.match(disclosure, /not a guarantee/i);

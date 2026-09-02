@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 64-output parallel batches that retain record-order state updates.
 - Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
+- Disclosed that the development Private Payments client self-submits transfers and withdrawals from the user's public Stellar account; fee-bump sponsorship alone does not hide that inner transaction source.
+- Re-pinned development proof generation to the PSE degree-14 Perpetual Powers of Tau transcript after its hash and complete contribution/beacon chain verified and the prior endpoint stopped serving its authenticated artifact.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 
 ### Removed
