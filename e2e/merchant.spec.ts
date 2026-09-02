@@ -254,21 +254,39 @@ async function openStaffSettings(page: Page) {
 }
 
 async function openMerchantMode(page: Page) {
-  const merchantTab = page
-    .getByRole("navigation", { name: "Tabs" })
-    .getByRole("button", { name: "Merchant" });
+  const tabs = page.getByRole("navigation", { name: "Tabs" });
+  const merchantTab = tabs.getByRole("button", { name: "Merchant" });
   if (await merchantTab.isVisible().catch(() => false)) {
     await merchantTab.click();
     return;
   }
-  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
+
+  const settingsTab = tabs.getByRole("button", { name: "Settings" });
   const openTill = page.getByRole("button", { name: /^Open till/ });
-  await merchantTab.or(openTill).first().waitFor({ state: "visible" });
-  if (await merchantTab.isVisible().catch(() => false)) {
-    await merchantTab.click();
+  const merchantDestination = merchantTab.or(openTill).first();
+
+  // After restoring a backup, the server-rendered tab shell can become visible
+  // just before React attaches its handlers. Retry the navigation itself so a
+  // click received by that non-interactive shell cannot make this helper flaky.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await settingsTab.click();
+    try {
+      await merchantDestination.waitFor({
+        state: "visible",
+        timeout: attempt === 2 ? 15_000 : 3_000,
+      });
+    } catch (cause) {
+      if (attempt === 2) throw cause;
+      continue;
+    }
+
+    if (await merchantTab.isVisible().catch(() => false)) {
+      await merchantTab.click();
+      return;
+    }
+    await openTill.click();
     return;
   }
-  await openTill.click();
 }
 
 async function returnToTill(page: Page) {
