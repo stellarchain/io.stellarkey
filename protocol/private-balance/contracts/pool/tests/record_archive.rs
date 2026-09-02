@@ -61,10 +61,9 @@ fn actions_are_written_once_as_independent_archive_records() {
         env.as_contract(&fixture.pool_id, || {
             archive::append_record(
                 &env,
-                &config,
                 &action,
                 &fixture.asset,
-                &BytesN::from_array(&env, &signals[7]),
+                &signals,
                 u64::from(index) * 2,
                 &BytesN::from_array(&env, &[index as u8 + 1; 32]),
                 Some(&fixture.guardian),

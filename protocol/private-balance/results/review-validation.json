@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "revision": "69335bd893e6c2739043ddae9434161b2c22a6ce",
-  "generatedAt": "2026-09-02T20:30:53.912Z",
+  "revision": "c39cc3904646c16c7a8e354fdcf06ca9d5cae85b",
+  "generatedAt": "2026-09-02T20:45:06.160Z",
   "environment": {
     "node": "v26.7.0",
     "platform": "darwin",
@@ -14,78 +14,78 @@
     "warmups": 20,
     "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
     "nativeJwk": {
-      "p50Microseconds": 353.584,
-      "p95Microseconds": 490.541,
+      "p50Microseconds": 799.834,
+      "p95Microseconds": 1056.083,
       "trialResults": [
         {
-          "p50Microseconds": 341.458,
-          "p95Microseconds": 459.042
+          "p50Microseconds": 719.833,
+          "p95Microseconds": 879.375
         },
         {
-          "p50Microseconds": 353.584,
-          "p95Microseconds": 490.541
+          "p50Microseconds": 799.834,
+          "p95Microseconds": 1056.083
         },
         {
-          "p50Microseconds": 367.125,
-          "p95Microseconds": 569.5
+          "p50Microseconds": 893.875,
+          "p95Microseconds": 1966.417
         }
       ]
     },
     "nativePkcs8Prototype": {
-      "p50Microseconds": 81.25,
-      "p95Microseconds": 163.75,
+      "p50Microseconds": 134.875,
+      "p95Microseconds": 417.208,
       "trialResults": [
         {
-          "p50Microseconds": 80.416,
-          "p95Microseconds": 135
+          "p50Microseconds": 100.083,
+          "p95Microseconds": 349
         },
         {
-          "p50Microseconds": 81.25,
-          "p95Microseconds": 163.75
+          "p50Microseconds": 134.875,
+          "p95Microseconds": 417.208
         },
         {
-          "p50Microseconds": 83.666,
-          "p95Microseconds": 131.292
+          "p50Microseconds": 225.083,
+          "p95Microseconds": 501.75
         }
       ]
     },
     "portable": {
-      "p50Microseconds": 767.708,
-      "p95Microseconds": 873.209,
+      "p50Microseconds": 779.042,
+      "p95Microseconds": 909.375,
       "trialResults": [
         {
-          "p50Microseconds": 758.5,
-          "p95Microseconds": 862.875
+          "p50Microseconds": 773.625,
+          "p95Microseconds": 883.542
         },
         {
-          "p50Microseconds": 767.708,
-          "p95Microseconds": 873.209
+          "p50Microseconds": 779.042,
+          "p95Microseconds": 909.375
         },
         {
-          "p50Microseconds": 820.042,
-          "p95Microseconds": 911.917
+          "p50Microseconds": 911.416,
+          "p95Microseconds": 1029.333
         }
       ]
     },
     "diversifiedAddress": {
-      "p50Microseconds": 245.792,
-      "p95Microseconds": 292.292,
+      "p50Microseconds": 674.458,
+      "p95Microseconds": 1798.584,
       "trialResults": [
         {
-          "p50Microseconds": 240.875,
-          "p95Microseconds": 300.084
+          "p50Microseconds": 380.542,
+          "p95Microseconds": 2477.458
         },
         {
-          "p50Microseconds": 245.792,
-          "p95Microseconds": 292.292
+          "p50Microseconds": 674.458,
+          "p95Microseconds": 1798.584
         },
         {
-          "p50Microseconds": 448,
-          "p95Microseconds": 1193.542
+          "p50Microseconds": 865.625,
+          "p95Microseconds": 2510.875
         }
       ]
     },
-    "pkcs8MedianImprovementPercent": 77.02
+    "pkcs8MedianImprovementPercent": 83.14
   },
   "scanPath": {
     "trials": 3,
@@ -100,82 +100,82 @@
     },
     "variants": {
       "current": {
-        "p50Microseconds": 2232.208,
-        "p95Microseconds": 4383.667,
+        "p50Microseconds": 1172.084,
+        "p95Microseconds": 4179.042,
         "trialResults": [
           {
-            "p50Microseconds": 1025.833,
-            "p95Microseconds": 3516.25
+            "p50Microseconds": 1062.584,
+            "p95Microseconds": 1861.75
           },
           {
-            "p50Microseconds": 2232.208,
-            "p95Microseconds": 4383.667
+            "p50Microseconds": 1172.084,
+            "p95Microseconds": 4179.042
           },
           {
-            "p50Microseconds": 2424.25,
-            "p95Microseconds": 4917.75
+            "p50Microseconds": 2056.75,
+            "p95Microseconds": 3769.958
           }
         ]
       },
       "reordered": {
-        "p50Microseconds": 1997.375,
-        "p95Microseconds": 4657.75,
+        "p50Microseconds": 977.542,
+        "p95Microseconds": 3838,
         "trialResults": [
           {
-            "p50Microseconds": 892.583,
-            "p95Microseconds": 2016.709
+            "p50Microseconds": 919.25,
+            "p95Microseconds": 1672.125
           },
           {
-            "p50Microseconds": 1997.375,
-            "p95Microseconds": 4657.75
+            "p50Microseconds": 977.542,
+            "p95Microseconds": 3838
           },
           {
-            "p50Microseconds": 2164.375,
-            "p95Microseconds": 4052.542
+            "p50Microseconds": 1732.708,
+            "p95Microseconds": 4693.958
           }
         ]
       },
       "webcrypto": {
-        "p50Microseconds": 599.625,
-        "p95Microseconds": 2275.292,
+        "p50Microseconds": 236.416,
+        "p95Microseconds": 2033.625,
         "trialResults": [
           {
-            "p50Microseconds": 206.167,
-            "p95Microseconds": 1057.5
+            "p50Microseconds": 222.166,
+            "p95Microseconds": 553.042
           },
           {
-            "p50Microseconds": 599.625,
-            "p95Microseconds": 2275.292
+            "p50Microseconds": 236.416,
+            "p95Microseconds": 2033.625
           },
           {
-            "p50Microseconds": 640.542,
-            "p95Microseconds": 1920.709
+            "p50Microseconds": 540.75,
+            "p95Microseconds": 2398.292
           }
         ]
       },
       "ideal": {
-        "p50Microseconds": 133.333,
-        "p95Microseconds": 882.375,
+        "p50Microseconds": 62.292,
+        "p95Microseconds": 695.542,
         "trialResults": [
           {
-            "p50Microseconds": 49.333,
-            "p95Microseconds": 343.166
+            "p50Microseconds": 51.375,
+            "p95Microseconds": 154.292
           },
           {
-            "p50Microseconds": 133.333,
-            "p95Microseconds": 882.375
+            "p50Microseconds": 62.292,
+            "p95Microseconds": 695.542
           },
           {
-            "p50Microseconds": 171.167,
-            "p95Microseconds": 786.209
+            "p50Microseconds": 133.542,
+            "p95Microseconds": 1044.333
           }
         ]
       }
     },
     "ratios": {
-      "currentOverReordered": 1.118,
-      "currentOverWebcrypto": 3.723,
-      "currentOverIdeal": 16.742
+      "currentOverReordered": 1.199,
+      "currentOverWebcrypto": 4.958,
+      "currentOverIdeal": 18.816
     }
   },
   "scanBatch": {
@@ -183,64 +183,64 @@
     "candidatesPerTrial": 128,
     "variants": {
       "1": {
-        "p50MicrosecondsPerEnvelope": 148.743,
-        "p95MicrosecondsPerEnvelope": 153.12,
+        "p50MicrosecondsPerEnvelope": 207.997,
+        "p95MicrosecondsPerEnvelope": 275.247,
         "trialResults": [
-          148.026,
-          148.743,
-          153.12
+          178.211,
+          207.997,
+          275.247
         ]
       },
       "4": {
-        "p50MicrosecondsPerEnvelope": 93.118,
-        "p95MicrosecondsPerEnvelope": 93.332,
+        "p50MicrosecondsPerEnvelope": 117.853,
+        "p95MicrosecondsPerEnvelope": 381.159,
         "trialResults": [
-          90.627,
-          93.118,
-          93.332
+          98.92,
+          117.853,
+          381.159
         ]
       },
       "8": {
-        "p50MicrosecondsPerEnvelope": 78.617,
-        "p95MicrosecondsPerEnvelope": 82.877,
+        "p50MicrosecondsPerEnvelope": 111.316,
+        "p95MicrosecondsPerEnvelope": 233.804,
         "trialResults": [
-          78.31,
-          78.617,
-          82.877
+          85.156,
+          111.316,
+          233.804
         ]
       },
       "16": {
-        "p50MicrosecondsPerEnvelope": 73.654,
-        "p95MicrosecondsPerEnvelope": 75.965,
+        "p50MicrosecondsPerEnvelope": 85.164,
+        "p95MicrosecondsPerEnvelope": 302.591,
         "trialResults": [
-          72.272,
-          73.654,
-          75.965
+          82.802,
+          85.164,
+          302.591
         ]
       },
       "32": {
-        "p50MicrosecondsPerEnvelope": 71.961,
-        "p95MicrosecondsPerEnvelope": 72.25,
+        "p50MicrosecondsPerEnvelope": 77.643,
+        "p95MicrosecondsPerEnvelope": 273.673,
         "trialResults": [
-          67.01,
-          71.961,
-          72.25
+          73.317,
+          77.643,
+          273.673
         ]
       },
       "64": {
-        "p50MicrosecondsPerEnvelope": 68.438,
-        "p95MicrosecondsPerEnvelope": 80.118,
+        "p50MicrosecondsPerEnvelope": 87.371,
+        "p95MicrosecondsPerEnvelope": 172.325,
         "trialResults": [
-          67.361,
-          68.438,
-          80.118
+          72.241,
+          87.371,
+          172.325
         ]
       }
     },
-    "selectedBatchSize": 64,
-    "sequentialP50MicrosecondsPerEnvelope": 148.743,
-    "selectedP50MicrosecondsPerEnvelope": 68.438,
-    "throughputRatio": 2.173,
+    "selectedBatchSize": 32,
+    "sequentialP50MicrosecondsPerEnvelope": 207.997,
+    "selectedP50MicrosecondsPerEnvelope": 77.643,
+    "throughputRatio": 2.679,
     "acceptanceThreshold": 1.2
   },
   "circuit": {
@@ -273,6 +273,23 @@
     "reductionPercent": 36.53,
     "method": "Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs."
   },
+  "contractCosts": {
+    "verifier": {
+      "baselineInstructions": 39614514,
+      "batchedMsmInstructions": 29960188,
+      "reductionPercent": 24.37,
+      "method": "Soroban test budget for the two-input transfer proof vector; both variants use the same verification key, proof and 13 public signals."
+    },
+    "poolWasm": {
+      "reviewMisidentifiedBytes": 154609,
+      "reviewMisidentifiedArtifact": "protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)",
+      "trackedPoolWasmBytes": 93504,
+      "measuredBaselineOptimizedBytes": 121675,
+      "withoutRuntimeBigIntOptimizedBytes": 87145,
+      "reductionPercent": 28.38,
+      "method": "Built the same private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize before and after fixed-width field arithmetic."
+    }
+  },
   "decisions": {
     "1": {
       "status": "accept",
@@ -280,31 +297,31 @@
     },
     "2": {
       "status": "reject",
-      "reason": "A cached handle accelerates repeated derivations but distinct diversifiers produce distinct scalars; the full WebCrypto scan was only 3.72x current."
+      "reason": "Caching one private-key handle across distinct diversified addresses is invalid because every diversifier produces a distinct RFC 9180 private scalar."
     },
     "3": {
       "status": "accept",
-      "reason": "Accept only the view-tag reorder (1.12x current); reject the custom WebCrypto key derivation because it was slower than the reorder and adds cryptographic code."
+      "reason": "The RFC 9180-compatible WebCrypto path is byte-identical to the existing implementation and measured 4.96x current; view-tag-first hashing removes Poseidon work from misses."
     },
     "4": {
       "status": "accept",
-      "reason": "Bounded batch 64 measured 2.17x sequential throughput on the deterministic corpus."
+      "reason": "Bounded batch 32 measured 2.68x sequential throughput on the deterministic corpus."
     },
     "5": {
-      "status": "defer",
-      "reason": "The BN254 public-input MSM is accepted only if the Soroban resource meter decreases and adversarial verdicts remain unchanged."
+      "status": "accept",
+      "reason": "One BN254 MSM reduced the measured verifier budget by 24.37 percent while every proof vector and adversarial rejection retained its verdict."
     },
     "6": {
       "status": "accept",
       "reason": "The contract currently derives the same 13 public signals twice; passing the verified vector into archival removes duplicate hashing."
     },
     "7": {
-      "status": "defer",
-      "reason": "Precomputing the immutable asset field is sound, but host hashing is accepted only after a measured contract-budget reduction."
+      "status": "accept",
+      "reason": "Precomputing the immutable asset field is accepted and byte-identical; the separate host-hash backend proposal is rejected until actual Wasm simulation demonstrates a gain."
     },
     "8": {
-      "status": "defer",
-      "reason": "Removing runtime BigUint is accepted only if property tests agree and optimized contract Wasm size decreases."
+      "status": "accept",
+      "reason": "Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 87145 bytes; the review had measured the witness generator instead."
     },
     "9": {
       "status": "accept",

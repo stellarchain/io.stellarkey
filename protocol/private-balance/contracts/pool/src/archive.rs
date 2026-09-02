@@ -1,5 +1,5 @@
 use crate::{
-    action::{OutputPackage, address_payload, public_signals},
+    action::{OutputPackage, address_payload},
     errors::PoolError,
     storage::{self, PoolConfig},
 };
@@ -84,10 +84,9 @@ pub fn genesis_record_hash(config: &PoolConfig) -> [u8; 32] {
 
 pub fn append_record(
     env: &Env,
-    config: &PoolConfig,
     action: &Action,
     asset: &Address,
-    action_field: &BytesN<32>,
+    signals: &[[u8; 32]; 13],
     starting_leaf_index: u64,
     tree_root_after: &BytesN<32>,
     public_address: Option<&Address>,
@@ -97,8 +96,11 @@ pub fn append_record(
     let action_index = meta.action_count;
     let starting_leaf_index =
         u32::try_from(starting_leaf_index).map_err(|_| PoolError::TreeFull)?;
-    let expected_signals = public_signals(env, config, action)?;
-    if expected_signals[7] != action_field.to_array() {
+    if signals[9] != action.nullifiers[0]
+        || signals[10] != action.nullifiers[1]
+        || signals[11] != action.outputs[0].cm
+        || signals[12] != action.outputs[1].cm
+    {
         return Err(PoolError::ArchiveCorrupt);
     }
     if action.asset != address_payload(asset)? {

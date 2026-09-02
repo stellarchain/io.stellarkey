@@ -142,6 +142,14 @@
                         "map": [
                           {
                             "key": {
+                              "symbol": "asset_field"
+                            },
+                            "val": {
+                              "bytes": "0fa59baaa8e420fbf133e5f8e488ed2e2073219b6bf201091500fa723ccfa657"
+                            }
+                          },
+                          {
+                            "key": {
                               "symbol": "circuit_hash"
                             },
                             "val": {

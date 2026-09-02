@@ -22,6 +22,7 @@ pub struct PoolConfig {
     pub deployment_binding_hash: BytesN<32>,
     pub context_hash: BytesN<32>,
     pub context_field: BytesN<32>,
+    pub asset_field: BytesN<32>,
 }
 
 #[contracttype]

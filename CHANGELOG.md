@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retired the incompatible Testnet Private Payments pools and fixture evidence, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 64-output parallel batches that retain record-order state updates.
+- Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 
 ### Removed

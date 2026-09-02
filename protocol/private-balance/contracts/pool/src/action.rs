@@ -233,11 +233,12 @@ pub fn public_signals(
     action: &ProtocolAction,
 ) -> Result<[[u8; 32]; 13], PoolError> {
     let pool_id = contract_payload(&env.current_contract_address())?;
-    Ok(action.compute_public_signals(
+    Ok(action.compute_public_signals_with_asset_field(
         &config.context_field.to_array(),
         &config.network_id.to_array(),
         &config.realm_id.to_array(),
         &pool_id,
+        &config.asset_field.to_array(),
     ))
 }
 

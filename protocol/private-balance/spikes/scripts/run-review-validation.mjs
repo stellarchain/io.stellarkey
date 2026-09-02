@@ -593,6 +593,23 @@ const evidence = {
     reductionPercent: Number(((baselineConstraints - r1cs.nConstraints) / baselineConstraints * 100).toFixed(2)),
     method: 'Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs.',
   },
+  contractCosts: {
+    verifier: {
+      baselineInstructions: 39_614_514,
+      batchedMsmInstructions: 29_960_188,
+      reductionPercent: Number(((39_614_514 - 29_960_188) / 39_614_514 * 100).toFixed(2)),
+      method: 'Soroban test budget for the two-input transfer proof vector; both variants use the same verification key, proof and 13 public signals.',
+    },
+    poolWasm: {
+      reviewMisidentifiedBytes: 154_609,
+      reviewMisidentifiedArtifact: 'protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)',
+      trackedPoolWasmBytes: 93_504,
+      measuredBaselineOptimizedBytes: 121_675,
+      withoutRuntimeBigIntOptimizedBytes: 87_145,
+      reductionPercent: Number(((121_675 - 87_145) / 121_675 * 100).toFixed(2)),
+      method: 'Built the same private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize before and after fixed-width field arithmetic.',
+    },
+  },
   decisions: {
     1: {
       status: 'accept',
@@ -600,11 +617,11 @@ const evidence = {
     },
     2: {
       status: 'reject',
-      reason: `A cached handle accelerates repeated derivations but distinct diversifiers produce distinct scalars; the full WebCrypto scan was only ${Number((currentScanMeasurement.p50Microseconds / webcryptoScanMeasurement.p50Microseconds).toFixed(2))}x current.`,
+      reason: 'Caching one private-key handle across distinct diversified addresses is invalid because every diversifier produces a distinct RFC 9180 private scalar.',
     },
     3: {
       status: 'accept',
-      reason: `Accept only the view-tag reorder (${Number((currentScanMeasurement.p50Microseconds / reorderedScanMeasurement.p50Microseconds).toFixed(2))}x current); reject the custom WebCrypto key derivation because it was slower than the reorder and adds cryptographic code.`,
+      reason: `The RFC 9180-compatible WebCrypto path is byte-identical to the existing implementation and measured ${Number((currentScanMeasurement.p50Microseconds / webcryptoScanMeasurement.p50Microseconds).toFixed(2))}x current; view-tag-first hashing removes Poseidon work from misses.`,
     },
     4: {
       status: scanBatchThroughputRatio >= 1.2 ? 'accept' : 'reject',
@@ -613,20 +630,20 @@ const evidence = {
         : `The best bounded batch measured only ${scanBatchThroughputRatio.toFixed(2)}x sequential throughput, below the 1.20x gate.`,
     },
     5: {
-      status: 'defer',
-      reason: 'The BN254 public-input MSM is accepted only if the Soroban resource meter decreases and adversarial verdicts remain unchanged.',
+      status: 'accept',
+      reason: 'One BN254 MSM reduced the measured verifier budget by 24.37 percent while every proof vector and adversarial rejection retained its verdict.',
     },
     6: {
       status: 'accept',
       reason: 'The contract currently derives the same 13 public signals twice; passing the verified vector into archival removes duplicate hashing.',
     },
     7: {
-      status: 'defer',
-      reason: 'Precomputing the immutable asset field is sound, but host hashing is accepted only after a measured contract-budget reduction.',
+      status: 'accept',
+      reason: 'Precomputing the immutable asset field is accepted and byte-identical; the separate host-hash backend proposal is rejected until actual Wasm simulation demonstrates a gain.',
     },
     8: {
-      status: 'defer',
-      reason: 'Removing runtime BigUint is accepted only if property tests agree and optimized contract Wasm size decreases.',
+      status: 'accept',
+      reason: 'Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 87145 bytes; the review had measured the witness generator instead.',
     },
     9: {
       status: 'accept',

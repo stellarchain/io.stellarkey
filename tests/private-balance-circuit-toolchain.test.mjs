@@ -69,6 +69,37 @@ test('pool contract shares the canonical ternary Merkle hash primitive', () => {
   assert.doesNotMatch(contract, /p2\("SKSB_MERKLE_NODE_V1"/u);
 });
 
+test('private archive reuses the public signals already verified for the action', () => {
+  const archive = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/archive.rs'),
+    'utf8',
+  );
+  const contract = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/contract.rs'),
+    'utf8',
+  );
+
+  assert.doesNotMatch(archive, /action::\{[^}]*public_signals/u);
+  assert.doesNotMatch(archive, /public_signals\(env, config, action\)/u);
+  assert.match(archive, /signals: &\[\[u8; 32\]; 13\]/u);
+  assert.match(contract, /archive::append_record\([\s\S]*?&signals,/u);
+});
+
+test('asset-pinned pools precompute their immutable public asset field', () => {
+  const storage = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/storage.rs'),
+    'utf8',
+  );
+  const action = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/action.rs'),
+    'utf8',
+  );
+
+  assert.match(storage, /pub asset_field: BytesN<32>/u);
+  assert.match(action, /compute_public_signals_with_asset_field/u);
+  assert.match(action, /config\.asset_field\.to_array\(\)/u);
+});
+
 test('private proving-key checks pin and authenticate the pot14 ceremony input', () => {
   const transcriptScript = readFileSync(join(circuitsDir, 'scripts/powers-of-tau.mjs'), 'utf8');
   const verifier = readFileSync(join(circuitsDir, 'scripts/verify-proving-key.mjs'), 'utf8');
@@ -204,6 +235,13 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.ok(Number.isFinite(evidence.scanBatch.selectedP50MicrosecondsPerEnvelope));
   assert.ok(Number.isFinite(evidence.scanBatch.sequentialP50MicrosecondsPerEnvelope));
   assert.ok(evidence.scanBatch.throughputRatio > 0);
+  assert.equal(evidence.contractCosts.verifier.baselineInstructions, 39_614_514);
+  assert.equal(evidence.contractCosts.verifier.batchedMsmInstructions, 29_960_188);
+  assert.ok(evidence.contractCosts.verifier.reductionPercent > 24);
+  assert.equal(evidence.contractCosts.poolWasm.reviewMisidentifiedBytes, 154_609);
+  assert.equal(evidence.contractCosts.poolWasm.measuredBaselineOptimizedBytes, 121_675);
+  assert.equal(evidence.contractCosts.poolWasm.withoutRuntimeBigIntOptimizedBytes, 87_145);
+  assert.ok(evidence.contractCosts.poolWasm.reductionPercent > 28);
   assert.deepEqual(Object.keys(evidence.decisions).sort(), [
     '1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '2',
     '20', '3', '4', '5', '6', '7', '8', '9',

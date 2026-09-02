@@ -89,5 +89,13 @@ fn test_verify_vectors() {
         let proof = proof_from_snarkjs(&item.proof);
         let valid = verify_groth16_proof_bytes(&env, &proof, &signals).expect("verifier run");
         assert!(valid, "Proof must verify successfully in Soroban verifier!");
+        println!(
+            "Verifier CPU instructions: {}",
+            env.cost_estimate().budget().cpu_instruction_cost(),
+        );
+        assert!(
+            env.cost_estimate().budget().cpu_instruction_cost() < 39_000_000,
+            "batched public-input accumulation must beat the 39.6M-instruction loop baseline",
+        );
     }
 }
