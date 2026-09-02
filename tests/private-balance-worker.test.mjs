@@ -28,6 +28,8 @@ const manifest = {
   assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  witnessRpcUrl: 'https://witness.example.test',
+  deploymentCheckpoint: { ledger: 0, hash: '00'.repeat(32) },
   deploymentBindingHash: Buffer.from(DEPLOYMENT_BINDING).toString('hex'),
   artifacts: {
     r1csSha256: 'a1'.repeat(32),
