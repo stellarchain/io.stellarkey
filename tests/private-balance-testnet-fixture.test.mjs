@@ -23,7 +23,7 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the committed testnet deployment remains quarantined development evidence', () => {
+test('the committed testnet deployment preserves exact deployment evidence with current release provenance', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
@@ -48,7 +48,27 @@ test('the committed testnet deployment remains quarantined development evidence'
       new URL(`../public${deployment.manifestUrl}`, import.meta.url),
     );
     const manifest = JSON.parse(manifestBytes);
-    assert.deepEqual(manifest, fixture.manifest);
+    const { release: publishedRelease, ...publishedDeployment } = manifest;
+    const { release: deployedRelease, ...recordedDeployment } = fixture.manifest;
+    assert.deepEqual(publishedDeployment, recordedDeployment);
+    for (const key of [
+      'contractWasmSha256',
+      'circuitSourceSha256',
+      'poseidonParametersSha256',
+      'hpkePackageVersion',
+      'hpkeDependencyIntegritySha256',
+      'powersOfTauSha256',
+      'ceremonyTranscriptRoot',
+      'auditReports',
+      'deploymentTransactions',
+      'allowedEnvironment',
+    ]) {
+      assert.deepEqual(
+        publishedRelease[key],
+        deployedRelease[key],
+        `published release must preserve deployed ${key}`,
+      );
+    }
     assert.equal(manifest.artifactVersion, '1.0.2-dev-fixture');
     assert.equal(manifest.status, 'development');
     assert.equal(manifest.poolContractId, fixture.poolContractId);

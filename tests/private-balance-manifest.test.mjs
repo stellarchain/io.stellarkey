@@ -8,12 +8,60 @@ import {
   PRIVATE_ADDRESS_PAYLOAD_BYTES,
   PRIVATE_ADDRESS_TESTNET_ASCII_BYTES,
 } from '@stellarkey/private-balance';
+import { verifyProvingKey } from '../protocol/private-balance/circuits/scripts/verify-proving-key.mjs';
 import * as manifestModule from '../src/lib/private-balance-manifest.ts';
 import * as assetsModule from '../src/lib/private-balance-assets.ts';
 
 const { validateManifest } = manifestModule;
 const manifestPath = join(process.cwd(), 'public/protocol/private-balance/v1/manifest.json');
 const cataloguePath = join(process.cwd(), 'public/protocol/private-balance/v1/catalogue.json');
+
+test('manifest: proving-key verification succeeds only after the pinned verifier command succeeds', () => {
+  const calls = [];
+  const transcripts = [];
+
+  const verified = verifyProvingKey({
+    ensureTranscript(path) {
+      transcripts.push(path);
+    },
+    execute(command, args, options) {
+      calls.push({ command, args, options });
+    },
+    stdio: 'pipe',
+  });
+
+  assert.equal(verified, true);
+  assert.equal(transcripts.length, 1);
+  assert.match(transcripts[0], /build\/pot15_final\.ptau$/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, 'npx');
+  assert.deepEqual(calls[0].args.slice(0, 4), [
+    '--no-install',
+    'snarkjs',
+    'zkey',
+    'verify',
+  ]);
+  assert.equal(calls[0].options.stdio, 'pipe');
+  assert.match(calls[0].options.cwd, /protocol\/private-balance\/circuits$/);
+  assert.match(calls[0].args[4], /build\/action\.r1cs$/);
+  assert.match(calls[0].args[5], /build\/pot15_final\.ptau$/);
+  assert.match(calls[0].args[6], /build\/action_dev\.zkey$/);
+});
+
+test('manifest: proving-key verification propagates verifier failures', () => {
+  const verifierFailure = new Error('invalid proving key');
+
+  assert.throws(
+    () => verifyProvingKey({
+      ensureTranscript() {},
+      execute() {
+        throw verifierFailure;
+      },
+      stdio: 'pipe',
+    }),
+    error => error === verifierFailure,
+  );
+});
 
 test('manifest: validates real manifest.json successfully', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -232,6 +280,8 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.match(source, /protocol\/private-balance\/scripts\/build-private-balance-artifacts\.mjs/);
   assert.match(source, /soroban-rpc\.testnet\.stellar\.gateway\.fm/);
   assert.match(source, /deploymentCheckpoint/);
+  assert.match(source, /const zkeyVerified = verifyProvingKey\(\)/);
+  assert.doesNotMatch(source, /zkeyVerified:\s*true/);
   assert.match(source, /\['log', '-1', '--format=%H', '--'/);
   assert.doesNotMatch(source, /existing\.release\?\.contractSourceCommit/);
   assert.match(buildSource, /STELLAR_CLI_VERSION = '27\.0\.0'/);

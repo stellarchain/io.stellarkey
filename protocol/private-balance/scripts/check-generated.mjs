@@ -73,12 +73,6 @@ execFileSync(process.execPath, ['protocol/private-balance/scripts/verify-artifac
   cwd: root,
   stdio: 'inherit',
 });
-execFileSync(process.execPath, [
-  'protocol/private-balance/circuits/scripts/verify-proving-key.mjs',
-], {
-  cwd: root,
-  stdio: 'inherit',
-});
 const after = snapshot();
 const names = new Set([...before.keys(), ...after.keys()]);
 const changed = [...names].filter(name => before.get(name) !== after.get(name));

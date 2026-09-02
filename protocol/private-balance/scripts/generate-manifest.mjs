@@ -15,6 +15,7 @@ import { brotliCompressSync, constants as zlibConstants } from 'node:zlib';
 import * as snarkjs from 'snarkjs';
 import { encodePointCompressedZkey } from './zkey-point-transport.mjs';
 import { POWERS_OF_TAU_SHA256 } from '../circuits/scripts/powers-of-tau.mjs';
+import { verifyProvingKey } from '../circuits/scripts/verify-proving-key.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -188,6 +189,7 @@ const vkJsonBytes = readFileSync(join(buildDir, 'verification_key.json'));
 const vkBinBytes = readFileSync(join(buildDir, 'verifying-key.bin'));
 const r1csBytes = readFileSync(join(buildDir, 'action.r1cs'));
 const r1csInfo = await snarkjs.r1cs.info(join(buildDir, 'action.r1cs'));
+const zkeyVerified = verifyProvingKey();
 const contractWasmPath = join(
   process.cwd(),
   'protocol/private-balance/target/wasm32v1-none/release/private_balance_pool.wasm',
@@ -298,7 +300,7 @@ const baseManifest = {
       join(process.cwd(), 'protocol/private-balance/circuits/scripts/verify-proving-key.mjs'),
     ]),
     powersOfTauSha256: POWERS_OF_TAU_SHA256,
-    zkeyVerified: true,
+    zkeyVerified,
     ceremonyTranscriptRoot: '0'.repeat(64),
     auditReports: [],
     deploymentTransactions: [],
