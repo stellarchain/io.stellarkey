@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Kept every merchant payment reconciliation actionable outside the 200-row presentation tray, derived the tray from durable records, and added owner-only bounded cleanup with an audit disposition for every row.
 - Bound Multi-Sig Studio edits to canonical signer state, required explicit in-session provenance for signer additions, rejected stale or conflicting authority, and displayed full changed signer keys before signing.
 - Added schema-validated BN254/BLS12-381 proving benchmarks with verified desktop smoke evidence, explicit pending phone and Soroban measurements, and no premature curve selection.
 - Corroborated Private Payments recovery checkpoints, overlapping ledger hashes, and contract heads across independent RPC providers; disagreement now preserves the last authenticated state as status unknown, with routine witness checks and their access-pattern tradeoff exposed in settings.

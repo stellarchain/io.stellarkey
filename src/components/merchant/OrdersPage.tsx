@@ -5,6 +5,7 @@ import {
   useMerchantConfiguration,
   useMerchantRecords,
   useMerchantReporting,
+  useMerchantStaff,
   useMerchantStatus,
 } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
@@ -161,10 +162,13 @@ export function OrdersPage() {
     orders,
     charges,
     unmatched,
+    paymentReconciliations,
     attachPayment,
+    dismissPendingReconciliations,
     dismissUnmatched,
     openCharge,
   } = useMerchantRecords();
+  const { activeStaff } = useMerchantStaff();
   const { settings } = useMerchantConfiguration();
   const { today } = useMerchantReporting();
   const { toast } = useToast();
@@ -206,6 +210,13 @@ export function OrdersPage() {
     () => charges.filter(isFilable).sort((a, b) => b.createdAt - a.createdAt),
     [charges],
   );
+  const pendingReconciliationCount = useMemo(
+    () =>
+      paymentReconciliations.filter(
+        (entry) => entry.outcome !== "settled" && entry.resolution === null,
+      ).length,
+    [paymentReconciliations],
+  );
 
   // Nothing to filter and no day to summarise until a ticket exists, so the
   // empty screen is the empty state alone rather than three empty shells.
@@ -222,6 +233,8 @@ export function OrdersPage() {
       {unmatched.length > 0 && (
         <UnmatchedTray
           payments={unmatched}
+          pendingCount={pendingReconciliationCount}
+          canBulkDismiss={activeStaff?.role === "owner"}
           filable={filableCharges}
           onAttach={async (paymentId, chargeId, orderNumber) => {
             try {
@@ -241,6 +254,21 @@ export function OrdersPage() {
             } catch (cause) {
               triggerHaptic("error");
               toast(cause instanceof Error ? cause.message : "The payment could not be dismissed.", "error");
+            }
+          }}
+          onBulkDismiss={async () => {
+            try {
+              const count = await dismissPendingReconciliations();
+              triggerHaptic("warning");
+              toast(
+                count > 0
+                  ? `${count} oldest payments dismissed with owner audit records`
+                  : "No pending payments remained",
+              );
+            } catch (cause) {
+              triggerHaptic("error");
+              toast(cause instanceof Error ? cause.message : "Pending payments could not be dismissed.", "error");
+              throw cause;
             }
           }}
           onReviewDuplicate={setDuplicatePaymentId}
@@ -505,20 +533,29 @@ function OrderRow({
  */
 function UnmatchedTray({
   payments,
+  pendingCount,
+  canBulkDismiss,
   filable,
   onAttach,
   onDismiss,
+  onBulkDismiss,
   onReviewDuplicate,
 }: {
   payments: UnmatchedPayment[];
+  pendingCount: number;
+  canBulkDismiss: boolean;
   filable: (Charge & { status: FilableStatus })[];
   onAttach: (paymentId: string, chargeId: string, orderNumber: string) => void;
   onDismiss: (paymentId: string) => void;
+  onBulkDismiss: () => Promise<void>;
   onReviewDuplicate: (paymentId: string) => void;
 }) {
   const { invoices, orderFor, paymentReconciliations } = useMerchantRecords();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [confirmingDismiss, setConfirmingDismiss] = useState<string | null>(null);
+  const [confirmingBulkDismiss, setConfirmingBulkDismiss] = useState(false);
+  const [bulkDismissBusy, setBulkDismissBusy] = useState(false);
+  const bulkDismissCount = Math.min(pendingCount, 100);
 
   // Newest first, each one carrying the state it is in: two charges for the same
   // money are told apart by whether one expired and the other came up short.
@@ -562,18 +599,68 @@ function UnmatchedTray({
           <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[#FF9F0A]/15 text-[#FF9F0A]">
             <IconAlert size={17} />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 id="unmatched-tray-title" className="text-[14.5px] font-semibold text-white">
               Unmatched payments
               <span aria-live="polite" className="mono ml-2 text-[12.5px] text-[#FF9F0A]">
-                {payments.length}
+                {pendingCount}
               </span>
             </h2>
             <p className="mt-0.5 text-[12px] text-neutral-400">
-              File each against the charge it belongs to, or dismiss it.
+              File each against the charge it belongs to, or dismiss it.{" "}
+              {payments.length === pendingCount
+                ? `Showing all ${pendingCount}.`
+                : `Showing the newest ${payments.length} of ${pendingCount}.`}
             </p>
           </div>
+          {canBulkDismiss && pendingCount > 20 && !confirmingBulkDismiss && (
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => {
+                triggerHaptic("warning");
+                setConfirmingBulkDismiss(true);
+              }}
+            >
+              Owner cleanup
+            </Button>
+          )}
         </div>
+
+        {confirmingBulkDismiss && (
+          <div className="border-t border-[#FF9F0A]/20 px-4 py-3.5">
+            <p className="text-[12.5px] font-semibold text-white">
+              Dismiss the {bulkDismissCount} oldest pending payments?
+            </p>
+            <p className="mt-1 text-[12px] leading-relaxed text-neutral-400">
+              This does not attach or refund them. Each payment keeps a separate owner audit
+              disposition, and the on-chain funds remain in the receiving account.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={bulkDismissBusy}
+                onClick={() => setConfirmingBulkDismiss(false)}
+              >
+                Keep pending
+              </Button>
+              <Button
+                variant="danger"
+                loading={bulkDismissBusy}
+                disabled={bulkDismissBusy}
+                onClick={() => {
+                  setBulkDismissBusy(true);
+                  void onBulkDismiss()
+                    .then(() => setConfirmingBulkDismiss(false))
+                    .catch(() => undefined)
+                    .finally(() => setBulkDismissBusy(false));
+                }}
+              >
+                Dismiss oldest {bulkDismissCount}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {payments.map((payment) => {
           const options = optionsByPayment.get(payment.id) ?? [];

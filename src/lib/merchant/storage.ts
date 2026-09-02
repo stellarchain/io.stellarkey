@@ -1,4 +1,5 @@
 import { isCurrentMerchantStore } from "./schema";
+import { pendingReconciliationTray } from "./reconciliation";
 import type { MerchantStore } from "./types";
 
 /** Decode the current data format without mutating or repairing storage. */
@@ -86,7 +87,7 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     }];
   });
 
-  return {
+  const pruned: MerchantStore = {
     ...store,
     orders,
     charges: store.charges.filter(
@@ -105,9 +106,7 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
         refund.submissionStatus === "accepted" ||
         refund.submissionStatus === "status_unknown",
     ),
-    unmatched: store.unmatched.filter(
-      (payment) => payment.seenAt >= cutoff || unresolvedPaymentIds.has(payment.id),
-    ),
+    unmatched: [],
     paymentReconciliations: store.paymentReconciliations.filter(
       (record) => record.observedAt >= cutoff || record.resolution === null,
     ),
@@ -123,4 +122,5 @@ export function prune(store: MerchantStore, retainDays?: number): MerchantStore 
     exportRecords: store.exportRecords.filter((record) => record.runAt >= cutoff),
     customers,
   };
+  return { ...pruned, unmatched: pendingReconciliationTray(pruned) };
 }

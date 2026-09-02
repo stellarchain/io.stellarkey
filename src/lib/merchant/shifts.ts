@@ -200,7 +200,6 @@ export function unresolvedShiftFlows(
     }
   }
 
-  const paymentIds = new Set<string>();
   for (const record of store.paymentReconciliations) {
     if (
       record.network === shift.network &&
@@ -208,13 +207,7 @@ export function unresolvedShiftFlows(
       record.resolution === null &&
       inWindow(record.observedAt, shift, until)
     ) {
-      paymentIds.add(record.id);
       flows.push({ kind: "payment", id: record.id, label: "An incoming payment still needs review." });
-    }
-  }
-  for (const payment of store.unmatched) {
-    if (!paymentIds.has(payment.id) && inWindow(payment.seenAt, shift, until)) {
-      flows.push({ kind: "payment", id: payment.id, label: "An incoming payment still needs review." });
     }
   }
 

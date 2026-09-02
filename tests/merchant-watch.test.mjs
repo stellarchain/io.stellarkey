@@ -6,11 +6,14 @@ import { createCharge } from "../src/lib/merchant/charge.ts";
 import { defaultSettings, emptyStore } from "../src/lib/merchant/defaults.ts";
 import {
   attachReconciledPayment,
+  bulkDismissPendingReconciliations,
   dismissReconciledPayment,
   markReconciledRefund,
+  pendingReconciliationTray,
   reconcileIncomingPayments,
 } from "../src/lib/merchant/reconciliation.ts";
 import { recordRefundSubmission } from "../src/lib/merchant/refunds.ts";
+import { closeShift, openShift, unresolvedShiftFlows } from "../src/lib/merchant/shifts.ts";
 import { fetchIncomingPayments } from "../src/lib/merchant/watch.ts";
 
 const NOW = 1_800_000_000_000;
@@ -431,6 +434,94 @@ test("dismiss and exact manual attach keep an immutable staff audit", () => {
   );
 });
 
+test("reconciliation rows remain actionable after a dust flood evicts their tray projection", () => {
+  const owner = actor();
+  const opened = openShift(awaitingStore(), {
+    id: "shift-flood",
+    actor: owner,
+    terminalName: "Counter",
+    network: "mainnet",
+    floatMinor: 0,
+    now: NOW - 2_000,
+  });
+  const genuine = payment({ id: "genuine", routingId: null });
+  const dust = Array.from({ length: 250 }, (_, index) => payment({
+    id: `dust-${String(index).padStart(3, "0")}`,
+    transactionHash: index.toString(16).padStart(64, "0"),
+    amount: "0.0000001",
+    routingId: String(6_000 + index),
+  }));
+  const flooded = reconcileIncomingPayments(opened.store, {
+    network: "mainnet",
+    payments: [genuine, ...dust],
+    now: NOW,
+  });
+
+  assert.equal(flooded.paymentReconciliations.length, 251);
+  assert.equal(flooded.unmatched.length, 200);
+  assert.equal(flooded.unmatched.some((entry) => entry.id === genuine.id), false);
+  assert.equal(pendingReconciliationTray(flooded).length, 200);
+  assert.deepEqual(pendingReconciliationTray(flooded, 0), []);
+
+  const attached = attachReconciledPayment(flooded, {
+    paymentId: genuine.id,
+    chargeId: "charge-1",
+    actor: owner,
+    now: NOW + 1,
+  });
+  assert.equal(attached.orders[0].status, "paid");
+  assert.equal(
+    attached.paymentReconciliations.find((entry) => entry.id === genuine.id)?.resolution?.kind,
+    "attached",
+  );
+
+  const cashier = { ...owner, id: "cashier", name: "Cashier", role: "server" };
+  assert.throws(
+    () => bulkDismissPendingReconciliations(attached, {
+      actor: cashier,
+      now: NOW + 2,
+      limit: 100,
+    }),
+    /owner/i,
+  );
+
+  let cleared = attached;
+  const resolvedIds = [];
+  while (unresolvedShiftFlows(cleared, opened.shift.id, NOW + 10).length > 0) {
+    const result = bulkDismissPendingReconciliations(cleared, {
+      actor: owner,
+      now: NOW + 2 + resolvedIds.length,
+      limit: 100,
+    });
+    assert.ok(result.resolvedIds.length > 0 && result.resolvedIds.length <= 100);
+    resolvedIds.push(...result.resolvedIds);
+    cleared = result.store;
+  }
+
+  assert.equal(resolvedIds.length, 250);
+  assert.equal(resolvedIds[0], "dust-000", "bulk cleanup starts with evicted oldest rows");
+  assert.equal(pendingReconciliationTray(cleared).length, 0);
+  assert.ok(
+    cleared.paymentReconciliations
+      .filter((entry) => entry.id.startsWith("dust-"))
+      .every(
+        (entry) =>
+          entry.resolution?.kind === "dismissed" &&
+          entry.resolution.staffId === owner.id &&
+          entry.resolution.staffName === owner.name,
+      ),
+    "every bulk disposition keeps its own owner audit record",
+  );
+
+  const closed = closeShift(cleared, {
+    shiftId: opened.shift.id,
+    actor: owner,
+    countedMinor: 0,
+    now: NOW + 1_000,
+  });
+  assert.equal(closed.report.kind, "z");
+});
+
 test("the watcher resumes oldest-first and advances the cursor to the newest record", async (t) => {
   const olderToken = (BigInt(60_000_001) << 32n).toString();
   const newerToken = (BigInt(60_000_002) << 32n).toString();
@@ -544,4 +635,6 @@ test("duplicate and unmatched production surfaces expose real audited actions", 
   assert.match(duplicate, /await submitPaymentRefund\(/);
   assert.match(orders, /reconciliationOutcome/);
   assert.match(orders, /DuplicateChargeSheet/);
+  assert.match(orders, /Owner cleanup/);
+  assert.match(orders, /dismissPendingReconciliations/);
 });
