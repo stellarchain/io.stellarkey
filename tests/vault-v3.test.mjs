@@ -330,6 +330,35 @@ test("encrypted account payloads stay bound to their public identities", async (
   );
 });
 
+test("backup vault identity is independent of the browser locale", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    addStoredAccount,
+    backupVaultIdentity,
+    initializeVault,
+    loadVault,
+    lockVault,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  await initializeVault(password, { secret: Keypair.random().secret() });
+  await addStoredAccount({ secret: Keypair.random().secret() });
+  const vault = loadVault();
+  vault.accounts[0].id = "dd00";
+  vault.accounts[1].id = "df00";
+  const canonicalIdentity = backupVaultIdentity(vault);
+  const legacyCompare = new Intl.Collator("cy").compare;
+  const originalLocaleCompare = String.prototype.localeCompare;
+  String.prototype.localeCompare = function localeCompare(other) {
+    return legacyCompare(this, String(other));
+  };
+  try {
+    assert.equal(backupVaultIdentity(vault), canonicalIdentity);
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
+});
+
 test("concurrent imported-account writes reject a stale vault revision instead of losing a key", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
