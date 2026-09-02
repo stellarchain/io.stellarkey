@@ -45,7 +45,8 @@ The implementation targets five properties:
    and local record is bound to a network, realm, contract, and single asset.
 
 The design does not hide network metadata, the pool or asset, action timing, the
-fee-paying Stellar account, deposits, withdrawals, or the public action kind. It
+transaction source, deposits, withdrawals, or the public action kind. The
+development client self-submits from the user's public Stellar account. It
 does not guarantee a minimum privacy set, protect a compromised browser, or
 make an unaudited single-party proving setup safe for real value.
 
@@ -68,10 +69,14 @@ address format, encryption suite, and deployment-binding hash.
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
 
 The protocol includes a relayer address and fee in transfer and withdrawal
-actions, but it does not require a hosted relayer service. The submitting wallet
-binds the selected relayer and may choose a zero relayer fee. The transaction
-independently has a public network-fee payer. Any non-zero relayer fee is public
-and is paid by the pool only when the proof authorizes it.
+actions, and the contract permits third-party submission without user account
+authorization. No operated relayer exists today. The development client binds
+its own public Stellar account as relayer, uses a zero relayer fee, signs an
+inner transaction from that account, and self-submits it. This directly links
+the shielded action to the public account. A fee-bump sponsor changes the outer
+fee source but leaves the inner transaction source public, so fee bumping alone
+is not a privacy improvement. Any non-zero relayer fee is public and is paid by
+the pool only when the proof authorizes it.
 
 ## 3. Deployment-bound keys and private addresses
 
@@ -178,11 +183,11 @@ The public action kind selects which public term is active.
 
 ## 7. Groth16 statement
 
-The production-shaped development circuit has 14,876 constraints, 13 public
+The production-shaped development circuit has 14,574 constraints, 11 public
 inputs, and 124 private inputs when compiled with Circom 2.2.3 and `--O2`. It
 fits a `2^14` Groth16 domain.
 
-The 13 public inputs, in verifier order, are:
+The 11 public inputs, in verifier order, are:
 
 1. deployment context field;
 2. pinned asset field;
@@ -190,17 +195,17 @@ The 13 public inputs, in verifier order, are:
 4. anchor root;
 5. public deposit or withdrawal value;
 6. relayer fee;
-7. relayer identity field;
-8. action field;
-9. action binding;
-10. and 11. two nullifiers; and
-12. and 13. two output commitments.
+7. canonical action field;
+8. and 9. two nullifiers; and
+10. and 11. two output commitments.
 
 The private witness proves owner authorization, real-input membership, correct
 real or dummy nullifier derivation, distinct spent leaves, output commitments,
-fixed action shape, and conservation of value. Network, realm, pool, asset,
-action nonce, public endpoints, relayer, and output context are folded into the
-public context/action bindings checked again by the contract.
+fixed action shape, and conservation of value. The canonical action field
+hashes the network, realm, pool, asset, nonce, roots, complete outputs, public
+endpoints, relayer, and fee. A non-zero circuit constraint gives this public
+field a non-zero Groth16 input coefficient; a proof-mutation regression confirms
+that changing it invalidates the proof. The contract derives the field itself.
 
 Encryption is intentionally outside the circuit. A valid proof binds an output
 commitment but does not prove that its ciphertext is decryptable or honestly
@@ -252,7 +257,7 @@ For an action, the contract atomically:
 2. enforces the deposit pause or verifies a recent anchor root;
 3. rejects already-spent durable nullifiers;
 4. checks remaining tree capacity;
-5. reconstructs the 13 public signals and verifies the Groth16 proof;
+5. reconstructs the 11 public signals and verifies the Groth16 proof;
 6. persists replay protection;
 7. appends both commitments and updates the root/frontier;
 8. appends the authenticated archive record and transcript head;
@@ -377,7 +382,7 @@ can defeat every browser-level privacy control.
 | Recipient private address | Public action kind |
 | Which note lanes are real | Anchor root, two nullifiers and two commitments |
 | Whether a real output is recipient or change | Fixed-size encrypted output packages |
-| Memo plaintext | Relayer address/fee and fee-paying Stellar account |
+| Memo plaintext | Relayer address/fee and public transaction source |
 | Spending and viewing secrets | Transaction timing and network metadata |
 
 Deposits reveal their public source and amount. Withdrawals reveal their public
@@ -396,6 +401,12 @@ transfers.
 Private Balance must not be described as hiding all identities, defeating all
 tracing, or guaranteeing privacy.
 
+The separate Horizon stealth subsystem is complementary, not an alternative
+name for the pool. It provides reusable-recipient unlinkability by deriving a
+fresh classic destination without proving, but the asset, amount, sender,
+timing, account creation, and later sweep can remain linkable. The two systems
+retain separate keys, recovery, sync, and user-facing guarantees.
+
 ## 15. Measured implementation
 
 The protocol-review harness compiles each circuit variant sequentially and
@@ -403,20 +414,31 @@ records machine-readable results. The accepted replacement measures:
 
 | Metric | Implemented result |
 | --- | ---: |
-| Constraints | 14,876, down from 23,437 (36.53%) |
-| Public / private inputs | 13 / 124 |
-| R1CS | 6,981,468 bytes |
-| Witness Wasm | 154,609 bytes |
-| Development proving key | 9,121,500 bytes |
-| Point-compressed proving-key transport | 6,227,870 bytes |
-| Compressed HTTP wire size recorded in manifest | 2,464,278 bytes |
+| Constraints | 14,574, down from 23,437 (37.82%) |
+| Public / private inputs | 11 / 124 |
+| R1CS | 6,848,312 bytes |
+| Witness Wasm | 152,217 bytes |
+| Development proving key | 8,971,612 bytes |
+| Point-compressed proving-key transport | 6,120,542 bytes |
+| Compressed HTTP wire size recorded in manifest | 2,427,581 bytes |
 | Canonical BN254 proof | 256 bytes |
 | Tree | Ternary depth 17, 129,140,163 leaves |
+| Transfer verification | 29,287,953 Soroban test-budget instructions |
+| Pool Wasm | 66,377 bytes raw; 57,042 bytes after `stellar contract optimize` |
 
 In the recorded three-trial Node.js run on an Apple M3 Max, native X25519 p50
-fell from 799.834 microseconds with JWK plus redundant public derivation to
-134.875 microseconds with PKCS#8, an 83.14% median improvement. This is a local
-microbenchmark, not physical-phone latency evidence.
+fell from 460.417 microseconds with JWK import to 102.125 microseconds with
+PKCS#8 import, a 77.82% median improvement. The complete RFC 9180-compatible
+scan path measured 4.487x faster than the prior path, and a bounded 64-envelope
+batch measured 2.681x the sequential throughput. These are local
+microbenchmarks, not physical-phone latency evidence.
+
+A standalone additional depth-17 association-set membership path compiled to
+4,573 constraints. It would raise the current action to at least 19,147
+constraints (+31.38%) before any policy logic. No association-set feature is
+included without a concrete governance model and end-to-end device and Soroban
+measurements. Cross-origin isolation is likewise deferred until a complete
+subresource audit and physical-device benchmark exist.
 
 The earlier BN254/BLS12-381 comparison is also desktop smoke evidence. BLS12-381
 is not selected: physical-phone proving and Soroban verifier resource evidence
@@ -439,9 +461,12 @@ hashes; their manifests and fixture evidence were retired rather than relabeled.
 Old balances and addresses are not presented as part of the replacement.
 
 The current proving key was created by a single-party setup. It passes
-`snarkjs zkey verify` against the repository's pinned Powers-of-Tau transcript.
-That verifies consistency; it does not make these artifacts safe for real value.
-Anyone retaining the phase-2 secret could forge proofs.
+`snarkjs zkey verify` against the repository's pinned Powers-of-Tau transcript,
+PSE's degree-14 Perpetual Powers of Tau, whose complete contribution and
+final-beacon chain also passes `snarkjs powersoftau verify` at its pinned
+SHA-256. That verifies consistency and phase-one provenance; it does not make
+these development artifacts safe for real value. Anyone retaining the phase-2
+secret could forge proofs.
 
 The replacement is deliberately unavailable until fresh asset-pinned Testnet
 pools are deployed and their transactions, checkpoints, contract configuration,

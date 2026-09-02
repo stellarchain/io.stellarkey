@@ -20,21 +20,29 @@ The machine-readable evidence is
 
 | Item | Decision | Measured result | Implementation |
 |---|---|---|---|
-| PKCS#8 X25519 import | Accept | Byte-identical shared secret; warm native median improved 80.31% in the recorded three-trial run | Native WebCrypto imports the raw scalar through RFC 8410 PKCS#8; the portable fallback remains |
+| PKCS#8 X25519 import | Accept | Byte-identical shared secret; warm native median improved 77.82% in the final three-trial run | Native WebCrypto imports the raw scalar through RFC 8410 PKCS#8; the portable fallback remains |
+| Recipient scan path | Accept | RFC 9180-compatible WebCrypto measured 4.487x the old path; bounded batch 64 measured 2.681x sequential throughput | View-tag-first rejection and bounded ordered scanning shipped; the claimed 11x did not reproduce |
 | Remove dummy `lane` | Accept | 23,437 → 22,909 constraints (−528 exactly) | Removed from the circuit and witness schema |
-| Ternary depth-17 tree | Accept | Complete production circuit: 14,876 constraints, 13 public inputs, 124 private inputs; 36.53% below baseline | Replaced the binary tree in Circom, Rust, Soroban, browser, cache, vectors, and manifests |
+| Ternary depth-17 tree and public-statement reduction | Accept with safety correction | Complete circuit: 14,574 constraints, 11 public inputs, 124 private inputs; 37.82% below baseline | Replaced the tree throughout and retained one constraint so the canonical action field has a nonzero Groth16 IC coefficient |
+| Verifier and pool contract reductions | Accept | Transfer verification: 39,614,514 → 29,287,953 instructions (−26.07%); optimized pool Wasm: 121,675 → 57,042 bytes (−53.12%) | Uses one BN254 MSM, derives signals once, precomputes the asset field, uses fixed-width field arithmetic, and removes dead paging configuration |
 | Sapling-style X25519 diversification | Defer | Diversified-envelope opening remains materially slower, but the proposal lacks a complete reviewed variable-base KEM and cofactor specification | RFC 9180 remains unchanged |
 | Consume outgoing envelopes | Accept | Existing 157-byte envelopes were already present for each output | Scanner now authenticates them to recover external recipient fingerprints and memos from seed plus chain data |
 | Reduce deposit nullifier storage | Accept with correction | Storing neither dummy nullifier would allow exact proof replay; one durable replay key is sufficient | Deposits persist one nullifier; transfers and withdrawals persist both |
 | Share Merkle primitive | Accept | Static review confirmed three unchecked string literals and duplicate consensus hashing | Contract imports the canonical raw ternary hash and empty-root table from the protocol crate |
 | Remove redundant total range | Accept | 22,909 → 22,846 constraints (−63 exactly) | One 63-bit decomposition remains after equality |
 | Derive output roles | Accept | 22,846 → 22,844 constraints and 152 → 150 private inputs | `outputReal` is derived from output value rather than supplied as witness data |
+| Shared multi-asset tree | Reject | Public asset identity provides no demonstrated cross-asset anonymity; shared state couples spam and recovery cost | Immutable asset-pinned pools remain |
+| Association-set membership | Reject for this circuit | One compiled depth-17 path adds 4,573 constraints, projecting 19,147 total (+31.38%) before policy logic | No implementation without a curator/appeals/root-lifecycle design and end-to-end measurements |
+| COEP / threaded proving | Defer | No physical-device or subresource-compatibility evidence exists | No header change until the browser/device gate is measured |
+| Relayer availability | Accept as disclosed limitation | Fee bumping preserves the public inner transaction source | Development self-submission is disclosed; beta remains blocked pending an operated relay |
 
-The resulting circuit fits the 2¹⁴ Groth16 domain. The generated development zkey is 9,121,500
-bytes and its point-compressed transport is 6,227,870 bytes. The prior Testnet pools bind different
-circuit and contract hashes, so they were not relabeled. The replacement artifacts ship with an
-authenticated empty deployment catalogue and development use disabled until fresh asset-pinned
-Testnet pools are deployed and verified.
+The resulting circuit fits the 2¹⁴ Groth16 domain. The generated development zkey is 8,971,612
+bytes and its point-compressed transport is 6,120,542 bytes (2,427,581-byte Brotli-11 wire size).
+The PSE degree-14 phase-one transcript was accepted only after its pinned SHA-256 and full
+contribution/final-beacon chain passed `snarkjs powersoftau verify`. The prior Testnet pools bind
+different circuit and contract hashes, so they were not relabeled. The replacement artifacts ship
+with an authenticated empty deployment catalogue and development use disabled until fresh
+asset-pinned Testnet pools are deployed and verified.
 
 The original analysis below is retained as the review record. Where a prototype caveat conflicts
 with this section, this section records the completed implementation and test result.

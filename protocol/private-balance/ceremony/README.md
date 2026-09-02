@@ -15,12 +15,12 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 14,876 (machine value: `14876`) |
-| Public inputs | 13 |
-| R1CS SHA-256 | `844502934eb783db4ee1489219d3f953c055e59c0e1edbdbe95123935ccd2380` |
-| Development zkey SHA-256 | `5db722e67850d1f980cf308c1d2ca6de70b8ab9265cb8d2ca2dfb951dda394ed` |
-| Development verifying-key JSON SHA-256 | `9a153d99ce8d388db385853e838c70bdad06c374a6c11ddeba007487f96a4a42` |
-| Embedded verifying-key binary SHA-256 | `710015f547274d2a22d15d1c2ecf74d105953551e4e2a6f4a6c21776182561ed` |
+| R1CS constraints | 14,574 (machine value: `14574`) |
+| Public inputs | 11 |
+| R1CS SHA-256 | `724f255668714f206aaa187521ae2ea723093034823446575bdb3bff7c57ec97` |
+| Development zkey SHA-256 | `56a9b0adbff26b767a6fe27246f51067e8aee9a6f68367ebbc78d94e90f02d49` |
+| Development verifying-key JSON SHA-256 | `b76899b86c8d73f2bcb9fb083e182a4a15b48eaa2e07ed7b085002c4de4cf0c0` |
+| Embedded verifying-key binary SHA-256 | `3aa6114707047cee80e1005d2d20fad69d053ff2de9023d01bf8a830bfa4e2ad` |
 
 These values identify the hash-pinned local candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
@@ -100,9 +100,10 @@ Gate B/C contract, recovery, browser-crypto, vault/worker, and transaction-safet
    ```
 
 2. Obtain a sufficiently large, independently verified BN254 Powers of Tau transcript. Record its
-   origin, download URL, byte length, and SHA-256. Verify it before use. The development setup used
-   the Hermez Powers of Tau 14 transcript, but the final coordinator must revalidate the source and
-   hash rather than trusting a filename.
+   origin, download URL, byte length, and SHA-256. Verify it before use. The development setup pins
+   PSE's degree-14 Perpetual Powers of Tau artifact `ppot_0080_14.ptau` at SHA-256
+   `3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db`; the final coordinator must
+   still revalidate the source and contribution chain rather than trusting a filename.
 
 3. In `protocol/private-balance/circuits`, initialize phase 2 against the frozen R1CS:
 
