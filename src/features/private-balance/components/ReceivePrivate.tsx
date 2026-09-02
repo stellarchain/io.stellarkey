@@ -40,7 +40,7 @@ export function PrivateReceiveContent() {
   const nativeAsset = asset?.kind === 'native';
   const reusable = nativeAsset && receiveKind === 'reusable';
   const address = reusable ? (stealthMetaAddress ?? '') : (privateAddress ?? '');
-  const prefix: PrivateAddressPrefix = networkLabel === 'Mainnet' ? 'sks' : 'tks';
+  const prefix: PrivateAddressPrefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
   const stealthPrefix: StealthAddressPrefix = networkLabel === 'Mainnet' ? 'ssm' : 'tsm';
   const payload = useMemo(
     () => address

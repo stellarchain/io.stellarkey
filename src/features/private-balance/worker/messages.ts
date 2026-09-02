@@ -24,7 +24,7 @@ export interface PrivateBalanceKeyContext {
   accountPublicKey: Uint8Array;
   contextField: Uint8Array;
   deploymentBindingHash: Uint8Array;
-  addressPrefix: 'tks' | 'sks';
+  addressPrefix: 'tskpay_' | 'skpay_';
 }
 
 export type WorkerRequest =

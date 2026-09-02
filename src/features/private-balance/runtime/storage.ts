@@ -19,7 +19,7 @@ import type {
 
 const RECORD_KIND = 'stellarkey-private-balance-state';
 const RECORD_VERSION = 1;
-const PRIVATE_ADDRESS_PATTERN = /^(?:tks1|sks1)[02-9ac-hj-np-z]{166}$/;
+const PRIVATE_ADDRESS_PATTERN = /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9A-HJ-NP-Za-km-z]{121})$/;
 // Accept the former 32-bit code only for already-encrypted local preview data;
 // newly derived codes use a 128-bit SHA-256 prefix.
 const RECIPIENT_FINGERPRINT_PATTERN = /^(?:[0-9A-F]{4} ){1,7}[0-9A-F]{4}$/;
@@ -83,7 +83,7 @@ async function assertPrivateAddress(
   try {
     await decodePrivateAddress(
       address,
-      address.slice(0, 3),
+      address.startsWith('tskpay_') ? 'tskpay_' : 'skpay_',
       hexBytes(context.deploymentBindingHash),
     );
   } catch (error) {

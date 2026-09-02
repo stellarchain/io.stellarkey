@@ -14,6 +14,9 @@ import {
   computeContextHash,
   encodePrivateAddress,
   decodePrivateAddress,
+  derivePrivateAddressDeploymentTag,
+  PRIVATE_ADDRESS_MAINNET_ASCII_BYTES,
+  PRIVATE_ADDRESS_TESTNET_ASCII_BYTES,
   encodeNotePlaintext,
   decodeNotePlaintext,
   serializeCanonicalActionBytes,
@@ -62,32 +65,58 @@ test('Poseidon2 matches every pinned Rust/Soroban vector', async () => {
   }
 });
 
-test('V2 private address uses strict network HRP, Bech32m checksum, and exact length', async () => {
+test('private address uses compact network prefixes, Base58, and a prefix-bound checksum', async () => {
   const diversifier = Uint8Array.of(1, 2, 3, 4);
   const deploymentBindingHash = new Uint8Array(32).fill(0x42);
+  const deploymentTag = derivePrivateAddressDeploymentTag(deploymentBindingHash);
   const ownerCommitment = new Uint8Array(32);
   ownerCommitment[31] = 7;
   const hpkePublicKey = new Uint8Array(32).fill(0x22);
-  const encoded = encodePrivateAddress(
-    { deploymentBindingHash, diversifier, ownerCommitment, hpkePublicKey },
-    'tks',
+  const testnet = encodePrivateAddress(
+    { deploymentTag, diversifier, ownerCommitment, hpkePublicKey },
+    'tskpay_',
+  );
+  const mainnet = encodePrivateAddress(
+    { deploymentTag, diversifier, ownerCommitment, hpkePublicKey },
+    'skpay_',
   );
 
-  assert.equal(encoded.length, 170);
-  assert.match(encoded, /^tks1[02-9ac-hj-np-z]{166}$/);
-  assert.deepEqual(await decodePrivateAddress(encoded, 'tks'), {
-    deploymentBindingHash,
+  assert.equal(testnet.length, PRIVATE_ADDRESS_TESTNET_ASCII_BYTES);
+  assert.equal(mainnet.length, PRIVATE_ADDRESS_MAINNET_ASCII_BYTES);
+  assert.ok(testnet.length <= 128);
+  assert.match(testnet, /^tskpay_[1-9A-HJ-NP-Za-km-z]+$/);
+  assert.doesNotMatch(testnet.slice('tskpay_'.length), /[0OIl]/);
+  assert.deepEqual(await decodePrivateAddress(testnet, 'tskpay_', deploymentBindingHash), {
+    deploymentTag,
     diversifier,
     ownerCommitment,
     hpkePublicKey,
   });
-  await assert.rejects(() => decodePrivateAddress(`${encoded}=`, 'tks'));
-  await assert.rejects(() => decodePrivateAddress(`sks1${encoded.slice(4)}`, 'tks'));
-  await assert.rejects(() => decodePrivateAddress(encoded.toUpperCase(), 'tks'));
+
+  await assert.rejects(() => decodePrivateAddress(`${testnet}=`, 'tskpay_', deploymentBindingHash));
   await assert.rejects(
-    () => decodePrivateAddress(encoded, 'tks', new Uint8Array(32).fill(0x43)),
+    () => decodePrivateAddress(`skpay_${testnet.slice('tskpay_'.length)}`, 'skpay_', deploymentBindingHash),
+    /checksum/i,
+  );
+  await assert.rejects(() => decodePrivateAddress(testnet, 'skpay_', deploymentBindingHash), /prefix/i);
+  await assert.rejects(() => decodePrivateAddress(testnet.toUpperCase(), 'tskpay_', deploymentBindingHash));
+  await assert.rejects(
+    () => decodePrivateAddress(testnet, 'tskpay_', new Uint8Array(32).fill(0x43)),
     /deployment/i,
   );
+  await assert.rejects(() => decodePrivateAddress(`tks1${'q'.repeat(166)}`, 'tskpay_', deploymentBindingHash));
+  await assert.rejects(() => decodePrivateAddress(`sks1${'q'.repeat(166)}`, 'skpay_', deploymentBindingHash));
+});
+
+test('private address deployment tags bind 32-byte deployment hashes', () => {
+  const hash = new Uint8Array(32).fill(0x42);
+  const first = derivePrivateAddressDeploymentTag(hash);
+  const second = derivePrivateAddressDeploymentTag(hash);
+  assert.equal(first.length, 16);
+  assert.deepEqual(first, second);
+  hash[31] ^= 1;
+  assert.notDeepEqual(derivePrivateAddressDeploymentTag(hash), first);
+  assert.throws(() => derivePrivateAddressDeploymentTag(new Uint8Array(31)));
 });
 
 test('V2 note encoding binds a diversifier in the normative 128-byte layout', () => {

@@ -9,7 +9,7 @@ import {
 } from '../src/features/private-balance/runtime/chained-send.ts';
 
 const OWN_FINGERPRINT = 'ABCD EF01';
-const RECIPIENT = `tks1${'p'.repeat(115)}`;
+const RECIPIENT = `tskpay_${'2'.repeat(121)}`;
 const DRAFT = { kind: 'transfer', amount: '2.5', recipientAddress: RECIPIENT };
 
 function approvalFixture(overrides = {}) {

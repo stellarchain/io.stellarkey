@@ -59,7 +59,7 @@ async function readPrivateAddress(page: Page, region: Locator): Promise<string> 
   const addressText = dialog.getByLabel("Private address").locator("[title]").first();
   await expect(addressText).toBeVisible();
   const address = await addressText.getAttribute("title") ?? "";
-  expect(address).toMatch(/^tks1[023456789acdefghjklmnpqrstuvwxyz]{115}$/);
+  expect(address).toMatch(/^tskpay_[1-9A-HJ-NP-Za-km-z]{121}$/);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   return address;
 }

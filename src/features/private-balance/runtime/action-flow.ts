@@ -273,7 +273,7 @@ export async function validatePrivateTransferRecipient(
   address: string,
   manifest: PrivateBalanceManifest,
 ): Promise<{ fingerprint: string }> {
-  const prefix = manifest.networkPassphrase.startsWith('Public ') ? 'sks' : 'tks';
+  const prefix = manifest.networkPassphrase.startsWith('Public ') ? 'skpay_' : 'tskpay_';
   await decodePrivateAddress(address, prefix);
   return { fingerprint: privateAddressFingerprint(address) };
 }

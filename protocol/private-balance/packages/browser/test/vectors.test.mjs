@@ -10,6 +10,7 @@ import {
   computeContextField,
   encodePrivateAddress,
   decodePrivateAddress,
+  derivePrivateAddressDeploymentTag,
   createOutputPackage,
   openRecipientEnvelope,
   encodeNotePlaintext,
@@ -81,14 +82,15 @@ test('fixed protocol conformance snapshots match every v2 primitive', async () =
   })) assert.equal(toHex(value), keyVector.expected[name], name);
 
   const addressVector = load('addresses');
+  const addressDeploymentBindingHash = fromHex(addressVector.input.deploymentBindingHash);
   const addressInput = {
-    deploymentBindingHash: fromHex(addressVector.input.deploymentBindingHash),
+    deploymentTag: derivePrivateAddressDeploymentTag(addressDeploymentBindingHash),
     diversifier: fromHex(addressVector.input.diversifier),
     ownerCommitment: fromHex(addressVector.input.ownerCommitment),
     hpkePublicKey: fromHex(addressVector.input.hpkePublicKey),
   };
-  assert.equal(encodePrivateAddress(addressInput, 'tks'), addressVector.expected.testnet);
-  assert.equal(encodePrivateAddress(addressInput, 'sks'), addressVector.expected.mainnet);
+  assert.equal(encodePrivateAddress(addressInput, 'tskpay_'), addressVector.expected.testnet);
+  assert.equal(encodePrivateAddress(addressInput, 'skpay_'), addressVector.expected.mainnet);
 
   const noteVector = load('notes');
   const noteInput = noteVector.input;
@@ -249,18 +251,18 @@ test('address: encode and decode roundtrip', async () => {
   const hpkePk = new Uint8Array(32).fill(0x33);
 
   const addrObj = {
-    deploymentBindingHash: new Uint8Array(32).fill(0x44),
+    deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(0x44)),
     diversifier,
     ownerCommitment: owner,
     hpkePublicKey: hpkePk,
   };
 
-  const encoded = encodePrivateAddress(addrObj, 'tks');
-  assert.equal(encoded.startsWith('tks1'), true);
-  assert.equal(encoded.length, 170);
+  const encoded = encodePrivateAddress(addrObj, 'tskpay_');
+  assert.equal(encoded.startsWith('tskpay_'), true);
+  assert.equal(encoded.length, 128);
 
-  const decoded = await decodePrivateAddress(encoded, 'tks');
-  assert.deepEqual(decoded.deploymentBindingHash, addrObj.deploymentBindingHash);
+  const decoded = await decodePrivateAddress(encoded, 'tskpay_');
+  assert.deepEqual(decoded.deploymentTag, addrObj.deploymentTag);
   assert.deepEqual(decoded.diversifier, diversifier);
   assert.deepEqual(decoded.ownerCommitment, owner);
   assert.deepEqual(decoded.hpkePublicKey, hpkePk);

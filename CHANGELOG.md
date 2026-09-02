@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.
+
+### Removed
+
+- Removed support for the previous `tks1` and `sks1` Private Payments address encodings; existing testnet private state must be recreated.
+
 ### Fixed
 
 - Corrected the remaining Private Payments page copy that contradicted the hosted Testnet-only development preview policy.

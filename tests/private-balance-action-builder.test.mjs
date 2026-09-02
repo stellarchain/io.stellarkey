@@ -7,6 +7,7 @@ import {
   computeContextHash,
   deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
+  derivePrivateAddressDeploymentTag,
   encodePrivateAddress,
   bigintTo32Bytes,
   openRecipientEnvelope,
@@ -39,7 +40,7 @@ async function fixture() {
     ...context,
     deploymentBindingHash: bytes(9),
     contextField: computeContextField(contextHash),
-    addressPrefix: 'tks',
+    addressPrefix: 'tskpay_',
   };
   const owner = await deriveExpandedSpendingKey(
     new Uint8Array(64).fill(6),
@@ -60,11 +61,11 @@ async function fixture() {
     keyContext.contextField,
   );
   const recipientAddress = encodePrivateAddress({
-    deploymentBindingHash: keyContext.deploymentBindingHash,
+    deploymentTag: derivePrivateAddressDeploymentTag(keyContext.deploymentBindingHash),
     diversifier: new Uint8Array(4),
     ownerCommitment: recipient.ownerCommitment,
     hpkePublicKey: recipient.hpkePublicKey,
-  }, 'tks');
+  }, 'tskpay_');
   return { keyContext, owner, recipient, recipientAddress, assetContractId, assetField };
 }
 
@@ -259,11 +260,11 @@ test('action builder creates an exact one-note transfer witness with self change
     /another asset/i,
   );
   const foreignDeploymentAddress = encodePrivateAddress({
-    deploymentBindingHash: bytes(10),
+    deploymentTag: derivePrivateAddressDeploymentTag(bytes(10)),
     diversifier: new Uint8Array(4),
     ownerCommitment: recipient.ownerCommitment,
     hpkePublicKey: recipient.hpkePublicKey,
-  }, 'tks');
+  }, 'tskpay_');
   await assert.rejects(
     () => preparePrivateAction({
       esk: owner,

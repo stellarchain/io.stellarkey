@@ -4,10 +4,21 @@ import { readFileSync } from 'node:fs';
 import {
   consumePrivateAddIntent,
   consumePrivateSendIntent,
+  isPrivateReceiveAddressLike,
   isStealthMetaAddressLike,
   requestPrivateAdd,
   requestPrivateSend,
 } from '../src/lib/private-address.ts';
+
+test('recognizes only canonical-shape compact private payment addresses', () => {
+  const body = '2'.repeat(121);
+  assert.equal(isPrivateReceiveAddressLike(`tskpay_${body}`), true);
+  assert.equal(isPrivateReceiveAddressLike(`skpay_${body}`), true);
+  assert.equal(isPrivateReceiveAddressLike(`tks1${body}`), false);
+  assert.equal(isPrivateReceiveAddressLike(`tskpay_${'2'.repeat(120)}`), false);
+  assert.equal(isPrivateReceiveAddressLike(`tskpay_${'0'.repeat(121)}`), false);
+  assert.equal(isPrivateReceiveAddressLike(` tskpay_${body}`), true);
+});
 
 test('recognizes only canonical-shape reusable private recipient handles', () => {
   const payload = 'q'.repeat(160);

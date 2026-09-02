@@ -17,6 +17,7 @@ import {
   createEmptyTree,
   deriveKeysFromSeed,
   derivePrivacySessionRoot,
+  derivePrivateAddressDeploymentTag,
   encodeNotePlaintext,
   encodePrivateAddress,
   serializeCanonicalActionBytes,
@@ -83,6 +84,7 @@ write('keys-v1.json', {
 
 const diversifier = new Uint8Array(4);
 const deploymentBindingHash = new Uint8Array(32).fill(0x42);
+const deploymentTag = derivePrivateAddressDeploymentTag(deploymentBindingHash);
 write('addresses-v1.json', {
   version: 1,
   input: {
@@ -93,17 +95,17 @@ write('addresses-v1.json', {
   },
   expected: {
     testnet: encodePrivateAddress({
-      deploymentBindingHash,
+      deploymentTag,
       diversifier,
       ownerCommitment: keys.ownerCommitment,
       hpkePublicKey: keys.hpkePublicKey,
-    }, 'tks'),
+    }, 'tskpay_'),
     mainnet: encodePrivateAddress({
-      deploymentBindingHash,
+      deploymentTag,
       diversifier,
       ownerCommitment: keys.ownerCommitment,
       hpkePublicKey: keys.hpkePublicKey,
-    }, 'sks'),
+    }, 'skpay_'),
   },
 });
 

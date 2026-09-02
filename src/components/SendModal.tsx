@@ -378,7 +378,7 @@ function SendInner({
   }, [activity]);
 
   const isFederation = destination.includes("*");
-  // A tks1/sks1 paste is a Private Payments recipient — a regular Stellar
+  // An skpay_/tskpay_ paste is a Private Payments recipient — a regular Stellar
   // payment can never reach it, so offer the one-tap handoff instead.
   const privateDestination = isPrivateReceiveAddressLike(destination);
   // A tsm1/ssm1 reusable handle is funded from the public account, but derives

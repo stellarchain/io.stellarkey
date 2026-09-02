@@ -97,10 +97,10 @@ const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   notePlaintextBytes: 128,
   recipientEnvelopeBytes: 181,
   outputPackageBytes: 213,
-  addressPayloadBytes: 100,
-  addressAsciiBytes: 170,
-  addressContextTagBytes: 0,
-  addressChecksumBytes: 6,
+  addressPayloadBytes: 84,
+  addressAsciiBytes: 128,
+  addressContextTagBytes: 16,
+  addressChecksumBytes: 4,
 };
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 const DEVELOPMENT_POOL_ID = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4';
