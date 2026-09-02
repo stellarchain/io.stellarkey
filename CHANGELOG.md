@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
 - Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
 - Reduced the Private Payments circuit from 23,437 to 14,876 constraints by removing the dummy lane input and duplicate total range check, deriving output roles, and using the ternary tree; development proving now fits the pinned `pot14` transcript.
-- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
+- Retired the incompatible Testnet Private Payments pools and fixture evidence, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 

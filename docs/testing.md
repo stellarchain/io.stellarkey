@@ -27,8 +27,8 @@ bounded pull-request suite.
 
 The replacement protocol currently publishes an authenticated empty catalogue.
 `npm run private:generate` regenerates local artifacts and cannot make them a
-deployment. Historical fixture records remain evidence for the retired build
-only. After fresh XLM and USDC deployments produce evidence matching the current
+deployment. Retired fixture records are removed so they cannot be mistaken for
+or block current deployment evidence. After fresh XLM and USDC deployments produce evidence matching the current
 artifacts, publication must be requested explicitly with:
 
 ```sh
