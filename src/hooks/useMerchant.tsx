@@ -161,6 +161,7 @@ import {
   merchantPaymentTransport,
   type MerchantPaymentTransport,
 } from "@/lib/merchant/routing";
+import { isCurrentReceivingDestination } from "@/lib/merchant/destination";
 import {
   customerHistory as buildCustomerHistory,
   forgetCustomer as forgetPersistedCustomer,
@@ -3453,12 +3454,12 @@ export function MerchantProvider({
       transport: MerchantPaymentTransport = "muxed",
     ) => {
       const quote = quoteFor(charge, asset);
-      if (!quote) return null;
+      if (!quote || !isCurrentReceivingDestination(settings, charge.destination)) return null;
       return transport === "memo-id"
         ? chargeCompatibilityPayUri(charge, quote, settings.profile.name)
         : chargePayUri(charge, quote, settings.profile.name);
     },
-    [settings.profile.name],
+    [settings],
   );
   const orderFor = useCallback(
     (chargeId: string) => {

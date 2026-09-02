@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import {
+  useMerchantConfiguration,
   useMerchantRecords,
   useMerchantStatus,
 } from "@/hooks/useMerchant";
@@ -58,6 +59,7 @@ export function ChargeSheet({ charge, onClose }: { charge: Charge | null; onClos
 
 function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => void }) {
   const { payUriFor, voidCharge, orderFor } = useMerchantRecords();
+  const { settings } = useMerchantConfiguration();
   const { watchedLedger, watchError, pollNow } = useMerchantStatus();
   const { toast } = useToast();
 
@@ -72,6 +74,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const payment = charge.payment;
   const paidQuote = payment ? quoteFor(charge, payment.asset) : null;
   const payUri = payUriFor(charge, quote.asset, requestTransport);
+  const receivingAccountChanged = settings.receivingPublicKey !== charge.destination;
   const requestTarget = merchantPaymentTransport(
     charge.destination,
     charge.routingId,
@@ -79,7 +82,8 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   );
   const order = orderFor(charge.id);
   const awaiting = charge.status === "awaiting";
-  const wakeLock = useWakeLock(awaiting);
+  const requestAvailable = awaiting && !receivingAccountChanged && payUri !== null;
+  const wakeLock = useWakeLock(requestAvailable);
   const seconds = secondsRemaining(charge, now);
   const urgent = seconds < URGENT_SECONDS;
   const gap = payment && paidQuote ? difference(payment, paidQuote) : null;
@@ -130,6 +134,9 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   }, [charge.status, toast]);
 
   const headline = useMemo(() => {
+    if (receivingAccountChanged && charge.status === "awaiting") {
+      return "Receiving account changed";
+    }
     switch (charge.status) {
       case "paid":
         return "Paid in full";
@@ -144,7 +151,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
       default:
         return "Watching for payment";
     }
-  }, [charge.status]);
+  }, [charge.status, receivingAccountChanged]);
 
   const title = useMemo(() => {
     switch (charge.status) {
@@ -167,7 +174,10 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const tone =
     settled
       ? "#30D158"
-      : charge.status === "underpaid" || charge.status === "overpaid" || charge.status === "expired"
+      : receivingAccountChanged ||
+          charge.status === "underpaid" ||
+          charge.status === "overpaid" ||
+          charge.status === "expired"
         ? "#FF9F0A"
         : "#0A84FF";
 
@@ -176,11 +186,11 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
        the header cross all go, because clearTicket() has already emptied the till
        and the QR would be the only way back to a customer who is mid-payment. Both
        ways out of an open charge are spelled out at the foot of the sheet. */
-    <Modal open onClose={onClose} wide dismissable={!awaiting}>
+    <Modal open onClose={onClose} wide dismissable={!requestAvailable}>
       <ModalHeader
         title={title}
         subtitle={order ? `Order ${order.number} · ${charge.reference}` : charge.reference}
-        onClose={awaiting ? undefined : onClose}
+        onClose={requestAvailable ? undefined : onClose}
       />
 
       <div className="space-y-4 p-4 sm:p-6">
@@ -198,7 +208,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         </div>
 
         {/* Switching asset is only a choice while the request is still open. */}
-        {awaiting && charge.quotes.length > 1 && (
+        {requestAvailable && charge.quotes.length > 1 && (
           <div className="mx-auto w-full max-w-[320px]">
             <SegmentedControl
               ariaLabel="Payment asset"
@@ -212,7 +222,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
           </div>
         )}
 
-        {awaiting && (
+        {requestAvailable && (
           <div className="mx-auto w-full max-w-[320px]">
             <SegmentedControl
               ariaLabel="Payment request compatibility"
@@ -229,7 +239,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         {/* ---------- the live status ---------- */}
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.04] px-4 py-3">
           <div role="status" aria-live="polite" className="flex min-w-0 items-center gap-2.5">
-            {awaiting ? (
+            {requestAvailable ? (
               <span className="text-[#0A84FF]">
                 <Spinner size={14} />
               </span>
@@ -243,7 +253,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
             )}
             <span className="truncate text-[13.5px] font-medium text-white">{headline}</span>
           </div>
-          {awaiting && (
+          {requestAvailable && (
             <div className="shrink-0 text-right">
               <span
                 aria-hidden="true"
@@ -260,7 +270,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
           )}
         </div>
 
-        {awaiting && (wakeLock.state === "error" || wakeLock.state === "released") && (
+        {requestAvailable && (wakeLock.state === "error" || wakeLock.state === "released") && (
           <button
             type="button"
             onClick={wakeLock.retry}
@@ -270,7 +280,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
           </button>
         )}
 
-        {awaiting && watchError && (
+        {requestAvailable && watchError && (
           <Notice tone="warn">
             <div className="flex items-start gap-2.5">
               <span className="mt-0.5 shrink-0 text-[#FF9F0A]">
@@ -299,7 +309,7 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         )}
 
         {/* ---------- the request ---------- */}
-        {awaiting && (
+        {requestAvailable && (
           <div className="space-y-4">
             <div className="flex justify-center">
               <div className="rounded-3xl bg-white p-3.5 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)]">
@@ -402,6 +412,41 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {awaiting && !requestAvailable && (
+          <div className="space-y-3">
+            <Notice tone="warn">
+              <p className="font-semibold text-white">
+                {receivingAccountChanged
+                  ? "Receiving account changed"
+                  : "This payment request is unavailable"}
+              </p>
+              <p className="mt-1 text-neutral-300">
+                {receivingAccountChanged
+                  ? "This charge points to the previous receiving account, so its QR, address, and automatic settlement are paused. Restore that account or cancel this charge and ring up a replacement."
+                  : "The saved charge cannot produce a complete payment request. Cancel it and ring up a replacement before asking the customer to pay."}
+              </p>
+            </Notice>
+            <button
+              type="button"
+              onClick={async () => {
+                triggerHaptic("warning");
+                try {
+                  await voidCharge(charge.id);
+                  onClose();
+                } catch (error) {
+                  toast(
+                    error instanceof Error ? error.message : "The charge could not be cancelled.",
+                    "error",
+                  );
+                }
+              }}
+              className="btn btn-danger w-full"
+            >
+              Cancel charge
+            </button>
           </div>
         )}
 

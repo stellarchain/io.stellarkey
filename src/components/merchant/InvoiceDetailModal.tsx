@@ -256,6 +256,18 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const requestTarget = destination
     ? merchantPaymentTransport(destination, invoice.routingId, requestTransport)
     : null;
+  const payable =
+    (status === "sent" || status === "partially_paid" || status === "overdue") &&
+    Boolean(destination && payUri && selectedQuote && payAmount && requestTarget);
+  const paymentUnavailableNotice = receivingAccountChanged
+    ? "The receiving account changed after this invoice was issued. Contact the merchant for a replacement invoice before paying."
+    : status === "void"
+      ? "This invoice is void. Its previous payment request must not be used."
+      : status === "paid"
+        ? "This invoice is paid in full. No further payment is due."
+        : status === "draft"
+          ? "This draft has not been issued and carries no payment request."
+          : "A complete payment request is unavailable. Contact the merchant before paying.";
 
   useEffect(() => {
     if (!payUri) return;
@@ -698,7 +710,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
                 <p className="font-semibold text-white">This invoice is void.</p>
                 <p className="mt-1">Its old payment request must no longer be shared.</p>
               </Notice>
-            ) : destination && payUri && selectedQuote && payAmount ? (
+            ) : payable && destination && selectedQuote && payAmount ? (
               <>
                 <SegmentedControl
                   ariaLabel="Payment request compatibility"
@@ -990,11 +1002,13 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
               addressLines={settings.profile.addressLines.filter(Boolean)}
               taxId={settings.profile.taxId.trim()}
               footer={settings.profile.receiptFooter.trim()}
-              destination={requestTarget?.destination ?? destination}
+              payable={payable}
+              paymentUnavailableNotice={paymentUnavailableNotice}
+              destination={payable ? (requestTarget?.destination ?? destination) : null}
               requestTransport={requestTransport}
-              qrDataUrl={qrDataUrl}
-              payAmount={payAmount}
-              payAssetCode={selectedQuote?.asset.code ?? null}
+              qrDataUrl={payable ? qrDataUrl : null}
+              payAmount={payable ? payAmount : null}
+              payAssetCode={payable ? (selectedQuote?.asset.code ?? null) : null}
               taxModeNote={
                 settings.taxMode === "inclusive"
                   ? "Unit prices include VAT."
@@ -1047,6 +1061,8 @@ function InvoicePaper({
   addressLines,
   taxId,
   footer,
+  payable,
+  paymentUnavailableNotice,
   destination,
   requestTransport,
   qrDataUrl,
@@ -1063,6 +1079,8 @@ function InvoicePaper({
   addressLines: string[];
   taxId: string;
   footer: string;
+  payable: boolean;
+  paymentUnavailableNotice: string;
   destination: string | null;
   requestTransport: MerchantPaymentTransport;
   qrDataUrl: string | null;
@@ -1200,59 +1218,74 @@ function InvoicePaper({
         </p>
       )}
 
-      {/* How to pay it */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: "8mm",
-          margin: "10mm 0 0",
-          padding: "5mm",
-          border: "0.4mm solid #000000",
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: "7.5pt", letterSpacing: "0.08em", fontWeight: 600 }}>
-            HOW TO PAY
-          </p>
-          <p style={{ margin: "2mm 0 0", fontSize: "8.5pt" }}>
-            {requestTransport === "muxed"
-              ? "Scan this standard Stellar request. Its payment route is included in the address:"
-              : "Scan this Trezor-compatible request. It includes the account and MEMO_ID:"}
-          </p>
-          <p
-            style={{
-              margin: "1mm 0 0",
-              fontSize: "8pt",
-              fontFamily: MONO,
-              wordBreak: "break-all",
-            }}
-          >
-            {destination ?? "— no receiving account set —"}
-          </p>
-          <p style={{ margin: "3mm 0 0", fontSize: "8.5pt" }}>Invoice reference:</p>
-          <p style={{ margin: "1mm 0 0", fontSize: "14pt", fontWeight: 700, fontFamily: MONO }}>
-            {invoice.reference}
-          </p>
-          <p style={{ margin: "2mm 0 0", fontSize: "7.5pt" }}>
-            The QR carries the payment route automatically.
-          </p>
-          {payAmount && payAssetCode && (
-            <p style={{ margin: "3mm 0 0", fontSize: "11pt", fontWeight: 700, fontFamily: MONO }}>
-              Pay exactly {payAmount} {payAssetCode}
+      {/* How to pay it, or an explicit quarantine that contains no reusable payment facts. */}
+      {payable ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: "8mm",
+            margin: "10mm 0 0",
+            padding: "5mm",
+            border: "0.4mm solid #000000",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: "7.5pt", letterSpacing: "0.08em", fontWeight: 600 }}>
+              HOW TO PAY
             </p>
+            <p style={{ margin: "2mm 0 0", fontSize: "8.5pt" }}>
+              {requestTransport === "muxed"
+                ? "Scan this standard Stellar request. Its payment route is included in the address:"
+                : "Scan this Trezor-compatible request. It includes the account and MEMO_ID:"}
+            </p>
+            <p
+              style={{
+                margin: "1mm 0 0",
+                fontSize: "8pt",
+                fontFamily: MONO,
+                wordBreak: "break-all",
+              }}
+            >
+              {destination}
+            </p>
+            <p style={{ margin: "3mm 0 0", fontSize: "8.5pt" }}>Invoice reference:</p>
+            <p style={{ margin: "1mm 0 0", fontSize: "14pt", fontWeight: 700, fontFamily: MONO }}>
+              {invoice.reference}
+            </p>
+            <p style={{ margin: "2mm 0 0", fontSize: "7.5pt" }}>
+              The QR carries the payment route automatically.
+            </p>
+            {payAmount && payAssetCode && (
+              <p style={{ margin: "3mm 0 0", fontSize: "11pt", fontWeight: 700, fontFamily: MONO }}>
+                Pay exactly {payAmount} {payAssetCode}
+              </p>
+            )}
+          </div>
+          {qrDataUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={qrDataUrl}
+              alt={`Payment request for ${invoice.number}, reference ${invoice.reference}`}
+              style={{ display: "block", width: "32mm", height: "32mm", flexShrink: 0 }}
+            />
           )}
         </div>
-        {qrDataUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={qrDataUrl}
-            alt={`Payment request for ${invoice.number}, reference ${invoice.reference}`}
-            style={{ display: "block", width: "32mm", height: "32mm", flexShrink: 0 }}
-          />
-        )}
-      </div>
+      ) : (
+        <div
+          style={{
+            margin: "10mm 0 0",
+            padding: "5mm",
+            border: "0.8mm solid #000000",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: "9pt", letterSpacing: "0.08em", fontWeight: 700 }}>
+            PAYMENT REQUEST WITHDRAWN
+          </p>
+          <p style={{ margin: "2mm 0 0", fontSize: "9pt" }}>{paymentUnavailableNotice}</p>
+        </div>
+      )}
 
       {footer && (
         <p style={{ margin: "8mm 0 0", fontSize: "8pt", textAlign: "center" }}>{footer}</p>

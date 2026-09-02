@@ -557,6 +557,11 @@ test("production invoice surfaces use persisted actions and real document handof
   assert.match(detail, /window\.print|mailto:|Blob/);
   assert.match(detail, /Invoice surplus/);
   assert.match(detail, /submitPaymentRefund/);
+  assert.match(detail, /const payable =/);
+  assert.match(detail, /payable=\{payable\}/);
+  const paper = detail.split("function InvoicePaper")[1] ?? "";
+  assert.match(paper, /payable \? \(/);
+  assert.match(paper, /PAYMENT REQUEST WITHDRAWN/);
   assert.match(hook, /reconciliation\.reversalAmount \?\? payment\.amount/);
   assert.doesNotMatch(detail, /statusOverride|would be closed|would be voided/);
 });

@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Applied one current-receiving-account quarantine to charges, invoices, and counter codes; stale charges no longer settle or regenerate requests, and printed invoices replace stale, void, paid, draft, or incomplete payment instructions with a withdrawal notice.
 - Enforced customer-note and customer-erasure authority inside the merchant domain, limited irreversible erasure to active owners, and retained actor-attributed hashed-address audit events after deletion.
 - Centralized Merchant Mode exit authorization in the shared navigation transition, covering the mode switcher, mobile tabs, keyboard shortcuts, command actions, and in-flow redirects.
 - Required comp authority for discounts that reduce a ticket to zero, recorded those giveaways as comps, and retained payment and open-shift authorization for their automatic settlement.

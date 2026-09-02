@@ -277,6 +277,24 @@ test("a payment cannot settle a charge issued to another receiving account", () 
   assert.equal(reconciled.paymentReconciliations[0].outcome, "routing_unknown");
 });
 
+test("an awaiting charge stops settling after the merchant receiving account changes", () => {
+  const initial = awaitingStore();
+  const changed = {
+    ...initial,
+    settings: { ...initial.settings, receivingPublicKey: ISSUER },
+  };
+  const reconciled = reconcileIncomingPayments(changed, {
+    network: "mainnet",
+    payments: [payment()],
+    now: NOW,
+  });
+
+  assert.equal(reconciled.orders[0].status, "awaiting");
+  assert.equal(reconciled.charges[0].status, "awaiting");
+  assert.equal(reconciled.paymentReconciliations[0].outcome, "routing_unknown");
+  assert.equal(reconciled.unmatched[0].destination, TILL);
+});
+
 test("watch targets and cursors retain immutable destinations after settings change", async () => {
   const watch = await import("../src/lib/merchant/watch.ts");
   assert.equal(typeof watch.merchantWatchDestinations, "function");
@@ -648,4 +666,19 @@ test("duplicate and unmatched production surfaces expose real audited actions", 
   assert.match(orders, /DuplicateChargeSheet/);
   assert.match(orders, /Owner cleanup/);
   assert.match(orders, /dismissPendingReconciliations/);
+});
+
+test("stale charges cannot render a new payment request", () => {
+  const hook = readFileSync(new URL("../src/hooks/useMerchant.tsx", import.meta.url), "utf8");
+  const sheet = readFileSync(
+    new URL("../src/components/merchant/ChargeSheet.tsx", import.meta.url),
+    "utf8",
+  );
+  const payUriFor = hook.split("const payUriFor = useCallback")[1]
+    ?.split("const orderFor = useCallback")[0] ?? "";
+
+  assert.match(payUriFor, /isCurrentReceivingDestination\(settings, charge\.destination\)/);
+  assert.match(sheet, /receivingAccountChanged/);
+  assert.match(sheet, /requestAvailable/);
+  assert.match(sheet, /Receiving account changed/);
 });
