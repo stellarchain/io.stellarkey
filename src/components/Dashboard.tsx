@@ -535,6 +535,38 @@ export function Dashboard() {
   const [refreshingPull, setRefreshingPull] = useState(false);
   const touchStartY = useRef<number | null>(null);
   const pullYRef = useRef(0);
+  const merchantExitAuthorizationRef = useRef<Promise<boolean> | null>(null);
+  const navigationRequestRef = useRef(0);
+  const switchTab = useCallback(async (v: View): Promise<void> => {
+    const requestId = ++navigationRequestRef.current;
+    if (mode === "merchant" && !isMerchantView(v) && v !== "settings") {
+      if (!merchantExitAuthorizationRef.current) {
+        merchantExitAuthorizationRef.current = merchantAuthorizeWalletExit()
+          .then(() => true)
+          .catch((error: unknown) => {
+            toast(
+              error instanceof Error ? error.message : "Owner authorization is required.",
+              "error",
+            );
+            return false;
+          })
+          .finally(() => {
+            merchantExitAuthorizationRef.current = null;
+          });
+      }
+      const authorized = await merchantExitAuthorizationRef.current;
+      if (!authorized || requestId !== navigationRequestRef.current) return;
+    }
+    triggerHaptic("selection");
+    if (v === "swap") setSwapPrefill(null);
+    setView(v);
+    if (isMerchantView(v)) {
+      writeShellMode("merchant");
+    } else if (v !== "settings") {
+      writeShellMode("wallet");
+    }
+    window.scrollTo({ top: 0 });
+  }, [merchantAuthorizeWalletExit, mode, toast]);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
   const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
@@ -911,7 +943,7 @@ export function Dashboard() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [accounts, selectAccount, togglePrivacy, lock, merchantEnabled]);
+  }, [accounts, selectAccount, togglePrivacy, lock, merchantEnabled, switchTab]);
 
   // Infinite scroll for Activity — iOS-style forever scroll: an IntersectionObserver
   // sentinel near the list end pulls the next page automatically.
@@ -1273,18 +1305,6 @@ export function Dashboard() {
     openSettings(mode === "merchant" ? "merchant" : "root");
   }
 
-  function switchTab(v: View) {
-    triggerHaptic("selection");
-    if (v === "swap") setSwapPrefill(null);
-    setView(v);
-    if (isMerchantView(v)) {
-      writeShellMode("merchant");
-    } else if (v !== "settings") {
-      writeShellMode("wallet");
-    }
-    window.scrollTo({ top: 0 });
-  }
-
   const openPrivatePayments = useCallback((deploymentId?: string) => {
     const targetDeploymentId = deploymentId ??
       privateWithdrawEntry?.deploymentId ??
@@ -1325,15 +1345,7 @@ export function Dashboard() {
 
   /** Merchant selects the till, Wallet returns Home. */
   async function switchMode(next: ShellMode) {
-    if (next === "wallet" && mode === "merchant") {
-      try {
-        await merchantAuthorizeWalletExit();
-      } catch (error) {
-        toast(error instanceof Error ? error.message : "Owner authorization is required.", "error");
-        return;
-      }
-    }
-    switchTab(next === "merchant" ? "merchant" : "home");
+    await switchTab(next === "merchant" ? "merchant" : "home");
   }
 
   function handleSendToContact(c: Contact) {
@@ -1494,6 +1506,7 @@ export function Dashboard() {
       switchNetwork,
       selectAccount,
       lock,
+      switchTab,
     ],
   );
 
