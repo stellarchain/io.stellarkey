@@ -103,6 +103,7 @@ export function PrivateBalanceCard({
   const [prefillRecipient, setPrefillRecipient] = useState<string | undefined>(undefined);
   const [prefillAmount, setPrefillAmount] = useState<string | undefined>(undefined);
   const current = phase === 'current';
+  const statusUnknown = phase === 'status-unknown';
   const follower = configured && !isLeader;
   const actionable = current && isLeader;
   const decimals = asset?.decimals ?? 7;
@@ -205,11 +206,11 @@ export function PrivateBalanceCard({
       {showAssetSelector ? <PrivateAssetSelector /> : null}
       <div className="balance-display mt-1.5 text-white">
         <span className="balance-display-value">
-          {!configured ? '0' : privacyMode ? '••••••' : fmtAmount(balance)}
+          {!configured ? '0' : statusUnknown ? '—' : privacyMode ? '••••••' : fmtAmount(balance)}
         </span>
-        {!configured || !privacyMode ? <span className="balance-display-unit">{assetCode}</span> : null}
+        {!configured || statusUnknown || !privacyMode ? <span className="balance-display-unit">{assetCode}</span> : null}
       </div>
-      {configured ? (
+      {configured && !statusUnknown ? (
         <div className="mt-1 flex min-h-[18px] items-center justify-center">
           <FiatValue
             amount={balance}

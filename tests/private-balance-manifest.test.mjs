@@ -106,6 +106,48 @@ test('manifest: requires a classic account as the stealth announcement sink', ()
   );
 });
 
+test('manifest: requires a clean independent witness URL and deployment checkpoint', () => {
+  const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const complete = {
+    ...raw,
+    witnessRpcUrl: 'https://soroban-rpc.testnet.stellar.gateway.fm/',
+    deploymentCheckpoint: { ledger: 123, hash: 'ab'.repeat(32) },
+    constants: {
+      ...raw.constants,
+      outgoingEnvelopeBytes: 157,
+      outputPackageBytes: 370,
+      addressPayloadBytes: 84,
+      addressAsciiBytes: 128,
+      addressContextTagBytes: 16,
+      addressChecksumBytes: 4,
+    },
+  };
+
+  const parsed = validateManifest(complete);
+  assert.equal(parsed.witnessRpcUrl, 'https://soroban-rpc.testnet.stellar.gateway.fm');
+  assert.deepEqual(parsed.deploymentCheckpoint, { ledger: 123, hash: 'ab'.repeat(32) });
+  assert.throws(
+    () => validateManifest({ ...complete, witnessRpcUrl: undefined }),
+    /witnessRpcUrl is invalid/,
+  );
+  assert.throws(
+    () => validateManifest({ ...complete, witnessRpcUrl: 'http://witness.example.test' }),
+    /witnessRpcUrl requires HTTPS/,
+  );
+  assert.throws(
+    () => validateManifest({ ...complete, witnessRpcUrl: 'https://witness.example.test/?account=1' }),
+    /credentials, query, or fragment/,
+  );
+  assert.throws(
+    () => validateManifest({ ...complete, deploymentCheckpoint: { ledger: -1, hash: 'ab'.repeat(32) } }),
+    /deploymentCheckpoint\.ledger/,
+  );
+  assert.throws(
+    () => validateManifest({ ...complete, deploymentCheckpoint: { ledger: 123, hash: 'AB'.repeat(32) } }),
+    /lowercase hex/,
+  );
+});
+
 test('manifest: rejects consensus constant drift', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
   assert.throws(
@@ -188,6 +230,8 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.match(source, /protocol\/private-balance\/rust-toolchain\.toml/);
   assert.match(source, /protocol\/private-balance\/parameters\/generator\.lock/);
   assert.match(source, /protocol\/private-balance\/scripts\/build-private-balance-artifacts\.mjs/);
+  assert.match(source, /soroban-rpc\.testnet\.stellar\.gateway\.fm/);
+  assert.match(source, /deploymentCheckpoint/);
   assert.match(source, /\['log', '-1', '--format=%H', '--'/);
   assert.doesNotMatch(source, /existing\.release\?\.contractSourceCommit/);
   assert.match(buildSource, /STELLAR_CLI_VERSION = '27\.0\.0'/);

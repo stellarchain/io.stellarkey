@@ -94,6 +94,37 @@ const recordScVal = record => mapScVal({
   tree_root_after: nativeToScVal(record.tree_root_after),
 });
 
+test('archive client reads exact RPC network and ledger identities', async () => {
+  const calls = [];
+  const server = {
+    async getNetwork() {
+      return { passphrase: manifest.networkPassphrase };
+    },
+    async getLatestLedger() {
+      return { sequence: 500 };
+    },
+    async getLedgers(request) {
+      calls.push(request);
+      return {
+        ledgers: [{
+          sequence: request.startLedger,
+          hash: 'ab'.repeat(32),
+          ledgerCloseTime: '1700',
+        }],
+      };
+    },
+  };
+  const client = new PrivateBalanceArchiveClient('https://rpc.example', manifest, server);
+
+  assert.equal(await client.readNetworkPassphrase(), manifest.networkPassphrase);
+  assert.equal(await client.readLatestLedgerSequence(), 500);
+  assert.deepEqual(await client.readLedgerIdentity(499), {
+    sequence: 499,
+    hash: 'ab'.repeat(32),
+  });
+  assert.deepEqual(calls, [{ startLedger: 499, pagination: { limit: 1 } }]);
+});
+
 test('archive client reads the public asset balance through a read-only SAC call', async () => {
   const calls = [];
   const server = {

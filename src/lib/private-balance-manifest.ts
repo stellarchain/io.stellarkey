@@ -56,6 +56,11 @@ export interface PrivateBalanceReleaseProvenance {
   allowedEnvironment: 'testnet';
 }
 
+export interface PrivateBalanceDeploymentCheckpoint {
+  ledger: number;
+  hash: string;
+}
+
 export interface PrivateBalanceManifest {
   schemaVersion: number;
   protocolVersion: number;
@@ -70,6 +75,9 @@ export interface PrivateBalanceManifest {
   guardianAddress: string;
   /** Public classic-account sink used to index backend-free stealth announcements. */
   stealthAnnouncerAddress: string;
+  /** Independently operated read-only RPC used to corroborate recovery checkpoints. */
+  witnessRpcUrl: string;
+  deploymentCheckpoint: PrivateBalanceDeploymentCheckpoint;
   deploymentBindingHash: string;
   artifacts: PrivateBalanceArtifacts;
   constants: PrivateBalanceConstants;
@@ -227,6 +235,33 @@ function hex32(value: unknown, name: string): string {
   return parsed;
 }
 
+function canonicalHex32(value: unknown, name: string): string {
+  const parsed = string(value, name);
+  if (!HEX_32.test(parsed)) throw new Error(`${name} must be 32-byte lowercase hex`);
+  return parsed;
+}
+
+function rpcUrl(value: unknown, name: string): string {
+  const source = string(value, name);
+  let parsed: URL;
+  try {
+    parsed = new URL(source);
+  } catch {
+    throw new Error(`${name} is invalid`);
+  }
+  const loopback = parsed.protocol === 'http:' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !loopback) {
+    throw new Error(`${name} requires HTTPS or a loopback development endpoint`);
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error(`${name} must not contain credentials, query, or fragment`);
+  }
+  if (parsed.href.length > 2_048) throw new Error(`${name} is too long`);
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+  return parsed.toString().replace(/\/$/, '');
+}
+
 export function validateManifest(raw: unknown): PrivateBalanceManifest {
   const obj = record(raw, 'Manifest');
 
@@ -252,6 +287,11 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
   const stealthAnnouncerAddress = string(
     obj.stealthAnnouncerAddress,
     'stealthAnnouncerAddress',
+  );
+  const witnessRpcUrl = rpcUrl(obj.witnessRpcUrl, 'witnessRpcUrl');
+  const deploymentCheckpoint = record(
+    obj.deploymentCheckpoint,
+    'deploymentCheckpoint',
   );
   if (!CONTRACT_ADDRESS.test(poolContractId)) throw new Error('poolContractId is invalid');
   if (!CONTRACT_ADDRESS.test(assetContractId)) throw new Error('assetContractId is invalid');
@@ -321,6 +361,11 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     assetContractId,
     guardianAddress,
     stealthAnnouncerAddress,
+    witnessRpcUrl,
+    deploymentCheckpoint: {
+      ledger: integer(deploymentCheckpoint.ledger, 'deploymentCheckpoint.ledger', 0xffff_ffff),
+      hash: canonicalHex32(deploymentCheckpoint.hash, 'deploymentCheckpoint.hash'),
+    },
     deploymentBindingHash: hex32(obj.deploymentBindingHash, 'deploymentBindingHash'),
     artifacts: {
       r1csSha256: hex32(artifacts.r1csSha256, 'artifacts.r1csSha256'),
@@ -340,6 +385,12 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
       aeadId: string(hpke.aeadId, 'hpke.aeadId'),
     },
   };
+  if (
+    parsed.status !== 'development' &&
+    (parsed.deploymentCheckpoint.ledger === 0 || parsed.deploymentCheckpoint.hash === EMPTY_SHA256)
+  ) {
+    throw new Error('deploymentCheckpoint must pin a deployed ledger for published releases');
+  }
   if (obj.mirrorBaseUrl !== undefined) {
     const mirrorBaseUrl = string(obj.mirrorBaseUrl, 'mirrorBaseUrl');
     let mirror: URL;

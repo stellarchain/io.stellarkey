@@ -63,6 +63,7 @@ export interface SyncPrivateBalanceProgress {
 
 export interface SyncPrivateBalanceInput {
   archive: ArchiveReader;
+  corroborateHead?(): Promise<ArchiveHeadState>;
   worker: ScanWorker;
   contextHash: Uint8Array;
   deploymentBindingHash: Uint8Array;
@@ -326,7 +327,8 @@ async function syncPrivateBalanceOnce(
     throw new Error('Private Balance checkpoint deployment binding changed');
   }
 
-  const initialHead = await input.archive.readHead();
+  const readHead = input.corroborateHead ?? (() => input.archive.readHead());
+  const initialHead = await readHead();
   if (state.checkpoint && initialHead.latestLedger < state.checkpoint.latestLedger) {
     throw new Error('Private Balance RPC endpoint moved behind the verified checkpoint');
   }
@@ -537,7 +539,7 @@ async function syncPrivateBalanceOnce(
     state = nextState;
   }
 
-  const finalHead = await input.archive.readHead();
+  const finalHead = await readHead();
   if (!sameHead(initialHead, finalHead)) {
     throw new PrivateContractAdvancedDuringSyncError();
   }

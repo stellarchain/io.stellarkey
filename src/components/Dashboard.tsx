@@ -297,6 +297,8 @@ function privateWithdrawOpeningLabel(
       return "Unlock StellarKey to continue";
     case "safe-error":
       return "Private balance needs attention";
+    case "status-unknown":
+      return "Waiting for independent network checks";
     case "disabled":
     default:
       return "Starting the private wallet";
@@ -384,6 +386,7 @@ export function Dashboard() {
       "restoration-required",
       "restoring",
       "current",
+      "status-unknown",
       "safe-error",
     ].includes(privateBalanceRuntime.phase);
 

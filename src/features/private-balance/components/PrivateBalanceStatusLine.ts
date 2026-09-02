@@ -42,6 +42,9 @@ export function privateBalanceStatusLine(input: {
       tone: 'neutral',
     };
   }
+  if (phase === 'status-unknown') {
+    return { label: STATUS_LINE.statusUnknown, tone: 'caution' };
+  }
   if (phase === 'safe-error') {
     return {
       label: humanizePrivateError(input.error ?? 'Private payments stopped safely.').title,

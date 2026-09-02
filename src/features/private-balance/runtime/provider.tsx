@@ -115,6 +115,11 @@ import {
   type PrivateBalanceSigningRequest,
 } from './submission';
 import { diffIncomingPrivateTransfers, syncPrivateBalance } from './sync-machine';
+import {
+  PrivateRpcViewsDisagreeError,
+  PrivateRpcWitnessUnavailableError,
+  corroboratePrivateRpcCheckpoint,
+} from './rpc-checkpoint';
 import type {
   PrivateBalanceDurableState,
   DeploymentContext,
@@ -135,6 +140,7 @@ const LEASE_TTL_MS = 15_000;
 const LEASE_RENEW_MS = 5_000;
 const IDLE_SYNC_INTERVAL_MS = 30_000;
 const BACKGROUND_PROGRESS_SURFACE_MS = 2_000;
+const RPC_WITNESS_PREFERENCE_PREFIX = 'stellarkey.private.rpc-witness.v1';
 
 interface PrivateBalanceContextValue {
   state: PrivateBalanceState;
@@ -269,6 +275,29 @@ function ownerId(): string {
     `runtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function rpcWitnessPreferenceKey(manifest: PrivateBalanceManifest): string {
+  return [
+    RPC_WITNESS_PREFERENCE_PREFIX,
+    manifest.networkId,
+    manifest.realmId,
+    manifest.poolContractId,
+  ].join(':');
+}
+
+function loadRpcWitnessPreference(manifest: PrivateBalanceManifest): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(rpcWitnessPreferenceKey(manifest)) !== 'disabled';
+  } catch {
+    return true;
+  }
+}
+
+function isRpcAuthenticationError(error: unknown): boolean {
+  return error instanceof PrivateRpcViewsDisagreeError ||
+    error instanceof PrivateRpcWitnessUnavailableError;
+}
+
 function publicXlmBalanceStroops(
   balances: ReadonlyArray<{ balance: string; isNative?: boolean }> | null | undefined,
 ): bigint {
@@ -312,6 +341,9 @@ export function PrivateBalanceProvider({
     deployment,
   }));
   const [encryptedStorageBytes, setEncryptedStorageBytes] = useState<number | null>(null);
+  const [rpcWitnessEnabled, setRpcWitnessEnabledState] = useState(
+    () => loadRpcWitnessPreference(manifest),
+  );
   const [stealthSnapshot, setStealthSnapshot] = useState<StealthRuntimeSnapshot>(
     INITIAL_STEALTH_SNAPSHOT,
   );
@@ -335,6 +367,7 @@ export function PrivateBalanceProvider({
   // tearing down the current snapshot; the next foreground failure surfaces
   // normally and the next successful sync clears it.
   const backgroundSyncErrorRef = useRef<string | null>(null);
+  const rpcWitnessEnabledRef = useRef(rpcWitnessEnabled);
   const walletPhaseRef = useRef(walletPhase);
   const takeoverRef = useRef<(() => void) | null>(null);
   const incomingListenersRef = useRef(
@@ -356,6 +389,23 @@ export function PrivateBalanceProvider({
   useEffect(() => {
     walletPhaseRef.current = walletPhase;
   }, [walletPhase]);
+
+  useEffect(() => {
+    rpcWitnessEnabledRef.current = rpcWitnessEnabled;
+  }, [rpcWitnessEnabled]);
+
+  const setRpcWitnessEnabled = useCallback((enabled: boolean) => {
+    rpcWitnessEnabledRef.current = enabled;
+    setRpcWitnessEnabledState(enabled);
+    try {
+      window.localStorage.setItem(
+        rpcWitnessPreferenceKey(manifest),
+        enabled ? 'enabled' : 'disabled',
+      );
+    } catch {
+      // The public preference remains active for this mounted runtime.
+    }
+  }, [manifest]);
 
   const refreshStealth = useCallback((): Promise<void> => {
     if (asset.kind !== 'native') return Promise.resolve();
@@ -566,18 +616,12 @@ export function PrivateBalanceProvider({
           const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
           const archive = new PrivateBalanceArchiveClient(rpcUrl, manifest);
           const contextHashBytes = hex32(context.contextHash, 'Private Balance context hash');
-          const [head, depositsPaused] = await Promise.all([
-            archive.readHead(),
-            archive.readDepositsPaused(),
-          ]);
+          const depositsPaused = await archive.readDepositsPaused();
           setSnapshot(current => ({
             ...current,
             deployment: {
               ...current.deployment,
               depositsPaused,
-              actionCount: head.meta.actionCount,
-              pageCount: null,
-              latestLedger: head.latestLedger,
             },
           }));
           await withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
@@ -597,6 +641,51 @@ export function PrivateBalanceProvider({
             }
             encryptedStateExistsRef.current = true;
             progress.durable = durable;
+            const useWitness = durable.checkpoint === null || rpcWitnessEnabledRef.current;
+            let witnessArchive: PrivateBalanceArchiveClient | null = null;
+            if (useWitness) {
+              const primaryOrigin = new URL(rpcUrl).origin;
+              const witnessOrigin = new URL(manifest.witnessRpcUrl).origin;
+              if (primaryOrigin === witnessOrigin) {
+                throw new PrivateRpcViewsDisagreeError(
+                  'Private Payments primary and witness RPCs must use independent origins.',
+                );
+              }
+              witnessArchive = new PrivateBalanceArchiveClient(
+                manifest.witnessRpcUrl,
+                manifest,
+              );
+            }
+            const readAuthenticatedHead = async () => {
+              const verifiedHead = witnessArchive
+                ? (await corroboratePrivateRpcCheckpoint({
+                    primary: archive,
+                    witness: witnessArchive,
+                    expectedNetworkPassphrase: manifest.networkPassphrase,
+                    deploymentCheckpoint: manifest.deploymentCheckpoint,
+                  })).head
+                : await archive.readHead();
+              setSnapshot(current => ({
+                ...current,
+                deployment: {
+                  ...current.deployment,
+                  actionCount: verifiedHead.meta.actionCount,
+                  pageCount: null,
+                  latestLedger: verifiedHead.latestLedger,
+                },
+              }));
+              return verifiedHead;
+            };
+            let primedHead: Awaited<ReturnType<typeof readAuthenticatedHead>> | null =
+              await readAuthenticatedHead();
+            const readSyncHead = async () => {
+              if (primedHead) {
+                const verifiedHead = primedHead;
+                primedHead = null;
+                return verifiedHead;
+              }
+              return readAuthenticatedHead();
+            };
             // A reservation past the TTL is pre-proof by construction and was
             // provably never broadcast; releasing it unblocks its notes.
             durable = await releaseExpiredPrivateBuildReservations(
@@ -698,6 +787,7 @@ export function PrivateBalanceProvider({
                   archive.readRecords(startActionIndex, count),
                 readLedgerCloseTimes: sequences => archive.readLedgerCloseTimes(sequences),
               },
+              corroborateHead: readSyncHead,
               worker,
               contextHash: contextHashBytes,
               deploymentBindingHash: hex32(
@@ -848,6 +938,27 @@ export function PrivateBalanceProvider({
             }));
             return;
           }
+          if (isRpcAuthenticationError(error)) {
+            // An independent-view failure is not evidence that the last
+            // authenticated balance was wrong. Keep it in memory, disable
+            // actions, and make the uncertainty explicit until a later pair
+            // of RPC views agrees.
+            lastSyncCurrentRef.current = false;
+            backgroundSyncErrorRef.current = message;
+            dispatch({ type: 'SET_SYNCING', syncing: false });
+            dispatch({ type: 'SET_ERROR', error: message });
+            setSnapshot(current => ({
+              ...current,
+              phase: 'status-unknown',
+              configured: encryptedStateExistsRef.current,
+              isLeader: leaderRef.current,
+              backgroundSyncing: false,
+              syncProgress: null,
+              error: message,
+              restoreRequiredActionIndex: null,
+            }));
+            throw error;
+          }
           if (quiet) {
             // A routine background tick that fails (flaky wifi, a transient
             // RPC 5xx, a vault that locked mid-pass) must not tear down a
@@ -962,7 +1073,7 @@ export function PrivateBalanceProvider({
       if (leaderRef.current) return;
       leaderRef.current = true;
       setSnapshot(current => ({ ...current, isLeader: true, error: null }));
-      if (encryptedStateExistsRef.current) void performSync(false);
+      if (encryptedStateExistsRef.current) void performSync(false).catch(() => undefined);
     };
 
     takeoverRef.current = () => {
@@ -1844,6 +1955,7 @@ export function PrivateBalanceProvider({
     actionBusyRef.current = true;
     const driver = new IndexedDbEncryptedRecordDriver();
     const context = deploymentContext(manifest);
+    let lastAuthenticatedState: PrivateBalanceDurableState | null = null;
     try {
       await withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
         const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
@@ -1851,6 +1963,7 @@ export function PrivateBalanceProvider({
         if (current.pendingActions.length > 0 || current.buildReservations.length > 0) {
           throw new Error('Reconcile or cancel every pending Private Balance action before full verification.');
         }
+        lastAuthenticatedState = current;
         const empty = createEmptyPrivateBalanceState(manifestHash);
         const reset: PrivateBalanceDurableState = {
           ...empty,
@@ -1871,6 +1984,35 @@ export function PrivateBalanceProvider({
         reflectDurableState(reset);
       });
       await performSyncRef.current?.(false);
+    } catch (error) {
+      if (isRpcAuthenticationError(error) && lastAuthenticatedState) {
+        // Full verification temporarily replaces the durable scan cursor. If
+        // the two public network views cannot authenticate the restart, put
+        // the exact prior encrypted state back instead of presenting zero as
+        // a newly verified balance.
+        try {
+          await withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
+            const latest = await loadPrivateBalanceState(storageScope, storageKey, driver);
+            if (!latest || !lastAuthenticatedState) return;
+            const restored: PrivateBalanceDurableState = {
+              ...lastAuthenticatedState,
+              revision: latest.revision + 1,
+            };
+            await commitPrivateBalanceState(
+              storageScope,
+              storageKey,
+              restored,
+              latest.revision,
+              driver,
+            );
+            reflectDurableState(restored);
+          });
+        } catch {
+          // Keep the authentication error as the visible cause; the next
+          // recovery attempt will reload the latest committed encrypted state.
+        }
+      }
+      throw error;
     } finally {
       actionBusyRef.current = false;
     }
@@ -1989,6 +2131,8 @@ export function PrivateBalanceProvider({
     recentPrivateRecipients: state.recentRecipients,
     checkpoint: state.checkpoint,
     selectedRpc: getRpcUrl(network),
+    witnessRpc: manifest.witnessRpcUrl,
+    rpcWitnessEnabled,
     encryptedStorageBytes,
     stealthMetaAddress: stealthSnapshot.metaAddress,
     stealthPayments: stealthSnapshot.payments,
@@ -2010,6 +2154,7 @@ export function PrivateBalanceProvider({
     submitChainedSend,
     onIncomingPrivatePayment,
     takeoverLeadership,
+    setRpcWitnessEnabled,
     runFullVerification,
     disableLocalData,
   }), [
@@ -2019,6 +2164,7 @@ export function PrivateBalanceProvider({
     disableLocalData,
     encryptedStorageBytes,
     manifest.protocolVersion,
+    manifest.witnessRpcUrl,
     network,
     onIncomingPrivatePayment,
     optIn,
@@ -2029,7 +2175,9 @@ export function PrivateBalanceProvider({
     restorePrivateHistory,
     refreshStealth,
     rotatePrivateAddress,
+    rpcWitnessEnabled,
     runFullVerification,
+    setRpcWitnessEnabled,
     snapshot,
     stealthSnapshot,
     selectedState.activities,

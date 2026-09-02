@@ -63,6 +63,10 @@ test('private follower updates accept only a redacted exact schema', () => {
     decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'proving-secret' })),
     null,
   );
+  assert.equal(
+    decodePrivateBalanceFollowerUpdate(JSON.stringify({ ...update, phase: 'status-unknown' }))?.phase,
+    'status-unknown',
+  );
 });
 
 test('private runtime scope rejects malformed or ambiguous identifiers', () => {

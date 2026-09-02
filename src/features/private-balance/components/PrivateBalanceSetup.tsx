@@ -63,7 +63,7 @@ export function PrivateBalanceSetup({
   const setupReady = stage === 'running' && configured && privateAddress !== null;
   const visibleStage = setupReady ? 'done' : stage;
   const visibleSetupError = setupError ?? (
-    stage === 'running' && phase === 'safe-error' && error
+    stage === 'running' && (phase === 'safe-error' || phase === 'status-unknown') && error
       ? new Error(error)
       : null
   );
