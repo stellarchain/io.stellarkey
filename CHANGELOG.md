@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept non-sensitive payment-received feedback visible when Merchant Mode locks the operator immediately after settlement.
 - Preserved the exact case of Stellar asset codes when adding and deduplicating trustlines.
 - Allowed the key-bearing wallet to unlock when non-signing contact or note records are corrupt, while preserving those records for recovery and surfacing contacts as unavailable.
-- Identified the authenticated primary account in the destructive backup-restore review so users can distinguish wallets before replacement.
+- Identified a key-authenticated account in the destructive backup-restore review, labeled watch-only and hardware identities honestly, and bound backup-health records to the exact exported or restored bytes.
 - Bounded and validated Horizon fee statistics before rendering or transaction fee selection so malformed endpoint data cannot crash the wallet.
 - Enforced SEP-29 memo-required destination checks for single and multi-recipient payments while exempting muxed addresses that carry their routing ID intrinsically.
 - Applied inactivity auto-lock while a newly created vault is still displaying its recovery phrase, and made idle timing monotonic across device-clock changes.

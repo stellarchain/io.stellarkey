@@ -177,7 +177,7 @@ export function Onboarding() {
       try {
         if (!pendingBackupJson) throw new Error("Choose an encrypted backup file first.");
         await restoreWalletFromBackup(pendingBackupJson, password);
-        markBackupVerified();
+        markBackupVerified(pendingBackupJson);
         triggerHaptic("success");
       } catch (e) {
         triggerHaptic("error");

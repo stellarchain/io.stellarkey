@@ -115,7 +115,7 @@ export function PaperWalletModal({
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      if (kind === "mnemonic") markBackupExported();
+      if (kind === "mnemonic") markBackupExported(json);
       triggerHaptic("success");
       toast(
         kind === "secret"
