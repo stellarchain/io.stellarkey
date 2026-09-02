@@ -108,6 +108,10 @@ export class PrivateBalanceTransactionBuilder {
     this.contract = new Contract(manifest.poolContractId);
   }
 
+  public buildTouchRootOperation(): xdr.Operation {
+    return this.contract.call('touch_root');
+  }
+
   public buildDepositOperation(params: {
     action: DepositContractAction;
     proof: ContractProof;

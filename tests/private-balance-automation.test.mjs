@@ -107,8 +107,9 @@ test('stale chain state auto-resyncs and retries the preparation once', () => {
   assert.match(provider, /error instanceof PrivateStaleChainStateError && attempt === 0/);
   const actionFlow = source('src/features/private-balance/runtime/action-flow.ts');
   assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance root changed/);
-  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance root is too close to expiry/);
-  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance commitment cache is incomplete/);
+  assert.doesNotMatch(actionFlow, /root is too close to expiry|readKnownRoot/);
+  assert.match(actionFlow, /head\.latestLedger \+ input\.manifest\.constants\.rootWindowLedgers/);
+  assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance Merkle (checkpoint is unavailable|cache is invalid)/);
 });
 
 test('incoming private payments surface as one leader-side event per sync', () => {

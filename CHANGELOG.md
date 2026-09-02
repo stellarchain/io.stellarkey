@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept idle Private Payments pools withdrawable while deposits are paused by refreshing the current spend root atomically in every private send or withdrawal, with the refresh disclosed in review.
 - Matched returned Private Payments archive records to their requested ledger keys, treated zero-lifetime entries as archived, and bounded every restoration footprint by the canonical action count.
 - Funded reusable private-payment accounts for the full reviewed Private Balance fee cap and refused sweeps before signing when the one-time account cannot preserve both its minimum reserve and fee budget.
 - Removed Horizon transaction joins from reusable-payment discovery, retried oversized pages at smaller limits, and advanced its durable cursor only to paging tokens the payments response actually returned.

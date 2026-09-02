@@ -24,6 +24,7 @@ export interface PrivateBalanceTransactionReview {
   envelopeXdr: string;
   transactionHash: string;
   method: 'deposit' | 'transfer' | 'withdraw';
+  refreshesAnchor: boolean;
   classicFeeStroops: bigint;
   resourceFeeStroops: bigint;
   expiresAt: number;
@@ -239,6 +240,7 @@ export function reviewPrivateBalanceTransaction(
     envelopeXdr,
     transactionHash: bytesToHex(parsed.hash()),
     method,
+    refreshesAnchor: method !== 'deposit',
     classicFeeStroops,
     resourceFeeStroops,
     expiresAt: Number(request.timeBounds.maxTime),
