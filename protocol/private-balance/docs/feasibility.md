@@ -36,6 +36,41 @@ Machine-readable evidence:
 - `results/archive-gate.json`
 - `results/model-100k.json`
 - `spikes/results/recovery-10k.json`
+- `results/curve-benchmark.json`
+
+## Provisional Groth16 curve benchmark
+
+The frozen 23,437-constraint action circuit was compiled independently for BN254 and BLS12-381
+and proved against the same deterministic deposit corpus. These are three-sample Node.js desktop
+smoke measurements on an Apple M3 Max, not browser or physical-phone evidence:
+
+| Metric | BN254 | BLS12-381 |
+| --- | ---: | ---: |
+| Constraints | 23,437 | 23,437 |
+| R1CS bytes | 11,039,180 | 11,039,180 |
+| Witness Wasm bytes | 188,366 | 188,367 |
+| Benchmark proving-key bytes | 14,739,008 | 19,522,128 |
+| Canonical uncompressed proof bytes | 256 | 384 |
+| Proving p50 / p95 | 1,060.819 / 1,061.431 ms | 835.427 / 862.149 ms |
+| Peak process RSS | 1,483,735,040 bytes | 1,515,044,864 bytes |
+| Local verification p50 / p95 | 22.696 / 38.836 ms | 12.459 / 14.373 ms |
+
+The measurements were produced with SIMD, explicit Wasm threads, proving-key streaming, and a
+native mobile prover disabled. Soroban instructions, ledger I/O, resource fee, and transaction
+bytes are explicit pending fields because no curve-specific comparison verifier transaction was
+built. iOS Safari and Android Chrome physical mid-range-phone rows also remain pending. Therefore
+the evidence selects no curve; the apparent desktop speed advantage for BLS12-381 is not a release
+decision. Its larger key/proof and missing on-chain/mobile measurements still have to be evaluated.
+
+The BLS12-381 comparison reuses the exact frozen circuit corpus and existing round constants. A
+production BLS12-381 design would additionally require curve-reviewed hash parameters, verifier
+code, host-resource measurements, a fresh phase-2 ceremony, and the full security review. The
+benchmark command creates disposable setup material outside the repository and never changes the
+shipped BN254 artifacts:
+
+```bash
+node protocol/private-balance/spikes/scripts/run-curve-benchmark.mjs --iterations 3 --warmups 1
+```
 
 ## Final Gate 0 still required
 
