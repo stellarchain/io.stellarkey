@@ -31,6 +31,19 @@ test("encrypted paper-wallet export requires a fresh scoped password", () => {
   assert.doesNotMatch(wizard, /password=\{password\}/);
 });
 
+test("paper wallets bind recovery material to the selected account type", () => {
+  const verify = wizard.split("async function handleVerify")[1]
+    ?.split("function download")[0] ?? "";
+  const certificate = wizard.split("<PaperWalletModal")[1] ?? "";
+
+  assert.match(wizard, /activeAccount\.index !== undefined/);
+  assert.match(verify, /revealSecret\(activeAccount\.id, password\)/);
+  assert.doesNotMatch(verify, /method === "paper" && hasPhrase/);
+  assert.match(certificate, /kind=\{paperMaterial\.kind\}/);
+  assert.doesNotMatch(certificate, /kind=\{hasPhrase \? "mnemonic" : "secret"\}/);
+  assert.match(wizard, /Imported accounts need\s+separate backups/i);
+});
+
 test("secret copy controls warn and clear only after an explicit user action", () => {
   assert.equal(wizard.match(/<CopyButton value=\{revealed\} label="Copy" sensitive \/>/g)?.length, 2);
   assert.match(onboarding, /<CopyButton value=\{revealed \?\? ""\} label="Copy" sensitive \/>/);
