@@ -32,7 +32,7 @@ test('manifest: proving-key verification succeeds only after the pinned verifier
 
   assert.equal(verified, true);
   assert.equal(transcripts.length, 1);
-  assert.match(transcripts[0], /build\/pot15_final\.ptau$/);
+  assert.match(transcripts[0], /build\/pot14_final\.ptau$/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, 'npx');
   assert.deepEqual(calls[0].args.slice(0, 4), [
@@ -44,7 +44,7 @@ test('manifest: proving-key verification succeeds only after the pinned verifier
   assert.equal(calls[0].options.stdio, 'pipe');
   assert.match(calls[0].options.cwd, /protocol\/private-balance\/circuits$/);
   assert.match(calls[0].args[4], /build\/action\.r1cs$/);
-  assert.match(calls[0].args[5], /build\/pot15_final\.ptau$/);
+  assert.match(calls[0].args[5], /build\/pot14_final\.ptau$/);
   assert.match(calls[0].args[6], /build\/action_dev\.zkey$/);
 });
 
@@ -70,7 +70,8 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.protocolVersion, 1);
   assert.equal(manifest.status, 'development');
-  assert.equal(manifest.constants.treeDepth, 32);
+  assert.equal(manifest.constants.treeDepth, 17);
+  assert.equal(manifest.constants.treeArity, 3);
   assert.equal(manifest.constants.pageCapacity, 32);
   assert.equal(manifest.constants.publicInputs, 13);
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
@@ -85,7 +86,7 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.match(manifest.release.contractWasmSha256, /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.release.powersOfTauSha256,
-    '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
+    '489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d',
   );
   assert.equal(manifest.release.zkeyVerified, true);
   assert.equal(manifest.release.allowedEnvironment, 'testnet');
@@ -218,16 +219,24 @@ test('manifest: requires the Protocol 25 BN254 and Poseidon host baseline', () =
 
 test('manifest: every non-development release requires verified proving and release evidence', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const published = {
+    ...raw,
+    status: 'testnet-beta',
+    poolContractId: 'CBBPOAHEJABZ56QJHFB3MJAEJUHPOSBD3DJBSUPXRZBC2KQVESQX7BFX',
+    guardianAddress: 'GCWEMAKEF6WW6G44RRBGU43B5FB2T2EZVSBZFGLX4OTVROBPWVR574WA',
+    deploymentCheckpoint: { ledger: 1, hash: '11'.repeat(32) },
+    deploymentBindingHash: '22'.repeat(32),
+  };
   assert.throws(
-    () => validateManifest({ ...raw, status: 'testnet-beta', release: undefined }),
+    () => validateManifest({ ...published, release: undefined }),
     /release provenance is required/i,
   );
   assert.throws(
-    () => validateManifest({ ...raw, status: 'testnet-beta' }),
+    () => validateManifest(published),
     /release provenance is incomplete/i,
   );
   assert.throws(
-    () => validateManifest({ ...raw, status: 'testnet-preview' }),
+    () => validateManifest({ ...published, status: 'testnet-preview' }),
     /release provenance is incomplete/i,
   );
 });
@@ -265,7 +274,7 @@ test('manifest: wallet build pins the exact shipped manifest SHA-256', () => {
   assert.equal(manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256, expected);
 });
 
-test('manifest: generator binds exact toolchains and the latest contract source commit', () => {
+test('manifest: generator binds exact toolchains and defaults to an undeployed build', () => {
   const source = readFileSync(
     join(process.cwd(), 'protocol/private-balance/scripts/generate-manifest.mjs'),
     'utf8',
@@ -289,43 +298,33 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.match(buildSource, /'--optimize=false'/);
   assert.doesNotMatch(source, /artifactVersion: '1\.0\.2-testnet-preview'/);
   assert.doesNotMatch(source, /status: 'testnet-preview'/);
-  assert.match(
-    source,
-    /const generated = deploymentEvidence\.map\([\s\S]*\.\.\.evidence\.manifest,[\s\S]*release: baseManifest\.release/,
-    'the preview must use freshly reproduced release metadata after artifact equality checks',
-  );
-  assert.match(
-    source,
-    /protocol\/private-balance\/manifests\/development\.json'[\s\S]*JSON\.stringify\(generated\[0\]\.evidence\.manifest/,
-    'normal generation must preserve the exact development deployment evidence separately',
-  );
+  assert.match(source, /process\.argv\.includes\('--publish-deployment'\)/);
+  assert.match(source, /ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = false/);
+  assert.match(source, /deployments: \[\]/);
 });
 
-test('manifest: deployment preparation stages artifacts without publishing unverified evidence', () => {
+test('manifest: deployment publication requires an explicit flag and matching evidence', () => {
   const source = readFileSync(
     join(process.cwd(), 'protocol/private-balance/scripts/generate-manifest.mjs'),
     'utf8',
   );
-  const prepareFlag = source.indexOf("process.argv.includes('--prepare-deployment')");
-  const preparationBranch = source.indexOf('if (prepareDeployment)');
+  const publishFlag = source.indexOf("process.argv.includes('--publish-deployment')");
+  const publicationBranch = source.indexOf('if (publishDeployment)');
   const evidenceLoad = source.indexOf(
     'const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);',
   );
   const publicManifestWrite = source.indexOf("writeFileSync(join(publicDir, 'manifest.json')");
   const expectedHashWrite = source.indexOf('expectedManifestModule,');
 
-  assert.notEqual(prepareFlag, -1, 'the deployment preparation mode must be explicit');
-  assert.notEqual(preparationBranch, -1, 'the generator must branch for deployment preparation');
-  assert.ok(preparationBranch < evidenceLoad, 'preparation must finish before evidence is loaded');
+  assert.notEqual(publishFlag, -1, 'deployment publication must be explicit');
+  assert.notEqual(publicationBranch, -1, 'the generator must branch for deployment publication');
+  assert.ok(publicationBranch < evidenceLoad, 'evidence must load only during publication');
   assert.ok(evidenceLoad < publicManifestWrite, 'only verified evidence may publish the manifest');
   assert.ok(evidenceLoad < expectedHashWrite, 'only verified evidence may update the wallet hash pin');
-  assert.match(
-    source.slice(preparationBranch, evidenceLoad),
-    /protocol\/private-balance\/manifests\/development\.json/,
-  );
+  assert.match(source.slice(0, publicationBranch), /protocol\/private-balance\/manifests\/development\.json/);
 });
 
-test('manifest: generator pins a reproducible private-asset catalogue to the exact manifest', () => {
+test('manifest: generator pins an empty catalogue until replacement pools are deployed', () => {
   const catalogueBytes = readFileSync(cataloguePath);
   const catalogueHash = createHash('sha256').update(catalogueBytes).digest('hex');
   const catalogue = assetsModule.validatePrivateBalanceCatalogue(JSON.parse(catalogueBytes));
@@ -335,14 +334,7 @@ test('manifest: generator pins a reproducible private-asset catalogue to the exa
   );
 
   assert.equal(catalogueHash, assetsModule.EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256);
-  assert.ok(catalogue.deployments.length >= 1);
-  const xlm = catalogue.deployments.find(deployment => deployment.id === 'testnet-private-xlm');
-  const usdc = catalogue.deployments.find(deployment => deployment.id === 'testnet-private-usdc');
-  assert.ok(xlm);
-  assert.ok(usdc);
-  assert.equal(xlm.asset.code, 'XLM');
-  assert.equal(usdc.asset.code, 'USDC');
-  assert.equal(xlm.manifestSha256, manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256);
+  assert.deepEqual(catalogue.deployments, []);
   assert.match(generator, /catalogue\.json/);
   assert.match(generator, /private-balance-expected-catalogue\.ts/);
 });

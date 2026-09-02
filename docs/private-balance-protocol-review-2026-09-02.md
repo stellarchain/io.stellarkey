@@ -11,6 +11,36 @@
 
 ---
 
+## Implementation outcome
+
+The recommendations were treated as hypotheses and recompiled or benchmarked before implementation.
+The machine-readable evidence is
+`protocol/private-balance/results/review-validation.json`; the harness is
+`protocol/private-balance/spikes/scripts/run-review-validation.mjs`.
+
+| Item | Decision | Measured result | Implementation |
+|---|---|---|---|
+| PKCS#8 X25519 import | Accept | Byte-identical shared secret; warm native median improved 80.31% in the recorded three-trial run | Native WebCrypto imports the raw scalar through RFC 8410 PKCS#8; the portable fallback remains |
+| Remove dummy `lane` | Accept | 23,437 → 22,909 constraints (−528 exactly) | Removed from the circuit and witness schema |
+| Ternary depth-17 tree | Accept | Complete production circuit: 14,876 constraints, 13 public inputs, 124 private inputs; 36.53% below baseline | Replaced the binary tree in Circom, Rust, Soroban, browser, cache, vectors, and manifests |
+| Sapling-style X25519 diversification | Defer | Diversified-envelope opening remains materially slower, but the proposal lacks a complete reviewed variable-base KEM and cofactor specification | RFC 9180 remains unchanged |
+| Consume outgoing envelopes | Accept | Existing 157-byte envelopes were already present for each output | Scanner now authenticates them to recover external recipient fingerprints and memos from seed plus chain data |
+| Reduce deposit nullifier storage | Accept with correction | Storing neither dummy nullifier would allow exact proof replay; one durable replay key is sufficient | Deposits persist one nullifier; transfers and withdrawals persist both |
+| Share Merkle primitive | Accept | Static review confirmed three unchecked string literals and duplicate consensus hashing | Contract imports the canonical raw ternary hash and empty-root table from the protocol crate |
+| Remove redundant total range | Accept | 22,909 → 22,846 constraints (−63 exactly) | One 63-bit decomposition remains after equality |
+| Derive output roles | Accept | 22,846 → 22,844 constraints and 152 → 150 private inputs | `outputReal` is derived from output value rather than supplied as witness data |
+
+The resulting circuit fits the 2¹⁴ Groth16 domain. The generated development zkey is 9,121,500
+bytes and its point-compressed transport is 6,227,870 bytes. The prior Testnet pools bind different
+circuit and contract hashes, so they were not relabeled. The replacement artifacts ship with an
+authenticated empty deployment catalogue and development use disabled until fresh asset-pinned
+Testnet pools are deployed and verified.
+
+The original analysis below is retained as the review record. Where a prototype caveat conflicts
+with this section, this section records the completed implementation and test result.
+
+---
+
 ## 1. Verdict
 
 | Axis | Grade | Short version |
@@ -271,8 +301,8 @@ Items 1, 5, 6, 7 and 8 are independent of it.
 - The microsecond figures are Node 26 on the review machine, **not a browser**. Browser WebCrypto
   X25519 is far faster (~40 µs vs the 427 µs measured here), which makes the `@noble` base
   multiplications *relatively worse*, not better.
-- The ternary constraint counts come from compiling a faithful cost probe of the circuit change.
-  That prototype was **not audited for soundness** — it exists to price the change — and the
-  counts exclude the client, contract and tree-code work the change implies.
+- The initial ternary figures came from a cost probe. The implementation outcome above reports the
+  complete production circuit and cross-language implementation; it still requires independent
+  protocol and circuit review before any non-development release.
 - Constraint counts are `--O2`. Under `--O1` (circom's default) the absolute numbers differ;
   all build scripts in this repo already pass `--O2`.

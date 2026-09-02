@@ -1,9 +1,10 @@
 # Private Balance security and privacy model
 
-Private Balance is a production-hosted Testnet-only development preview. The
-wallet intentionally accepts the exact hash-pinned development deployment on
-Testnet, while Mainnet independently rejects Private Payments. Its proving key
-was produced by a single-party setup and passes `snarkjs zkey verify` against
+Private Balance is a Testnet-only development candidate. The replacement
+artifacts are production-hosted, but the authenticated deployment catalogue is
+empty and the wallet disables development deployment use until fresh pools are
+deployed and verified. Mainnet independently rejects Private Payments. Its
+proving key was produced by a single-party setup and passes `snarkjs zkey verify` against
 the repository's pinned Powers-of-Tau transcript. That verifies consistency; it
 does not make the setup safe for real value. Anyone who retained the setup
 secret could forge proofs and take testnet funds. A public multi-party ceremony,
@@ -12,8 +13,8 @@ must all bind to the same hashes before any Mainnet or real-value promotion.
 
 ## What it is
 
-Private Balance is a shielded note pool for the manifest-approved Testnet XLM
-and USDC asset contracts. A supported
+Private Balance is a shielded note-pool design for asset-pinned Testnet XLM and
+USDC contracts. A supported
 software wallet derives a deployment-bound viewing and spending context inside
 the unlocked vault boundary. The browser reads the canonical encrypted action
 archive from Stellar RPC, verifies its hash chain and Merkle root, opens only
@@ -54,6 +55,11 @@ Use exact integer stroops for protocol and balance calculations. A balance is
 current only after the final archive head, action count, transcript, and Merkle
 root reconcile. An incomplete scan may show the last verified balance but must
 not permit a spend.
+
+The current protocol replacement is deliberately unavailable until new pools
+bind the new circuit, verification key, ternary tree, and contract hashes. The
+previous Testnet state is incompatible and is not migrated or presented as the
+new deployment.
 
 See [recovery](private-balance-recovery.md), [safe support](private-balance-support.md),
 and the [incident playbook](private-balance-incident-response.md).

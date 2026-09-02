@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "revision": "cc45d237493a06b0257966da23413bad2c2579aa",
-  "generatedAt": "2026-09-02T12:59:41.967Z",
+  "generatedAt": "2026-09-02T13:40:18.732Z",
   "environment": {
     "node": "v26.7.0",
     "platform": "darwin",
@@ -14,98 +14,121 @@
     "warmups": 20,
     "sharedSecretSha256": "7abd7d93e9549667e21ee0ff394ce158bb86cc8c564c8d6d4f12fd1761bc33e1",
     "nativeJwk": {
-      "p50Microseconds": 380.958,
-      "p95Microseconds": 552.916,
+      "p50Microseconds": 435.583,
+      "p95Microseconds": 2239.5,
       "trialResults": [
         {
-          "p50Microseconds": 323.167,
-          "p95Microseconds": 454.333
+          "p50Microseconds": 350.458,
+          "p95Microseconds": 435.625
         },
         {
-          "p50Microseconds": 380.958,
-          "p95Microseconds": 552.916
+          "p50Microseconds": 435.583,
+          "p95Microseconds": 2239.5
         },
         {
-          "p50Microseconds": 438.834,
-          "p95Microseconds": 717.417
+          "p50Microseconds": 1108.417,
+          "p95Microseconds": 2790.5
         }
       ]
     },
     "nativePkcs8Prototype": {
-      "p50Microseconds": 72.541,
-      "p95Microseconds": 90.542,
+      "p50Microseconds": 85.75,
+      "p95Microseconds": 115.375,
       "trialResults": [
         {
-          "p50Microseconds": 69.916,
-          "p95Microseconds": 84.875
+          "p50Microseconds": 83.584,
+          "p95Microseconds": 311.833
         },
         {
-          "p50Microseconds": 72.541,
-          "p95Microseconds": 90.542
+          "p50Microseconds": 85.75,
+          "p95Microseconds": 115.375
         },
         {
-          "p50Microseconds": 74.833,
-          "p95Microseconds": 107.833
+          "p50Microseconds": 98.708,
+          "p95Microseconds": 262.709
         }
       ]
     },
     "portable": {
-      "p50Microseconds": 722.791,
-      "p95Microseconds": 817.958,
+      "p50Microseconds": 963.958,
+      "p95Microseconds": 1054.125,
       "trialResults": [
         {
-          "p50Microseconds": 716.666,
-          "p95Microseconds": 807.5
+          "p50Microseconds": 903.709,
+          "p95Microseconds": 1677.458
         },
         {
-          "p50Microseconds": 722.791,
-          "p95Microseconds": 817.958
+          "p50Microseconds": 963.958,
+          "p95Microseconds": 1054.125
         },
         {
-          "p50Microseconds": 761.5,
-          "p95Microseconds": 849.083
+          "p50Microseconds": 1032.875,
+          "p95Microseconds": 1114.958
         }
       ]
     },
     "diversifiedAddress": {
-      "p50Microseconds": 1080.125,
-      "p95Microseconds": 2844.334,
+      "p50Microseconds": 1434,
+      "p95Microseconds": 3273.125,
       "trialResults": [
         {
-          "p50Microseconds": 989.958,
-          "p95Microseconds": 2453.791
+          "p50Microseconds": 1296.25,
+          "p95Microseconds": 1902.958
         },
         {
-          "p50Microseconds": 1080.125,
-          "p95Microseconds": 2844.334
+          "p50Microseconds": 1434,
+          "p95Microseconds": 3273.125
         },
         {
-          "p50Microseconds": 1147.375,
-          "p95Microseconds": 4874.375
+          "p50Microseconds": 2148.083,
+          "p95Microseconds": 6800.917
         }
       ]
     },
-    "pkcs8MedianImprovementPercent": 80.96
+    "pkcs8MedianImprovementPercent": 80.31
   },
   "circuit": {
     "baseline": {
       "constraints": 23437,
       "publicInputs": 13,
-      "privateInputs": 152
-    }
+      "privateInputs": 152,
+      "sourceRevision": "cc45d237493a06b0257966da23413bad2c2579aa"
+    },
+    "laneFree": {
+      "constraints": 22909,
+      "delta": -528
+    },
+    "singleTotalRange": {
+      "constraints": 22846,
+      "delta": -63
+    },
+    "derivedOutputRoles": {
+      "constraints": 22844,
+      "privateInputs": 150,
+      "delta": -2
+    },
+    "ternaryDepth17": {
+      "constraints": 14876,
+      "publicInputs": 13,
+      "privateInputs": 124,
+      "capacityLeaves": 129140163,
+      "groth16Domain": 16384
+    },
+    "reductionPercent": 36.53,
+    "method": "Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs."
   },
   "decisions": {
     "1": {
       "status": "accept",
-      "reason": "PKCS#8 prototype preserves the shared secret and changes warm native median by 80.96%."
+      "reason": "PKCS#8 prototype preserves the shared secret and changes warm native median by 80.31%."
     },
     "2": {
-      "status": "defer",
-      "reason": "Lane-free dummy-nullifier constraint savings still require a fresh compiled R1CS comparison."
+      "status": "accept",
+      "reason": "The lane-free circuit compiled from 23,437 to 22,909 constraints, exactly the predicted 528-constraint reduction."
     },
     "3": {
-      "status": "defer",
-      "reason": "The ternary depth-17 tree still requires a full-circuit compile and cross-language root/path proof."
+      "status": "accept",
+      "reason": "The complete ternary circuit has 14,876 constraints, 13 public inputs, and fits the 2^14 Groth16 domain."
     },
     "4": {
       "status": "defer",
@@ -113,19 +136,19 @@
     },
     "5": {
       "status": "accept",
-      "reason": "Outgoing ciphertext is already paid into every archive record and has vectors but no runtime consumer."
+      "reason": "The scanner now authenticates the already-paid outgoing ciphertext and recovers external recipient fingerprints and memos."
     },
     "6": {
       "status": "accept",
-      "reason": "Deposits can reduce two stored nullifiers to one while retaining a durable proof replay key."
+      "reason": "Deposits now store one durable proof replay key instead of two nullifiers; storing zero would permit exact proof replay."
     },
     "7": {
       "status": "accept",
-      "reason": "The contract duplicates a consensus hash label as unchecked string literals instead of sharing the protocol primitive."
+      "reason": "The contract now imports the canonical ternary Merkle hash primitive and empty roots from the protocol crate."
     },
     "8": {
       "status": "accept",
-      "reason": "Input/output total equality makes the second 63-bit range decomposition logically redundant."
+      "reason": "Removing the second total range decomposition compiled from 22,909 to 22,846 constraints, an exact 63-constraint reduction."
     }
   }
 }

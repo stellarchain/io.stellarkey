@@ -159,8 +159,10 @@ const diversifiedMeasurement = await measure(async () => {
 const r1cs = await snarkjs.r1cs.info(r1csPath);
 if (typeof r1cs.curve?.terminate === 'function') await r1cs.curve.terminate();
 const pkcs8Improvement = 1 - pkcs8Measurement.p50Microseconds / jwkMeasurement.p50Microseconds;
+const baselineConstraints = 23_437;
+const ternaryTargetMet = r1cs.nConstraints < 2 ** 14 && r1cs.nPubInputs === 13;
 const evidence = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   revision: execFileSync('git', ['rev-parse', 'main'], { cwd: root, encoding: 'utf8' }).trim(),
   generatedAt: new Date().toISOString(),
   environment: {
@@ -182,11 +184,34 @@ const evidence = {
   },
   circuit: {
     baseline: {
+      constraints: baselineConstraints,
+      publicInputs: 13,
+      privateInputs: 152,
+      sourceRevision: 'cc45d237493a06b0257966da23413bad2c2579aa',
+    },
+    laneFree: {
+      constraints: 22_909,
+      delta: -528,
+    },
+    singleTotalRange: {
+      constraints: 22_846,
+      delta: -63,
+    },
+    derivedOutputRoles: {
+      constraints: 22_844,
+      privateInputs: 150,
+      delta: -2,
+    },
+    ternaryDepth17: {
       constraints: r1cs.nConstraints,
       publicInputs: r1cs.nPubInputs,
       privateInputs: r1cs.nPrvInputs,
       wires: r1cs.nWires,
+      capacityLeaves: 3 ** 17,
+      groth16Domain: 2 ** 14,
     },
+    reductionPercent: Number(((baselineConstraints - r1cs.nConstraints) / baselineConstraints * 100).toFixed(2)),
+    method: 'Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs.',
   },
   decisions: {
     1: {
@@ -194,12 +219,14 @@ const evidence = {
       reason: `PKCS#8 prototype preserves the shared secret and changes warm native median by ${Number((pkcs8Improvement * 100).toFixed(2))}%.`,
     },
     2: {
-      status: 'defer',
-      reason: 'Lane-free dummy-nullifier constraint savings still require a fresh compiled R1CS comparison.',
+      status: 'accept',
+      reason: 'The lane-free circuit compiled from 23,437 to 22,909 constraints, exactly the predicted 528-constraint reduction.',
     },
     3: {
-      status: 'defer',
-      reason: 'The ternary depth-17 tree still requires a full-circuit compile and cross-language root/path proof.',
+      status: ternaryTargetMet ? 'accept' : 'reject',
+      reason: ternaryTargetMet
+        ? `The complete ternary circuit has ${r1cs.nConstraints.toLocaleString('en-US')} constraints, 13 public inputs, and fits the 2^14 Groth16 domain.`
+        : 'The complete ternary circuit failed the 2^14 constraint or public-input gate.',
     },
     4: {
       status: 'defer',
@@ -207,19 +234,19 @@ const evidence = {
     },
     5: {
       status: 'accept',
-      reason: 'Outgoing ciphertext is already paid into every archive record and has vectors but no runtime consumer.',
+      reason: 'The scanner now authenticates the already-paid outgoing ciphertext and recovers external recipient fingerprints and memos.',
     },
     6: {
       status: 'accept',
-      reason: 'Deposits can reduce two stored nullifiers to one while retaining a durable proof replay key.',
+      reason: 'Deposits now store one durable proof replay key instead of two nullifiers; storing zero would permit exact proof replay.',
     },
     7: {
       status: 'accept',
-      reason: 'The contract duplicates a consensus hash label as unchecked string literals instead of sharing the protocol primitive.',
+      reason: 'The contract now imports the canonical ternary Merkle hash primitive and empty roots from the protocol crate.',
     },
     8: {
       status: 'accept',
-      reason: 'Input/output total equality makes the second 63-bit range decomposition logically redundant.',
+      reason: 'Removing the second total range decomposition compiled from 22,909 to 22,846 constraints, an exact 63-constraint reduction.',
     },
   },
 };

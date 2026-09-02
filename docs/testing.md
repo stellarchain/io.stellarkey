@@ -25,6 +25,16 @@ bounded pull-request suite.
 
 ## Isolated Private Balance testnet fixture
 
+The replacement protocol currently publishes an authenticated empty catalogue.
+`npm run private:generate` regenerates local artifacts and cannot make them a
+deployment. Historical fixture records remain evidence for the retired build
+only. After fresh XLM and USDC deployments produce evidence matching the current
+artifacts, publication must be requested explicitly with:
+
+```sh
+node protocol/private-balance/scripts/generate-manifest.mjs --publish-deployment
+```
+
 The normal test and release commands never deploy contracts. To inspect the
 reproducible fixture plan without network mutation, run:
 

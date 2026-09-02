@@ -42,7 +42,19 @@ const PROJECT_ROOT = path.resolve(
 );
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    const resolved = nextResolve(specifier, context);
+    let resolved;
+    try {
+      resolved = nextResolve(specifier, context);
+    } catch (error) {
+      if (
+        error?.code !== 'ERR_MODULE_NOT_FOUND' ||
+        !specifier.startsWith('.') ||
+        path.extname(specifier)
+      ) {
+        throw error;
+      }
+      resolved = nextResolve(`${specifier}.ts`, context);
+    }
     return resolved.url.endsWith('.ts')
       ? { ...resolved, format: 'module-typescript' }
       : resolved;
@@ -413,6 +425,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: computeGenesisRecordHash(contextHash, deploymentBindingHash),

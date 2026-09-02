@@ -28,7 +28,7 @@ const description =
 const highlights = [
   "Private: the amount, the recipient, and the memo of a private transfer stay encrypted. Public: money moving in or out, network fees paid by your Stellar account, and timing.",
   "Proofs are created on this device. There is no application backend, relayer, indexer, or hosted key service anywhere in the flow.",
-  "A testnet-only preview today. Mainnet waits for independent audit and trusted-setup evidence, and the app shows you that status itself.",
+  "A Testnet development candidate. The replacement deployment is disabled until fresh pools and evidence match the new protocol; Mainnet remains blocked.",
 ] as const;
 
 const sections = [
@@ -245,11 +245,11 @@ export default function PrivatePaymentsPage() {
       summary="A private balance inside the same wallet. The amount, the recipient, and the memo of a private transfer stay encrypted; the proof is built on your device and verified against the public Stellar ledger."
       highlights={highlights}
       sections={sections}
-      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · Testnet development preview`}
+      stamp={`Describes StellarKey release ${APPLICATION_VERSION} · Testnet development candidate`}
     >
         <section id="private-what"><h2><DocShieldDots />What it is</h2>
         <p>Private Payments is a shielded pool for configured XLM and USDC, driven from the wallet you already have. Funds you move into it are held as encrypted notes on this device and can change hands without publishing the amount, the recipient, or the memo; a zero-knowledge proof convinces a contract on the public Stellar ledger that every rule held, without showing it the contents. That one sentence is the whole promise. The rest of this page is the mechanism.</p>
-        <p>Release {APPLICATION_VERSION} permits the exact hash-pinned development fixture from production-hosted builds on Testnet only and refuses Mainnet independently. The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge Testnet proofs and take Testnet pool funds. A public multi-party ceremony, independent review, and fresh deployment are required before real-value use.</p></section>
+        <p>Release {APPLICATION_VERSION} hosts the hash-pinned replacement artifacts but publishes no active Private Payments deployment. The wallet disables development deployment use until fresh Testnet pools and their evidence match the new circuit and contract hashes, and it refuses Mainnet independently. The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge proofs. A public multi-party ceremony, independent review, and fresh deployment are required before real-value use.</p></section>
 
         <section id="private-pockets"><h2><DocCoin />One wallet, two pockets</h2>
         <p>Your Stellar account is a public pocket: anyone can look up its balance and history, and that openness is what makes the ledger checkable. The private balance is a second pocket beside it. Crossings between the two — deposits in, withdrawals out — are ordinary public transactions by design; only life inside the pocket is encrypted.</p>
@@ -298,7 +298,7 @@ export default function PrivatePaymentsPage() {
         <p>The receive screen also offers a reusable stealth address (<span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tsm1…</span>): a two-key meta-address, one scan key and one spend key, from which a sender derives a fresh one-time destination per payment. Only your scan key can link those destinations back together. It is the same discipline — publish nothing that connects your payments — applied to a different receiving pattern.</p></section>
 
         <section id="private-screens"><h2><DocFile />What it looks like</h2>
-        <p>The surfaces below show the production-hosted Testnet development preview: the setup disclosure, a shielded receive with its verification code, and a private send review. Mainnet remains unavailable.</p>
+        <p>The surfaces below illustrate the Testnet development candidate: the setup disclosure, a shielded receive with its verification code, and a private send review. The replacement deployment and Mainnet remain unavailable.</p>
         <div className="panel-grid">
         <PanelDeal />
         <PanelReceive />
@@ -324,7 +324,7 @@ export default function PrivatePaymentsPage() {
         <li>Obscurity. What stays public — fees, timing, deposits, withdrawals — is written on this page so you can plan around it.</li>
         </ul></div>
         </div>
-        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current development key passes circuit and transcript compatibility checks but has no public ceremony or independent audit evidence, so hosted availability remains Testnet-only and Mainnet stays refused.</p></section>
+        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current development key passes circuit and transcript compatibility checks but has no public ceremony or independent audit evidence. No replacement pool is currently published, and Mainnet stays refused.</p></section>
 
         <section id="private-faq"><h2><DocQuestion />The awkward questions</h2>
         <div className="faq">

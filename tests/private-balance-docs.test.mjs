@@ -12,7 +12,8 @@ test('private balance documentation states exact privacy, recovery, and support 
   const support = read('private-balance-support.md');
   const combined = `${product}\n${recovery}\n${incident}\n${support}`;
 
-  assert.match(product, /production-hosted.*Testnet.*development preview/is);
+  assert.match(product, /Testnet-only development candidate/is);
+  assert.match(product, /catalogue is\s+empty/is);
   assert.match(product, /single-party setup/i);
   assert.match(product, /passes.*pinned Powers-of-Tau transcript/is);
   assert.match(product, /does not make.*safe for real value/is);
@@ -33,8 +34,9 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.doesNotMatch(combined, /anonymous|untraceable|guaranteed private/i);
 });
 
-test('the public private-payments page describes hosted Testnet availability consistently', () => {
+test('the public private-payments page describes the undeployed Testnet candidate consistently', () => {
   const page = readSource('src/app/private/page.tsx');
-  assert.match(page, /production-hosted.*Testnet.*development preview/is);
+  assert.match(page, /publishes no active Private Payments deployment/is);
+  assert.match(page, /fresh Testnet pools/is);
   assert.doesNotMatch(page, /current key fails.*production availability is off/is);
 });
