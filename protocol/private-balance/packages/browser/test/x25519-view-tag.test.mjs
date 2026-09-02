@@ -11,6 +11,17 @@ import {
 
 const bytes = (value, length = 32) => new Uint8Array(length).fill(value);
 
+test('X25519 native import uses the RFC 8410 PKCS#8 private-key wrapper', async () => {
+  const api = await import('../dist/index.js');
+  assert.equal(typeof api.encodeX25519PrivateKeyPkcs8, 'function');
+  const scalar = Uint8Array.from({ length: 32 }, (_, index) => index);
+  assert.equal(
+    Buffer.from(api.encodeX25519PrivateKeyPkcs8(scalar)).toString('hex'),
+    '302e020100300506032b656e04220420'
+      + '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+  );
+});
+
 test('X25519 native and portable scan paths derive the same secret', async () => {
   const sender = await deriveKeysFromSeed(
     bytes(1), 1, bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7),
@@ -38,6 +49,10 @@ test('X25519 rejects low-order public keys before tag comparison', async () => {
   await assert.rejects(
     deriveX25519SharedSecret(bytes(1), new Uint8Array(32), 'portable'),
     /low-order|invalid X25519/i,
+  );
+  await assert.rejects(
+    deriveX25519SharedSecret(bytes(1), new Uint8Array(32), 'native'),
+    /low-order|invalid|derive/i,
   );
 });
 
