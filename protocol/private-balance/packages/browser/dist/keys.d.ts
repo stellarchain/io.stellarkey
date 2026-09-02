@@ -1,3 +1,4 @@
+import { X25519PrivateKeyHandle } from './x25519.js';
 export declare const DOMAIN_ROOT = "SKSB_ROOT_V1";
 export declare const DOMAIN_ASK = "SKSB_ASK_V1";
 export declare const DOMAIN_NK = "SKSB_NK_V1";
@@ -30,6 +31,13 @@ export interface DiversifiedAddressKeys {
     hpkePrivateKey: Uint8Array;
     hpkePublicKey: Uint8Array;
 }
+export type DiversifiedEncryptionKeys = Pick<DiversifiedAddressKeys, 'diversifier' | 'hpkePrivateKey' | 'hpkePublicKey'>;
+export interface DiversifiedScanningKeys extends DiversifiedEncryptionKeys {
+    nativePrivateKey?: X25519PrivateKeyHandle;
+}
+export declare function computeDiversifiedOwnerCommitment(baseOwnerCommitment: Uint8Array, diversifier: Uint8Array): Uint8Array;
+export declare function deriveDiversifiedEncryptionKeys(incomingViewingKey: Uint8Array, diversifier: Uint8Array): Promise<DiversifiedEncryptionKeys>;
+export declare function deriveDiversifiedScanningKeys(incomingViewingKey: Uint8Array, diversifier: Uint8Array): Promise<DiversifiedScanningKeys>;
 export declare function deriveDiversifiedAddressKeys(baseOwnerCommitment: Uint8Array, incomingViewingKey: Uint8Array, diversifier: Uint8Array): Promise<DiversifiedAddressKeys>;
 export declare function derivePrivacySessionRoot(rawStellarSeed: Uint8Array, protocolVersion: number, networkId: Uint8Array, realmId: Uint8Array, poolId: Uint8Array, accountPublicKeyBytes: Uint8Array): Uint8Array;
 export declare function derivePrivateStorageKey(privacySessionRoot: Uint8Array, deploymentBindingHash: Uint8Array): Uint8Array;

@@ -3,8 +3,8 @@ import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import { deriveHpkeInfo, deriveHpkeAad } from './encoding.js';
 import { computeCommitment, decodeNotePlaintext } from './note.js';
 import { concatBytes, equalBytes, hmacSha256, sha256Bytes, utf8 } from './hash.js';
-import { deriveX25519SharedSecret } from './x25519.js';
-import { deriveDiversifiedAddressKeys } from './keys.js';
+import { deriveX25519SharedSecret, deriveX25519SharedSecretFromHandle, } from './x25519.js';
+import { computeDiversifiedOwnerCommitment, deriveDiversifiedScanningKeys, } from './keys.js';
 const suite = new CipherSuite({
     kem: new DhkemX25519HkdfSha256(),
     kdf: new HkdfSha256(),
@@ -166,11 +166,14 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
         const diversifier = recipientEnvelope.subarray(1, 5);
         const encPk = recipientEnvelope.subarray(5, 37);
         const ct = recipientEnvelope.subarray(37, 181);
-        diversified = await deriveDiversifiedAddressKeys(baseOwnerCommitment, recipientHpkeSk, diversifier);
+        diversified = await deriveDiversifiedScanningKeys(recipientHpkeSk, diversifier);
         const recipientPublicKey = diversified.hpkePublicKey;
-        sharedSecret = await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk);
+        sharedSecret = diversified.nativePrivateKey
+            ? await deriveX25519SharedSecretFromHandle(diversified.nativePrivateKey, encPk)
+            : await deriveX25519SharedSecret(diversified.hpkePrivateKey, encPk, 'portable');
         if (viewTag !== deriveViewTag(sharedSecret, contextHash, encPk, recipientPublicKey))
             return null;
+        const ownerCommitment = computeDiversifiedOwnerCommitment(baseOwnerCommitment, diversifier);
         const info = deriveHpkeInfo(2, contextHash);
         const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
         const skR = await suite.kem.deserializePrivateKey(diversified.hpkePrivateKey);
@@ -184,7 +187,7 @@ export async function openRecipientEnvelope(recipientHpkeSk, recipientEnvelope, 
         const note = decodeNotePlaintext(plaintextBytes);
         if (!equalBytes(note.diversifier, diversifier))
             return null;
-        if (!equalBytes(note.ownerCommitment, diversified.ownerCommitment))
+        if (!equalBytes(note.ownerCommitment, ownerCommitment))
             return null;
         const expectedCommitment = computeCommitment(contextField, assetField, note.ownerCommitment, note.value, note.rho);
         return equalBytes(expectedCommitment, cm) ? note : null;
