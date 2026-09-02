@@ -29,6 +29,7 @@ const FIAT_CURRENCIES = new Set(["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"
 const MAX_ACCOUNTS = 1_000;
 const MAX_CONTACTS = 5_000;
 const MAX_MERCHANT_ARCHIVE_CHARS = 32 * 1024 * 1024;
+export const MAX_ACCOUNT_LABEL_CHARS = 256;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -55,7 +56,10 @@ export function isRawKeyEncryptedPayloadValue(value: unknown): value is RawKeyEn
 function isStoredAccount(value: unknown): value is StoredAccount {
   if (!isRecord(value)) return false;
   if (typeof value.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.id)) return false;
-  if (typeof value.label !== "string" || value.label.length > 256) return false;
+  if (
+    typeof value.label !== "string" ||
+    value.label.length > MAX_ACCOUNT_LABEL_CHARS
+  ) return false;
   if (typeof value.publicKey !== "string" || !StrKey.isValidEd25519PublicKey(value.publicKey)) {
     return false;
   }

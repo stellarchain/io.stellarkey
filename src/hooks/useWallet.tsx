@@ -2151,9 +2151,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [accounts, mergeReconciliations, pendingTxsHydrated, phase]);
 
   const renameAccount = useCallback((id: string, newLabel: string) => {
-    updateAccountLabel(id, newLabel);
+    const updated = updateAccountLabel(id, newLabel);
+    if (!updated) throw new Error("That account is no longer available to rename.");
+    const persistedLabel = updated.accounts.find((account) => account.id === id)?.label;
+    if (!persistedLabel) throw new Error("The renamed account could not be read back.");
     setAccounts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, label: newLabel.trim() || a.label } : a)),
+      prev.map((a) => (a.id === id ? { ...a, label: persistedLabel } : a)),
     );
   }, []);
 

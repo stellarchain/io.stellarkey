@@ -351,6 +351,31 @@ test("concurrent imported-account writes reject a stale vault revision instead o
   assert.equal(stored.accounts.length, 2);
 });
 
+test("account labels cannot make the persisted vault unreadable", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const {
+    initializeVault,
+    loadVaultResult,
+    lockVault,
+    updateAccountLabel,
+    withSecretKey,
+  } = await import("../src/lib/vault.ts");
+  lockVault();
+  const source = Keypair.random();
+  const { account } = await initializeVault(password, { secret: source.secret() });
+
+  updateAccountLabel(account.id, "x".repeat(256));
+  assert.equal(loadVaultResult().kind, "ready");
+
+  assert.throws(
+    () => updateAccountLabel(account.id, "y".repeat(257)),
+    /account label.*256/i,
+  );
+  assert.equal(loadVaultResult().kind, "ready");
+  assert.equal(await withSecretKey(account.id, (secret) => secret), source.secret());
+});
+
 test("archived derived accounts keep their HD index and are reactivated instead of duplicated", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
