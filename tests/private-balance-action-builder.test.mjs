@@ -8,9 +8,12 @@ import {
   deriveDiversifiedAddressKeys,
   deriveExpandedSpendingKey,
   derivePrivateAddressDeploymentTag,
+  deriveOutgoingAad,
+  decodeOutgoingPlaintext,
   encodePrivateAddress,
   bigintTo32Bytes,
   openRecipientEnvelope,
+  openOutgoingEnvelope,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
 import { preparePrivateAction } from '../src/features/private-balance/worker/action-builder.ts';
@@ -114,8 +117,8 @@ test('public deposit preflight reports the exact asset balance shortfall', () =>
   );
 });
 
-test('action builder creates a deposit with zero private witness lanes', async () => {
-  const { keyContext, owner, assetContractId } = await fixture();
+test('action builder creates a fixed-shape deposit with private dummy lanes', async () => {
+  const { keyContext, owner, assetContractId, assetField } = await fixture();
   const prepared = await preparePrivateAction({
     esk: owner,
     keyContext,
@@ -133,10 +136,43 @@ test('action builder creates a deposit with zero private witness lanes', async (
   assert.deepEqual(prepared.reservedNoteIds, []);
   assert.equal(prepared.action.kind, 1);
   assert.equal(prepared.action.publicValue, 5_000_000n);
-  assert.deepEqual(prepared.circuitInputs.inputEnabled, ['0', '0']);
+  assert.deepEqual(prepared.circuitInputs.inputReal, ['0', '0']);
+  assert.equal(prepared.circuitInputs.inputDummySecret.every(value => value !== '0'), true);
+  assert.equal(prepared.action.nullifiers.every(value => value.some(byte => byte !== 0)), true);
+  assert.notDeepEqual(prepared.action.nullifiers[0], prepared.action.nullifiers[1]);
   assert.equal(prepared.circuitInputs.ask, '0');
   assert.equal(prepared.circuitInputs.nk, '0');
-  assert.deepEqual(prepared.circuitInputs.outputEnabled, ['1', '0']);
+  assert.deepEqual([...prepared.circuitInputs.outputReal].sort(), ['0', '1']);
+  assert.equal(prepared.action.outputs.every(output => (
+    output.cm.some(byte => byte !== 0)
+    && output.recipientEnvelope.some(byte => byte !== 0)
+    && output.outgoingEnvelope.some(byte => byte !== 0)
+  )), true);
+  const contextHash = computeContextHash(
+    keyContext.protocolVersion,
+    keyContext.networkId,
+    keyContext.realmId,
+    keyContext.poolId,
+  );
+  const outgoingFlags = [];
+  for (const [lane, output] of prepared.action.outputs.entries()) {
+    const plaintext = await openOutgoingEnvelope(
+      owner.outgoingViewingKey,
+      output.recipientEnvelope.slice(5, 37),
+      output.outgoingEnvelope,
+      deriveOutgoingAad(
+        keyContext.deploymentBindingHash,
+        contextHash,
+        assetField,
+        output.cm,
+        prepared.action.actionNonce,
+        lane,
+      ),
+    );
+    assert.ok(plaintext);
+    outgoingFlags.push(decodeOutgoingPlaintext(plaintext).flags);
+  }
+  assert.deepEqual(outgoingFlags.sort(), [0, 1]);
   assert.equal(prepared.publicSignals.length, 13);
 });
 
@@ -164,9 +200,10 @@ test('rotating the receive address cannot corrupt canonical self outputs', async
     },
   });
 
+  const realLane = prepared.circuitInputs.outputReal.indexOf('1');
   const recovered = await openRecipientEnvelope(
     owner.hpkePrivateKey,
-    prepared.action.outputs[0].recipientEnvelope,
+    prepared.action.outputs[realLane].recipientEnvelope,
     computeContextHash(
       keyContext.protocolVersion,
       keyContext.networkId,
@@ -175,14 +212,14 @@ test('rotating the receive address cannot corrupt canonical self outputs', async
     ),
     keyContext.contextField,
     assetField,
-    prepared.action.outputs[0].cm,
+    prepared.action.outputs[realLane].cm,
     prepared.action.actionNonce,
-    0,
+    realLane,
     owner.baseOwnerCommitment,
   );
 
   assert.ok(recovered, 'canonical self-output must remain decryptable after address rotation');
-  assert.deepEqual(recovered.diversifier, new Uint8Array(4));
+  assert.equal(recovered.diversifier.some(byte => byte !== 0), true);
   assert.equal(recovered.value, 5_000_000n);
 });
 
@@ -231,13 +268,15 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.deepEqual(prepared.reservedNoteIds, [noteId]);
   assert.equal(prepared.inputValue, '10');
   assert.equal(prepared.changeValue, '4');
-  assert.deepEqual(prepared.circuitInputs.inputEnabled, ['1', '0']);
-  assert.deepEqual(prepared.circuitInputs.outputEnabled, ['1', '1']);
-  assert.equal(prepared.circuitInputs.inputLeafIndex[0], '0');
-  assert.equal(prepared.circuitInputs.inputSiblings[0].length, 32);
-  assert.equal(prepared.circuitInputs.inputDirectionBits[0].length, 32);
+  assert.deepEqual([...prepared.circuitInputs.inputReal].sort(), ['0', '1']);
+  assert.deepEqual(prepared.circuitInputs.outputReal, ['1', '1']);
+  const realInputLane = prepared.circuitInputs.inputReal.indexOf('1');
+  assert.equal(prepared.circuitInputs.inputLeafIndex[realInputLane], '0');
+  assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 32);
+  assert.equal(prepared.circuitInputs.inputDirectionBits[realInputLane].length, 32);
   assert.equal(prepared.action.outputs[0].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
+  assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);
   assert.equal(prepared.publicSignals.length, 13);
   await assert.rejects(
     () => preparePrivateAction({

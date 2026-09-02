@@ -11,11 +11,19 @@
     "actionNonceFill": 17,
     "anchorRootFill": 34,
     "treeRootAfterFill": 51,
+    "nullifier0Fill": 1,
+    "nullifier1Fill": 2,
+    "output0CommitmentFill": 3,
+    "output0RecipientEnvelopeFill": 4,
+    "output0OutgoingEnvelopeFill": 5,
+    "output1CommitmentFill": 6,
+    "output1RecipientEnvelopeFill": 7,
+    "output1OutgoingEnvelopeFill": 8,
     "publicValue": 1000,
     "relayerFee": 0,
     "depositSourceKind": 0,
     "depositSourcePayloadFill": 170,
     "priorRecordHashFill": 85
   },
-  "expectedRecordHash": "27ee334fafb144b5c87cc956b0f7919a09df85d329a6e80e180140b622a462bc"
+  "expectedRecordHash": "bfc506616e57bbe383308a7aae2fe2c2481cddfef230185b1c79e624698e7d9c"
 }

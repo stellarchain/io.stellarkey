@@ -26,6 +26,7 @@ export interface PrivateBalanceConstants {
   publicInputs: number;
   notePlaintextBytes: number;
   recipientEnvelopeBytes: number;
+  outgoingEnvelopeBytes: number;
   outputPackageBytes: number;
   addressPayloadBytes: number;
   addressAsciiBytes: number;
@@ -96,7 +97,8 @@ const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   publicInputs: 13,
   notePlaintextBytes: 128,
   recipientEnvelopeBytes: 181,
-  outputPackageBytes: 213,
+  outgoingEnvelopeBytes: 157,
+  outputPackageBytes: 370,
   addressPayloadBytes: 84,
   addressAsciiBytes: 128,
   addressContextTagBytes: 16,

@@ -89,12 +89,16 @@ fn test_pool_withdrawal() {
     let ctx_bytes = field_str_to_bytes(&wd_item.public_signals[0]);
     let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[3]);
     let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
+    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
     let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[11]);
+    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[12]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);
     let nf0 = BytesN::from_array(&env, &nf0_bytes);
+    let nf1 = BytesN::from_array(&env, &nf1_bytes);
     let out_cm0 = BytesN::from_array(&env, &out_cm0_bytes);
+    let out_cm1 = BytesN::from_array(&env, &out_cm1_bytes);
 
     assert_eq!(pool_client.config().context_field, context_field);
 
@@ -112,12 +116,17 @@ fn test_pool_withdrawal() {
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root,
         nullifier_0: nf0.clone(),
-        nullifier_1: BytesN::from_array(&env, &[0; 32]),
+        nullifier_1: nf1,
         output_0: OutputPackage {
             commitment: out_cm0,
             recipient_envelope: BytesN::from_array(&env, &[0xdd; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xde; 157]),
         },
-        output_1: OutputPackage::dummy(&env),
+        output_1: OutputPackage {
+            commitment: out_cm1,
+            recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
+        },
         public_value: 7_000_000,
         public_recipient: recipient.clone(),
         relayer_fee: 2_000,

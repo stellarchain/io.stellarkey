@@ -93,11 +93,9 @@ fn execute_action(
 
     if action.kind != ActionKind::Deposit {
         known_root(env, &BytesN::from_array(env, &action.anchor_root))?;
-        for nullifier in &action.nullifiers {
-            if *nullifier != [0; 32] {
-                nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
-            }
-        }
+    }
+    for nullifier in &action.nullifiers {
+        nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
     let tree_before = get_tree(env);
@@ -113,9 +111,7 @@ fn execute_action(
 
     let action_index = get_meta(env).action_count;
     for nullifier in &action.nullifiers {
-        if *nullifier != [0; 32] {
-            nullifier::mark_spent(env, &BytesN::from_array(env, nullifier), action_index);
-        }
+        nullifier::mark_spent(env, &BytesN::from_array(env, nullifier), action_index);
     }
 
     let mut tree = tree_before;

@@ -171,6 +171,7 @@ function decodeOutput(value: unknown, name: string): ArchiveRecordModel['outputs
   return {
     cm: bytes(output.commitment, 32, `${name}.commitment`),
     recipientEnvelope: bytes(output.recipient_envelope, 181, `${name}.recipient_envelope`),
+    outgoingEnvelope: bytes(output.outgoing_envelope, 157, `${name}.outgoing_envelope`),
   };
 }
 

@@ -4,12 +4,15 @@ use private_balance_protocol::constants::{
 use private_balance_protocol::encryption::*;
 
 #[test]
-fn test_output_package_dummy() {
-    let dummy = OutputPackage::dummy();
-    assert!(dummy.is_dummy());
-    let serialized = dummy.serialize();
+fn test_output_package_round_trip_includes_both_ciphertexts() {
+    let package = OutputPackage {
+        cm: [1; 32],
+        recipient_envelope: [2; 181],
+        outgoing_envelope: [3; 157],
+    };
+    let serialized = package.serialize();
     let deserialized = OutputPackage::deserialize(&serialized).unwrap();
-    assert_eq!(deserialized, dummy);
+    assert_eq!(deserialized, package);
 }
 
 #[test]

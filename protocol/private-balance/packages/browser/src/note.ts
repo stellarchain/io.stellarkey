@@ -6,6 +6,7 @@ export const MEMO_BYTES = 32;
 export const MAX_NOTE_VALUE = (1n << 63n) - 1n;
 export const DOMAIN_NOTE = 'SKSB_NOTE_COMMITMENT_V1';
 export const DOMAIN_NULLIFIER = 'SKSB_NULLIFIER_V1';
+export const DOMAIN_DUMMY_NULLIFIER = 'SKSB_DUMMY_NULLIFIER_V1';
 
 export interface NotePlaintext {
   protocolVersion: number;
@@ -25,8 +26,13 @@ function requireLength(name: string, bytes: Uint8Array, expected: number): void 
 
 function validateNote(note: NotePlaintext): void {
   if (note.protocolVersion !== 1) throw new Error('Unsupported note protocol version');
-  if (note.flags !== 0) throw new Error('Unsupported note flags');
-  if (note.value < 1n || note.value > MAX_NOTE_VALUE) throw new Error('Invalid note value');
+  if (note.flags !== 0 && note.flags !== 1) throw new Error('Unsupported note flags');
+  if (
+    note.value < 0n
+    || note.value > MAX_NOTE_VALUE
+    || (note.flags === 0 && note.value === 0n)
+    || (note.flags === 1 && note.value !== 0n)
+  ) throw new Error('Invalid note value');
   requireLength('Address diversifier', note.diversifier, 4);
   requireLength('Owner commitment', note.ownerCommitment, 32);
   requireLength('Rho', note.rho, 32);
@@ -95,7 +101,7 @@ export function computeCommitment(
   value: bigint,
   rho: Uint8Array,
 ): Uint8Array {
-  if (value < 1n || value > MAX_NOTE_VALUE) throw new Error('Invalid commitment value');
+  if (value < 0n || value > MAX_NOTE_VALUE) throw new Error('Invalid commitment value');
   return p2(DOMAIN_NOTE, [contextField, assetField, ownerCommitment, bigintTo32Bytes(value), rho]);
 }
 
@@ -108,4 +114,16 @@ export function computeNullifier(
 ): Uint8Array {
   if (leafIndex < 0n || leafIndex > 0xffff_ffffn) throw new Error('Invalid leaf index');
   return p2(DOMAIN_NULLIFIER, [contextField, nk, rho, bigintTo32Bytes(leafIndex), cm]);
+}
+
+export function computeDummyNullifier(
+  contextField: Uint8Array,
+  dummySecret: Uint8Array,
+  lane: number,
+): Uint8Array {
+  if (lane !== 0 && lane !== 1) throw new Error('Invalid dummy input lane');
+  if (!isCanonicalField(dummySecret) || dummySecret.every(byte => byte === 0)) {
+    throw new Error('Invalid dummy nullifier secret');
+  }
+  return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret, bigintTo32Bytes(BigInt(lane))]);
 }

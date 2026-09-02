@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.
+- Replaced sparse Private Payments actions with fixed two-nullifier, two-output packages that include recipient and sender-recovery ciphertexts for every lane.
 
 ### Removed
 
@@ -45,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Hid Private Payments input/output lane roles behind private circuit selectors, secret-derived dummy nullifiers, randomized zero-value dummy notes, randomized lane ordering, and fresh self-output diversifiers.
 - Removed private recipient and amount handoffs from browser storage, restored reusable-receipt discovery to the authenticated wallet birthday, terminated proof workers on cancellation, bound live contract circuit hashes to the manifest, and added Rust policy checks to tagged releases.
 - Prevented issuer-logo referrer leakage, fully redacted long witness values, and escaped paper-wallet QR attributes before constructing print HTML.
 - Revalidated wallet and merchant refund authority after durable transaction journaling, prevented settled charges from being voided, expired stale Mainnet issued-asset quotes, and cleared decrypted merchant snapshots on lock and unmount.

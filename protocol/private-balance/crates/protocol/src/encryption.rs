@@ -36,12 +36,12 @@ pub struct OutgoingPlaintext {
 pub struct OutputPackage {
     pub cm: [u8; 32],
     pub recipient_envelope: [u8; HPKE_ENVELOPE_BYTES],
+    pub outgoing_envelope: [u8; OUTGOING_ENVELOPE_BYTES],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncryptionError {
     InvalidLength,
-    InvalidDummyPackage,
     InvalidPlaintext,
     InvalidOutputIndex,
     SealFailed,
@@ -112,21 +112,11 @@ impl OutgoingPlaintext {
 }
 
 impl OutputPackage {
-    pub fn dummy() -> Self {
-        OutputPackage {
-            cm: [0u8; 32],
-            recipient_envelope: [0u8; HPKE_ENVELOPE_BYTES],
-        }
-    }
-
-    pub fn is_dummy(&self) -> bool {
-        self.cm == [0u8; 32] && self.recipient_envelope == [0u8; HPKE_ENVELOPE_BYTES]
-    }
-
     pub fn serialize(&self) -> [u8; OUTPUT_PACKAGE_BYTES] {
         let mut out = [0u8; OUTPUT_PACKAGE_BYTES];
         out[0..32].copy_from_slice(&self.cm);
         out[32..213].copy_from_slice(&self.recipient_envelope);
+        out[213..370].copy_from_slice(&self.outgoing_envelope);
         out
     }
 
@@ -136,14 +126,13 @@ impl OutputPackage {
 
         let mut recipient_envelope = [0u8; HPKE_ENVELOPE_BYTES];
         recipient_envelope.copy_from_slice(&bytes[32..213]);
-
-        if cm == [0u8; 32] && recipient_envelope != [0u8; HPKE_ENVELOPE_BYTES] {
-            return Err(EncryptionError::InvalidDummyPackage);
-        }
+        let mut outgoing_envelope = [0u8; OUTGOING_ENVELOPE_BYTES];
+        outgoing_envelope.copy_from_slice(&bytes[213..370]);
 
         Ok(OutputPackage {
             cm,
             recipient_envelope,
+            outgoing_envelope,
         })
     }
 }

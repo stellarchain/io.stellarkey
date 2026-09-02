@@ -63,9 +63,9 @@ test('output packages carry a secret-derived view tag and reject non-matches ear
   );
 
   assert.equal(RECIPIENT_ENVELOPE_BYTES, 181);
-  assert.equal(OUTPUT_PACKAGE_BYTES, 213);
+  assert.equal(OUTPUT_PACKAGE_BYTES, 370);
   assert.equal(created.recipientEnvelope.length, 181);
-  assert.equal(created.outputPackage.length, 213);
+  assert.equal(created.outputPackage.length, 370);
 
   const wrongTag = created.recipientEnvelope.slice();
   wrongTag[0] ^= 0xff;

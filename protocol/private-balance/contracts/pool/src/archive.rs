@@ -44,6 +44,7 @@ fn protocol_output(output: &OutputPackage) -> ProtocolOutputPackage {
     ProtocolOutputPackage {
         cm: output.commitment.to_array(),
         recipient_envelope: output.recipient_envelope.to_array(),
+        outgoing_envelope: output.outgoing_envelope.to_array(),
     }
 }
 
@@ -157,10 +158,12 @@ pub fn append_record(
         output_0: OutputPackage {
             commitment: BytesN::from_array(env, &action.outputs[0].cm),
             recipient_envelope: BytesN::from_array(env, &action.outputs[0].recipient_envelope),
+            outgoing_envelope: BytesN::from_array(env, &action.outputs[0].outgoing_envelope),
         },
         output_1: OutputPackage {
             commitment: BytesN::from_array(env, &action.outputs[1].cm),
             recipient_envelope: BytesN::from_array(env, &action.outputs[1].recipient_envelope),
+            outgoing_envelope: BytesN::from_array(env, &action.outputs[1].outgoing_envelope),
         },
         public_value: action.public_value,
         deposit_source,

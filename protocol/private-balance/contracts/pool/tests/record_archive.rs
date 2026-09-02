@@ -12,19 +12,30 @@ use soroban_sdk::{BytesN, Env};
 fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action {
     let mut commitment = [0; 32];
     commitment[28..].copy_from_slice(&(index + 1).to_be_bytes());
+    let mut second_commitment = [0; 32];
+    second_commitment[28..].copy_from_slice(&(index + 101).to_be_bytes());
+    let mut first_nullifier = [0; 32];
+    first_nullifier[28..].copy_from_slice(&(index + 201).to_be_bytes());
+    let mut second_nullifier = [0; 32];
+    second_nullifier[28..].copy_from_slice(&(index + 301).to_be_bytes());
     Action {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Deposit,
         asset,
         action_nonce: [index as u8; 32],
         anchor_root: [0; 32],
-        nullifiers: [[0; 32]; 2],
+        nullifiers: [first_nullifier, second_nullifier],
         outputs: [
             OutputPackage {
                 cm: commitment,
-                recipient_envelope: [index as u8; 181],
+                recipient_envelope: [index as u8 + 1; 181],
+                outgoing_envelope: [index as u8 + 2; 157],
             },
-            OutputPackage::dummy(),
+            OutputPackage {
+                cm: second_commitment,
+                recipient_envelope: [index as u8 + 3; 181],
+                outgoing_envelope: [index as u8 + 4; 157],
+            },
         ],
         public_value: 1,
         deposit_source: Some(source),

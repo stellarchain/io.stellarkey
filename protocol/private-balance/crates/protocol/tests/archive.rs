@@ -31,8 +31,19 @@ fn test_archive_record_hash_chain() {
         action_nonce: [fill(&["record", "actionNonceFill"]); 32],
         anchor_root: [fill(&["record", "anchorRootFill"]); 32],
         tree_root_after: [fill(&["record", "treeRootAfterFill"]); 32],
-        nullifiers: [[0u8; 32], [0u8; 32]],
-        outputs: [OutputPackage::dummy(), OutputPackage::dummy()],
+        nullifiers: [[1u8; 32], [2u8; 32]],
+        outputs: [
+            OutputPackage {
+                cm: [3; 32],
+                recipient_envelope: [4; 181],
+                outgoing_envelope: [5; 157],
+            },
+            OutputPackage {
+                cm: [6; 32],
+                recipient_envelope: [7; 181],
+                outgoing_envelope: [8; 157],
+            },
+        ],
         public_value: 1000,
         deposit_source: Some((0, [fill(&["record", "depositSourcePayloadFill"]); 32])),
         public_recipient: None,

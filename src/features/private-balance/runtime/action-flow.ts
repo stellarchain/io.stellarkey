@@ -147,9 +147,10 @@ function commonContractAction(action: ActionModel) {
     outputs: action.outputs.map(output => ({
       commitment: output.cm,
       recipientEnvelope: output.recipientEnvelope,
+      outgoingEnvelope: output.outgoingEnvelope,
     })) as [
-      { commitment: Uint8Array; recipientEnvelope: Uint8Array },
-      { commitment: Uint8Array; recipientEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
     ],
     publicValue: action.publicValue,
   };

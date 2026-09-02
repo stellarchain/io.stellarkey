@@ -5,14 +5,19 @@ import {
   computeCommitment,
   computeContextHash,
   computeAssetField,
+  computeDummyNullifier,
   computeNullifier,
   computePublicSignals,
   createOutputPackage,
   decodePrivateAddress,
   deriveDiversifiedAddressKeys,
+  deriveOutgoingAad,
+  deriveX25519PublicKey,
   encodeNotePlaintext,
+  encodeOutgoingPlaintext,
   randomBytes32,
   sampleNonzeroField,
+  sealOutgoingEnvelope,
   type ActionModel,
   type ExpandedSpendingKey,
 } from '@stellarkey/private-balance';
@@ -23,7 +28,6 @@ import type { PrivateBalanceKeyContext } from './messages';
 const MAX_VALUE = (1n << 63n) - 1n;
 const ZERO_32 = new Uint8Array(32);
 const ZERO_DIVERSIFIER = new Uint8Array(4);
-const ZERO_ENVELOPE = new Uint8Array(181);
 
 export interface PublicAddressPayload {
   kind: number;
@@ -88,6 +92,8 @@ export interface PreparePrivateActionInput {
 }
 
 interface InputWitness {
+  real: boolean;
+  dummySecret: Uint8Array;
   ownerCommitment: Uint8Array;
   diversifier: Uint8Array;
   value: bigint;
@@ -99,12 +105,14 @@ interface InputWitness {
 }
 
 interface OutputWitness {
+  real: boolean;
   ownerCommitment: Uint8Array;
   diversifier: Uint8Array;
   value: bigint;
   rho: Uint8Array;
   commitment: Uint8Array;
   recipientEnvelope: Uint8Array;
+  outgoingEnvelope: Uint8Array;
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -154,8 +162,36 @@ function memoBytes(value?: Uint8Array): { bytes: Uint8Array; length: number } {
   return { bytes, length: value.length };
 }
 
-function dummyInput(): InputWitness {
+function randomBit(): number {
+  const entropy = randomBytes32();
+  try {
+    return entropy[0] & 1;
+  } finally {
+    entropy.fill(0);
+  }
+}
+
+function randomDiversifier(): Uint8Array {
+  for (;;) {
+    const entropy = randomBytes32();
+    try {
+      const diversifier = entropy.slice(0, 4);
+      if (!isZero(diversifier)) return diversifier;
+    } finally {
+      entropy.fill(0);
+    }
+  }
+}
+
+function shuffled<T>(values: [T, T]): [T, T] {
+  return randomBit() === 0 ? values : [values[1], values[0]];
+}
+
+function dummyInput(contextField: Uint8Array, lane: number): InputWitness {
+  const dummySecret = sampleNonzeroField();
   return {
+    real: false,
+    dummySecret,
     ownerCommitment: ZERO_32.slice(),
     diversifier: ZERO_DIVERSIFIER.slice(),
     value: 0n,
@@ -163,22 +199,12 @@ function dummyInput(): InputWitness {
     leafIndex: 0,
     siblings: Array.from({ length: 32 }, () => ZERO_32.slice()),
     directionBits: Array.from({ length: 32 }, () => 0),
-    nullifier: ZERO_32.slice(),
+    nullifier: computeDummyNullifier(contextField, dummySecret, lane),
   };
 }
 
-function dummyOutput(): OutputWitness {
-  return {
-    ownerCommitment: ZERO_32.slice(),
-    diversifier: ZERO_DIVERSIFIER.slice(),
-    value: 0n,
-    rho: ZERO_32.slice(),
-    commitment: ZERO_32.slice(),
-    recipientEnvelope: ZERO_ENVELOPE.slice(),
-  };
-}
-
-async function createRealOutput(input: {
+async function createOutput(input: {
+  real: boolean;
   recipientOwnerCommitment: Uint8Array;
   recipientHpkePublicKey: Uint8Array;
   diversifier: Uint8Array;
@@ -188,6 +214,8 @@ async function createRealOutput(input: {
   contextField: Uint8Array;
   assetField: Uint8Array;
   actionNonce: Uint8Array;
+  deploymentBindingHash: Uint8Array;
+  outgoingViewingKey: Uint8Array;
   outputIndex: number;
   priorCommitments: Uint8Array[];
   selfIdentity?: {
@@ -231,7 +259,7 @@ async function createRealOutput(input: {
     }
     const noteBytes = encodeNotePlaintext({
       protocolVersion: 1,
-      flags: 0,
+      flags: input.real ? 0 : 1,
       value: input.value,
       diversifier: input.diversifier,
       ownerCommitment: input.recipientOwnerCommitment,
@@ -249,14 +277,50 @@ async function createRealOutput(input: {
       input.actionNonce,
       input.outputIndex,
     );
-    noteBytes.fill(0);
+    const outgoingPlaintext = encodeOutgoingPlaintext({
+      protocolVersion: 1,
+      flags: input.real ? 0 : 1,
+      value: input.value,
+      diversifier: input.diversifier,
+      ownerCommitment: input.recipientOwnerCommitment,
+      recipientHpkePublicKey: input.recipientHpkePublicKey,
+      memoLength: memo.length,
+      memo: memo.bytes,
+      reserved: new Uint8Array(15),
+    });
+    const outgoingAad = deriveOutgoingAad(
+      input.deploymentBindingHash,
+      input.contextHash,
+      input.assetField,
+      commitment,
+      input.actionNonce,
+      input.outputIndex,
+    );
+    const outgoingNonceEntropy = randomBytes32();
+    let outgoingEnvelope: Uint8Array;
+    try {
+      outgoingEnvelope = await sealOutgoingEnvelope(
+        input.outgoingViewingKey,
+        output.recipientEnvelope.slice(5, 37),
+        outgoingPlaintext,
+        outgoingAad,
+        outgoingNonceEntropy.slice(0, 12),
+      );
+    } finally {
+      noteBytes.fill(0);
+      outgoingPlaintext.fill(0);
+      outgoingNonceEntropy.fill(0);
+      output.outputPackage.fill(0);
+    }
     return {
+      real: input.real,
       ownerCommitment: input.recipientOwnerCommitment.slice(),
       diversifier: input.diversifier.slice(),
       value: input.value,
       rho,
       commitment,
       recipientEnvelope: output.recipientEnvelope,
+      outgoingEnvelope,
     };
   }
 }
@@ -267,7 +331,11 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
   total: bigint;
 }> {
   if (input.intent.kind === 'deposit') {
-    return { witnesses: [dummyInput(), dummyInput()], selectedNoteIds: [], total: 0n };
+    return {
+      witnesses: [dummyInput(input.keyContext.contextField, 0), dummyInput(input.keyContext.contextField, 1)],
+      selectedNoteIds: [],
+      total: 0n,
+    };
   }
   const selectedNoteIds = input.intent.selectedNoteIds;
   if (
@@ -331,6 +399,8 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
       commitment,
     );
     witnesses.push({
+      real: true,
+      dummySecret: ZERO_32.slice(),
       ownerCommitment,
       diversifier,
       value,
@@ -343,9 +413,17 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     total += value;
   }
   if (total > MAX_VALUE) throw new Error('Selected private note total is outside the supported range');
-  while (witnesses.length < 2) witnesses.push(dummyInput());
+  let arranged: [InputWitness, InputWitness];
+  if (witnesses.length === 1) {
+    const realLane = randomBit();
+    arranged = realLane === 0
+      ? [witnesses[0], dummyInput(input.keyContext.contextField, 1)]
+      : [dummyInput(input.keyContext.contextField, 0), witnesses[0]];
+  } else {
+    arranged = shuffled(witnesses as [InputWitness, InputWitness]);
+  }
   return {
-    witnesses: witnesses as [InputWitness, InputWitness],
+    witnesses: arranged,
     selectedNoteIds: [...selectedNoteIds],
     total,
   };
@@ -372,6 +450,7 @@ export async function preparePrivateAction(
   let relayer: PublicAddressPayload | undefined;
   let relayerFee = 0n;
   let outputSpecs: Array<{
+    real: boolean;
     ownerCommitment: Uint8Array;
     hpkePublicKey: Uint8Array;
     diversifier: Uint8Array;
@@ -383,17 +462,24 @@ export async function preparePrivateAction(
     };
   }>;
 
+  const usedSelfDiversifiers: Uint8Array[] = [];
   const selfOutput = async (value: bigint, memo?: Uint8Array) => {
+    let diversifier: Uint8Array;
+    do {
+      diversifier = randomDiversifier();
+    } while (usedSelfDiversifiers.some(existing => equalBytes(existing, diversifier)));
+    usedSelfDiversifiers.push(diversifier);
     const identity = await deriveDiversifiedAddressKeys(
       input.esk.baseOwnerCommitment,
       input.esk.hpkePrivateKey,
-      ZERO_DIVERSIFIER,
+      diversifier,
     );
     try {
       return {
+        real: true,
         ownerCommitment: identity.ownerCommitment,
         hpkePublicKey: identity.hpkePublicKey,
-        diversifier: ZERO_DIVERSIFIER,
+        diversifier,
         value,
         memo,
         selfIdentity: {
@@ -403,6 +489,20 @@ export async function preparePrivateAction(
       };
     } finally {
       identity.hpkePrivateKey.fill(0);
+    }
+  };
+  const dummyOutput = () => {
+    const privateKey = randomBytes32();
+    try {
+      return {
+        real: false,
+        ownerCommitment: sampleNonzeroField(),
+        hpkePublicKey: deriveX25519PublicKey(privateKey),
+        diversifier: randomDiversifier(),
+        value: 0n,
+      };
+    } finally {
+      privateKey.fill(0);
     }
   };
 
@@ -426,6 +526,7 @@ export async function preparePrivateAction(
       input.keyContext.deploymentBindingHash,
     );
     outputSpecs = [{
+      real: true,
       ownerCommitment: recipient.ownerCommitment,
       hpkePublicKey: recipient.hpkePublicKey,
       diversifier: recipient.diversifier,
@@ -450,9 +551,13 @@ export async function preparePrivateAction(
     outputSpecs = change > 0n ? [await selfOutput(change)] : [];
   }
 
+  while (outputSpecs.length < 2) outputSpecs.push(dummyOutput());
+  const arrangedOutputSpecs = shuffled(outputSpecs as [typeof outputSpecs[number], typeof outputSpecs[number]]);
+
   const outputWitnesses: OutputWitness[] = [];
-  for (const [outputIndex, spec] of outputSpecs.entries()) {
-    outputWitnesses.push(await createRealOutput({
+  for (const [outputIndex, spec] of arrangedOutputSpecs.entries()) {
+    outputWitnesses.push(await createOutput({
+      real: spec.real,
       recipientOwnerCommitment: spec.ownerCommitment,
       recipientHpkePublicKey: spec.hpkePublicKey,
       diversifier: spec.diversifier,
@@ -462,12 +567,13 @@ export async function preparePrivateAction(
       contextField: input.keyContext.contextField,
       assetField,
       actionNonce,
+      deploymentBindingHash: input.keyContext.deploymentBindingHash,
+      outgoingViewingKey: input.esk.outgoingViewingKey,
       outputIndex,
       priorCommitments: outputWitnesses.map(output => output.commitment),
       selfIdentity: spec.selfIdentity,
     }));
   }
-  while (outputWitnesses.length < 2) outputWitnesses.push(dummyOutput());
   const outputs = outputWitnesses as [OutputWitness, OutputWitness];
   const anchorRoot = input.intent.kind === 'deposit' ? ZERO_32.slice() : input.intent.anchorRoot.slice();
   const action: ActionModel = {
@@ -481,8 +587,16 @@ export async function preparePrivateAction(
       preparedInputs.witnesses[1].nullifier,
     ],
     outputs: [
-      { cm: outputs[0].commitment, recipientEnvelope: outputs[0].recipientEnvelope },
-      { cm: outputs[1].commitment, recipientEnvelope: outputs[1].recipientEnvelope },
+      {
+        cm: outputs[0].commitment,
+        recipientEnvelope: outputs[0].recipientEnvelope,
+        outgoingEnvelope: outputs[0].outgoingEnvelope,
+      },
+      {
+        cm: outputs[1].commitment,
+        recipientEnvelope: outputs[1].recipientEnvelope,
+        outgoingEnvelope: outputs[1].outgoingEnvelope,
+      },
     ],
     publicValue,
     depositSource,
@@ -519,7 +633,8 @@ export async function preparePrivateAction(
     outputCommitment: [publicSignals[11], publicSignals[12]],
     ask: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.ask),
     nk: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.nk),
-    inputEnabled: preparedInputs.witnesses.map(witness => witness.value === 0n ? '0' : '1'),
+    inputReal: preparedInputs.witnesses.map(witness => witness.real ? '1' : '0'),
+    inputDummySecret: preparedInputs.witnesses.map(witness => fieldString(witness.dummySecret)),
     inputOwnerCommitment: preparedInputs.witnesses.map(witness => fieldString(witness.ownerCommitment)),
     inputDiversifier: preparedInputs.witnesses.map(witness => bytesToBigint(witness.diversifier).toString()),
     inputValue: preparedInputs.witnesses.map(witness => witness.value.toString()),
@@ -527,7 +642,7 @@ export async function preparePrivateAction(
     inputLeafIndex: preparedInputs.witnesses.map(witness => witness.leafIndex.toString()),
     inputSiblings: preparedInputs.witnesses.map(witness => witness.siblings.map(fieldString)),
     inputDirectionBits: preparedInputs.witnesses.map(witness => witness.directionBits.map(String)),
-    outputEnabled: outputs.map(output => output.value === 0n ? '0' : '1'),
+    outputReal: outputs.map(output => output.real ? '1' : '0'),
     outputOwnerCommitment: outputs.map(output => fieldString(output.ownerCommitment)),
     outputValue: outputs.map(output => output.value.toString()),
     outputRho: outputs.map(output => fieldString(output.rho)),

@@ -197,7 +197,7 @@ write('encryption-v1.json', {
     info: hex(deriveHpkeInfo(2, contextHash)),
     aad: hex(deriveHpkeAad(contextHash, commitment, actionNonce, 0)),
     recipientEnvelopeBytes: 181,
-    outputPackageBytes: 213,
+    outputPackageBytes: 370,
     outgoingPlaintext: hex(outgoingPlaintext),
     outgoingAad: hex(outgoingAad),
     outgoingEnvelope: hex(outgoingEnvelope),
@@ -217,16 +217,26 @@ write('tree-v1.json', {
 });
 
 const zero32 = new Uint8Array(32);
+const firstDummyNullifier = fill(0x01, 32);
+const secondDummyNullifier = fill(0x02, 32);
 const action = {
   protocolVersion: 1,
   kind: ActionKind.Deposit,
   asset,
   actionNonce,
   anchorRoot: zero32,
-  nullifiers: [zero32, zero32],
+  nullifiers: [firstDummyNullifier, secondDummyNullifier],
   outputs: [
-    { cm: commitment, recipientEnvelope: new Uint8Array(181) },
-    { cm: zero32, recipientEnvelope: new Uint8Array(181) },
+    {
+      cm: commitment,
+      recipientEnvelope: fill(0xa1, 181),
+      outgoingEnvelope: fill(0xa2, 157),
+    },
+    {
+      cm: secondCommitment,
+      recipientEnvelope: fill(0xb1, 181),
+      outgoingEnvelope: fill(0xb2, 157),
+    },
   ],
   publicValue: 5_000_000n,
   relayerFee: 0n,
@@ -249,6 +259,13 @@ write('actions-v1.json', {
     actionNonce: hex(actionNonce),
     assetId: hex(assetId),
     output0Commitment: hex(commitment),
+    output1Commitment: hex(secondCommitment),
+    nullifier0: hex(firstDummyNullifier),
+    nullifier1: hex(secondDummyNullifier),
+    output0RecipientEnvelope: hex(action.outputs[0].recipientEnvelope),
+    output0OutgoingEnvelope: hex(action.outputs[0].outgoingEnvelope),
+    output1RecipientEnvelope: hex(action.outputs[1].recipientEnvelope),
+    output1OutgoingEnvelope: hex(action.outputs[1].outgoingEnvelope),
     depositSource: hex(accountPublicKey),
   },
   expected: {
@@ -267,10 +284,10 @@ const archiveRecord = {
   actionNonce: fill(0x11, 32),
   anchorRoot: fill(0x22, 32),
   treeRootAfter: fill(0x33, 32),
-  nullifiers: [zero32, zero32],
+  nullifiers: [fill(0x01, 32), fill(0x02, 32)],
   outputs: [
-    { cm: zero32, recipientEnvelope: new Uint8Array(181) },
-    { cm: zero32, recipientEnvelope: new Uint8Array(181) },
+    { cm: fill(0x03, 32), recipientEnvelope: fill(0x04, 181), outgoingEnvelope: fill(0x05, 157) },
+    { cm: fill(0x06, 32), recipientEnvelope: fill(0x07, 181), outgoingEnvelope: fill(0x08, 157) },
   ],
   publicValue: 1_000n,
   depositSource: { kind: 0, payload: fill(0xaa, 32) },
@@ -291,6 +308,14 @@ write('archive-v1.json', {
     actionNonceFill: 0x11,
     anchorRootFill: 0x22,
     treeRootAfterFill: 0x33,
+    nullifier0Fill: 0x01,
+    nullifier1Fill: 0x02,
+    output0CommitmentFill: 0x03,
+    output0RecipientEnvelopeFill: 0x04,
+    output0OutgoingEnvelopeFill: 0x05,
+    output1CommitmentFill: 0x06,
+    output1RecipientEnvelopeFill: 0x07,
+    output1OutgoingEnvelopeFill: 0x08,
     publicValue: Number(archiveRecord.publicValue),
     relayerFee: Number(archiveRecord.relayerFee),
     depositSourceKind: archiveRecord.depositSource.kind,

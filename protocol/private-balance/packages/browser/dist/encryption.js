@@ -11,7 +11,7 @@ const suite = new CipherSuite({
     aead: new Aes128Gcm(),
 });
 export const RECIPIENT_ENVELOPE_BYTES = 181;
-export const OUTPUT_PACKAGE_BYTES = 213;
+export const OUTPUT_PACKAGE_BYTES = 370;
 export const OUTGOING_ENVELOPE_BYTES = 157;
 export const OUTGOING_NONCE_BYTES = 12;
 const OUTGOING_KEY_DOMAIN = utf8('SKSB_OUTGOING_KEY_V1');

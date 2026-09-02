@@ -20,6 +20,7 @@ fn output(commitment: u32, envelope_byte: u8) -> OutputPackage {
     OutputPackage {
         cm: field(commitment),
         recipient_envelope: [envelope_byte; 181],
+        outgoing_envelope: [envelope_byte.wrapping_add(1); 157],
     }
 }
 
@@ -72,11 +73,7 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
             } else {
                 model.tree.root
             },
-            nullifiers: if kind == ActionKind::Deposit {
-                [[0; 32]; 2]
-            } else {
-                [field(index + 1_000_001), [0; 32]]
-            },
+            nullifiers: [field(index + 1_000_001), field(index + 2_000_001)],
             outputs: [
                 output(first_commitment, 0xa1),
                 output(rng.gen_range(1..=2_000_000_000u32), 0xb2),

@@ -4,6 +4,7 @@ use crate::encoding::{
 };
 use crate::encryption::OutputPackage;
 use crate::field::field_id;
+use crate::field::is_canonical_field;
 use crate::poseidon2::p2;
 use alloc::vec::Vec;
 
@@ -44,6 +45,80 @@ pub enum ActionError {
 }
 
 impl Action {
+    pub fn validate_public_shape(&self) -> Result<(), ActionError> {
+        const ZERO: [u8; 32] = [0; 32];
+        if self.protocol_version != crate::constants::PROTOCOL_VERSION {
+            return Err(ActionError::InvalidProtocolVersion);
+        }
+        if self.asset.0 != 1 || self.asset.1 == ZERO {
+            return Err(ActionError::InvalidKind);
+        }
+        if self.public_value > i64::MAX as u64 || self.relayer_fee > i64::MAX as u64 {
+            return Err(ActionError::InvalidPublicValue);
+        }
+        if !is_canonical_field(&self.anchor_root)
+            || self
+                .nullifiers
+                .iter()
+                .any(|field| !is_canonical_field(field))
+            || self
+                .outputs
+                .iter()
+                .any(|output| !is_canonical_field(&output.cm))
+        {
+            return Err(ActionError::NonCanonicalField);
+        }
+        if self.nullifiers.iter().any(|field| *field == ZERO)
+            || self.outputs.iter().any(|output| {
+                output.cm == ZERO
+                    || output.recipient_envelope == [0; 181]
+                    || output.outgoing_envelope == [0; 157]
+            })
+        {
+            return Err(ActionError::InvalidSlots);
+        }
+        if self.nullifiers[0] == self.nullifiers[1] {
+            return Err(ActionError::DuplicateNullifiers);
+        }
+        if self.outputs[0].cm == self.outputs[1].cm {
+            return Err(ActionError::DuplicateOutputs);
+        }
+        match self.kind {
+            ActionKind::Deposit => {
+                if self.anchor_root != ZERO
+                    || self.public_value == 0
+                    || self.deposit_source.is_none()
+                    || self.public_recipient.is_some()
+                    || self.relayer_fee != 0
+                    || self.relayer.is_some()
+                {
+                    return Err(ActionError::InvalidDepositSource);
+                }
+            }
+            ActionKind::PrivateTransfer => {
+                if self.anchor_root == ZERO
+                    || self.public_value != 0
+                    || self.deposit_source.is_some()
+                    || self.public_recipient.is_some()
+                    || self.relayer.is_none()
+                {
+                    return Err(ActionError::InvalidSlots);
+                }
+            }
+            ActionKind::Withdraw => {
+                if self.anchor_root == ZERO
+                    || self.public_value == 0
+                    || self.deposit_source.is_some()
+                    || self.public_recipient.is_none()
+                    || self.relayer.is_none()
+                {
+                    return Err(ActionError::InvalidPublicRecipient);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn serialize_canonical_action_bytes(
         &self,
         network_id: &[u8; 32],

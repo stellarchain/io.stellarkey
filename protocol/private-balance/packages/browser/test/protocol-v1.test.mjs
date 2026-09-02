@@ -182,16 +182,25 @@ test('context and action encoders reject malformed fixed-width fields', () => {
 test('canonical action encoding permits a full withdrawal without private change', () => {
   const zero = new Uint8Array(32);
   const nonzero = bigintTo32Bytes(1n);
+  const second = bigintTo32Bytes(2n);
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
     asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: nonzero,
-    nullifiers: [nonzero, zero],
+    nullifiers: [nonzero, second],
     outputs: [
-      { cm: zero, recipientEnvelope: new Uint8Array(181) },
-      { cm: zero, recipientEnvelope: new Uint8Array(181) },
+      {
+        cm: bigintTo32Bytes(3n),
+        recipientEnvelope: new Uint8Array(181).fill(3),
+        outgoingEnvelope: new Uint8Array(157).fill(4),
+      },
+      {
+        cm: bigintTo32Bytes(4n),
+        recipientEnvelope: new Uint8Array(181).fill(5),
+        outgoingEnvelope: new Uint8Array(157).fill(6),
+      },
     ],
     publicValue: 1n,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(0x44) },
@@ -199,9 +208,16 @@ test('canonical action encoding permits a full withdrawal without private change
     relayer: { kind: 0, payload: new Uint8Array(32).fill(0x45) },
   };
 
-  assert.doesNotThrow(() =>
-    serializeCanonicalActionBytes(action, zero, zero, zero),
-  );
+  const encoded = serializeCanonicalActionBytes(action, zero, zero, zero);
+  assert.equal(encoded.length, 1134);
+  assert.throws(() => serializeCanonicalActionBytes({
+    ...action,
+    nullifiers: [nonzero, zero],
+  }, zero, zero, zero));
+  assert.throws(() => serializeCanonicalActionBytes({
+    ...action,
+    outputs: [{ ...action.outputs[0], cm: zero }, action.outputs[1]],
+  }, zero, zero, zero));
 });
 
 test('private transfer binds an asset, relayer address, and fee into thirteen public signals', async () => {
@@ -214,10 +230,18 @@ test('private transfer binds an asset, relayer address, and fee into thirteen pu
     asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: one,
-    nullifiers: [one, zero],
+    nullifiers: [one, bigintTo32Bytes(2n)],
     outputs: [
-      { cm: one, recipientEnvelope: new Uint8Array(181) },
-      { cm: zero, recipientEnvelope: new Uint8Array(181) },
+      {
+        cm: bigintTo32Bytes(3n),
+        recipientEnvelope: new Uint8Array(181).fill(3),
+        outgoingEnvelope: new Uint8Array(157).fill(4),
+      },
+      {
+        cm: bigintTo32Bytes(4n),
+        recipientEnvelope: new Uint8Array(181).fill(5),
+        outgoingEnvelope: new Uint8Array(157).fill(6),
+      },
     ],
     publicValue: 0n,
     relayerFee: 25n,
