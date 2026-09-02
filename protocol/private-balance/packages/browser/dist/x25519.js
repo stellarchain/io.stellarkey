@@ -1,11 +1,9 @@
 import { x25519 } from '@noble/curves/ed25519.js';
 let nativeX25519Available;
-function base64Url(bytes) {
-    let binary = '';
-    for (const byte of bytes)
-        binary += String.fromCharCode(byte);
-    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
-}
+const X25519_PKCS8_PREFIX = Uint8Array.from([
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
+    0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20,
+]);
 function isAllZero(bytes) {
     let combined = 0;
     for (const byte of bytes)
@@ -19,24 +17,34 @@ function assertKey(key, label) {
 function ownedBuffer(bytes) {
     return Uint8Array.from(bytes).buffer;
 }
+export function encodeX25519PrivateKeyPkcs8(privateKey) {
+    assertKey(privateKey, 'X25519 private key');
+    const encoded = new Uint8Array(X25519_PKCS8_PREFIX.length + privateKey.length);
+    encoded.set(X25519_PKCS8_PREFIX);
+    encoded.set(privateKey, X25519_PKCS8_PREFIX.length);
+    return encoded;
+}
 async function deriveNative(privateKey, publicKey) {
     const subtle = globalThis.crypto?.subtle;
     if (!subtle)
         throw new Error('WebCrypto is unavailable');
-    const ownPublicKey = x25519.getPublicKey(privateKey);
-    const privateCryptoKey = await subtle.importKey('jwk', {
-        kty: 'OKP',
-        crv: 'X25519',
-        d: base64Url(privateKey),
-        x: base64Url(ownPublicKey),
-        ext: true,
-        key_ops: ['deriveBits'],
-    }, { name: 'X25519' }, false, ['deriveBits']);
-    const publicCryptoKey = await subtle.importKey('raw', ownedBuffer(publicKey), { name: 'X25519' }, false, []);
-    const shared = new Uint8Array(await subtle.deriveBits({ name: 'X25519', public: publicCryptoKey }, privateCryptoKey, 256));
-    if (isAllZero(shared))
-        throw new Error('Invalid low-order X25519 public key');
-    return shared;
+    const encodedPrivateKey = encodeX25519PrivateKeyPkcs8(privateKey);
+    const encodedPrivateKeyBuffer = ownedBuffer(encodedPrivateKey);
+    try {
+        const privateCryptoKey = await subtle.importKey('pkcs8', encodedPrivateKeyBuffer, { name: 'X25519' }, false, ['deriveBits']);
+        const publicCryptoKey = await subtle.importKey('raw', ownedBuffer(publicKey), { name: 'X25519' }, false, []);
+        const shared = new Uint8Array(await subtle.deriveBits({ name: 'X25519', public: publicCryptoKey }, privateCryptoKey, 256));
+        if (isAllZero(shared))
+            throw new Error('Invalid low-order X25519 public key');
+        return shared;
+    }
+    catch (error) {
+        throw new Error('Invalid X25519 key agreement', { cause: error });
+    }
+    finally {
+        encodedPrivateKey.fill(0);
+        new Uint8Array(encodedPrivateKeyBuffer).fill(0);
+    }
 }
 function derivePortable(privateKey, publicKey) {
     try {
