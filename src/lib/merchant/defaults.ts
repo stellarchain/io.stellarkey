@@ -150,6 +150,7 @@ export function emptyStore(): MerchantStore {
     counterCodes: [],
     counterPayments: [],
     customers: [],
+    customerEvents: [],
     settlementRule: {
       autoConvert: false,
       maxSlippageBps: 100,

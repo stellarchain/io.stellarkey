@@ -626,6 +626,16 @@ const customerRecord: Validator<Merchant.CustomerRecord> =
   (value): value is Merchant.CustomerRecord =>
     customerRecordShape(value) && new Set(value.sourceIds).size === value.sourceIds.length;
 
+const customerMutationEvent = objectOf<Merchant.CustomerMutationEvent>({
+  id: nonEmptyString,
+  kind: oneOf("note_updated", "forgotten"),
+  addressHash: (value): value is string =>
+    typeof value === "string" && /^[0-9a-f]{64}$/.test(value),
+  actorId: nonEmptyString,
+  actorName: nonEmptyString,
+  at: timestamp,
+}, {});
+
 const settlementRuleShape = objectOf<Merchant.SettlementRule>({
   autoConvert: booleanValue,
   maxSlippageBps: positiveInteger,
@@ -744,6 +754,7 @@ const merchantStoreShape = objectOf<Merchant.MerchantStore>({
     blockedUntil: timestamp,
     lockoutLevel: nonNegativeInteger,
   }, {})),
+  customerEvents: arrayOf(customerMutationEvent),
 });
 
 function nextInvoiceNumberIsCurrent(store: Merchant.MerchantStore): boolean {
