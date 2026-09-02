@@ -114,6 +114,8 @@ export function computeDeploymentBindingHash(input) {
     hex32(input.networkId, 'Network ID'),
     hex32(input.realmId, 'Realm ID'),
     contractPayload(input.poolContractId, 'Pool contract ID'),
+    Buffer.from([1]),
+    contractPayload(input.assetContractId, 'Asset contract ID'),
     Buffer.from([guardian.kind]),
     guardian.payload,
     hex32(input.poseidon2ParameterHash, 'Poseidon2 parameter hash'),
@@ -133,13 +135,14 @@ export function computeDeploymentBindingHash(input) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function fixtureBinding({ realmId, poolContractId, guardianAddress }) {
+function fixtureBinding({ realmId, poolContractId, assetContractId, guardianAddress }) {
   const artifacts = protocolArtifactHashes();
   return {
     protocolVersion: 1,
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
+    assetContractId,
     guardianAddress,
     ...artifacts,
     treeDepth: TREE_DEPTH,
@@ -156,6 +159,7 @@ export function buildConstructorArguments(input) {
     '--network_id', TESTNET_NETWORK_ID,
     '--realm_id', input.realmId,
     '--guardian', input.guardianAddress,
+    '--asset', input.assetContractId,
     '--poseidon2_parameter_hash', binding.poseidon2ParameterHash,
     '--circuit_hash', binding.circuitHash,
     '--verification_key_hash', binding.verificationKeyHash,
@@ -209,7 +213,7 @@ export function fixtureAssetDescriptor(value = 'native') {
     issuer,
     name: code === 'USDC' && issuer === TESTNET_USDC_ISSUER ? 'USD Coin' : `${code} asset`,
     decimals: 7,
-    displayDecimals: 7,
+    displayDecimals: code === 'USDC' && issuer === TESTNET_USDC_ISSUER ? 2 : 7,
   };
 }
 
@@ -328,7 +332,13 @@ function safeOutputPath(requested, poolContractId) {
   return target;
 }
 
-function createFixtureManifest({ poolContractId, guardianAddress, realmId, deploymentBindingHash }) {
+function createFixtureManifest({
+  poolContractId,
+  assetContractId,
+  guardianAddress,
+  realmId,
+  deploymentBindingHash,
+}) {
   const development = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
   return {
     ...development,
@@ -338,6 +348,7 @@ function createFixtureManifest({ poolContractId, guardianAddress, realmId, deplo
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
+    assetContractId,
     guardianAddress,
     stealthAnnouncerAddress: guardianAddress,
     deploymentBindingHash,
@@ -380,6 +391,7 @@ function deployFixture(parsed) {
     const constructorArguments = buildConstructorArguments({
       realmId,
       poolContractId: predictedPoolContractId,
+      assetContractId,
       guardianAddress: sourceAccount,
     });
     const bindingIndex = constructorArguments.indexOf('--deployment_binding_hash');
@@ -398,8 +410,9 @@ function deployFixture(parsed) {
     if (actualPoolContractId !== predictedPoolContractId) {
       throw new Error('Deployed pool ID does not match the precomputed deployment binding.');
     }
-    const [config, archiveMeta, treeState, depositsPaused] = [
+    const [config, pinnedAsset, archiveMeta, treeState, depositsPaused] = [
       ['config'],
+      ['asset'],
       ['archive_meta'],
       ['tree_state'],
       ['deposits_paused'],
@@ -415,6 +428,7 @@ function deployFixture(parsed) {
 
     const manifest = createFixtureManifest({
       poolContractId: actualPoolContractId,
+      assetContractId,
       guardianAddress: sourceAccount,
       realmId,
       deploymentBindingHash,
@@ -433,6 +447,7 @@ function deployFixture(parsed) {
       deploymentBindingHash,
       wasmSha256,
       config,
+      pinnedAsset,
       archiveMeta,
       treeState,
       depositsPaused,

@@ -30,7 +30,7 @@ test('the committed testnet deployment remains quarantined development evidence'
   );
   const fixtureNames = readdirSync(fixtureDirectory)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
-  assert.equal(fixtureNames.length, 1, 'keep exactly one current deployment evidence file');
+  assert.equal(fixtureNames.length, 2, 'keep exactly one current deployment evidence file per asset');
 
   const fixture = JSON.parse(readFileSync(new URL(fixtureNames[0], fixtureDirectory), 'utf8'));
   const manifestBytes = readFileSync(
@@ -148,7 +148,7 @@ test('testnet fixture accepts only canonical Stellar asset identifiers', () => {
     issuer: TESTNET_USDC_ISSUER,
     name: 'USD Coin',
     decimals: 7,
-    displayDecimals: 7,
+    displayDecimals: 2,
   });
   assert.equal(TESTNET_USDC_SAC_ID, 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA');
   assert.throws(() => fixtureAssetDescriptor('usdc:' + TESTNET_USDC_ISSUER), /canonical/i);
@@ -176,11 +176,13 @@ test('testnet fixture entropy is exact, independent, and rejects malformed provi
 test('deployment binding matches the canonical V1 fixture vector', () => {
   const guardian = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 5));
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 3));
+  const assetContractId = StrKey.encodeContract(Buffer.alloc(32, 4));
   const binding = {
     protocolVersion: 1,
     networkId: '01'.repeat(32),
     realmId: '02'.repeat(32),
     poolContractId,
+    assetContractId,
     guardianAddress: guardian,
     poseidon2ParameterHash: '06'.repeat(32),
     circuitHash: '07'.repeat(32),
@@ -191,16 +193,18 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    '7b15135e0166d843cad1451e27327305a89b3beb4c172a0cc7655c38e82f0018',
+    'd3a8883e40e91c86351999b1470e3a22d62e7584955ef63c5ed8b45a422b621c',
   );
 });
 
 test('constructor arguments bind the public testnet and exact deployment hash', () => {
   const guardianAddress = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 9)).publicKey();
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 10));
+  const assetContractId = StrKey.encodeContract(Buffer.alloc(32, 11));
   const argumentsList = buildConstructorArguments({
     realmId: '12'.repeat(32),
     poolContractId,
+    assetContractId,
     guardianAddress,
   });
   assert.equal(TESTNET_NETWORK_ID, 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472');
@@ -212,7 +216,7 @@ test('constructor arguments bind the public testnet and exact deployment hash', 
     TESTNET_NETWORK_ID,
   ]);
   assert.ok(argumentsList.includes('--deployment_binding_hash'));
-  assert.equal(argumentsList.includes('--asset'), false);
+  assert.equal(argumentsList[argumentsList.indexOf('--asset') + 1], assetContractId);
   const bindingIndex = argumentsList.indexOf('--deployment_binding_hash');
   assert.match(argumentsList[bindingIndex + 1], /^[0-9a-f]{64}$/);
   const development = JSON.parse(readFileSync(

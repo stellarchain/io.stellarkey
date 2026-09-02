@@ -30,12 +30,14 @@ fn constructor_binds_exact_immutable_configuration() {
     let realm_id = BytesN::from_array(&env, &[2; 32]);
     let pool_id =
         AddressPayload::ContractIdHash(BytesN::from_array(&env, &[3; 32])).to_address(&env);
+    let asset = AddressPayload::ContractIdHash(BytesN::from_array(&env, &[4; 32])).to_address(&env);
     let guardian = Address::generate(&env);
     let deployment_binding_hash = DeploymentBinding {
         protocol_version: PROTOCOL_VERSION,
         network_id: network_id.to_array(),
         realm_id: realm_id.to_array(),
         pool_id: payload(&pool_id).1,
+        asset: payload(&asset),
         guardian: payload(&guardian),
         poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
         circuit_hash: EXPECTED_CIRCUIT_HASH,
@@ -62,6 +64,7 @@ fn constructor_binds_exact_immutable_configuration() {
             &network_id,
             &realm_id,
             &guardian,
+            &asset,
             &BytesN::from_array(&env, &EXPECTED_POSEIDON2_PARAMETER_HASH),
             &BytesN::from_array(&env, &EXPECTED_CIRCUIT_HASH),
             &BytesN::from_array(&env, &EXPECTED_VERIFICATION_KEY_HASH),
@@ -78,6 +81,7 @@ fn constructor_binds_exact_immutable_configuration() {
     assert_eq!(config.network_id, network_id);
     assert_eq!(config.realm_id, realm_id);
     assert_eq!(config.guardian, guardian);
+    assert_eq!(client.asset(), asset);
     assert_eq!(
         config.deployment_binding_hash.to_array(),
         deployment_binding_hash
@@ -105,19 +109,21 @@ fn constructor_binds_exact_immutable_configuration() {
 }
 
 #[test]
-fn constructor_context_is_asset_agnostic() {
+fn constructor_context_and_binding_are_asset_pinned() {
     let env = Env::default();
     env.mock_all_auths();
     let network_id = env.ledger().network_id();
     let realm_id = BytesN::from_array(&env, &[2; 32]);
     let pool_id =
         AddressPayload::ContractIdHash(BytesN::from_array(&env, &[3; 32])).to_address(&env);
+    let asset = AddressPayload::ContractIdHash(BytesN::from_array(&env, &[4; 32])).to_address(&env);
     let guardian = Address::generate(&env);
     let deployment_binding_hash = DeploymentBinding {
         protocol_version: PROTOCOL_VERSION,
         network_id: network_id.to_array(),
         realm_id: realm_id.to_array(),
         pool_id: payload(&pool_id).1,
+        asset: payload(&asset),
         guardian: payload(&guardian),
         poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
         circuit_hash: EXPECTED_CIRCUIT_HASH,
@@ -144,6 +150,7 @@ fn constructor_context_is_asset_agnostic() {
             &network_id,
             &realm_id,
             &guardian,
+            &asset,
             &BytesN::from_array(&env, &EXPECTED_POSEIDON2_PARAMETER_HASH),
             &BytesN::from_array(&env, &EXPECTED_CIRCUIT_HASH),
             &BytesN::from_array(&env, &EXPECTED_VERIFICATION_KEY_HASH),
@@ -155,6 +162,7 @@ fn constructor_context_is_asset_agnostic() {
     );
 
     let config = PrivateBalancePoolClient::new(&env, &pool_id).config();
+    assert_eq!(PrivateBalancePoolClient::new(&env, &pool_id).asset(), asset);
     assert_eq!(
         config.context_hash.to_array(),
         compute_context_hash(

@@ -28,6 +28,7 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
   assert.equal(manifest.constants.addressPayloadBytes, PRIVATE_ADDRESS_PAYLOAD_BYTES);
   assert.equal(manifest.constants.addressAsciiBytes, PRIVATE_ADDRESS_TESTNET_ASCII_BYTES);
+  assert.match(manifest.assetContractId, /^C[A-Z2-7]{55}$/);
   assert.match(manifest.stealthAnnouncerAddress, /^G[A-Z2-7]{55}$/);
   assert.equal(manifest.artifacts.zkeyTransport.encoding, 'points-compressed');
   assert.match(manifest.artifacts.zkeyTransport.sha256, /^[0-9a-f]{64}$/);
@@ -85,6 +86,12 @@ test('manifest: rejects malformed manifest', () => {
   assert.throws(() => validateManifest({ schemaVersion: 2 }), /Unsupported schemaVersion/);
   assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 2 }), /Unsupported protocolVersion/);
   assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 1, status: 'invalid' }), /Invalid manifest status/);
+});
+
+test('manifest: requires one pinned asset contract', () => {
+  const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  assert.throws(() => validateManifest({ ...raw, assetContractId: undefined }), /assetContractId/i);
+  assert.throws(() => validateManifest({ ...raw, assetContractId: raw.guardianAddress }), /assetContractId/i);
 });
 
 test('manifest: requires a classic account as the stealth announcement sink', () => {
@@ -190,12 +197,12 @@ test('manifest: generator binds exact toolchains and the latest contract source 
   assert.doesNotMatch(source, /status: 'testnet-preview'/);
   assert.match(
     source,
-    /const manifest = \{[\s\S]*\.\.\.deploymentEvidence\.manifest,[\s\S]*release: baseManifest\.release,[\s\S]*\};/,
+    /const generated = deploymentEvidence\.map\([\s\S]*\.\.\.evidence\.manifest,[\s\S]*release: baseManifest\.release/,
     'the preview must use freshly reproduced release metadata after artifact equality checks',
   );
   assert.match(
     source,
-    /protocol\/private-balance\/manifests\/development\.json'[\s\S]*JSON\.stringify\(deploymentEvidence\.manifest/,
+    /protocol\/private-balance\/manifests\/development\.json'[\s\S]*JSON\.stringify\(generated\[0\]\.evidence\.manifest/,
     'normal generation must preserve the exact development deployment evidence separately',
   );
 });
@@ -235,13 +242,13 @@ test('manifest: generator pins a reproducible private-asset catalogue to the exa
 
   assert.equal(catalogueHash, assetsModule.EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256);
   assert.ok(catalogue.deployments.length >= 1);
-  const pool = catalogue.deployments.find(deployment => deployment.id === 'testnet-private-pool-v2');
-  assert.ok(pool);
-  const xlm = pool.assets.find(asset => asset.kind === 'native');
+  const xlm = catalogue.deployments.find(deployment => deployment.id === 'testnet-private-xlm');
+  const usdc = catalogue.deployments.find(deployment => deployment.id === 'testnet-private-usdc');
   assert.ok(xlm);
-  assert.equal(xlm.code, 'XLM');
-  assert.equal(pool.assets.some(asset => asset.code === 'USDC'), true);
-  assert.equal(pool.manifestSha256, manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256);
+  assert.ok(usdc);
+  assert.equal(xlm.asset.code, 'XLM');
+  assert.equal(usdc.asset.code, 'USDC');
+  assert.equal(xlm.manifestSha256, manifestModule.EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256);
   assert.match(generator, /catalogue\.json/);
   assert.match(generator, /private-balance-expected-catalogue\.ts/);
 });

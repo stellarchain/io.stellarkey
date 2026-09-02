@@ -37,7 +37,6 @@ function invocation(operation) {
 test('private transaction builder matches the fixed deposit/transfer/withdraw ABI', () => {
   const builder = new PrivateBalanceTransactionBuilder(manifest);
   const common = {
-    assetContractId: manifest.assetContractId,
     actionNonce: bytes(32, 4),
     anchorRoot: bytes(32, 5),
     nullifiers: [bytes(32, 6), bytes(32, 7)],
@@ -59,7 +58,6 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   assert.deepEqual(Object.keys(scValToNative(deposit.args[0])), [
     'action_nonce',
     'anchor_root',
-    'asset',
     'deposit_source',
     'nullifier_0',
     'nullifier_1',
@@ -93,7 +91,6 @@ test('private transaction builder rejects malformed fixed proof widths', () => {
   assert.throws(
     () => builder.buildTransferOperation({
       action: {
-        assetContractId: manifest.assetContractId,
         actionNonce: bytes(32, 1),
         anchorRoot: bytes(32, 2),
         nullifiers: [bytes(32, 3), bytes(32, 6)],
@@ -112,7 +109,6 @@ test('private transaction reviewer approves only the exact prepared envelope', (
   const source = Keypair.random().publicKey();
   const operation = new PrivateBalanceTransactionBuilder(manifest).buildTransferOperation({
     action: {
-      assetContractId: manifest.assetContractId,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
@@ -139,8 +135,8 @@ test('private transaction reviewer approves only the exact prepared envelope', (
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
+      assetContractId: manifest.assetContractId,
     },
-    assetContractId: manifest.assetContractId,
     source,
     sequence: '8',
     timeBounds: { minTime: '1', maxTime: '2000000000' },
@@ -181,7 +177,6 @@ test('private transaction preparation binds simulation, fees, source, and time b
   const source = Keypair.random().publicKey();
   const operation = new PrivateBalanceTransactionBuilder(manifest).buildTransferOperation({
     action: {
-      assetContractId: manifest.assetContractId,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
@@ -216,8 +211,8 @@ test('private transaction preparation binds simulation, fees, source, and time b
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
+      assetContractId: manifest.assetContractId,
     },
-    assetContractId: manifest.assetContractId,
     source,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -233,7 +228,6 @@ test('private deposit review accepts only its exact source-account SAC transfer 
   const source = Keypair.random().publicKey();
   const operation = new PrivateBalanceTransactionBuilder(manifest).buildDepositOperation({
     action: {
-      assetContractId: manifest.assetContractId,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 0),
       nullifiers: [bytes(32, 7), bytes(32, 8)],
@@ -274,8 +268,8 @@ test('private deposit review accepts only its exact source-account SAC transfer 
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
+      assetContractId: manifest.assetContractId,
     },
-    assetContractId: manifest.assetContractId,
     source,
     sequence: '8',
     timeBounds: { minTime: '1', maxTime: '2000000000' },

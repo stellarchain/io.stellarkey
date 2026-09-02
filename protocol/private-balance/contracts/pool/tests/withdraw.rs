@@ -112,7 +112,6 @@ fn test_pool_withdrawal() {
     });
 
     let action = WithdrawAction {
-        asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root,
         nullifier_0: nf0.clone(),

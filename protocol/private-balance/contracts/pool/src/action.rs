@@ -21,7 +21,6 @@ pub struct OutputPackage {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DepositAction {
-    pub asset: Address,
     pub action_nonce: BytesN<32>,
     pub anchor_root: BytesN<32>,
     pub nullifier_0: BytesN<32>,
@@ -35,7 +34,6 @@ pub struct DepositAction {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TransferAction {
-    pub asset: Address,
     pub action_nonce: BytesN<32>,
     pub anchor_root: BytesN<32>,
     pub nullifier_0: BytesN<32>,
@@ -50,7 +48,6 @@ pub struct TransferAction {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WithdrawAction {
-    pub asset: Address,
     pub action_nonce: BytesN<32>,
     pub anchor_root: BytesN<32>,
     pub nullifier_0: BytesN<32>,
@@ -149,7 +146,10 @@ fn checked_relayer_fee(value: u64) -> Result<u64, PoolError> {
     Ok(value)
 }
 
-pub(crate) fn from_deposit(action: &DepositAction) -> Result<ProtocolAction, PoolError> {
+pub(crate) fn from_deposit(
+    action: &DepositAction,
+    asset: &Address,
+) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
@@ -160,7 +160,7 @@ pub(crate) fn from_deposit(action: &DepositAction) -> Result<ProtocolAction, Poo
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Deposit,
-        asset: (1, contract_payload(&action.asset)?),
+        asset: (1, contract_payload(asset)?),
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -173,7 +173,10 @@ pub(crate) fn from_deposit(action: &DepositAction) -> Result<ProtocolAction, Poo
     })
 }
 
-pub(crate) fn from_transfer(action: &TransferAction) -> Result<ProtocolAction, PoolError> {
+pub(crate) fn from_transfer(
+    action: &TransferAction,
+    asset: &Address,
+) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
@@ -184,7 +187,7 @@ pub(crate) fn from_transfer(action: &TransferAction) -> Result<ProtocolAction, P
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::PrivateTransfer,
-        asset: (1, contract_payload(&action.asset)?),
+        asset: (1, contract_payload(asset)?),
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -197,7 +200,10 @@ pub(crate) fn from_transfer(action: &TransferAction) -> Result<ProtocolAction, P
     })
 }
 
-pub(crate) fn from_withdraw(action: &WithdrawAction) -> Result<ProtocolAction, PoolError> {
+pub(crate) fn from_withdraw(
+    action: &WithdrawAction,
+    asset: &Address,
+) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
@@ -208,7 +214,7 @@ pub(crate) fn from_withdraw(action: &WithdrawAction) -> Result<ProtocolAction, P
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Withdraw,
-        asset: (1, contract_payload(&action.asset)?),
+        asset: (1, contract_payload(asset)?),
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -242,9 +248,9 @@ mod tests {
     #[test]
     fn full_withdrawal_without_private_change_is_valid() {
         let env = Env::default();
+        let asset =
+            AddressPayload::ContractIdHash(BytesN::from_array(&env, &[5; 32])).to_address(&env);
         let action = WithdrawAction {
-            asset: AddressPayload::ContractIdHash(BytesN::from_array(&env, &[5; 32]))
-                .to_address(&env),
             action_nonce: BytesN::from_array(&env, &[0x33; 32]),
             anchor_root: BytesN::from_array(&env, &[1; 32]),
             nullifier_0: BytesN::from_array(&env, &[2; 32]),
@@ -269,6 +275,6 @@ mod tests {
                 .to_address(&env),
         };
 
-        assert!(from_withdraw(&action).is_ok());
+        assert!(from_withdraw(&action, &asset).is_ok());
     }
 }

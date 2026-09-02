@@ -16,7 +16,7 @@ export interface PrivateBalanceAsset {
 export interface PrivateBalanceCatalogueDeployment {
   id: string;
   network: PrivateBalanceNetwork;
-  assets: PrivateBalanceAsset[];
+  asset: PrivateBalanceAsset;
   manifestUrl: string;
   manifestSha256: string;
 }
@@ -27,7 +27,7 @@ export interface PrivateBalanceCatalogue {
 }
 
 export interface LoadedPrivateBalanceDeployment {
-  /** Asset-option ID; the underlying pool deployment is `poolDeploymentId`. */
+  /** Stable ID for this single-asset pool deployment. */
   id: string;
   poolDeploymentId: string;
   network: PrivateBalanceNetwork;
@@ -82,8 +82,8 @@ function safeManifestUrl(value: unknown): string {
   return parsed.pathname;
 }
 
-function validateAsset(value: unknown, deploymentIndex: number, assetIndex: number): PrivateBalanceAsset {
-  const path = `deployments[${deploymentIndex}].assets[${assetIndex}]`;
+function validateAsset(value: unknown, deploymentIndex: number): PrivateBalanceAsset {
+  const path = `deployments[${deploymentIndex}].asset`;
   const asset = object(value, path);
   if (asset.kind !== 'native' && asset.kind !== 'stellar') {
     throw new Error(`${path}.kind is invalid.`);
@@ -144,21 +144,15 @@ export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCat
       throw new Error(`deployments[${index}].network is invalid.`);
     }
     const network: PrivateBalanceNetwork = deployment.network;
-    if (!Array.isArray(deployment.assets) || deployment.assets.length === 0 || deployment.assets.length > 32) {
-      throw new Error(`deployments[${index}].assets is invalid.`);
+    const asset = validateAsset(deployment.asset, index);
+    const assetKey = `${network}:${privateBalanceAssetKey(asset)}`;
+    if (assets.has(assetKey)) throw new Error(`Private Balance catalogue contains duplicate asset ${assetKey}.`);
+    assets.add(assetKey);
+    const contractKey = `${network}:${asset.contractId}`;
+    if (contractIds.has(contractKey)) {
+      throw new Error(`Private Balance catalogue contains duplicate asset contract ${asset.contractId}.`);
     }
-    const approvedAssets = deployment.assets.map((candidate, assetIndex) => {
-      const asset = validateAsset(candidate, index, assetIndex);
-      const assetKey = `${network}:${privateBalanceAssetKey(asset)}`;
-      if (assets.has(assetKey)) throw new Error(`Private Balance catalogue contains duplicate asset ${assetKey}.`);
-      assets.add(assetKey);
-      const contractKey = `${network}:${asset.contractId}`;
-      if (contractIds.has(contractKey)) {
-        throw new Error(`Private Balance catalogue contains duplicate asset contract ${asset.contractId}.`);
-      }
-      contractIds.add(contractKey);
-      return asset;
-    });
+    contractIds.add(contractKey);
     const manifestSha256 = string(deployment.manifestSha256, `deployments[${index}].manifestSha256`).toLowerCase();
     if (!HEX_32.test(manifestSha256)) {
       throw new Error(`deployments[${index}].manifestSha256 is invalid.`);
@@ -166,7 +160,7 @@ export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCat
     return {
       id,
       network,
-      assets: approvedAssets,
+      asset,
       manifestUrl: safeManifestUrl(deployment.manifestUrl),
       manifestSha256,
     };
@@ -262,18 +256,21 @@ export async function loadPrivateBalanceDeployments(input: {
     if (loaded.manifest.networkPassphrase !== expectedPassphrase) {
       throw new Error(`Private Balance deployment ${deployment.id} network does not match its manifest.`);
     }
+    if (loaded.manifest.assetContractId !== deployment.asset.contractId) {
+      throw new Error(`Private Balance deployment ${deployment.id} asset does not match its manifest.`);
+    }
     return { deployment, loaded };
   }));
-  return pools.flatMap(({ deployment, loaded }) => deployment.assets.map(asset => ({
-    id: `${deployment.id}:${privateBalanceAssetKey(asset)}`,
+  return pools.map(({ deployment, loaded }) => ({
+    id: deployment.id,
     poolDeploymentId: deployment.id,
     network: deployment.network,
-    asset,
+    asset: deployment.asset,
     manifestUrl: deployment.manifestUrl,
     manifestSha256: deployment.manifestSha256,
     manifest: loaded.manifest,
     manifestHash: loaded.manifestHash,
-  })));
+  }));
 }
 
 export { EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256 } from './private-balance-expected-catalogue';

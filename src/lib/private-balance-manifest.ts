@@ -66,6 +66,7 @@ export interface PrivateBalanceManifest {
   networkId: string;
   realmId: string;
   poolContractId: string;
+  assetContractId: string;
   guardianAddress: string;
   /** Public classic-account sink used to index backend-free stealth announcements. */
   stealthAnnouncerAddress: string;
@@ -246,12 +247,14 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     throw new Error('Private Payments are available on Stellar testnet only.');
   }
   const poolContractId = string(obj.poolContractId, 'poolContractId');
+  const assetContractId = string(obj.assetContractId, 'assetContractId');
   const guardianAddress = string(obj.guardianAddress, 'guardianAddress');
   const stealthAnnouncerAddress = string(
     obj.stealthAnnouncerAddress,
     'stealthAnnouncerAddress',
   );
   if (!CONTRACT_ADDRESS.test(poolContractId)) throw new Error('poolContractId is invalid');
+  if (!CONTRACT_ADDRESS.test(assetContractId)) throw new Error('assetContractId is invalid');
   if (!ACCOUNT_ADDRESS.test(guardianAddress) && !CONTRACT_ADDRESS.test(guardianAddress)) {
     throw new Error('guardianAddress is invalid');
   }
@@ -315,6 +318,7 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     networkId: hex32(obj.networkId, 'networkId'),
     realmId: hex32(obj.realmId, 'realmId'),
     poolContractId,
+    assetContractId,
     guardianAddress,
     stealthAnnouncerAddress,
     deploymentBindingHash: hex32(obj.deploymentBindingHash, 'deploymentBindingHash'),

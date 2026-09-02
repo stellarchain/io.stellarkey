@@ -9,6 +9,7 @@ pub struct DeploymentBinding {
     pub network_id: [u8; 32],
     pub realm_id: [u8; 32],
     pub pool_id: [u8; 32],
+    pub asset: (u8, [u8; 32]),
     pub guardian: (u8, [u8; 32]),
     pub poseidon2_parameter_hash: [u8; 32],
     pub circuit_hash: [u8; 32],
@@ -33,6 +34,7 @@ impl DeploymentBinding {
         bytes.extend_from_slice(&self.network_id);
         bytes.extend_from_slice(&self.realm_id);
         bytes.extend_from_slice(&self.pool_id);
+        encode_address(self.asset.0, &self.asset.1, &mut bytes)?;
         encode_address(self.guardian.0, &self.guardian.1, &mut bytes)?;
         bytes.extend_from_slice(&self.poseidon2_parameter_hash);
         bytes.extend_from_slice(&self.circuit_hash);
