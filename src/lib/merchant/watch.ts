@@ -5,6 +5,7 @@ import { isValidPaymentAddress, isValidPublicAddress } from "../vault";
 import type { ObservedPayment } from "./match";
 import type { AcceptedAsset } from "./types";
 import { isMerchantRoutingId } from "./routing";
+import { observedPayerAddress, samePayerAccount } from "./payer";
 export { merchantCursorKey, merchantWatchDestinations } from "./watch-targets";
 
 /**
@@ -177,7 +178,7 @@ export async function fetchIncomingPayments({
       throw new Error("Invalid Horizon payment endpoint.");
     }
     if (record.to !== publicKey) continue;
-    if (record.from === publicKey) continue;
+    if (samePayerAccount(record.from, publicKey)) continue;
 
     const asset = assetOf(record);
     if (!asset || !record.amount) throw new Error("Invalid Horizon payment asset.");
@@ -192,7 +193,7 @@ export async function fetchIncomingPayments({
       id: record.id,
       transactionHash: record.transaction_hash,
       ledger: ledger ?? 0,
-      from: record.from_muxed ?? record.from ?? "",
+      from: observedPayerAddress(record.from, record.from_muxed),
       destination: record.to,
       amount: record.amount,
       asset,

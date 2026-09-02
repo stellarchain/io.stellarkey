@@ -12,10 +12,12 @@ import {
 import { matchPayment, chargeStatusFor } from "../src/lib/merchant/match.ts";
 import { fetchIncomingPayments, ledgerFromPagingToken } from "../src/lib/merchant/watch.ts";
 import { defaultSettings } from "../src/lib/merchant/defaults.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 import { parseSep7PayUri } from "../src/lib/payuri.ts";
 
 const TILL = "GAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI476ZVG";
 const PAYER = "GCUXWZHL7FGVL3MVYH6N5G3RACCKAC7ZLTUBKKN4I5MCCTDPJXITNGFD";
+const MUXED_PAYER = muxedAddressForRouting(PAYER, "42");
 const USDC = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const NATIVE = { code: "XLM", issuer: null };
 const USDC_ASSET = { code: "USDC", issuer: USDC };
@@ -290,7 +292,7 @@ test("the watcher normalizes muxed destinations and preserves muxed payer addres
               to_muxed: "MAVLAAAWTBEO5XJELA3TID4XVHELGTFYRMMFRU2MQ25C5VVCBI47YAAAAAAAAAABDUKQ",
               to_muxed_id: "42",
               from: PAYER,
-              from_muxed: "MCUXWZHL7FGVL3MVYH6N5G3RACCKAC7ZLTUBKKN4I5MCCTDPJXITM4AAAAAAAAAAFE2Q",
+              from_muxed: MUXED_PAYER,
               asset_type: "credit_alphanum4",
               asset_code: "USDC",
               asset_issuer: USDC,
@@ -313,11 +315,42 @@ test("the watcher normalizes muxed destinations and preserves muxed payer addres
   assert.equal(result.payments[0].memo, "Customer note");
   assert.equal(result.payments[0].routingId, "42");
   assert.equal(result.payments[0].routingConflict, false);
-  assert.match(result.payments[0].from, /^M/);
+  assert.equal(result.payments[0].from, MUXED_PAYER);
   assert.equal(result.payments[0].asset.code, "USDC");
   assert.equal(result.payments[0].destination, TILL);
   assert.equal(result.payments[0].ledger, 56_420_130);
   assert.equal(result.latestLedger, 56_420_130);
+});
+
+test("the watcher ignores malformed muxed payer metadata and keeps the validated refund source", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(
+      JSON.stringify({
+        _embedded: {
+          records: [
+            {
+              id: "malformed-muxed-source",
+              type: "payment",
+              transaction_hash: "c".repeat(64),
+              transaction_successful: true,
+              created_at: "2026-08-24T18:14:31Z",
+              paging_token: (BigInt(56_420_130) << BigInt(32)).toString(),
+              to: TILL,
+              from: PAYER,
+              from_muxed: "not-a-stellar-address",
+              asset_type: "native",
+              amount: "1.0000000",
+              transaction: { successful: true },
+            },
+          ],
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ),
+  );
+
+  const result = await fetchIncomingPayments({ publicKey: TILL, network: "mainnet", cursor: "12" });
+  assert.equal(result.payments[0].from, PAYER);
 });
 
 test("the watcher accepts MEMO_ID fallback and flags conflicting dual routing", async (t) => {

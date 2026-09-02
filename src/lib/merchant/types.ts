@@ -294,6 +294,8 @@ export interface UnmatchedPayment extends Omit<MatchedPayment, "lane"> {
   reconciliationOutcome: PaymentReconciliationOutcome;
   candidateChargeId: string | null;
   candidateInvoiceId: string | null;
+  /** Present for reusable counter-code payments awaiting staff confirmation. */
+  candidateCounterCodeId?: string | null;
 }
 
 export type PaymentReconciliationOutcome =
@@ -320,11 +322,13 @@ export interface PaymentResolution {
   at: number;
   targetChargeId: string | null;
   refundId: string | null;
+  targetCounterCodeId?: string | null;
+  targetInvoiceId?: string | null;
 }
 
-/** One immutable observation per Horizon payment operation ID. */
+/** One immutable observation; transaction facts provide the settlement identity. */
 export interface PaymentReconciliation {
-  /** Horizon payment operation ID and the idempotency key. */
+  /** Horizon payment operation ID retained for display and provider replay handling. */
   id: string;
   network: NetworkKey;
   payment: Omit<MatchedPayment, "lane">;
@@ -332,6 +336,7 @@ export interface PaymentReconciliation {
   chargeId: string | null;
   orderId: string | null;
   invoiceId: string | null;
+  counterCodeId?: string | null;
   /** Exact held-quote value where a matching asset/charge exists. */
   amountMinor: Minor | null;
   /** Exact source-asset amount reversible when only a surplus should be returned. */
@@ -632,7 +637,7 @@ export interface CounterCode {
 
 /** One immutable Horizon payment attributed to a reusable counter code. */
 export interface CounterPayment {
-  /** Horizon payment operation id; also the deduplication key. */
+  /** Horizon payment operation id; transaction facts are the deduplication key. */
   id: string;
   codeId: string;
   payment: MatchedPayment;
