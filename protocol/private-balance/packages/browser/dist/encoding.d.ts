@@ -3,6 +3,20 @@ export declare const DOMAIN_CONTEXT_FIELD = "SKSB_CONTEXT_FIELD_V1";
 export declare const DOMAIN_ADDRESS_CONTEXT = "SKSB_ADDRESS_CONTEXT_V1";
 export declare const DOMAIN_HPKE_INFO = "SKSB_HPKE_INFO_V1";
 export declare const DOMAIN_HPKE_AAD = "SKSB_HPKE_AAD_V1";
+export declare const DOMAIN_OUTGOING_AAD = "SKSB_OUTGOING_AAD_V1";
+export declare const OUTGOING_PLAINTEXT_BYTES = 128;
+export declare const OUTGOING_DUMMY_FLAG = 1;
+export interface OutgoingPlaintext {
+    protocolVersion: number;
+    flags: number;
+    value: bigint;
+    diversifier: Uint8Array;
+    ownerCommitment: Uint8Array;
+    recipientHpkePublicKey: Uint8Array;
+    memoLength: number;
+    memo: Uint8Array;
+    reserved: Uint8Array;
+}
 export declare function encodeU8(val: number, out: number[]): void;
 export declare function encodeU16Be(val: number, out: number[]): void;
 export declare function encodeU32Be(val: number, out: number[]): void;
@@ -17,3 +31,6 @@ export declare function computeContextField(contextHash: Uint8Array): Uint8Array
 export declare function computeAddressContextTag(contextHash: Uint8Array): Uint8Array;
 export declare function deriveHpkeInfo(protocolVersion: number, contextHash: Uint8Array): Uint8Array;
 export declare function deriveHpkeAad(contextHash: Uint8Array, cm: Uint8Array, actionNonce: Uint8Array, outputIndex: number): Uint8Array;
+export declare function encodeOutgoingPlaintext(plaintext: OutgoingPlaintext): Uint8Array;
+export declare function decodeOutgoingPlaintext(bytes: Uint8Array): OutgoingPlaintext;
+export declare function deriveOutgoingAad(deploymentBindingHash: Uint8Array, contextHash: Uint8Array, assetField: Uint8Array, cm: Uint8Array, actionNonce: Uint8Array, outputIndex: number): Uint8Array;

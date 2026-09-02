@@ -11,6 +11,7 @@ import {
   computeContextHash,
   deriveHpkeAad,
   deriveHpkeInfo,
+  deriveOutgoingAad,
   computeNullifier,
   computePublicSignals,
   computeRecordHash,
@@ -19,7 +20,9 @@ import {
   derivePrivacySessionRoot,
   derivePrivateAddressDeploymentTag,
   encodeNotePlaintext,
+  encodeOutgoingPlaintext,
   encodePrivateAddress,
+  sealOutgoingEnvelope,
   serializeCanonicalActionBytes,
 } from '../packages/browser/dist/index.js';
 
@@ -79,6 +82,7 @@ write('keys-v1.json', {
     ownerCommitment: hex(keys.ownerCommitment),
     hpkePrivateKey: hex(keys.hpkePrivateKey),
     hpkePublicKey: hex(keys.hpkePublicKey),
+    outgoingViewingKey: hex(keys.outgoingViewingKey),
   },
 });
 
@@ -147,6 +151,35 @@ write('notes-v1.json', {
 });
 
 const actionNonce = fill(0x12, 32);
+const deploymentBindingHashForOutgoing = fill(0x77, 32);
+const ephemeralPublicKey = fill(0x78, 32);
+const outgoingNonce = fill(0x79, 12);
+const outgoingPlaintext = encodeOutgoingPlaintext({
+  protocolVersion: 1,
+  flags: 0,
+  value: note.value,
+  diversifier,
+  ownerCommitment: keys.ownerCommitment,
+  recipientHpkePublicKey: keys.hpkePublicKey,
+  memoLength: note.memoLength,
+  memo,
+  reserved: new Uint8Array(15),
+});
+const outgoingAad = deriveOutgoingAad(
+  deploymentBindingHashForOutgoing,
+  contextHash,
+  assetField,
+  commitment,
+  actionNonce,
+  0,
+);
+const outgoingEnvelope = await sealOutgoingEnvelope(
+  keys.outgoingViewingKey,
+  ephemeralPublicKey,
+  outgoingPlaintext,
+  outgoingAad,
+  outgoingNonce,
+);
 write('encryption-v1.json', {
   version: 1,
   suite: { kemId: '0x0020', kdfId: '0x0001', aeadId: '0x0001' },
@@ -155,12 +188,20 @@ write('encryption-v1.json', {
     commitment: hex(commitment),
     actionNonce: hex(actionNonce),
     outputIndex: 0,
+    deploymentBindingHash: hex(deploymentBindingHashForOutgoing),
+    assetField: hex(assetField),
+    ephemeralPublicKey: hex(ephemeralPublicKey),
+    outgoingNonce: hex(outgoingNonce),
   },
   expected: {
     info: hex(deriveHpkeInfo(2, contextHash)),
     aad: hex(deriveHpkeAad(contextHash, commitment, actionNonce, 0)),
     recipientEnvelopeBytes: 181,
     outputPackageBytes: 213,
+    outgoingPlaintext: hex(outgoingPlaintext),
+    outgoingAad: hex(outgoingAad),
+    outgoingEnvelope: hex(outgoingEnvelope),
+    outgoingEnvelopeBytes: outgoingEnvelope.length,
   },
 });
 
@@ -264,4 +305,5 @@ keys.ask.fill(0);
 keys.nk.fill(0);
 keys.baseOwnerCommitment.fill(0);
 keys.hpkePrivateKey.fill(0);
+keys.outgoingViewingKey.fill(0);
 console.log('✓ Generated fixed Private Balance conformance vectors.');

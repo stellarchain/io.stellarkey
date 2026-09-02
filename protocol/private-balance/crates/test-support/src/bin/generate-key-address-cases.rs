@@ -25,6 +25,7 @@ struct KeyAddressCase {
     owner_commitment: String,
     hpke_private_key: String,
     hpke_public_key: String,
+    outgoing_viewing_key: String,
     prefix: &'static str,
     address: String,
 }
@@ -89,6 +90,7 @@ fn main() {
             owner_commitment: hex::encode(keys.owner_commitment),
             hpke_private_key: hex::encode(keys.hpke_private_key),
             hpke_public_key: hex::encode(keys.hpke_public_key),
+            outgoing_viewing_key: hex::encode(keys.outgoing_viewing_key),
             prefix,
             address,
         });

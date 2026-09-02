@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added domain-separated outgoing viewing keys and fixed authenticated recovery envelopes for reconstructing sent Private Payments from seed and chain data.
+
 ### Changed
 
 - Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.

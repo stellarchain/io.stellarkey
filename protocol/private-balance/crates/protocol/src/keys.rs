@@ -1,6 +1,6 @@
 use crate::constants::{
     DOMAIN_ADDRESS_KEY, DOMAIN_ASK, DOMAIN_DIVERSIFIED_OWNER, DOMAIN_HPKE_IKM, DOMAIN_NK,
-    DOMAIN_OWNER, DOMAIN_ROOT,
+    DOMAIN_OVK, DOMAIN_OWNER, DOMAIN_ROOT,
 };
 use crate::field::bytes_to_field;
 use crate::poseidon2::p2;
@@ -17,6 +17,7 @@ pub struct ExpandedSpendingKey {
     pub owner_commitment: [u8; 32],
     pub hpke_private_key: [u8; 32],
     pub hpke_public_key: [u8; 32],
+    pub outgoing_viewing_key: [u8; 32],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +27,7 @@ pub struct FullViewingKey {
     pub nk: [u8; 32],
     pub hpke_private_key: [u8; 32],
     pub hpke_public_key: [u8; 32],
+    pub outgoing_viewing_key: [u8; 32],
 }
 
 pub fn derive_diversified_address_keys(
@@ -127,6 +129,13 @@ pub fn derive_keys_from_seed(
     let mut incoming_viewing_key = [0u8; 32];
     incoming_viewing_key.copy_from_slice(hpke_private.to_bytes().as_slice());
 
+    let mut ovk_info = Vec::new();
+    ovk_info.extend_from_slice(DOMAIN_OVK.as_bytes());
+    ovk_info.extend_from_slice(&context);
+    let mut outgoing_viewing_key = [0u8; 32];
+    hk.expand(&ovk_info, &mut outgoing_viewing_key)
+        .expect("HKDF expand outgoing viewing key");
+
     let base_owner_commitment = p2(DOMAIN_OWNER, &[*context_field, ask, nk]);
     let (owner_commitment, mut default_private_key, hpke_public_key) =
         derive_diversified_address_keys(&base_owner_commitment, &incoming_viewing_key, &[0u8; 4]);
@@ -139,6 +148,7 @@ pub fn derive_keys_from_seed(
         owner_commitment,
         hpke_private_key: incoming_viewing_key,
         hpke_public_key,
+        outgoing_viewing_key,
     }
 }
 
@@ -150,6 +160,7 @@ impl ExpandedSpendingKey {
             nk: self.nk,
             hpke_private_key: self.hpke_private_key,
             hpke_public_key: self.hpke_public_key,
+            outgoing_viewing_key: self.outgoing_viewing_key,
         }
     }
 }

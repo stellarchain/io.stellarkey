@@ -98,7 +98,7 @@ async function deterministicOutputPackage({
   const enc = new Uint8Array(sender.enc);
   const sharedSecret = await deriveX25519SharedSecret(recipientPrivateKey, enc);
   const viewTag = createHash('sha256')
-    .update('StellarKey private view tag v2', 'utf8')
+    .update('StellarKey private view tag v1', 'utf8')
     .update(sharedSecret)
     .update(contextHash)
     .update(enc)

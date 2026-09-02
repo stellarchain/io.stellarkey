@@ -1,7 +1,7 @@
 use private_balance_protocol::note::NotePlaintext;
 
 #[test]
-fn v2_note_round_trips_diversifier_in_exact_128_byte_layout() {
+fn protocol_v1_note_round_trips_diversifier_in_exact_128_byte_layout() {
     let mut owner = [0u8; 32];
     owner[31] = 7;
     let mut rho = [0u8; 32];
@@ -15,7 +15,7 @@ fn v2_note_round_trips_diversifier_in_exact_128_byte_layout() {
 }
 
 #[test]
-fn v2_note_rejects_nonzero_reserved_tail() {
+fn protocol_v1_note_rejects_nonzero_reserved_tail() {
     let mut owner = [0u8; 32];
     owner[31] = 7;
     let mut rho = [0u8; 32];
