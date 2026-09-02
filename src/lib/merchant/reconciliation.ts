@@ -393,6 +393,9 @@ export function markReconciledRefund(
   if (refund.submissionStatus === "failed") {
     throw new Error("The refund submission failed and did not move funds, so this payment remains open.");
   }
+  if (refund.submissionStatus !== "confirmed") {
+    throw new Error("The refund must be canonically confirmed before this payment can be resolved.");
+  }
   return withReconciliationTray({
     ...store,
     paymentReconciliations: store.paymentReconciliations.map((entry) =>

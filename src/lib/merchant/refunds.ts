@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import { sameAsset } from "./charge";
 import { toStroops } from "./money";
+import { pendingReconciliationTray } from "./reconciliation";
 
 const FINAL_SUBMISSION_STATUSES = new Set<RefundSubmissionStatus>(["confirmed", "failed"]);
 
@@ -244,17 +245,62 @@ export function reconcileRefundSubmission(
   store: MerchantStore,
   refundId: string,
   status: RefundSubmissionStatus,
+  resolvedAt = Date.now(),
 ): MerchantStore {
   if (!isSubmissionStatus(status)) throw new Error("The refund submission status is invalid.");
   const refund = store.refunds.find((entry) => entry.id === refundId);
   if (!refund) throw new Error("That refund record no longer exists.");
-  if (refund.submissionStatus === status) return store;
-  if (FINAL_SUBMISSION_STATUSES.has(refund.submissionStatus)) return store;
+  const canTransition = refund.submissionStatus !== status &&
+    !FINAL_SUBMISSION_STATUSES.has(refund.submissionStatus);
 
-  const next = {
+  let next = canTransition ? {
     ...store,
     refunds: store.refunds.map((entry) =>
       entry.id === refund.id ? { ...entry, submissionStatus: status } : entry),
-  };
+  } : store;
+  const effectiveStatus = canTransition ? status : refund.submissionStatus;
+
+  if (refund.kind === "payment_reversal" && refund.sourcePaymentId) {
+    let reconciliationChanged = false;
+    const paymentReconciliations = next.paymentReconciliations.map((entry) => {
+      if (entry.id !== refund.sourcePaymentId) return entry;
+      if (
+        effectiveStatus === "failed" &&
+        entry.resolution?.kind === "refund_submitted" &&
+        entry.resolution.refundId === refund.id
+      ) {
+        reconciliationChanged = true;
+        return { ...entry, resolution: null };
+      }
+      if (
+        effectiveStatus === "confirmed" &&
+        entry.resolution === null &&
+        refund.submittedById &&
+        refund.submittedBy &&
+        Number.isSafeInteger(resolvedAt) &&
+        resolvedAt > 0
+      ) {
+        reconciliationChanged = true;
+        return {
+          ...entry,
+          resolution: {
+            kind: "refund_submitted" as const,
+            staffId: refund.submittedById,
+            staffName: refund.submittedBy,
+            at: resolvedAt,
+            targetChargeId: null,
+            refundId: refund.id,
+          },
+        };
+      }
+      return entry;
+    });
+    if (reconciliationChanged) {
+      next = { ...next, paymentReconciliations };
+      next = { ...next, unmatched: pendingReconciliationTray(next) };
+    }
+  }
+
+  if (next === store) return store;
   return refund.kind === "order" ? deriveOrder(next, refund.orderId) : next;
 }

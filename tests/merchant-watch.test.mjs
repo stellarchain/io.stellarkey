@@ -383,6 +383,17 @@ test("a duplicate is resolved only by its persisted non-failed refund submission
     /failed|did not move/i,
   );
   assert.equal(recorded.paymentReconciliations[0].resolution, null);
+  const unknownRefund = { ...failedRefund, id: "refund-unknown", transactionHash: "d".repeat(64), submissionStatus: "status_unknown" };
+  const unknownRecorded = recordRefundSubmission(duplicate, unknownRefund);
+  assert.throws(
+    () => markReconciledRefund(unknownRecorded, {
+      paymentId: "payment-2",
+      refundId: "refund-unknown",
+      actor: actor(),
+      now: NOW + 3,
+    }),
+    /confirmed/i,
+  );
   assert.throws(
     () => markReconciledRefund(duplicate, {
       paymentId: "payment-2",

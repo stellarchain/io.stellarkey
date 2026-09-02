@@ -105,6 +105,7 @@ import {
   pendingTransactionFromSubmission,
   pendingTransactionFromPrepared,
   pendingTransactionPresentation,
+  pendingTransactionNeedsManualCheck,
   pendingTransactionStoragePrefix,
   persistDurablePendingTransaction,
   persistMergeReconciliation,
@@ -1354,8 +1355,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       pendingPollTimers.current.delete(identity);
     }
 
+    const now = Date.now();
     const expired = transaction.expiresAt !== undefined &&
-      transaction.expiresAt * 1000 <= Date.now();
+      transaction.expiresAt * 1000 <= now;
+    const manualCheck = pendingTransactionNeedsManualCheck(transaction, now);
     const api = await loadWalletApi();
     const expiredLookup = expired && transaction.expiresAt !== undefined
       ? await api.resolveCanonicalTransaction(
@@ -1420,7 +1423,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // An expired envelope with an unavailable lookup stays conservatively
     // locked, but automatic polling stops. The dashboard exposes a bounded
     // manual status check so outages cannot create an infinite request loop.
-    if (expired) return;
+    if (manualCheck) return;
 
     const timer = window.setTimeout(() => {
       pendingPollTimers.current.delete(identity);
@@ -1616,11 +1619,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void accountRefreshRef.current();
       return;
     }
-    persistDurablePendingTransaction(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
-    commitTransactionTracking((current) => trackPendingTransaction(current, pending));
-    const presentation = pendingTransactionPresentation(pending);
+    const tracked = persistDurablePendingTransaction(
+      window.localStorage,
+      PENDING_TX_STORAGE_KEY,
+      pending,
+    );
+    commitTransactionTracking((current) => trackPendingTransaction(current, tracked));
+    const presentation = pendingTransactionPresentation(tracked);
     toast(presentation.detail, "info");
-    void pollPendingRef.current(pending);
+    void pollPendingRef.current(tracked);
   }, [commitTransactionTracking, toast]);
 
   const runTrackedBroadcast = useCallback(async <T,>(

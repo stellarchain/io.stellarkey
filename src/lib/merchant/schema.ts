@@ -383,6 +383,8 @@ const refund = objectOf<Merchant.Refund>({
 }, {
   invoiceId: nullableString,
   requestId: nullableString,
+  submittedById: nonEmptyString,
+  submittedBy: nonEmptyString,
 });
 
 const staffPermissions = objectOf<Merchant.StaffPermissions>({
