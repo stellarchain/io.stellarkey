@@ -1,5 +1,5 @@
 import { isCurrentMerchantStore } from "./schema";
-import { pendingReconciliationTray } from "./reconciliation";
+import { pendingReconciliationTray } from "./reconciliation-tray";
 import type { MerchantStore } from "./types";
 
 /** Decode the current data format without mutating or repairing storage. */

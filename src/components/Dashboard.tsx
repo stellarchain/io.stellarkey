@@ -130,7 +130,7 @@ import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
-import { merchantExitRequired } from "@/lib/merchant/security-boundaries";
+import { merchantExitRequired } from "@/lib/merchant/navigation";
 import { SendModal, type SendPrefill } from "./SendModal";
 import { ReceiveModal } from "./ReceiveModal";
 import { AddAssetModal } from "./AddAssetModalShell";

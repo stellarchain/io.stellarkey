@@ -2,6 +2,7 @@ import type { NetworkKey } from "../stellar";
 import { requireActiveOwner } from "./permissions";
 import { activeShiftForTerminal } from "./shifts";
 import type { MerchantStore, StaffMember } from "./types";
+export { merchantExitRequired } from "./navigation";
 
 export interface MerchantPaymentAuthority {
   actorId: string | null;
@@ -96,17 +97,4 @@ export function merchantPageAccess({
     canSeeReports,
     canAccessRecords: canSeeReports,
   };
-}
-
-/** Settings remains inside the merchant shell; every other wallet target exits it. */
-export function merchantExitRequired({
-  mode,
-  targetIsMerchantView,
-  targetIsSettings,
-}: {
-  mode: "wallet" | "merchant";
-  targetIsMerchantView: boolean;
-  targetIsSettings: boolean;
-}): boolean {
-  return mode === "merchant" && !targetIsMerchantView && !targetIsSettings;
 }

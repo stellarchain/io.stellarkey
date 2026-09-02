@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
 - Replaced the disposable Testnet Private Payments fixture with fresh asset-pinned XLM and USDC pools and regenerated every circuit, contract, client, catalogue, manifest, and proof-vector binding.
+- Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 
 ### Removed
 

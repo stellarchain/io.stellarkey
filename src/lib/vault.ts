@@ -28,7 +28,6 @@ import {
   MAX_TRANSACTION_NOTE_CHARS,
   type FullBackupPayload,
 } from "./backup-schema";
-import { getMerchantRepository } from "./merchant/repository";
 import {
   MERCHANT_BOOTSTRAP_STORAGE_KEY,
   readMerchantBootstrapState,
@@ -1624,6 +1623,7 @@ async function prepareDecodedBackup(
     merchantKey = await decryptVaultBytes(vault.wrappedMerchantKey, masterKey);
     if (merchantKey.byteLength !== 32) throw new Error("Merchant recovery key is invalid.");
     if (payload.merchantStore) {
+      const { getMerchantRepository } = await import("./merchant/repository");
       getMerchantRepository().verifyEncryptedArchive(payload.merchantStore, merchantKey);
     }
 
@@ -1764,9 +1764,12 @@ export async function exportVaultBackup(password: string): Promise<string> {
   let privateBalanceStore: string | null = null;
   try {
     merchantKey = typeof indexedDB === "undefined" ? null : getMerchantEncryptionKey();
-    merchantStore = merchantKey
-      ? await getMerchantRepository().exportEncryptedArchive(merchantKey)
-      : null;
+    if (merchantKey) {
+      const { getMerchantRepository } = await import("./merchant/repository");
+      merchantStore = await getMerchantRepository().exportEncryptedArchive(merchantKey);
+    } else {
+      merchantStore = null;
+    }
     if (typeof indexedDB !== "undefined") {
       const { exportPrivateBalanceBackupArchive } = await import(
         "@/features/private-balance/runtime/backup"
@@ -1854,7 +1857,9 @@ export async function restoreVaultBackup(
     PASSKEY_RECORD_KEY,
     MERCHANT_BOOTSTRAP_STORAGE_KEY,
   ];
-  const merchantRepository = typeof indexedDB === "undefined" ? null : getMerchantRepository();
+  const merchantRepository = typeof indexedDB === "undefined"
+    ? null
+    : (await import("./merchant/repository")).getMerchantRepository();
   if (payload.merchantStore && !merchantRepository) {
     throw new Error("IndexedDB is required to restore this backup's merchant records.");
   }

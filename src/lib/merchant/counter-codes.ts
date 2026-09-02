@@ -15,7 +15,7 @@ import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, counterReference } from "./payment-reference";
 import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
 import { isCurrentReceivingDestination } from "./destination";
-import { pendingReconciliationTray } from "./reconciliation";
+import { pendingReconciliationTray } from "./reconciliation-tray";
 import {
   createMerchantRoutingId,
   merchantPaymentTransport,
