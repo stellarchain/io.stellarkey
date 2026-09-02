@@ -327,7 +327,7 @@ interface WalletContextValue {
     label?: string;
     index?: number;
   }) => Promise<AccountMeta>;
-  removeAccount: (id: string) => void;
+  removeAccount: (id: string) => Promise<void>;
   renameAccount: (id: string, newLabel: string) => void;
   restoreArchivedAccount: (id: string) => Promise<AccountMeta>;
   restoreAccountByIndex: (index: number) => Promise<AccountMeta>;
@@ -1986,7 +1986,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return account;
   }, []);
 
-  const removeAccount = useCallback((id: string) => {
+  const removeAccount = useCallback(async (id: string) => {
     const remaining = removeStoredAccount(id);
     if (!remaining) {
       setAccounts([]);
@@ -2003,6 +2003,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setBalances(null);
     setActivity([]);
     setActivityCursor(null);
+    try {
+      const { removePrivateBalanceRecordsForAccount } = await import(
+        "@/features/private-balance/runtime/backup"
+      );
+      await removePrivateBalanceRecordsForAccount(id);
+    } catch {
+      throw new Error(
+        "Account archived, but its local Private Payments data could not be removed.",
+      );
+    }
   }, []);
 
   const reconcileMergeRecordRef = useRef<(record: MergeReconciliation) => Promise<void>>(
@@ -2047,7 +2057,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           )) {
             throw new Error("Stale merge reconciliation was cancelled.");
           }
-          removeAccount(accountId);
+          return removeAccount(accountId);
         },
       );
 

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   exportPrivateBalanceBackupArchive,
+  preparePrivateBalanceBackupArchive,
+  removePrivateBalanceRecordsForAccount,
   restorePrivateBalanceBackupArchive,
 } from '../src/features/private-balance/runtime/backup.ts';
 import {
@@ -30,6 +32,9 @@ class MemoryDriver {
   }
   async removePrefix(prefix) {
     await this.replacePrefixVerified(prefix, new Map());
+  }
+  async remove(key) {
+    this.records.delete(key);
   }
 }
 
@@ -183,4 +188,68 @@ test('private backup preserves independently encrypted state for multiple pools'
   assert.equal(restoredSecond.lastValidatedManifestHash, secondState.lastValidatedManifestHash);
   assert.equal(restoredFirst.account.syncStatus, 'never');
   assert.equal(restoredSecond.account.syncStatus, 'never');
+});
+
+test('private backup preparation omits only explicitly unresolvable account records', async () => {
+  const source = new MemoryDriver();
+  const knownContext = context;
+  const unknownContext = { ...context, accountId: 'unknown-account' };
+  await commitPrivateBalanceState(
+    knownContext,
+    key,
+    createEmptyPrivateBalanceState('07'.repeat(32), 1),
+    null,
+    source,
+  );
+  await commitPrivateBalanceState(
+    unknownContext,
+    key,
+    createEmptyPrivateBalanceState('08'.repeat(32), 1),
+    null,
+    source,
+  );
+  const archive = await exportPrivateBalanceBackupArchive(source);
+
+  const prepared = await preparePrivateBalanceBackupArchive({
+    archive,
+    resolveStorageKey: async restoredContext =>
+      restoredContext.accountId === knownContext.accountId ? key.slice() : null,
+    validateContext: async () => {},
+    now: () => 20,
+  });
+
+  assert.equal(prepared.omittedRecords, 1);
+  assert.equal(prepared.archive.records.length, 1);
+  assert.match(prepared.archive.records[0].key, new RegExp(`:${knownContext.accountId}:`));
+});
+
+test('account archival cleanup removes only matching sensitive private records', async () => {
+  const driver = new MemoryDriver();
+  const secondContext = { ...context, accountId: 'account-2' };
+  await commitPrivateBalanceState(
+    context,
+    key,
+    createEmptyPrivateBalanceState('07'.repeat(32), 1),
+    null,
+    driver,
+  );
+  await commitPrivateBalanceState(
+    secondContext,
+    key,
+    createEmptyPrivateBalanceState('08'.repeat(32), 1),
+    null,
+    driver,
+  );
+  driver.records.set('private:cache:v1:public', 'keep-public-cache');
+  driver.records.set('merchant.records.v1:data:keep', 'keep-merchant');
+
+  const removed = await removePrivateBalanceRecordsForAccount(context.accountId, driver);
+
+  assert.equal(removed, 1);
+  assert.equal([...driver.records.keys()].some(recordKey =>
+    recordKey.includes(`:${context.accountId}:`)), false);
+  assert.equal([...driver.records.keys()].some(recordKey =>
+    recordKey.includes(`:${secondContext.accountId}:`)), true);
+  assert.equal(driver.records.get('private:cache:v1:public'), 'keep-public-cache');
+  assert.equal(driver.records.get('merchant.records.v1:data:keep'), 'keep-merchant');
 });

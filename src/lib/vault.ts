@@ -1636,9 +1636,10 @@ async function prepareDecodedBackup(
       const prepared = await preparePrivateBalanceBackupArchive({
         archive: payload.privateBalanceStore,
         resolveStorageKey: async context => {
-          const account = vault.accounts.find(candidate => candidate.id === context.accountId);
+          const account = [...vault.accounts, ...(vault.archivedAccounts ?? [])]
+            .find(candidate => candidate.id === context.accountId);
           if (!account || account.watchOnly || account.hardware) {
-            throw new Error("Private Balance backup references an unsupported wallet account.");
+            return null;
           }
           let secret = "";
           let rawSeed: Uint8Array | null = null;
@@ -1676,7 +1677,14 @@ async function prepareDecodedBackup(
           }
         },
       });
-      preparedPrivateBalanceStore = JSON.stringify(prepared);
+      preparedPrivateBalanceStore = JSON.stringify(prepared.archive);
+      if (prepared.omittedRecords > 0) {
+        warnings.push(
+          `${prepared.omittedRecords} Private Payments record${
+            prepared.omittedRecords === 1 ? " was" : "s were"
+          } omitted because the referenced wallet account was unavailable.`,
+        );
+      }
     } else if (typeof indexedDB !== "undefined") {
       preparedPrivateBalanceStore = JSON.stringify({ schemaVersion: 1, records: [] });
     }

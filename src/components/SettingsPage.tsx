@@ -1519,8 +1519,12 @@ export function SettingsPage({
                 onClick={() => {
                   triggerHaptic("warning");
                   if (activeAccount) {
-                    removeAccount(activeAccount.id);
-                    toast("Account archived", "info");
+                    void removeAccount(activeAccount.id)
+                      .then(() => toast("Account archived", "info"))
+                      .catch((cause: unknown) => toast(
+                        cause instanceof Error ? cause.message : "Account archival failed.",
+                        "error",
+                      ));
                   }
                 }}
               />
