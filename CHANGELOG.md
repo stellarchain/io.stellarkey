@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Made merchant integrity manifests and wallet backup identities independent of browser locale, while transparently resealing authenticated stores created under legacy affected collations.
 - Prevented account-label writes from creating a vault that the wallet's own decoder refuses, and kept rename failures visible without reporting success.
 - Corrected the remaining Private Payments page copy that contradicted the hosted Testnet-only development preview policy.
 - Neutralized spreadsheet formulas in wallet activity CSV exports and applied the same shared encoding to merchant reports.

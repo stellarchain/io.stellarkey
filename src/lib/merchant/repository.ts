@@ -76,7 +76,7 @@ interface RepositorySnapshot {
   store: MerchantStore;
   metaRaw: string;
   records: Map<string, PersistedRecordState>;
-  metadataSchema: 1 | 2;
+  requiresMetadataReseal: boolean;
 }
 
 interface BuiltRecordSet {
@@ -136,10 +136,22 @@ function recordDigest(raw: string): string {
   ).join("");
 }
 
-function recordSetDigest(records: ReadonlyMap<string, string>): string {
+type StringComparator = (left: string, right: string) => number;
+
+const LEGACY_RECORD_COLLATION_LOCALES = ["da", "nb", "nn", "fo", "cy", "haw"] as const;
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function recordSetDigest(
+  records: ReadonlyMap<string, string>,
+  comparator: StringComparator = compareCodeUnits,
+): string {
   const digest = sha256.create();
   const encoder = new TextEncoder();
-  for (const [storageKey, raw] of [...records].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [storageKey, raw] of [...records].sort(([left], [right]) =>
+    comparator(left, right))) {
     digest.update(encoder.encode(storageKey));
     digest.update(Uint8Array.of(0));
     digest.update(encoder.encode(recordDigest(raw)));
@@ -149,6 +161,14 @@ function recordSetDigest(records: ReadonlyMap<string, string>): string {
     digest.digest(),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
+}
+
+function matchesLegacyRecordSetDigest(
+  records: ReadonlyMap<string, string>,
+  expectedDigest: string,
+): boolean {
+  return LEGACY_RECORD_COLLATION_LOCALES.some((locale) =>
+    recordSetDigest(records, new Intl.Collator(locale).compare) === expectedDigest);
 }
 
 function previousCollection(
@@ -282,7 +302,12 @@ function buildRecordSet(
     all,
     puts,
     removeKeys,
-    snapshot: { store, metaRaw, records: persisted, metadataSchema: 2 },
+    snapshot: {
+      store,
+      metaRaw,
+      records: persisted,
+      requiresMetadataReseal: false,
+    },
   };
 }
 
@@ -296,7 +321,8 @@ function archiveRaw(
     revision: meta.revision,
     writerId: meta.writerId,
     updatedAt: meta.updatedAt,
-    records: Object.fromEntries([...records].sort(([left], [right]) => left.localeCompare(right))),
+    records: Object.fromEntries([...records].sort(([left], [right]) =>
+      compareCodeUnits(left, right))),
   };
   return JSON.stringify(archive);
 }
@@ -369,10 +395,16 @@ export class MerchantRepository {
         throw new Error("Merchant metadata payload is invalid.");
       }
       const metadata = decryptedMeta as unknown as MerchantMetadataPayload | MerchantMetadataPayloadV1;
+      let requiresMetadataReseal = metadata.schema === 1;
       if (metadata.schema === 2) {
-        if (recordSetDigest(recordRaws) !== metadata.recordSetDigest) {
+        const canonicalDigest = recordSetDigest(recordRaws);
+        if (
+          canonicalDigest !== metadata.recordSetDigest &&
+          !matchesLegacyRecordSetDigest(recordRaws, metadata.recordSetDigest)
+        ) {
           throw new Error("Merchant metadata record manifest does not match history.");
         }
+        requiresMetadataReseal = canonicalDigest !== metadata.recordSetDigest;
       }
       const collections = Object.fromEntries(
         RECORD_COLLECTIONS.map((collection) => [collection, []]),
@@ -442,7 +474,7 @@ export class MerchantRepository {
           store: decoded,
           metaRaw,
           records: persisted,
-          metadataSchema: metadata.schema,
+          requiresMetadataReseal,
         };
       }
       return { kind: "ready", value: decoded };
@@ -463,7 +495,7 @@ export class MerchantRepository {
     if (metaRaw !== null) {
       const records = await this.driver.readPrefix(RECORD_DATA_PREFIX);
       const decoded = this.decodeRecordSet(metaRaw, records, key);
-      if (decoded.kind !== "ready" || this.snapshot?.metadataSchema !== 1) return decoded;
+      if (decoded.kind !== "ready" || !this.snapshot?.requiresMetadataReseal) return decoded;
 
       const sealed = buildRecordSet(decoded.value, key, this.snapshot);
       const result = await this.driver.compareAndSetMany(

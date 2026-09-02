@@ -352,7 +352,7 @@ export function backupVaultIdentity(vault: VaultFile | null = readVault()): stri
         watchOnly: account.watchOnly === true,
         hardware: account.hardware ?? null,
       }))
-      .sort((left, right) => left.id.localeCompare(right.id)),
+      .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
   };
   return [...sha256(new TextEncoder().encode(JSON.stringify(credentialState)))]
     .map((byte) => byte.toString(16).padStart(2, "0"))

@@ -162,6 +162,88 @@ test("merchant repository commits revisions transactionally and rejects stale wr
   assert.equal((await repository.load(KEY)).value.revision, 2);
 });
 
+test("merchant integrity seals survive legacy locale ordering and are resealed canonically", async () => {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  const { decryptMerchantRecord, encryptMerchantRecord } = await import(
+    "../src/lib/merchant/record-crypto.ts"
+  );
+  const { sha256 } = await import("@noble/hashes/sha2.js");
+  globalThis.window = { localStorage: memoryStorage() };
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const order = (index) => ({
+    id: `locale-order-${index}`,
+    number: 10_000 + index,
+    reference: `LOCALE${index}`,
+    network: "testnet",
+    status: "paid",
+    lines: [],
+    totals: {
+      grossMinor: 100,
+      discountMinor: 0,
+      tipMinor: 0,
+      netMinor: 100,
+      taxByRate: {},
+      taxMinor: 0,
+      totalMinor: 100,
+    },
+    currency: "GBP",
+    tender: [],
+    staffId: null,
+    staffName: "Owner",
+    terminalName: "Till",
+    createdAt: index + 1,
+    paidAt: index + 1,
+    stockAppliedAt: index + 1,
+    stockExceptions: [],
+    payerAddress: null,
+    note: null,
+  });
+  await repository.commit({
+    ...emptyStore(),
+    revision: 1,
+    writerId: "legacy-locale",
+    updatedAt: 10,
+    settings: { ...emptyStore().settings, recordRetentionMonths: null },
+    orders: Array.from({ length: 256 }, (_, index) => order(index)),
+  }, KEY, null);
+  const dataRecords = await driver.readPrefix(repository.dataPrefix);
+  const legacyCompare = new Intl.Collator("haw").compare;
+  const recordDigest = (raw) => Buffer.from(sha256(new TextEncoder().encode(raw))).toString("hex");
+  const digest = sha256.create();
+  const encoder = new TextEncoder();
+  for (const [storageKey, raw] of [...dataRecords].sort(([left], [right]) =>
+    legacyCompare(left, right))) {
+    digest.update(encoder.encode(storageKey));
+    digest.update(Uint8Array.of(0));
+    digest.update(encoder.encode(recordDigest(raw)));
+    digest.update(Uint8Array.of(10));
+  }
+  const legacyDigest = Buffer.from(digest.digest()).toString("hex");
+  const metaEnvelope = JSON.parse(driver.records.get(repository.recordKey));
+  const metadata = decryptMerchantRecord(metaEnvelope, KEY, repository.recordKey);
+  assert.notEqual(metadata.recordSetDigest, legacyDigest, "the fixture must use a divergent ordering");
+  metadata.recordSetDigest = legacyDigest;
+  driver.records.set(repository.recordKey, JSON.stringify(encryptMerchantRecord(
+    metadata,
+    KEY,
+    repository.recordKey,
+    metaEnvelope,
+  )));
+  const legacyMetaRaw = driver.records.get(repository.recordKey);
+
+  const loaded = await new MerchantRepository(driver).load(KEY);
+
+  assert.equal(loaded.kind, "ready");
+  assert.equal(loaded.value.orders.length, 256);
+  assert.notEqual(
+    driver.records.get(repository.recordKey),
+    legacyMetaRaw,
+    "authenticated legacy metadata should be resealed with canonical ordering",
+  );
+  assert.equal((await new MerchantRepository(driver).load(KEY)).kind, "ready");
+});
+
 test("IndexedDB commits preserve unlimited merchant retention", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
   globalThis.window = { localStorage: memoryStorage() };
