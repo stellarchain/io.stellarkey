@@ -278,6 +278,14 @@ async function returnToTill(page: Page) {
   await page.getByText(/Shift 1 · Front counter/).waitFor();
 }
 
+async function authorizeMerchantExitToHome(page: Page) {
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+  const authorization = page.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password").fill(password);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
+  await authorization.waitFor({ state: "hidden" });
+}
+
 async function readIndexedMerchantArchive(page: Page): Promise<string | null> {
   return page.evaluate(async () => new Promise<string | null>((resolve, reject) => {
     const open = indexedDB.open("wallet.local.v1", 1);
@@ -651,7 +659,7 @@ test(
         window.dispatchEvent(promptEvent);
       });
       await page.getByRole("button", { name: "Back to Merchant settings" }).click();
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+      await authorizeMerchantExitToHome(page);
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByText("Install App", { exact: true }).click();
       await page.getByRole("heading", { name: "Back up before installing" }).waitFor();
@@ -680,7 +688,11 @@ test(
               watchOnly: account.watchOnly === true,
               hardware: account.hardware ?? null,
             }))
-            .sort((left, right) => String(left.id).localeCompare(String(right.id))),
+            .sort((left, right) => {
+              const leftId = String(left.id);
+              const rightId = String(right.id);
+              return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+            }),
         };
         const digest = await crypto.subtle.digest(
           "SHA-256",
@@ -692,10 +704,12 @@ test(
         localStorage.setItem(
           "wallet.backup-health.v1",
           JSON.stringify({
-            version: 2,
+            version: 3,
             vaultId,
             lastExportedAt: new Date().toISOString(),
+            lastExportedBackupSha256: "00".repeat(32),
             lastVerifiedAt: null,
+            lastVerifiedBackupSha256: null,
           }),
         );
         window.dispatchEvent(new Event("wallet:backup-health-changed"));
@@ -731,7 +745,7 @@ test(
       const archiveBeforeBackup = await readIndexedMerchantArchive(page);
       assert.ok(archiveBeforeBackup, "merchant history must exist in IndexedDB before backup");
 
-      await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Home" }).click();
+      await authorizeMerchantExitToHome(page);
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByRole("button", { name: /Backup & Recovery/ }).click();
       await page.getByRole("dialog", { name: /Backup & Recovery/ }).getByRole("button", { name: "Back Up Wallet" }).click();
