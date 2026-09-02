@@ -2206,14 +2206,23 @@ export function MerchantProvider({
     });
   }, [network, rateFor]);
 
-  const requireCustomerActor = useCallback((current: MerchantStore): StaffMember => {
+  const requireCustomerActor = useCallback((
+    current: MerchantStore,
+    authority: "takePayment" | "comp" | "owner",
+  ): StaffMember => {
     const actor = current.staff.find(
       (member) =>
         member.id === staffSessionId &&
         member.id === current.activeStaffId &&
         member.active,
     );
-    if (!actor) throw new Error("Choose an active staff member before managing loyalty.");
+    if (!actor) throw new Error("Choose an active staff member before managing customers.");
+    if (authority === "owner" && actor.role !== "owner") {
+      throw new Error("Only an active owner can forget a customer.");
+    }
+    if (authority !== "owner" && !actor.permissions[authority]) {
+      throw new Error(`${actor.name} is not allowed to manage customers.`);
+    }
     return actor;
   }, [staffSessionId]);
 
@@ -2221,11 +2230,18 @@ export function MerchantProvider({
     address: string,
     note: string,
   ): Promise<CustomerRecord> => {
-    requireCustomerActor(storeRef.current);
+    requireCustomerActor(storeRef.current, "takePayment");
+    const eventId = uid("customer");
+    const now = Date.now();
     let updated: CustomerRecord | null = null;
     await commitStore((latest) => {
-      requireCustomerActor(latest);
-      const next = updatePersistedCustomerNote(latest, address, note);
+      const next = updatePersistedCustomerNote(latest, {
+        address,
+        note,
+        actor: requireCustomerActor(latest, "takePayment"),
+        eventId,
+        now,
+      });
       updated = next.customers.find((customer) => customer.address === address) ?? null;
       return next;
     });
@@ -2237,35 +2253,55 @@ export function MerchantProvider({
     address: string,
     target = 10,
   ): Promise<CustomerRecord> => {
-    const current = storeRef.current;
-    const next = startPersistedLoyaltyCard(current, {
-      address,
-      target,
-      actor: requireCustomerActor(current),
-      eventId: uid("loyalty"),
-      now: Date.now(),
+    requireCustomerActor(storeRef.current, "takePayment");
+    const eventId = uid("loyalty");
+    const now = Date.now();
+    let updated: CustomerRecord | null = null;
+    await commitStore((latest) => {
+      const next = startPersistedLoyaltyCard(latest, {
+        address,
+        target,
+        actor: requireCustomerActor(latest, "takePayment"),
+        eventId,
+        now,
+      });
+      updated = next.customers.find((customer) => customer.address === address) ?? null;
+      return next;
     });
-    await commitStore(next);
-    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
+    if (!updated) throw new Error("That customer record is no longer available.");
+    return updated;
   }, [commitStore, requireCustomerActor]);
 
   const redeemLoyaltyReward = useCallback(async (address: string): Promise<CustomerRecord> => {
-    const current = storeRef.current;
-    const next = redeemPersistedLoyaltyReward(current, {
-      address,
-      actor: requireCustomerActor(current),
-      eventId: uid("loyalty"),
-      now: Date.now(),
+    requireCustomerActor(storeRef.current, "comp");
+    const eventId = uid("loyalty");
+    const now = Date.now();
+    let updated: CustomerRecord | null = null;
+    await commitStore((latest) => {
+      const next = redeemPersistedLoyaltyReward(latest, {
+        address,
+        actor: requireCustomerActor(latest, "comp"),
+        eventId,
+        now,
+      });
+      updated = next.customers.find((customer) => customer.address === address) ?? null;
+      return next;
     });
-    await commitStore(next);
-    return next.customers.find((customer) => customer.address === address) as CustomerRecord;
+    if (!updated) throw new Error("That customer record is no longer available.");
+    return updated;
   }, [commitStore, requireCustomerActor]);
 
   const forgetCustomer = useCallback(async (address: string): Promise<void> => {
-    requireCustomerActor(storeRef.current);
+    requireCustomerActor(storeRef.current, "owner");
+    const eventId = uid("customer");
+    const now = Date.now();
     await commitStore((latest) => {
-      requireCustomerActor(latest);
-      return forgetPersistedCustomer(latest, address);
+      return forgetPersistedCustomer(latest, {
+        address,
+        actor: requireCustomerActor(latest, "owner"),
+        eventId,
+        now,
+      });
     });
   }, [commitStore, requireCustomerActor]);
 

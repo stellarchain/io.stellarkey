@@ -690,6 +690,16 @@ export interface CustomerRecord {
   note: string | null;
 }
 
+export interface CustomerMutationEvent {
+  id: string;
+  kind: "note_updated" | "forgotten";
+  /** SHA-256 of the canonical base account; the erased address is not retained directly. */
+  addressHash: string;
+  actorId: string;
+  actorName: string;
+  at: number;
+}
+
 export interface SettlementRule {
   /** Convert held assets to the settlement asset in batches, never on receipt. */
   autoConvert: boolean;
@@ -825,6 +835,8 @@ export interface MerchantStore {
   counterCodes: CounterCode[];
   counterPayments: CounterPayment[];
   customers: CustomerRecord[];
+  /** Append-only mutation attribution; optional for stores written before this audit trail. */
+  customerEvents?: CustomerMutationEvent[];
   settlementRule: SettlementRule;
   adjustments: Adjustment[];
   refundRequests: RefundRequest[];

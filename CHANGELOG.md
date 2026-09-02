@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Enforced customer-note and customer-erasure authority inside the merchant domain, limited irreversible erasure to active owners, and retained actor-attributed hashed-address audit events after deletion.
 - Centralized Merchant Mode exit authorization in the shared navigation transition, covering the mode switcher, mobile tabs, keyboard shortcuts, command actions, and in-flow redirects.
 - Required comp authority for discounts that reduce a ticket to zero, recorded those giveaways as comps, and retained payment and open-shift authorization for their automatic settlement.
 - Normalized muxed merchant payers to one base-account customer identity while preserving exact refund routes, made customer-history enrichment non-fatal, deduplicated settlement by transaction facts, and required staff review for reused invoice and counter-code routes.

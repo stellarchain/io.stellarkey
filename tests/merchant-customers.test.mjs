@@ -25,7 +25,7 @@ function source(path) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-function actor() {
+function actor(overrides = {}) {
   return {
     id: "staff-owner",
     name: "Ari",
@@ -43,6 +43,7 @@ function actor() {
     pinDigest: null,
     pinSetAt: null,
     active: true,
+    ...overrides,
   };
 }
 
@@ -294,7 +295,8 @@ test("only new crypto settlements create customer visits and history is exact", 
 
 test("contact synchronization and notes persist without inventing identity", async () => {
   const { recordCustomerVisit, syncCustomerContacts, updateCustomerNote } = await customerDomain();
-  let store = recordCustomerVisit(emptyStore(), {
+  const { member, store: base } = storeWithActor();
+  let store = recordCustomerVisit(base, {
     sourceId: "order:1",
     address: CUSTOMER,
     amountMinor: 100,
@@ -305,9 +307,31 @@ test("contact synchronization and notes persist without inventing identity", asy
   assert.equal(store.customers[0].name, null);
   store = syncCustomerContacts(store, [{ name: "Owned contact", address: CUSTOMER }]);
   assert.equal(store.customers[0].name, "Owned contact");
-  store = updateCustomerNote(store, CUSTOMER, "Oat flat white");
+  store = updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "Oat flat white",
+    actor: member,
+    eventId: "customer-note-1",
+    now: NOW + 1,
+  });
   assert.equal(store.customers[0].note, "Oat flat white");
-  assert.throws(() => updateCustomerNote(store, CUSTOMER, "x".repeat(141)), /140/);
+  assert.deepEqual(store.customerEvents, [{
+    id: "customer-note-1",
+    kind: "note_updated",
+    addressHash: store.customerEvents[0].addressHash,
+    actorId: member.id,
+    actorName: member.name,
+    at: NOW + 1,
+  }]);
+  assert.match(store.customerEvents[0].addressHash, /^[0-9a-f]{64}$/);
+  assert.notEqual(store.customerEvents[0].addressHash, CUSTOMER);
+  assert.throws(() => updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "x".repeat(141),
+    actor: member,
+    eventId: "customer-note-2",
+    now: NOW + 2,
+  }), /140/);
   assert.equal(syncCustomerContacts(store, []).customers[0].name, null);
 });
 
@@ -376,8 +400,11 @@ test("loyalty opening, earning, and redemption retain an actor audit", async () 
 test("forget removes only the local profile and leaves financial history intact", async () => {
   const { forgetCustomer, recordCustomerVisit } = await customerDomain();
   const paidOrder = order("1", CUSTOMER, 700, NOW, USDC);
+  const member = actor();
   let store = {
     ...emptyStore(),
+    staff: [member],
+    activeStaffId: member.id,
     orders: [paidOrder],
     charges: [paidOrder.charge],
   };
@@ -389,10 +416,67 @@ test("forget removes only the local profile and leaves financial history intact"
     at: NOW,
     contacts: [],
   });
-  const forgotten = forgetCustomer(store, CUSTOMER);
+  const forgotten = forgetCustomer(store, {
+    address: CUSTOMER,
+    actor: member,
+    eventId: "customer-forgotten-1",
+    now: NOW + 1,
+  });
   assert.deepEqual(forgotten.customers, []);
   assert.equal(forgotten.orders.length, 1);
   assert.equal(forgotten.charges.length, 1);
+  assert.deepEqual(forgotten.customerEvents, [{
+    id: "customer-forgotten-1",
+    kind: "forgotten",
+    addressHash: forgotten.customerEvents[0].addressHash,
+    actorId: member.id,
+    actorName: member.name,
+    at: NOW + 1,
+  }]);
+  assert.match(forgotten.customerEvents[0].addressHash, /^[0-9a-f]{64}$/);
+});
+
+test("customer mutations re-resolve current domain authority", async () => {
+  const { forgetCustomer, recordCustomerVisit, updateCustomerNote } = await customerDomain();
+  const accountant = actor({
+    id: "staff-accountant",
+    name: "Alex",
+    role: "accountant",
+    permissions: {
+      ...actor().permissions,
+      takePayment: false,
+      comp: false,
+      void: false,
+    },
+  });
+  let store = recordCustomerVisit({
+    ...emptyStore(),
+    staff: [accountant],
+    activeStaffId: accountant.id,
+  }, {
+    sourceId: "order:accountant",
+    address: CUSTOMER,
+    amountMinor: 100,
+    asset: XLM,
+    at: NOW,
+    contacts: [],
+  });
+
+  assert.throws(() => updateCustomerNote(store, {
+    address: CUSTOMER,
+    note: "Hidden rewrite",
+    actor: accountant,
+    eventId: "customer-note-accountant",
+    now: NOW + 1,
+  }), /not allowed to manage customers/i);
+  assert.throws(() => forgetCustomer(store, {
+    address: CUSTOMER,
+    actor: accountant,
+    eventId: "customer-forget-accountant",
+    now: NOW + 2,
+  }), /only an active owner/i);
+  assert.equal(store.customers.length, 1);
+  assert.deepEqual(store.customerEvents, []);
 });
 
 test("production customer surfaces use persisted actions, contacts, real history, and receipts", () => {
