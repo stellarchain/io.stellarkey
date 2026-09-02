@@ -211,9 +211,23 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.equal(existsSync(harnessPath), true, 'review benchmark harness must exist');
   assert.equal(existsSync(evidencePath), true, 'review evidence must exist');
 
+  const harness = readFileSync(harnessPath, 'utf8');
+  assert.match(harness, /Verifier CPU instructions:/u);
+  assert.match(harness, /'contract',\s*'build'/u);
+  assert.match(harness, /'contract',\s*'optimize'/u);
+  assert.match(harness, /baselinePoolSourceRevision = '69335bd/u);
+  assert.match(harness, /'worktree',\s*'add',\s*'--detach'/u);
+  assert.match(harness, /expectedStellarCliVersion = '27\.0\.0'/u);
+  assert.match(harness, /RUSTUP_TOOLCHAIN:\s*'1\.97\.1'/u);
+  assert.doesNotMatch(harness, /currentInstructions:\s*29_287_953/u);
+  assert.doesNotMatch(harness, /currentRawBytes:\s*66_377/u);
+  assert.doesNotMatch(harness, /currentOptimizedBytes:\s*57_042/u);
+
   const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
   assert.equal(evidence.schemaVersion, 3);
   assert.match(evidence.revision, /^[0-9a-f]{40}$/u);
+  assert.equal(evidence.environment.stellarCli, '27.0.0');
+  assert.match(evidence.environment.cargo, /^cargo 1\.97\.1\b/u);
   assert.equal(evidence.circuit.baseline.publicInputs, 13);
   assert.equal(evidence.circuit.baseline.constraints, 23_437);
   assert.equal(evidence.circuit.laneFree.constraints, 22_909);
@@ -268,18 +282,33 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.deepEqual(Object.keys(evidence.scanBatch.variants).sort(), [
     '1', '16', '32', '4', '64', '8',
   ]);
-  assert.ok([1, 4, 8, 16, 32, 64].includes(evidence.scanBatch.selectedBatchSize));
+  assert.equal(evidence.scanBatch.trials, 9);
+  assert.equal(
+    evidence.scanBatch.selectionPolicy,
+    'fixed conservative 8-output cap from repeated exploratory runs; paired median must exceed 1.20x sequential',
+  );
+  assert.equal(evidence.scanBatch.selectedBatchSize, 8);
+  assert.equal(
+    evidence.scanBatch.variants['8'].pairedMedianThroughputRatio,
+    evidence.scanBatch.throughputRatio,
+  );
   assert.ok(Number.isFinite(evidence.scanBatch.selectedP50MicrosecondsPerEnvelope));
   assert.ok(Number.isFinite(evidence.scanBatch.sequentialP50MicrosecondsPerEnvelope));
-  assert.ok(evidence.scanBatch.throughputRatio > 0);
+  assert.ok(evidence.scanBatch.throughputRatio >= evidence.scanBatch.acceptanceThreshold);
   assert.equal(evidence.contractCosts.verifier.baselineInstructions, 39_614_514);
   assert.equal(evidence.contractCosts.verifier.currentInstructions, 29_287_953);
   assert.ok(evidence.contractCosts.verifier.reductionPercent > 26);
   assert.equal(evidence.contractCosts.poolWasm.reviewMisidentifiedBytes, 154_609);
-  assert.equal(evidence.contractCosts.poolWasm.measuredBaselineOptimizedBytes, 121_675);
+  assert.equal(
+    evidence.contractCosts.poolWasm.baselineRevision,
+    '69335bd893e6c2739043ddae9434161b2c22a6ce',
+  );
+  assert.equal(evidence.contractCosts.poolWasm.baselineRawBytes, 93_504);
+  assert.equal(evidence.contractCosts.poolWasm.baselineOptimizedBytes, 80_245);
   assert.equal(evidence.contractCosts.poolWasm.currentRawBytes, 66_377);
   assert.equal(evidence.contractCosts.poolWasm.currentOptimizedBytes, 57_042);
-  assert.ok(evidence.contractCosts.poolWasm.reductionPercent > 53);
+  assert.ok(evidence.contractCosts.poolWasm.rawReductionPercent > 29);
+  assert.ok(evidence.contractCosts.poolWasm.optimizedReductionPercent > 28);
   assert.deepEqual(Object.keys(evidence.decisions).sort(), [
     '1', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '2',
     '20', '3', '4', '5', '6', '7', '8', '9',
