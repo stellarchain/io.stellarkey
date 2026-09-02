@@ -94,8 +94,8 @@ fn test_verify_vectors() {
             env.cost_estimate().budget().cpu_instruction_cost(),
         );
         assert!(
-            env.cost_estimate().budget().cpu_instruction_cost() < 39_000_000,
-            "batched public-input accumulation must beat the 39.6M-instruction loop baseline",
+            env.cost_estimate().budget().cpu_instruction_cost() < 30_000_000,
+            "the 11-signal batched verifier must remain below its measured 30M-instruction ceiling",
         );
     }
 }

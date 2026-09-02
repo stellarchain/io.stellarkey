@@ -633,18 +633,19 @@ const evidence = {
   contractCosts: {
     verifier: {
       baselineInstructions: 39_614_514,
-      batchedMsmInstructions: 29_960_188,
-      reductionPercent: Number(((39_614_514 - 29_960_188) / 39_614_514 * 100).toFixed(2)),
-      method: 'Soroban test budget for the two-input transfer proof vector; both variants use the same verification key, proof and 13 public signals.',
+      currentInstructions: 29_287_953,
+      reductionPercent: Number(((39_614_514 - 29_287_953) / 39_614_514 * 100).toFixed(2)),
+      method: 'Soroban test budget for the two-input transfer proof vector. The baseline used the prior 13-signal verifier loop; the current measurement uses one MSM and the accepted 11-signal statement.',
     },
     poolWasm: {
       reviewMisidentifiedBytes: 154_609,
       reviewMisidentifiedArtifact: 'protocol/private-balance/circuits/build/action_js/action.wasm (Circom witness generator)',
       trackedPoolWasmBytes: 93_504,
       measuredBaselineOptimizedBytes: 121_675,
-      withoutRuntimeBigIntOptimizedBytes: 87_145,
-      reductionPercent: Number(((121_675 - 87_145) / 121_675 * 100).toFixed(2)),
-      method: 'Built the same private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize before and after fixed-width field arithmetic.',
+      currentRawBytes: 66_377,
+      currentOptimizedBytes: 57_042,
+      reductionPercent: Number(((121_675 - 57_042) / 121_675 * 100).toFixed(2)),
+      method: 'Built the private-balance-pool source tree for wasm32v1-none --release and ran stellar contract optimize. The current measurement includes fixed-width field arithmetic, 11 public signals, and removal of dead paging configuration.',
     },
   },
   decisions: {
@@ -668,11 +669,11 @@ const evidence = {
     },
     5: {
       status: 'accept',
-      reason: 'One BN254 MSM reduced the measured verifier budget by 24.37 percent while every proof vector and adversarial rejection retained its verdict.',
+      reason: 'One BN254 MSM plus the accepted 11-signal statement reduced the measured verifier budget by 26.07 percent while every proof vector and adversarial rejection retained its verdict.',
     },
     6: {
       status: 'accept',
-      reason: 'The contract currently derives the same 13 public signals twice; passing the verified vector into archival removes duplicate hashing.',
+      reason: 'Passing the eleven-signal vector already verified by the contract into archival removes a duplicate derivation without removing archive payload checks.',
     },
     7: {
       status: 'accept',
@@ -680,7 +681,7 @@ const evidence = {
     },
     8: {
       status: 'accept',
-      reason: 'Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 87145 bytes; the review had measured the witness generator instead.',
+      reason: 'Ten thousand-case differential tests match BigUint and the measured optimized pool Wasm fell from 121675 to 57042 bytes after all accepted contract changes; the review had measured the witness generator instead.',
     },
     9: {
       status: 'accept',

@@ -89,10 +89,10 @@ fn test_pool_private_transfer() {
 
     let ctx_bytes = field_str_to_bytes(&tr_item.public_signals[0]);
     let anchor_root_bytes = field_str_to_bytes(&tr_item.public_signals[3]);
-    let nf0_bytes = field_str_to_bytes(&tr_item.public_signals[9]);
-    let nf1_bytes = field_str_to_bytes(&tr_item.public_signals[10]);
-    let out_cm0_bytes = field_str_to_bytes(&tr_item.public_signals[11]);
-    let out_cm1_bytes = field_str_to_bytes(&tr_item.public_signals[12]);
+    let nf0_bytes = field_str_to_bytes(&tr_item.public_signals[7]);
+    let nf1_bytes = field_str_to_bytes(&tr_item.public_signals[8]);
+    let out_cm0_bytes = field_str_to_bytes(&tr_item.public_signals[9]);
+    let out_cm1_bytes = field_str_to_bytes(&tr_item.public_signals[10]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);

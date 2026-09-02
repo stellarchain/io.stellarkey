@@ -88,10 +88,10 @@ fn test_pool_withdrawal() {
 
     let ctx_bytes = field_str_to_bytes(&wd_item.public_signals[0]);
     let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[3]);
-    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
-    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
-    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[11]);
-    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[12]);
+    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
+    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
+    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
+    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);
@@ -184,10 +184,10 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
     let wd_item = &file.proofs[2];
     let proof = proof_from_snarkjs(&wd_item.proof).to_contract_proof(&env);
     let anchor_root = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[3]));
-    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
-    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
-    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[11]));
-    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[12]));
+    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
+    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
+    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
+    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
     let action = WithdrawAction {
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root: anchor_root.clone(),

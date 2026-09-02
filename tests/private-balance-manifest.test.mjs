@@ -85,7 +85,7 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.match(manifest.release.contractWasmSha256, /^[0-9a-f]{64}$/);
   assert.equal(
     manifest.release.powersOfTauSha256,
-    '489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d',
+    '3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db',
   );
   assert.equal(manifest.release.zkeyVerified, true);
   assert.equal(manifest.release.allowedEnvironment, 'testnet');

@@ -229,7 +229,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
   assert.match(circuits.scripts["gate:a"], /verify:zkey/);
   assert.match(setup, /ensurePowersOfTau/);
-  assert.match(transcript, /489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d/);
+  assert.match(transcript, /3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db/);
   assert.match(verify, /zkey["',\s]+verify/);
   assert.match(manifestValidator, /parsed\.status !== 'development'/);
   assert.match(manifestValidator, /parsed\.release\.zkeyVerified !== true/);
