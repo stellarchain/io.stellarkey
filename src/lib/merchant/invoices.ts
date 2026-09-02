@@ -19,6 +19,7 @@ import {
 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
 import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
+import { pendingReconciliationTray } from "./reconciliation";
 import {
   createMerchantRoutingId,
   merchantPaymentTransport,
@@ -400,7 +401,6 @@ export function reconcileInvoicePayments(
   const claimedIds = new Set(store.invoices.flatMap((invoice) => invoice.payments.map((payment) => payment.id)));
   let invoices = store.invoices;
   let paymentReconciliations = store.paymentReconciliations;
-  let unmatched = store.unmatched;
   const unclaimed: ObservedPayment[] = [];
 
   for (const payment of input.payments) {
@@ -489,25 +489,14 @@ export function reconcileInvoicePayments(
           },
           ...paymentReconciliations,
         ];
-        unmatched = [
-          {
-            ...payment,
-            seenAt: now,
-            reconciliationOutcome: "overpaid" as const,
-            candidateChargeId: null,
-            candidateInvoiceId: invoice.id,
-          },
-          ...unmatched,
-        ].slice(0, 200);
       }
     }
     claimedIds.add(payment.id);
   }
+  if (invoices === store.invoices) return { store, unclaimed };
+  const next = { ...store, invoices, paymentReconciliations };
   return {
-    store:
-      invoices === store.invoices
-        ? store
-        : { ...store, invoices, paymentReconciliations, unmatched },
+    store: { ...next, unmatched: pendingReconciliationTray(next) },
     unclaimed,
   };
 }

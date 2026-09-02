@@ -123,8 +123,10 @@ import {
 } from "@/lib/merchant/orders";
 import {
   attachReconciledPayment,
+  bulkDismissPendingReconciliations,
   dismissReconciledPayment,
   markReconciledRefund,
+  pendingReconciliationTray,
   reconcileIncomingPayments,
 } from "@/lib/merchant/reconciliation";
 import {
@@ -477,6 +479,8 @@ interface MerchantContextValue {
   /** File a tray payment against an order by hand. */
   attachPayment: (paymentId: string, chargeId: string) => Promise<void>;
   dismissUnmatched: (paymentId: string) => Promise<void>;
+  /** Owner-only bounded cleanup of the oldest still-pending reconciliation rows. */
+  dismissPendingReconciliations: () => Promise<number>;
 
   refundOrder: (params: {
     orderId: string;
@@ -632,6 +636,7 @@ type MerchantRecordsValue = Pick<
   | "payUriFor"
   | "attachPayment"
   | "dismissUnmatched"
+  | "dismissPendingReconciliations"
   | "refundOrder"
   | "submitRefund"
   | "submitPaymentRefund"
@@ -2783,6 +2788,23 @@ export function MerchantProvider({
     [commitStore, requirePaymentActor],
   );
 
+  const dismissPendingReconciliations = useCallback(async (): Promise<number> => {
+    const actorId = staffSessionIdRef.current;
+    if (!actorId) throw new Error("Unlock the owner before cleaning up pending payments.");
+    requireActiveOwner(storeRef.current, actorId);
+    let resolvedCount = 0;
+    await commitStore((latest) => {
+      const owner = requireActiveOwner(latest, actorId);
+      const result = bulkDismissPendingReconciliations(latest, {
+        actor: owner,
+        now: Date.now(),
+      });
+      resolvedCount = result.resolvedIds.length;
+      return result.store;
+    });
+    return resolvedCount;
+  }, [commitStore]);
+
   /* ---------------- refunds ---------------- */
 
   const refundOrder = useCallback(
@@ -3344,6 +3366,10 @@ export function MerchantProvider({
     [runtime.queuedChargeCount, settings.terminalName, store.terminal],
   );
   const watching = foreground && online && enabled && Boolean(settings.receivingPublicKey);
+  const unmatched = useMemo(
+    () => pendingReconciliationTray(store),
+    [store],
+  );
 
   const value = useMemo<MerchantContextValue>(() => ({
     ready,
@@ -3401,7 +3427,7 @@ export function MerchantProvider({
     orders: store.orders,
     charges: store.charges,
     refunds: store.refunds,
-    unmatched: store.unmatched,
+    unmatched,
     paymentReconciliations: store.paymentReconciliations,
     adjustments: store.adjustments,
     peripherals,
@@ -3465,6 +3491,7 @@ export function MerchantProvider({
     payUriFor,
     attachPayment,
     dismissUnmatched,
+    dismissPendingReconciliations,
     refundOrder,
     submitRefund,
     submitPaymentRefund,
@@ -3508,6 +3535,7 @@ export function MerchantProvider({
     createReportExport,
     customerHistory,
     declineRefundRequest,
+    dismissPendingReconciliations,
     dismissUnmatched,
     duplicateInvoice,
     enabled,
@@ -3565,6 +3593,7 @@ export function MerchantProvider({
     ticketTotals,
     tipOptions,
     today,
+    unmatched,
     unlockCustomerDisplay,
     updateCounterCode,
     updateCustomerNote,
@@ -3754,7 +3783,7 @@ export function MerchantProvider({
       orders: store.orders,
       charges: store.charges,
       refunds: store.refunds,
-      unmatched: store.unmatched,
+      unmatched,
       paymentReconciliations: store.paymentReconciliations,
       adjustments: store.adjustments,
       invoices: store.invoices,
@@ -3788,6 +3817,7 @@ export function MerchantProvider({
       payUriFor,
       attachPayment,
       dismissUnmatched,
+      dismissPendingReconciliations,
       refundOrder,
       submitRefund,
       submitPaymentRefund,
@@ -3804,6 +3834,7 @@ export function MerchantProvider({
       createInvoiceDraft,
       customerHistory,
       dismissUnmatched,
+      dismissPendingReconciliations,
       duplicateInvoice,
       forgetCustomer,
       invoiceBlockedReason,
@@ -3826,7 +3857,7 @@ export function MerchantProvider({
       store.orders,
       store.paymentReconciliations,
       store.refunds,
-      store.unmatched,
+      unmatched,
       submitPaymentRefund,
       submitRefund,
       updateCounterCode,
@@ -3863,7 +3894,7 @@ export function MerchantProvider({
   const shellValue = useMemo<MerchantShellContextValue>(
     () => ({
       enabled: merchantShellEnabled({ ready, encryptedEnabled: enabled, enabledHint }),
-      unmatched: store.unmatched,
+      unmatched,
       charges: store.charges,
       activeShift,
       authorizeWalletExit,
@@ -3875,7 +3906,7 @@ export function MerchantProvider({
       enabledHint,
       ready,
       store.charges,
-      store.unmatched,
+      unmatched,
     ],
   );
   const settingsValue = useMemo<MerchantSettingsContextValue>(
