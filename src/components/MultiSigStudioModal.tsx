@@ -8,10 +8,11 @@ import {
   useWalletTransactions,
 } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
-import { fetchAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
+import { fetchCanonicalAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
 import { isValidPublicAddress } from "@/lib/vault";
 import {
   hasAdditionalSignerCapacity,
+  multisigAuthorityFingerprint,
   totalWeight,
   explainTransaction,
   type CosignOutcome,
@@ -56,6 +57,13 @@ interface CosignerDraft {
   weight: number;
 }
 
+interface SignerChangeReview {
+  kind: "add" | "remove" | "reweight";
+  key: string;
+  fromWeight?: number;
+  toWeight?: number;
+}
+
 interface ApprovalReviewBinding {
   xdr: string;
   network: "mainnet" | "testnet";
@@ -97,6 +105,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
   // Configure state
   const [ownWeight, setOwnWeight] = useState(1);
   const [cosigners, setCosigners] = useState<CosignerDraft[]>([]);
+  const [confirmedNewSignerKeys, setConfirmedNewSignerKeys] = useState<string[]>([]);
   const [newKey, setNewKey] = useState("");
   const [preset, setPreset] = useState<"any" | "majority" | "all" | "custom">("majority");
   const [customLow, setCustomLow] = useState(2);
@@ -166,7 +175,10 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     const requestGeneration = ++signerInfoRequestGeneration.current;
     let result: AccountSignerInfo | null = null;
     try {
-      result = await fetchAccountSignerInfo(requestedAccountPublicKey, requestedNetwork);
+      result = await fetchCanonicalAccountSignerInfo(
+        requestedAccountPublicKey,
+        requestedNetwork,
+      );
     } catch {
       // Network and malformed-response failures share the same fail-closed UI state.
     }
@@ -267,6 +279,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     setCosigners(
       existingCosigners.map((s) => ({ key: s.key, weight: s.weight })),
     );
+    setConfirmedNewSignerKeys([]);
     setReviewing(false);
     setError(null);
     setTab("configure");
@@ -292,6 +305,7 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     }
     triggerHaptic("selection");
     setCosigners((prev) => [...prev, { key: k, weight: 1 }]);
+    setConfirmedNewSignerKeys((previous) => [...previous, k]);
     setNewKey("");
     setError(null);
   }
@@ -314,16 +328,59 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     thresholds.medium <= thresholds.high &&
     thresholds.high <= draftTotal;
 
+  const signerChanges = useMemo<SignerChangeReview[]>(() => {
+    if (!info) return [];
+    const currentByKey = new Map(info.signers.map((signer) => [signer.key, signer.weight]));
+    const desired = [{ key: ownKey, weight: ownWeight }, ...cosigners];
+    const desiredByKey = new Map(desired.map((signer) => [signer.key, signer.weight]));
+    const changes: SignerChangeReview[] = [];
+    for (const signer of desired) {
+      const currentWeight = currentByKey.get(signer.key) ?? 0;
+      if (currentWeight === 0 && signer.weight > 0) {
+        changes.push({ kind: "add", key: signer.key, toWeight: signer.weight });
+      } else if (currentWeight !== signer.weight) {
+        changes.push({
+          kind: "reweight",
+          key: signer.key,
+          fromWeight: currentWeight,
+          toWeight: signer.weight,
+        });
+      }
+    }
+    for (const signer of info.signers) {
+      if (
+        signer.key !== ownKey &&
+        signer.weight > 0 &&
+        (desiredByKey.get(signer.key) ?? 0) === 0
+      ) {
+        changes.push({ kind: "remove", key: signer.key, fromWeight: signer.weight });
+      }
+    }
+    return changes;
+  }, [cosigners, info, ownKey, ownWeight]);
+
   async function handleApply() {
     if (configLocked) return;
     setBusy(true);
     setError(null);
     try {
+      if (!info) {
+        throw new Error("Signer configuration must be reloaded before applying changes.");
+      }
+      const currentByKey = new Map(info.signers.map((signer) => [signer.key, signer.weight]));
       const result = await applyMultisigConfig({
         signers: [{ key: ownKey, weight: ownWeight }, ...cosigners],
         low: thresholds.low,
         medium: thresholds.medium,
         high: thresholds.high,
+        authority: {
+          expectedFingerprint: multisigAuthorityFingerprint(info),
+          confirmedNewSignerKeys: confirmedNewSignerKeys.filter(
+            (key) =>
+              cosigners.some((signer) => signer.key === key && signer.weight > 0) &&
+              (currentByKey.get(key) ?? 0) === 0,
+          ),
+        },
       });
       triggerHaptic(
         result.submission?.status === "status_unknown"
@@ -349,7 +406,8 @@ function StudioInner({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await disableMultisig();
+      if (!info) throw new Error("Signer configuration must be reloaded before disabling multi-sig.");
+      const result = await disableMultisig(multisigAuthorityFingerprint(info));
       triggerHaptic(
         result.submission?.status === "status_unknown"
           ? "warning"
@@ -589,6 +647,16 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         This removes every cosigner and restores single-signature control to
                         this device. Continue?
                       </p>
+                      <div className="mt-3 space-y-2">
+                        {existingCosigners.map((signer) => (
+                          <p
+                            className="mono break-all rounded-xl bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-white"
+                            key={signer.key}
+                          >
+                            {signer.key} · weight {signer.weight}
+                          </p>
+                        ))}
+                      </div>
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <Button
                           variant="ghost"
@@ -666,6 +734,29 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                     </span>
                   </div>
                 </div>
+                {signerChanges.length > 0 && (
+                  <div>
+                    <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                      Exact signer changes
+                    </p>
+                    <div className="list-group divide-y divide-white/[0.08]">
+                      {signerChanges.map((change) => (
+                        <div className="px-4 py-3" key={`${change.kind}:${change.key}`}>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                            {change.kind === "add"
+                              ? `Add at weight ${change.toWeight}`
+                              : change.kind === "remove"
+                                ? `Remove signer (was weight ${change.fromWeight})`
+                                : `Change weight ${change.fromWeight} → ${change.toWeight}`}
+                          </p>
+                          <p className="mono mt-1 break-all text-[12px] leading-relaxed text-white">
+                            {change.key}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Notice tone="warn">
                   Applied as one atomic transaction. Settings changes afterwards will require
                   weight {thresholds.high} of signatures.
@@ -716,17 +807,28 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                         </div>
                         <WeightInput
                           value={c.weight}
-                          onChange={(w) =>
+                          onChange={(w) => {
                             setCosigners((prev) =>
                               prev.map((p) => (p.key === c.key ? { ...p, weight: w } : p)),
-                            )
-                          }
+                            );
+                            if ((info.signers.find((signer) => signer.key === c.key)?.weight ?? 0) === 0) {
+                              setConfirmedNewSignerKeys((previous) =>
+                                w > 0
+                                  ? previous.includes(c.key)
+                                    ? previous
+                                    : [...previous, c.key]
+                                  : previous.filter((key) => key !== c.key),
+                              );
+                            }
+                          }}
                         />
                         <button
                           type="button"
                           onClick={() => {
                             triggerHaptic("selection");
                             setCosigners((prev) => prev.filter((p) => p.key !== c.key));
+                            setConfirmedNewSignerKeys((previous) =>
+                              previous.filter((key) => key !== c.key));
                           }}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-[#FF453A]/10 hover:text-[#FF453A]"
                           aria-label="Remove signer"

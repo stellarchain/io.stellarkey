@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -53,6 +54,7 @@ import {
   requiredWeightForTx,
 } from "../src/lib/multisig.ts";
 import * as multisig from "../src/lib/multisig.ts";
+import { NETWORKS } from "../src/lib/stellar.ts";
 import {
   assetMetadataCacheKey,
   extractCurrencyInfo,
@@ -100,6 +102,30 @@ function canonicalSubmissionHash(init) {
   assert.ok(xdr, "expected submitted transaction XDR");
   const transaction = TransactionBuilder.fromXdr(xdr, Networks.TESTNET);
   return Buffer.from(transaction.hash()).toString("hex");
+}
+
+function multisigAuthorityFingerprintForTest(info) {
+  const normalized = {
+    thresholds: {
+      low: info.thresholds.low_threshold,
+      medium: info.thresholds.med_threshold,
+      high: info.thresholds.high_threshold,
+    },
+    signers: [...info.signers]
+      .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+      .map(({ key, type, weight }) => ({ key, type, weight })),
+  };
+  return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
+}
+
+function multisigAuthorityForTest(thresholds, signers, confirmedNewSignerKeys = []) {
+  return {
+    expectedFingerprint: multisigAuthorityFingerprintForTest({
+      thresholds,
+      signers: signers.map((signer) => ({ ...signer, type: "ed25519_public_key" })),
+    }),
+    confirmedNewSignerKeys,
+  };
 }
 
 function mockPaymentHorizon(t, sourcePublicKey, destinationPublicKey) {
@@ -488,6 +514,11 @@ test("every broadcast builder applies the shared surge fee per operation", async
       low: 1,
       medium: 1,
       high: 1,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        [{ key: source.publicKey(), weight: 1 }],
+        [cosigner],
+      ),
     },
     onPrepared: prepared,
   });
@@ -838,6 +869,28 @@ test("approval review renders every security-sensitive address in full", () => {
   assert.match(approvalReview, /l\.kind === "address"[\s\S]*EXACT_REVIEW_VALUE_CLASS/);
 });
 
+test("multisig review renders every changed signer key in full", () => {
+  const source = readFileSync(
+    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    "utf8",
+  );
+  const changeReview = source
+    .split("Exact signer changes")[1]
+    ?.split("<Notice tone=\"warn\">")[0];
+  const disableReview = source
+    .split("This removes every cosigner")[1]
+    ?.split("Disable Multi-Sig")[0];
+
+  assert.ok(changeReview, "expected the changed-signer review section");
+  assert.match(changeReview, /break-all/);
+  assert.match(changeReview, /\{change\.key\}/);
+  assert.doesNotMatch(changeReview, /<HashValue\b|truncate|line-clamp/);
+  assert.ok(disableReview, "expected the disable-multisig review section");
+  assert.match(disableReview, /break-all/);
+  assert.match(disableReview, /\{signer\.key\}/);
+  assert.doesNotMatch(disableReview, /<HashValue\b|truncate|line-clamp/);
+});
+
 test("local signer revalidates live authorization around password access", () => {
   const source = readFileSync(
     new URL("../src/components/SettingsPage.tsx", import.meta.url),
@@ -1116,6 +1169,13 @@ test("multisig configuration returns a partial envelope when current high thresh
       low: 1,
       medium: 2,
       high: 2,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: cosigner.publicKey(), weight: 1 },
+        ],
+      ),
     },
   });
 
@@ -1155,6 +1215,13 @@ test("multisig configuration explicitly writes every retained signer", async (t)
       low: 1,
       medium: 1,
       high: 1,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: reportedCosigner.publicKey(), weight: 1 },
+        ],
+      ),
     },
   });
 
@@ -1170,15 +1237,123 @@ test("multisig configuration explicitly writes every retained signer", async (t)
   );
 });
 
-test("multisig authority reads cannot be redirected to a custom Horizon", () => {
-  const source = readFileSync(
-    new URL("../src/lib/multisig.ts", import.meta.url),
-    "utf8",
+test("multisig rejects signer authority seeded by a conflicting custom Horizon", async (t) => {
+  const account = Keypair.random();
+  const attacker = Keypair.random();
+  const customHorizon = "https://hostile-horizon.example";
+  const values = new Map([
+    ["wallet.endpoint.horizon.testnet.v1", customHorizon],
+  ]);
+  globalThis.window = {
+    localStorage: {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key),
+    },
+  };
+  t.after(() => { delete globalThis.window; });
+  const customInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [
+      { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+      { key: attacker.publicKey(), weight: 5, type: "ed25519_public_key" },
+    ],
+  };
+  const canonicalInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 10, med_threshold: 10, high_threshold: 10 },
+    signers: [
+      { key: account.publicKey(), weight: 10, type: "ed25519_public_key" },
+    ],
+  };
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl === `${customHorizon}/accounts/${account.publicKey()}`) {
+      return new Response(JSON.stringify(customInfo), { status: 200 });
+    }
+    if (stringUrl === `${NETWORKS.testnet.horizonUrl}/accounts/${account.publicKey()}`) {
+      return new Response(JSON.stringify(canonicalInfo), { status: 200 });
+    }
+    if (stringUrl === `${customHorizon}/transactions`) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    applyMultisigConfig({
+      network: "testnet",
+      accountPublicKey: account.publicKey(),
+      secretKey: account.secret(),
+      feeStroops: 100,
+      config: {
+        signers: [
+          { key: account.publicKey(), weight: 1 },
+          { key: attacker.publicKey(), weight: 5 },
+        ],
+        low: 2,
+        medium: 2,
+        high: 2,
+        authority: {
+          expectedFingerprint: multisigAuthorityFingerprintForTest(customInfo),
+          confirmedNewSignerKeys: [attacker.publicKey()],
+        },
+      },
+    }),
+    /canonical signer configuration changed|reload.*signer/i,
   );
-  const applySource = source.split("export async function applyMultisigConfig")[1]
-    ?.split("/** Remove every cosigner")[0] ?? "";
-  assert.match(applySource, /fetchCanonicalAccountSignerInfo\(accountPublicKey, network\)/);
-  assert.doesNotMatch(applySource, /fetchAccountSignerInfo\(accountPublicKey, network\)/);
+  assert.equal(submitted, false);
+});
+
+test("multisig refuses a positive signer addition without explicit session provenance", async (t) => {
+  const account = Keypair.random();
+  const unconfirmed = Keypair.random();
+  const canonicalInfo = {
+    sequence: "0",
+    thresholds: { low_threshold: 1, med_threshold: 1, high_threshold: 1 },
+    signers: [
+      { key: account.publicKey(), weight: 1, type: "ed25519_public_key" },
+    ],
+  };
+  let submitted = false;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    const stringUrl = String(url);
+    if (stringUrl.endsWith(`/accounts/${account.publicKey()}`)) {
+      return new Response(JSON.stringify(canonicalInfo), { status: 200 });
+    }
+    if (stringUrl.endsWith("/transactions")) {
+      submitted = true;
+      return new Response(JSON.stringify({ hash: canonicalSubmissionHash(init) }), { status: 200 });
+    }
+    throw new Error(`Unexpected Horizon URL: ${stringUrl}`);
+  });
+
+  await assert.rejects(
+    applyMultisigConfig({
+      network: "testnet",
+      accountPublicKey: account.publicKey(),
+      secretKey: account.secret(),
+      feeStroops: 100,
+      config: {
+        signers: [
+          { key: account.publicKey(), weight: 1 },
+          { key: unconfirmed.publicKey(), weight: 1 },
+        ],
+        low: 1,
+        medium: 1,
+        high: 1,
+        authority: {
+          expectedFingerprint: multisigAuthorityFingerprintForTest(canonicalInfo),
+          confirmedNewSignerKeys: [],
+        },
+      },
+    }),
+    /new signer.*explicitly added|confirm.*new signer/i,
+  );
+  assert.equal(submitted, false);
 });
 
 test("multisig replaces a signer at full capacity without exceeding 20 additional signers", async (t) => {
@@ -1223,6 +1398,14 @@ test("multisig replaces a signer at full capacity without exceeding 20 additiona
       low: 2,
       medium: 2,
       high: 2,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          ...currentCosigners.map((signer) => ({ key: signer.publicKey(), weight: 1 })),
+        ],
+        [replacement.publicKey()],
+      ),
     },
   });
   assert.equal(partial.submission, null);
@@ -1305,6 +1488,13 @@ test("multisig recovery transitions lower the high threshold before removing sig
       low: 0,
       medium: 0,
       high: 0,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 1 },
+          { key: cosigner.publicKey(), weight: 1 },
+        ],
+      ),
     },
   });
   const tx = TransactionBuilder.fromXdr(outcome.xdr, Networks.TESTNET);
@@ -1350,6 +1540,13 @@ test("recovery restores a zero-weight master before removing recovery signers", 
       low: 0,
       medium: 0,
       high: 0,
+      authority: multisigAuthorityForTest(
+        { low_threshold: 2, med_threshold: 2, high_threshold: 2 },
+        [
+          { key: account.publicKey(), weight: 0 },
+          { key: recovery.publicKey(), weight: 2 },
+        ],
+      ),
     },
   });
   const partialTx = TransactionBuilder.fromXdr(partial.xdr, Networks.TESTNET);

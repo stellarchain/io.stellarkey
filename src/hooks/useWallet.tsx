@@ -394,7 +394,7 @@ interface WalletContextValue {
   /** Apply a multi-sig signer/threshold configuration to the active account */
   applyMultisigConfig: (config: MultisigConfig) => Promise<MultisigConfigOutcome>;
   /** Remove all cosigners and reset thresholds to single-sig defaults */
-  disableMultisig: () => Promise<MultisigConfigOutcome>;
+  disableMultisig: (expectedAuthorityFingerprint: string) => Promise<MultisigConfigOutcome>;
   /** Sign a payment with our key only and return the envelope XDR for co-signing */
   prepareCosignPayment: (params: {
     destination: string;
@@ -2570,7 +2570,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, toast, withAuthorizedSigningSecret],
   );
 
-  const disableMultisig = useCallback(async () => {
+  const disableMultisig = useCallback(async (expectedAuthorityFingerprint: string) => {
     if (!activeAccount) throw new Error("No active account");
     if (activeAccount.watchOnly) {
       throw new Error("Watch-only accounts cannot sign transactions.");
@@ -2585,6 +2585,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         accountPublicKey: activeAccount.publicKey,
         softwareSigner,
         hardwareSigner: hw,
+        expectedAuthorityFingerprint,
         feeStroops: recommendedBaseFeeStroops,
         onPrepared,
       }),

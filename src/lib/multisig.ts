@@ -14,6 +14,7 @@ import {
   extractBaseAddress,
   type Transaction,
 } from "@stellar/stellar-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
 import {
   type AccountSignerInfo,
   assertDestinationMemoRequirement,
@@ -50,6 +51,10 @@ export interface MultisigConfig {
   low: number;
   medium: number;
   high: number;
+  authority: {
+    expectedFingerprint: string;
+    confirmedNewSignerKeys: string[];
+  };
 }
 
 export interface MultisigConfigOutcome {
@@ -72,6 +77,23 @@ export function hasAdditionalSignerCapacity(additionalSignerCount: number): bool
 
 export function totalWeight(signers: { weight: number }[]): number {
   return signers.reduce((sum, s) => sum + s.weight, 0);
+}
+
+export function multisigAuthorityFingerprint(info: AccountSignerInfo): string {
+  const normalized = {
+    thresholds: {
+      low: info.thresholds.low_threshold,
+      medium: info.thresholds.med_threshold,
+      high: info.thresholds.high_threshold,
+    },
+    signers: [...info.signers]
+      .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0)
+      .map(({ key, type, weight }) => ({ key, type, weight })),
+  };
+  return Array.from(
+    sha256(new TextEncoder().encode(JSON.stringify(normalized))),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 /** Signing weight a transaction requires, derived from its operation types. */
@@ -158,6 +180,16 @@ export async function applyMultisigConfig(params: {
   for (const [label, v] of [["Low", config.low], ["Medium", config.medium], ["High", config.high]] as const) {
     if (v > total) throw new SendError(`${label} threshold (${v}) exceeds the total signer weight (${total}).`);
   }
+  if (
+    !config.authority ||
+    !/^[0-9a-f]{64}$/.test(config.authority.expectedFingerprint) ||
+    !Array.isArray(config.authority.confirmedNewSignerKeys) ||
+    new Set(config.authority.confirmedNewSignerKeys).size !==
+      config.authority.confirmedNewSignerKeys.length ||
+    config.authority.confirmedNewSignerKeys.some((key) => !isValidPublicAddress(key))
+  ) {
+    throw new SendError("Signer authority review is missing or invalid. Reload the signer configuration.");
+  }
 
   const horizonUrl = getHorizonUrl(network);
   const cfg = NETWORKS[network];
@@ -166,6 +198,11 @@ export async function applyMultisigConfig(params: {
   if (!source) throw new SendError("Account does not exist on this network.");
   const current = await fetchCanonicalAccountSignerInfo(accountPublicKey, network);
   if (!current) throw new SendError("Account signer configuration could not be loaded.");
+  if (multisigAuthorityFingerprint(current) !== config.authority.expectedFingerprint) {
+    throw new SendError(
+      "The canonical signer configuration changed. Reload and review every signer before retrying.",
+    );
+  }
   if (current.signers.some((signer) => signer.type !== "ed25519_public_key")) {
     throw new SendError(
       "This account uses signer types this configuration editor cannot safely modify.",
@@ -196,6 +233,16 @@ export async function applyMultisigConfig(params: {
     signer.weight > 0 &&
     (currentByKey.get(signer.key) ?? 0) === 0
   );
+  const additionKeys = new Set(additions.map((signer) => signer.key));
+  const confirmedNewSignerKeys = new Set(config.authority.confirmedNewSignerKeys);
+  if (
+    additionKeys.size !== confirmedNewSignerKeys.size ||
+    [...additionKeys].some((key) => !confirmedNewSignerKeys.has(key))
+  ) {
+    throw new SendError(
+      "Every new signer must be explicitly added and confirmed in this configuration session.",
+    );
+  }
   const obsoleteSigners = currentAdditionalSigners.filter(
     (signer) => (desiredByKey.get(signer.key) ?? 0) === 0,
   );
@@ -329,6 +376,7 @@ export async function disableMultisig(params: {
   hardwareSigner?: HardwareSigner;
   feeStroops?: number;
   onPrepared?: SubmissionPreparedCallback;
+  expectedAuthorityFingerprint: string;
 }): Promise<MultisigConfigOutcome> {
   return applyMultisigConfig({
     ...params,
@@ -337,6 +385,10 @@ export async function disableMultisig(params: {
       low: 0,
       medium: 0,
       high: 0,
+      authority: {
+        expectedFingerprint: params.expectedAuthorityFingerprint,
+        confirmedNewSignerKeys: [],
+      },
     },
   });
 }
