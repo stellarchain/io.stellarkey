@@ -267,7 +267,21 @@ test("leaving Merchant Mode and exporting retained records revalidate current au
   assert.match(runtime, /authorizeWalletExit: \(\) => Promise<void>/);
   assert.match(hook, /const authorizeWalletExit = useCallback/);
   assert.match(hook, /authorizeSensitiveAction\("Leave Merchant Mode"\)/);
-  assert.match(dashboard, /await merchantAuthorizeWalletExit\(\)/);
+  const tabTransition = dashboard.split("const switchTab = useCallback")[1]
+    ?.split("const [addAccountOpen")[0] ?? "";
+  assert.match(tabTransition, /mode === "merchant"/);
+  assert.match(tabTransition, /!isMerchantView\(v\)/);
+  assert.match(tabTransition, /merchantAuthorizeWalletExit\(\)/);
+  assert.match(tabTransition, /await merchantExitAuthorizationRef\.current/);
+  assert.ok(
+    tabTransition.indexOf("merchantAuthorizeWalletExit()") < tabTransition.indexOf("setView(v)"),
+    "Merchant exit authorization must happen before the shared tab transition mutates navigation",
+  );
+
+  const modeTransition = dashboard.split("async function switchMode")[1]
+    ?.split("function handleSendToContact")[0] ?? "";
+  assert.match(modeTransition, /await switchTab/);
+  assert.doesNotMatch(modeTransition, /merchantAuthorizeWalletExit/);
 
   const archive = hook.split("const exportEncryptedArchive = useCallback")[1]
     ?.split("const resetRecoveryData")[0] ?? "";
