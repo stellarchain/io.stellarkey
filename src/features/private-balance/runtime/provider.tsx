@@ -48,8 +48,11 @@ import {
   PrivateBalanceArchiveClient,
 } from './archive-client';
 import {
+  findContiguousPrivateArchiveRestorationRange,
   preparePrivateArchiveRestoration,
+  restorePrivateArchiveRange,
   submitPrivateArchiveRestoration,
+  type PrivateArchiveRestorationProgress,
 } from './archive-restoration';
 import {
   claimPrivateBalanceLease,
@@ -1045,7 +1048,10 @@ export function PrivateBalanceProvider({
     await performSync(false);
   }, []);
 
-  const restorePrivateHistory = useCallback(async () => {
+  const restorePrivateHistory = useCallback(async (
+    onProgress?: (progress: PrivateArchiveRestorationProgress) => void,
+    signal?: AbortSignal,
+  ) => {
     const actionIndex = snapshot.restoreRequiredActionIndex;
     if (actionIndex === null) {
       throw new Error('Private history does not require restoration.');
@@ -1062,24 +1068,76 @@ export function PrivateBalanceProvider({
     const allowHttp = endpoint.protocol === 'http:' &&
       ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
     const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    const archive = new PrivateBalanceArchiveClient(rpcUrl, manifest);
     actionBusyRef.current = true;
     try {
       await mutexRef.current.runExclusive(async () => {
-        const prepared = await preparePrivateArchiveRestoration({
-          rpc,
-          manifest,
-          source: accountPublicKey,
-          actionIndex,
-          classicFeeStroops: BigInt(recommendedBaseFeeStroops),
-          maximumResourceFeeStroops: MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
-        });
-        await submitPrivateArchiveRestoration({
-          review: prepared.review,
-          networkPassphrase: manifest.networkPassphrase,
-          sign: signPrivateBalanceEnvelope,
-          rpc,
-        });
+        if (signal?.aborted) {
+          throw new DOMException('Private history restoration cancelled.', 'AbortError');
+        }
+        const head = await archive.readHead();
+        if (actionIndex >= head.meta.actionCount) {
+          throw new Error('The archived private history cursor is no longer in the contract archive.');
+        }
+        setSnapshot(current => ({
+          ...current,
+          deployment: {
+            ...current.deployment,
+            actionCount: head.meta.actionCount,
+            latestLedger: head.latestLedger,
+          },
+        }));
+        let restorationEndActionIndex = actionIndex;
+        while (restorationEndActionIndex < head.meta.actionCount) {
+          const range = await findContiguousPrivateArchiveRestorationRange({
+            rpc,
+            poolContractId: manifest.poolContractId,
+            startActionIndex: restorationEndActionIndex,
+            endActionIndexExclusive: head.meta.actionCount,
+            signal,
+          });
+          restorationEndActionIndex = range.endActionIndexExclusive;
+          if (range.endActionIndexExclusive < range.probedEndActionIndexExclusive) break;
+        }
+        if (restorationEndActionIndex > actionIndex) {
+          await restorePrivateArchiveRange({
+            startActionIndex: actionIndex,
+            endActionIndexExclusive: restorationEndActionIndex,
+            signal,
+            prepare: request => preparePrivateArchiveRestoration({
+              rpc,
+              manifest,
+              source: accountPublicKey,
+              startActionIndex: request.startActionIndex,
+              maximumActionCount: request.maximumActionCount,
+              classicFeeStroops: BigInt(recommendedBaseFeeStroops),
+              maximumResourceFeeStroops: MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
+              signal: request.signal,
+            }),
+            submit: (review, submissionSignal) => submitPrivateArchiveRestoration({
+              review,
+              networkPassphrase: manifest.networkPassphrase,
+              sign: signPrivateBalanceEnvelope,
+              rpc,
+              signal: submissionSignal,
+            }),
+            onProgress: progress => {
+              setSnapshot(current => ({
+                ...current,
+                error: null,
+                restoreRequiredActionIndex:
+                  progress.nextActionIndex < head.meta.actionCount
+                    ? progress.nextActionIndex
+                    : null,
+              }));
+              onProgress?.(progress);
+            },
+          });
+        }
       });
+      if (signal?.aborted) {
+        throw new DOMException('Private history restoration cancelled.', 'AbortError');
+      }
       await performSyncRef.current?.(false);
     } finally {
       actionBusyRef.current = false;

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Modal, ModalHeader, Notice } from '@/components/ui';
 import {
   usePrivateBalanceRuntimeData,
 } from '@/hooks/usePrivateBalanceRuntime';
 import { triggerHaptic } from '@/lib/haptics';
+import type { PrivateArchiveRestorationProgress } from '../runtime/archive-restoration';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 
 /**
@@ -21,27 +22,48 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
   } = usePrivateBalanceRuntimeData();
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [restorationProgress, setRestorationProgress] =
+    useState<PrivateArchiveRestorationProgress | null>(null);
+  const [activeRestoration, setActiveRestoration] = useState(false);
+  const operationRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => operationRef.current?.abort(), []);
 
   const scan = async () => {
     triggerHaptic('selection');
+    const controller = new AbortController();
+    operationRef.current?.abort();
+    operationRef.current = controller;
+    const needsRestoration = restoreRequiredActionIndex !== null;
     setWorking(true);
+    setActiveRestoration(needsRestoration);
     setError(null);
+    setRestorationProgress(null);
     try {
-      if (restoreRequiredActionIndex === null) {
+      if (!needsRestoration) {
         await refreshSync();
       } else {
-        await restorePrivateHistory();
+        await restorePrivateHistory(setRestorationProgress, controller.signal);
       }
     } catch (cause: unknown) {
-      setError(cause ?? new Error('Private recovery stopped safely.'));
+      if (!controller.signal.aborted) {
+        setError(cause ?? new Error('Private recovery stopped safely.'));
+      }
     } finally {
-      setWorking(false);
+      if (operationRef.current === controller) {
+        operationRef.current = null;
+        setWorking(false);
+        setActiveRestoration(false);
+      }
     }
   };
 
   const restoring = restoreRequiredActionIndex !== null;
-  const checking = working && restoring
-    ? 'Restoring private history…'
+  const restorationVisible = working ? activeRestoration : restoring;
+  const checking = working && restorationVisible
+    ? restorationProgress
+      ? `Restored ${restorationProgress.restoredCount} of ${restorationProgress.totalCount} records…`
+      : 'Preparing private history restoration…'
     : working && syncProgress && syncProgress.total > 1
     ? `Checking ${Math.min(syncProgress.current, syncProgress.total)} of ${syncProgress.total}…`
     : 'Checking…';
@@ -55,11 +77,11 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
       />
       <div className="space-y-4 p-4 sm:p-6">
         <>
-            {restoring ? (
+            {restorationVisible ? (
               <Notice tone="warn">
-                Stellar has archived one record needed to rebuild your private history. Restoring it
-                submits one maintenance transaction from your Stellar account and costs a network fee.
-                It does not send a payment. Your password is required before signing.
+                Stellar has archived records needed to rebuild your private history. StellarKey
+                restores the largest safe group in each maintenance transaction, and each transaction
+                costs a network fee. It does not send a payment. Your password is required before signing.
               </Notice>
             ) : (
               <Notice>
@@ -85,11 +107,11 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
               ) : null}
             </div>
             <Button type="button" className="w-full" loading={working} onClick={() => void scan()}>
-              {working ? checking : restoring ? 'Restore Private History' : 'Check for New Activity'}
+              {working ? checking : restorationVisible ? 'Restore Private History' : 'Check for New Activity'}
             </Button>
             <p className="text-center text-[11px] leading-relaxed text-neutral-500">
-              {restoring
-                ? 'Only the archived record needed for the next checked step is restored. StellarKey resumes the check after confirmation.'
+              {restorationVisible
+                ? 'Only contiguous records needed for this check are restored. Every confirmed group advances the saved resume point before StellarKey continues.'
                 : 'Picks up where your last check left off. For a from-scratch recheck of your whole history, open Advanced privacy → Verify private history.'}
             </p>
         </>

@@ -21,6 +21,16 @@ test('the activity check speaks plainly, is named honestly, and reports concrete
   assert.match(recovery, /HumanizedErrorNotice/);
   assert.match(recovery, /Restore Private History/);
   assert.match(recovery, /maintenance transaction/);
+  assert.match(recovery, /PrivateArchiveRestorationProgress/);
+  assert.match(recovery, /Restored \$\{restorationProgress\.restoredCount\} of \$\{restorationProgress\.totalCount\} records/);
+  assert.match(recovery, /AbortController/);
+  assert.match(recovery, /operationRef\.current\?\.abort\(\)/);
+  assert.match(recovery, /<Modal open onClose=\{onClose\} dismissable=\{!working\}>/);
+  assert.equal([...recovery.matchAll(/<Modal\b/g)].length, 1);
+  assert.equal([...recovery.matchAll(/<ModalHeader\b/g)].length, 1);
+  assert.doesNotMatch(recovery, /Suspense|dynamic\(|key=\{/);
+  assert.match(recovery, /aria-live="polite"/);
+  assert.match(recovery, /every confirmed group advances the saved resume point/i);
   // Vocabulary bans hold: identifiers only behind Technical details. (The
   // `checkpoint` runtime field may appear as code, never as displayed copy.)
   assert.doesNotMatch(recovery, /Merkle|canonical|Last verified page/);
