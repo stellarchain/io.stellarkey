@@ -28,10 +28,12 @@ constants are pinned by the manifest and cross-language conformance vectors.
 
 ## 3. Notes and commitments
 
-A note contains its asset-bound value, spending-key material, diversifier, randomness, optional
-memo, and deployment context. `NoteCommitment` hashes the complete note preimage under its explicit
-domain. A commitment is always a non-zero field element and every action appends exactly two
-commitments.
+The 128-byte encrypted note plaintext contains its version and flags, value, diversifier, owner
+commitment, randomness `rho`, optional memo, and reserved bytes. `NoteCommitment` hashes the
+deployment context, pinned asset, owner commitment, value, and `rho` under its explicit domain. The
+diversified owner commitment binds the address diversifier. The memo is authenticated by the
+recipient and outgoing envelopes but is not an input to the commitment or Groth16 circuit. A
+commitment is always a non-zero field element and every action appends exactly two commitments.
 
 A zero-value output is a dummy note, not an absent slot. Its commitment, randomness, keys,
 diversifier, recipient envelope, and outgoing envelope are freshly constructed in the same format
