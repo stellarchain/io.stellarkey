@@ -125,7 +125,6 @@ import {
   attachReconciledPayment,
   bulkDismissPendingReconciliations,
   dismissReconciledPayment,
-  markReconciledRefund,
   pendingReconciliationTray,
   reconcileIncomingPayments,
 } from "@/lib/merchant/reconciliation";
@@ -2945,6 +2944,8 @@ export function MerchantProvider({
         destination: sourcePayment.from,
         reason,
         note: note?.trim() || null,
+        submittedById: member.id,
+        submittedBy: member.name,
         createdAt,
       };
       const result = await send({
@@ -3026,6 +3027,15 @@ export function MerchantProvider({
     if (!reconciliation || reconciliation.resolution) {
       throw new Error("That incoming payment is no longer available for refund.");
     }
+    const trackedRefund = current.refunds.find(
+      (refund) =>
+        refund.kind === "payment_reversal" &&
+        refund.sourcePaymentId === reconciliation.id &&
+        refundReservesFunds(refund),
+    );
+    if (trackedRefund) {
+      throw new Error("A refund for this payment is already being tracked. Check its status before retrying.");
+    }
     const amountMinor = reconciliation.amountMinor;
     if (amountMinor === null || !member || !canReleaseRefund(member, amountMinor)) {
       throw new Error("This payment refund needs approval from a staff member with a higher ceiling.");
@@ -3076,6 +3086,8 @@ export function MerchantProvider({
       destination: payment.from,
       reason: reconciliation.outcome === "overpaid" ? "overpayment" : "duplicate",
       note: note?.trim() || null,
+      submittedById: member.id,
+      submittedBy: member.name,
       createdAt: now,
     };
     const result = await send({
@@ -3106,15 +3118,8 @@ export function MerchantProvider({
         },
       },
     });
-    await commitStore((latest) => {
-      const recorded = reconcileRefundSubmission(latest, refundId, result.status);
-      return markReconciledRefund(recorded, {
-        paymentId,
-        refundId,
-        actor: member as StaffMember,
-        now,
-      });
-    });
+    await commitStore((latest) =>
+      reconcileRefundSubmission(latest, refundId, result.status));
     return {
       ...refundBase,
       transactionHash: result.hash,

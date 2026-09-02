@@ -383,6 +383,9 @@ export interface Refund {
   transactionHash: string | null;
   /** Never infer success from a hash alone: ambiguous submissions stay reserved and tracked. */
   submissionStatus: RefundSubmissionStatus;
+  /** Immutable operator snapshot used only when canonical confirmation closes a reversal. */
+  submittedById?: string;
+  submittedBy?: string;
   createdAt: number;
 }
 

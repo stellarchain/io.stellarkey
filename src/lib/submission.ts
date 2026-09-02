@@ -77,6 +77,12 @@ export interface PendingTransaction {
   action?: PendingTransactionAction;
 }
 
+/**
+ * Old recovery records may predate exact envelope max-time persistence. Keep
+ * their automatic canonical polling bounded, then require an explicit check.
+ */
+export const LEGACY_PENDING_AUTO_POLL_MS = 10 * 60 * 1_000;
+
 export type TransactionResolutionStatus = "confirmed" | "failed";
 
 export interface TransactionResolution {
@@ -242,18 +248,33 @@ export interface PendingTransactionPresentation {
   manualCheck: boolean;
 }
 
+export function pendingTransactionNeedsManualCheck(
+  transaction: Pick<PendingTransaction, "createdAt" | "expiresAt">,
+  nowMs = Date.now(),
+): boolean {
+  if (transaction.expiresAt !== undefined) {
+    return transaction.expiresAt * 1_000 <= nowMs;
+  }
+  return nowMs - transaction.createdAt >= LEGACY_PENDING_AUTO_POLL_MS;
+}
+
 export function pendingTransactionPresentation(
-  transaction: Pick<PendingTransaction, "hash" | "network" | "label" | "status" | "expiresAt">,
+  transaction: Pick<
+    PendingTransaction,
+    "hash" | "network" | "label" | "status" | "createdAt" | "expiresAt"
+  >,
   nowMs = Date.now(),
 ): PendingTransactionPresentation {
   const networkLabel = transaction.network === "mainnet" ? "Mainnet" : "Testnet";
-  const manualCheck = transaction.expiresAt !== undefined &&
-    transaction.expiresAt * 1000 <= nowMs;
+  const manualCheck = pendingTransactionNeedsManualCheck(transaction, nowMs);
+  const legacyExpiry = manualCheck && transaction.expiresAt === undefined;
   if (transaction.status === "status_unknown") {
     return {
       title: `${transaction.label} status unknown`,
       detail: manualCheck
-        ? `The envelope expired before Horizon status could be verified on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
+        ? legacyExpiry
+          ? `This legacy recovery record has no exact envelope expiry. Automatic checks stopped after a bounded interval on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
+          : `The envelope expired before Horizon status could be verified on ${networkLabel}. Do not resubmit blindly. Use Check Status for a bounded canonical-hash lookup.`
         : `Horizon did not confirm whether this transaction was accepted on ${networkLabel}. Do not resubmit blindly. Tracking canonical hash ${transaction.hash}.`,
       caution: true,
       manualCheck,
@@ -366,17 +387,22 @@ export function persistPendingTransactionQueue(
 
 /** Persist one recovery identity without replacing records written by another tab. */
 export function persistDurablePendingTransaction(
-  storage: Pick<Storage, "setItem">,
+  storage: Pick<Storage, "getItem" | "setItem">,
   key: string,
   record: PendingTransaction,
 ): PendingTransaction {
   const [sanitized] = parsePendingTransactions(JSON.stringify([record]));
   if (!sanitized) throw new Error("Pending transaction recovery record is invalid.");
-  storage.setItem(
-    pendingTransactionStorageKey(key, sanitized),
-    serializePendingTransactions([sanitized]),
+  const storageKey = pendingTransactionStorageKey(key, sanitized);
+  const [merged] = upsertPendingTransaction(
+    parsePendingTransactions(storage.getItem(storageKey)),
+    sanitized,
   );
-  return sanitized;
+  storage.setItem(
+    storageKey,
+    serializePendingTransactions([merged]),
+  );
+  return merged;
 }
 
 /** Remove only the resolved envelope, preserving recovery records from other tabs. */

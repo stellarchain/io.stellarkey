@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserved transaction max-time evidence when upgrading durable submission records, bounded polling for legacy records without an expiry, and kept merchant payment reversals actionable until their refund is canonically confirmed.
 - Restored Private Payments records belonging to archived accounts, omitted records for genuinely unavailable accounts with a warning, and added account-scoped sensitive-record cleanup for new archival.
 - Accepted the wallet's canonical Private Payments activity keys in encrypted transaction-note backups, rejected invalid note writes, omitted malformed optional note entries with a restore warning, and verified fresh backup bytes before returning them.
 - Made merchant integrity manifests and wallet backup identities independent of browser locale, while transparently resealing authenticated stores created under legacy affected collations.

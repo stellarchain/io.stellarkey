@@ -834,6 +834,50 @@ test("prepared tracking survives a simulated crash with its exact expiry", () =>
   assert.equal("expiresAt" in sanitized[1], false);
 });
 
+test("post-response persistence merges with the prepared recovery record", () => {
+  const storage = memoryStorage();
+  const hash = "ac".repeat(32);
+  const prepared = submission.pendingTransactionFromPrepared(
+    { hash, network: "testnet", expiresAt: 2_000_000_000 },
+    "Payment",
+    undefined,
+    10,
+  );
+  submission.persistDurablePendingTransaction(storage, "pending", prepared);
+
+  const response = submission.pendingTransactionFromSubmission({
+    hash,
+    network: "testnet",
+    status: "accepted",
+  }, "Payment");
+  assert.ok(response);
+  const merged = submission.persistDurablePendingTransaction(storage, "pending", response);
+
+  assert.equal(merged.status, "confirming");
+  assert.equal(merged.createdAt, prepared.createdAt);
+  assert.equal(merged.expiresAt, prepared.expiresAt);
+  assert.deepEqual(submission.loadDurablePendingTransactions(storage, "pending"), [merged]);
+});
+
+test("legacy pending records stop automatic polling and expose manual checking", () => {
+  assert.equal(typeof submission.LEGACY_PENDING_AUTO_POLL_MS, "number");
+  assert.equal(typeof submission.pendingTransactionNeedsManualCheck, "function");
+  const now = 2_000_000;
+  const record = {
+    hash: "ad".repeat(32),
+    network: "testnet",
+    label: "Payment",
+    status: "status_unknown",
+    createdAt: now - submission.LEGACY_PENDING_AUTO_POLL_MS,
+  };
+
+  assert.equal(submission.pendingTransactionNeedsManualCheck(record, now - 1), false);
+  assert.equal(submission.pendingTransactionNeedsManualCheck(record, now), true);
+  const presentation = submission.pendingTransactionPresentation(record, now);
+  assert.equal(presentation.manualCheck, true);
+  assert.match(presentation.detail, /legacy recovery record|Check Status/i);
+});
+
 test("different tabs persist pending recovery records without replacing each other", () => {
   assert.equal(typeof submission.persistDurablePendingTransaction, "function");
   assert.equal(typeof submission.removeDurablePendingTransaction, "function");
