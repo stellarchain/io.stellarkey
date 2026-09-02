@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellarkey.example/schemas/private-balance-curve-benchmark-v1.json",
+  "title": "StellarKey Private Payments curve benchmark evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "benchmark",
+    "generatedAt",
+    "circuitCorpusSha256",
+    "decision",
+    "runs",
+    "pendingPhysicalDevices",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "benchmark": { "const": "private-action-groth16-curves" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "circuitCorpusSha256": { "$ref": "#/$defs/sha256" },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "selectedCurve", "reason"],
+      "properties": {
+        "status": { "const": "pending-physical-device-evidence" },
+        "selectedCurve": { "type": "null" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "pendingPhysicalDevices": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/pendingDevice" }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "nullableMetric": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "manufacturer", "model", "cpu", "os", "browser"],
+      "properties": {
+        "class": { "enum": ["desktop", "phone", "emulator"] },
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "cpu": { "type": "string", "minLength": 1 },
+        "os": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "architecture"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "architecture": { "type": "string", "minLength": 1 }
+          }
+        },
+        "browser": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "userAgent"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "userAgent": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wasmSimd",
+        "wasmThreads",
+        "crossOriginIsolated",
+        "provingKeyStreaming",
+        "nativeMobileProver"
+      ],
+      "properties": {
+        "wasmSimd": { "type": "boolean" },
+        "wasmThreads": { "type": "boolean" },
+        "crossOriginIsolated": { "type": "boolean" },
+        "provingKeyStreaming": { "type": "boolean" },
+        "nativeMobileProver": { "type": "boolean" }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samplesMs", "p50Ms", "p95Ms"],
+      "properties": {
+        "samplesMs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/positiveNumber" }
+        },
+        "p50Ms": { "$ref": "#/$defs/positiveNumber" },
+        "p95Ms": { "$ref": "#/$defs/positiveNumber" }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "instructions",
+        "readBytes",
+        "writeBytes",
+        "resourceFeeStroops",
+        "transactionBytes",
+        "reason"
+      ],
+      "properties": {
+        "status": { "enum": ["measured", "pending"] },
+        "instructions": { "$ref": "#/$defs/nullableMetric" },
+        "readBytes": { "$ref": "#/$defs/nullableMetric" },
+        "writeBytes": { "$ref": "#/$defs/nullableMetric" },
+        "resourceFeeStroops": {
+          "type": ["string", "null"],
+          "pattern": "^(0|[1-9][0-9]*)$"
+        },
+        "transactionBytes": { "$ref": "#/$defs/nullableMetric" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "curve",
+        "proofSystem",
+        "status",
+        "evidenceKind",
+        "physicalDevice",
+        "physicalAttestation",
+        "device",
+        "capabilities",
+        "circuit",
+        "workload",
+        "proving",
+        "verification",
+        "proof",
+        "contract"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "curve": { "enum": ["bn254", "bls12-381"] },
+        "proofSystem": { "const": "groth16" },
+        "status": { "const": "measured" },
+        "evidenceKind": { "enum": ["desktop-smoke", "browser-smoke", "physical-device"] },
+        "physicalDevice": { "type": "boolean" },
+        "physicalAttestation": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["operator", "observedAt", "evidenceSha256"],
+              "properties": {
+                "operator": { "type": "string", "minLength": 1 },
+                "observedAt": { "type": "string", "format": "date-time" },
+                "evidenceSha256": { "$ref": "#/$defs/sha256" }
+              }
+            }
+          ]
+        },
+        "device": { "$ref": "#/$defs/device" },
+        "capabilities": { "$ref": "#/$defs/capabilities" },
+        "circuit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "constraintCount",
+            "publicInputCount",
+            "privateInputCount",
+            "r1csBytes",
+            "witnessWasmBytes",
+            "provingKeyBytes",
+            "verificationKeyBytes",
+            "r1csSha256",
+            "witnessWasmSha256",
+            "provingKeySha256"
+          ],
+          "properties": {
+            "constraintCount": { "$ref": "#/$defs/positiveInteger" },
+            "publicInputCount": { "$ref": "#/$defs/positiveInteger" },
+            "privateInputCount": { "$ref": "#/$defs/positiveInteger" },
+            "r1csBytes": { "$ref": "#/$defs/positiveInteger" },
+            "witnessWasmBytes": { "$ref": "#/$defs/positiveInteger" },
+            "provingKeyBytes": { "$ref": "#/$defs/positiveInteger" },
+            "verificationKeyBytes": { "$ref": "#/$defs/positiveInteger" },
+            "r1csSha256": { "$ref": "#/$defs/sha256" },
+            "witnessWasmSha256": { "$ref": "#/$defs/sha256" },
+            "provingKeySha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "workload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["corpus", "corpusSha256", "warmupIterations", "measuredIterations"],
+          "properties": {
+            "corpus": { "const": "deterministic-deposit-v1" },
+            "corpusSha256": { "$ref": "#/$defs/sha256" },
+            "warmupIterations": { "type": "integer", "minimum": 0 },
+            "measuredIterations": { "$ref": "#/$defs/positiveInteger" }
+          }
+        },
+        "proving": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["samplesMs", "p50Ms", "p95Ms", "peakRssBytes"],
+          "properties": {
+            "samplesMs": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/positiveNumber" }
+            },
+            "p50Ms": { "$ref": "#/$defs/positiveNumber" },
+            "p95Ms": { "$ref": "#/$defs/positiveNumber" },
+            "peakRssBytes": { "$ref": "#/$defs/positiveInteger" }
+          }
+        },
+        "verification": { "$ref": "#/$defs/distribution" },
+        "proof": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonBytes", "canonicalUncompressedBytes", "verified"],
+          "properties": {
+            "jsonBytes": { "$ref": "#/$defs/positiveInteger" },
+            "canonicalUncompressedBytes": { "$ref": "#/$defs/positiveInteger" },
+            "verified": { "const": true }
+          }
+        },
+        "contract": { "$ref": "#/$defs/contract" }
+      }
+    },
+    "pendingDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "browser", "deviceClass", "physicalDevice", "status"],
+      "properties": {
+        "platform": { "enum": ["ios", "android"] },
+        "browser": { "enum": ["iOS Safari", "Android Chrome"] },
+        "deviceClass": { "const": "mid-range-phone" },
+        "physicalDevice": { "const": true },
+        "status": { "const": "pending" }
+      }
+    }
+  }
+}

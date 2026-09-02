@@ -5,6 +5,10 @@ import {
   buildRecoveryGateEvidence,
   parseRecoveryGateArguments,
 } from '../protocol/private-balance/spikes/scripts/recovery-gate-lib.mjs';
+import {
+  validateCurveBenchmarkEvidence,
+} from '../protocol/private-balance/spikes/scripts/run-curve-benchmark.mjs';
+import { readFileSync } from 'node:fs';
 
 test('recovery gate requires the backend-free sources to be disabled', () => {
   assert.throws(
@@ -104,5 +108,68 @@ test('recovery evidence fails closed on any balance or activity mismatch', () =>
       completedAt: '2026-08-30T00:00:00.000Z',
     }),
     /mismatch/i,
+  );
+});
+
+test('curve benchmark evidence records both curves without claiming a winner', () => {
+  const evidence = JSON.parse(readFileSync(
+    new URL('../protocol/private-balance/results/curve-benchmark.json', import.meta.url),
+    'utf8',
+  ));
+  assert.equal(validateCurveBenchmarkEvidence(evidence), evidence);
+  assert.equal(evidence.decision.status, 'pending-physical-device-evidence');
+  assert.equal(evidence.decision.selectedCurve, null);
+  assert.deepEqual(evidence.runs.map(run => run.curve).sort(), ['bls12-381', 'bn254']);
+  for (const run of evidence.runs) {
+    assert.equal(run.status, 'measured');
+    assert.equal(run.physicalDevice, false);
+    assert.equal(run.device.class, 'desktop');
+    assert.equal(run.proofSystem, 'groth16');
+    assert.ok(run.circuit.constraintCount > 0);
+    assert.ok(run.circuit.provingKeyBytes > 0);
+    assert.ok(run.proof.jsonBytes > 0);
+    assert.ok(run.proving.p50Ms > 0);
+    assert.ok(run.proving.p95Ms >= run.proving.p50Ms);
+    assert.ok(run.proving.peakRssBytes > 0);
+    assert.ok(run.verification.p50Ms > 0);
+    assert.equal(run.contract.status, 'pending');
+    for (const field of [
+      'instructions',
+      'readBytes',
+      'writeBytes',
+      'resourceFeeStroops',
+      'transactionBytes',
+    ]) assert.equal(field in run.contract, true);
+  }
+  assert.deepEqual(
+    evidence.pendingPhysicalDevices.map(item => item.browser).sort(),
+    ['Android Chrome', 'iOS Safari'],
+  );
+});
+
+test('curve benchmark rejects empty and fabricated phone evidence', () => {
+  const evidence = JSON.parse(readFileSync(
+    new URL('../protocol/private-balance/results/curve-benchmark.json', import.meta.url),
+    'utf8',
+  ));
+  assert.throws(
+    () => validateCurveBenchmarkEvidence({ ...evidence, runs: [] }),
+    /exactly one measured run per curve/i,
+  );
+  assert.throws(
+    () => validateCurveBenchmarkEvidence({
+      ...evidence,
+      runs: evidence.runs.map((run, index) => index === 0
+        ? { ...run, physicalDevice: true, device: { ...run.device, class: 'desktop' } }
+        : run),
+    }),
+    /physical phone evidence/i,
+  );
+  assert.throws(
+    () => validateCurveBenchmarkEvidence({
+      ...evidence,
+      decision: { ...evidence.decision, selectedCurve: 'bn254' },
+    }),
+    /must not select a curve/i,
   );
 });
