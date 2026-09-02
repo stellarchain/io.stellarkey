@@ -54,7 +54,7 @@
   },
   "release": {
     "contractWasmSha256": "073a2ad51ff05e697b03a45143eb399655650d1f07cdbd59149b45046d3ce182",
-    "contractSourceCommit": "b1e6e5f40cae616db9dee53d83ed4951cebbf91e",
+    "contractSourceCommit": "fa593690647bab54e3819fffb782d75a320450c7",
     "circuitSourceSha256": "dbd6ab35846290135c86f3648565dcbd2f4d2443b34d114dcaeb4f4b5a162acf",
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
