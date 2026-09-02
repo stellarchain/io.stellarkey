@@ -34,7 +34,7 @@ const hex = value => Buffer.from(value).toString('hex');
 
 test('scanner maps envelope trials concurrently in bounded ordered batches', async () => {
   assert.equal(typeof scannerModule.mapInBoundedBatches, 'function');
-  assert.equal(scannerModule.SCAN_ENVELOPE_BATCH_SIZE, 64);
+  assert.equal(scannerModule.SCAN_ENVELOPE_BATCH_SIZE, 8);
   let active = 0;
   let peak = 0;
   const values = Array.from({ length: 145 }, (_, index) => index);

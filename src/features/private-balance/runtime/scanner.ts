@@ -161,7 +161,7 @@ function classifyActivity(
   return { actionKind, amount: amount.toString(), direction };
 }
 
-export const SCAN_ENVELOPE_BATCH_SIZE = 64;
+export const SCAN_ENVELOPE_BATCH_SIZE = 8;
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0));
