@@ -119,11 +119,9 @@ export function computeNullifier(
 export function computeDummyNullifier(
   contextField: Uint8Array,
   dummySecret: Uint8Array,
-  lane: number,
 ): Uint8Array {
-  if (lane !== 0 && lane !== 1) throw new Error('Invalid dummy input lane');
   if (!isCanonicalField(dummySecret) || dummySecret.every(byte => byte === 0)) {
     throw new Error('Invalid dummy nullifier secret');
   }
-  return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret, bigintTo32Bytes(BigInt(lane))]);
+  return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret]);
 }

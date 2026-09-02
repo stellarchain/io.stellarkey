@@ -26,20 +26,63 @@ test('private reproducibility rebuild pins the same O2 compiler mode', () => {
   assert.match(invocation[1], /['"]--O2['"]/, 'reproducibility must rebuild the shipped O2 circuit');
 });
 
-test('private proving-key checks pin and authenticate the pot15 ceremony input', () => {
+test('private action circuit performs one range decomposition for equal totals', () => {
+  const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
+  const totalRangeChecks = actionCircuit.match(
+    /component total(?:Input|Output)Range = CheckBits\(63\);/gu,
+  ) ?? [];
+
+  assert.equal(totalRangeChecks.length, 1);
+  assert.match(actionCircuit, /totalInput === totalOutput;/u);
+});
+
+test('private action circuit derives output roles from committed values', () => {
+  const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
+  const actionBuilder = readFileSync(
+    join(process.cwd(), 'src/features/private-balance/worker/action-builder.ts'),
+    'utf8',
+  );
+
+  assert.doesNotMatch(actionCircuit, /signal input outputReal/u);
+  assert.match(actionCircuit, /outputReal\[j\] <== 1 - outputValueZero\[j\]\.out;/u);
+  assert.doesNotMatch(actionBuilder, /outputReal:/u);
+});
+
+test('private action circuit uses a depth-17 ternary Merkle path', () => {
+  const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
+  const merkleCircuit = readFileSync(join(circuitsDir, 'circom/merkle.circom'), 'utf8');
+
+  assert.match(actionCircuit, /inputSiblings\[2\]\[17\]\[2\]/u);
+  assert.match(actionCircuit, /inputPositions\[2\]\[17\]/u);
+  assert.match(actionCircuit, /MerklePath\(17\)/u);
+  assert.match(merkleCircuit, /component hasher = Poseidon2Hash\(3\);/u);
+  assert.doesNotMatch(merkleCircuit, /DOMAIN_MERKLE_NODE/u);
+});
+
+test('pool contract shares the canonical ternary Merkle hash primitive', () => {
+  const contract = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/contract.rs'),
+    'utf8',
+  );
+
+  assert.match(contract, /tree::\{EMPTY_ROOTS, hash_merkle_node\}/u);
+  assert.doesNotMatch(contract, /p2\("SKSB_MERKLE_NODE_V1"/u);
+});
+
+test('private proving-key checks pin and authenticate the pot14 ceremony input', () => {
   const transcriptScript = readFileSync(join(circuitsDir, 'scripts/powers-of-tau.mjs'), 'utf8');
   const verifier = readFileSync(join(circuitsDir, 'scripts/verify-proving-key.mjs'), 'utf8');
 
-  assert.match(transcriptScript, /powersOfTau28_hez_final_15\.ptau/);
+  assert.match(transcriptScript, /powersOfTau28_hez_final_14\.ptau/);
   assert.match(
     transcriptScript,
-    /3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f/,
+    /489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d/,
   );
   assert.match(transcriptScript, /assertPowersOfTau/);
   assert.match(transcriptScript, /rmSync\(path, \{ force: true \}\)/);
   assert.match(verifier, /ensurePowersOfTau/);
   assert.match(verifier, /'zkey', 'verify'/);
-  assert.doesNotMatch(transcriptScript, /pot17|final_17/);
+  assert.doesNotMatch(transcriptScript, /pot15|final_15/);
 });
 
 test('private artifact generation refreshes and checks proving-key-bound proof vectors', () => {
@@ -108,10 +151,17 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.equal(existsSync(evidencePath), true, 'review evidence must exist');
 
   const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
-  assert.equal(evidence.schemaVersion, 1);
+  assert.equal(evidence.schemaVersion, 2);
   assert.match(evidence.revision, /^[0-9a-f]{40}$/u);
   assert.equal(evidence.circuit.baseline.publicInputs, 13);
   assert.equal(evidence.circuit.baseline.constraints, 23_437);
+  assert.equal(evidence.circuit.laneFree.constraints, 22_909);
+  assert.equal(evidence.circuit.singleTotalRange.constraints, 22_846);
+  assert.equal(evidence.circuit.derivedOutputRoles.constraints, 22_844);
+  assert.equal(evidence.circuit.ternaryDepth17.constraints, 14_876);
+  assert.equal(evidence.circuit.ternaryDepth17.publicInputs, 13);
+  assert.equal(evidence.circuit.ternaryDepth17.privateInputs, 124);
+  assert.ok(evidence.circuit.reductionPercent > 36);
   assert.ok(evidence.x25519.trials >= 3);
   assert.ok(evidence.x25519.samplesPerTrial >= 100);
   for (const measurement of [

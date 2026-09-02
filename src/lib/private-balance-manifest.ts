@@ -98,8 +98,8 @@ const HEX_32 = /^[0-9a-f]{64}$/;
 const CONTRACT_ADDRESS = /^C[A-Z2-7]{55}$/;
 const ACCOUNT_ADDRESS = /^G[A-Z2-7]{55}$/;
 const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
-  treeDepth: 32,
-  treeArity: 2,
+  treeDepth: 17,
+  treeArity: 3,
   rootWindowLedgers: 1440,
   pageCapacity: 32,
   maxPagesPerTouch: 4,

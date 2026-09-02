@@ -55,10 +55,9 @@ template ActionCircuit() {
     signal input inputValue[2];
     signal input inputRho[2];
     signal input inputLeafIndex[2];
-    signal input inputSiblings[2][32];
-    signal input inputDirectionBits[2][32];
+    signal input inputSiblings[2][17][2];
+    signal input inputPositions[2][17];
 
-    signal input outputReal[2];
     signal input outputOwnerCommitment[2];
     signal input outputValue[2];
     signal input outputRho[2];
@@ -158,9 +157,10 @@ template ActionCircuit() {
         inputDummy[i] * inputLeafIndex[i] === 0;
         inputDummy[i] * inputDummySecretZero[i].out === 0;
         inputReal[i] * inputDummySecret[i] === 0;
-        for (var l = 0; l < 32; l++) {
-            inputDummy[i] * inputSiblings[i][l] === 0;
-            inputDummy[i] * inputDirectionBits[i][l] === 0;
+        for (var l = 0; l < 17; l++) {
+            inputDummy[i] * inputSiblings[i][l][0] === 0;
+            inputDummy[i] * inputSiblings[i][l][1] === 0;
+            inputDummy[i] * inputPositions[i][l] === 0;
         }
 
         // A real lane has nonzero note fields and the shared owner.
@@ -191,17 +191,17 @@ template ActionCircuit() {
         inputDummyNullifier[i] = DummyNullifier();
         inputDummyNullifier[i].contextField <== contextField;
         inputDummyNullifier[i].dummySecret <== inputDummySecret[i];
-        inputDummyNullifier[i].lane <== i;
         selectedNullifier[i] <== inputDummyNullifier[i].out
             + inputReal[i] * (inputNullifier[i].out - inputDummyNullifier[i].out);
         selectedNullifier[i] === nullifier[i];
 
-        inputPath[i] = MerklePath(32);
+        inputPath[i] = MerklePath(17);
         inputPath[i].leaf <== inputNote[i].out;
         inputPath[i].leafIndex <== inputLeafIndex[i];
-        for (var p = 0; p < 32; p++) {
-            inputPath[i].siblings[p] <== inputSiblings[i][p];
-            inputPath[i].directionBits[p] <== inputDirectionBits[i][p];
+        for (var p = 0; p < 17; p++) {
+            inputPath[i].siblings[p][0] <== inputSiblings[i][p][0];
+            inputPath[i].siblings[p][1] <== inputSiblings[i][p][1];
+            inputPath[i].positions[p] <== inputPositions[i][p];
         }
         inputReal[i] * (inputPath[i].root - anchorRoot) === 0;
     }
@@ -228,16 +228,16 @@ template ActionCircuit() {
     component outputRhoZero[2];
     component outputCommitmentZero[2];
     component outputNote[2];
+    signal outputReal[2];
     signal outputDummy[2];
 
     for (var j = 0; j < 2; j++) {
-        outputReal[j] * (1 - outputReal[j]) === 0;
-        outputDummy[j] <== 1 - outputReal[j];
-
         outputValueRange[j] = CheckBits(63);
         outputValueRange[j].in <== outputValue[j];
         outputValueZero[j] = IsZero();
         outputValueZero[j].in <== outputValue[j];
+        outputReal[j] <== 1 - outputValueZero[j].out;
+        outputDummy[j] <== outputValueZero[j].out;
         outputOwnerZero[j] = IsZero();
         outputOwnerZero[j].in <== outputOwnerCommitment[j];
         outputRhoZero[j] = IsZero();
@@ -279,9 +279,7 @@ template ActionCircuit() {
     totalInput === totalOutput;
 
     component totalInputRange = CheckBits(63);
-    component totalOutputRange = CheckBits(63);
     totalInputRange.in <== totalInput;
-    totalOutputRange.in <== totalOutput;
 
     component anchorZero = IsZero();
     anchorZero.in <== anchorRoot;

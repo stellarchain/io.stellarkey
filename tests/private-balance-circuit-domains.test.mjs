@@ -13,7 +13,6 @@ const domains = [
   ['note.circom', 'DOMAIN_NOTE_COMMITMENT', 'SKSB_NOTE_COMMITMENT_V1'],
   ['nullifier.circom', 'DOMAIN_NULLIFIER', 'SKSB_NULLIFIER_V1'],
   ['nullifier.circom', 'DOMAIN_DUMMY_NULLIFIER', 'SKSB_DUMMY_NULLIFIER_V1'],
-  ['merkle.circom', 'DOMAIN_MERKLE_NODE', 'SKSB_MERKLE_NODE_V1'],
   ['action_binding.circom', 'DOMAIN_ACTION_BINDING', 'SKSB_ACTION_BINDING_V1'],
 ];
 

@@ -37,7 +37,7 @@ const manifest = {
       vkBinSha256: 'a5'.repeat(32),
     },
     constants: {
-      treeDepth: 32,
+      treeDepth: 17,
       pageCapacity: 32,
       publicInputs: 13,
       notePlaintextBytes: 128,
@@ -104,7 +104,7 @@ test('worker client: transfers the exact standalone root with public derivation 
           activities: [],
           tree: {
             nextIndex: 0,
-            frontier: Array.from({ length: 32 }, () => new Uint8Array(32)),
+            frontier: Array.from({ length: 34 }, () => new Uint8Array(32)),
             currentRoot: new Uint8Array(32),
           },
           lastRecordHash: new Uint8Array(32),

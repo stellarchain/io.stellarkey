@@ -22,7 +22,7 @@ function head(actionCount, marker = actionCount) {
       poseidon2ParameterHash: bytes(3),
       circuitHash: bytes(4),
       verificationKeyHash: bytes(5),
-      treeDepth: 32,
+      treeDepth: 17,
       rootWindowLedgers: 1_440,
       pageCapacity: 32,
       deploymentBindingHash: bytes(6),
@@ -32,7 +32,7 @@ function head(actionCount, marker = actionCount) {
     meta: { actionCount, transcriptHead: bytes(marker) },
     tree: {
       nextIndex: actionCount * 2,
-      frontier: Array.from({ length: 32 }, () => bytes(marker)),
+      frontier: Array.from({ length: 34 }, () => bytes(marker)),
       currentRoot: bytes(marker),
     },
   };

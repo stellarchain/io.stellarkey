@@ -333,7 +333,7 @@ test('sync resumes a bounded number of times when the contract advances mid-scan
     },
     tree: {
       nextIndex: 0,
-      frontier: Array.from({ length: 32 }, () => bytes(0)),
+      frontier: Array.from({ length: 34 }, () => bytes(0)),
       currentRoot: bytes(0),
     },
   });
@@ -435,7 +435,7 @@ test('sync uses the injected corroborated head for both boundary checks', async 
     meta: { actionCount: 0, transcriptHead: bytes(0) },
     tree: {
       nextIndex: 0,
-      frontier: Array.from({ length: 32 }, () => bytes(0)),
+      frontier: Array.from({ length: 34 }, () => bytes(0)),
       currentRoot: bytes(0),
     },
   };

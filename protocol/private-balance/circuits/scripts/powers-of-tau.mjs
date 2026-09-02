@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const POWERS_OF_TAU_SHA256 =
-  '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f';
+  '489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d';
 export const POWERS_OF_TAU_URL =
-  'https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_15.ptau';
+  'https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_14.ptau';
 
 export function assertPowersOfTau(path) {
   const actual = createHash('sha256').update(readFileSync(path)).digest('hex');

@@ -171,7 +171,10 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
   assert.notDeepEqual(prepared.action.nullifiers[0], prepared.action.nullifiers[1]);
   assert.equal(prepared.circuitInputs.ask, '0');
   assert.equal(prepared.circuitInputs.nk, '0');
-  assert.deepEqual([...prepared.circuitInputs.outputReal].sort(), ['0', '1']);
+  assert.deepEqual(
+    [...prepared.circuitInputs.outputValue].sort((left, right) => Number(left) - Number(right)),
+    ['0', '5000000'],
+  );
   assert.equal(prepared.action.outputs.every(output => (
     output.cm.some(byte => byte !== 0)
     && output.recipientEnvelope.some(byte => byte !== 0)
@@ -229,7 +232,7 @@ test('rotating the receive address cannot corrupt canonical self outputs', async
     },
   });
 
-  const realLane = prepared.circuitInputs.outputReal.indexOf('1');
+  const realLane = prepared.circuitInputs.outputValue.findIndex(value => value !== '0');
   const recovered = await openRecipientEnvelope(
     owner.hpkePrivateKey,
     prepared.action.outputs[realLane].recipientEnvelope,
@@ -299,20 +302,21 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.inputValue, '10');
   assert.equal(prepared.changeValue, '4');
   assert.deepEqual([...prepared.circuitInputs.inputReal].sort(), ['0', '1']);
-  assert.deepEqual(prepared.circuitInputs.outputReal, ['1', '1']);
+  assert.equal(prepared.circuitInputs.outputValue.every(value => value !== '0'), true);
   const realInputLane = prepared.circuitInputs.inputReal.indexOf('1');
   assert.equal(prepared.circuitInputs.inputLeafIndex[realInputLane], '0');
-  assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 32);
-  assert.equal(prepared.circuitInputs.inputDirectionBits[realInputLane].length, 32);
+  assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 17);
+  assert.equal(prepared.circuitInputs.inputPositions[realInputLane].length, 17);
   assert.equal(prepared.action.outputs[0].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);
   assert.equal(prepared.publicSignals.length, 13);
   const tamperedPath = {
     ...merklePath,
-    siblings: merklePath.siblings.map((sibling, index) =>
-      index === 0 ? bytes(31) : sibling.slice()),
-    directionBits: [...merklePath.directionBits],
+    siblings: merklePath.siblings.map((siblings, index) => (
+      index === 0 ? [bytes(31), siblings[1].slice()] : siblings.map(node => node.slice())
+    )),
+    positions: [...merklePath.positions],
   };
   await assert.rejects(
     () => preparePrivateAction({

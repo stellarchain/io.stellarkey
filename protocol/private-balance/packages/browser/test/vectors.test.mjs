@@ -532,7 +532,7 @@ test('note: encode and decode plaintext', () => {
 test('tree: create empty tree and append leaves', async () => {
   const tree = await createEmptyTree();
   assert.equal(tree.nextIndex, 0);
-  assert.equal(tree.frontier.length, 32);
+  assert.equal(tree.frontier.length, 34);
 
   const leaf0 = new Uint8Array(32).fill(0x01);
   const leaf1 = new Uint8Array(32).fill(0x02);
@@ -557,8 +557,8 @@ test('tree: public node store rebuilds exact local witness paths', async () => {
 
   const path = await store.getPath(1);
   assert.deepEqual(path.leaf, leaves[1]);
-  assert.deepEqual(path.siblings[0], leaves[0]);
-  assert.deepEqual(path.directionBits.slice(0, 3), [1, 0, 0]);
+  assert.deepEqual(path.siblings[0], [leaves[0], leaves[2]]);
+  assert.deepEqual(path.positions.slice(0, 3), [1, 0, 0]);
   assert.deepEqual(path.root, tree.currentRoot);
   await assert.rejects(() => store.getPath(4), /not present/i);
 });

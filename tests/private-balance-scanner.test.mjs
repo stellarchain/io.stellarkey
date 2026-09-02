@@ -12,13 +12,19 @@ import {
   computeRecordHash,
   createEmptyTree,
   createOutputPackage,
+  deriveOutgoingAad,
   deriveDiversifiedAddressKeys,
   deriveKeysFromSeed,
+  derivePrivateAddressDeploymentTag,
+  encodeOutgoingPlaintext,
+  encodePrivateAddress,
   encodeNotePlaintext,
+  sealOutgoingEnvelope,
   toViewingKey,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
 import { scanArchiveRecords } from '../src/features/private-balance/runtime/scanner.ts';
+import { privateAddressFingerprint } from '../src/features/private-balance/runtime/receive.ts';
 
 const zero = (length) => new Uint8Array(length);
 const bytes = (value, length = 32) => new Uint8Array(length).fill(value);
@@ -163,6 +169,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -264,6 +272,37 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       outgoingEnvelope: bytes(25, 157),
     },
   ];
+  for (const [outputIndex, output] of transferOutputs.entries()) {
+    const outgoingNote = outputIndex === 0 ? recipientNote : changeNote;
+    const recipientPublicKey = outputIndex === 0
+      ? recipientKeys.hpkePublicKey
+      : keys.hpkePublicKey;
+    const outgoingPlaintext = encodeOutgoingPlaintext({
+      protocolVersion: 1,
+      flags: 0,
+      value: outgoingNote.value,
+      diversifier: outgoingNote.diversifier,
+      ownerCommitment: outgoingNote.ownerCommitment,
+      recipientHpkePublicKey: recipientPublicKey,
+      memoLength: outgoingNote.memoLength,
+      memo: outgoingNote.memo,
+      reserved: zero(15),
+    });
+    output.outgoingEnvelope = await sealOutgoingEnvelope(
+      keys.outgoingViewingKey,
+      output.recipientEnvelope.slice(5, 37),
+      outgoingPlaintext,
+      deriveOutgoingAad(
+        deploymentBindingHash,
+        contextHash,
+        assetField,
+        output.cm,
+        transferNonce,
+        outputIndex,
+      ),
+      bytes(30 + outputIndex, 12),
+    );
+  }
   const transferNullifier = computeNullifier(
     contextField,
     keys.nk,
@@ -313,6 +352,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -336,8 +377,17 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       { actionKind: 'transfer', amount: '30000000', direction: 'outflow' },
     ],
   );
-  assert.equal('recipientFingerprint' in transferResult.activities[1], false);
-  assert.equal('memoHex' in transferResult.activities[1], false);
+  const recipientAddress = encodePrivateAddress({
+    deploymentTag: derivePrivateAddressDeploymentTag(deploymentBindingHash),
+    diversifier: recipientNote.diversifier,
+    ownerCommitment: recipientNote.ownerCommitment,
+    hpkePublicKey: recipientKeys.hpkePublicKey,
+  }, 'tskpay_');
+  assert.equal(
+    transferResult.activities[1].recipientFingerprint,
+    privateAddressFingerprint(recipientAddress),
+  );
+  assert.equal(transferResult.activities[1].memoHex, Buffer.from('pay').toString('hex'));
 
   const recipientTransferResult = await scanArchiveRecords({
     records: [record, transferRecord],
@@ -349,6 +399,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -408,6 +460,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       poolId,
       contextHash,
       contextField,
+      deploymentBindingHash,
+      addressPrefix: 'tskpay_',
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -433,6 +487,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         poolId,
         contextHash,
         contextField,
+        deploymentBindingHash,
+        addressPrefix: 'tskpay_',
       },
       expectedPriorRecordHash: priorRecordHash,
     }),
@@ -449,6 +505,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         poolId,
         contextHash,
         contextField,
+        deploymentBindingHash,
+        addressPrefix: 'tskpay_',
       },
       expectedPriorRecordHash: priorRecordHash,
     }),

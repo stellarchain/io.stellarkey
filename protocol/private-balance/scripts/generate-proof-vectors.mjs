@@ -26,16 +26,21 @@ const {
 const fromHex = (value) => Uint8Array.from(value.match(/../g), (byte) => Number.parseInt(byte, 16));
 const fieldDecimal = (value) => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
 const fieldBytes = (value) => fromHex(BigInt(value).toString(16).padStart(64, '0'));
-const directionBitsFor = (leafIndex) => {
-  const value = BigInt(leafIndex);
-  return Array.from({ length: 32 }, (_, index) => ((value >> BigInt(index)) & 1n).toString());
+const positionsFor = (leafIndex) => {
+  let value = BigInt(leafIndex);
+  return Array.from({ length: 17 }, () => {
+    const position = value % 3n;
+    value /= 3n;
+    return position.toString();
+  });
 };
+const emptySiblings = () => Array.from({ length: 17 }, () => ['0', '0']);
 
 const helperWasm = readFileSync(helperWasmPath);
 const wcModule = await import(join(circuitsDir, 'node_modules/circom_runtime/js/witness_calculator.js'));
 const helper = await wcModule.default(helperWasm);
 
-async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = new Array(32).fill('0'), actionField = '0' }) {
+async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings(), actionField = '0' }) {
   const wtns = await helper.calculateWitness({
     contextField: contextField.toString(),
     assetField: assetField.toString(),
@@ -45,8 +50,8 @@ async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', dive
     rho: rho.toString(),
     value: value.toString(),
     leafIndex: leafIndex.toString(),
-    siblings: siblings.map(s => s.toString()),
-    directionBits: directionBitsFor(leafIndex),
+    siblings: siblings.map(level => level.map(String)),
+    positions: positionsFor(leafIndex),
     actionField: actionField.toString(),
   });
   return {
@@ -91,10 +96,9 @@ async function generateVectors() {
       ),
     ),
   );
-  const dummyNullifier = (secret, lane) => fieldDecimal(computeDummyNullifier(
+  const dummyNullifier = secret => fieldDecimal(computeDummyNullifier(
     fieldBytes(contextField),
     fieldBytes(secret),
-    lane,
   ));
   const depActionKindField = '1';
   const depAnchorRoot = '0';
@@ -116,7 +120,7 @@ async function generateVectors() {
     rho: '88888',
     value: '0',
   });
-  const depDummyNullifiers = [dummyNullifier('901', 0), dummyNullifier('902', 1)];
+  const depDummyNullifiers = [dummyNullifier('901'), dummyNullifier('902')];
   const depAction = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
@@ -157,10 +161,9 @@ async function generateVectors() {
     inputValue: ['0', '0'],
     inputRho: ['0', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputReal: ['1', '0'],
     outputOwnerCommitment: [depGadgets.ownerCommitment, depDummyOutput.ownerCommitment],
     outputValue: ['5000000', '0'],
     outputRho: ['77777', '88888'],
@@ -180,7 +183,7 @@ async function generateVectors() {
     rho: '33333',
     value: '10000000',
     leafIndex: '0',
-    siblings: new Array(32).fill('0'),
+    siblings: emptySiblings(),
   });
 
   const out0Res = await evalGadgets({
@@ -200,7 +203,7 @@ async function generateVectors() {
     rho: '55555',
     value: '3999000',
   });
-  const trDummyNullifier = dummyNullifier('903', 1);
+  const trDummyNullifier = dummyNullifier('903');
   const trAction = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
@@ -244,10 +247,9 @@ async function generateVectors() {
     inputValue: ['10000000', '0'],
     inputRho: ['33333', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputReal: ['1', '1'],
     outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment],
     outputValue: ['6000000', '3999000'],
     outputRho: ['44444', '55555'],
@@ -267,7 +269,7 @@ async function generateVectors() {
     rho: '33333',
     value: '10000000',
     leafIndex: '0',
-    siblings: new Array(32).fill('0'),
+    siblings: emptySiblings(),
   });
 
   const wdOut0Res = await evalGadgets({
@@ -286,7 +288,7 @@ async function generateVectors() {
     rho: '99999',
     value: '0',
   });
-  const wdDummyNullifier = dummyNullifier('904', 1);
+  const wdDummyNullifier = dummyNullifier('904');
   const wdAction = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
@@ -331,10 +333,9 @@ async function generateVectors() {
     inputValue: ['10000000', '0'],
     inputRho: ['33333', '0'],
     inputLeafIndex: ['0', '0'],
-    inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
-    inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
+    inputSiblings: [emptySiblings(), emptySiblings()],
+    inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputReal: ['1', '0'],
     outputOwnerCommitment: [wdOut0Res.ownerCommitment, wdDummyOutput.ownerCommitment],
     outputValue: ['2998000', '0'],
     outputRho: ['66666', '99999'],

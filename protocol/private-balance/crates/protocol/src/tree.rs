@@ -1,11 +1,11 @@
-use crate::constants::{DOMAIN_MERKLE_NODE, TREE_DEPTH};
-use crate::poseidon2::p2;
+use crate::constants::{TREE_ARITY, TREE_CAPACITY, TREE_DEPTH, TREE_FRONTIER_WIDTH};
+use crate::poseidon2::poseidon2_hash;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeState {
     pub root: [u8; 32],
     pub next_leaf_index: u64,
-    pub frontier: [[u8; 32]; TREE_DEPTH],
+    pub frontier: [[[u8; 32]; TREE_FRONTIER_WIDTH]; TREE_DEPTH],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,138 +28,24 @@ const fn root_bytes(words: [u128; 2]) -> [u8; 32] {
 }
 
 const EMPTY_ROOT_WORDS: [[u128; 2]; TREE_DEPTH + 1] = [
-    [
-        0x00000000000000000000000000000000,
-        0x00000000000000000000000000000000,
-    ],
-    [
-        0x0f7c2789476dc071529b9e3b40c2ec7a,
-        0x80d6e713e9589457abc7b25191b67b29,
-    ],
-    [
-        0x0d43ebf9e470ed8a96f853e933a0f478,
-        0x8114fb3ccc2e82a03305e89f25825d80,
-    ],
-    [
-        0x24bc9221ecc1487fca1d18ef95fec226,
-        0xaad4c9d5e8da83e8cdd539950cf27d05,
-    ],
-    [
-        0x0c12d256cb26917631491388432ee0db,
-        0x2b8dd5ed37e4ce9403506bcaee3ef157,
-    ],
-    [
-        0x0357f785c10179e3117163d89cc48331,
-        0x6f41c8fc644708a6645e1f00fd1facbd,
-    ],
-    [
-        0x2706d06eb5f7abeaf81abaf30655c10b,
-        0x1440cb8dd9e57cf5923f6792bebfc01e,
-    ],
-    [
-        0x1c7d88c18f76ebc6352d1a5e6fac337a,
-        0x9d93c9eb44bef2075d81a3661410b88d,
-    ],
-    [
-        0x0a7489501fbf8f1d7867ec2095d44378,
-        0x1279a038332a9b73c42202e483554ed6,
-    ],
-    [
-        0x0e4646e28c25e7d0714a896be3b5acaf,
-        0x6c9904a847ae8ef52c890e8fef9dbc9c,
-    ],
-    [
-        0x04d25dff536b2ccb34ecd8bc0bb2b52a,
-        0xaed25f2d6f97b09977d3b9c8bbb5d291,
-    ],
-    [
-        0x0f671dfa78647b718b165884aaea767b,
-        0x768a022fb92aed7c499d8a810ab57165,
-    ],
-    [
-        0x1b7981da3b6295881a39edcdeb3818eb,
-        0x8a81a3648b2f770d3d2d01ffb3b41ef2,
-    ],
-    [
-        0x20152fa61dba4d8e5fb0905d2eaac530,
-        0x31a6660dd36061ab0bd5c481ca00f503,
-    ],
-    [
-        0x2dac8eb58b489bd74c29903b587577a4,
-        0x80bf4f14a17d1930f4826a2c120d2fa7,
-    ],
-    [
-        0x1b2e05e523ce6f2ca56454a2009da308,
-        0x9c1a203b469b6b9099026277c5443698,
-    ],
-    [
-        0x1ce1c933da4f4292af1d720984f1e338,
-        0xa4543896050721705009d0d1472d5cb4,
-    ],
-    [
-        0x2aedbd2263c29d05fe25fab45e0e302a,
-        0x278edf9f3277d6b46c66c482abb90a08,
-    ],
-    [
-        0x2852eb6024eb6d5b1b6b5d6936071fbe,
-        0x737576dc1d357b25e2f7b328c386f0cd,
-    ],
-    [
-        0x00e15bc0b2b424ea06eba41ab1a54d1a,
-        0xa1daa901fa060b88b085910d70db2714,
-    ],
-    [
-        0x04e44ef91546201b5773e875afe66399,
-        0x8100a33d0f53d696849f995b4eed05e7,
-    ],
-    [
-        0x1c77e58c802f130c845557decc519dbb,
-        0xda2c34a20df7cf28ede07be9ab742066,
-    ],
-    [
-        0x2d74985d79db03f7ba598806a3f9fe4e,
-        0xae3a3bb7e292ddfc52112d351983d590,
-    ],
-    [
-        0x226bf0a63692ab678e01ca37df94e03e,
-        0x9a652bdc932daa2de6e81896045b3375,
-    ],
-    [
-        0x1d981537f02514ae15cb7ed1718653e5,
-        0xed2b03b11b36ba9a3fc712e71bffdd6d,
-    ],
-    [
-        0x2cc19110b437ead061a0ebf0340e79cc,
-        0xeb397b4deed01bc109f8f1b8502ad098,
-    ],
-    [
-        0x14ab202bdc00e9241e1c9926c5c5492c,
-        0x8eb6e776a4be09639cc66acbe24382e4,
-    ],
-    [
-        0x19859c8232ddf1c519cc4aadf011c89e,
-        0xfd90ca30b40b8a96fa557d4142299ab8,
-    ],
-    [
-        0x28c184e7fbb8b63c6d88ac9f3ec43161,
-        0xe8b4ba171a8205ffadec8236971f71ea,
-    ],
-    [
-        0x2fde26459b3f7e57e665c5f3a71a80c7,
-        0x488d2458403818ad939a89100eb118b7,
-    ],
-    [
-        0x0084be1c34626938ca37c98f70d466b2,
-        0x7c114132624f767b0979e4a4ee80fd77,
-    ],
-    [
-        0x0268d5cc1e50f7ca209a3bdfa176e47e,
-        0xf2a0d0b4f0cb11b03ba6df0bf6a8d3b0,
-    ],
-    [
-        0x047585958785546e518e72d1bbfb7c57,
-        0x3205c35c332e0b876f60218918401a59,
-    ],
+    [0x00000000000000000000000000000000, 0x00000000000000000000000000000000],
+    [0x2a5de47ed300af27b706aaa14762fc46, 0x8f5cfc16cd8116eb6b09b0f2643ca2b9],
+    [0x1070e389d2a8c6c59df016833644d786, 0xbc20cd3c02702f8842318abdbc24f2be],
+    [0x0219c4d94d0a6bbedaca37389b257a9d, 0x77b79eb808c6c96aad26b3fedf18623f],
+    [0x1c542f962c10039f740a8df044f0f7a2, 0x4a5e34ddfdb4aceac279219ec138994a],
+    [0x041427ef9d920eea17d39cd01efa15f8, 0x7b5d86bc43d2681fa6e37498625106ab],
+    [0x0ac86b0ef82942a569557943ec260012, 0x6932f3b1d171bb2a2cd54eeae3401868],
+    [0x24a59b2c70ffdd9b05059919fc6d281a, 0x6d9427cd239ade15d9ed1469711d10f0],
+    [0x147afd0d2c07f85eaa70d3d673a1db77, 0x003ee4ab5d0bd821ad0ea66801bda534],
+    [0x2efdede6144d26513da58fab51b1e275, 0x6cbcc5ed29f9f56c231e43c0c451170b],
+    [0x27a77c9a37fa7fc9e205bf22ef812319, 0x9a834ebf1e0f756de5bb587a8ae2280e],
+    [0x02550c437ec27e059f2e0f8a6f3ef0b1, 0x9f76b2aaf418c6258e00c6a6013bcc03],
+    [0x2e512ab7918b5c42e16201af79869aad, 0x6231f2ff0d7988d362bf8c9e71d3ee4d],
+    [0x23246d93d74982acb736c0208daf955e, 0x4c3cba5aec87506e76efe2fb6c598da4],
+    [0x1e01f044649095495c9a65a993d8797d, 0x3d684a047875a15498dfcbc14e12e0c7],
+    [0x16b3a2ff965b9474bf814cc1a3a55859, 0xcbbc83d94ce5628632461871c6447a16],
+    [0x1bdaee57fd2490bdbcd7328fe96f98dc, 0xd62dab5d2818e47d12d8327cc59d4215],
+    [0x23b3e23c0bc898db86d462d5e7a3c7e7, 0xa3f1f4f9409dfc3744feb2fb4cae15a5],
 ];
 
 const fn empty_roots() -> [[u8; 32]; TREE_DEPTH + 1] {
@@ -174,8 +60,8 @@ const fn empty_roots() -> [[u8; 32]; TREE_DEPTH + 1] {
 
 pub const EMPTY_ROOTS: [[u8; 32]; TREE_DEPTH + 1] = empty_roots();
 
-pub fn hash_merkle_parent(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-    p2(DOMAIN_MERKLE_NODE, &[*left, *right])
+pub fn hash_merkle_node(children: &[[u8; 32]; TREE_ARITY]) -> [u8; 32] {
+    poseidon2_hash(children)
 }
 
 pub const fn compute_empty_roots() -> [[u8; 32]; TREE_DEPTH + 1] {
@@ -185,25 +71,27 @@ pub const fn compute_empty_roots() -> [[u8; 32]; TREE_DEPTH + 1] {
 pub fn compute_root_from_path(
     leaf: &[u8; 32],
     leaf_index: u32,
-    siblings: &[[u8; 32]; TREE_DEPTH],
+    siblings: &[[[u8; 32]; TREE_FRONTIER_WIDTH]; TREE_DEPTH],
 ) -> [u8; 32] {
     let mut current = *leaf;
-    let mut index = leaf_index;
-    for sibling in siblings {
-        current = if index & 1 == 0 {
-            hash_merkle_parent(&current, sibling)
-        } else {
-            hash_merkle_parent(sibling, &current)
+    let mut index = u64::from(leaf_index);
+    for level_siblings in siblings {
+        let position = (index % TREE_ARITY as u64) as usize;
+        let children = match position {
+            0 => [current, level_siblings[0], level_siblings[1]],
+            1 => [level_siblings[0], current, level_siblings[1]],
+            2 => [level_siblings[0], level_siblings[1], current],
+            _ => unreachable!(),
         };
-        index >>= 1;
+        current = hash_merkle_node(&children);
+        index /= TREE_ARITY as u64;
     }
     current
 }
 
 impl TreeState {
     pub fn new() -> Self {
-        let mut frontier = [[0u8; 32]; TREE_DEPTH];
-        frontier.copy_from_slice(&EMPTY_ROOTS[..TREE_DEPTH]);
+        let frontier = core::array::from_fn(|level| [EMPTY_ROOTS[level]; TREE_FRONTIER_WIDTH]);
         Self {
             root: EMPTY_ROOTS[TREE_DEPTH],
             next_leaf_index: 0,
@@ -212,39 +100,64 @@ impl TreeState {
     }
 
     pub fn append_frontier(&mut self, leaf: &[u8; 32]) -> Result<(), TreeError> {
-        if self.next_leaf_index >= (1u64 << TREE_DEPTH) {
+        if self.next_leaf_index >= TREE_CAPACITY {
             return Err(TreeError::TreeFull);
         }
         let mut current = *leaf;
         let mut index = self.next_leaf_index;
         let mut level = 0;
-        while index & 1 == 1 {
-            current = hash_merkle_parent(&self.frontier[level], &current);
-            index >>= 1;
-            level += 1;
-        }
-        if level < TREE_DEPTH {
-            self.frontier[level] = current;
-        } else {
-            self.root = current;
+        loop {
+            match index % TREE_ARITY as u64 {
+                0 => {
+                    self.frontier[level][0] = current;
+                    break;
+                }
+                1 => {
+                    self.frontier[level][1] = current;
+                    break;
+                }
+                2 => {
+                    current = hash_merkle_node(&[
+                        self.frontier[level][0],
+                        self.frontier[level][1],
+                        current,
+                    ]);
+                    index /= TREE_ARITY as u64;
+                    level += 1;
+                    if level == TREE_DEPTH {
+                        self.root = current;
+                        break;
+                    }
+                }
+                _ => unreachable!(),
+            }
         }
         self.next_leaf_index += 1;
         Ok(())
     }
 
     pub fn refresh_root(&mut self) -> [u8; 32] {
-        if self.next_leaf_index == (1u64 << TREE_DEPTH) {
+        if self.next_leaf_index == TREE_CAPACITY {
             return self.root;
         }
         let mut current = EMPTY_ROOTS[0];
         let mut index = self.next_leaf_index;
-        for (level, empty_root) in EMPTY_ROOTS.iter().enumerate().take(TREE_DEPTH) {
-            current = if index & 1 == 1 {
-                hash_merkle_parent(&self.frontier[level], &current)
-            } else {
-                hash_merkle_parent(&current, empty_root)
+        for level in 0..TREE_DEPTH {
+            current = match index % TREE_ARITY as u64 {
+                0 => hash_merkle_node(&[current, EMPTY_ROOTS[level], EMPTY_ROOTS[level]]),
+                1 => hash_merkle_node(&[
+                    self.frontier[level][0],
+                    current,
+                    EMPTY_ROOTS[level],
+                ]),
+                2 => hash_merkle_node(&[
+                    self.frontier[level][0],
+                    self.frontier[level][1],
+                    current,
+                ]),
+                _ => unreachable!(),
             };
-            index >>= 1;
+            index /= TREE_ARITY as u64;
         }
         self.root = current;
         current
@@ -260,7 +173,7 @@ impl TreeState {
         cm0: &[u8; 32],
         cm1: &[u8; 32],
     ) -> Result<[u8; 32], TreeError> {
-        if self.next_leaf_index > (1u64 << TREE_DEPTH) - 2 {
+        if self.next_leaf_index > TREE_CAPACITY - 2 {
             return Err(TreeError::TreeFull);
         }
         self.append_frontier(cm0)?;

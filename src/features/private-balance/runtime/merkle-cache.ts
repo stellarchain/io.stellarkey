@@ -1,8 +1,10 @@
 import {
-  DOMAIN_MERKLE,
   EMPTY_ROOTS,
+  TREE_ARITY,
+  TREE_CAPACITY,
   TREE_DEPTH,
-  p2,
+  TREE_FRONTIER_SIZE,
+  hashMerkleNode,
   type MerklePathWitness,
 } from '@stellarkey/private-balance';
 import {
@@ -13,7 +15,7 @@ import type { PrivateBalancePublicCacheContext } from './public-cache';
 
 const CHECKPOINT_KIND = 'public-merkle-checkpoint';
 const NODE_KIND = 'public-merkle-node';
-const RECORD_VERSION = 1;
+const RECORD_VERSION = 2;
 
 export type PrivateBalanceMerkleCacheDriver = Pick<
   EncryptedRecordDriver,
@@ -95,7 +97,7 @@ function contextHex(value: string, name: string): string {
 
 function prefix(context: PrivateBalancePublicCacheContext): string {
   return [
-    'private:merkle:v1',
+    'private:merkle:v2',
     contextHex(context.networkId, 'network ID'),
     contextHex(context.realmId, 'realm ID'),
     contextHex(context.poolId, 'pool ID'),
@@ -134,9 +136,9 @@ function decodeCheckpoint(raw: string): MerkleCheckpointRecord {
     record.version !== RECORD_VERSION ||
     !safeInteger(record.revision) ||
     !safeInteger(record.cursor) ||
-    !safeInteger(record.commitmentCount, 2 ** TREE_DEPTH) ||
+    !safeInteger(record.commitmentCount, TREE_CAPACITY) ||
     !Array.isArray(record.frontier) ||
-    record.frontier.length !== TREE_DEPTH
+    record.frontier.length !== TREE_FRONTIER_SIZE
   ) {
     throw new Error('Private Balance Merkle checkpoint is invalid');
   }
@@ -204,8 +206,8 @@ function validateExpectedCheckpoint(expected: ExpectedPrivateBalanceMerkleCheckp
   decodeHex32(expected.root, 'Expected Merkle root');
   if (
     !safeInteger(expected.cursor) ||
-    !safeInteger(expected.commitmentCount, 2 ** TREE_DEPTH) ||
-    expected.frontier.length !== TREE_DEPTH
+    !safeInteger(expected.commitmentCount, TREE_CAPACITY) ||
+    expected.frontier.length !== TREE_FRONTIER_SIZE
   ) {
     throw new Error('Expected Private Balance Merkle checkpoint is invalid');
   }
@@ -222,10 +224,10 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
     !safeInteger(batch.priorCursor) ||
     !safeInteger(batch.cursor) ||
     batch.cursor <= batch.priorCursor ||
-    !safeInteger(batch.startIndex, 2 ** TREE_DEPTH) ||
+    !safeInteger(batch.startIndex, TREE_CAPACITY) ||
     batch.commitments.length === 0 ||
-    batch.startIndex + batch.commitments.length > 2 ** TREE_DEPTH ||
-    batch.expectedFrontier.length !== TREE_DEPTH
+    batch.startIndex + batch.commitments.length > TREE_CAPACITY ||
+    batch.expectedFrontier.length !== TREE_FRONTIER_SIZE
   ) {
     throw new Error('Verified Private Balance Merkle batch is invalid');
   }
@@ -261,7 +263,9 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
 
   const frontier = current
     ? current.frontier.map((node, index) => decodeHex32(node, `Merkle frontier ${index}`))
-    : EMPTY_ROOTS.slice(0, TREE_DEPTH).map(node => node.slice());
+    : Array.from({ length: TREE_FRONTIER_SIZE }, (_, index) => (
+      EMPTY_ROOTS[Math.floor(index / (TREE_ARITY - 1))].slice()
+    ));
   const entries = new Map<string, string>();
   let count = batch.startIndex;
   let root: Uint8Array = EMPTY_ROOTS[TREE_DEPTH].slice();
@@ -273,36 +277,54 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
     entries.set(nodeKey(context, 0, nodeIndex), serializeNode(0, nodeIndex, currentNode));
 
     let level = 0;
-    while (level < TREE_DEPTH && (nodeIndex & 1) === 1) {
-      currentNode = p2(DOMAIN_MERKLE, [frontier[level], currentNode]);
-      nodeIndex = Math.floor(nodeIndex / 2);
+    for (;;) {
+      const position = nodeIndex % TREE_ARITY;
+      const offset = level * (TREE_ARITY - 1);
+      if (position < TREE_ARITY - 1) {
+        frontier[offset + position] = currentNode.slice();
+        break;
+      }
+      currentNode = hashMerkleNode([
+        frontier[offset],
+        frontier[offset + 1],
+        currentNode,
+      ]);
+      nodeIndex = Math.floor(nodeIndex / TREE_ARITY);
       level += 1;
       entries.set(
         nodeKey(context, level, nodeIndex),
         serializeNode(level, nodeIndex, currentNode),
       );
+      if (level === TREE_DEPTH) break;
     }
-    if (level < TREE_DEPTH) frontier[level] = currentNode.slice();
     count += 1;
 
     let folded: Uint8Array = EMPTY_ROOTS[0].slice();
     let width = count;
     let enteredPopulatedBranch = false;
     for (let foldLevel = 0; foldLevel < TREE_DEPTH; foldLevel += 1) {
-      if ((width & 1) === 1) {
+      const position = width % TREE_ARITY;
+      const offset = foldLevel * (TREE_ARITY - 1);
+      if (position !== 0) {
         enteredPopulatedBranch = true;
-        folded = p2(DOMAIN_MERKLE, [frontier[foldLevel], folded]);
+        folded = position === 1
+          ? hashMerkleNode([frontier[offset], folded, EMPTY_ROOTS[foldLevel]])
+          : hashMerkleNode([frontier[offset], frontier[offset + 1], folded]);
       } else {
-        folded = p2(DOMAIN_MERKLE, [folded, EMPTY_ROOTS[foldLevel]]);
+        folded = hashMerkleNode([
+          folded,
+          EMPTY_ROOTS[foldLevel],
+          EMPTY_ROOTS[foldLevel],
+        ]);
       }
       if (enteredPopulatedBranch && foldLevel + 1 < TREE_DEPTH) {
-        const partialIndex = Math.floor((count - 1) / 2 ** (foldLevel + 1));
+        const partialIndex = Math.floor((count - 1) / TREE_ARITY ** (foldLevel + 1));
         entries.set(
           nodeKey(context, foldLevel + 1, partialIndex),
           serializeNode(foldLevel + 1, partialIndex, folded),
         );
       }
-      width = Math.floor(width / 2);
+      width = Math.floor(width / TREE_ARITY);
     }
     root = folded;
   }
@@ -310,7 +332,7 @@ export async function recordVerifiedPrivateBalanceMerkleBatch(
   if (!equalBytes(root, batch.expectedRoot)) {
     throw new Error('Verified Private Balance Merkle root does not match the archive');
   }
-  for (let index = 0; index < TREE_DEPTH; index += 1) {
+  for (let index = 0; index < TREE_FRONTIER_SIZE; index += 1) {
     if (!equalBytes(frontier[index], batch.expectedFrontier[index])) {
       throw new Error('Verified Private Balance Merkle frontier does not match the archive');
     }
@@ -372,27 +394,36 @@ export async function loadPrivateBalanceMerklePaths(
   const paths: MerklePathWitness[] = [];
   for (const leafIndex of leafIndices) {
     const leaf = await readNode(0, leafIndex);
-    const siblings: Uint8Array[] = [];
-    const directionBits: number[] = [];
+    const siblings: [Uint8Array, Uint8Array][] = [];
+    const positions: number[] = [];
     let current: Uint8Array = leaf.slice();
     for (let level = 0; level < TREE_DEPTH; level += 1) {
-      const currentIndex = Math.floor(leafIndex / 2 ** level);
-      const direction = currentIndex & 1;
-      const siblingIndex = direction === 0 ? currentIndex + 1 : currentIndex - 1;
-      const siblingStart = siblingIndex * 2 ** level;
-      const sibling = siblingStart >= expected.commitmentCount
-        ? EMPTY_ROOTS[level].slice()
-        : await readNode(level, siblingIndex);
-      siblings.push(sibling);
-      directionBits.push(direction);
-      current = direction === 0
-        ? p2(DOMAIN_MERKLE, [current, sibling])
-        : p2(DOMAIN_MERKLE, [sibling, current]);
+      const currentIndex = Math.floor(leafIndex / TREE_ARITY ** level);
+      const position = currentIndex % TREE_ARITY;
+      const firstChildIndex = currentIndex - position;
+      const resolvedChildren = await Promise.all([0, 1, 2].map(
+        async childPosition => {
+          if (childPosition === position) return current;
+          const childIndex = firstChildIndex + childPosition;
+          const childStart = childIndex * TREE_ARITY ** level;
+          return childStart >= expected.commitmentCount
+            ? EMPTY_ROOTS[level].slice()
+            : readNode(level, childIndex);
+        },
+      )) as [Uint8Array, Uint8Array, Uint8Array];
+      siblings.push(
+        resolvedChildren.filter((_, childPosition) => childPosition !== position) as [
+          Uint8Array,
+          Uint8Array,
+        ],
+      );
+      positions.push(position);
+      current = hashMerkleNode(resolvedChildren);
     }
     if (!equalBytes(current, expectedRoot)) {
       throw new Error('Private Balance Merkle path does not match verified checkpoint');
     }
-    paths.push({ leaf, leafIndex, siblings, directionBits, root: current });
+    paths.push({ leaf, leafIndex, siblings, positions, root: current });
   }
   return paths;
 }

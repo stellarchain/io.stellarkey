@@ -48,7 +48,9 @@ function clearCurrentEsk(): void {
   currentAddressDiversifier = null;
 }
 
-function zeroWitnessValue(value: string | string[] | string[][]): void {
+type WitnessValue = string | WitnessValue[];
+
+function zeroWitnessValue(value: WitnessValue): void {
   if (!Array.isArray(value)) return;
   for (let index = 0; index < value.length; index += 1) {
     const item = value[index];
@@ -201,6 +203,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
               keyContext.poolId,
             ),
             contextField: keyContext.contextField,
+            deploymentBindingHash: keyContext.deploymentBindingHash,
+            addressPrefix: keyContext.addressPrefix,
             accountAddress: { kind: 0, payload: keyContext.accountPublicKey },
           },
           expectedPriorRecordHash: req.expectedPriorRecordHash,

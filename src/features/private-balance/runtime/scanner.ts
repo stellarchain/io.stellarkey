@@ -6,6 +6,11 @@ import {
   computeNullifier,
   computeRecordHash,
   createEmptyTree,
+  decodeOutgoingPlaintext,
+  deriveOutgoingAad,
+  derivePrivateAddressDeploymentTag,
+  encodePrivateAddress,
+  openOutgoingEnvelope,
   openRecipientEnvelope,
   refreshTreeRoot,
   type ActionModel,
@@ -16,6 +21,7 @@ import {
 import { StrKey } from '@stellar/stellar-sdk';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { ShieldedActivityRecord, ShieldedNoteRecord } from './types';
+import { privateAddressFingerprint } from './receive';
 
 export interface ArchiveScanContext {
   protocolVersion: number;
@@ -24,6 +30,8 @@ export interface ArchiveScanContext {
   poolId: Uint8Array;
   contextHash: Uint8Array;
   contextField: Uint8Array;
+  deploymentBindingHash: Uint8Array;
+  addressPrefix: 'tskpay_' | 'skpay_';
   accountAddress?: { kind: number; payload: Uint8Array };
 }
 
@@ -77,10 +85,6 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return difference === 0;
 }
 
-function isZero(bytes: Uint8Array): boolean {
-  return bytes.every(byte => byte === 0);
-}
-
 function cloneTree(tree: MerkleTree): MerkleTree {
   return {
     nextIndex: tree.nextIndex,
@@ -121,9 +125,14 @@ function classifyActivity(
   record: ArchiveRecordModel,
   ownedInputValue: bigint,
   ownedOutputValue: bigint,
+  recoveredOutgoingValue: bigint,
   context: ArchiveScanContext,
 ): Pick<ShieldedActivityRecord, 'actionKind' | 'amount' | 'direction'> | null {
-  if (ownedInputValue === 0n && ownedOutputValue === 0n) return null;
+  if (ownedInputValue === 0n && ownedOutputValue === 0n) {
+    return record.actionKind === ActionKind.PrivateTransfer && recoveredOutgoingValue > 0n
+      ? { actionKind: 'transfer', amount: recoveredOutgoingValue.toString(), direction: 'outflow' }
+      : null;
+  }
 
   let direction: ShieldedActivityRecord['direction'];
   let amount: bigint;
@@ -205,7 +214,6 @@ export async function scanArchiveRecords(
 
     let ownedInputValue = 0n;
     for (const nullifier of record.nullifiers) {
-      if (isZero(nullifier)) continue;
       const nullifierHex = hex(nullifier);
       const spentNote = notesByNullifier.get(nullifierHex);
       if (!spentNote) continue;
@@ -219,8 +227,8 @@ export async function scanArchiveRecords(
 
     let ownedOutputValue = 0n;
     let receivedMemoHex: string | undefined;
+    const recoveredRecipients: Array<{ fingerprint: string; memoHex?: string; value: bigint }> = [];
     for (const [outputIndex, output] of record.outputs.entries()) {
-      if (isZero(output.cm)) continue;
       const note = await openRecipientEnvelope(
         input.viewingKey.hpkePrivateKey,
         output.recipientEnvelope,
@@ -232,52 +240,101 @@ export async function scanArchiveRecords(
         outputIndex,
         input.viewingKey.baseOwnerCommitment,
       );
-      if (!note) continue;
-      if (note.flags === 1) continue;
-
-      const commitment = hex(output.cm);
-      const leafIndex = record.startingLeafIndex + outputIndex;
-      const noteId = usedNoteIds.has(commitment)
-        ? duplicateNoteId(output.cm, leafIndex)
-        : commitment;
-      if (usedNoteIds.has(noteId)) {
-        throw new Error('Private note identity collision');
+      const ownedRealOutput = Boolean(note && note.flags === 0);
+      if (note && note.flags === 0) {
+        const commitment = hex(output.cm);
+        const leafIndex = record.startingLeafIndex + outputIndex;
+        const noteId = usedNoteIds.has(commitment)
+          ? duplicateNoteId(output.cm, leafIndex)
+          : commitment;
+        if (usedNoteIds.has(noteId)) {
+          throw new Error('Private note identity collision');
+        }
+        const memoHex = hex(note.memo.slice(0, note.memoLength));
+        const recovered: ShieldedNoteRecord = {
+          id: noteId,
+          commitment,
+          value: note.value.toString(),
+          assetContractId,
+          diversifier: hex(note.diversifier),
+          ownerCommitment: hex(note.ownerCommitment),
+          leafIndex,
+          actionIndex: record.actionIndex,
+          rho: hex(note.rho),
+          memoHex,
+          senderFingerprintHex: '',
+          status: 'unspent',
+          createdAt: input.ledgerClosedAt?.[record.ledgerSequence] ?? 0,
+        };
+        const nullifier = computeNullifier(
+          input.context.contextField,
+          input.viewingKey.nk,
+          note.rho,
+          BigInt(recovered.leafIndex),
+          output.cm,
+        );
+        const nullifierHex = hex(nullifier);
+        notes.push(recovered);
+        usedNoteIds.add(noteId);
+        notesByNullifier.set(nullifierHex, recovered);
+        nullifiersByCommitment.set(noteId, nullifierHex);
+        ownedOutputValue += note.value;
+        if (memoHex) receivedMemoHex ??= memoHex;
       }
-      const memoHex = hex(note.memo.slice(0, note.memoLength));
-      const recovered: ShieldedNoteRecord = {
-        id: noteId,
-        commitment,
-        value: note.value.toString(),
-        assetContractId,
-        diversifier: hex(note.diversifier),
-        ownerCommitment: hex(note.ownerCommitment),
-        leafIndex,
-        actionIndex: record.actionIndex,
-        rho: hex(note.rho),
-        memoHex,
-        senderFingerprintHex: '',
-        status: 'unspent',
-        createdAt: input.ledgerClosedAt?.[record.ledgerSequence] ?? 0,
-      };
-      const nullifier = computeNullifier(
-        input.context.contextField,
-        input.viewingKey.nk,
-        note.rho,
-        BigInt(recovered.leafIndex),
-        output.cm,
+
+      const outgoingBytes = await openOutgoingEnvelope(
+        input.viewingKey.outgoingViewingKey,
+        output.recipientEnvelope.slice(5, 37),
+        output.outgoingEnvelope,
+        deriveOutgoingAad(
+          input.context.deploymentBindingHash,
+          input.context.contextHash,
+          assetField,
+          output.cm,
+          record.actionNonce,
+          outputIndex,
+        ),
       );
-      const nullifierHex = hex(nullifier);
-      notes.push(recovered);
-      usedNoteIds.add(noteId);
-      notesByNullifier.set(nullifierHex, recovered);
-      nullifiersByCommitment.set(noteId, nullifierHex);
-      ownedOutputValue += note.value;
-      if (memoHex) receivedMemoHex ??= memoHex;
+      if (outgoingBytes) {
+        try {
+          if (!ownedRealOutput) {
+            const outgoing = decodeOutgoingPlaintext(outgoingBytes);
+            if (outgoing.flags === 0) {
+              const address = encodePrivateAddress({
+                deploymentTag: derivePrivateAddressDeploymentTag(
+                  input.context.deploymentBindingHash,
+                ),
+                diversifier: outgoing.diversifier,
+                ownerCommitment: outgoing.ownerCommitment,
+                hpkePublicKey: outgoing.recipientHpkePublicKey,
+              }, input.context.addressPrefix);
+              const memoHex = hex(outgoing.memo.slice(0, outgoing.memoLength));
+              recoveredRecipients.push({
+                fingerprint: privateAddressFingerprint(address),
+                ...(memoHex ? { memoHex } : {}),
+                value: outgoing.value,
+              });
+            }
+          }
+        } finally {
+          outgoingBytes.fill(0);
+        }
+      }
     }
 
     for (const output of record.outputs) await appendFrontier(tree, output.cm);
     expectedFinalTreeRoot = record.treeRootAfter;
-    const classification = classifyActivity(record, ownedInputValue, ownedOutputValue, input.context);
+    const recoveredOutgoingValue = recoveredRecipients.reduce(
+      (total, recipient) => total + recipient.value,
+      0n,
+    );
+    const classification = classifyActivity(
+      record,
+      ownedInputValue,
+      ownedOutputValue,
+      recoveredOutgoingValue,
+      input.context,
+    );
     if (classification) {
       activities.push({
         id: hex(expectedActionField),
@@ -285,8 +342,18 @@ export async function scanArchiveRecords(
         assetContractId,
         ...classification,
         timestamp: input.ledgerClosedAt?.[record.ledgerSequence] ?? 0,
-        nullifiers: record.nullifiers.filter(nullifier => !isZero(nullifier)).map(hex),
-        outputCommitments: record.outputs.filter(output => !isZero(output.cm)).map(output => hex(output.cm)),
+        nullifiers: record.nullifiers.map(hex),
+        outputCommitments: record.outputs.map(output => hex(output.cm)),
+        ...(classification.actionKind === 'transfer' &&
+          classification.direction === 'outflow' &&
+          recoveredRecipients.length === 1
+          ? {
+            recipientFingerprint: recoveredRecipients[0].fingerprint,
+            ...(recoveredRecipients[0].memoHex
+              ? { memoHex: recoveredRecipients[0].memoHex }
+              : {}),
+          }
+          : {}),
         ...(classification.actionKind === 'transfer' &&
           classification.direction === 'inflow' &&
           receivedMemoHex

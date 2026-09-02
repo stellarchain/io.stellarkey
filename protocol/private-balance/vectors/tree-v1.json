@@ -7,8 +7,8 @@
     ]
   },
   "expected": {
-    "emptyRoot": "047585958785546e518e72d1bbfb7c573205c35c332e0b876f60218918401a59",
-    "rootAfter": "22195846b686b90e1c01b395b585565d5e6109efa3cdb82c56f54ba4d48d85c3",
+    "emptyRoot": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5",
+    "rootAfter": "164f80da510e08605e907219014c1742395cad3dd0056a3a03e7936cc7d9dd50",
     "nextIndex": 2
   }
 }

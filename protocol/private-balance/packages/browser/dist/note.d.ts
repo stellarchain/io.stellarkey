@@ -19,4 +19,4 @@ export declare function encodeNotePlaintext(note: NotePlaintext): Uint8Array;
 export declare function decodeNotePlaintext(bytes: Uint8Array): NotePlaintext;
 export declare function computeCommitment(contextField: Uint8Array, assetField: Uint8Array, ownerCommitment: Uint8Array, value: bigint, rho: Uint8Array): Uint8Array;
 export declare function computeNullifier(contextField: Uint8Array, nk: Uint8Array, rho: Uint8Array, leafIndex: bigint, cm: Uint8Array): Uint8Array;
-export declare function computeDummyNullifier(contextField: Uint8Array, dummySecret: Uint8Array, lane: number): Uint8Array;
+export declare function computeDummyNullifier(contextField: Uint8Array, dummySecret: Uint8Array): Uint8Array;

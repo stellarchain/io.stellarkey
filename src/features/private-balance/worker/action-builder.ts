@@ -1,6 +1,6 @@
 import {
   ActionKind,
-  DOMAIN_MERKLE,
+  TREE_DEPTH,
   bytesToBigint,
   computeCommitment,
   computeContextHash,
@@ -15,7 +15,7 @@ import {
   deriveX25519PublicKey,
   encodeNotePlaintext,
   encodeOutgoingPlaintext,
-  p2,
+  hashMerkleNode,
   randomBytes32,
   sampleNonzeroField,
   sealOutgoingEnvelope,
@@ -71,7 +71,7 @@ interface WithdrawIntent {
 
 export type BuildActionIntent = DepositIntent | TransferIntent | WithdrawIntent;
 
-type CircuitInputs = Record<string, string | string[] | string[][]>;
+type CircuitInputs = Record<string, string | string[] | string[][] | string[][][]>;
 
 export interface PreparedPrivateAction {
   action: ActionModel;
@@ -101,8 +101,8 @@ interface InputWitness {
   value: bigint;
   rho: Uint8Array;
   leafIndex: number;
-  siblings: Uint8Array[];
-  directionBits: number[];
+  siblings: [Uint8Array, Uint8Array][];
+  positions: number[];
   nullifier: Uint8Array;
 }
 
@@ -129,9 +129,13 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 function merklePathRoot(path: MerklePathWitness): Uint8Array {
   let current: Uint8Array = path.leaf.slice();
   for (let level = 0; level < path.siblings.length; level += 1) {
-    current = path.directionBits[level] === 0
-      ? p2(DOMAIN_MERKLE, [current, path.siblings[level]])
-      : p2(DOMAIN_MERKLE, [path.siblings[level], current]);
+    const position = path.positions[level];
+    const siblings = path.siblings[level];
+    current = position === 0
+      ? hashMerkleNode([current, siblings[0], siblings[1]])
+      : position === 1
+        ? hashMerkleNode([siblings[0], current, siblings[1]])
+        : hashMerkleNode([siblings[0], siblings[1], current]);
   }
   return current;
 }
@@ -199,7 +203,7 @@ function shuffled<T>(values: [T, T]): [T, T] {
   return randomBit() === 0 ? values : [values[1], values[0]];
 }
 
-function dummyInput(contextField: Uint8Array, lane: number): InputWitness {
+function dummyInput(contextField: Uint8Array): InputWitness {
   const dummySecret = sampleNonzeroField();
   return {
     real: false,
@@ -209,9 +213,12 @@ function dummyInput(contextField: Uint8Array, lane: number): InputWitness {
     value: 0n,
     rho: ZERO_32.slice(),
     leafIndex: 0,
-    siblings: Array.from({ length: 32 }, () => ZERO_32.slice()),
-    directionBits: Array.from({ length: 32 }, () => 0),
-    nullifier: computeDummyNullifier(contextField, dummySecret, lane),
+    siblings: Array.from(
+      { length: TREE_DEPTH },
+      () => [ZERO_32.slice(), ZERO_32.slice()] as [Uint8Array, Uint8Array],
+    ),
+    positions: Array.from({ length: TREE_DEPTH }, () => 0),
+    nullifier: computeDummyNullifier(contextField, dummySecret),
   };
 }
 
@@ -347,7 +354,7 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
       throw new Error('Private deposit must not include Merkle paths');
     }
     return {
-      witnesses: [dummyInput(input.keyContext.contextField, 0), dummyInput(input.keyContext.contextField, 1)],
+      witnesses: [dummyInput(input.keyContext.contextField), dummyInput(input.keyContext.contextField)],
       selectedNoteIds: [],
       total: 0n,
     };
@@ -408,9 +415,10 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     const path = pathsByLeafIndex.get(note.leafIndex);
     if (
       !path ||
-      path.siblings.length !== 32 ||
-      path.directionBits.length !== 32 ||
-      path.directionBits.some(bit => bit !== 0 && bit !== 1) ||
+      path.siblings.length !== TREE_DEPTH ||
+      path.siblings.some(level => level.length !== 2 || level.some(node => node.length !== 32)) ||
+      path.positions.length !== TREE_DEPTH ||
+      path.positions.some(position => !Number.isInteger(position) || position < 0 || position > 2) ||
       !equalBytes(path.leaf, commitment) ||
       !equalBytes(merklePathRoot(path), path.root) ||
       !equalBytes(path.root, input.intent.anchorRoot)
@@ -433,7 +441,7 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
       rho,
       leafIndex: note.leafIndex,
       siblings: path.siblings,
-      directionBits: path.directionBits,
+      positions: path.positions,
       nullifier,
     });
     total += value;
@@ -443,8 +451,8 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
   if (witnesses.length === 1) {
     const realLane = randomBit();
     arranged = realLane === 0
-      ? [witnesses[0], dummyInput(input.keyContext.contextField, 1)]
-      : [dummyInput(input.keyContext.contextField, 0), witnesses[0]];
+      ? [witnesses[0], dummyInput(input.keyContext.contextField)]
+      : [dummyInput(input.keyContext.contextField), witnesses[0]];
   } else {
     arranged = shuffled(witnesses as [InputWitness, InputWitness]);
   }
@@ -666,9 +674,10 @@ export async function preparePrivateAction(
     inputValue: preparedInputs.witnesses.map(witness => witness.value.toString()),
     inputRho: preparedInputs.witnesses.map(witness => fieldString(witness.rho)),
     inputLeafIndex: preparedInputs.witnesses.map(witness => witness.leafIndex.toString()),
-    inputSiblings: preparedInputs.witnesses.map(witness => witness.siblings.map(fieldString)),
-    inputDirectionBits: preparedInputs.witnesses.map(witness => witness.directionBits.map(String)),
-    outputReal: outputs.map(output => output.real ? '1' : '0'),
+    inputSiblings: preparedInputs.witnesses.map(witness => (
+      witness.siblings.map(level => level.map(fieldString))
+    )),
+    inputPositions: preparedInputs.witnesses.map(witness => witness.positions.map(String)),
     outputOwnerCommitment: outputs.map(output => fieldString(output.ownerCommitment)),
     outputValue: outputs.map(output => output.value.toString()),
     outputRho: outputs.map(output => fieldString(output.rho)),

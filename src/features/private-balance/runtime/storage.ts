@@ -1,4 +1,4 @@
-import { decodePrivateAddress } from '@stellarkey/private-balance';
+import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import {
@@ -18,7 +18,7 @@ import type {
 } from './types';
 
 const RECORD_KIND = 'stellarkey-private-balance-state';
-const RECORD_VERSION = 1;
+const RECORD_VERSION = 2;
 const PRIVATE_ADDRESS_PATTERN = /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9A-HJ-NP-Za-km-z]{121})$/;
 // Accept the former 32-bit code only for already-encrypted local preview data;
 // newly derived codes use a 128-bit SHA-256 prefix.
@@ -233,7 +233,7 @@ function isCheckpoint(value: unknown): value is ShieldedCheckpoint {
     isHex(checkpoint.lastRecordHash, 32) &&
     isHex(checkpoint.treeRoot, 32) &&
     Array.isArray(checkpoint.treeFrontier) &&
-    checkpoint.treeFrontier.length === 32 &&
+    checkpoint.treeFrontier.length === TREE_FRONTIER_SIZE &&
     checkpoint.treeFrontier.every(item => isHex(item, 32)) &&
     isHex(checkpoint.deploymentBindingHash, 32) &&
     isHex(checkpoint.manifestHash, 32) &&

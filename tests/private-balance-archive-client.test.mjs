@@ -32,7 +32,7 @@ const manifest = {
     r1csSha256: '0d'.repeat(32),
     vkJsonSha256: '0e'.repeat(32),
   },
-  constants: { treeDepth: 32, pageCapacity: 32 },
+  constants: { treeDepth: 17, pageCapacity: 32 },
 };
 
 const recordNative = {
@@ -190,7 +190,7 @@ test('archive client reads manifest-bound state and canonical record storage key
           poseidon2_parameter_hash: bytes(12),
           circuit_hash: bytes(13),
           verification_key_hash: bytes(14),
-          tree_depth: 32,
+          tree_depth: 17,
           root_window_ledgers: 1_440,
           page_capacity: 32,
           deployment_binding_hash: Buffer.from(deploymentBindingHash, 'hex'),
@@ -203,7 +203,7 @@ test('archive client reads manifest-bound state and canonical record storage key
         },
         tree_state: {
           next_index: 2n,
-          frontier: Array.from({ length: 32 }, () => bytes(0)),
+          frontier: Array.from({ length: 34 }, () => bytes(0)),
           current_root: bytes(5),
         },
         deposits_paused: pauseResult,

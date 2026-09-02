@@ -19,6 +19,7 @@ import {
   PRIVATE_ADDRESS_TESTNET_ASCII_BYTES,
   encodeNotePlaintext,
   decodeNotePlaintext,
+  computeDummyNullifier,
   serializeCanonicalActionBytes,
   computePublicSignals,
   ActionKind,
@@ -143,6 +144,16 @@ test('protocol V1 note encoding binds a diversifier in the normative 128-byte la
   const nonzeroReserved = encoded.slice();
   nonzeroReserved[127] = 1;
   assert.throws(() => decodeNotePlaintext(nonzeroReserved));
+});
+
+test('dummy nullifiers are derived from fresh secrets without exposing lane order', () => {
+  const contextField = bigintTo32Bytes(42n);
+  const first = computeDummyNullifier(contextField, bigintTo32Bytes(901n));
+  const second = computeDummyNullifier(contextField, bigintTo32Bytes(902n));
+
+  assert.equal(first.length, 32);
+  assert.equal(second.length, 32);
+  assert.notDeepEqual(first, second);
 });
 
 test('canonical integer encoders reject truncation and signed values', () => {

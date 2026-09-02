@@ -1,5 +1,9 @@
 pub const PROTOCOL_VERSION: u16 = 1;
-pub const TREE_DEPTH: usize = 32;
+pub const TREE_ARITY: usize = 3;
+pub const TREE_DEPTH: usize = 17;
+pub const TREE_CAPACITY: u64 = 129_140_163;
+pub const TREE_FRONTIER_WIDTH: usize = TREE_ARITY - 1;
+pub const TREE_FRONTIER_SIZE: usize = TREE_DEPTH * TREE_FRONTIER_WIDTH;
 pub const MAX_INPUTS: usize = 2;
 pub const MAX_OUTPUTS: usize = 2;
 
@@ -49,7 +53,6 @@ pub const DOMAIN_DIVERSIFIED_OWNER: &str = "SKSB_DIVERSIFIED_OWNER_V1";
 pub const DOMAIN_ADDRESS_KEY: &str = "SKSB_ADDRESS_KEY_V1";
 pub const DOMAIN_NOTE_COMMITMENT: &str = "SKSB_NOTE_COMMITMENT_V1";
 pub const DOMAIN_NULLIFIER: &str = "SKSB_NULLIFIER_V1";
-pub const DOMAIN_MERKLE_NODE: &str = "SKSB_MERKLE_NODE_V1";
 pub const DOMAIN_ACTION: &str = "SKSB_ACTION_V1";
 pub const DOMAIN_ACTION_BINDING: &str = "SKSB_ACTION_BINDING_V1";
 pub const DOMAIN_ASSET: &str = "SKSB_ASSET_V1";

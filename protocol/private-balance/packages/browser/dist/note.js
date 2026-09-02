@@ -88,11 +88,9 @@ export function computeNullifier(contextField, nk, rho, leafIndex, cm) {
         throw new Error('Invalid leaf index');
     return p2(DOMAIN_NULLIFIER, [contextField, nk, rho, bigintTo32Bytes(leafIndex), cm]);
 }
-export function computeDummyNullifier(contextField, dummySecret, lane) {
-    if (lane !== 0 && lane !== 1)
-        throw new Error('Invalid dummy input lane');
+export function computeDummyNullifier(contextField, dummySecret) {
     if (!isCanonicalField(dummySecret) || dummySecret.every(byte => byte === 0)) {
         throw new Error('Invalid dummy nullifier secret');
     }
-    return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret, bigintTo32Bytes(BigInt(lane))]);
+    return p2(DOMAIN_DUMMY_NULLIFIER, [contextField, dummySecret]);
 }

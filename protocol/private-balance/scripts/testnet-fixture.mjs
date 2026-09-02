@@ -35,7 +35,7 @@ const POSEIDON_PARAMETERS_PATH = path.join(
 );
 const RESULTS_ROOT = path.join(PROJECT_ROOT, 'protocol/private-balance/results/fixtures');
 const DOMAIN_DEPLOYMENT_BINDING = 'SKSB_DEPLOYMENT_BINDING_V1';
-const TREE_DEPTH = 32;
+const TREE_DEPTH = 17;
 const ROOT_WINDOW_LEDGERS = 1_440;
 const PAGE_CAPACITY = 32;
 const PRIVATE_ADDRESS_PAYLOAD_BYTES = 84;

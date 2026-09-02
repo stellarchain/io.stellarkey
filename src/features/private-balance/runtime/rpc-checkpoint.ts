@@ -1,4 +1,5 @@
 import type { ArchiveHeadState } from './archive-client';
+import { TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 
 const DEFAULT_MAXIMUM_HEAD_ATTEMPTS = 3;
 const HEX_32 = /^[0-9a-f]{64}$/;
@@ -94,7 +95,13 @@ function headFingerprint(head: ArchiveHeadState, name: string): string {
   const config = head?.config;
   const meta = head?.meta;
   const tree = head?.tree;
-  if (!config || !meta || !tree || !Array.isArray(tree.frontier) || tree.frontier.length !== 32) {
+  if (
+    !config ||
+    !meta ||
+    !tree ||
+    !Array.isArray(tree.frontier) ||
+    tree.frontier.length !== TREE_FRONTIER_SIZE
+  ) {
     throw new PrivateRpcViewsDisagreeError(`${name} contract head is invalid.`);
   }
   const actionCount = u32(meta.actionCount, `${name} action count`);
