@@ -13,7 +13,7 @@ test('private payments setup is one consent screen with an honest disclosure and
   assert.doesNotMatch(setup, /Step \$\{step \+ 1\} of 3|Requirements|Set up locally/);
   assert.match(setup, /Private Payments/);
   assert.match(setup, /where the amount and recipient stay encrypted/);
-  assert.match(disclosure, /Private:/);
+  assert.match(disclosure, /Private internal sends:/);
   assert.match(disclosure, /Public:/);
   assert.match(surface, /money moving in or out/i);
   assert.match(surface, /timing/i);
