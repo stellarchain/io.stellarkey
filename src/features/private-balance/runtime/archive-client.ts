@@ -40,7 +40,11 @@ interface ArchiveRpc {
     networkPassphrase?: string,
   ): Promise<{ result: T; isReadCall: boolean }>;
   getLedgerEntries(...keys: xdr.LedgerKey[]): Promise<{
-    entries: Array<{ val: xdr.LedgerEntryData; liveUntilLedgerSeq?: number }>;
+    entries: Array<{
+      key: xdr.LedgerKey;
+      val: xdr.LedgerEntryData;
+      liveUntilLedgerSeq?: number;
+    }>;
     latestLedger: number;
   }>;
   getLedgers(request: {
@@ -479,27 +483,53 @@ export class PrivateBalanceArchiveClient {
     if (start + validCount - 1 > 0xffff_ffff) {
       throw new Error('Archive record range exceeds u32');
     }
-    const response = await this.server.getLedgerEntries(
-      ...Array.from({ length: validCount }, (_, offset) =>
-        deriveArchiveRecordLedgerKey(this.manifest.poolContractId, start + offset)),
-    );
-    if (response.entries.length !== validCount) {
-      throw new ArchiveRecordUnavailableError(start + response.entries.length, response.latestLedger);
+    const expectedKeys = Array.from({ length: validCount }, (_, offset) =>
+      deriveArchiveRecordLedgerKey(this.manifest.poolContractId, start + offset));
+    const expectedIndices = new Map(expectedKeys.map((key, offset) => [
+      key.toXDR('base64'),
+      start + offset,
+    ]));
+    const response = await this.server.getLedgerEntries(...expectedKeys);
+    const latestLedger = u32(response.latestLedger, 'Archive response latest ledger');
+    const entriesByIndex = new Map<number, (typeof response.entries)[number]>();
+    for (const entry of response.entries) {
+      const actionIndex = expectedIndices.get(entry.key.toXDR('base64'));
+      if (actionIndex === undefined || entriesByIndex.has(actionIndex)) {
+        throw new Error('RPC returned an unexpected or duplicate archive record key');
+      }
+      if (entry.liveUntilLedgerSeq !== undefined) {
+        const liveUntilLedger = u32(
+          entry.liveUntilLedgerSeq,
+          `Archive record ${actionIndex} liveUntilLedgerSeq`,
+        );
+        if (liveUntilLedger === 0) continue;
+      }
+      entriesByIndex.set(actionIndex, entry);
     }
-    const records = response.entries.map((entry, offset) => {
+    const missingActionIndex = expectedKeys.findIndex(
+      (_key, offset) => !entriesByIndex.has(start + offset),
+    );
+    if (missingActionIndex !== -1) {
+      throw new ArchiveRecordUnavailableError(start + missingActionIndex, latestLedger);
+    }
+    return expectedKeys.map((_key, offset) => {
+      const actionIndex = start + offset;
+      const entry = entriesByIndex.get(actionIndex);
+      if (!entry) {
+        throw new ArchiveRecordUnavailableError(actionIndex, latestLedger);
+      }
       if (entry.val.type !== 'contractData') {
         throw new Error('RPC returned a non-contract archive entry');
       }
       const record = decodeRecord(
         scValToNative(entry.val.contractData.val),
-        `Archive record ${start + offset}`,
+        `Archive record ${actionIndex}`,
       );
-      if (record.actionIndex !== start + offset) {
-        throw new Error('RPC returned archive records out of sequence');
+      if (record.actionIndex !== actionIndex) {
+        throw new Error('RPC returned an archive record under the wrong storage key');
       }
       return record;
     });
-    return records;
   }
 
   private validateHead(
