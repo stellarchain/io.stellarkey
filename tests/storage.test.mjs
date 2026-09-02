@@ -365,6 +365,105 @@ test("backup export refuses an unreadable encrypted transaction-note store", asy
   await assert.rejects(() => exportVaultBackup(password), /transaction notes|backup.*validate/i);
 });
 
+test("backup inspection recovers archived-account private state and warns on unknown records", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const { Keypair, StrKey } = await import("@stellar/stellar-sdk");
+  const { decryptString, encryptString } = await import("../src/lib/crypto.ts");
+  const {
+    derivePrivacySessionRoot,
+    derivePrivateStorageKey,
+  } = await import("@stellarkey/private-balance");
+  const {
+    commitPrivateBalanceState,
+    createEmptyPrivateBalanceState,
+  } = await import("../src/features/private-balance/runtime/storage.ts");
+  const { exportPrivateBalanceBackupArchive } = await import(
+    "../src/features/private-balance/runtime/backup.ts"
+  );
+  const {
+    addStoredAccount,
+    exportVaultBackup,
+    initializeVault,
+    inspectVaultBackup,
+  } = await import("../src/lib/vault.ts");
+  const password = "correct horse battery staple";
+  const first = Keypair.random();
+  const archived = Keypair.random();
+  await initializeVault(password, { secret: first.secret() });
+  const archivedMeta = await addStoredAccount({ secret: archived.secret() });
+  const backup = JSON.parse(await exportVaultBackup(password));
+  const payload = JSON.parse(await decryptString(backup.crypto, password));
+  const archivedRecord = payload.vault.accounts.find(account => account.id === archivedMeta.id);
+  payload.vault.accounts = payload.vault.accounts.filter(account => account.id !== archivedMeta.id);
+  payload.vault.archivedAccounts = [archivedRecord];
+  payload.vault.activeAccountId = payload.vault.accounts[0].id;
+
+  const context = {
+    networkId: "01".repeat(32),
+    realmId: "02".repeat(32),
+    poolId: "03".repeat(32),
+    accountId: archivedMeta.id,
+    deploymentBindingHash: "05".repeat(32),
+  };
+  const rawSeed = new Uint8Array(StrKey.decodeEd25519SecretSeed(archived.secret()));
+  const sessionRoot = derivePrivacySessionRoot(
+    rawSeed,
+    1,
+    Buffer.from(context.networkId, "hex"),
+    Buffer.from(context.realmId, "hex"),
+    Buffer.from(context.poolId, "hex"),
+    new Uint8Array(StrKey.decodeEd25519PublicKey(archived.publicKey())),
+  );
+  const storageKey = derivePrivateStorageKey(
+    sessionRoot,
+    Buffer.from(context.deploymentBindingHash, "hex"),
+  );
+  rawSeed.fill(0);
+  sessionRoot.fill(0);
+  const privateDriver = {
+    records: new Map(),
+    async read(key) { return this.records.get(key) ?? null; },
+    async readPrefix(prefix) {
+      return new Map([...this.records].filter(([key]) => key.startsWith(prefix)));
+    },
+    async compareAndSet(recordKey, expectedRevision, value) {
+      const current = this.records.get(recordKey) ?? null;
+      const revision = current === null ? null : JSON.parse(current).revision;
+      if (revision !== expectedRevision) return { ok: false, current };
+      this.records.set(recordKey, value);
+      return { ok: true, current: value };
+    },
+  };
+  await commitPrivateBalanceState(
+    context,
+    storageKey,
+    createEmptyPrivateBalanceState("07".repeat(32), 1),
+    null,
+    privateDriver,
+  );
+  await commitPrivateBalanceState(
+    { ...context, accountId: "unknown-account" },
+    storageKey,
+    createEmptyPrivateBalanceState("08".repeat(32), 1),
+    null,
+    privateDriver,
+  );
+  storageKey.fill(0);
+  payload.privateBalanceStore = JSON.stringify(
+    await exportPrivateBalanceBackupArchive(privateDriver),
+  );
+  backup.crypto = await encryptString(JSON.stringify(payload), password);
+  globalThis.indexedDB = {};
+  try {
+    const info = await inspectVaultBackup(JSON.stringify(backup), password);
+    assert.equal(info.hasPrivateBalanceArchive, true);
+    assert.match(info.warnings.join(" "), /1 Private Payments record.*omitted/i);
+  } finally {
+    delete globalThis.indexedDB;
+  }
+});
+
 test("merchant session keys are unique to each vault even when passwords match", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
