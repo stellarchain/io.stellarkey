@@ -13,7 +13,7 @@ const suite = new CipherSuite({
 });
 
 export const RECIPIENT_ENVELOPE_BYTES = 181;
-export const OUTPUT_PACKAGE_BYTES = 213;
+export const OUTPUT_PACKAGE_BYTES = 370;
 export const OUTGOING_ENVELOPE_BYTES = 157;
 export const OUTGOING_NONCE_BYTES = 12;
 

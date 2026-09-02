@@ -20,10 +20,12 @@ const {
   computeAssetField,
   computeContextField,
   computeContextHash,
+  computeDummyNullifier,
   computeRelayerField,
 } = await import(browserPackagePath);
 const fromHex = (value) => Uint8Array.from(value.match(/../g), (byte) => Number.parseInt(byte, 16));
 const fieldDecimal = (value) => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
+const fieldBytes = (value) => fromHex(BigInt(value).toString(16).padStart(64, '0'));
 const directionBitsFor = (leafIndex) => {
   const value = BigInt(leafIndex);
   return Array.from({ length: 32 }, (_, index) => ((value >> BigInt(index)) & 1n).toString());
@@ -66,7 +68,11 @@ async function generateVectors() {
   const asset = { kind: 1, payload: assetId };
   const assetField = fieldDecimal(computeAssetField(asset));
   const zero32 = new Uint8Array(32);
-  const dummyOutput = { cm: zero32, recipientEnvelope: new Uint8Array(181) };
+  const outputPackage = (cm, recipientFill, outgoingFill) => ({
+    cm: fieldBytes(cm),
+    recipientEnvelope: new Uint8Array(181).fill(recipientFill),
+    outgoingEnvelope: new Uint8Array(157).fill(outgoingFill),
+  });
   const actionFieldDecimal = (action) => fieldDecimal(
     computeActionField(action, networkId, realmId, poolId),
   );
@@ -85,6 +91,11 @@ async function generateVectors() {
       ),
     ),
   );
+  const dummyNullifier = (secret, lane) => fieldDecimal(computeDummyNullifier(
+    fieldBytes(contextField),
+    fieldBytes(secret),
+    lane,
+  ));
   const depActionKindField = '1';
   const depAnchorRoot = '0';
   const depPublicValueField = '5000000';
@@ -97,19 +108,25 @@ async function generateVectors() {
     rho: '77777',
     value: '5000000',
   });
+  const depDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '333',
+    nk: '444',
+    rho: '88888',
+    value: '0',
+  });
+  const depDummyNullifiers = [dummyNullifier('901', 0), dummyNullifier('902', 1)];
   const depAction = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
     asset,
     actionNonce: new Uint8Array(32).fill(0x11),
     anchorRoot: zero32,
-    nullifiers: [zero32, zero32],
+    nullifiers: depDummyNullifiers.map(fieldBytes),
     outputs: [
-      {
-        cm: fromHex(BigInt(depGadgets.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xaa),
-      },
-      dummyOutput,
+      outputPackage(depGadgets.noteCommitment, 0xaa, 0xab),
+      outputPackage(depDummyOutput.noteCommitment, 0xac, 0xad),
     ],
     publicValue: 5_000_000n,
     relayerFee: 0n,
@@ -128,12 +145,13 @@ async function generateVectors() {
     relayerField: '0',
     actionField: depActionField,
     actionBinding: depActionBinding,
-    nullifier: ['0', '0'],
-    outputCommitment: [depGadgets.noteCommitment, '0'],
+    nullifier: depDummyNullifiers,
+    outputCommitment: [depGadgets.noteCommitment, depDummyOutput.noteCommitment],
 
     ask: '0',
     nk: '0',
-    inputEnabled: ['0', '0'],
+    inputReal: ['0', '0'],
+    inputDummySecret: ['901', '902'],
     inputOwnerCommitment: ['0', '0'],
     inputDiversifier: ['0', '0'],
     inputValue: ['0', '0'],
@@ -142,10 +160,10 @@ async function generateVectors() {
     inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
     inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
 
-    outputEnabled: ['1', '0'],
-    outputOwnerCommitment: [depGadgets.ownerCommitment, '0'],
+    outputReal: ['1', '0'],
+    outputOwnerCommitment: [depGadgets.ownerCommitment, depDummyOutput.ownerCommitment],
     outputValue: ['5000000', '0'],
-    outputRho: ['77777', '0'],
+    outputRho: ['77777', '88888'],
   };
 
   const depositRes = await snarkjs.groth16.fullProve(depInputs, wasmPath, zkeyPath);
@@ -182,6 +200,7 @@ async function generateVectors() {
     rho: '55555',
     value: '3999000',
   });
+  const trDummyNullifier = dummyNullifier('903', 1);
   const trAction = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
@@ -189,18 +208,12 @@ async function generateVectors() {
     actionNonce: new Uint8Array(32).fill(0x22),
     anchorRoot: fromHex(BigInt(in0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
-      fromHex(BigInt(in0Res.nullifier).toString(16).padStart(64, '0')),
-      zero32,
+      fieldBytes(in0Res.nullifier),
+      fieldBytes(trDummyNullifier),
     ],
     outputs: [
-      {
-        cm: fromHex(BigInt(out0Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xbb),
-      },
-      {
-        cm: fromHex(BigInt(out1Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xcc),
-      },
+      outputPackage(out0Res.noteCommitment, 0xbb, 0xbc),
+      outputPackage(out1Res.noteCommitment, 0xcc, 0xcd),
     ],
     publicValue: 0n,
     relayerFee: 1_000n,
@@ -219,12 +232,13 @@ async function generateVectors() {
     relayerField: fieldDecimal(computeRelayerField(trAction)),
     actionField: trActionField,
     actionBinding: trActionBinding,
-    nullifier: [in0Res.nullifier, '0'],
+    nullifier: [in0Res.nullifier, trDummyNullifier],
     outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment],
 
     ask: '11111',
     nk: '22222',
-    inputEnabled: ['1', '0'],
+    inputReal: ['1', '0'],
+    inputDummySecret: ['0', '903'],
     inputOwnerCommitment: [in0Res.ownerCommitment, '0'],
     inputDiversifier: ['7', '0'],
     inputValue: ['10000000', '0'],
@@ -233,7 +247,7 @@ async function generateVectors() {
     inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
     inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
 
-    outputEnabled: ['1', '1'],
+    outputReal: ['1', '1'],
     outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment],
     outputValue: ['6000000', '3999000'],
     outputRho: ['44444', '55555'],
@@ -264,6 +278,15 @@ async function generateVectors() {
     rho: '66666',
     value: '2998000',
   });
+  const wdDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '777',
+    nk: '888',
+    rho: '99999',
+    value: '0',
+  });
+  const wdDummyNullifier = dummyNullifier('904', 1);
   const wdAction = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
@@ -271,15 +294,12 @@ async function generateVectors() {
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: fromHex(BigInt(wdIn0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
-      fromHex(BigInt(wdIn0Res.nullifier).toString(16).padStart(64, '0')),
-      zero32,
+      fieldBytes(wdIn0Res.nullifier),
+      fieldBytes(wdDummyNullifier),
     ],
     outputs: [
-      {
-        cm: fromHex(BigInt(wdOut0Res.noteCommitment).toString(16).padStart(64, '0')),
-        recipientEnvelope: new Uint8Array(181).fill(0xdd),
-      },
-      dummyOutput,
+      outputPackage(wdOut0Res.noteCommitment, 0xdd, 0xde),
+      outputPackage(wdDummyOutput.noteCommitment, 0xdf, 0xe0),
     ],
     publicValue: 7_000_000n,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(5) },
@@ -299,12 +319,13 @@ async function generateVectors() {
     relayerField: fieldDecimal(computeRelayerField(wdAction)),
     actionField: wdActionField,
     actionBinding: wdActionBinding,
-    nullifier: [wdIn0Res.nullifier, '0'],
-    outputCommitment: [wdOut0Res.noteCommitment, '0'],
+    nullifier: [wdIn0Res.nullifier, wdDummyNullifier],
+    outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment],
 
     ask: '11111',
     nk: '22222',
-    inputEnabled: ['1', '0'],
+    inputReal: ['1', '0'],
+    inputDummySecret: ['0', '904'],
     inputOwnerCommitment: [wdIn0Res.ownerCommitment, '0'],
     inputDiversifier: ['11', '0'],
     inputValue: ['10000000', '0'],
@@ -313,10 +334,10 @@ async function generateVectors() {
     inputSiblings: [new Array(32).fill('0'), new Array(32).fill('0')],
     inputDirectionBits: [directionBitsFor(0), directionBitsFor(0)],
 
-    outputEnabled: ['1', '0'],
-    outputOwnerCommitment: [wdOut0Res.ownerCommitment, '0'],
+    outputReal: ['1', '0'],
+    outputOwnerCommitment: [wdOut0Res.ownerCommitment, wdDummyOutput.ownerCommitment],
     outputValue: ['2998000', '0'],
-    outputRho: ['66666', '0'],
+    outputRho: ['66666', '99999'],
   };
 
   const withdrawRes = await snarkjs.groth16.fullProve(wdInputs, wasmPath, zkeyPath);

@@ -44,10 +44,18 @@ const recordNative = {
     action_nonce: bytes(4),
     anchor_root: bytes(0),
     tree_root_after: bytes(5),
-    nullifier_0: bytes(0),
-    nullifier_1: bytes(0),
-    output_0: { commitment: bytes(6), recipient_envelope: bytes(7, 181) },
-    output_1: { commitment: bytes(0), recipient_envelope: bytes(0, 181) },
+    nullifier_0: bytes(8),
+    nullifier_1: bytes(9),
+    output_0: {
+      commitment: bytes(6),
+      recipient_envelope: bytes(7, 181),
+      outgoing_envelope: bytes(8, 157),
+    },
+    output_1: {
+      commitment: bytes(10),
+      recipient_envelope: bytes(11, 181),
+      outgoing_envelope: bytes(12, 157),
+    },
     public_value: 5_000_000n,
     deposit_source: account,
     public_recipient: null,
@@ -63,6 +71,7 @@ const mapScVal = entries => xdr.ScVal.scvMap(
 );
 const outputScVal = output => mapScVal({
   commitment: nativeToScVal(output.commitment),
+  outgoing_envelope: nativeToScVal(output.outgoing_envelope),
   recipient_envelope: nativeToScVal(output.recipient_envelope),
 });
 const recordScVal = record => mapScVal({

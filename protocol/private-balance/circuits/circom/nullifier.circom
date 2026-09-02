@@ -22,3 +22,20 @@ template Nullifier() {
 
     out <== hasher.out;
 }
+
+template DummyNullifier() {
+    signal input contextField;
+    signal input dummySecret;
+    signal input lane;
+    signal output out;
+
+    var DOMAIN_DUMMY_NULLIFIER = 11079287110993094273924039464477300343037036643499336743423997609200409937317;
+
+    component hasher = Poseidon2Hash(4);
+    hasher.in[0] <== DOMAIN_DUMMY_NULLIFIER;
+    hasher.in[1] <== contextField;
+    hasher.in[2] <== dummySecret;
+    hasher.in[3] <== lane;
+
+    out <== hasher.out;
+}

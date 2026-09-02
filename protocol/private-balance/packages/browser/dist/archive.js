@@ -31,8 +31,10 @@ function requireRecordWidths(record) {
         ['Nullifier 1', record.nullifiers[1], 32],
         ['Output 0 commitment', record.outputs[0].cm, 32],
         ['Output 0 envelope', record.outputs[0].recipientEnvelope, 181],
+        ['Output 0 outgoing envelope', record.outputs[0].outgoingEnvelope, 157],
         ['Output 1 commitment', record.outputs[1].cm, 32],
         ['Output 1 envelope', record.outputs[1].recipientEnvelope, 181],
+        ['Output 1 outgoing envelope', record.outputs[1].outgoingEnvelope, 157],
     ])
         requireLength(name, bytes, length);
 }
@@ -49,8 +51,8 @@ export function computeRecordHash(record, protocolVersion, priorRecordHash) {
     bytes.push(record.asset.kind, ...record.asset.payload);
     bytes.push(...record.actionNonce, ...record.anchorRoot, ...record.treeRootAfter);
     bytes.push(...record.nullifiers[0], ...record.nullifiers[1]);
-    bytes.push(...record.outputs[0].cm, ...record.outputs[0].recipientEnvelope);
-    bytes.push(...record.outputs[1].cm, ...record.outputs[1].recipientEnvelope);
+    bytes.push(...record.outputs[0].cm, ...record.outputs[0].recipientEnvelope, ...record.outputs[0].outgoingEnvelope);
+    bytes.push(...record.outputs[1].cm, ...record.outputs[1].recipientEnvelope, ...record.outputs[1].outgoingEnvelope);
     encodeU64Be(record.publicValue, bytes);
     encodeU64Be(record.relayerFee, bytes);
     encodeOptionalAddress(record.relayer, bytes);

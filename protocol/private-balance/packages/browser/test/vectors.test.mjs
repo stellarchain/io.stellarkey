@@ -191,10 +191,18 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     asset,
     actionNonce: fromHex(actionVector.input.actionNonce),
     anchorRoot: zero,
-    nullifiers: [zero, zero],
+    nullifiers: [fromHex(actionVector.input.nullifier0), fromHex(actionVector.input.nullifier1)],
     outputs: [
-      { cm: fromHex(actionVector.input.output0Commitment), recipientEnvelope: new Uint8Array(181) },
-      { cm: zero, recipientEnvelope: new Uint8Array(181) },
+      {
+        cm: fromHex(actionVector.input.output0Commitment),
+        recipientEnvelope: fromHex(actionVector.input.output0RecipientEnvelope),
+        outgoingEnvelope: fromHex(actionVector.input.output0OutgoingEnvelope),
+      },
+      {
+        cm: fromHex(actionVector.input.output1Commitment),
+        recipientEnvelope: fromHex(actionVector.input.output1RecipientEnvelope),
+        outgoingEnvelope: fromHex(actionVector.input.output1OutgoingEnvelope),
+      },
     ],
     publicValue: BigInt(actionVector.input.publicValue),
     relayerFee: 0n,
@@ -412,7 +420,6 @@ test('archive: Rust and TypeScript record hashes match', () => {
   const vectorPath = join(import.meta.dirname, '../../../vectors/archive-v1.json');
   const vector = JSON.parse(readFileSync(vectorPath, 'utf8'));
   const fill = (value, length) => new Uint8Array(length).fill(value);
-  const zero = (length) => new Uint8Array(length);
   const record = {
     actionIndex: vector.record.actionIndex,
     ledgerSequence: vector.record.ledgerSequence,
@@ -425,10 +432,18 @@ test('archive: Rust and TypeScript record hashes match', () => {
     actionNonce: fill(vector.record.actionNonceFill, 32),
     anchorRoot: fill(vector.record.anchorRootFill, 32),
     treeRootAfter: fill(vector.record.treeRootAfterFill, 32),
-    nullifiers: [zero(32), zero(32)],
+    nullifiers: [fill(vector.record.nullifier0Fill, 32), fill(vector.record.nullifier1Fill, 32)],
     outputs: [
-      { cm: zero(32), recipientEnvelope: zero(181) },
-      { cm: zero(32), recipientEnvelope: zero(181) },
+      {
+        cm: fill(vector.record.output0CommitmentFill, 32),
+        recipientEnvelope: fill(vector.record.output0RecipientEnvelopeFill, 181),
+        outgoingEnvelope: fill(vector.record.output0OutgoingEnvelopeFill, 157),
+      },
+      {
+        cm: fill(vector.record.output1CommitmentFill, 32),
+        recipientEnvelope: fill(vector.record.output1RecipientEnvelopeFill, 181),
+        outgoingEnvelope: fill(vector.record.output1OutgoingEnvelopeFill, 157),
+      },
     ],
     publicValue: BigInt(vector.record.publicValue),
     depositSource: {

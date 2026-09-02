@@ -23,7 +23,11 @@ const manifest = {
 };
 const bytes = (length, value) => new Uint8Array(length).fill(value);
 const proof = { a: bytes(64, 1), b: bytes(128, 2), c: bytes(64, 3) };
-const output = (value) => ({ commitment: bytes(32, value), recipientEnvelope: bytes(181, value) });
+const output = (value) => ({
+  commitment: bytes(32, value),
+  recipientEnvelope: bytes(181, value),
+  outgoingEnvelope: bytes(157, value),
+});
 const relayer = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 
 function invocation(operation) {
@@ -45,7 +49,7 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
     action: {
       ...common,
       anchorRoot: bytes(32, 0),
-      nullifiers: [bytes(32, 0), bytes(32, 0)],
+      nullifiers: [bytes(32, 10), bytes(32, 11)],
       depositSource: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     },
     proof,
@@ -92,7 +96,7 @@ test('private transaction builder rejects malformed fixed proof widths', () => {
         assetContractId: manifest.assetContractId,
         actionNonce: bytes(32, 1),
         anchorRoot: bytes(32, 2),
-        nullifiers: [bytes(32, 3), bytes(32, 0)],
+        nullifiers: [bytes(32, 3), bytes(32, 6)],
         outputs: [output(4), output(5)],
         publicValue: 0n,
         relayerFee: 0n,
@@ -232,8 +236,8 @@ test('private deposit review accepts only its exact source-account SAC transfer 
       assetContractId: manifest.assetContractId,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 0),
-      nullifiers: [bytes(32, 0), bytes(32, 0)],
-      outputs: [output(5), output(0)],
+      nullifiers: [bytes(32, 7), bytes(32, 8)],
+      outputs: [output(5), output(6)],
       publicValue: 10n,
       depositSource: source,
     },

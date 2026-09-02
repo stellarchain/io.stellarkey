@@ -21,14 +21,26 @@ const mutations = [
   {
     name: 'shared input ownership',
     testName: 'inputs controlled by different spending keys',
-    needle: '        inputEnabled[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) === 0;',
-    replacement: '        inputEnabled[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) * 0 === 0;',
+    needle: '        inputReal[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) === 0;',
+    replacement: '        inputReal[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) * 0 === 0;',
   },
   {
     name: 'duplicate output prevention',
     testName: 'duplicate real output commitments',
-    needle: '    bothOutputsEnabled * duplicateOutput.out === 0;',
-    replacement: '    bothOutputsEnabled * duplicateOutput.out * 0 === 0;',
+    needle: '    duplicateOutput.out === 0;',
+    replacement: '    duplicateOutput.out * 0 === 0;',
+  },
+  {
+    name: 'dummy nullifier derivation',
+    testName: 'malformed real/dummy selectors and lane witnesses',
+    needle: '        selectedNullifier[i] === nullifier[i];',
+    replacement: '        selectedNullifier[i] * 0 === nullifier[i] * 0;',
+  },
+  {
+    name: 'dummy output commitment derivation',
+    testName: 'malformed real/dummy selectors and lane witnesses',
+    needle: '        outputNote[j].out === outputCommitment[j];',
+    replacement: '        outputNote[j].out * 0 === outputCommitment[j] * 0;',
   },
 ];
 

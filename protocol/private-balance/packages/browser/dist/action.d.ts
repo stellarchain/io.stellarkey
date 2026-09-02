@@ -10,6 +10,7 @@ export declare enum ActionKind {
 export interface OutputPackageModel {
     cm: Uint8Array;
     recipientEnvelope: Uint8Array;
+    outgoingEnvelope: Uint8Array;
 }
 export interface ActionModel {
     protocolVersion: number;

@@ -39,10 +39,10 @@ test('one pool context supports asset-bound notes and actions', async () => {
     asset: xlm,
     actionNonce: bytes(8),
     anchorRoot: zero,
-    nullifiers: [zero, zero],
+    nullifiers: [bytes(10), bytes(11)],
     outputs: [
-      { cm: commitment, recipientEnvelope: new Uint8Array(181) },
-      { cm: zero, recipientEnvelope: new Uint8Array(181) },
+      { cm: commitment, recipientEnvelope: new Uint8Array(181).fill(1), outgoingEnvelope: new Uint8Array(157).fill(2) },
+      { cm: bytes(12), recipientEnvelope: new Uint8Array(181).fill(3), outgoingEnvelope: new Uint8Array(157).fill(4) },
     ],
     publicValue: 10n,
     relayerFee: 0n,

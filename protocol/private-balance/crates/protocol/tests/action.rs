@@ -11,7 +11,18 @@ fn test_action_canonical_bytes_and_signals() {
         action_nonce: [0x11u8; 32],
         anchor_root: bytes_to_field(&[0x22u8; 32]),
         nullifiers: [bytes_to_field(&[0x33u8; 32]), bytes_to_field(&[0x44u8; 32])],
-        outputs: [OutputPackage::dummy(), OutputPackage::dummy()],
+        outputs: [
+            OutputPackage {
+                cm: bytes_to_field(&[0x11u8; 32]),
+                recipient_envelope: [0x55; 181],
+                outgoing_envelope: [0x66; 157],
+            },
+            OutputPackage {
+                cm: bytes_to_field(&[0x12u8; 32]),
+                recipient_envelope: [0x77; 181],
+                outgoing_envelope: [0x88; 157],
+            },
+        ],
         public_value: 0,
         deposit_source: None,
         public_recipient: None,
@@ -31,4 +42,12 @@ fn test_action_canonical_bytes_and_signals() {
     assert_eq!(signals[3], action.anchor_root);
     assert_eq!(&signals[5][24..], &25u64.to_be_bytes());
     assert_ne!(signals[6], [0; 32]);
+    assert!(action.validate_public_shape().is_ok());
+
+    let mut zero_lane = action.clone();
+    zero_lane.nullifiers[1] = [0; 32];
+    assert_eq!(
+        zero_lane.validate_public_shape(),
+        Err(ActionError::InvalidSlots)
+    );
 }

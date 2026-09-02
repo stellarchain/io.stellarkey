@@ -62,17 +62,15 @@ function validateAction(action) {
     for (const [index, output] of action.outputs.entries()) {
         requireLength(`Output ${index} commitment`, output.cm, 32);
         requireLength(`Output ${index} recipient envelope`, output.recipientEnvelope, 181);
+        requireLength(`Output ${index} outgoing envelope`, output.outgoingEnvelope, 157);
         if (!isCanonicalField(output.cm))
             throw new Error(`Output ${index} commitment is not canonical`);
-        if (isZero(output.cm) && !isZero(output.recipientEnvelope)) {
-            throw new Error(`Output ${index} dummy envelope must be zero`);
+        if (isZero(output.cm) || isZero(output.recipientEnvelope) || isZero(output.outgoingEnvelope)) {
+            throw new Error(`Output ${index} package must be nonzero`);
         }
     }
-    if (action.kind !== ActionKind.Withdraw && isZero(action.outputs[0].cm)) {
-        throw new Error('Output 0 must be real');
-    }
-    if (!isZero(action.outputs[1].cm) && equalBytes(action.outputs[0].cm, action.outputs[1].cm)) {
-        throw new Error('Real output commitments must differ');
+    if (equalBytes(action.outputs[0].cm, action.outputs[1].cm)) {
+        throw new Error('Output commitments must differ');
     }
     if (action.publicValue < 0n || action.publicValue > MAX_PUBLIC_VALUE) {
         throw new Error('Invalid public value');
@@ -81,10 +79,13 @@ function validateAction(action) {
         throw new Error('Invalid relayer fee');
     }
     const anchorIsZero = isZero(action.anchorRoot);
-    const firstNullifierIsZero = isZero(action.nullifiers[0]);
-    const secondNullifierIsZero = isZero(action.nullifiers[1]);
+    if (action.nullifiers.some(isZero))
+        throw new Error('Nullifiers must be nonzero');
+    if (equalBytes(action.nullifiers[0], action.nullifiers[1])) {
+        throw new Error('Nullifiers must differ');
+    }
     if (action.kind === ActionKind.Deposit) {
-        if (!anchorIsZero || !firstNullifierIsZero || !secondNullifierIsZero) {
+        if (!anchorIsZero) {
             throw new Error('Invalid deposit private slots');
         }
         if (action.publicValue === 0n ||
@@ -97,11 +98,8 @@ function validateAction(action) {
         validateAddress(action.depositSource, 'Deposit source');
         return;
     }
-    if (anchorIsZero || firstNullifierIsZero)
+    if (anchorIsZero)
         throw new Error('Invalid private spend slots');
-    if (!secondNullifierIsZero && equalBytes(action.nullifiers[0], action.nullifiers[1])) {
-        throw new Error('Real nullifiers must differ');
-    }
     if (action.kind === ActionKind.PrivateTransfer) {
         if (action.publicValue !== 0n || action.depositSource || action.publicRecipient || !action.relayer) {
             throw new Error('Invalid transfer public boundary');
@@ -143,15 +141,19 @@ export function serializeCanonicalActionBytes(action, networkId, realmId, poolId
         buf.push(b);
     for (const b of action.nullifiers[1])
         buf.push(b);
-    // outputs[0] (213 bytes)
+    // outputs[0] (370 bytes)
     for (const b of action.outputs[0].cm)
         buf.push(b);
     for (const b of action.outputs[0].recipientEnvelope)
         buf.push(b);
-    // outputs[1] (213 bytes)
+    for (const b of action.outputs[0].outgoingEnvelope)
+        buf.push(b);
+    // outputs[1] (370 bytes)
     for (const b of action.outputs[1].cm)
         buf.push(b);
     for (const b of action.outputs[1].recipientEnvelope)
+        buf.push(b);
+    for (const b of action.outputs[1].outgoingEnvelope)
         buf.push(b);
     encodeU64Be(action.publicValue, buf);
     encodeU64Be(action.relayerFee, buf);

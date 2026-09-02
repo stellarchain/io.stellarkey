@@ -10,6 +10,7 @@ export interface ContractProof {
 export interface ContractOutputPackage {
   commitment: Uint8Array;
   recipientEnvelope: Uint8Array;
+  outgoingEnvelope: Uint8Array;
 }
 
 interface CommonContractAction {
@@ -62,8 +63,10 @@ function encodeProof(proof: ContractProof): xdr.ScVal {
 function encodeOutput(output: ContractOutputPackage, index: number): xdr.ScVal {
   requireLength(`Output ${index} commitment`, output.commitment, 32);
   requireLength(`Output ${index} recipient envelope`, output.recipientEnvelope, 181);
+  requireLength(`Output ${index} outgoing envelope`, output.outgoingEnvelope, 157);
   return scMap([
     ['commitment', xdr.ScVal.scvBytes(output.commitment)],
+    ['outgoing_envelope', xdr.ScVal.scvBytes(output.outgoingEnvelope)],
     ['recipient_envelope', xdr.ScVal.scvBytes(output.recipientEnvelope)],
   ]);
 }

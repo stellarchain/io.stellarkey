@@ -87,10 +87,16 @@ fn test_pool_initialization_and_deposit() {
     let proof = proof_bytes.to_contract_proof(&env);
 
     let ctx_bytes = field_str_to_bytes(&dep_item.public_signals[0]);
+    let nf0_bytes = field_str_to_bytes(&dep_item.public_signals[9]);
+    let nf1_bytes = field_str_to_bytes(&dep_item.public_signals[10]);
     let out_cm0_bytes = field_str_to_bytes(&dep_item.public_signals[11]);
+    let out_cm1_bytes = field_str_to_bytes(&dep_item.public_signals[12]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
+    let nf0 = BytesN::from_array(&env, &nf0_bytes);
+    let nf1 = BytesN::from_array(&env, &nf1_bytes);
     let out_cm0 = BytesN::from_array(&env, &out_cm0_bytes);
+    let out_cm1 = BytesN::from_array(&env, &out_cm1_bytes);
 
     let config = pool_client.config();
     assert_eq!(config.protocol_version, 1);
@@ -101,13 +107,18 @@ fn test_pool_initialization_and_deposit() {
         asset: fixture.asset.clone(),
         action_nonce: BytesN::from_array(&env, &[0x11; 32]),
         anchor_root: BytesN::from_array(&env, &[0; 32]),
-        nullifier_0: BytesN::from_array(&env, &[0; 32]),
-        nullifier_1: BytesN::from_array(&env, &[0; 32]),
+        nullifier_0: nf0,
+        nullifier_1: nf1,
         output_0: OutputPackage {
             commitment: out_cm0,
             recipient_envelope: BytesN::from_array(&env, &[0xaa; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xab; 157]),
         },
-        output_1: OutputPackage::dummy(&env),
+        output_1: OutputPackage {
+            commitment: out_cm1,
+            recipient_envelope: BytesN::from_array(&env, &[0xac; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xad; 157]),
+        },
         public_value: 5_000_000,
         deposit_source: user.clone(),
     };
@@ -122,11 +133,11 @@ fn test_pool_initialization_and_deposit() {
     assert_eq!(pool_client.archive_meta().action_count, 0);
     assert_eq!(pool_client.tree_state().next_index, 0);
 
-    let mut malformed_dummy = action.clone();
-    malformed_dummy.output_1.recipient_envelope = BytesN::from_array(&env, &[1; 181]);
+    let mut malformed_output = action.clone();
+    malformed_output.output_1.outgoing_envelope = BytesN::from_array(&env, &[0; 157]);
     assert!(
-        pool_client.try_deposit(&malformed_dummy, &proof).is_err(),
-        "a zero commitment cannot carry nonzero package bytes",
+        pool_client.try_deposit(&malformed_output, &proof).is_err(),
+        "every output must carry an outgoing recovery envelope",
     );
 
     // Deposit 5,000,000 stroops

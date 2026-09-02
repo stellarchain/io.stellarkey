@@ -233,6 +233,7 @@ export async function scanArchiveRecords(
         input.viewingKey.baseOwnerCommitment,
       );
       if (!note) continue;
+      if (note.flags === 1) continue;
 
       const commitment = hex(output.cm);
       const leafIndex = record.startingLeafIndex + outputIndex;

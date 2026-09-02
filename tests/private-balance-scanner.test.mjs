@@ -81,9 +81,42 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     actionNonce,
     0,
   );
+  const dummyRho = bytes(10);
+  const dummyNote = {
+    ...note,
+    flags: 1,
+    value: 0n,
+    rho: dummyRho,
+    memoLength: 0,
+    memo: zero(32),
+  };
+  const dummyCommitment = computeCommitment(
+    contextField,
+    assetField,
+    receiveKeys.ownerCommitment,
+    0n,
+    dummyRho,
+  );
+  const dummyEncrypted = await createOutputPackage(
+    receiveKeys.hpkePublicKey,
+    dummyNote.diversifier,
+    encodeNotePlaintext(dummyNote),
+    contextHash,
+    dummyCommitment,
+    actionNonce,
+    1,
+  );
   const outputs = [
-    { cm: commitment, recipientEnvelope: encrypted.recipientEnvelope },
-    { cm: zero(32), recipientEnvelope: zero(181) },
+    {
+      cm: commitment,
+      recipientEnvelope: encrypted.recipientEnvelope,
+      outgoingEnvelope: bytes(11, 157),
+    },
+    {
+      cm: dummyCommitment,
+      recipientEnvelope: dummyEncrypted.recipientEnvelope,
+      outgoingEnvelope: bytes(12, 157),
+    },
   ];
   const tree = await createEmptyTree();
   const anchorRoot = zero(32);
@@ -94,7 +127,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     asset,
     actionNonce,
     anchorRoot,
-    nullifiers: [zero(32), zero(32)],
+    nullifiers: [bytes(13), bytes(14)],
     outputs,
     publicValue: note.value,
     relayerFee: 0n,
@@ -215,6 +248,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         transferNonce,
         0,
       )).recipientEnvelope,
+      outgoingEnvelope: bytes(24, 157),
     },
     {
       cm: changeCommitment,
@@ -227,6 +261,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         transferNonce,
         1,
       )).recipientEnvelope,
+      outgoingEnvelope: bytes(25, 157),
     },
   ];
   const transferNullifier = computeNullifier(
@@ -246,7 +281,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     asset,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
-    nullifiers: [transferNullifier, zero(32)],
+    nullifiers: [transferNullifier, bytes(26)],
     outputs: transferOutputs,
     publicValue: 0n,
     relayerFee: 0n,
@@ -337,8 +372,16 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     0,
   );
   const duplicateOutputs = [
-    { cm: commitment, recipientEnvelope: duplicateEnvelope.recipientEnvelope },
-    { cm: zero(32), recipientEnvelope: zero(181) },
+    {
+      cm: commitment,
+      recipientEnvelope: duplicateEnvelope.recipientEnvelope,
+      outgoingEnvelope: bytes(27, 157),
+    },
+    {
+      cm: dummyCommitment,
+      recipientEnvelope: dummyEncrypted.recipientEnvelope,
+      outgoingEnvelope: bytes(28, 157),
+    },
   ];
   const duplicateTree = await createEmptyTree();
   await appendCommitments(duplicateTree, outputs.map(output => output.cm));

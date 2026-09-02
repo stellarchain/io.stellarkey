@@ -58,7 +58,8 @@ function developmentManifest() {
     constants: {
       treeDepth: 32, treeArity: 2, rootWindowLedgers: 1440,
       pageCapacity: 32, maxPagesPerTouch: 4, publicInputs: 13,
-      notePlaintextBytes: 128, recipientEnvelopeBytes: 181, outputPackageBytes: 213,
+      notePlaintextBytes: 128, recipientEnvelopeBytes: 181,
+      outgoingEnvelopeBytes: 157, outputPackageBytes: 370,
       addressPayloadBytes: 84, addressAsciiBytes: 128,
       addressContextTagBytes: 16, addressChecksumBytes: 4,
     },

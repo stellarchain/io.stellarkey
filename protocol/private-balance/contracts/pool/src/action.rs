@@ -15,15 +15,7 @@ const MAX_PUBLIC_VALUE: u64 = i64::MAX as u64;
 pub struct OutputPackage {
     pub commitment: BytesN<32>,
     pub recipient_envelope: BytesN<181>,
-}
-
-impl OutputPackage {
-    pub fn dummy(env: &Env) -> Self {
-        Self {
-            commitment: BytesN::from_array(env, &ZERO_FIELD),
-            recipient_envelope: BytesN::from_array(env, &[0; 181]),
-        }
-    }
+    pub outgoing_envelope: BytesN<157>,
 }
 
 #[contracttype]
@@ -97,15 +89,14 @@ pub(crate) fn contract_payload(address: &Address) -> Result<[u8; 32], PoolError>
 fn protocol_output(output: &OutputPackage) -> Result<ProtocolOutputPackage, PoolError> {
     let commitment = output.commitment.to_array();
     let recipient_envelope = output.recipient_envelope.to_array();
+    let outgoing_envelope = output.outgoing_envelope.to_array();
     if !is_canonical_field(&commitment) {
         return Err(PoolError::NoncanonicalEncoding);
-    }
-    if commitment == ZERO_FIELD && recipient_envelope != [0; 181] {
-        return Err(PoolError::InvalidCommitment);
     }
     Ok(ProtocolOutputPackage {
         cm: commitment,
         recipient_envelope,
+        outgoing_envelope,
     })
 }
 
@@ -114,29 +105,32 @@ fn validate_slots(
     nullifiers: &[[u8; 32]; 2],
     outputs: &[ProtocolOutputPackage; 2],
     is_deposit: bool,
-    require_output: bool,
 ) -> Result<(), PoolError> {
     if !is_canonical_field(anchor_root) || !nullifiers.iter().all(is_canonical_field) {
         return Err(PoolError::NoncanonicalEncoding);
     }
-    if require_output && outputs[0].cm == ZERO_FIELD {
+    if nullifiers.iter().any(|nullifier| *nullifier == ZERO_FIELD)
+        || outputs.iter().any(|output| {
+            output.cm == ZERO_FIELD
+                || output.recipient_envelope == [0; 181]
+                || output.outgoing_envelope == [0; 157]
+        })
+    {
         return Err(PoolError::InvalidActionShape);
     }
-    if outputs[1].cm != ZERO_FIELD && outputs[0].cm == outputs[1].cm {
+    if outputs[0].cm == outputs[1].cm {
         return Err(PoolError::InvalidCommitment);
+    }
+    if nullifiers[0] == nullifiers[1] {
+        return Err(PoolError::InvalidActionShape);
     }
 
     if is_deposit {
-        if *anchor_root != ZERO_FIELD || *nullifiers != [ZERO_FIELD; 2] {
+        if *anchor_root != ZERO_FIELD {
             return Err(PoolError::InvalidActionShape);
         }
-    } else {
-        if *anchor_root == ZERO_FIELD || nullifiers[0] == ZERO_FIELD {
-            return Err(PoolError::InvalidActionShape);
-        }
-        if nullifiers[1] != ZERO_FIELD && nullifiers[0] == nullifiers[1] {
-            return Err(PoolError::InvalidActionShape);
-        }
+    } else if *anchor_root == ZERO_FIELD {
+        return Err(PoolError::InvalidActionShape);
     }
     Ok(())
 }
@@ -162,7 +156,7 @@ pub(crate) fn from_deposit(action: &DepositAction) -> Result<ProtocolAction, Poo
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
-    validate_slots(&anchor_root, &nullifiers, &outputs, true, true)?;
+    validate_slots(&anchor_root, &nullifiers, &outputs, true)?;
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Deposit,
@@ -186,7 +180,7 @@ pub(crate) fn from_transfer(action: &TransferAction) -> Result<ProtocolAction, P
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
-    validate_slots(&anchor_root, &nullifiers, &outputs, false, true)?;
+    validate_slots(&anchor_root, &nullifiers, &outputs, false)?;
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::PrivateTransfer,
@@ -210,7 +204,7 @@ pub(crate) fn from_withdraw(action: &WithdrawAction) -> Result<ProtocolAction, P
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
-    validate_slots(&anchor_root, &nullifiers, &outputs, false, false)?;
+    validate_slots(&anchor_root, &nullifiers, &outputs, false)?;
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Withdraw,
@@ -254,9 +248,17 @@ mod tests {
             action_nonce: BytesN::from_array(&env, &[0x33; 32]),
             anchor_root: BytesN::from_array(&env, &[1; 32]),
             nullifier_0: BytesN::from_array(&env, &[2; 32]),
-            nullifier_1: BytesN::from_array(&env, &[0; 32]),
-            output_0: OutputPackage::dummy(&env),
-            output_1: OutputPackage::dummy(&env),
+            nullifier_1: BytesN::from_array(&env, &[3; 32]),
+            output_0: OutputPackage {
+                commitment: BytesN::from_array(&env, &[4; 32]),
+                recipient_envelope: BytesN::from_array(&env, &[5; 181]),
+                outgoing_envelope: BytesN::from_array(&env, &[6; 157]),
+            },
+            output_1: OutputPackage {
+                commitment: BytesN::from_array(&env, &[7; 32]),
+                recipient_envelope: BytesN::from_array(&env, &[8; 181]),
+                outgoing_envelope: BytesN::from_array(&env, &[9; 157]),
+            },
             public_value: 1,
             public_recipient: AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(
                 &env, &[3; 32],

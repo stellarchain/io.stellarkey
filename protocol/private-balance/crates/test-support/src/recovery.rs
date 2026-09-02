@@ -172,11 +172,14 @@ fn replay_record(
         relayer_fee: record.relayer_fee,
         relayer: record.relayer,
     };
+    action
+        .validate_public_shape()
+        .map_err(|error| format!("Invalid action shape at action {action_index}: {error:?}"))?;
     let _action_field =
         action.compute_action_field(&context.network_id, &context.realm_id, &context.pool_id);
 
     for nullifier in record.nullifiers {
-        if nullifier != [0u8; 32] && !accumulator.nullifiers.insert(nullifier) {
+        if !accumulator.nullifiers.insert(nullifier) {
             return Err(format!("Duplicate nullifier at action {action_index}"));
         }
     }

@@ -48,7 +48,8 @@ template ActionCircuit() {
     signal input ask;
     signal input nk;
 
-    signal input inputEnabled[2];
+    signal input inputReal[2];
+    signal input inputDummySecret[2];
     signal input inputOwnerCommitment[2];
     signal input inputDiversifier[2];
     signal input inputValue[2];
@@ -57,7 +58,7 @@ template ActionCircuit() {
     signal input inputSiblings[2][32];
     signal input inputDirectionBits[2][32];
 
-    signal input outputEnabled[2];
+    signal input outputReal[2];
     signal input outputOwnerCommitment[2];
     signal input outputValue[2];
     signal input outputRho[2];
@@ -121,16 +122,19 @@ template ActionCircuit() {
     component inputOwnerZero[2];
     component inputRhoZero[2];
     component inputNullifierZero[2];
+    component inputDummySecretZero[2];
     component inputNote[2];
     component inputNullifier[2];
+    component inputDummyNullifier[2];
     component inputPath[2];
     component inputDiversifierRange[2];
     component inputDiversifiedOwner[2];
-    signal inputDisabled[2];
+    signal inputDummy[2];
+    signal selectedNullifier[2];
 
     for (var i = 0; i < 2; i++) {
-        inputEnabled[i] * (1 - inputEnabled[i]) === 0;
-        inputDisabled[i] <== 1 - inputEnabled[i];
+        inputReal[i] * (1 - inputReal[i]) === 0;
+        inputDummy[i] <== 1 - inputReal[i];
 
         inputValueRange[i] = CheckBits(63);
         inputValueRange[i].in <== inputValue[i];
@@ -142,30 +146,34 @@ template ActionCircuit() {
         inputRhoZero[i].in <== inputRho[i];
         inputNullifierZero[i] = IsZero();
         inputNullifierZero[i].in <== nullifier[i];
+        inputDummySecretZero[i] = IsZero();
+        inputDummySecretZero[i].in <== inputDummySecret[i];
 
-        // A disabled lane is the unique all-zero dummy representation.
-        inputDisabled[i] * inputValue[i] === 0;
-        inputDisabled[i] * inputOwnerCommitment[i] === 0;
-        inputDisabled[i] * inputDiversifier[i] === 0;
-        inputDisabled[i] * inputRho[i] === 0;
-        inputDisabled[i] * inputLeafIndex[i] === 0;
-        inputDisabled[i] * nullifier[i] === 0;
+        // Dummy witnesses are private, zero-value lanes with a fresh secret-derived
+        // public nullifier. Their unused membership fields have a unique zero form.
+        inputDummy[i] * inputValue[i] === 0;
+        inputDummy[i] * inputOwnerCommitment[i] === 0;
+        inputDummy[i] * inputDiversifier[i] === 0;
+        inputDummy[i] * inputRho[i] === 0;
+        inputDummy[i] * inputLeafIndex[i] === 0;
+        inputDummy[i] * inputDummySecretZero[i].out === 0;
+        inputReal[i] * inputDummySecret[i] === 0;
         for (var l = 0; l < 32; l++) {
-            inputDisabled[i] * inputSiblings[i][l] === 0;
-            inputDisabled[i] * inputDirectionBits[i][l] === 0;
+            inputDummy[i] * inputSiblings[i][l] === 0;
+            inputDummy[i] * inputDirectionBits[i][l] === 0;
         }
 
         // A real lane has nonzero note fields and the shared owner.
-        inputEnabled[i] * inputValueZero[i].out === 0;
-        inputEnabled[i] * inputOwnerZero[i].out === 0;
-        inputEnabled[i] * inputRhoZero[i].out === 0;
-        inputEnabled[i] * inputNullifierZero[i].out === 0;
+        inputReal[i] * inputValueZero[i].out === 0;
+        inputReal[i] * inputOwnerZero[i].out === 0;
+        inputReal[i] * inputRhoZero[i].out === 0;
+        inputNullifierZero[i].out === 0;
         inputDiversifierRange[i] = CheckBits(32);
         inputDiversifierRange[i].in <== inputDiversifier[i];
         inputDiversifiedOwner[i] = DiversifiedOwnerCommitment();
         inputDiversifiedOwner[i].baseOwnerCommitment <== actionOwner.out;
         inputDiversifiedOwner[i].diversifier <== inputDiversifier[i];
-        inputEnabled[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) === 0;
+        inputReal[i] * (inputOwnerCommitment[i] - inputDiversifiedOwner[i].out) === 0;
 
         inputNote[i] = NoteCommitment();
         inputNote[i].contextField <== contextField;
@@ -180,7 +188,13 @@ template ActionCircuit() {
         inputNullifier[i].rho <== inputRho[i];
         inputNullifier[i].leafIndex <== inputLeafIndex[i];
         inputNullifier[i].cm <== inputNote[i].out;
-        inputEnabled[i] * (inputNullifier[i].out - nullifier[i]) === 0;
+        inputDummyNullifier[i] = DummyNullifier();
+        inputDummyNullifier[i].contextField <== contextField;
+        inputDummyNullifier[i].dummySecret <== inputDummySecret[i];
+        inputDummyNullifier[i].lane <== i;
+        selectedNullifier[i] <== inputDummyNullifier[i].out
+            + inputReal[i] * (inputNullifier[i].out - inputDummyNullifier[i].out);
+        selectedNullifier[i] === nullifier[i];
 
         inputPath[i] = MerklePath(32);
         inputPath[i].leaf <== inputNote[i].out;
@@ -189,24 +203,24 @@ template ActionCircuit() {
             inputPath[i].siblings[p] <== inputSiblings[i][p];
             inputPath[i].directionBits[p] <== inputDirectionBits[i][p];
         }
-        inputEnabled[i] * (inputPath[i].root - anchorRoot) === 0;
+        inputReal[i] * (inputPath[i].root - anchorRoot) === 0;
     }
 
-    // Real lanes are left-packed, making inputEnabled[0] the has-inputs bit.
-    inputEnabled[1] * (1 - inputEnabled[0]) === 0;
-    (1 - inputEnabled[0]) * ask === 0;
-    (1 - inputEnabled[0]) * nk === 0;
-    inputEnabled[0] * askZero.out === 0;
-    inputEnabled[0] * nkZero.out === 0;
+    signal bothInputsReal;
+    signal hasRealInput;
+    bothInputsReal <== inputReal[0] * inputReal[1];
+    hasRealInput <== inputReal[0] + inputReal[1] - bothInputsReal;
+    (1 - hasRealInput) * ask === 0;
+    (1 - hasRealInput) * nk === 0;
+    hasRealInput * askZero.out === 0;
+    hasRealInput * nkZero.out === 0;
 
-    signal bothInputsEnabled;
-    bothInputsEnabled <== inputEnabled[0] * inputEnabled[1];
     component duplicateNullifier = IsZero();
     component duplicateLeafIndex = IsZero();
     duplicateNullifier.in <== nullifier[0] - nullifier[1];
     duplicateLeafIndex.in <== inputLeafIndex[0] - inputLeafIndex[1];
-    bothInputsEnabled * duplicateNullifier.out === 0;
-    bothInputsEnabled * duplicateLeafIndex.out === 0;
+    duplicateNullifier.out === 0;
+    bothInputsReal * duplicateLeafIndex.out === 0;
 
     component outputValueRange[2];
     component outputValueZero[2];
@@ -214,11 +228,11 @@ template ActionCircuit() {
     component outputRhoZero[2];
     component outputCommitmentZero[2];
     component outputNote[2];
-    signal outputDisabled[2];
+    signal outputDummy[2];
 
     for (var j = 0; j < 2; j++) {
-        outputEnabled[j] * (1 - outputEnabled[j]) === 0;
-        outputDisabled[j] <== 1 - outputEnabled[j];
+        outputReal[j] * (1 - outputReal[j]) === 0;
+        outputDummy[j] <== 1 - outputReal[j];
 
         outputValueRange[j] = CheckBits(63);
         outputValueRange[j].in <== outputValue[j];
@@ -231,15 +245,11 @@ template ActionCircuit() {
         outputCommitmentZero[j] = IsZero();
         outputCommitmentZero[j].in <== outputCommitment[j];
 
-        outputDisabled[j] * outputValue[j] === 0;
-        outputDisabled[j] * outputOwnerCommitment[j] === 0;
-        outputDisabled[j] * outputRho[j] === 0;
-        outputDisabled[j] * outputCommitment[j] === 0;
-
-        outputEnabled[j] * outputValueZero[j].out === 0;
-        outputEnabled[j] * outputOwnerZero[j].out === 0;
-        outputEnabled[j] * outputRhoZero[j].out === 0;
-        outputEnabled[j] * outputCommitmentZero[j].out === 0;
+        outputDummy[j] * outputValue[j] === 0;
+        outputReal[j] * outputValueZero[j].out === 0;
+        outputOwnerZero[j].out === 0;
+        outputRhoZero[j].out === 0;
+        outputCommitmentZero[j].out === 0;
 
         outputNote[j] = NoteCommitment();
         outputNote[j].contextField <== contextField;
@@ -247,15 +257,16 @@ template ActionCircuit() {
         outputNote[j].ownerCommitment <== outputOwnerCommitment[j];
         outputNote[j].value <== outputValue[j];
         outputNote[j].rho <== outputRho[j];
-        outputEnabled[j] * (outputNote[j].out - outputCommitment[j]) === 0;
+        outputNote[j].out === outputCommitment[j];
     }
 
-    outputEnabled[1] * (1 - outputEnabled[0]) === 0;
-    signal bothOutputsEnabled;
-    bothOutputsEnabled <== outputEnabled[0] * outputEnabled[1];
+    signal bothOutputsReal;
+    signal hasRealOutput;
+    bothOutputsReal <== outputReal[0] * outputReal[1];
+    hasRealOutput <== outputReal[0] + outputReal[1] - bothOutputsReal;
     component duplicateOutput = IsZero();
     duplicateOutput.in <== outputCommitment[0] - outputCommitment[1];
-    bothOutputsEnabled * duplicateOutput.out === 0;
+    duplicateOutput.out === 0;
 
     signal depositValue;
     signal withdrawValue;
@@ -275,27 +286,24 @@ template ActionCircuit() {
     component anchorZero = IsZero();
     anchorZero.in <== anchorRoot;
 
-    // Deposit: zero anchor/inputs, positive public value, and at least one output.
+    // Deposit: zero anchor/real inputs, positive public value, and at least one real output.
     isDeposit * anchorRoot === 0;
-    isDeposit * inputEnabled[0] === 0;
-    isDeposit * inputEnabled[1] === 0;
-    isDeposit * nullifier[0] === 0;
-    isDeposit * nullifier[1] === 0;
-    isDeposit * (1 - outputEnabled[0]) === 0;
+    isDeposit * hasRealInput === 0;
+    isDeposit * (1 - hasRealOutput) === 0;
     isDeposit * publicValueZero.out === 0;
     isDeposit * relayerFeeField === 0;
     isDeposit * relayerField === 0;
 
-    // Transfer: nonzero anchor, at least one input/output, and no public value.
+    // Transfer: nonzero anchor, at least one real input/output, and no public value.
     isTransfer * anchorZero.out === 0;
-    isTransfer * (1 - inputEnabled[0]) === 0;
-    isTransfer * (1 - outputEnabled[0]) === 0;
+    isTransfer * (1 - hasRealInput) === 0;
+    isTransfer * (1 - hasRealOutput) === 0;
     isTransfer * publicValueField === 0;
     isTransfer * relayerFieldZero.out === 0;
 
-    // Withdraw: nonzero anchor/input and a positive public withdrawal amount.
+    // Withdraw: nonzero anchor/real input and a positive public withdrawal amount.
     isWithdraw * anchorZero.out === 0;
-    isWithdraw * (1 - inputEnabled[0]) === 0;
+    isWithdraw * (1 - hasRealInput) === 0;
     isWithdraw * publicValueZero.out === 0;
     isWithdraw * relayerFieldZero.out === 0;
 }

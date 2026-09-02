@@ -90,6 +90,9 @@ impl PoolModel {
         ledger_sequence: u32,
         tree_hash_context: Option<&NativeTreeHashContext>,
     ) -> Result<ArchiveRecord, String> {
+        action
+            .validate_public_shape()
+            .map_err(|error| format!("Invalid action shape: {error:?}"))?;
         let current_asset_balance = *self.asset_public_balances.get(&action.asset).unwrap_or(&0);
         let next_asset_balance = match action.kind {
             ActionKind::Deposit => {
@@ -121,7 +124,7 @@ impl PoolModel {
 
         let mut next_nullifiers = self.nullifiers.clone();
         for nf in &action.nullifiers {
-            if *nf != [0u8; 32] && !next_nullifiers.insert(*nf) {
+            if !next_nullifiers.insert(*nf) {
                 return Err("Nullifier already spent".into());
             }
         }
