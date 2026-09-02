@@ -26,7 +26,10 @@ interface PrivateArchiveRestorationDiscoveryRpc {
   getLedgerEntries(
     ...keys: ReturnType<typeof deriveArchiveRecordLedgerKey>[]
   ): Promise<{
-    entries: Array<{ key: ReturnType<typeof deriveArchiveRecordLedgerKey> }>;
+    entries: Array<{
+      key: ReturnType<typeof deriveArchiveRecordLedgerKey>;
+      liveUntilLedgerSeq?: number;
+    }>;
     latestLedger: number;
   }>;
 }
@@ -168,11 +171,23 @@ export async function findContiguousPrivateArchiveRestorationRange(input: {
   ) {
     throw new Error('RPC returned an invalid ledger during restoration discovery.');
   }
+  const seenKeys = new Set<string>();
   const liveKeys = new Set<string>();
   for (const entry of response.entries) {
     const encoded = entry.key.toXDR('base64');
-    if (!expectedKeySet.has(encoded) || liveKeys.has(encoded)) {
+    if (!expectedKeySet.has(encoded) || seenKeys.has(encoded)) {
       throw new Error('RPC returned an unexpected archive record during restoration discovery.');
+    }
+    seenKeys.add(encoded);
+    if (entry.liveUntilLedgerSeq !== undefined) {
+      if (
+        !Number.isInteger(entry.liveUntilLedgerSeq) ||
+        entry.liveUntilLedgerSeq < 0 ||
+        entry.liveUntilLedgerSeq > 0xffff_ffff
+      ) {
+        throw new Error('RPC returned an invalid archive record lifetime during restoration discovery.');
+      }
+      if (entry.liveUntilLedgerSeq === 0) continue;
     }
     liveKeys.add(encoded);
   }
@@ -254,6 +269,7 @@ export async function preparePrivateArchiveRestoration(input: {
   manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId'>;
   source: string;
   startActionIndex: number;
+  actionCount: number;
   maximumActionCount: number;
   classicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;
@@ -268,11 +284,19 @@ export async function preparePrivateArchiveRestoration(input: {
     throw new Error('Archive restoration start action index is invalid.');
   }
   if (
+    !Number.isInteger(input.actionCount) ||
+    input.actionCount < 1 ||
+    input.actionCount > 0x1_0000_0000 ||
+    input.startActionIndex >= input.actionCount
+  ) {
+    throw new Error('Archive restoration start is outside the canonical action count.');
+  }
+  if (
     !Number.isInteger(input.maximumActionCount) ||
     input.maximumActionCount < 1 ||
-    input.startActionIndex + input.maximumActionCount - 1 > 0xffff_ffff
+    input.startActionIndex + input.maximumActionCount > input.actionCount
   ) {
-    throw new Error('Archive restoration action count is invalid.');
+    throw new Error('Archive restoration range exceeds the canonical action count.');
   }
   if (input.classicFeeStroops < 1n || input.classicFeeStroops > 0xffff_ffffn) {
     throw new Error('Archive restoration classic fee is outside the supported range.');

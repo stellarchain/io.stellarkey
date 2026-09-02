@@ -63,7 +63,15 @@ test('archive restoration discovers only the contiguous unavailable prefix', asy
           requested.map(key => key.toXDR('base64')),
           keys.map(key => key.toXDR('base64')),
         );
-        return { entries: [{ key: keys[5] }, { key: keys[3] }, { key: keys[4] }], latestLedger: 123 };
+        return {
+          entries: [
+            { key: keys[5], liveUntilLedgerSeq: 456 },
+            { key: keys[0], liveUntilLedgerSeq: 0 },
+            { key: keys[3], liveUntilLedgerSeq: 456 },
+            { key: keys[4], liveUntilLedgerSeq: 456 },
+          ],
+          latestLedger: 123,
+        };
       },
     },
     poolContractId,
@@ -99,6 +107,34 @@ test('archive restoration discovery rejects keys outside its local probe', async
   );
 });
 
+test('archive restoration preparation refuses indices outside the canonical action count', async () => {
+  const signer = Keypair.random();
+  let accountRequested = false;
+
+  await assert.rejects(
+    preparePrivateArchiveRestoration({
+      rpc: {
+        async getAccount() {
+          accountRequested = true;
+          return new Account(signer.publicKey(), '7');
+        },
+        async simulateTransaction(transaction) {
+          return exactBatchSimulation(transaction);
+        },
+      },
+      manifest: { networkPassphrase, poolContractId },
+      source: signer.publicKey(),
+      startActionIndex: 41,
+      actionCount: 42,
+      maximumActionCount: 2,
+      classicFeeStroops: 100n,
+      maximumResourceFeeStroops: 1_000n,
+    }),
+    /canonical action count/i,
+  );
+  assert.equal(accountRequested, false);
+});
+
 test('archive restoration reviews one exact locally derived record key', async () => {
   const signer = Keypair.random();
   const actionIndex = 41;
@@ -123,6 +159,7 @@ test('archive restoration reviews one exact locally derived record key', async (
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: actionIndex,
+    actionCount: actionIndex + 1,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -160,6 +197,7 @@ test('archive restoration rejects an RPC-expanded footprint', async () => {
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
       startActionIndex: 41,
+      actionCount: 51,
       maximumActionCount: 1,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -182,6 +220,7 @@ test('archive restoration binds signed submission and confirmation to its hash',
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -236,6 +275,7 @@ test('archive restoration refuses a mismatched confirmation hash', async () => {
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -290,6 +330,7 @@ test('archive restoration selects the largest safe prefix and freshly simulates 
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 10,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -325,6 +366,7 @@ test('archive restoration bisects resource overflow with an explicit 80% margin'
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 8,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -343,6 +385,7 @@ test('archive restoration falls back to one key and reports a one-key failure', 
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 4,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,
@@ -407,6 +450,7 @@ test('archive restoration rejects an RPC-expanded or reordered batch footprint',
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
       startActionIndex: 41,
+      actionCount: 51,
       maximumActionCount: 2,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -432,6 +476,7 @@ test('archive restoration rejects a selected batch whose fresh simulation change
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
       startActionIndex: 41,
+      actionCount: 51,
       maximumActionCount: 4,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -460,6 +505,7 @@ test('archive restoration aborts intentional cancellation between simulations', 
       manifest: { networkPassphrase, poolContractId },
       source: signer.publicKey(),
       startActionIndex: 41,
+      actionCount: 51,
       maximumActionCount: 8,
       classicFeeStroops: 100n,
       maximumResourceFeeStroops: 1_000n,
@@ -524,6 +570,7 @@ test('archive restoration cancellation stops confirmation polling', async () => 
     manifest: { networkPassphrase, poolContractId },
     source: signer.publicKey(),
     startActionIndex: 41,
+    actionCount: 51,
     maximumActionCount: 1,
     classicFeeStroops: 100n,
     maximumResourceFeeStroops: 1_000n,

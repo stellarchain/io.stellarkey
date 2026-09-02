@@ -233,6 +233,7 @@ test('archive client reads manifest-bound state and canonical record storage key
       return {
         latestLedger: 500,
         entries: includeRecord ? [{
+          key: keys[0],
           val: {
             type: 'contractData',
             contractData: { val: recordScVal(recordNative) },
@@ -291,5 +292,35 @@ test('archive client reads manifest-bound state and canonical record storage key
   await assert.rejects(
     () => client.readRecords(0, 1),
     error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 0,
+  );
+});
+
+test('archive client reports the lowest missing requested record by ledger key', async () => {
+  const server = {
+    async getLedgerEntries(...keys) {
+      return {
+        latestLedger: 500,
+        entries: [2, 1].map(offset => ({
+          key: keys[offset],
+          liveUntilLedgerSeq: 1_000,
+          val: {
+            type: 'contractData',
+            contractData: {
+              val: recordScVal({
+                ...recordNative,
+                action_index: 10 + offset,
+                starting_leaf_index: (10 + offset) * 2,
+              }),
+            },
+          },
+        })),
+      };
+    },
+  };
+  const client = new PrivateBalanceArchiveClient('https://rpc.example', manifest, server);
+
+  await assert.rejects(
+    () => client.readRecords(10, 3),
+    error => error instanceof ArchiveRecordUnavailableError && error.actionIndex === 10,
   );
 });

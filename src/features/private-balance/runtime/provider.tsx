@@ -1221,6 +1221,7 @@ export function PrivateBalanceProvider({
               manifest,
               source: accountPublicKey,
               startActionIndex: request.startActionIndex,
+              actionCount: head.meta.actionCount,
               maximumActionCount: request.maximumActionCount,
               classicFeeStroops: BigInt(recommendedBaseFeeStroops),
               maximumResourceFeeStroops: MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
