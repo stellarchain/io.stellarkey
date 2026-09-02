@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Replaced source-text merchant security assertions with executable boundaries covering charge voiding, retained-record access, owner reauthentication, and every Merchant-to-Wallet navigation decision.
 - Derived Private Payments manifest proving-key verification evidence from a successful pinned `snarkjs zkey verify` run instead of a literal claim.
 - Required complete generated-artifact toolchains and the locked Private Payments Rust workspace in CI and tagged releases, and scheduled the ignored 100,000-action recovery model as a separate Gate B workflow.
 - Made the shipped Private Payments manifest-tamper browser test unconditional and fixture-independent so CI and release verification cannot silently skip the fail-closed UI assertion.

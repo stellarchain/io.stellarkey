@@ -130,6 +130,7 @@ import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
+import { merchantExitRequired } from "@/lib/merchant/security-boundaries";
 import { SendModal, type SendPrefill } from "./SendModal";
 import { ReceiveModal } from "./ReceiveModal";
 import { AddAssetModal } from "./AddAssetModalShell";
@@ -539,7 +540,11 @@ export function Dashboard() {
   const navigationRequestRef = useRef(0);
   const switchTab = useCallback(async (v: View): Promise<void> => {
     const requestId = ++navigationRequestRef.current;
-    if (mode === "merchant" && !isMerchantView(v) && v !== "settings") {
+    if (merchantExitRequired({
+      mode,
+      targetIsMerchantView: isMerchantView(v),
+      targetIsSettings: v === "settings",
+    })) {
       if (!merchantExitAuthorizationRef.current) {
         merchantExitAuthorizationRef.current = merchantAuthorizeWalletExit()
           .then(() => true)
