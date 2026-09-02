@@ -1,6 +1,6 @@
 import {
   ActionKind,
-  MerkleNodeStore,
+  DOMAIN_MERKLE,
   bytesToBigint,
   computeCommitment,
   computeContextHash,
@@ -15,11 +15,13 @@ import {
   deriveX25519PublicKey,
   encodeNotePlaintext,
   encodeOutgoingPlaintext,
+  p2,
   randomBytes32,
   sampleNonzeroField,
   sealOutgoingEnvelope,
   type ActionModel,
   type ExpandedSpendingKey,
+  type MerklePathWitness,
 } from '@stellarkey/private-balance';
 import { StrKey } from '@stellar/stellar-sdk';
 import type { ShieldedNoteRecord } from '../runtime/types';
@@ -87,7 +89,7 @@ export interface PreparePrivateActionInput {
   esk: ExpandedSpendingKey;
   keyContext: PrivateBalanceKeyContext;
   availableNotes: ShieldedNoteRecord[];
-  commitments: Uint8Array[];
+  merklePaths: MerklePathWitness[];
   intent: BuildActionIntent;
 }
 
@@ -122,6 +124,16 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
     difference |= left[index] ^ right[index];
   }
   return difference === 0;
+}
+
+function merklePathRoot(path: MerklePathWitness): Uint8Array {
+  let current: Uint8Array = path.leaf.slice();
+  for (let level = 0; level < path.siblings.length; level += 1) {
+    current = path.directionBits[level] === 0
+      ? p2(DOMAIN_MERKLE, [current, path.siblings[level]])
+      : p2(DOMAIN_MERKLE, [path.siblings[level], current]);
+  }
+  return current;
 }
 
 function isZero(bytes: Uint8Array): boolean {
@@ -331,6 +343,9 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
   total: bigint;
 }> {
   if (input.intent.kind === 'deposit') {
+    if (input.merklePaths.length !== 0) {
+      throw new Error('Private deposit must not include Merkle paths');
+    }
     return {
       witnesses: [dummyInput(input.keyContext.contextField, 0), dummyInput(input.keyContext.contextField, 1)],
       selectedNoteIds: [],
@@ -352,9 +367,12 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     throw new Error('Private action anchor expiry is invalid');
   }
 
-  const store = await MerkleNodeStore.fromCommitments(input.commitments);
-  if (!equalBytes(store.currentRoot, input.intent.anchorRoot)) {
-    throw new Error('Private action commitments do not match the selected anchor root');
+  if (input.merklePaths.length !== selectedNoteIds.length) {
+    throw new Error('Private action must include one Merkle path per selected note');
+  }
+  const pathsByLeafIndex = new Map(input.merklePaths.map(path => [path.leafIndex, path]));
+  if (pathsByLeafIndex.size !== input.merklePaths.length) {
+    throw new Error('Private action Merkle paths must be distinct');
   }
   const notesById = new Map(input.availableNotes.map(note => [note.id, note]));
   const witnesses: InputWitness[] = [];
@@ -387,8 +405,16 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     if (!equalBytes(computeCommitment(input.keyContext.contextField, assetField, ownerCommitment, value, rho), commitment)) {
       throw new Error('Selected private note commitment is invalid');
     }
-    const path = await store.getPath(note.leafIndex);
-    if (!equalBytes(path.leaf, commitment) || !equalBytes(path.root, input.intent.anchorRoot)) {
+    const path = pathsByLeafIndex.get(note.leafIndex);
+    if (
+      !path ||
+      path.siblings.length !== 32 ||
+      path.directionBits.length !== 32 ||
+      path.directionBits.some(bit => bit !== 0 && bit !== 1) ||
+      !equalBytes(path.leaf, commitment) ||
+      !equalBytes(merklePathRoot(path), path.root) ||
+      !equalBytes(path.root, input.intent.anchorRoot)
+    ) {
       throw new Error('Selected private note Merkle witness is invalid');
     }
     const nullifier = computeNullifier(

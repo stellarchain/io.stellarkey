@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.
 - Replaced sparse Private Payments actions with fixed two-nullifier, two-output packages that include recipient and sender-recovery ciphertexts for every lane.
 - Isolated each Private Payments pool and catalogue deployment to one immutable asset, removing caller-selected asset fields from contract actions.
+- Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
 
 ### Removed
 
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Hid Private Payments input/output lane roles behind private circuit selectors, secret-derived dummy nullifiers, randomized zero-value dummy notes, randomized lane ordering, and fresh self-output diversifiers.
 - Bound each Private Payments deployment hash, manifest, proof asset field, archive record, and token transfer to the pool's constructor-pinned asset contract.
+- Bound the incremental Merkle cache to the deployment, archive cursor, transcript head, root, frontier, and commitment count, with verified recovery after corruption.
 - Removed private recipient and amount handoffs from browser storage, restored reusable-receipt discovery to the authenticated wallet birthday, terminated proof workers on cancellation, bound live contract circuit hashes to the manifest, and added Rust policy checks to tagged releases.
 - Prevented issuer-logo referrer leakage, fully redacted long witness values, and escaped paper-wallet QR attributes before constructing print HTML.
 - Revalidated wallet and merchant refund authority after durable transaction journaling, prevented settled charges from being voided, expired stale Mainnet issued-asset quotes, and cleared decrypted merchant snapshots on lock and unmount.

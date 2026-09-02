@@ -88,8 +88,11 @@ test('public cache reset removes only the selected pool namespace', async () => 
   const other = { ...context, poolId: '04'.repeat(32) };
   await storePrivateBalanceCommitmentChunk(context, 0, [commitment(1)], driver);
   await storePrivateBalanceCommitmentChunk(other, 0, [commitment(2)], driver);
+  const merkleKey = `private:merkle:v1:${context.networkId}:${context.realmId}:${context.poolId}:checkpoint`;
+  driver.records.set(merkleKey, '{"revision":0}');
 
   await clearPrivateBalancePublicCache(context, driver);
   assert.deepEqual(await loadPrivateBalanceCommitments(context, driver), []);
+  assert.equal(driver.records.has(merkleKey), false);
   assert.equal((await loadPrivateBalanceCommitments(other, driver))[0][0], 2);
 });

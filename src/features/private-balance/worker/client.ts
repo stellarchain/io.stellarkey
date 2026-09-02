@@ -4,6 +4,7 @@ import {
   computeContextHash,
   decodePrivateAddress,
   type ArchiveRecordModel,
+  type MerklePathWitness,
   type MerkleTree,
 } from '@stellarkey/private-balance';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
@@ -436,7 +437,7 @@ export class PrivateBalanceWorkerClient {
   public async buildAction(
     reservationId: string,
     intent: BuildActionIntent,
-    commitments: Uint8Array[],
+    merklePaths: MerklePathWitness[],
     availableNotes: ShieldedNoteRecord[],
   ): Promise<Extract<WorkerResponse, { type: 'ACTION_PREPARED' }>> {
     this.assertNotFailed();
@@ -448,7 +449,7 @@ export class PrivateBalanceWorkerClient {
       type: 'BUILD_ACTION',
       reservationId,
       intent,
-      commitments,
+      merklePaths,
       availableNotes,
     };
     return this.request<Extract<WorkerResponse, { type: 'ACTION_PREPARED' }>>(req);

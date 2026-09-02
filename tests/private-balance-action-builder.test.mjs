@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   computeCommitment,
@@ -99,6 +100,14 @@ test('action flow snapshots selected durable notes for a fresh worker session', 
   assert.throws(() => privateActionNoteSnapshot([], [note.id]), /unavailable/i);
 });
 
+test('spend preparation never reconstructs a Merkle tree from pool history', () => {
+  const source = readFileSync(
+    new URL('../src/features/private-balance/worker/action-builder.ts', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /MerkleNodeStore|fromCommitments|loadPrivateBalanceCommitments/);
+});
+
 test('public deposit preflight reports the exact asset balance shortfall', () => {
   assert.doesNotThrow(() => actionFlow.assertSufficientPublicDepositBalance({
     available: 2_500_000_000n,
@@ -123,7 +132,7 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
     esk: owner,
     keyContext,
     availableNotes: [],
-    commitments: [],
+    merklePaths: [],
     intent: {
       kind: 'deposit',
       assetContractId,
@@ -191,7 +200,7 @@ test('rotating the receive address cannot corrupt canonical self outputs', async
     esk: owner,
     keyContext,
     availableNotes: [],
-    commitments: [],
+    merklePaths: [],
     intent: {
       kind: 'deposit',
       assetContractId,
@@ -245,12 +254,13 @@ test('action builder creates an exact one-note transfer witness with self change
   };
   const tree = await import('@stellarkey/private-balance')
     .then(({ MerkleNodeStore }) => MerkleNodeStore.fromCommitments([commitment]));
+  const merklePath = await tree.getPath(0);
 
   const prepared = await preparePrivateAction({
     esk: owner,
     keyContext,
     availableNotes: [note],
-    commitments: [commitment],
+    merklePaths: [merklePath],
     intent: {
       kind: 'transfer',
       assetContractId,
@@ -278,12 +288,38 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.action.outputs[1].cm.some(byte => byte !== 0), true);
   assert.equal(prepared.action.outputs.every(output => output.outgoingEnvelope.length === 157), true);
   assert.equal(prepared.publicSignals.length, 13);
+  const tamperedPath = {
+    ...merklePath,
+    siblings: merklePath.siblings.map((sibling, index) =>
+      index === 0 ? bytes(31) : sibling.slice()),
+    directionBits: [...merklePath.directionBits],
+  };
   await assert.rejects(
     () => preparePrivateAction({
       esk: owner,
       keyContext,
       availableNotes: [note],
-      commitments: [commitment],
+      merklePaths: [tamperedPath],
+      intent: {
+        kind: 'transfer',
+        assetContractId,
+        amount: '6',
+        recipientAddress,
+        selectedNoteIds: [noteId],
+        anchorRoot: tree.currentRoot,
+        anchorExpiresAtLedger: 1234,
+        relayerFee: '0',
+        relayer: { kind: 0, payload: keyContext.accountPublicKey },
+      },
+    }),
+    /Merkle witness/i,
+  );
+  await assert.rejects(
+    () => preparePrivateAction({
+      esk: owner,
+      keyContext,
+      availableNotes: [note],
+      merklePaths: [merklePath],
       intent: {
         kind: 'transfer',
         assetContractId: StrKey.encodeContract(bytes(9)),
@@ -309,7 +345,7 @@ test('action builder creates an exact one-note transfer witness with self change
       esk: owner,
       keyContext,
       availableNotes: [note],
-      commitments: [commitment],
+      merklePaths: [merklePath],
       intent: {
         kind: 'transfer',
         assetContractId,
