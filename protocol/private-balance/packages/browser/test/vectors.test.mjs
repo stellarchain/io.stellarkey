@@ -30,13 +30,20 @@ import {
   computePublicSignals,
   deriveKeysFromSeed,
   derivePrivacySessionRoot,
+  deriveOutgoingAad,
+  encodeOutgoingPlaintext,
+  decodeOutgoingPlaintext,
+  sealOutgoingEnvelope,
+  openOutgoingEnvelope,
+  OUTGOING_ENVELOPE_BYTES,
+  OUTGOING_PLAINTEXT_BYTES,
   serializeCanonicalActionBytes,
 } from '../dist/index.js';
 
 const fromHex = value => Uint8Array.from(value.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
 const toHex = value => Buffer.from(value).toString('hex');
 
-test('fixed protocol conformance snapshots match every v2 primitive', async () => {
+test('fixed protocol V1 conformance snapshots match every primitive', async () => {
   const load = name => JSON.parse(readFileSync(
     join(import.meta.dirname, `../../../vectors/${name}-v1.json`),
     'utf8',
@@ -79,6 +86,7 @@ test('fixed protocol conformance snapshots match every v2 primitive', async () =
     ownerCommitment: keys.ownerCommitment,
     hpkePrivateKey: keys.hpkePrivateKey,
     hpkePublicKey: keys.hpkePublicKey,
+    outgoingViewingKey: keys.outgoingViewingKey,
   })) assert.equal(toHex(value), keyVector.expected[name], name);
 
   const addressVector = load('addresses');
@@ -138,6 +146,35 @@ test('fixed protocol conformance snapshots match every v2 primitive', async () =
     fromHex(encryptionVector.input.actionNonce),
     encryptionVector.input.outputIndex,
   )), encryptionVector.expected.aad);
+  const outgoingPlaintext = encodeOutgoingPlaintext({
+    protocolVersion: 1,
+    flags: 0,
+    value: BigInt(noteInput.value),
+    diversifier: fromHex(noteInput.diversifier),
+    ownerCommitment: keys.ownerCommitment,
+    recipientHpkePublicKey: keys.hpkePublicKey,
+    memoLength: fromHex(noteInput.memo).length,
+    memo,
+    reserved: new Uint8Array(15),
+  });
+  const outgoingAad = deriveOutgoingAad(
+    fromHex(encryptionVector.input.deploymentBindingHash),
+    fromHex(encryptionVector.input.contextHash),
+    fromHex(encryptionVector.input.assetField),
+    fromHex(encryptionVector.input.commitment),
+    fromHex(encryptionVector.input.actionNonce),
+    encryptionVector.input.outputIndex,
+  );
+  const outgoingEnvelope = await sealOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    fromHex(encryptionVector.input.ephemeralPublicKey),
+    outgoingPlaintext,
+    outgoingAad,
+    fromHex(encryptionVector.input.outgoingNonce),
+  );
+  assert.equal(toHex(outgoingPlaintext), encryptionVector.expected.outgoingPlaintext);
+  assert.equal(toHex(outgoingAad), encryptionVector.expected.outgoingAad);
+  assert.equal(toHex(outgoingEnvelope), encryptionVector.expected.outgoingEnvelope);
 
   const treeVector = load('tree');
   const tree = await createEmptyTree();
@@ -182,6 +219,193 @@ test('fixed protocol conformance snapshots match every v2 primitive', async () =
     keyInput.realmId,
     keyInput.poolId,
   )).map(toHex), actionVector.expected.publicSignals);
+});
+
+test('outgoing viewing key recovers fixed real and dummy envelopes and binds all context', async () => {
+  const fill = (value, length = 32) => new Uint8Array(length).fill(value);
+  const keys = await deriveKeysFromSeed(
+    fill(0x11),
+    1,
+    fill(0x22),
+    fill(0x33),
+    fill(0x44),
+    fill(0x66),
+    computeContextField(computeContextHash(1, fill(0x22), fill(0x33), fill(0x44))),
+  );
+  assert.notDeepEqual(keys.outgoingViewingKey, keys.ask);
+  assert.notDeepEqual(keys.outgoingViewingKey, keys.nk);
+  assert.notDeepEqual(keys.outgoingViewingKey, keys.hpkePrivateKey);
+
+  const memo = new Uint8Array(32);
+  memo.set(new TextEncoder().encode('rent'));
+  const real = {
+    protocolVersion: 1,
+    flags: 0,
+    value: 25n,
+    diversifier: Uint8Array.of(1, 2, 3, 4),
+    ownerCommitment: Uint8Array.from([...new Uint8Array(31), 5]),
+    recipientHpkePublicKey: fill(6),
+    memoLength: 4,
+    memo,
+    reserved: new Uint8Array(15),
+  };
+  const dummy = {
+    ...real,
+    flags: 1,
+    value: 0n,
+    memoLength: 0,
+    memo: new Uint8Array(32),
+  };
+  const realBytes = encodeOutgoingPlaintext(real);
+  const dummyBytes = encodeOutgoingPlaintext(dummy);
+  assert.equal(realBytes.length, OUTGOING_PLAINTEXT_BYTES);
+  assert.deepEqual(decodeOutgoingPlaintext(realBytes), real);
+  assert.deepEqual(decodeOutgoingPlaintext(dummyBytes), dummy);
+
+  const binding = fill(7);
+  const context = fill(8);
+  const asset = fill(9);
+  const commitment = fill(10);
+  const actionNonce = fill(11);
+  const ephemeralPublicKey = fill(12);
+  const aad = deriveOutgoingAad(binding, context, asset, commitment, actionNonce, 0);
+  const envelope = await sealOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    ephemeralPublicKey,
+    realBytes,
+    aad,
+    fill(13, 12),
+  );
+  assert.equal(envelope.length, OUTGOING_ENVELOPE_BYTES);
+  assert.deepEqual(
+    decodeOutgoingPlaintext(await openOutgoingEnvelope(
+      keys.outgoingViewingKey,
+      ephemeralPublicKey,
+      envelope,
+      aad,
+    )),
+    real,
+  );
+
+  const mutations = [binding, context, asset, commitment, actionNonce].map((value, index) => {
+    const changed = value.slice();
+    changed[index] ^= 1;
+    return [
+      index === 0 ? changed : binding,
+      index === 1 ? changed : context,
+      index === 2 ? changed : asset,
+      index === 3 ? changed : commitment,
+      index === 4 ? changed : actionNonce,
+    ];
+  });
+  for (const mutation of mutations) {
+    const changedAad = deriveOutgoingAad(...mutation, 0);
+    assert.equal(await openOutgoingEnvelope(
+      keys.outgoingViewingKey,
+      ephemeralPublicKey,
+      envelope,
+      changedAad,
+    ), null);
+  }
+  const changedLaneAad = deriveOutgoingAad(binding, context, asset, commitment, actionNonce, 1);
+  assert.equal(await openOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    ephemeralPublicKey,
+    envelope,
+    changedLaneAad,
+  ), null);
+  const changedCiphertext = envelope.slice();
+  changedCiphertext[changedCiphertext.length - 1] ^= 1;
+  assert.equal(await openOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    ephemeralPublicKey,
+    changedCiphertext,
+    aad,
+  ), null);
+  assert.equal(await openOutgoingEnvelope(
+    fill(99),
+    ephemeralPublicKey,
+    envelope,
+    aad,
+  ), null);
+  assert.equal(await openOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    fill(98),
+    envelope,
+    aad,
+  ), null);
+
+  const dummyEnvelope = await sealOutgoingEnvelope(
+    keys.outgoingViewingKey,
+    ephemeralPublicKey,
+    dummyBytes,
+    aad,
+    fill(14, 12),
+  );
+  assert.deepEqual(
+    decodeOutgoingPlaintext(await openOutgoingEnvelope(
+      keys.outgoingViewingKey,
+      ephemeralPublicKey,
+      dummyEnvelope,
+      aad,
+    )),
+    dummy,
+  );
+  assert.throws(() => encodeOutgoingPlaintext({ ...real, value: 0n }), /value/i);
+  assert.throws(() => encodeOutgoingPlaintext({ ...dummy, value: 1n }), /value/i);
+
+  const recipientMemo = new Uint8Array(32);
+  const recipientRho = Uint8Array.from([...new Uint8Array(31), 15]);
+  const recipientContextField = computeContextField(context);
+  const recipientNote = encodeNotePlaintext({
+    protocolVersion: 1,
+    flags: 0,
+    value: 25n,
+    diversifier: new Uint8Array(4),
+    ownerCommitment: keys.ownerCommitment,
+    rho: recipientRho,
+    memoLength: 0,
+    memo: recipientMemo,
+    reserved: new Uint8Array(15),
+  });
+  const recipientCommitment = computeCommitment(
+    recipientContextField,
+    asset,
+    keys.ownerCommitment,
+    25n,
+    recipientRho,
+  );
+  const recipientPackage = await createOutputPackage(
+    keys.hpkePublicKey,
+    new Uint8Array(4),
+    recipientNote,
+    context,
+    recipientCommitment,
+    actionNonce,
+    0,
+  );
+  assert.notEqual(await openRecipientEnvelope(
+    keys.hpkePrivateKey,
+    recipientPackage.recipientEnvelope,
+    context,
+    recipientContextField,
+    asset,
+    recipientCommitment,
+    actionNonce,
+    0,
+    keys.baseOwnerCommitment,
+  ), null);
+  assert.equal(await openRecipientEnvelope(
+    keys.outgoingViewingKey,
+    recipientPackage.recipientEnvelope,
+    context,
+    recipientContextField,
+    asset,
+    recipientCommitment,
+    actionNonce,
+    0,
+    keys.baseOwnerCommitment,
+  ), null);
 });
 
 test('archive: Rust and TypeScript record hashes match', () => {

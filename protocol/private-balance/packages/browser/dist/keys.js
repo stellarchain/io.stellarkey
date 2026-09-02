@@ -5,10 +5,11 @@ import { p2 } from './poseidon2.js';
 export const DOMAIN_ROOT = 'SKSB_ROOT_V1';
 export const DOMAIN_ASK = 'SKSB_ASK_V1';
 export const DOMAIN_NK = 'SKSB_NK_V1';
+export const DOMAIN_OVK = 'SKSB_OVK_V1';
 export const DOMAIN_HPKE_IKM = 'SKSB_HPKE_IKM_V1';
 export const DOMAIN_OWNER = 'SKSB_OWNER_V1';
-export const DOMAIN_DIVERSIFIED_OWNER = 'SKSB_DIVERSIFIED_OWNER_V2';
-export const DOMAIN_ADDRESS_KEY = 'SKSB_ADDRESS_KEY_V2';
+export const DOMAIN_DIVERSIFIED_OWNER = 'SKSB_DIVERSIFIED_OWNER_V1';
+export const DOMAIN_ADDRESS_KEY = 'SKSB_ADDRESS_KEY_V1';
 export const DOMAIN_STORAGE_KEY = 'SKSB_STORAGE_KEY_V1';
 function keyContext(protocolVersion, networkId, realmId, poolId, accountPublicKeyBytes) {
     for (const [name, value] of [
@@ -109,6 +110,7 @@ export async function deriveExpandedSpendingKey(privacySessionRoot, protocolVers
     let hpkeIkm = null;
     try {
         const nk = deriveNonzeroField(prk, DOMAIN_NK, context).field;
+        const outgoingViewingKey = hkdfExpand(prk, concatBytes(utf8(DOMAIN_OVK), context), 32);
         let askResult = deriveNonzeroField(prk, DOMAIN_ASK, context);
         let baseOwnerCommitment = p2(DOMAIN_OWNER, [contextField, askResult.field, nk]);
         while (baseOwnerCommitment.every((byte) => byte === 0)) {
@@ -127,6 +129,7 @@ export async function deriveExpandedSpendingKey(privacySessionRoot, protocolVers
             ownerCommitment: defaultAddress.ownerCommitment,
             hpkePrivateKey: incomingViewingKey,
             hpkePublicKey: defaultAddress.hpkePublicKey,
+            outgoingViewingKey,
         };
     }
     finally {
@@ -150,5 +153,6 @@ export function toViewingKey(esk) {
         nk: esk.nk.slice(),
         hpkePrivateKey: esk.hpkePrivateKey.slice(),
         hpkePublicKey: esk.hpkePublicKey.slice(),
+        outgoingViewingKey: esk.outgoingViewingKey.slice(),
     };
 }

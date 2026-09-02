@@ -119,7 +119,7 @@ test('private address deployment tags bind 32-byte deployment hashes', () => {
   assert.throws(() => derivePrivateAddressDeploymentTag(new Uint8Array(31)));
 });
 
-test('V2 note encoding binds a diversifier in the normative 128-byte layout', () => {
+test('protocol V1 note encoding binds a diversifier in the normative 128-byte layout', () => {
   const note = {
     protocolVersion: 1,
     flags: 0,

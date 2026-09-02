@@ -41,7 +41,7 @@ test('X25519 rejects low-order public keys before tag comparison', async () => {
   );
 });
 
-test('v2 output packages carry a secret-derived view tag and reject non-matches early', async () => {
+test('output packages carry a secret-derived view tag and reject non-matches early', async () => {
   const keys = await deriveKeysFromSeed(
     bytes(10), 1, bytes(11), bytes(12), bytes(13), bytes(14), bytes(15), bytes(16),
   );

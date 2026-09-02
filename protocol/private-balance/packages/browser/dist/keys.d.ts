@@ -1,10 +1,11 @@
 export declare const DOMAIN_ROOT = "SKSB_ROOT_V1";
 export declare const DOMAIN_ASK = "SKSB_ASK_V1";
 export declare const DOMAIN_NK = "SKSB_NK_V1";
+export declare const DOMAIN_OVK = "SKSB_OVK_V1";
 export declare const DOMAIN_HPKE_IKM = "SKSB_HPKE_IKM_V1";
 export declare const DOMAIN_OWNER = "SKSB_OWNER_V1";
-export declare const DOMAIN_DIVERSIFIED_OWNER = "SKSB_DIVERSIFIED_OWNER_V2";
-export declare const DOMAIN_ADDRESS_KEY = "SKSB_ADDRESS_KEY_V2";
+export declare const DOMAIN_DIVERSIFIED_OWNER = "SKSB_DIVERSIFIED_OWNER_V1";
+export declare const DOMAIN_ADDRESS_KEY = "SKSB_ADDRESS_KEY_V1";
 export declare const DOMAIN_STORAGE_KEY = "SKSB_STORAGE_KEY_V1";
 export interface ExpandedSpendingKey {
     ask: Uint8Array;
@@ -13,6 +14,7 @@ export interface ExpandedSpendingKey {
     ownerCommitment: Uint8Array;
     hpkePrivateKey: Uint8Array;
     hpkePublicKey: Uint8Array;
+    outgoingViewingKey: Uint8Array;
 }
 export interface FullViewingKey {
     baseOwnerCommitment: Uint8Array;
@@ -20,6 +22,7 @@ export interface FullViewingKey {
     nk: Uint8Array;
     hpkePrivateKey: Uint8Array;
     hpkePublicKey: Uint8Array;
+    outgoingViewingKey: Uint8Array;
 }
 export interface DiversifiedAddressKeys {
     diversifier: Uint8Array;

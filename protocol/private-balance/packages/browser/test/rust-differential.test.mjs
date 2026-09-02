@@ -69,6 +69,7 @@ test('1,000 seeded Rust and TypeScript key/address derivations agree byte-for-by
     assert.equal(toHex(keys.ownerCommitment), item.ownerCommitment);
     assert.equal(toHex(keys.hpkePrivateKey), item.hpkePrivateKey);
     assert.equal(toHex(keys.hpkePublicKey), item.hpkePublicKey);
+    assert.equal(toHex(keys.outgoingViewingKey), item.outgoingViewingKey);
     assert.equal(address, item.address);
   }
 });

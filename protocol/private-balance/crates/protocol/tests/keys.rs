@@ -36,13 +36,18 @@ fn test_key_derivation_deterministic() {
     assert_eq!(k1.owner_commitment, k2.owner_commitment);
     assert_eq!(k1.hpke_private_key, k2.hpke_private_key);
     assert_eq!(k1.hpke_public_key, k2.hpke_public_key);
+    assert_eq!(k1.outgoing_viewing_key, k2.outgoing_viewing_key);
     assert_ne!(k1.ask, [0u8; 32]);
     assert_ne!(k1.nk, [0u8; 32]);
     assert_ne!(k1.owner_commitment, [0u8; 32]);
+    assert_ne!(k1.outgoing_viewing_key, k1.ask);
+    assert_ne!(k1.outgoing_viewing_key, k1.nk);
+    assert_ne!(k1.outgoing_viewing_key, k1.hpke_private_key);
 
     let vk = k1.to_viewing_key();
     assert_eq!(vk.owner_commitment, k1.owner_commitment);
     assert_eq!(vk.nk, k1.nk);
     assert_eq!(vk.hpke_private_key, k1.hpke_private_key);
     assert_eq!(vk.hpke_public_key, k1.hpke_public_key);
+    assert_eq!(vk.outgoing_viewing_key, k1.outgoing_viewing_key);
 }
