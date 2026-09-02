@@ -11,7 +11,7 @@ const RECORD_KIND = 'stellarkey-stealth-discovery-cache';
 const RECORD_VERSION = 1;
 const CACHE_PREFIX = 'private:cache:v1';
 const MAX_CACHE_RECORD_BYTES = 8 * 1024 * 1024;
-const MAX_PAYMENTS = 10_000;
+export const MAX_STEALTH_DISCOVERY_PAYMENTS = 10_000;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const POSITIVE_DECIMAL = /^[1-9][0-9]*$/;
@@ -154,7 +154,7 @@ function isCache(value: unknown): value is StealthDiscoveryCache {
     !timestamp(lowerBoundCreatedAt) ||
     !safeIndex(cache.latestLedger) ||
     !Array.isArray(cache.payments) ||
-    cache.payments.length > MAX_PAYMENTS ||
+    cache.payments.length > MAX_STEALTH_DISCOVERY_PAYMENTS ||
     !timestamp(cache.updatedAt) ||
     cache.updatedAt < lowerBoundCreatedAt ||
     !cache.payments.every(payment => isPayment(payment, lowerBoundCreatedAt))
@@ -196,21 +196,44 @@ export function createEmptyStealthDiscoveryCache(
   if (walletCreatedAt !== undefined && !timestamp(walletCreatedAt)) {
     throw new Error('Wallet birthday timestamp is invalid');
   }
-  const lowerBound = new Date(now);
-  lowerBound.setUTCFullYear(lowerBound.getUTCFullYear() - 1);
-  const recoveryFloor = Math.max(0, lowerBound.getTime());
-  const walletBirthday = walletCreatedAt === undefined
-    ? recoveryFloor
-    : Math.min(now, walletCreatedAt);
   return {
     schemaVersion: 1,
     revision: 0,
     cursor: null,
-    lowerBoundCreatedAt: walletBirthday,
+    // A wallet birthday is a local installation fact, not a key-derivation
+    // fact. Seed and secret-key recovery must rescan all retained announcement
+    // history instead of silently starting at the import instant.
+    lowerBoundCreatedAt: 0,
     latestLedger: 0,
     payments: [],
     updatedAt: now,
   };
+}
+
+/**
+ * Keep every receipt that can still move value. Older terminal rows are only
+ * bounded dedup hints below the durable forward cursor and may be compacted.
+ */
+export function compactStealthDiscoveryPayments(
+  payments: StealthOwnedPayment[],
+): StealthOwnedPayment[] {
+  if (payments.length <= MAX_STEALTH_DISCOVERY_PAYMENTS) return payments;
+  const actionable = payments.filter(
+    payment => payment.status === 'unspent' || payment.status === 'sweeping',
+  );
+  if (actionable.length > MAX_STEALTH_DISCOVERY_PAYMENTS) {
+    throw new Error(
+      'Reusable private payments contain more than 10,000 unsettled receipts. Move or dismiss receipts before discovery can continue.',
+    );
+  }
+  const terminalCapacity = MAX_STEALTH_DISCOVERY_PAYMENTS - actionable.length;
+  const retainedTerminal = terminalCapacity === 0
+    ? []
+    : payments
+        .filter(payment => payment.status === 'swept' || payment.status === 'ignored')
+        .slice(-terminalCapacity);
+  const retained = new Set([...actionable, ...retainedTerminal]);
+  return payments.filter(payment => retained.has(payment));
 }
 
 export async function loadStealthDiscoveryCache(
@@ -307,7 +330,8 @@ async function updateStealthDiscoveryCache(
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const current = await loadStealthDiscoveryCache(context, key, candidate);
     if (!current) throw new Error('Stealth discovery cache is unavailable. Check for payments again.');
-    const payments = mutate(current.payments);
+    const mutated = mutate(current.payments);
+    const payments = mutated === null ? null : compactStealthDiscoveryPayments(mutated);
     if (payments === null) return current;
     const next: StealthDiscoveryCache = {
       ...current,

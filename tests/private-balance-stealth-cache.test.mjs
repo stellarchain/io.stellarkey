@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  compactStealthDiscoveryPayments,
   commitStealthDiscoveryCache,
   createEmptyStealthDiscoveryCache,
   loadStealthDiscoveryCache,
@@ -89,21 +90,53 @@ test('stealth discovery cache authenticates context, ciphertext, and revisions',
   );
 });
 
-test('empty stealth cache uses a one-year lower bound and contains no legacy state', () => {
+test('empty stealth cache uses the retained-chain floor and contains no legacy state', () => {
   const now = Date.UTC(2026, 7, 30);
   const state = createEmptyStealthDiscoveryCache(now);
-  assert.equal(state.lowerBoundCreatedAt, Date.UTC(2025, 7, 30));
+  assert.equal(state.lowerBoundCreatedAt, 0);
   assert.equal(state.cursor, null);
   assert.equal(state.latestLedger, 0);
   assert.deepEqual(state.payments, []);
   assert.equal('legacyCursor' in state, false);
 });
 
-test('empty stealth cache always uses the authenticated wallet birthday', () => {
+test('empty stealth cache rescans retained history after seed-only recovery', () => {
   const now = Date.UTC(2026, 7, 30);
   const walletCreatedAt = Date.UTC(2023, 7, 29, 12);
   const state = createEmptyStealthDiscoveryCache(now, walletCreatedAt);
-  assert.equal(state.lowerBoundCreatedAt, walletCreatedAt);
+  assert.equal(
+    state.lowerBoundCreatedAt,
+    0,
+    'seed-only recovery must not inherit the import instant as its discovery floor',
+  );
+});
+
+test('stealth cache compaction retains every actionable receipt and bounded terminal dedup', () => {
+  const payment = (index, status) => ({
+    transactionHash: index.toString(16).padStart(64, '0'),
+    pagingToken: String(index + 1),
+    ephemeralPublicKey: '07'.repeat(32),
+    destinationPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    amountStroops: '1',
+    ledger: 1,
+    createdAt: 1,
+    status,
+  });
+  const terminal = Array.from({ length: 10_000 }, (_, index) => payment(index, 'swept'));
+  const newest = payment(10_000, 'unspent');
+  const compacted = compactStealthDiscoveryPayments([...terminal, newest]);
+
+  assert.equal(compacted.length, 10_000);
+  assert.equal(compacted.at(-1), newest);
+  assert.equal(compacted.some(entry => entry.transactionHash === terminal[0].transactionHash), false);
+  assert.equal(compacted.filter(entry => entry.status === 'unspent').length, 1);
+
+  assert.throws(
+    () => compactStealthDiscoveryPayments(
+      Array.from({ length: 10_001 }, (_, index) => payment(index, 'unspent')),
+    ),
+    /10,000 unsettled|move or dismiss/i,
+  );
 });
 
 test('stealth sweep journal advances only from signed intent to canonical action', async () => {
