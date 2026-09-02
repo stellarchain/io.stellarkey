@@ -91,14 +91,21 @@ fn execute_action(
         return Err(PoolError::DepositsPaused);
     }
 
+    let tree_before = get_tree(env);
     if action.kind != ActionKind::Deposit {
-        known_root(env, &BytesN::from_array(env, &action.anchor_root))?;
+        let anchor_root = BytesN::from_array(env, &action.anchor_root);
+        if anchor_root == tree_before.current_root {
+            // The current root must remain spendable even after an idle root
+            // window or while deposits are paused. This write rolls back with
+            // the action if proof verification or token movement fails.
+            add_known_root(env, &anchor_root, config.root_window_ledgers)?;
+        }
+        known_root(env, &anchor_root)?;
     }
     for nullifier in &action.nullifiers {
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
-    let tree_before = get_tree(env);
     if tree_before.next_index > (1u64 << TREE_DEPTH) - 2 {
         return Err(PoolError::TreeFull);
     }
@@ -338,6 +345,15 @@ impl PrivateBalancePool {
 
     pub fn tree_state(env: Env) -> TreeStorage {
         get_tree(&env)
+    }
+
+    /// Re-registers the current tree root without moving value. This is
+    /// permissionless so an idle pool remains spendable while deposits are
+    /// paused, and repeated calls only refresh the same canonical root.
+    pub fn touch_root(env: Env) -> Result<KnownRoot, PoolError> {
+        let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let tree = get_tree(&env);
+        add_known_root(&env, &tree.current_root, config.root_window_ledgers)
     }
 
     pub fn deposits_paused(env: Env) -> bool {

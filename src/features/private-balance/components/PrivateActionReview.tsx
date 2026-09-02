@@ -266,6 +266,9 @@ export function PrivateActionReview({
             )}
           </ReviewRow>
         )}
+        {review?.transaction.refreshesAnchor ? (
+          <ReviewRow label="Private access">Refreshed with this payment</ReviewRow>
+        ) : null}
         <ReviewRow label="Privacy">
           <span className="text-[12.5px] font-normal text-neutral-300">{PRIVACY_ROW[draft.kind]}</span>
         </ReviewRow>

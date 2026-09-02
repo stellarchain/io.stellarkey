@@ -314,6 +314,14 @@ test('the review balance simulation stays protocol-true before and after inputs 
   );
 });
 
+test('private spend review discloses its atomic idle-pool refresh', () => {
+  const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
+
+  assert.match(review, /review\?\.transaction\.refreshesAnchor/);
+  assert.match(review, /Private access/);
+  assert.match(review, /Refreshed with this payment/);
+});
+
 test('private assets coexist with wallet home and open one focused detail modal', () => {
   const dashboard = read('src/components/Dashboard.tsx');
   assert.equal(

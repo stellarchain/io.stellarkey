@@ -84,6 +84,10 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   }));
   assert.equal(withdraw.functionName.toString(), 'withdraw');
   assert.equal(withdraw.args.length, 2);
+
+  const touchRoot = invocation(builder.buildTouchRootOperation());
+  assert.equal(touchRoot.functionName.toString(), 'touch_root');
+  assert.equal(touchRoot.args.length, 0);
 });
 
 test('private transaction builder rejects malformed fixed proof widths', () => {
@@ -148,6 +152,7 @@ test('private transaction reviewer approves only the exact prepared envelope', (
 
   const review = reviewPrivateBalanceTransaction(expected);
   assert.equal(review.method, 'transfer');
+  assert.equal(review.refreshesAnchor, true);
   assert.equal(review.classicFeeStroops, 100n);
   assert.equal(review.resourceFeeStroops, 500n);
   assert.match(review.transactionHash, /^[0-9a-f]{64}$/);
@@ -219,6 +224,7 @@ test('private transaction preparation binds simulation, fees, source, and time b
     nowSeconds: 10,
   });
   assert.equal(prepared.review.method, 'transfer');
+  assert.equal(prepared.review.refreshesAnchor, true);
   assert.equal(prepared.review.classicFeeStroops, 100n);
   assert.equal(prepared.review.resourceFeeStroops, 500n);
   assert.deepEqual(prepared.timeBounds, { minTime: '0', maxTime: '310' });
@@ -279,4 +285,5 @@ test('private deposit review accepts only its exact source-account SAC transfer 
     maximumResourceFeeStroops: 500n,
   });
   assert.equal(review.method, 'deposit');
+  assert.equal(review.refreshesAnchor, false);
 });

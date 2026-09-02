@@ -39,7 +39,6 @@ import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 
 export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
-const ROOT_EXPIRY_SAFETY_LEDGERS = 12;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 
 export type PrivateActionDraft =
@@ -112,8 +111,8 @@ export class PrivateActionInFlightError extends Error {
 }
 
 /**
- * The verified local chain view went stale between syncs (root changed or
- * near expiry, or the commitment cache trails the head). A fresh sync
+ * The verified local chain view went stale between syncs (the root changed
+ * or the commitment cache trails the head). A fresh sync
  * followed by one automatic re-prepare resolves it without user action.
  */
 export class PrivateStaleChainStateError extends Error {
@@ -413,11 +412,10 @@ export async function preparePrivateBalanceActionFlow(input: {
       if (!state.checkpoint || state.checkpoint.treeRoot !== hex(head.tree.currentRoot)) {
         throw new PrivateStaleChainStateError('Private Balance root changed. Sync and review again.');
       }
-      const root = await archive.readKnownRoot(head.tree.currentRoot);
-      if (root.validUntilLedger - root.latestLedger <= ROOT_EXPIRY_SAFETY_LEDGERS) {
-        throw new PrivateStaleChainStateError('Private Balance root is too close to expiry. Sync and review again.');
+      anchorExpiresAtLedger = head.latestLedger + input.manifest.constants.rootWindowLedgers;
+      if (anchorExpiresAtLedger > 0xffff_ffff) {
+        throw new Error('Private Balance root refresh exceeds the supported ledger range.');
       }
-      anchorExpiresAtLedger = root.validUntilLedger;
       if (input.draft.kind === 'consolidate') {
         const selected = consolidationSelection(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
