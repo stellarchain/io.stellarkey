@@ -31,68 +31,49 @@ test('the committed testnet deployment remains quarantined development evidence'
   const fixtureNames = readdirSync(fixtureDirectory)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name));
   assert.equal(fixtureNames.length, 2, 'keep exactly one current deployment evidence file per asset');
-
-  const fixture = JSON.parse(readFileSync(new URL(fixtureNames[0], fixtureDirectory), 'utf8'));
-  const manifestBytes = readFileSync(
-    new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
+  const fixtures = fixtureNames.map(name =>
+    JSON.parse(readFileSync(new URL(name, fixtureDirectory), 'utf8')),
   );
-  const manifest = JSON.parse(manifestBytes);
-  const {
-    artifactVersion,
-    status,
-    release,
-    ...deploymentManifest
-  } = manifest;
-  const {
-    artifactVersion: fixtureArtifactVersion,
-    status: fixtureStatus,
-    release: fixtureRelease,
-    ...fixtureDeploymentManifest
-  } = fixture.manifest;
-
-  assert.deepEqual(deploymentManifest, fixtureDeploymentManifest);
-  assert.equal(artifactVersion, '1.0.2-dev-fixture');
-  assert.equal(status, 'development');
-  assert.equal(fixtureArtifactVersion, '1.0.2-dev-fixture');
-  assert.equal(fixtureStatus, 'development');
-  for (const key of [
-    'contractWasmSha256',
-    'circuitSourceSha256',
-    'poseidonParametersSha256',
-    'hpkePackageVersion',
-    'hpkeDependencyIntegritySha256',
-    'ceremonyTranscriptRoot',
-    'auditReports',
-    'deploymentTransactions',
-    'allowedEnvironment',
-  ]) {
-    assert.deepEqual(release[key], fixtureRelease[key], `release.${key}`);
-  }
-  assert.match(release.contractSourceCommit, /^[0-9a-f]{40}$/);
-  assert.match(release.toolchainLockSha256, /^[0-9a-f]{64}$/);
-  assert.equal(
-    release.powersOfTauSha256,
-    '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
-  );
-  assert.equal(release.zkeyVerified, true);
-  assert.equal(fixtureRelease.powersOfTauSha256, release.powersOfTauSha256);
-  assert.equal(fixtureRelease.zkeyVerified, release.zkeyVerified);
-  assert.equal(manifest.poolContractId, fixture.poolContractId);
-  assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
 
   const catalogue = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/catalogue.json', import.meta.url),
     'utf8',
   ));
-  assert.equal(catalogue.deployments.length, 1);
-  assert.equal(
-    catalogue.deployments[0].manifestSha256,
-    createHash('sha256').update(manifestBytes).digest('hex'),
+  assert.equal(catalogue.deployments.length, 2);
+
+  for (const deployment of catalogue.deployments) {
+    const fixture = fixtures.find(candidate => candidate.assetContractId === deployment.asset.contractId);
+    assert.ok(fixture, `missing evidence for ${deployment.id}`);
+    const manifestBytes = readFileSync(
+      new URL(`../public${deployment.manifestUrl}`, import.meta.url),
+    );
+    const manifest = JSON.parse(manifestBytes);
+    assert.deepEqual(manifest, fixture.manifest);
+    assert.equal(manifest.artifactVersion, '1.0.2-dev-fixture');
+    assert.equal(manifest.status, 'development');
+    assert.equal(manifest.poolContractId, fixture.poolContractId);
+    assert.equal(manifest.assetContractId, fixture.assetContractId);
+    assert.equal(manifest.release.contractWasmSha256, fixture.wasmSha256);
+    assert.match(manifest.release.contractSourceCommit, /^[0-9a-f]{40}$/);
+    assert.match(manifest.release.toolchainLockSha256, /^[0-9a-f]{64}$/);
+    assert.equal(
+      manifest.release.powersOfTauSha256,
+      '3ef2ecc5b75d687048cf2d59195119b42fb07c5af639c5f283d84bfa69829e7f',
+    );
+    assert.equal(manifest.release.zkeyVerified, true);
+    assert.equal(
+      deployment.manifestSha256,
+      createHash('sha256').update(manifestBytes).digest('hex'),
+    );
+  }
+
+  const rootManifest = readFileSync(
+    new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
   );
-  assert.equal(
-    catalogue.deployments[0].assets.find(asset => asset.code === 'XLM')?.contractId,
-    fixture.assetContractId,
+  const xlmManifest = readFileSync(
+    new URL('../public/protocol/private-balance/v1/xlm/manifest.json', import.meta.url),
   );
+  assert.deepEqual(rootManifest, xlmManifest, 'the compatibility manifest must identify the XLM pool');
 });
 
 test('testnet fixture defaults to a non-mutating plan and requires explicit live consent', () => {

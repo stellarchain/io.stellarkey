@@ -199,6 +199,14 @@ export interface Client {
   withdraw: ({action, proof}: {action: WithdrawAction, proof: Proof}, options?: MethodOptions) => Promise<AssembledTransaction<Result<u32>>>
 
   /**
+   * Construct and simulate a touch_root transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Re-registers the current tree root without moving value. This is
+   * permissionless so an idle pool remains spendable while deposits are
+   * paused, and repeated calls only refresh the same canonical root.
+   */
+  touch_root: (options?: MethodOptions) => Promise<AssembledTransaction<Result<KnownRoot>>>
+
+  /**
    * Construct and simulate a tree_state transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    */
   tree_state: (options?: MethodOptions) => Promise<AssembledTransaction<TreeStorage>>
@@ -257,6 +265,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAAAAAAAHZGVwb3NpdAAAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAANRGVwb3NpdEFjdGlvbgAAAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAIdHJhbnNmZXIAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOVHJhbnNmZXJBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
         "AAAAAAAAAAAAAAAId2l0aGRyYXcAAAACAAAAAAAAAAZhY3Rpb24AAAAAB9AAAAAOV2l0aGRyYXdBY3Rpb24AAAAAAAAAAAAFcHJvb2YAAAAAAAfQAAAABVByb29mAAAAAAAAAQAAA+kAAAAEAAAH0AAAAAlQb29sRXJyb3IAAAA=",
+        "AAAAAAAAAMVSZS1yZWdpc3RlcnMgdGhlIGN1cnJlbnQgdHJlZSByb290IHdpdGhvdXQgbW92aW5nIHZhbHVlLiBUaGlzIGlzCnBlcm1pc3Npb25sZXNzIHNvIGFuIGlkbGUgcG9vbCByZW1haW5zIHNwZW5kYWJsZSB3aGlsZSBkZXBvc2l0cyBhcmUKcGF1c2VkLCBhbmQgcmVwZWF0ZWQgY2FsbHMgb25seSByZWZyZXNoIHRoZSBzYW1lIGNhbm9uaWNhbCByb290LgAAAAAAAAp0b3VjaF9yb290AAAAAAAAAAAAAQAAA+kAAAfQAAAACUtub3duUm9vdAAAAAAAB9AAAAAJUG9vbEVycm9yAAAA",
         "AAAAAAAAAAAAAAAKdHJlZV9zdGF0ZQAAAAAAAAAAAAEAAAfQAAAAC1RyZWVTdG9yYWdlAA==",
         "AAAAAAAAAAAAAAAMYXJjaGl2ZV9tZXRhAAAAAAAAAAEAAAfQAAAAC0FyY2hpdmVNZXRhAA==",
         "AAAAAAAAAAAAAAANX19jb25zdHJ1Y3RvcgAAAAAAAAwAAAAAAAAAEHByb3RvY29sX3ZlcnNpb24AAAAEAAAAAAAAAApuZXR3b3JrX2lkAAAAAAPuAAAAIAAAAAAAAAAIcmVhbG1faWQAAAPuAAAAIAAAAAAAAAAIZ3VhcmRpYW4AAAATAAAAAAAAAAVhc3NldAAAAAAAABMAAAAAAAAAGHBvc2VpZG9uMl9wYXJhbWV0ZXJfaGFzaAAAA+4AAAAgAAAAAAAAAAxjaXJjdWl0X2hhc2gAAAPuAAAAIAAAAAAAAAAVdmVyaWZpY2F0aW9uX2tleV9oYXNoAAAAAAAD7gAAACAAAAAAAAAACnRyZWVfZGVwdGgAAAAAAAQAAAAAAAAAE3Jvb3Rfd2luZG93X2xlZGdlcnMAAAAABAAAAAAAAAANcGFnZV9jYXBhY2l0eQAAAAAAAAQAAAAAAAAAF2RlcGxveW1lbnRfYmluZGluZ19oYXNoAAAAA+4AAAAgAAAAAA==",
@@ -272,6 +281,7 @@ export class Client extends ContractClient {
         deposit: this.txFromJSON<Result<u32>>,
         transfer: this.txFromJSON<Result<u32>>,
         withdraw: this.txFromJSON<Result<u32>>,
+        touch_root: this.txFromJSON<Result<KnownRoot>>,
         tree_state: this.txFromJSON<TreeStorage>,
         archive_meta: this.txFromJSON<ArchiveMeta>,
         deposits_paused: this.txFromJSON<boolean>,
