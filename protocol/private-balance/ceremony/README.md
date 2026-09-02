@@ -14,11 +14,11 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 22,408 (machine value: `22408`) |
+| R1CS constraints | 23,437 (machine value: `23437`) |
 | Public inputs | 13 |
-| R1CS SHA-256 | `c5c598c09e09f7e546ef6cf8d924f44eea50c80d7ba9119e2215278de2babc07` |
-| Development zkey SHA-256 | `8e216c27f1ee692739c60ff40b34751573148d401a19fa5ab1e7e73791b35fbb` |
-| Development verifying-key SHA-256 | `ff6d7e3bde0d7d7ba8ae8f60e29be3f1db7a617189319bf2600de98bf99898ba` |
+| R1CS SHA-256 | `e9dc8f37a8ffde400c7ed5cd9735857a63f361d183e985fcaaf893b7d62ee199` |
+| Development zkey SHA-256 | `61f74662d0661bbc6efbc7175cdba6d49578a9cc7b45ab930cde672537b8a0b0` |
+| Development verifying-key SHA-256 | `fe28fdd58948e01802fb622768fdf1c77231068225fe92df245fb45e499b443b` |
 
 These values identify the hash-pinned testnet-preview candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
