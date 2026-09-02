@@ -231,7 +231,7 @@ test('canonical action encoding permits a full withdrawal without private change
   }, zero, zero, zero));
 });
 
-test('private transfer binds an asset, relayer address, and fee into thirteen public signals', async () => {
+test('private transfer binds its asset, relayer, and fee into eleven public signals', async () => {
   const zero = new Uint8Array(32);
   const one = bigintTo32Bytes(1n);
   const relayer = { kind: 0, payload: new Uint8Array(32).fill(0x45) };
@@ -260,10 +260,19 @@ test('private transfer binds an asset, relayer address, and fee into thirteen pu
   };
 
   const signals = await computePublicSignals(action, one, zero, zero, zero);
-  assert.equal(signals.length, 13);
+  assert.equal(signals.length, 11);
   assert.equal(signals[1].some((byte) => byte !== 0), true);
   assert.deepEqual(signals[5], bigintTo32Bytes(25n));
   assert.equal(signals[6].some((byte) => byte !== 0), true);
+
+  const changedRelayerSignals = await computePublicSignals(
+    { ...action, relayer: { ...relayer, payload: new Uint8Array(32).fill(0x47) } },
+    one,
+    zero,
+    zero,
+    zero,
+  );
+  assert.notDeepEqual(changedRelayerSignals[6], signals[6]);
 
   const changedFee = serializeCanonicalActionBytes(
     { ...action, relayerFee: 26n },

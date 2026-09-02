@@ -98,7 +98,6 @@ export type WorkerResponse =
       preparedActionId: string;
       action: ActionModel;
       actionFieldHex: string;
-      actionBindingHex: string;
       reservedNoteIds: string[];
       inputValue: string;
       changeValue: string;

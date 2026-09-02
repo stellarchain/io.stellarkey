@@ -5,7 +5,6 @@ include "owner.circom";
 include "note.circom";
 include "nullifier.circom";
 include "merkle.circom";
-include "action_binding.circom";
 
 template GadgetsHelper() {
     signal input contextField;
@@ -18,12 +17,10 @@ template GadgetsHelper() {
     signal input leafIndex;
     signal input siblings[17][2];
     signal input positions[17];
-    signal input actionField;
 
     signal output ownerCommitment;
     signal output noteCommitment;
     signal output nullifier;
-    signal output actionBinding;
     signal output merkleRoot;
 
     component oc = OwnerCommitment();
@@ -50,11 +47,6 @@ template GadgetsHelper() {
     nf.leafIndex <== leafIndex;
     nf.cm <== nc.out;
     nullifier <== nf.out;
-
-    component ab = ActionBinding();
-    ab.contextField <== contextField;
-    ab.actionField <== actionField;
-    actionBinding <== ab.out;
 
     component mp = MerklePath(17);
     mp.leaf <== nc.out;

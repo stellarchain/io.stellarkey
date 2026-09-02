@@ -37,7 +37,6 @@ const RESULTS_ROOT = path.join(PROJECT_ROOT, 'protocol/private-balance/results/f
 const DOMAIN_DEPLOYMENT_BINDING = 'SKSB_DEPLOYMENT_BINDING_V1';
 const TREE_DEPTH = 17;
 const ROOT_WINDOW_LEDGERS = 1_440;
-const PAGE_CAPACITY = 32;
 const PRIVATE_ADDRESS_PAYLOAD_BYTES = 84;
 const PRIVATE_ADDRESS_ASCII_BYTES = 128;
 const ADDRESS_CONTEXT_TAG_BYTES = 16;
@@ -123,7 +122,6 @@ export function computeDeploymentBindingHash(input) {
     hex32(input.verificationKeyHash, 'Verification-key hash'),
     u32(input.treeDepth),
     u32(input.rootWindowLedgers),
-    u32(input.pageCapacity),
     u32(PRIVATE_ADDRESS_PAYLOAD_BYTES),
     u32(PRIVATE_ADDRESS_ASCII_BYTES),
     u32(ADDRESS_CONTEXT_TAG_BYTES),
@@ -147,7 +145,6 @@ function fixtureBinding({ realmId, poolContractId, assetContractId, guardianAddr
     ...artifacts,
     treeDepth: TREE_DEPTH,
     rootWindowLedgers: ROOT_WINDOW_LEDGERS,
-    pageCapacity: PAGE_CAPACITY,
   };
 }
 
@@ -165,7 +162,6 @@ export function buildConstructorArguments(input) {
     '--verification_key_hash', binding.verificationKeyHash,
     '--tree_depth', String(TREE_DEPTH),
     '--root_window_ledgers', String(ROOT_WINDOW_LEDGERS),
-    '--page_capacity', String(PAGE_CAPACITY),
     '--deployment_binding_hash', deploymentBindingHash,
   ];
 }

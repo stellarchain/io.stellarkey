@@ -140,11 +140,10 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
     verificationKeyHash: '08'.repeat(32),
     treeDepth: 17,
     rootWindowLedgers: 1_440,
-    pageCapacity: 32,
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    '0dd48d20786c04ce28e69351e0005dd40aaf68f5f1989f8311f2569065a86563',
+    '35ee241fe07fab8a81950bb6fc062e17b1c5a063b345e5e3866e02deb4760ac1',
   );
 });
 

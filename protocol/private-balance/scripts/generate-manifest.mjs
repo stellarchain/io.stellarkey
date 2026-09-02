@@ -203,8 +203,8 @@ const contractWasmSource = existsSync(contractWasmPath)
 if (!existsSync(contractWasmSource)) {
   throw new Error('Private Balance pool Wasm is missing. Run private:generate first.');
 }
-if (r1csInfo.nPubInputs !== 13) {
-  throw new Error(`Expected 13 public inputs, got ${r1csInfo.nPubInputs}`);
+if (r1csInfo.nPubInputs !== 11) {
+  throw new Error(`Expected 11 public inputs, got ${r1csInfo.nPubInputs}`);
 }
 const r1csConstraints = r1csInfo.nConstraints;
 if (typeof r1csInfo.curve.terminate === 'function') await r1csInfo.curve.terminate();
@@ -258,9 +258,7 @@ const baseManifest = {
     treeDepth: 17,
     treeArity: 3,
     rootWindowLedgers: 1440,
-    pageCapacity: 32,
-    maxPagesPerTouch: 4,
-    publicInputs: 13,
+    publicInputs: 11,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,

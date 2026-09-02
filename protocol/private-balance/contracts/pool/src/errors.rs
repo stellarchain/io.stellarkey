@@ -17,7 +17,7 @@ pub enum PoolError {
     InvalidCommitment = 11,
     InvalidProof = 12,
     TreeFull = 13,
-    ArchivePageLimit = 14,
+    ActionCountOverflow = 14,
     ArchiveCorrupt = 15,
     UnauthorizedGuardian = 16,
 }

@@ -7,9 +7,8 @@ use private_balance_pool::{
 use private_balance_protocol::{
     action::compute_asset_field,
     constants::{
-        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY,
-        PRIVATE_ADDRESS_ASCII_BYTES, PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION,
-        ROOT_WINDOW_LEDGERS, TREE_DEPTH,
+        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PRIVATE_ADDRESS_ASCII_BYTES,
+        PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_DEPTH,
     },
     deployment::DeploymentBinding,
     encoding::{compute_context_field, compute_context_hash},
@@ -45,7 +44,6 @@ fn constructor_binds_exact_immutable_configuration() {
         verification_key_hash: EXPECTED_VERIFICATION_KEY_HASH,
         tree_depth: TREE_DEPTH as u32,
         root_window_ledgers: ROOT_WINDOW_LEDGERS,
-        page_capacity: PAGE_CAPACITY as u32,
         private_address_payload_bytes: PRIVATE_ADDRESS_PAYLOAD_BYTES as u32,
         private_address_ascii_bytes: PRIVATE_ADDRESS_ASCII_BYTES as u32,
         address_context_tag_bytes: ADDRESS_CONTEXT_TAG_BYTES as u32,
@@ -71,7 +69,6 @@ fn constructor_binds_exact_immutable_configuration() {
             &BytesN::from_array(&env, &EXPECTED_VERIFICATION_KEY_HASH),
             TREE_DEPTH as u32,
             ROOT_WINDOW_LEDGERS,
-            PAGE_CAPACITY as u32,
             &BytesN::from_array(&env, &deployment_binding_hash),
         ),
     );
@@ -135,7 +132,6 @@ fn constructor_context_and_binding_are_asset_pinned() {
         verification_key_hash: EXPECTED_VERIFICATION_KEY_HASH,
         tree_depth: TREE_DEPTH as u32,
         root_window_ledgers: ROOT_WINDOW_LEDGERS,
-        page_capacity: PAGE_CAPACITY as u32,
         private_address_payload_bytes: PRIVATE_ADDRESS_PAYLOAD_BYTES as u32,
         private_address_ascii_bytes: PRIVATE_ADDRESS_ASCII_BYTES as u32,
         address_context_tag_bytes: ADDRESS_CONTEXT_TAG_BYTES as u32,
@@ -161,7 +157,6 @@ fn constructor_context_and_binding_are_asset_pinned() {
             &BytesN::from_array(&env, &EXPECTED_VERIFICATION_KEY_HASH),
             TREE_DEPTH as u32,
             ROOT_WINDOW_LEDGERS,
-            PAGE_CAPACITY as u32,
             &BytesN::from_array(&env, &deployment_binding_hash),
         ),
     );

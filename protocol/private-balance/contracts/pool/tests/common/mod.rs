@@ -6,9 +6,8 @@ use private_balance_pool::{
 };
 use private_balance_protocol::{
     constants::{
-        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY,
-        PRIVATE_ADDRESS_ASCII_BYTES, PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION,
-        ROOT_WINDOW_LEDGERS, TREE_DEPTH,
+        ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PRIVATE_ADDRESS_ASCII_BYTES,
+        PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_DEPTH,
     },
     deployment::DeploymentBinding,
 };
@@ -101,7 +100,6 @@ pub fn register_pool(env: &Env) -> PoolFixture {
         verification_key_hash: EXPECTED_VERIFICATION_KEY_HASH,
         tree_depth: TREE_DEPTH as u32,
         root_window_ledgers: ROOT_WINDOW_LEDGERS,
-        page_capacity: PAGE_CAPACITY as u32,
         private_address_payload_bytes: PRIVATE_ADDRESS_PAYLOAD_BYTES as u32,
         private_address_ascii_bytes: PRIVATE_ADDRESS_ASCII_BYTES as u32,
         address_context_tag_bytes: ADDRESS_CONTEXT_TAG_BYTES as u32,
@@ -127,7 +125,6 @@ pub fn register_pool(env: &Env) -> PoolFixture {
             &BytesN::from_array(env, &EXPECTED_VERIFICATION_KEY_HASH),
             TREE_DEPTH as u32,
             ROOT_WINDOW_LEDGERS,
-            PAGE_CAPACITY as u32,
             &BytesN::from_array(env, &deployment_binding_hash),
         ),
     );

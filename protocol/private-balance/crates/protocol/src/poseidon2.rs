@@ -4,9 +4,7 @@ use sha2::{Digest, Sha256};
 use soroban_poseidon::poseidon2_hash as soroban_p2_hash;
 use soroban_sdk::{Bytes, BytesN, Env, U256, crypto::bn254::Bn254Fr, vec};
 
-use crate::constants::{
-    DOMAIN_ACTION_BINDING, DOMAIN_NOTE_COMMITMENT, DOMAIN_NULLIFIER, DOMAIN_OWNER,
-};
+use crate::constants::{DOMAIN_NOTE_COMMITMENT, DOMAIN_NULLIFIER, DOMAIN_OWNER};
 
 pub const WIDTH: usize = 4;
 pub const RATE: usize = 3;
@@ -39,17 +37,11 @@ const NULLIFIER_FIELD: [u8; 32] = field_words(
     0x29ade88c360e72d459bee62ca32d22de,
     0x2c8eb235d802f58b46125971b92593ec,
 );
-const ACTION_BINDING_FIELD: [u8; 32] = field_words(
-    0x2664569923168068021216d9a9aa3d72,
-    0xfe2631dde8b61115af1a6865a31f5040,
-);
-
 pub fn domain_field(domain: &str) -> [u8; 32] {
     match domain {
         DOMAIN_OWNER => OWNER_FIELD,
         DOMAIN_NOTE_COMMITMENT => NOTE_COMMITMENT_FIELD,
         DOMAIN_NULLIFIER => NULLIFIER_FIELD,
-        DOMAIN_ACTION_BINDING => ACTION_BINDING_FIELD,
         _ => bytes_to_field(&Sha256::digest(domain.as_bytes())),
     }
 }

@@ -56,6 +56,6 @@ test('one pool context supports asset-bound notes and actions', async () => {
     poolId,
   );
 
-  assert.equal(signals.length, 13);
+  assert.equal(signals.length, 11);
   assert.deepEqual(signals[1], xlmField);
 });

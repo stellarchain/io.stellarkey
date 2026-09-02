@@ -48,6 +48,16 @@ test('private action circuit derives output roles from committed values', () => 
   assert.doesNotMatch(actionBuilder, /outputReal:/u);
 });
 
+test('private action circuit safely binds eleven public signals', () => {
+  const action = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
+  assert.match(action, /exactly these eleven public signals/u);
+  assert.match(action, /actionFieldZero\.in <== actionField;/u);
+  assert.match(action, /actionFieldZero\.out === 0;/u);
+  assert.doesNotMatch(action, /signal input (?:relayerField|actionBinding);/u);
+  assert.doesNotMatch(action, /inputDummy\[i\] \* inputPositions/u);
+  assert.doesNotMatch(action, /include "action_binding\.circom"/u);
+});
+
 test('private action circuit uses a depth-17 ternary Merkle path', () => {
   const actionCircuit = readFileSync(join(circuitsDir, 'circom/action.circom'), 'utf8');
   const merkleCircuit = readFileSync(join(circuitsDir, 'circom/merkle.circom'), 'utf8');
@@ -81,8 +91,28 @@ test('private archive reuses the public signals already verified for the action'
 
   assert.doesNotMatch(archive, /action::\{[^}]*public_signals/u);
   assert.doesNotMatch(archive, /public_signals\(env, config, action\)/u);
-  assert.match(archive, /signals: &\[\[u8; 32\]; 13\]/u);
+  assert.match(archive, /signals: &\[\[u8; 32\]; 11\]/u);
   assert.match(contract, /archive::append_record\([\s\S]*?&signals,/u);
+});
+
+test('retired private archive paging constants stay out of consensus bindings', () => {
+  const paths = [
+    'protocol/private-balance/crates/protocol/src/constants.rs',
+    'protocol/private-balance/crates/protocol/src/deployment.rs',
+    'protocol/private-balance/contracts/pool/src/contract.rs',
+    'protocol/private-balance/contracts/pool/src/storage.rs',
+    'protocol/private-balance/scripts/generate-manifest.mjs',
+    'protocol/private-balance/manifests/development.json',
+    'public/protocol/private-balance/v1/manifest.json',
+  ];
+  for (const path of paths) {
+    const source = readFileSync(join(process.cwd(), path), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /PAGE_CAPACITY|MAX_PAGES_PER_TOUCH|pageCapacity|maxPagesPerTouch/u,
+      path,
+    );
+  }
 });
 
 test('asset-pinned pools precompute their immutable public asset field', () => {
@@ -189,10 +219,17 @@ test('protocol review decisions are backed by reproducible measurements', () => 
   assert.equal(evidence.circuit.laneFree.constraints, 22_909);
   assert.equal(evidence.circuit.singleTotalRange.constraints, 22_846);
   assert.equal(evidence.circuit.derivedOutputRoles.constraints, 22_844);
-  assert.equal(evidence.circuit.ternaryDepth17.constraints, 14_876);
-  assert.equal(evidence.circuit.ternaryDepth17.publicInputs, 13);
+  assert.equal(evidence.circuit.prePublicInputReduction.constraints, 14_876);
+  assert.equal(evidence.circuit.prePublicInputReduction.publicInputs, 13);
+  assert.equal(evidence.circuit.ternaryDepth17.constraints, 14_574);
+  assert.equal(evidence.circuit.ternaryDepth17.publicInputs, 11);
   assert.equal(evidence.circuit.ternaryDepth17.privateInputs, 124);
   assert.ok(evidence.circuit.reductionPercent > 36);
+  assert.equal(evidence.associationSet.additionalPathConstraints, 4_573);
+  assert.equal(evidence.associationSet.publicInputs, 1);
+  assert.equal(evidence.associationSet.privateInputs, 53);
+  assert.equal(evidence.associationSet.projectedActionConstraints, 19_147);
+  assert.ok(evidence.associationSet.projectedIncreasePercent > 31);
   assert.ok(evidence.x25519.trials >= 3);
   assert.ok(evidence.x25519.samplesPerTrial >= 100);
   for (const measurement of [

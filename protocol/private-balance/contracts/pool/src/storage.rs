@@ -18,7 +18,6 @@ pub struct PoolConfig {
     pub verification_key_hash: BytesN<32>,
     pub tree_depth: u32,
     pub root_window_ledgers: u32,
-    pub page_capacity: u32,
     pub deployment_binding_hash: BytesN<32>,
     pub context_hash: BytesN<32>,
     pub context_field: BytesN<32>,

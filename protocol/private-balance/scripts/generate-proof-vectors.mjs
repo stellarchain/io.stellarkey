@@ -15,13 +15,11 @@ const helperWasmPath = join(buildDir, 'gadgets_helper_js/gadgets_helper.wasm');
 const browserPackagePath = join(protocolDir, 'packages/browser/dist/index.js');
 const {
   ActionKind,
-  computeActionBinding,
   computeActionField,
   computeAssetField,
   computeContextField,
   computeContextHash,
   computeDummyNullifier,
-  computeRelayerField,
 } = await import(browserPackagePath);
 const fromHex = (value) => Uint8Array.from(value.match(/../g), (byte) => Number.parseInt(byte, 16));
 const fieldDecimal = (value) => BigInt(`0x${Buffer.from(value).toString('hex')}`).toString();
@@ -40,7 +38,7 @@ const helperWasm = readFileSync(helperWasmPath);
 const wcModule = await import(join(circuitsDir, 'node_modules/circom_runtime/js/witness_calculator.js'));
 const helper = await wcModule.default(helperWasm);
 
-async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings(), actionField = '0' }) {
+async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', diversifier = '0', rho = '0', value = '0', leafIndex = '0', siblings = emptySiblings() }) {
   const wtns = await helper.calculateWitness({
     contextField: contextField.toString(),
     assetField: assetField.toString(),
@@ -52,14 +50,12 @@ async function evalGadgets({ contextField, assetField, ask = '0', nk = '0', dive
     leafIndex: leafIndex.toString(),
     siblings: siblings.map(level => level.map(String)),
     positions: positionsFor(leafIndex),
-    actionField: actionField.toString(),
   });
   return {
     ownerCommitment: wtns[1].toString(),
     noteCommitment: wtns[2].toString(),
     nullifier: wtns[3].toString(),
-    actionBinding: wtns[4].toString(),
-    merkleRoot: wtns[5].toString(),
+    merkleRoot: wtns[4].toString(),
   };
 }
 
@@ -80,9 +76,6 @@ async function generateVectors() {
   });
   const actionFieldDecimal = (action) => fieldDecimal(
     computeActionField(action, networkId, realmId, poolId),
-  );
-  const actionBindingDecimal = async (actionField) => fieldDecimal(
-    await computeActionBinding(fromHex(BigInt(contextField).toString(16).padStart(64, '0')), fromHex(BigInt(actionField).toString(16).padStart(64, '0'))),
   );
 
   // 1. Deposit Vector
@@ -137,7 +130,6 @@ async function generateVectors() {
     depositSource: { kind: 0, payload: new Uint8Array(32).fill(4) },
   };
   const depActionField = actionFieldDecimal(depAction);
-  const depActionBinding = await actionBindingDecimal(depActionField);
 
   const depInputs = {
     contextField,
@@ -146,9 +138,7 @@ async function generateVectors() {
     anchorRoot: depAnchorRoot,
     publicValueField: depPublicValueField,
     relayerFeeField: '0',
-    relayerField: '0',
     actionField: depActionField,
-    actionBinding: depActionBinding,
     nullifier: depDummyNullifiers,
     outputCommitment: [depGadgets.noteCommitment, depDummyOutput.noteCommitment],
 
@@ -223,7 +213,6 @@ async function generateVectors() {
     relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const trActionField = actionFieldDecimal(trAction);
-  const trActionBinding = await actionBindingDecimal(trActionField);
 
   const trInputs = {
     contextField,
@@ -232,9 +221,7 @@ async function generateVectors() {
     anchorRoot: in0Res.merkleRoot,
     publicValueField: trPublicValueField,
     relayerFeeField: '1000',
-    relayerField: fieldDecimal(computeRelayerField(trAction)),
     actionField: trActionField,
-    actionBinding: trActionBinding,
     nullifier: [in0Res.nullifier, trDummyNullifier],
     outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment],
 
@@ -309,7 +296,6 @@ async function generateVectors() {
     relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const wdActionField = actionFieldDecimal(wdAction);
-  const wdActionBinding = await actionBindingDecimal(wdActionField);
 
   const wdInputs = {
     contextField,
@@ -318,9 +304,7 @@ async function generateVectors() {
     anchorRoot: wdIn0Res.merkleRoot,
     publicValueField: wdPublicValueField,
     relayerFeeField: '2000',
-    relayerField: fieldDecimal(computeRelayerField(wdAction)),
     actionField: wdActionField,
-    actionBinding: wdActionBinding,
     nullifier: [wdIn0Res.nullifier, wdDummyNullifier],
     outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment],
 

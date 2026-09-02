@@ -28,7 +28,7 @@ interface ArchiveManifest extends Pick<
   | 'deploymentBindingHash'
 > {
   artifacts: Pick<PrivateBalanceManifest['artifacts'], 'r1csSha256' | 'vkJsonSha256'>;
-  constants: Pick<PrivateBalanceManifest['constants'], 'treeDepth' | 'pageCapacity'>;
+  constants: Pick<PrivateBalanceManifest['constants'], 'treeDepth'>;
 }
 
 interface ArchiveRpc {
@@ -66,7 +66,6 @@ interface PoolConfigState {
   verificationKeyHash: Uint8Array;
   treeDepth: number;
   rootWindowLedgers: number;
-  pageCapacity: number;
   deploymentBindingHash: Uint8Array;
   contextHash: Uint8Array;
   contextField: Uint8Array;
@@ -224,7 +223,6 @@ function decodeConfig(value: unknown): PoolConfigState {
     verificationKeyHash: bytes(config.verification_key_hash, 32, 'Pool config verification_key_hash'),
     treeDepth: u32(config.tree_depth, 'Pool config tree_depth'),
     rootWindowLedgers: u32(config.root_window_ledgers, 'Pool config root_window_ledgers'),
-    pageCapacity: u32(config.page_capacity, 'Pool config page_capacity'),
     deploymentBindingHash: bytes(config.deployment_binding_hash, 32, 'Pool config deployment_binding_hash'),
     contextHash: bytes(config.context_hash, 32, 'Pool config context_hash'),
     contextField: bytes(config.context_field, 32, 'Pool config context_field'),
@@ -552,7 +550,6 @@ export class PrivateBalanceArchiveClient {
       !equalBytes(config.networkId, networkId) ||
       !equalBytes(config.realmId, realmId) ||
       config.treeDepth !== this.manifest.constants.treeDepth ||
-      config.pageCapacity !== this.manifest.constants.pageCapacity ||
       !equalBytes(
         config.deploymentBindingHash,
         hex32(this.manifest.deploymentBindingHash, 'Manifest deployment binding hash'),

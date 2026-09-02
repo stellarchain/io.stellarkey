@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { createHash, createHmac } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { cpus, platform, release } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpus, platform, release, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,10 @@ import { p2 } from '../../packages/browser/dist/poseidon2.js';
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const outputPath = join(root, 'protocol/private-balance/results/review-validation.json');
 const r1csPath = join(root, 'protocol/private-balance/circuits/build/action.r1cs');
+const associationPathSource = join(
+  root,
+  'protocol/private-balance/spikes/circom/association-path.circom',
+);
 const trials = 3;
 const samplesPerTrial = 120;
 const warmups = 20;
@@ -500,6 +504,23 @@ const scanBatchThroughputRatio = sequentialBatchCost / selectedBatchCost;
 
 const r1cs = await snarkjs.r1cs.info(r1csPath);
 if (typeof r1cs.curve?.terminate === 'function') await r1cs.curve.terminate();
+const associationBuildDir = mkdtempSync(join(tmpdir(), 'stellarkey-association-path-'));
+let associationPathR1cs;
+try {
+  execFileSync(
+    'circom',
+    [associationPathSource, '--r1cs', '--O2', '-o', associationBuildDir],
+    { cwd: root, stdio: 'ignore' },
+  );
+  associationPathR1cs = await snarkjs.r1cs.info(
+    join(associationBuildDir, 'association-path.r1cs'),
+  );
+  if (typeof associationPathR1cs.curve?.terminate === 'function') {
+    await associationPathR1cs.curve.terminate();
+  }
+} finally {
+  rmSync(associationBuildDir, { recursive: true, force: true });
+}
 const pkcs8Improvement = 1 - pkcs8Measurement.p50Microseconds / jwkMeasurement.p50Microseconds;
 const baselineConstraints = 23_437;
 const evidence = {
@@ -582,6 +603,11 @@ const evidence = {
       privateInputs: 150,
       delta: -2,
     },
+    prePublicInputReduction: {
+      constraints: 14_876,
+      publicInputs: 13,
+      privateInputs: 124,
+    },
     ternaryDepth17: {
       constraints: r1cs.nConstraints,
       publicInputs: r1cs.nPubInputs,
@@ -592,6 +618,17 @@ const evidence = {
     },
     reductionPercent: Number(((baselineConstraints - r1cs.nConstraints) / baselineConstraints * 100).toFixed(2)),
     method: 'Each source variant was compiled sequentially with Circom 2.2.3 and --O2; the final R1CS is read directly by snarkjs.',
+  },
+  associationSet: {
+    additionalPathConstraints: associationPathR1cs.nConstraints,
+    publicInputs: associationPathR1cs.nPubInputs,
+    privateInputs: associationPathR1cs.nPrvInputs,
+    projectedActionConstraints: r1cs.nConstraints + associationPathR1cs.nConstraints,
+    projectedIncreasePercent: Number(
+      (associationPathR1cs.nConstraints / r1cs.nConstraints * 100).toFixed(2),
+    ),
+    source: 'protocol/private-balance/spikes/circom/association-path.circom',
+    method: 'Compiled a standalone depth-17 ternary membership path with Circom 2.2.3 and --O2; policy predicates and association-root lifecycle logic are intentionally excluded.',
   },
   contractCosts: {
     verifier: {
@@ -651,11 +688,11 @@ const evidence = {
     },
     10: {
       status: 'accept',
-      reason: 'Consensus changes need explicit, repository-tested decisions before artifacts or deployment bindings move.',
+      reason: 'The custom KEM, shared multi-asset pool, and capacity-domain proposals now have explicit repository-tested rejection records before artifact bindings move.',
     },
     11: {
-      status: 'defer',
-      reason: 'The 11-input circuit claim must be reproduced by compilation and negative mutation gates before acceptance.',
+      status: 'accept',
+      reason: 'The safe variant compiled to 14574 constraints and 11 public inputs; one inverse constraint is retained because an otherwise-unused public actionField would receive a zero proof-binding IC coefficient.',
     },
     12: {
       status: 'reject',
@@ -666,28 +703,28 @@ const evidence = {
       reason: 'A shared multi-asset pool conflicts with the implemented asset-pinned isolation and reintroduces shared spam and recovery costs.',
     },
     14: {
-      status: 'defer',
-      reason: 'The paging constants appear retired, but removal must pass deployment-binding and generated-artifact checks.',
+      status: 'accept',
+      reason: 'The archive stores one persistent entry per record, so retired paging constants are removed from the constructor, deployment binding, manifest, and runtime head validation.',
     },
     15: {
-      status: 'defer',
-      reason: 'Capacity-domain separation is structurally sound but changes every tree and proof artifact and requires reproducible regeneration.',
+      status: 'reject',
+      reason: 'Soroban native Poseidon2 fixes the length-IV capacity and exposes no capacity-domain argument; a guest permutation would discard host acceleration without a measured safety need.',
     },
     16: {
-      status: 'defer',
-      reason: 'Artifact regeneration is required only for accepted consensus changes and must remain reproducible from authenticated inputs.',
+      status: 'accept',
+      reason: 'The accepted public-input and deployment-binding changes require complete proving-key, verifier, contract, vector, client, and manifest regeneration from an authenticated transcript.',
     },
     17: {
-      status: 'defer',
-      reason: 'Relayer availability needs a separately validated submission and fee-sponsorship design before product claims change.',
+      status: 'accept',
+      reason: 'The current client self-submits and therefore exposes its inner transaction source. A fee-bump changes only the fee source and does not remove that link, so the limitation is explicitly accepted until a third-party submission service is specified and operated.',
     },
     18: {
       status: 'defer',
       reason: 'Cross-origin isolation cannot be accepted without a subresource audit and physical-browser proving measurements.',
     },
     19: {
-      status: 'defer',
-      reason: 'Association sets add policy and circuit scope; the constraint estimate and product requirement need validation before ceremony.',
+      status: 'reject',
+      reason: `A compiled additional depth-17 membership path costs ${associationPathR1cs.nConstraints} constraints (${Number((associationPathR1cs.nConstraints / r1cs.nConstraints * 100).toFixed(2))} percent of the current action) before policy logic; no association curator, appeals model, or user requirement is specified.`,
     },
     20: {
       status: 'accept',

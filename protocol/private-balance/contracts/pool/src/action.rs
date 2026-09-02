@@ -231,7 +231,7 @@ pub fn public_signals(
     env: &Env,
     config: &PoolConfig,
     action: &ProtocolAction,
-) -> Result<[[u8; 32]; 13], PoolError> {
+) -> Result<[[u8; 32]; 11], PoolError> {
     let pool_id = contract_payload(&env.current_contract_address())?;
     Ok(action.compute_public_signals_with_asset_field(
         &config.context_field.to_array(),

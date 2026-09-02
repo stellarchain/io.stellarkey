@@ -257,7 +257,6 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           preparedActionId,
           action: prepared.action,
           actionFieldHex: toHex(prepared.actionField),
-          actionBindingHex: toHex(prepared.actionBinding),
           reservedNoteIds: prepared.reservedNoteIds,
           inputValue: prepared.inputValue,
           changeValue: prepared.changeValue,

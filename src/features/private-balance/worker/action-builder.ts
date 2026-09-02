@@ -76,7 +76,6 @@ type CircuitInputs = Record<string, string | string[] | string[][] | string[][][
 export interface PreparedPrivateAction {
   action: ActionModel;
   actionField: Uint8Array;
-  actionBinding: Uint8Array;
   publicSignals: string[];
   circuitInputs: CircuitInputs;
   reservedNoteIds: string[];
@@ -660,11 +659,9 @@ export async function preparePrivateAction(
     anchorRoot: publicSignals[3],
     publicValueField: publicSignals[4],
     relayerFeeField: publicSignals[5],
-    relayerField: publicSignals[6],
-    actionField: publicSignals[7],
-    actionBinding: publicSignals[8],
-    nullifier: [publicSignals[9], publicSignals[10]],
-    outputCommitment: [publicSignals[11], publicSignals[12]],
+    actionField: publicSignals[6],
+    nullifier: [publicSignals[7], publicSignals[8]],
+    outputCommitment: [publicSignals[9], publicSignals[10]],
     ask: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.ask),
     nk: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.nk),
     inputReal: preparedInputs.witnesses.map(witness => witness.real ? '1' : '0'),
@@ -689,8 +686,7 @@ export async function preparePrivateAction(
 
   return {
     action,
-    actionField: publicSignalBytes[7],
-    actionBinding: publicSignalBytes[8],
+    actionField: publicSignalBytes[6],
     publicSignals,
     circuitInputs,
     reservedNoteIds: preparedInputs.selectedNoteIds,

@@ -43,8 +43,7 @@ const manifest = {
   },
   constants: {
     treeDepth: 17,
-    pageCapacity: 32,
-    publicInputs: 13,
+    publicInputs: 11,
     notePlaintextBytes: 128,
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,

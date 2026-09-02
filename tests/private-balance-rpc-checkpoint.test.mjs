@@ -24,7 +24,6 @@ function head(actionCount, marker = actionCount) {
       verificationKeyHash: bytes(5),
       treeDepth: 17,
       rootWindowLedgers: 1_440,
-      pageCapacity: 32,
       deploymentBindingHash: bytes(6),
       contextHash: bytes(7),
       contextField: bytes(8),

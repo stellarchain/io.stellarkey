@@ -32,7 +32,7 @@ const manifest = {
     r1csSha256: '0d'.repeat(32),
     vkJsonSha256: '0e'.repeat(32),
   },
-  constants: { treeDepth: 17, pageCapacity: 32 },
+  constants: { treeDepth: 17 },
 };
 
 const recordNative = {
@@ -192,7 +192,6 @@ test('archive client reads manifest-bound state and canonical record storage key
           verification_key_hash: bytes(14),
           tree_depth: 17,
           root_window_ledgers: 1_440,
-          page_capacity: 32,
           deployment_binding_hash: Buffer.from(deploymentBindingHash, 'hex'),
           context_hash: contextHash,
           context_field: computeContextField(contextHash),

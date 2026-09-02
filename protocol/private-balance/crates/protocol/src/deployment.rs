@@ -16,7 +16,6 @@ pub struct DeploymentBinding {
     pub verification_key_hash: [u8; 32],
     pub tree_depth: u32,
     pub root_window_ledgers: u32,
-    pub page_capacity: u32,
     pub private_address_payload_bytes: u32,
     pub private_address_ascii_bytes: u32,
     pub address_context_tag_bytes: u32,
@@ -41,7 +40,6 @@ impl DeploymentBinding {
         bytes.extend_from_slice(&self.verification_key_hash);
         encode_u32_be(self.tree_depth, &mut bytes);
         encode_u32_be(self.root_window_ledgers, &mut bytes);
-        encode_u32_be(self.page_capacity, &mut bytes);
         encode_u32_be(self.private_address_payload_bytes, &mut bytes);
         encode_u32_be(self.private_address_ascii_bytes, &mut bytes);
         encode_u32_be(self.address_context_tag_bytes, &mut bytes);
