@@ -137,6 +137,7 @@ import {
   unresolvedShiftFlows,
 } from "@/lib/merchant/shifts";
 import {
+  confirmInvoicePayment as confirmPersistedInvoicePayment,
   createInvoiceDraft as createPersistedInvoiceDraft,
   duplicateInvoice as duplicatePersistedInvoice,
   invoiceCompatibilityPayUri,
@@ -151,6 +152,7 @@ import {
   buildCounterCodePayUri,
   counterCodeCompatibilityPayUri,
   counterCodePayUri,
+  confirmCounterPayment as confirmPersistedCounterPayment,
   createCounterCode as createPersistedCounterCode,
   reconcileCounterPayments,
   setCounterCodeActive as setPersistedCounterCodeActive,
@@ -163,7 +165,7 @@ import {
 import {
   customerHistory as buildCustomerHistory,
   forgetCustomer as forgetPersistedCustomer,
-  reconcileCustomerSettlements,
+  reconcileCustomerSettlementsNonFatal,
   redeemLoyaltyReward as redeemPersistedLoyaltyReward,
   startLoyaltyCard as startPersistedLoyaltyCard,
   syncCustomerContacts,
@@ -391,6 +393,7 @@ interface MerchantContextValue {
     amountMinor: Minor;
     note?: string | null;
   }) => Promise<Invoice>;
+  confirmInvoicePayment: (paymentId: string) => Promise<void>;
   voidInvoice: (invoiceId: string, reason: string) => Promise<Invoice>;
   duplicateInvoice: (invoiceId: string) => Promise<Invoice>;
   invoicePayUriFor: (
@@ -412,6 +415,7 @@ interface MerchantContextValue {
     active: boolean;
   }) => Promise<CounterCode>;
   setCounterCodeActive: (codeId: string, active: boolean) => Promise<CounterCode>;
+  confirmCounterPayment: (paymentId: string) => Promise<void>;
   counterCodePayUriFor: (
     code: CounterCode,
     asset: AcceptedAsset,
@@ -613,6 +617,7 @@ type MerchantRecordsValue = Pick<
   | "updateInvoiceDraft"
   | "issueInvoice"
   | "recordManualInvoicePayment"
+  | "confirmInvoicePayment"
   | "voidInvoice"
   | "duplicateInvoice"
   | "invoicePayUriFor"
@@ -622,6 +627,7 @@ type MerchantRecordsValue = Pick<
   | "createCounterCode"
   | "updateCounterCode"
   | "setCounterCodeActive"
+  | "confirmCounterPayment"
   | "counterCodePayUriFor"
   | "counterCodePreviewUri"
   | "customers"
@@ -2029,6 +2035,18 @@ export function MerchantProvider({
     return settled.invoice;
   }, [commitStore, requireInvoiceActor]);
 
+  const confirmInvoicePayment = useCallback(async (paymentId: string): Promise<void> => {
+    requireInvoiceActor(storeRef.current);
+    await commitStore((latest) => {
+      const actor = requireInvoiceActor(latest);
+      return confirmPersistedInvoicePayment(latest, {
+        paymentId,
+        actor,
+        now: Date.now(),
+      });
+    });
+  }, [commitStore, requireInvoiceActor]);
+
   const voidInvoice = useCallback(async (invoiceId: string, reason: string): Promise<Invoice> => {
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
@@ -2148,6 +2166,20 @@ export function MerchantProvider({
     await commitStore(changed.store);
     return changed.code;
   }, [commitStore, requireCounterCodeActor]);
+
+  const confirmCounterPayment = useCallback(async (paymentId: string): Promise<void> => {
+    const current = storeRef.current;
+    requireCounterCodeActor(current);
+    await commitStore((latest) => {
+      const actor = requireCounterCodeActor(latest);
+      return confirmPersistedCounterPayment(latest, {
+        paymentId,
+        actor,
+        rates: quoteInputs(),
+        now: Date.now(),
+      });
+    });
+  }, [commitStore, quoteInputs, requireCounterCodeActor]);
 
   const counterCodePreviewUri = useCallback((input: {
     kind: CounterCodeKind;
@@ -2551,8 +2583,8 @@ export function MerchantProvider({
   /* ---------------- the watcher ---------------- */
 
   const applyPayments = useCallback(
-    async (payments: ObservedPayment[]): Promise<void> => {
-      if (payments.length === 0) return;
+    async (payments: ObservedPayment[]): Promise<string | null> => {
+      if (payments.length === 0) return null;
       const current = storeRef.current;
       const invoiceResult = reconcileInvoicePayments(current, {
         network,
@@ -2570,7 +2602,8 @@ export function MerchantProvider({
         payments: counterResult.unclaimed,
         now: Date.now(),
       });
-      const withCustomers = reconcileCustomerSettlements(current, next, { contacts });
+      const customerResult = reconcileCustomerSettlementsNonFatal(current, next, { contacts });
+      const withCustomers = customerResult.store;
       if (withCustomers !== current) {
         const settlementStaffId = staffSessionIdRef.current;
         const securedStore = applyCompletedSalePolicy(
@@ -2587,6 +2620,7 @@ export function MerchantProvider({
           updateStaffSessionId(null);
         }
       }
+      return customerResult.warning;
     },
     [commitStore, contacts, network, quoteInputs, updateStaffSessionId],
   );
@@ -2609,7 +2643,13 @@ export function MerchantProvider({
       }
       return "The Stellar network is not answering right now.";
     }
-    return "The Stellar network is not answering right now.";
+    if (
+      error instanceof Error &&
+      error.message === "The payment was recorded, but customer history could not be updated."
+    ) {
+      return error.message;
+    }
+    return "A payment could not be reconciled safely. Its cursor was not advanced; try again.";
   }
 
   const watchDestinations = useMemo(
@@ -2696,13 +2736,14 @@ export function MerchantProvider({
           ) {
             latestLedger = result.latestLedger;
           }
-          await applyPayments(result.payments);
+          const enrichmentWarning = await applyPayments(result.payments);
           if (result.cursor) {
             await persist((prev) => ({
               ...prev,
               cursors: { ...prev.cursors, [cursorKey]: result.cursor as string },
             }));
           }
+          if (enrichmentWarning) firstFailure ??= new Error(enrichmentWarning);
         } catch (error) {
           firstFailure ??= error;
         }
@@ -2784,9 +2825,10 @@ export function MerchantProvider({
         actor,
         now: Date.now(),
       });
-      const reconciled = reconcileCustomerSettlements(current, attached, { contacts });
-      const securedStore = applyOperatorSalePolicy(reconciled);
+      const customerResult = reconcileCustomerSettlementsNonFatal(current, attached, { contacts });
+      const securedStore = applyOperatorSalePolicy(customerResult.store);
       await commitStore(securedStore);
+      if (customerResult.warning) setWatchError(customerResult.warning);
       if (securedStore.activeStaffId === null && staffSessionIdRef.current === actor.id) {
         updateStaffSessionId(null);
       }
@@ -3459,6 +3501,7 @@ export function MerchantProvider({
     updateInvoiceDraft,
     issueInvoice,
     recordManualInvoicePayment,
+    confirmInvoicePayment,
     voidInvoice,
     duplicateInvoice,
     invoicePayUriFor,
@@ -3469,6 +3512,7 @@ export function MerchantProvider({
     createCounterCode,
     updateCounterCode,
     setCounterCodeActive,
+    confirmCounterPayment,
     counterCodePayUriFor,
     counterCodePreviewUri,
 
@@ -3545,6 +3589,8 @@ export function MerchantProvider({
     compLine,
     completeSetup,
     configured,
+    confirmCounterPayment,
+    confirmInvoicePayment,
     counterCodeBlockedReason,
     counterCodePayUriFor,
     counterCodePreviewUri,
@@ -3812,6 +3858,7 @@ export function MerchantProvider({
       updateInvoiceDraft,
       issueInvoice,
       recordManualInvoicePayment,
+      confirmInvoicePayment,
       voidInvoice,
       duplicateInvoice,
       invoicePayUriFor,
@@ -3821,6 +3868,7 @@ export function MerchantProvider({
       createCounterCode,
       updateCounterCode,
       setCounterCodeActive,
+      confirmCounterPayment,
       counterCodePayUriFor,
       counterCodePreviewUri,
       customers: store.customers,
@@ -3849,6 +3897,8 @@ export function MerchantProvider({
       counterCodeBlockedReason,
       counterCodePayUriFor,
       counterCodePreviewUri,
+      confirmCounterPayment,
+      confirmInvoicePayment,
       createCounterCode,
       createInvoiceDraft,
       customerHistory,

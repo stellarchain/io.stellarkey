@@ -12,6 +12,7 @@ import {
   linePayableMinor,
   minorToDecimal,
 } from "@/lib/merchant/money";
+import { samePayerAccount } from "@/lib/merchant/payer";
 import { NETWORKS } from "@/lib/stellar";
 import type {
   MerchantProfile,
@@ -394,8 +395,9 @@ function ReceiptSheetInner({
   const [qr, setQr] = useState<{ url: string; dataUrl: string } | null>(null);
 
   const profile = settings.profile;
-  const loyalty = order.payerAddress
-    ? customers.find((customer) => customer.address === order.payerAddress)?.loyalty ?? null
+  const payerAddress = order.payerAddress;
+  const loyalty = payerAddress
+    ? customers.find((customer) => samePayerAccount(customer.address, payerAddress))?.loyalty ?? null
     : null;
   const rows = useMemo(
     () => vatRows(order, settings.taxRates, settings.taxMode),

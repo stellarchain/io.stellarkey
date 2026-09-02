@@ -13,6 +13,8 @@ import type {
   UnmatchedPayment,
 } from "./types";
 import type { NetworkKey } from "../stellar";
+import { canonicalPayerAddress } from "./payer";
+import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
 
 export interface ReconcileIncomingInput {
   network: NetworkKey;
@@ -69,6 +71,7 @@ function unmatchedForReconciliation(record: PaymentReconciliation): UnmatchedPay
     reconciliationOutcome: record.outcome,
     candidateChargeId: record.chargeId,
     candidateInvoiceId: record.invoiceId,
+    candidateCounterCodeId: record.counterCodeId ?? null,
   };
 }
 
@@ -111,6 +114,7 @@ function recordFor(
     chargeId: charge?.id ?? null,
     orderId: charge?.orderId ?? null,
     invoiceId: null,
+    counterCodeId: null,
     amountMinor: valueFor(payment, charge),
     reversalAmount: null,
     observedAt: now,
@@ -145,6 +149,18 @@ function reconcileOne(
   const scoped = store.charges.filter(
     (charge) => charge.network === network && charge.destination === payment.destination,
   );
+  if (merchantPaymentIdentitySet(store).has(paymentTransactionIdentity(network, payment))) {
+    const named = payment.routingId
+      ? scoped.find((entry) => entry.routingId === payment.routingId) ?? null
+      : null;
+    return {
+      ...store,
+      paymentReconciliations: [
+        recordFor(payment, network, "duplicate", named, now),
+        ...store.paymentReconciliations,
+      ],
+    };
+  }
   const outcome = matchPayment(payment, scoped, store.settings);
   let next = store;
   let charge: Charge | null = "charge" in outcome ? outcome.charge : null;
@@ -164,7 +180,7 @@ function reconcileOne(
         orderId: outcome.charge.orderId,
         chargeId: outcome.charge.id,
         amountMinor: outcome.charge.amountMinor,
-        payerAddress: payment.from,
+        payerAddress: canonicalPayerAddress(payment.from),
         now,
       }).store;
     } else {
@@ -355,7 +371,7 @@ export function attachReconciledPayment(
     orderId: charge.orderId,
     chargeId: charge.id,
     amountMinor: charge.amountMinor,
-    payerAddress: payment.from,
+    payerAddress: canonicalPayerAddress(payment.from),
     now: input.now,
   }).store;
 }

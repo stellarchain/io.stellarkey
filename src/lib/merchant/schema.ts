@@ -319,7 +319,9 @@ const unmatchedPayment = objectOf<Merchant.UnmatchedPayment>({
   ),
   candidateChargeId: nullableString,
   candidateInvoiceId: nullableString,
-}, {});
+}, {
+  candidateCounterCodeId: nullableString,
+});
 
 const paymentResolution = objectOf<Merchant.PaymentResolution>({
   kind: oneOf("attached", "dismissed", "refund_submitted"),
@@ -328,7 +330,10 @@ const paymentResolution = objectOf<Merchant.PaymentResolution>({
   at: timestamp,
   targetChargeId: nullableString,
   refundId: nullableString,
-}, {});
+}, {
+  targetCounterCodeId: nullableString,
+  targetInvoiceId: nullableString,
+});
 
 const paymentReconciliation = objectOf<Merchant.PaymentReconciliation>({
   id: nonEmptyString,
@@ -356,7 +361,9 @@ const paymentReconciliation = objectOf<Merchant.PaymentReconciliation>({
   reversalAmount: nullableString,
   observedAt: timestamp,
   resolution: nullable(paymentResolution),
-}, {});
+}, {
+  counterCodeId: nullableString,
+});
 
 const refund = objectOf<Merchant.Refund>({
   id: nonEmptyString,

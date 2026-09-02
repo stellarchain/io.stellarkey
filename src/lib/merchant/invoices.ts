@@ -18,6 +18,8 @@ import {
   toStroops,
 } from "./money";
 import { parsePaymentCreatedAt } from "./payment-time";
+import { canonicalPayerAddress } from "./payer";
+import { merchantPaymentIdentitySet, paymentTransactionIdentity } from "./payment-identity";
 import { assertPaymentReferenceAvailable, invoiceReference } from "./payment-reference";
 import { pendingReconciliationTray } from "./reconciliation";
 import {
@@ -78,6 +80,12 @@ export interface ReconcileInvoicePaymentsInput {
   now?: number;
 }
 
+export interface ConfirmInvoicePaymentInput {
+  paymentId: string;
+  actor: StaffMember;
+  now?: number;
+}
+
 export interface ManualInvoicePaymentInput {
   invoiceId: string;
   paymentId: string;
@@ -106,7 +114,9 @@ function currentActor(
   actor: StaffMember,
   permission: "takePayment" | "void",
 ): StaffMember {
-  const member = store.staff.find((entry) => entry.id === actor.id);
+  const member = store.staff.find(
+    (entry) => entry.id === actor.id && entry.id === store.activeStaffId,
+  );
   if (!member?.active || !member.permissions[permission]) {
     throw new Error(`${actor.name || "This staff member"} is not allowed to manage this invoice.`);
   }
@@ -398,13 +408,22 @@ export function reconcileInvoicePayments(
   input: ReconcileInvoicePaymentsInput,
 ): { store: MerchantStore; unclaimed: ObservedPayment[] } {
   const now = safeTime(input.now ?? Date.now(), "Invoice reconciliation time");
-  const claimedIds = new Set(store.invoices.flatMap((invoice) => invoice.payments.map((payment) => payment.id)));
+  const claimedIds = new Set([
+    ...store.invoices.flatMap((invoice) => invoice.payments.map((payment) => payment.id)),
+    ...store.paymentReconciliations.map((record) => record.id),
+  ]);
+  const claimedIdentities = merchantPaymentIdentitySet(store);
   let invoices = store.invoices;
   let paymentReconciliations = store.paymentReconciliations;
   const unclaimed: ObservedPayment[] = [];
 
   for (const payment of input.payments) {
     if (claimedIds.has(payment.id)) continue;
+    const transactionIdentity = paymentTransactionIdentity(input.network, payment);
+    if (claimedIdentities.has(transactionIdentity)) {
+      unclaimed.push(payment);
+      continue;
+    }
     const paymentAt = parsePaymentCreatedAt(payment.createdAt);
     if (paymentAt === null) {
       unclaimed.push(payment);
@@ -440,6 +459,27 @@ export function reconcileInvoicePayments(
     const remainingMinor = invoice.totals.totalMinor - invoice.paidMinor;
     const amountMinor = Math.min(remainingMinor, receivedMinor);
     const overpaymentMinor = receivedMinor - amountMinor;
+    if (invoice.paidMinor > 0 || invoice.payments.length > 0) {
+      paymentReconciliations = [
+        {
+          id: payment.id,
+          network: input.network,
+          payment: { ...payment },
+          outcome: "needs_confirmation",
+          chargeId: null,
+          orderId: null,
+          invoiceId: invoice.id,
+          amountMinor,
+          reversalAmount: null,
+          observedAt: now,
+          resolution: null,
+        },
+        ...paymentReconciliations,
+      ];
+      claimedIds.add(payment.id);
+      claimedIdentities.add(transactionIdentity);
+      continue;
+    }
     const nextPaidMinor = invoice.paidMinor + amountMinor;
     const settled = nextPaidMinor >= invoice.totals.totalMinor;
     const record: InvoicePayment = {
@@ -463,7 +503,7 @@ export function reconcileInvoicePayments(
       status: settled ? "paid" : "partially_paid",
       paidMinor: nextPaidMinor,
       paidAt: settled ? now : null,
-      customerAddress: invoice.customerAddress ?? payment.from,
+      customerAddress: invoice.customerAddress ?? canonicalPayerAddress(payment.from),
       payments: [...invoice.payments, record],
       updatedAt: now,
     };
@@ -492,13 +532,136 @@ export function reconcileInvoicePayments(
       }
     }
     claimedIds.add(payment.id);
+    claimedIdentities.add(transactionIdentity);
   }
-  if (invoices === store.invoices) return { store, unclaimed };
+  if (
+    invoices === store.invoices &&
+    paymentReconciliations === store.paymentReconciliations
+  ) return { store, unclaimed };
   const next = { ...store, invoices, paymentReconciliations };
   return {
     store: { ...next, unmatched: pendingReconciliationTray(next) },
     unclaimed,
   };
+}
+
+/** Apply a reviewed follow-up invoice payment against only the remaining balance. */
+export function confirmInvoicePayment(
+  store: MerchantStore,
+  input: ConfirmInvoicePaymentInput,
+): MerchantStore {
+  const actor = currentActor(store, input.actor, "takePayment");
+  const now = safeTime(input.now ?? Date.now(), "Invoice payment confirmation time");
+  const reconciliation = store.paymentReconciliations.find(
+    (entry) => entry.id === input.paymentId,
+  );
+  if (
+    !reconciliation ||
+    reconciliation.outcome !== "needs_confirmation" ||
+    reconciliation.resolution !== null ||
+    !reconciliation.invoiceId
+  ) {
+    throw new Error("That invoice payment is not awaiting confirmation.");
+  }
+  const invoice = findInvoice(store, reconciliation.invoiceId);
+  const payment = reconciliation.payment;
+  if (
+    invoice.network !== reconciliation.network ||
+    invoice.destination !== store.settings.receivingPublicKey ||
+    invoice.destination !== payment.destination ||
+    (invoice.status !== "sent" &&
+      invoice.status !== "partially_paid" &&
+      invoice.status !== "overdue")
+  ) {
+    throw new Error("That payment no longer matches the current invoice destination.");
+  }
+  const otherIdentities = merchantPaymentIdentitySet({
+    ...store,
+    paymentReconciliations: store.paymentReconciliations.filter(
+      (entry) => entry.id !== reconciliation.id,
+    ),
+  });
+  if (
+    invoice.payments.some((entry) => entry.id === payment.id) ||
+    otherIdentities.has(paymentTransactionIdentity(reconciliation.network, payment))
+  ) {
+    throw new Error("That invoice payment is already recorded.");
+  }
+  const paymentAt = parsePaymentCreatedAt(payment.createdAt);
+  const quote = invoice.quotes.find((entry) => sameAsset(entry.asset, payment.asset));
+  if (paymentAt === null || !quote) {
+    throw new Error("That payment no longer has valid invoice settlement evidence.");
+  }
+  const receivedMinor = minorForAssetAmount(payment.amount, quote.unitPriceMinorE6);
+  const remainingMinor = invoice.totals.totalMinor - invoice.paidMinor;
+  if (!Number.isSafeInteger(receivedMinor) || receivedMinor <= 0 || remainingMinor <= 0) {
+    throw new Error("That invoice has no remaining balance for this payment.");
+  }
+  const amountMinor = Math.min(remainingMinor, receivedMinor);
+  const overpaymentMinor = receivedMinor - amountMinor;
+  const nextPaidMinor = invoice.paidMinor + amountMinor;
+  const settled = nextPaidMinor >= invoice.totals.totalMinor;
+  const record: InvoicePayment = {
+    id: payment.id,
+    kind: "stellar",
+    network: reconciliation.network,
+    amountMinor,
+    receivedMinor,
+    overpaymentMinor,
+    asset: { ...payment.asset },
+    amount: payment.amount,
+    transactionHash: payment.transactionHash,
+    from: payment.from,
+    observedAt: paymentAt,
+    recordedById: actor.id,
+    recordedBy: actor.name,
+    note: "Confirmed from payment review",
+  };
+  const updated: Invoice = {
+    ...invoice,
+    status: settled ? "paid" : "partially_paid",
+    paidMinor: nextPaidMinor,
+    paidAt: settled ? now : null,
+    customerAddress: invoice.customerAddress ?? canonicalPayerAddress(payment.from),
+    payments: [...invoice.payments, record],
+    updatedAt: now,
+  };
+  let reversalAmount: string | null = null;
+  if (overpaymentMinor > 0) {
+    const dueAmount = assetAmountFor(remainingMinor, quote.unitPriceMinorE6);
+    const reversalStroops = toStroops(payment.amount) - toStroops(dueAmount);
+    if (reversalStroops > BigInt(0)) reversalAmount = fromStroops(reversalStroops);
+  }
+  if (overpaymentMinor > 0 && !reversalAmount) {
+    throw new Error("The invoice surplus could not be isolated safely.");
+  }
+  const next = {
+    ...replaceInvoice(store, updated),
+    paymentReconciliations: store.paymentReconciliations.map((entry) => {
+      if (entry.id !== reconciliation.id) return entry;
+      if (overpaymentMinor > 0 && reversalAmount) {
+        return {
+          ...entry,
+          outcome: "overpaid" as const,
+          amountMinor: overpaymentMinor,
+          reversalAmount,
+        };
+      }
+      return {
+        ...entry,
+        resolution: {
+          kind: "attached" as const,
+          staffId: actor.id,
+          staffName: actor.name,
+          at: now,
+          targetChargeId: null,
+          refundId: null,
+          targetInvoiceId: invoice.id,
+        },
+      };
+    }),
+  };
+  return { ...next, unmatched: pendingReconciliationTray(next) };
 }
 
 export function recordManualInvoicePayment(

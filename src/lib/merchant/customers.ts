@@ -11,6 +11,7 @@ import type {
   Minor,
   StaffMember,
 } from "./types";
+import { canonicalPayerAddress, samePayerAccount } from "./payer";
 
 const MAX_NOTE_LENGTH = 140;
 const MIN_LOYALTY_TARGET = 2;
@@ -52,11 +53,7 @@ function safeTime(value: number, label: string): number {
 }
 
 function validAddress(value: string): string {
-  const address = value.trim();
-  if (!StrKey.isValidEd25519PublicKey(address)) {
-    throw new Error("The customer address is not a valid Stellar public key.");
-  }
-  return address;
+  return canonicalPayerAddress(value);
 }
 
 function validAsset(asset: AcceptedAsset): AcceptedAsset {
@@ -69,7 +66,7 @@ function validAsset(asset: AcceptedAsset): AcceptedAsset {
 }
 
 function contactName(contacts: Contact[], address: string): string | null {
-  const contact = contacts.find((entry) => entry.address.trim() === address);
+  const contact = contacts.find((entry) => samePayerAccount(entry.address, address));
   const name = contact?.name.trim() ?? "";
   return name || null;
 }
@@ -199,11 +196,15 @@ export function reconcileCustomerSettlements(
   for (const order of current.orders) {
     if (order.status !== "paid" || !order.payerAddress || order.paidAt === null) continue;
     const prior = previous.orders.find((entry) => entry.id === order.id);
-    if (prior?.status === "paid" && prior.payerAddress === order.payerAddress) continue;
+    if (
+      prior?.status === "paid" &&
+      prior.payerAddress &&
+      samePayerAccount(prior.payerAddress, order.payerAddress)
+    ) continue;
     const cryptoTender = order.tender.find((entry) => entry.kind === "crypto");
     if (!cryptoTender || cryptoTender.kind !== "crypto") continue;
     const charge = current.charges.find((entry) => entry.id === cryptoTender.chargeId);
-    if (!charge?.payment || charge.payment.from !== order.payerAddress) continue;
+    if (!charge?.payment || !samePayerAccount(charge.payment.from, order.payerAddress)) continue;
     next = recordCustomerVisit(next, {
       sourceId: `order:${order.id}`,
       address: order.payerAddress,
@@ -238,6 +239,30 @@ export function reconcileCustomerSettlements(
     }
   }
   return next;
+}
+
+export interface CustomerSettlementEnrichment {
+  store: MerchantStore;
+  warning: string | null;
+}
+
+/** Customer history is optional enrichment and must never roll back received money. */
+export function reconcileCustomerSettlementsNonFatal(
+  previous: MerchantStore,
+  current: MerchantStore,
+  input: { contacts: Contact[] },
+): CustomerSettlementEnrichment {
+  try {
+    return {
+      store: reconcileCustomerSettlements(previous, current, input),
+      warning: null,
+    };
+  } catch {
+    return {
+      store: current,
+      warning: "The payment was recorded, but customer history could not be updated.",
+    };
+  }
 }
 
 export function syncCustomerContacts(store: MerchantStore, contacts: Contact[]): MerchantStore {
@@ -343,7 +368,11 @@ export function customerHistory(
   const address = validAddress(addressInput);
   const orders: CustomerHistoryEntry[] = store.orders
     .filter(
-      (order) => order.status === "paid" && order.payerAddress === address && order.paidAt !== null,
+      (order) =>
+        order.status === "paid" &&
+        order.payerAddress !== null &&
+        samePayerAccount(order.payerAddress, address) &&
+        order.paidAt !== null,
     )
     .map((order) => ({
       id: order.id,
@@ -356,7 +385,12 @@ export function customerHistory(
     }));
   const invoices: CustomerHistoryEntry[] = store.invoices.flatMap((invoice) =>
     invoice.payments
-      .filter((payment) => payment.kind === "stellar" && payment.from === address)
+      .filter(
+        (payment) =>
+          payment.kind === "stellar" &&
+          payment.from !== null &&
+          samePayerAccount(payment.from, address),
+      )
       .map((payment) => ({
         id: payment.id,
         kind: "invoice" as const,

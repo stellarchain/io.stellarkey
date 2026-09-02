@@ -164,6 +164,8 @@ export function OrdersPage() {
     unmatched,
     paymentReconciliations,
     attachPayment,
+    confirmCounterPayment,
+    confirmInvoicePayment,
     dismissPendingReconciliations,
     dismissUnmatched,
     openCharge,
@@ -254,6 +256,32 @@ export function OrdersPage() {
             } catch (cause) {
               triggerHaptic("error");
               toast(cause instanceof Error ? cause.message : "The payment could not be dismissed.", "error");
+            }
+          }}
+          onConfirmCounter={async (paymentId, title) => {
+            try {
+              await confirmCounterPayment(paymentId);
+              triggerHaptic("success");
+              toast(`Payment confirmed for ${title}`, "success");
+            } catch (cause) {
+              triggerHaptic("error");
+              toast(
+                cause instanceof Error ? cause.message : "The payment could not be confirmed.",
+                "error",
+              );
+            }
+          }}
+          onConfirmInvoice={async (paymentId, number) => {
+            try {
+              await confirmInvoicePayment(paymentId);
+              triggerHaptic("success");
+              toast(`Payment confirmed for ${number}`, "success");
+            } catch (cause) {
+              triggerHaptic("error");
+              toast(
+                cause instanceof Error ? cause.message : "The invoice payment could not be confirmed.",
+                "error",
+              );
             }
           }}
           onBulkDismiss={async () => {
@@ -539,6 +567,8 @@ function UnmatchedTray({
   onAttach,
   onDismiss,
   onBulkDismiss,
+  onConfirmCounter,
+  onConfirmInvoice,
   onReviewDuplicate,
 }: {
   payments: UnmatchedPayment[];
@@ -548,9 +578,11 @@ function UnmatchedTray({
   onAttach: (paymentId: string, chargeId: string, orderNumber: string) => void;
   onDismiss: (paymentId: string) => void;
   onBulkDismiss: () => Promise<void>;
+  onConfirmCounter: (paymentId: string, title: string) => void;
+  onConfirmInvoice: (paymentId: string, number: string) => void;
   onReviewDuplicate: (paymentId: string) => void;
 }) {
-  const { invoices, orderFor, paymentReconciliations } = useMerchantRecords();
+  const { counterCodes, invoices, orderFor, paymentReconciliations } = useMerchantRecords();
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [confirmingDismiss, setConfirmingDismiss] = useState<string | null>(null);
   const [confirmingBulkDismiss, setConfirmingBulkDismiss] = useState(false);
@@ -667,6 +699,9 @@ function UnmatchedTray({
           const invoice = payment.candidateInvoiceId
             ? invoices.find((entry) => entry.id === payment.candidateInvoiceId) ?? null
             : null;
+          const counterCode = payment.candidateCounterCodeId
+            ? counterCodes.find((entry) => entry.id === payment.candidateCounterCodeId) ?? null
+            : null;
           const orderNumberFor = (chargeId: string) => {
             const order = orderFor(chargeId);
             return order ? String(order.number) : "—";
@@ -696,11 +731,19 @@ function UnmatchedTray({
                       })}
                     </span>
                     <span className="rounded-full bg-[#FF9F0A]/15 px-2 py-0.5 text-[11px] font-semibold text-[#FF9F0A]">
-                      {RECONCILIATION_LABEL[payment.reconciliationOutcome]}
+                      {counterCode
+                        ? "Counter payment — verify"
+                        : invoice && payment.reconciliationOutcome === "needs_confirmation"
+                          ? "Invoice payment — verify"
+                          : RECONCILIATION_LABEL[payment.reconciliationOutcome]}
                     </span>
                   </div>
                   <p className="mt-1 text-[12px] leading-relaxed text-neutral-400">
-                    {RECONCILIATION_DETAIL[payment.reconciliationOutcome]}
+                    {counterCode
+                      ? "A reusable payment route named this counter code, so staff must verify the transaction before recording takings."
+                      : invoice && payment.reconciliationOutcome === "needs_confirmation"
+                        ? "This invoice route was already used once, so another payment needs staff verification."
+                        : RECONCILIATION_DETAIL[payment.reconciliationOutcome]}
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
                     <span className="text-neutral-500">From</span>
@@ -724,11 +767,41 @@ function UnmatchedTray({
                     >
                       Review duplicate
                     </Button>
+                  ) : counterCode ? (
+                    <div className="space-y-2">
+                      <p className="text-[12.5px] leading-relaxed text-neutral-400">
+                        Verify the transaction, then confirm it for {counterCode.title}. Reusable
+                        counter routes never change takings automatically.
+                      </p>
+                      <Button
+                        variant="secondary"
+                        className="w-full"
+                        onClick={() => onConfirmCounter(payment.id, counterCode.title)}
+                      >
+                        Confirm counter payment
+                      </Button>
+                    </div>
                   ) : invoice ? (
-                    <p className="text-[12.5px] leading-relaxed text-neutral-400">
-                      This is the surplus on {invoice.number}. Open that invoice to return the exact
-                      excess without changing its paid total.
-                    </p>
+                    payment.reconciliationOutcome === "overpaid" ? (
+                      <p className="text-[12.5px] leading-relaxed text-neutral-400">
+                        This is the surplus on {invoice.number}. Open that invoice to return the exact
+                        excess without changing its paid total.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-[12.5px] leading-relaxed text-neutral-400">
+                          {invoice.number} already has a payment. Verify this transaction before
+                          applying it to the remaining balance.
+                        </p>
+                        <Button
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => onConfirmInvoice(payment.id, invoice.number)}
+                        >
+                          Confirm invoice payment
+                        </Button>
+                      </div>
+                    )
                   ) : options.length === 0 ? (
                     <p className="text-[12.5px] leading-relaxed text-neutral-400">
                       No open or unsettled charge to file this against. Raise the charge first, or

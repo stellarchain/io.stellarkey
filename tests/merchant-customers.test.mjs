@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { emptyStore } from "../src/lib/merchant/defaults.ts";
+import { muxedAddressForRouting } from "../src/lib/merchant/routing.ts";
 
 const NOW = 1_800_000_000_000;
 const CUSTOMER = "GCUXWZHL7FGVL3MVYH6N5G3RACCKAC7ZLTUBKKN4I5MCCTDPJXITNGFD";
+const MUXED_CUSTOMER = muxedAddressForRouting(CUSTOMER, "42");
 const OTHER = "GDVPZQMATHMBM6B3V5JK4SYOFBTCVTLV4TLFNP5LMFW3NAU7D63ZFKIO";
 const ISSUER = "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN";
 const USDC = { code: "USDC", issuer: ISSUER };
@@ -213,6 +215,50 @@ test("payer visits are durable, contact-matched, and idempotent", async () => {
   assert.equal(second.customers[0].lifetimeMinor, 1000);
   assert.equal(second.customers[0].averageMinor, 500);
   assert.deepEqual(second.customers[0].preferredAsset, XLM);
+});
+
+test("muxed refund destinations map to one base-account customer identity", async () => {
+  const { customerHistory, recordCustomerVisit } = await customerDomain();
+  const paidOrder = order("42", MUXED_CUSTOMER, 450, NOW, USDC);
+  let store = {
+    ...emptyStore(),
+    orders: [paidOrder],
+    charges: [paidOrder.charge],
+  };
+  store = recordCustomerVisit(store, {
+    sourceId: "order:42",
+    address: MUXED_CUSTOMER,
+    amountMinor: 450,
+    asset: USDC,
+    at: NOW,
+    contacts: [{ name: "Muxed Marta", address: CUSTOMER }],
+  });
+
+  assert.equal(store.customers[0].address, CUSTOMER);
+  assert.equal(store.customers[0].name, "Muxed Marta");
+  assert.equal(customerHistory(store, CUSTOMER)[0].id, "42");
+  assert.equal(paidOrder.charge.payment.from, MUXED_CUSTOMER);
+});
+
+test("customer-ledger enrichment fails independently of the financial settlement", async () => {
+  const { reconcileCustomerSettlementsNonFatal } = await customerDomain();
+  const paidOrder = order(
+    "9",
+    CUSTOMER,
+    700,
+    NOW,
+    { code: "bad asset code", issuer: ISSUER },
+  );
+  const current = {
+    ...emptyStore(),
+    orders: [paidOrder],
+    charges: [paidOrder.charge],
+  };
+  const result = reconcileCustomerSettlementsNonFatal(emptyStore(), current, { contacts: [] });
+
+  assert.equal(result.store, current);
+  assert.match(result.warning ?? "", /customer history/i);
+  assert.equal(result.store.orders[0].status, "paid");
 });
 
 test("only new crypto settlements create customer visits and history is exact", async () => {
