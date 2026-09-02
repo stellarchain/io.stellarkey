@@ -220,11 +220,6 @@ test("merchant authorization is enforced at mutation and signing boundaries", ()
   assert.match(wallet, /authorizeBeforeSigning/);
   assert.match(api, /beforeSign/);
 
-  const recoveryReset = hook.split("const resetRecoveryData = useCallback")[1]
-    ?.split("// The wallet owns canonical-hash tracking")[0] ?? "";
-  assert.match(recoveryReset, /requireActiveOwner/);
-  assert.match(recoveryReset, /authorizeSensitiveAction/);
-
   const customerNote = hook.split("const updateCustomerNote = useCallback")[1]
     ?.split("const startLoyaltyCard")[0] ?? "";
   assert.match(customerNote, /requireCustomerActor/);

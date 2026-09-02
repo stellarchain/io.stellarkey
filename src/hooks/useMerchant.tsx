@@ -184,6 +184,7 @@ import {
   type SettlementHandoffs,
 } from "@/lib/merchant/settlement";
 import { BROWSER_PERIPHERALS, merchantRuntimeState } from "@/lib/merchant/runtime";
+import { resetMerchantRecoveryStore } from "@/lib/merchant/recovery";
 import {
   expireAwaitingCharges,
   indexMerchantRecords,
@@ -1016,6 +1017,7 @@ export function MerchantProvider({
             writeMerchantBootstrapState({
               enabled: committed.settings.enabled,
               configured: !needsMerchantSetup(committed.settings, committed.staff),
+              recoveryRequired: false,
             });
           }
           revisionChannelRef.current?.postRevision(committed);
@@ -1069,18 +1071,22 @@ export function MerchantProvider({
     }
   }, [readMerchantKey, requireExportingStaff]);
   const resetRecoveryData = useCallback(async () => {
-    const actorId = staffSessionIdRef.current ?? "";
-    requireActiveOwner(storeRef.current, actorId);
-    await authorizeSensitiveAction("Erase Merchant Mode recovery data");
-    requireActiveOwner(storeRef.current, actorId);
-    try {
-      await repositoryRef.current.clear();
-    } catch (error) {
-      setStorageError(
-        error instanceof Error ? error.message : "Merchant recovery data could not be erased.",
-      );
-      return;
-    }
+    await resetMerchantRecoveryStore({
+      getStorageIssue: () => storageIssueRef.current,
+      getStore: () => storeRef.current,
+      getActorId: () => staffSessionIdRef.current,
+      authorizeWalletOwner: () =>
+        authorizeSensitiveAction("Erase Merchant Mode recovery data"),
+      clearRepository: async () => {
+        try {
+          await repositoryRef.current.clear();
+        } catch {
+          const message = "Merchant recovery data could not be erased. Export it and try again.";
+          setStorageError(message);
+          throw new Error(message);
+        }
+      },
+    });
     const fresh = emptyStore();
     storageIssueRef.current = null;
     setStorageIssue(null);
@@ -1088,6 +1094,11 @@ export function MerchantProvider({
     storeRef.current = fresh;
     setStore(fresh);
     revisionChannelRef.current?.postRevision(fresh);
+    writeMerchantBootstrapState({
+      enabled: false,
+      configured: false,
+      recoveryRequired: false,
+    });
   }, [authorizeSensitiveAction]);
 
   // The wallet owns canonical-hash tracking. Merchant state mirrors a final
@@ -1151,8 +1162,16 @@ export function MerchantProvider({
   // above remains the source of truth whenever the hint is absent or invalid.
   useEffect(() => {
     if (!ready || phase !== "unlocked") return;
-    writeMerchantBootstrapState({ enabled, configured });
-  }, [configured, enabled, phase, ready]);
+    if (storageIssue) {
+      writeMerchantBootstrapState({
+        enabled: false,
+        configured: false,
+        recoveryRequired: true,
+      });
+      return;
+    }
+    writeMerchantBootstrapState({ enabled, configured, recoveryRequired: false });
+  }, [configured, enabled, phase, ready, storageIssue]);
 
   // A configured disabled store can be enabled from the thin Settings shell.
   // Web Locks may still be transferring on the first frame, so retry only that
@@ -3893,7 +3912,12 @@ export function MerchantProvider({
 
   const shellValue = useMemo<MerchantShellContextValue>(
     () => ({
-      enabled: merchantShellEnabled({ ready, encryptedEnabled: enabled, enabledHint }),
+      enabled: merchantShellEnabled({
+        ready,
+        encryptedEnabled: enabled,
+        enabledHint,
+        recoveryRequired: storageIssue !== null,
+      }),
       unmatched,
       charges: store.charges,
       activeShift,
@@ -3906,6 +3930,7 @@ export function MerchantProvider({
       enabledHint,
       ready,
       store.charges,
+      storageIssue,
       unmatched,
     ],
   );

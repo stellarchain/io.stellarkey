@@ -29,6 +29,7 @@ test("merchant bootstrap stores only validated non-sensitive runtime flags", asy
   const {
     MERCHANT_BOOTSTRAP_STORAGE_KEY,
     merchantShellEnabled,
+    merchantRuntimeShouldMount,
     readMerchantBootstrapState,
     writeMerchantBootstrapState,
   } = await bootstrapDomain();
@@ -53,6 +54,38 @@ test("merchant bootstrap stores only validated non-sensitive runtime flags", asy
   assert.equal(merchantShellEnabled({ ready: false, encryptedEnabled: false, enabledHint: true }), true);
   assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: true, enabledHint: false }), true);
   assert.equal(merchantShellEnabled({ ready: true, encryptedEnabled: false, enabledHint: true }), false);
+
+  writeMerchantBootstrapState(
+    { enabled: false, configured: false, recoveryRequired: true },
+    storage,
+  );
+  assert.deepEqual(readMerchantBootstrapState(storage), {
+    version: 1,
+    enabled: false,
+    configured: false,
+    recoveryRequired: true,
+  });
+  assert.equal(
+    merchantShellEnabled({
+      ready: true,
+      encryptedEnabled: false,
+      enabledHint: false,
+      recoveryRequired: true,
+    }),
+    true,
+  );
+  assert.equal(
+    merchantRuntimeShouldMount(readMerchantBootstrapState(storage), false),
+    true,
+  );
+  assert.equal(
+    merchantRuntimeShouldMount(
+      { version: 1, enabled: false, configured: true, recoveryRequired: false },
+      false,
+    ),
+    false,
+  );
+  assert.equal(merchantRuntimeShouldMount(null, true), true);
 });
 
 test("unavailable browser storage never blocks the wallet shell", async () => {
@@ -82,7 +115,7 @@ test("the authenticated wallet has no second full-screen merchant loading gate",
   assert.match(boundary, /lazy\(\(\) =>\s*import\("@\/hooks\/useMerchant"\)/s);
   assert.match(boundary, /<Suspense fallback=\{fallback\}>/);
   assert.match(boundary, /const fallback = \(\s*<MerchantRuntimeDataProviders/s);
-  assert.match(boundary, /const shouldMount = bootstrap\?\.enabled === true \|\| requested/);
+  assert.match(boundary, /merchantRuntimeShouldMount\(bootstrap, requested\)/);
   assert.match(boundary, /onRuntimeMounted=/);
   assert.doesNotMatch(boundary, /Opening merchant tools/);
   assert.doesNotMatch(boundary, /min-h-screen/);
