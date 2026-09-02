@@ -19,9 +19,9 @@ import {
   normalizeStellarAmount,
   stroopsToAmount,
 } from '../../../lib/stellar-domain';
+import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 
 const ANNOUNCEMENT_STROOPS = 1n;
-export const STEALTH_SWEEP_FEE_BUFFER_STROOPS = 1_000_000n;
 const OPERATION_COUNT = 3n;
 const MAX_INT64 = 9_223_372_036_854_775_807n;
 
@@ -84,7 +84,8 @@ export async function buildStealthPaymentTransaction(
   const baseFeeStroops = positiveStroops(input.baseFeeStroops, 'Stealth payment base fee');
   const reserveStroops = baseReserveStroops * 2n;
   const networkFeeStroops = baseFeeStroops * OPERATION_COUNT;
-  const oneTimeAccountStroops = reserveStroops + STEALTH_SWEEP_FEE_BUFFER_STROOPS;
+  const sweepFeeBufferStroops = baseFeeStroops + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
+  const oneTimeAccountStroops = reserveStroops + sweepFeeBufferStroops;
   const totalDebitStroops = amountStroops + oneTimeAccountStroops + ANNOUNCEMENT_STROOPS + networkFeeStroops;
   if (totalDebitStroops > MAX_INT64) throw new Error('Stealth payment total exceeds Stellar\'s amount range');
 
@@ -137,7 +138,7 @@ export async function buildStealthPaymentTransaction(
       destinationPublicKey,
       ephemeralPublicKey: recipient.ephemeralPublicKey.slice(),
       reserveStroops: reserveStroops.toString(),
-      sweepFeeBufferStroops: STEALTH_SWEEP_FEE_BUFFER_STROOPS.toString(),
+      sweepFeeBufferStroops: sweepFeeBufferStroops.toString(),
       amountStroops: amountStroops.toString(),
       announcementStroops: '1',
       networkFeeStroops: networkFeeStroops.toString(),

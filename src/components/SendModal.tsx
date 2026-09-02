@@ -990,8 +990,9 @@ function SendInner({
                   be private after the recipient moves the funds into Private Balance.
                 </p>
                 <p className="mt-1 text-neutral-400">
-                  The 0.1 XLM sweep buffer pays that later transaction; any unused portion can remain
-                  in the one-time account in this release.
+                  The funded sweep buffer covers the wallet&apos;s full reviewed Private Balance fee
+                  cap. If the one-time account cannot preserve its reserve and that fee budget, the
+                  recipient wallet refuses before signing.
                 </p>
               </div>
             )}

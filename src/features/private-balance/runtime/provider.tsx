@@ -25,6 +25,7 @@ import {
   type PreparedStealthSweep,
 } from '../../../hooks/usePrivateBalanceRuntime';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
+import { fetchCurrentBaseReserve } from '../../../lib/api';
 import { privateBalanceSensitivePrefix } from '../../../lib/private-balance-bootstrap';
 import {
   privateBalanceAvailability,
@@ -1361,6 +1362,7 @@ export function PrivateBalanceProvider({
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
     sourcePublicKey = accountPublicKey,
+    depositSourceMinimumBalanceStroops?: bigint,
   ): Promise<PreparedPrivateActionReview> => {
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
@@ -1390,6 +1392,7 @@ export function PrivateBalanceProvider({
               worker,
               rpcUrl,
               classicFeeStroops: BigInt(recommendedBaseFeeStroops),
+              depositSourceMinimumBalanceStroops,
               assetContractId: asset.contractId,
               assetCode: asset.code,
               assetDecimals: asset.decimals,
@@ -1481,6 +1484,7 @@ export function PrivateBalanceProvider({
         onProgress,
         signal,
         current.destinationPublicKey,
+        BigInt(await fetchCurrentBaseReserve(network)) * 2n,
       );
       if (
         review.kind !== 'deposit' ||
@@ -1500,7 +1504,7 @@ export function PrivateBalanceProvider({
     } finally {
       actionBusyRef.current = false;
     }
-  }, [asset.decimals, asset.kind, prepareActionInternal, stealthSnapshot.payments]);
+  }, [asset.decimals, asset.kind, network, prepareActionInternal, stealthSnapshot.payments]);
 
   const watchBroadcastOutcome = useCallback((
     actionId: string,
