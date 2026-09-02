@@ -247,6 +247,17 @@ test('testnet fixture deploys the exact manifest-pinned pool Wasm', () => {
   assert.doesNotMatch(source, /stellar\(\['contract', 'build'/);
 });
 
+test('live fixture evidence pins the post-deployment ledger identity', () => {
+  const deploy = source.indexOf("'contract', 'deploy'");
+  const checkpoint = source.indexOf('await readTestnetDeploymentCheckpoint()');
+  assert.notEqual(deploy, -1);
+  assert.ok(checkpoint > deploy, 'the checkpoint must be captured after deployment and readback');
+  assert.match(source, /method: 'getLatestLedger'/);
+  assert.match(source, /signal: AbortSignal\.timeout\(8_000\)/);
+  assert.match(source, /deploymentBindingHash,\s*\n\s*deploymentCheckpoint,\s*\n\s*wasmSha256,/);
+  assert.match(source, /deploymentCheckpoint,\s*\n\s*\}\);\s*\n\s*const evidence/);
+});
+
 test('fixture evidence never serializes a signer secret or local CLI path', () => {
   const evidence = sanitizeFixtureEvidence({
     schemaVersion: 1,

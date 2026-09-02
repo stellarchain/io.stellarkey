@@ -26,6 +26,7 @@ export type PrivateBalanceRuntimePhase =
   | 'reading-meta'
   | 'scanning-live'
   | 'current'
+  | 'status-unknown'
   | 'safe-error';
 
 export interface PrivateBalanceFollowerUpdate {
@@ -50,6 +51,7 @@ const PHASES = new Set<PrivateBalanceRuntimePhase>([
   'reading-meta',
   'scanning-live',
   'current',
+  'status-unknown',
   'safe-error',
 ]);
 

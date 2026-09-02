@@ -9,7 +9,7 @@ test('advanced privacy keeps unique diagnostics concise and protects local remov
   const provider = read('src/features/private-balance/runtime/provider.tsx');
   const runtime = read('src/hooks/usePrivateBalanceRuntime.tsx');
 
-  for (const label of ['Protocol version', 'Artifact version', 'Realm', 'Asset contract', 'Manifest hash', 'Circuit hash', 'Network endpoint', 'Last checkpoint', 'Encrypted local data', 'Unspent notes']) {
+  for (const label of ['Protocol version', 'Artifact version', 'Realm', 'Asset contract', 'Manifest hash', 'Circuit hash', 'Primary RPC', 'Witness RPC', 'Last checkpoint', 'Encrypted local data', 'Unspent notes']) {
     assert.match(settings, new RegExp(label, 'i'));
   }
   for (const duplicate of ['label="Network"', 'label="Pool"', 'Independent audit', 'Ceremony evidence', 'Measured seed recovery', 'Optional mirror']) {
@@ -20,7 +20,14 @@ test('advanced privacy keeps unique diagnostics concise and protects local remov
   assert.match(settings, /Technical details/);
   assert.match(settings, /aria-expanded/);
   assert.match(settings, /aria-live="polite"/);
-  assert.match(settings, /Private history checked against the selected RPC/);
+  assert.match(settings, /Private history checked against two independent network providers/);
+  assert.match(settings, /Use witness during routine checks/);
+  assert.match(settings, /public network access timing and pattern/);
+  assert.match(settings, /never signs, and never submits transactions/);
+  assert.match(settings, /Seed recovery and a full history check always require the witness/);
+  assert.match(settings, /<Toggle/);
+  assert.match(runtime, /rpcWitnessEnabled/);
+  assert.match(provider, /corroboratePrivateRpcCheckpoint/);
   // Errors route through the humanizer (title + body, raw message behind the
   // collapsed Technical details) — never a raw runtime string on screen.
   assert.match(settings, /HumanizedErrorNotice/);

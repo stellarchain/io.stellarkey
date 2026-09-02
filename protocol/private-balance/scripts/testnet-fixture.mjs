@@ -338,6 +338,7 @@ function createFixtureManifest({
   guardianAddress,
   realmId,
   deploymentBindingHash,
+  deploymentCheckpoint,
 }) {
   const development = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
   return {
@@ -351,11 +352,39 @@ function createFixtureManifest({
     assetContractId,
     guardianAddress,
     stealthAnnouncerAddress: guardianAddress,
+    deploymentCheckpoint,
     deploymentBindingHash,
   };
 }
 
-function deployFixture(parsed) {
+async function readTestnetDeploymentCheckpoint() {
+  const response = await fetch('https://soroban-testnet.stellar.org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getLatestLedger' }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Testnet deployment checkpoint request failed with HTTP ${response.status}.`);
+  }
+  const payload = await response.json();
+  const ledger = payload?.result?.sequence;
+  const hash = payload?.result?.id;
+  if (
+    payload?.jsonrpc !== '2.0' ||
+    payload?.id !== 1 ||
+    !Number.isInteger(ledger) ||
+    ledger < 1 ||
+    ledger > 0xffff_ffff ||
+    typeof hash !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(hash)
+  ) {
+    throw new Error('Testnet RPC returned an invalid deployment checkpoint.');
+  }
+  return { ledger, hash };
+}
+
+async function deployFixture(parsed) {
   const configDirectory = parsed.ephemeral
     ? mkdtempSync(path.join(tmpdir(), 'stellarkey-private-cli-'))
     : null;
@@ -425,6 +454,7 @@ function deployFixture(parsed) {
       '--',
       ...contractArguments,
     ], cliOptions), contractArguments[0]));
+    const deploymentCheckpoint = await readTestnetDeploymentCheckpoint();
 
     const manifest = createFixtureManifest({
       poolContractId: actualPoolContractId,
@@ -432,6 +462,7 @@ function deployFixture(parsed) {
       guardianAddress: sourceAccount,
       realmId,
       deploymentBindingHash,
+      deploymentCheckpoint,
     });
     const evidence = sanitizeFixtureEvidence({
       schemaVersion: 1,
@@ -445,6 +476,7 @@ function deployFixture(parsed) {
       realmId,
       salt,
       deploymentBindingHash,
+      deploymentCheckpoint,
       wasmSha256,
       config,
       pinnedAsset,
@@ -487,6 +519,6 @@ export function runFixture(argv = process.argv.slice(2), environment = process.e
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
 if (invokedPath === import.meta.url) {
-  const result = runFixture();
+  const result = await runFixture();
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

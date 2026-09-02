@@ -147,6 +147,22 @@ const ERROR_RULES: ErrorRule[] = [
     }),
   },
   {
+    match: /(RPC views disagree|contract heads did not agree|overlapping ledger|deployment checkpoint|independent origins)/i,
+    humanize: () => ({
+      title: "Network views don't agree",
+      body: 'Your last checked balance is unchanged, but its current status is unknown. Retry after the providers agree.',
+      action: 'retry',
+    }),
+  },
+  {
+    match: /witness RPC is unavailable/i,
+    humanize: () => ({
+      title: 'Independent check unavailable',
+      body: 'Your last checked balance is unchanged. Recovery waits until the second network provider is available.',
+      action: 'retry',
+    }),
+  },
+  {
     match: /restoration review expired|Create a new approval/i,
     humanize: () => ({
       title: 'That approval expired',
@@ -248,6 +264,7 @@ export const STATUS_LINE = {
     total > 1 ? `Updating… ${Math.min(done, total)} of ${total}` : 'Updating…',
   restoreNeeded: 'Action needed · Restore access',
   restoring: (step: number, total: number) => `Restoring… step ${step} of ${total}`,
+  statusUnknown: 'Status unknown · last checked balance unchanged',
   depositsPaused: 'Deposits paused · withdrawals still work',
 } as const;
 

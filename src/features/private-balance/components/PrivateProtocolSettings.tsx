@@ -7,7 +7,7 @@ import {
   IconRefresh,
   IconTrash,
 } from '@/components/icons';
-import { Button, Field, Modal, ModalHeader, Notice } from '@/components/ui';
+import { Button, Field, Modal, ModalHeader, Notice, Toggle } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 
@@ -93,10 +93,13 @@ export function PrivateProtocolSettings({
     deployment,
     asset,
     selectedRpc,
+    witnessRpc,
+    rpcWitnessEnabled,
     checkpoint,
     encryptedStorageBytes,
     noteCount,
     runFullVerification,
+    setRpcWitnessEnabled,
     disableLocalData,
   } = usePrivateBalanceRuntimeData();
   const [working, setWorking] = useState<'verify' | 'remove' | null>(null);
@@ -114,7 +117,7 @@ export function PrivateProtocolSettings({
     setResult(null);
     try {
       await runFullVerification();
-      setResult('Private history checked against the selected RPC.');
+      setResult('Private history checked against two independent network providers.');
     } catch (cause: unknown) {
       setError(cause ?? new Error('Private history verification stopped safely.'));
     } finally {
@@ -191,8 +194,33 @@ export function PrivateProtocolSettings({
           </h3>
           <dl className="ios-group overflow-hidden">
             <SettingsRow label="Encrypted local data" value={bytes(encryptedStorageBytes)} />
-            <SettingsRow label="Network endpoint" value={selectedRpc ?? 'Not configured'} mono />
+            <SettingsRow label="Primary RPC" value={selectedRpc ?? 'Not configured'} mono />
+            <SettingsRow label="Witness RPC" value={witnessRpc ?? 'Not configured'} mono />
           </dl>
+        </section>
+
+        <section aria-labelledby="private-network-checks-title">
+          <h3 id="private-network-checks-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+            Network checks
+          </h3>
+          <div className="ios-group overflow-hidden">
+            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-white">Use witness during routine checks</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">
+                  Compare public ledger and contract state with an independently operated provider.
+                </p>
+              </div>
+              <Toggle
+                checked={rpcWitnessEnabled}
+                onChange={enabled => setRpcWitnessEnabled(Boolean(enabled))}
+                label="Use independent RPC witness during routine checks"
+              />
+            </div>
+            <p className="border-t border-white/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-500">
+              A second provider sees another copy of the public network access timing and pattern. It never receives recipient or amount plaintext, never signs, and never submits transactions. Seed recovery and a full history check always require the witness, even when routine checks are off.
+            </p>
+          </div>
         </section>
 
         <section aria-label="Advanced controls" className="ios-group overflow-hidden">

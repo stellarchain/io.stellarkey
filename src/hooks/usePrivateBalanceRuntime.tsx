@@ -38,6 +38,7 @@ export type PrivateBalanceRuntimePhase =
   | 'reading-meta'
   | 'scanning-live'
   | 'current'
+  | 'status-unknown'
   | 'safe-error';
 
 export interface PrivateBalanceRuntimeControlValue {
@@ -119,6 +120,8 @@ export interface PrivateBalanceRuntimeDataValue {
   recentPrivateRecipients: PrivateRecentRecipient[];
   checkpoint: ShieldedCheckpoint | null;
   selectedRpc: string | null;
+  witnessRpc: string | null;
+  rpcWitnessEnabled: boolean;
   encryptedStorageBytes: number | null;
   asset: PrivateBalanceAsset | null;
   stealthMetaAddress: string | null;
@@ -158,6 +161,7 @@ export interface PrivateBalanceRuntimeDataValue {
     listener: (event: IncomingPrivateTransferSummary) => void,
   ): () => void;
   takeoverLeadership(): void;
+  setRpcWitnessEnabled(enabled: boolean): void;
   runFullVerification(): Promise<void>;
   disableLocalData(confirmation: string): Promise<void>;
 }
@@ -222,6 +226,8 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   recentPrivateRecipients: [],
   checkpoint: null,
   selectedRpc: null,
+  witnessRpc: null,
+  rpcWitnessEnabled: true,
   encryptedStorageBytes: null,
   asset: null,
   stealthMetaAddress: null,
@@ -265,6 +271,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},
   takeoverLeadership: () => {},
+  setRpcWitnessEnabled: () => {},
   runFullVerification: unavailable,
   disableLocalData: unavailable,
 };

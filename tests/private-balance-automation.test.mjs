@@ -53,6 +53,21 @@ test('a failed quiet background pass keeps the current snapshot instead of wipin
   assert.match(provider, /lastSyncCurrentRef\.current = true;\s*backgroundSyncErrorRef\.current = null;/);
 });
 
+test('RPC disagreement preserves the last authenticated state and disables actions', () => {
+  const authenticationBranch = provider.match(
+    /if \(isRpcAuthenticationError\(error\)\) \{[\s\S]*?throw error;\s*\}/,
+  )?.[0] ?? '';
+  assert.match(authenticationBranch, /phase: 'status-unknown'/);
+  assert.match(authenticationBranch, /SET_SYNCING/);
+  assert.doesNotMatch(authenticationBranch, /clearDecryptedState|verifiedBalanceStroops: '0'/);
+  assert.ok(
+    provider.indexOf('if (isRpcAuthenticationError(error))') < provider.indexOf('if (quiet) {'),
+    'independent-view failures must not stay hidden as a quiet background error',
+  );
+  assert.match(provider, /durable\.checkpoint === null \|\| rpcWitnessEnabledRef\.current/);
+  assert.match(provider, /primaryOrigin === witnessOrigin/);
+});
+
 test('losing leadership mid-sync presents as a follower, never as a safe-error', () => {
   assert.match(
     provider,

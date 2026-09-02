@@ -410,6 +410,102 @@ test('sync resumes a bounded number of times when the contract advances mid-scan
   assert.equal(churnReads, (MAX_CONTRACT_ADVANCE_RESUMES + 1) * 2);
 });
 
+test('sync uses the injected corroborated head for both boundary checks', async () => {
+  const deploymentBindingHash = bytes(62);
+  const manifestHash = hex(bytes(63));
+  const storageContext = {
+    networkId: hex(bytes(64)),
+    realmId: hex(bytes(65)),
+    poolId: hex(bytes(66)),
+    accountId: 'corroborated-head-account',
+    deploymentBindingHash: hex(deploymentBindingHash),
+  };
+  const storageKey = bytes(67);
+  const driver = new MemoryDriver();
+  await commitPrivateBalanceState(
+    storageContext,
+    storageKey,
+    createEmptyPrivateBalanceState(manifestHash, 1),
+    null,
+    driver,
+  );
+  const emptyHead = {
+    latestLedger: 700,
+    config: {},
+    meta: { actionCount: 0, transcriptHead: bytes(0) },
+    tree: {
+      nextIndex: 0,
+      frontier: Array.from({ length: 32 }, () => bytes(0)),
+      currentRoot: bytes(0),
+    },
+  };
+  let corroboratedReads = 0;
+  const result = await syncPrivateBalance({
+    archive: {
+      async readHead() { assert.fail('the unauthenticated primary head must not be used'); },
+      async readRecords() { assert.fail('an empty archive has no records'); },
+    },
+    async corroborateHead() {
+      corroboratedReads += 1;
+      return emptyHead;
+    },
+    worker: { async scanPage() { assert.fail('an empty archive never scans'); } },
+    contextHash: bytes(61),
+    deploymentBindingHash,
+    manifestHash,
+    storageContext,
+    storageKey,
+    storageDriver: driver,
+    publicCacheDriver: driver,
+    now: () => 5,
+  });
+
+  assert.equal(corroboratedReads, 2);
+  assert.equal(result.account.syncStatus, 'current');
+});
+
+test('a failed initial corroboration leaves the durable checkpoint unchanged', async () => {
+  const deploymentBindingHash = bytes(72);
+  const manifestHash = hex(bytes(73));
+  const storageContext = {
+    networkId: hex(bytes(74)),
+    realmId: hex(bytes(75)),
+    poolId: hex(bytes(76)),
+    accountId: 'disagreeing-head-account',
+    deploymentBindingHash: hex(deploymentBindingHash),
+  };
+  const storageKey = bytes(77);
+  const driver = new MemoryDriver();
+  const initial = createEmptyPrivateBalanceState(manifestHash, 9);
+  await commitPrivateBalanceState(storageContext, storageKey, initial, null, driver);
+
+  await assert.rejects(
+    () => syncPrivateBalance({
+      archive: {
+        async readHead() { assert.fail('the unauthenticated primary head must not be used'); },
+        async readRecords() { assert.fail('corroboration failed before scanning'); },
+      },
+      async corroborateHead() {
+        throw new Error('Private Payments RPC views disagree.');
+      },
+      worker: { async scanPage() { assert.fail('corroboration failed before scanning'); } },
+      contextHash: bytes(71),
+      deploymentBindingHash,
+      manifestHash,
+      storageContext,
+      storageKey,
+      storageDriver: driver,
+      publicCacheDriver: driver,
+    }),
+    /RPC views disagree/,
+  );
+
+  assert.deepEqual(
+    await loadPrivateBalanceState(storageContext, storageKey, driver),
+    JSON.parse(JSON.stringify(initial)),
+  );
+});
+
 test('incoming diffs collapse only new inbound transfers into one event', () => {
   const activity = (actionIndex, actionKind, direction, amount) => ({
     id: hex(bytes(actionIndex + 50)),

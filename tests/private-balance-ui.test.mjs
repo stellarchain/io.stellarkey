@@ -33,6 +33,7 @@ test('private balance surfaces use factual privacy claims and exact amount forma
     'reading-meta',
     'scanning-live',
     'current',
+    'status-unknown',
     'safe-error',
   ]) assert.match(status, new RegExp(phase));
   // Vocabulary bans hold on the always-visible surfaces (identifiers live
@@ -67,6 +68,7 @@ test('the card shows fiat, four actions, one Details chip, and no sync chip or s
   assert.match(card, /privateBalancePendingLine/);
   assert.match(card, /privacyMode/);
   assert.match(card, /••••••/);
+  assert.match(card, /statusUnknown \? '—'/);
   assert.match(card, /formatPrivateBalanceAmount/);
   assert.match(card, /fmtAmount/);
   // Buttons need the current phase on the leader tab; Receive only needs the
@@ -74,6 +76,20 @@ test('the card shows fiat, four actions, one Details chip, and no sync chip or s
   assert.match(card, /const actionable = current && isLeader/);
   assert.match(card, /disabled=\{privateAddress === null\}/);
   assert.match(card, /depositsPaused === true/);
+});
+
+test('independent RPC failures explain status unknown without exposing protocol jargon', async () => {
+  const { humanizePrivateError } = await import('../src/features/private-balance/copy.ts');
+  const disagreement = humanizePrivateError(
+    new Error('Private Payments RPC views disagree on an overlapping ledger hash.'),
+  );
+  assert.equal(disagreement.title, "Network views don't agree");
+  assert.match(disagreement.body, /last checked balance is unchanged/i);
+  const outage = humanizePrivateError(
+    new Error('The independent Private Payments witness RPC is unavailable.'),
+  );
+  assert.equal(outage.title, 'Independent check unavailable');
+  assert.match(outage.body, /last checked balance is unchanged/i);
 });
 
 test('the card consumes handoff intents and listens for live requests', () => {
@@ -139,6 +155,10 @@ test('the ambient status line follows the D1 rules', async () => {
   assert.deepEqual(
     privateBalanceStatusLine({ ...base, depositsPaused: true }),
     { label: 'Deposits paused · withdrawals still work', tone: 'caution' },
+  );
+  assert.deepEqual(
+    privateBalanceStatusLine({ ...base, phase: 'status-unknown' }),
+    { label: 'Status unknown · last checked balance unchanged', tone: 'caution' },
   );
 
   const safeError = privateBalanceStatusLine({

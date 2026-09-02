@@ -31,6 +31,7 @@ interface ArchiveManifest extends Pick<
 }
 
 interface ArchiveRpc {
+  getNetwork(): Promise<{ passphrase: string }>;
   getLatestLedger(): Promise<{ sequence: number }>;
   queryContract<T>(
     contractId: string,
@@ -46,7 +47,7 @@ interface ArchiveRpc {
     startLedger: number;
     pagination?: { limit?: number };
   }): Promise<{
-    ledgers: Array<{ sequence: number; ledgerCloseTime: string }>;
+    ledgers: Array<{ sequence: number; ledgerCloseTime: string; hash?: string }>;
   }>;
 }
 
@@ -299,6 +300,39 @@ export class PrivateBalanceArchiveClient {
     }
     this.manifest = manifest;
     this.server = server ?? new SorobanRpc.Server(endpoint.toString(), { allowHttp: localHttp });
+  }
+
+  public async readNetworkPassphrase(): Promise<string> {
+    const network = await this.server.getNetwork();
+    if (typeof network.passphrase !== 'string' || network.passphrase.length === 0) {
+      throw new Error('Private Balance RPC returned an invalid network identity');
+    }
+    return network.passphrase;
+  }
+
+  public async readLatestLedgerSequence(): Promise<number> {
+    const latest = await this.server.getLatestLedger();
+    return u32(latest.sequence, 'Latest ledger');
+  }
+
+  public async readLedgerIdentity(sequence: number): Promise<{
+    sequence: number;
+    hash: string;
+  }> {
+    const requestedSequence = u32(sequence, 'Ledger identity sequence');
+    const response = await this.server.getLedgers({
+      startLedger: requestedSequence,
+      pagination: { limit: 1 },
+    });
+    if (
+      response.ledgers.length !== 1 ||
+      response.ledgers[0].sequence !== requestedSequence ||
+      typeof response.ledgers[0].hash !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(response.ledgers[0].hash)
+    ) {
+      throw new Error('Private Balance RPC did not return the requested ledger identity');
+    }
+    return { sequence: requestedSequence, hash: response.ledgers[0].hash };
   }
 
   public async readHead(): Promise<ArchiveHeadState> {

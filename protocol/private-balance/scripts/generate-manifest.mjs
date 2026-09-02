@@ -89,6 +89,7 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     'minimumStellarProtocol',
     'networkPassphrase',
     'networkId',
+    'witnessRpcUrl',
   ]) {
     assertEqual(deployed[key], baseManifest[key], `manifest.${key}`);
   }
@@ -107,6 +108,18 @@ function loadTestnetDeploymentEvidence(baseManifest) {
   }
 
   assertEqual(evidence.networkPassphrase, baseManifest.networkPassphrase, 'network passphrase');
+  if (
+    !Number.isInteger(deployed.deploymentCheckpoint?.ledger) ||
+    deployed.deploymentCheckpoint.ledger < 1 ||
+    !/^[0-9a-f]{64}$/.test(deployed.deploymentCheckpoint?.hash ?? '')
+  ) {
+    throw new Error('Testnet deployment evidence must pin a ledger sequence and hash.');
+  }
+  assertJsonEqual(
+    evidence.deploymentCheckpoint,
+    deployed.deploymentCheckpoint,
+    'deployment checkpoint',
+  );
   assertEqual(evidence.poolContractId, deployed.poolContractId, 'pool contract ID');
   assertEqual(evidence.assetContractId, deployed.assetContractId, 'asset contract ID');
   assertEqual(evidence.pinnedAsset, deployed.assetContractId, 'contract pinned asset');
@@ -215,6 +228,11 @@ const baseManifest = {
   assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  witnessRpcUrl: 'https://soroban-rpc.testnet.stellar.gateway.fm',
+  deploymentCheckpoint: {
+    ledger: 0,
+    hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  },
   deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   artifacts: {
     r1csSha256: sha256(r1csBytes),
