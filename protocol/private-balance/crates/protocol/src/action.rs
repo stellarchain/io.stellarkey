@@ -8,6 +8,12 @@ use crate::field::is_canonical_field;
 use crate::poseidon2::p2;
 use alloc::vec::Vec;
 
+pub fn compute_asset_field(asset: (u8, [u8; 32])) -> [u8; 32] {
+    let mut bytes = Vec::with_capacity(33);
+    encode_address(asset.0, &asset.1, &mut bytes).unwrap();
+    field_id(DOMAIN_ASSET, &bytes)
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ActionKind {
     Deposit = 1,
@@ -171,9 +177,7 @@ impl Action {
     }
 
     pub fn compute_asset_field(&self) -> [u8; 32] {
-        let mut bytes = Vec::with_capacity(33);
-        encode_address(self.asset.0, &self.asset.1, &mut bytes).unwrap();
-        field_id(DOMAIN_ASSET, &bytes)
+        compute_asset_field(self.asset)
     }
 
     pub fn compute_public_signals(
@@ -184,6 +188,23 @@ impl Action {
         pool_id: &[u8; 32],
     ) -> [[u8; 32]; 13] {
         let asset_field = self.compute_asset_field();
+        self.compute_public_signals_with_asset_field(
+            context_field,
+            network_id,
+            realm_id,
+            pool_id,
+            &asset_field,
+        )
+    }
+
+    pub fn compute_public_signals_with_asset_field(
+        &self,
+        context_field: &[u8; 32],
+        network_id: &[u8; 32],
+        realm_id: &[u8; 32],
+        pool_id: &[u8; 32],
+        asset_field: &[u8; 32],
+    ) -> [[u8; 32]; 13] {
         let action_field = self.compute_action_field(network_id, realm_id, pool_id);
         let action_binding = Self::compute_action_binding(context_field, &action_field);
 
@@ -198,7 +219,7 @@ impl Action {
 
         [
             *context_field,
-            asset_field,
+            *asset_field,
             kind_field,
             self.anchor_root,
             val_field,

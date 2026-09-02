@@ -70,6 +70,7 @@ fn test_adversarial_mutated_public_signal() {
 
     for i in 0..13 {
         println!("Testing mutation on public signal index {}", i);
+        env.cost_estimate().budget().reset_unlimited();
         let mut signals = [[0u8; 32]; 13];
         for (signal, value) in signals.iter_mut().zip(&item.public_signals) {
             *signal = field_str_to_bytes(value);

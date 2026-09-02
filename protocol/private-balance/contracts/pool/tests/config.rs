@@ -5,6 +5,7 @@ use private_balance_pool::{
     },
 };
 use private_balance_protocol::{
+    action::compute_asset_field,
     constants::{
         ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY,
         PRIVATE_ADDRESS_ASCII_BYTES, PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION,
@@ -82,6 +83,10 @@ fn constructor_binds_exact_immutable_configuration() {
     assert_eq!(config.realm_id, realm_id);
     assert_eq!(config.guardian, guardian);
     assert_eq!(client.asset(), asset);
+    assert_eq!(
+        config.asset_field.to_array(),
+        compute_asset_field(payload(&asset))
+    );
     assert_eq!(
         config.deployment_binding_hash.to_array(),
         deployment_binding_hash

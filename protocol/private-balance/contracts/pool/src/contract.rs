@@ -10,7 +10,7 @@ use crate::generated_artifacts::{
 };
 use crate::storage::*;
 use crate::{nullifier, token};
-use private_balance_protocol::action::{Action as ProtocolAction, ActionKind};
+use private_balance_protocol::action::{Action as ProtocolAction, ActionKind, compute_asset_field};
 use private_balance_protocol::constants::{
     ADDRESS_CHECKSUM_BYTES, ADDRESS_CONTEXT_TAG_BYTES, PAGE_CAPACITY, PRIVATE_ADDRESS_ASCII_BYTES,
     PRIVATE_ADDRESS_PAYLOAD_BYTES, PROTOCOL_VERSION, ROOT_WINDOW_LEDGERS, TREE_ARITY,
@@ -146,7 +146,11 @@ fn execute_action(
     }
     // Deposits have no real inputs. One durable dummy nullifier is sufficient
     // to reject proof replay; the second public slot remains for fixed arity.
-    let persistent_nullifier_count = if action.kind == ActionKind::Deposit { 1 } else { 2 };
+    let persistent_nullifier_count = if action.kind == ActionKind::Deposit {
+        1
+    } else {
+        2
+    };
     for nullifier in action.nullifiers.iter().take(persistent_nullifier_count) {
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
@@ -177,10 +181,9 @@ fn execute_action(
 
     let record = archive::append_record(
         env,
-        config,
         action,
         &asset,
-        &BytesN::from_array(env, &signals[7]),
+        &signals,
         starting_leaf_index,
         &tree.current_root,
         public_address,
@@ -297,6 +300,7 @@ impl PrivateBalancePool {
             &pool_id,
         );
         let context_field = compute_context_field(&context_hash);
+        let asset_field = compute_asset_field(asset_payload);
 
         let current_root = BytesN::from_array(&env, &EMPTY_ROOTS[TREE_DEPTH]);
 
@@ -327,6 +331,7 @@ impl PrivateBalancePool {
             deployment_binding_hash,
             context_hash: BytesN::from_array(&env, &context_hash),
             context_field: BytesN::from_array(&env, &context_field),
+            asset_field: BytesN::from_array(&env, &asset_field),
         };
         let meta = ArchiveMeta {
             action_count: 0,
