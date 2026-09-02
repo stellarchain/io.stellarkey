@@ -50,7 +50,7 @@ test("the accessibility journey waits for asynchronous send readiness", () => {
   );
 });
 
-test("the Private Payments manifest-tamper browser gate cannot silently skip", () => {
+test("the Private Payments catalogue-tamper browser gate cannot silently skip", () => {
   const security = source("e2e/private-manifest-security.spec.ts");
   const pkg = JSON.parse(source("package.json"));
   const ci = source(".github/workflows/ci.yml");
@@ -58,7 +58,10 @@ test("the Private Payments manifest-tamper browser gate cannot silently skip", (
 
   assert.doesNotMatch(security, /PRIVATE_BALANCE_E2E|privateBalanceE2eEnabled|test\.skip/);
   assert.doesNotMatch(security, /if\s*\(await .*isVisible/);
-  assert.match(security, /Private Balance manifest hash mismatch/);
+  assert.match(security, /\/protocol\/private-balance\/v1\/catalogue\.json/);
+  assert.match(security, /catalogue\.deployments =/);
+  assert.match(security, /manifestRequested/);
+  assert.match(security, /expect\(await manifestRequested\)\.toBe\(false\)/);
   assert.match(security, /Open private XLM/);
   assert.match(pkg.scripts["test:e2e:private-ui"], /private-manifest-security\.spec\.ts/);
   assert.match(ci, /npm run test:e2e:private-ui/);
