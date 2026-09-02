@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const FIELD_MODULUS =
@@ -32,4 +32,60 @@ test('Circom domain literals match canonical Rust and browser SHA-256 field deri
     assert.ok(match, `${file} declares ${variable}`);
     assert.equal(BigInt(match[1]), domainField(label), `${file} ${variable}`);
   }
+});
+
+test('every arity-three protocol hash except MerkleParent occupies slot zero with a domain', () => {
+  const circuitsDir = join(
+    process.cwd(),
+    'protocol/private-balance/circuits/circom',
+  );
+  const calls = [];
+
+  for (const file of readdirSync(circuitsDir).filter(name => name.endsWith('.circom'))) {
+    const source = readFileSync(join(circuitsDir, file), 'utf8');
+    const templates = [...source.matchAll(/template\s+(\w+)\([^)]*\)\s*\{/gu)];
+    for (let index = 0; index < templates.length; index += 1) {
+      const start = templates[index].index;
+      const end = templates[index + 1]?.index ?? source.length;
+      const body = source.slice(start, end);
+      for (const match of body.matchAll(/component\s+(\w+)\s*=\s*Poseidon2Hash\(3\);/gu)) {
+        const component = match[1];
+        calls.push({
+          file,
+          template: templates[index][1],
+          domainInSlotZero: new RegExp(
+            `${component}\\.in\\[0\\]\\s*<==\\s*DOMAIN_[A-Z0-9_]+`,
+            'u',
+          ).test(body),
+        });
+      }
+    }
+  }
+
+  assert.ok(calls.length > 0, 'arity-three call sites are enumerated');
+  assert.deepEqual(
+    calls.filter(call => !call.domainInSlotZero),
+    [{ file: 'merkle.circom', template: 'MerkleParent', domainInSlotZero: false }],
+  );
+});
+
+test('protocol docs state that the Poseidon2 length IV separates arities only', () => {
+  const protocol = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/docs/protocol-v1.md'),
+    'utf8',
+  );
+  const threatModel = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/docs/threat-model.md'),
+    'utf8',
+  );
+  const circuit = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/circuits/circom/merkle.circom'),
+    'utf8',
+  );
+
+  for (const source of [protocol, threatModel, circuit]) {
+    assert.match(source, /length IV\s+separates\s+(?:hashes\s+)?by\s+arity\s+only/iu);
+  }
+  assert.match(protocol, /every other arity-three protocol hash/iu);
+  assert.match(threatModel, /preimage and collision resistance/iu);
 });

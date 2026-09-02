@@ -216,9 +216,11 @@ public leaf count advances by exactly two per accepted action.
 
 A parent is the raw three-input Poseidon2 permutation over ordered left, middle,
 and right children. All three rate elements are occupied, so the Merkle parent
-has no string-domain field. Separation from longer protocol hashes depends on
-the pinned Poseidon2 input-length IV. Arity, ordering, depth, empty roots, and
-the length IV are consensus parameters.
+has no string-domain field. The pinned Poseidon2 length IV separates hashes by
+arity only. Every other arity-three protocol hash puts a distinct domain
+constant in rate slot zero; separation from the raw parent additionally relies
+on Poseidon2 preimage and collision resistance. Arity, ordering, depth, empty
+roots, the length IV, and the domain-slot convention are consensus parameters.
 
 The contract and browser use the same generated empty roots and canonical hash
 implementation. The contract maintains a 34-node frontier—two slots for each of
@@ -412,8 +414,8 @@ records machine-readable results. The accepted replacement measures:
 | Tree | Ternary depth 17, 129,140,163 leaves |
 
 In the recorded three-trial Node.js run on an Apple M3 Max, native X25519 p50
-fell from 435.583 microseconds with JWK plus redundant public derivation to
-85.750 microseconds with PKCS#8, an 80.31% median improvement. This is a local
+fell from 799.834 microseconds with JWK plus redundant public derivation to
+134.875 microseconds with PKCS#8, an 83.14% median improvement. This is a local
 microbenchmark, not physical-phone latency evidence.
 
 The earlier BN254/BLS12-381 comparison is also desktop smoke evidence. BLS12-381
