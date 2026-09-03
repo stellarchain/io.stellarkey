@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Retried one semantically read-only RPC `getNetwork` probe after a transient transport or malformed-body response, preventing Firefox from rejecting a healthy endpoint while preserving fail-closed network-identity checks.
 - Matched live Private Payments contracts against the binary verifier-key digest published in their manifests, retained initialized workers after first-time setup persistence, automatically resynchronized once when action preparation observes non-current chain state, selected a CORS-capable independent Testnet witness RPC, and kept witnessed checks live after old deployment ledgers age out of rolling RPC retention.
 - Corrected the Private Balance whitepaper and public security copy to match optional routine RPC witnessing, provider-diversity assumptions, deployment and ceremony evidence limits, envelope bindings, diversifier collision bounds, restoration fee margins, runtime failure behavior, and the live Testnet deployment boundary.
 - Kept Private Payments recovery lossless when a browser exposes partial or transiently failing native X25519 by dropping unusable handles and retrying envelope key agreement with the reviewed portable implementation.
