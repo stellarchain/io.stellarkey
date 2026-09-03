@@ -127,14 +127,34 @@ test('wallet consent and selected-asset readiness are separate access states', a
   }), 'ready');
 });
 
-test('setup completes only after the selected private asset reaches authenticated current state', async () => {
-  const { privatePaymentSetupComplete } = await bootstrapDomain();
+test('wallet setup prepares every asset then restores the original selection before completion', async () => {
+  const {
+    privatePaymentSetupComplete,
+    privatePaymentSetupTarget,
+  } = await bootstrapDomain();
+  const xlmFirst = [
+    { deploymentId: 'testnet-xlm', encryptedStateExists: false },
+    { deploymentId: 'testnet-usdc', encryptedStateExists: false },
+  ];
+  assert.equal(privatePaymentSetupTarget(xlmFirst, 'testnet-xlm'), 'testnet-xlm');
+  assert.equal(privatePaymentSetupTarget(xlmFirst, 'testnet-usdc'), 'testnet-usdc');
+  assert.equal(privatePaymentSetupTarget([
+    { ...xlmFirst[0], encryptedStateExists: true },
+    xlmFirst[1],
+  ], 'testnet-xlm'), 'testnet-usdc');
+  assert.equal(privatePaymentSetupTarget([
+    { ...xlmFirst[0], encryptedStateExists: true },
+    { ...xlmFirst[1], encryptedStateExists: true },
+  ], 'testnet-xlm'), 'testnet-xlm');
+  assert.equal(privatePaymentSetupTarget([], 'testnet-xlm'), null);
+
   const ready = {
     setupRunning: true,
     phase: 'current',
     configured: true,
     privateAddressAvailable: true,
-    selectedStateExists: true,
+    allAssetsPrepared: true,
+    selectedDeploymentRestored: true,
     runtimeMatchesSelection: true,
   };
 
@@ -149,7 +169,8 @@ test('setup completes only after the selected private asset reaches authenticate
     false,
     'the setup dialog must own the scan instead of handing off to Preparing',
   );
-  assert.equal(privatePaymentSetupComplete({ ...ready, selectedStateExists: false }), false);
+  assert.equal(privatePaymentSetupComplete({ ...ready, allAssetsPrepared: false }), false);
+  assert.equal(privatePaymentSetupComplete({ ...ready, selectedDeploymentRestored: false }), false);
   assert.equal(privatePaymentSetupComplete({ ...ready, runtimeMatchesSelection: false }), false);
   assert.equal(privatePaymentSetupComplete({ ...ready, setupRunning: false }), false);
 });

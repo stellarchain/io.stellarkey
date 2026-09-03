@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconCheck, IconChevronDown, IconShieldStellar } from '@/components/icons';
 import { Button, Modal, ModalHeader, Spinner } from '@/components/ui';
 import {
@@ -8,7 +8,10 @@ import {
   usePrivateBalanceRuntimeData,
 } from '@/hooks/usePrivateBalanceRuntime';
 import { triggerHaptic } from '@/lib/haptics';
-import { privatePaymentSetupComplete } from '@/lib/private-balance-bootstrap';
+import {
+  privatePaymentSetupComplete,
+  privatePaymentSetupTarget,
+} from '@/lib/private-balance-bootstrap';
 import { PrivacyDisclosure } from './PrivacyDisclosure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateSuccess } from './PrivateSuccess';
@@ -45,7 +48,11 @@ export function PrivateBalanceSetup({
   open: boolean;
   onClose(): void;
 }) {
-  const { availableAssets, selectedDeploymentId } = usePrivateBalanceRuntime();
+  const {
+    availableAssets,
+    selectedDeploymentId,
+    selectAsset,
+  } = usePrivateBalanceRuntime();
   const {
     asset,
     optIn,
@@ -60,6 +67,12 @@ export function PrivateBalanceSetup({
   const [learnMore, setLearnMore] = useState(false);
   const [setupError, setSetupError] = useState<unknown>(null);
   const [addressBeat, setAddressBeat] = useState(false);
+  const [setupPlan, setSetupPlan] = useState<{
+    deploymentIds: string[];
+    initialDeploymentId: string;
+  } | null>(null);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const attemptedDeploymentRef = useRef<string | null>(null);
   const assetList = formatAssetList(
     availableAssets.map(option => option.asset.code),
   );
@@ -67,28 +80,97 @@ export function PrivateBalanceSetup({
     option => option.deploymentId === selectedDeploymentId,
   ) ?? availableAssets[0] ?? null;
   const selectedAssetCode = selected?.asset.code ?? 'asset';
-  const selectedStateExists = selected?.encryptedStateExists ?? false;
   const runtimeMatchesSelection = Boolean(
     selected && asset?.contractId === selected.asset.contractId,
   );
+  const setupAssets = setupPlan === null
+    ? []
+    : setupPlan.deploymentIds.flatMap(deploymentId => {
+        const option = availableAssets.find(assetOption => (
+          assetOption.deploymentId === deploymentId
+        ));
+        return option ? [option] : [];
+      });
+  const setupCatalogueStable = setupPlan === null
+    || setupAssets.length === setupPlan.deploymentIds.length;
+  const setupTargetDeploymentId = setupPlan === null
+    ? null
+    : privatePaymentSetupTarget(setupAssets, setupPlan.initialDeploymentId);
+  const setupTarget = setupAssets.find(
+    option => option.deploymentId === setupTargetDeploymentId,
+  ) ?? null;
+  const setupPlanError = setupPlan !== null && !setupCatalogueStable
+    ? new Error('The verified Private Payments asset list changed during setup.')
+    : setupPlan !== null && setupTargetDeploymentId === null
+      ? new Error('No verified Private Payments asset is available.')
+      : null;
+  const setupTargetCode = setupTarget?.asset.code ?? selectedAssetCode;
+  const allAssetsPrepared = setupPlan !== null
+    && setupCatalogueStable
+    && setupAssets.length > 0
+    && setupAssets.every(option => option.encryptedStateExists);
+  const selectedDeploymentRestored = setupPlan !== null
+    && selectedDeploymentId === setupPlan.initialDeploymentId;
   const setupReady = privatePaymentSetupComplete({
     setupRunning: stage === 'running',
     phase,
     configured,
     privateAddressAvailable: privateAddress !== null,
-    selectedStateExists,
+    allAssetsPrepared,
+    selectedDeploymentRestored,
     runtimeMatchesSelection,
   });
   const visibleStage = setupReady ? 'done' : stage;
-  const visibleSetupError = setupError ?? (
-    stage === 'running' && (phase === 'safe-error' || phase === 'status-unknown') && error
+  const visibleSetupError = setupError ?? setupPlanError ?? (
+    stage === 'running'
+      && setupTargetDeploymentId === selectedDeploymentId
+      && runtimeMatchesSelection
+      && (phase === 'safe-error' || phase === 'status-unknown')
+      && error
       ? new Error(error)
       : null
   );
   const working = visibleStage === 'running' && visibleSetupError === null;
 
-  // Setup ends only once the selected asset's authenticated history is current,
-  // so closing the success screen never reveals a second preparation state.
+  // One wallet-wide consent prepares every currently verified asset. The
+  // provider owns one asset-pinned runtime at a time, so this effect advances
+  // them sequentially and restores the user's original selection at the end.
+  useEffect(() => {
+    if (stage !== 'running' || setupPlan === null || setupError !== null) return;
+    if (!setupCatalogueStable || setupTargetDeploymentId === null) return;
+    if (selectedDeploymentId !== setupTargetDeploymentId) {
+      // Ignore any teardown rejection from the asset that just completed.
+      attemptedDeploymentRef.current = null;
+      selectAsset(setupTargetDeploymentId);
+      return;
+    }
+    if (!runtimeMatchesSelection || setupTarget?.encryptedStateExists) return;
+    if (attemptedDeploymentRef.current === setupTargetDeploymentId) return;
+
+    attemptedDeploymentRef.current = setupTargetDeploymentId;
+    void optIn().catch((cause: unknown) => {
+      if (attemptedDeploymentRef.current !== setupTargetDeploymentId) return;
+      setSetupError(cause ?? new Error(
+        `Private ${setupTargetCode} setup stopped safely.`,
+      ));
+    });
+  }, [
+    optIn,
+    retryVersion,
+    runtimeMatchesSelection,
+    selectAsset,
+    selectedDeploymentId,
+    setupCatalogueStable,
+    setupError,
+    setupPlan,
+    setupTarget,
+    setupTargetCode,
+    setupTargetDeploymentId,
+    stage,
+  ]);
+
+  // Setup ends only after every asset is durable and the original asset has
+  // returned to authenticated current state.
   useEffect(() => {
     if (stage !== 'running' || phase !== 'reading-meta') return;
     const timer = window.setTimeout(() => setAddressBeat(true), 1400);
@@ -110,6 +192,9 @@ export function PrivateBalanceSetup({
     setLearnMore(false);
     setSetupError(null);
     setAddressBeat(false);
+    setSetupPlan(null);
+    setRetryVersion(0);
+    attemptedDeploymentRef.current = null;
   };
 
   const close = () => {
@@ -122,19 +207,42 @@ export function PrivateBalanceSetup({
     triggerHaptic('selection');
     setStage('running');
     setSetupError(null);
-    void optIn().catch((cause: unknown) => {
-      setSetupError(cause ?? new Error('Private payments setup stopped safely.'));
+    attemptedDeploymentRef.current = null;
+    const initialDeploymentId = selected?.deploymentId ?? availableAssets[0]?.deploymentId;
+    if (!initialDeploymentId || availableAssets.length === 0) {
+      setSetupError(new Error('No verified Private Payments asset is available.'));
+      return;
+    }
+    setSetupPlan({
+      deploymentIds: availableAssets.map(option => option.deploymentId),
+      initialDeploymentId,
     });
   };
+
+  const retrySetup = () => {
+    attemptedDeploymentRef.current = null;
+    setSetupError(null);
+    setRetryVersion(version => version + 1);
+  };
+
+  const setupTargetIndex = setupPlan?.deploymentIds.indexOf(
+    setupTargetDeploymentId ?? '',
+  ) ?? -1;
+  const setupProgress = setupPlan && setupPlan.deploymentIds.length > 1
+    ? ` (${Math.max(0, setupTargetIndex) + 1} of ${setupPlan.deploymentIds.length})`
+    : '';
+  const runningSubtitle = allAssetsPrepared
+    ? 'Finishing Private Payments'
+    : phase === 'scanning-live' && runtimeMatchesSelection
+      ? `Checking private ${setupTargetCode}${setupProgress}`
+      : `Preparing private ${setupTargetCode}${setupProgress}`;
 
   return (
     <Modal open={open} onClose={close} dismissable={!working}>
       <ModalHeader
         title="Private Payments"
         subtitle={visibleStage === 'running'
-          ? phase === 'scanning-live'
-            ? `Checking private ${selectedAssetCode}`
-            : 'Setting up on this device'
+          ? runningSubtitle
           : 'Set up on this device'}
         onClose={working ? undefined : close}
       />
@@ -248,7 +356,7 @@ export function PrivateBalanceSetup({
             {visibleSetupError !== null ? (
               <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
                 <Button type="button" variant="ghost" onClick={close}>Close</Button>
-                <Button type="button" onClick={() => void handleOptIn()}>Try Again</Button>
+                <Button type="button" onClick={retrySetup}>Try Again</Button>
               </div>
             ) : null}
           </section>
@@ -257,7 +365,7 @@ export function PrivateBalanceSetup({
         {visibleStage === 'done' ? (
           <PrivateSuccess
             title="Private Payments is on"
-            subtitle={`Private ${selectedAssetCode} is ready to use. Other supported assets are prepared automatically when you first use them.`}
+            subtitle={`Private Payments is ready for ${assetList}.`}
             celebrate={false}
             doneLabel="Done"
             onDone={close}
