@@ -12,6 +12,7 @@ import { getHorizonUrl, testHorizonEndpoint } from "@/lib/stellar-endpoints";
 import { stroopsToAmount } from "@/lib/stellar-domain";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconCheck, IconShield } from "./icons";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 
 export function NetworkStatsModal({
   open,
@@ -51,6 +52,12 @@ export function NetworkStatsModal({
   if (!open) return null;
 
   const totalTxCount = activity.length;
+  const acceptedFeeXlm = feeStats
+    ? stroopsToAmount(BigInt(feeStats.modeAcceptedFee))
+    : null;
+  const lastLedgerFeeXlm = feeStats
+    ? stroopsToAmount(BigInt(feeStats.lastLedgerBaseFee))
+    : null;
 
   return (
     <Modal open onClose={onClose} wide>
@@ -94,8 +101,11 @@ export function NetworkStatsModal({
               Accepted Base Fee
             </p>
             <p className="mono text-[22px] font-bold text-[#30D158] mt-1">
-              {feeStats ? stroopsToAmount(BigInt(feeStats.modeAcceptedFee)) : "—"} XLM
+              {acceptedFeeXlm ?? "—"} XLM
             </p>
+            {acceptedFeeXlm && (
+              <XlmFeeFiatValue amount={acceptedFeeXlm} className="mt-0.5 block" />
+            )}
             <p className="text-[11px] text-neutral-400 mt-0.5">Horizon fee distribution mode</p>
           </div>
 
@@ -131,8 +141,11 @@ export function NetworkStatsModal({
           </div>
           <div className="flex justify-between text-neutral-300">
             <span>Last Ledger Base Fee</span>
-            <span className="mono font-semibold text-white">
-              {feeStats ? `${feeStats.lastLedgerBaseFee} stroops` : "—"}
+            <span className="flex flex-col items-end font-semibold text-white">
+              <span className="mono">
+                {feeStats ? `${feeStats.lastLedgerBaseFee} stroops · ${lastLedgerFeeXlm} XLM` : "—"}
+              </span>
+              {lastLedgerFeeXlm && <XlmFeeFiatValue amount={lastLedgerFeeXlm} />}
             </span>
           </div>
           <div className="flex items-center gap-1.5 pt-1 text-[11px] text-emerald-400">

@@ -90,6 +90,7 @@ import {
   Toggle,
 } from "./ui";
 import { AccountMark } from "./AccountMark";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
   IconBook,
@@ -209,6 +210,7 @@ export function SettingsPage({
     retryMergeReconciliation,
     submissionStatus,
   } = useWallet();
+  const singleOperationFeeXlm = networkFeeXlm(recommendedBaseFeeStroops, 1);
   const {
     enabled: merchantEnabled,
     configured: merchantConfigured,
@@ -1539,9 +1541,10 @@ export function SettingsPage({
           <Notice tone="pos">
             Account merge transfers all remaining lumens (including the 1.0 XLM base reserve) to the destination account and permanently closes this account on the network.
           </Notice>
-          <p className="px-1 text-[12px] text-neutral-400">
-            Selected network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
-          </p>
+          <div className="px-1 text-[12px] text-neutral-400">
+            <p>Selected network fee: {singleOperationFeeXlm} XLM</p>
+            <XlmFeeFiatValue amount={singleOperationFeeXlm} className="mt-0.5 block" />
+          </div>
 
           <div className="list-group p-4 space-y-4">
             <Field label="Destination Stellar Address" hint="Must be an existing active account">
@@ -1674,7 +1677,10 @@ export function SettingsPage({
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="text-neutral-400">Fee</span>
-                  <span className="mono text-neutral-200">{airReview.feeXlm} XLM</span>
+                  <span className="flex flex-col items-end text-neutral-200">
+                    <span className="mono">{airReview.feeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={airReview.feeXlm} />
+                  </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-2.5">
                   <span className="text-neutral-400">Memo</span>
@@ -2029,8 +2035,9 @@ export function SettingsPage({
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Selected Network Fee</span>
-              <span className="mono text-white">
-                {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM / operation
+              <span className="flex flex-col items-end text-white">
+                <span className="mono">{singleOperationFeeXlm} XLM / operation</span>
+                <XlmFeeFiatValue amount={singleOperationFeeXlm} />
               </span>
             </div>
             <div className="flex justify-between text-neutral-300">

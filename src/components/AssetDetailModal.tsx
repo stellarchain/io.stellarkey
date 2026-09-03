@@ -32,6 +32,7 @@ import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transactio
 import { networkFeeXlm } from "@/lib/api";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
 import { IconExternal, IconStellar, IconTrash } from "./icons";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 
 export function AssetDetailModal({
   asset,
@@ -123,6 +124,7 @@ export function AssetDetailModal({
   const balanceSummary = asset
     ? assetDetailBalanceSummary(asset, minimumBalanceXlm)
     : null;
+  const trustlineFeeXlm = networkFeeXlm(recommendedBaseFeeStroops, 1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
@@ -448,9 +450,10 @@ export function AssetDetailModal({
               </p>
             ) : (
               <div className="space-y-2">
-                <p className="text-center text-[11.5px] text-neutral-500">
-                  Network fee: {networkFeeXlm(recommendedBaseFeeStroops, 1)} XLM
-                </p>
+                <div className="text-center text-[11.5px] text-neutral-500">
+                  <p>Network fee: {trustlineFeeXlm} XLM</p>
+                  <XlmFeeFiatValue amount={trustlineFeeXlm} className="mt-0.5 block" />
+                </div>
                 <Button
                   variant="danger"
                   className="w-full flex items-center justify-center gap-2 !py-2.5 text-[13px]"

@@ -34,6 +34,7 @@ import type { SubmissionLifecycleStatus, SubmissionResult } from "@/lib/submissi
 import { assetKey as merchantAssetKey } from "@/lib/merchant/charge";
 import type { SettlementSwapIntent } from "@/lib/merchant/settlement";
 import { Button, ErrorText, HashValue, NetworkBadge, Select, Spinner } from "./ui";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconAlert,
   IconCheck,
@@ -619,7 +620,10 @@ export function SwapPage({
               </div>
               <div className="flex flex-wrap justify-between gap-2 text-neutral-400">
                 <span>Estimated Network Fee</span>
-                <span className="mono text-neutral-300">{feeXlm} XLM</span>
+                <span className="flex flex-col items-end text-neutral-300">
+                  <span className="mono">{feeXlm} XLM</span>
+                  <XlmFeeFiatValue amount={feeXlm} />
+                </span>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pt-1 text-neutral-400">
                 <span>Route Hops</span>
@@ -734,7 +738,10 @@ export function SwapPage({
                 </div>
                 <div className="flex justify-between text-neutral-400 text-[12px]">
                   <span>Base Network Fee</span>
-                  <span className="mono">{feeXlm} XLM</span>
+                  <span className="flex flex-col items-end">
+                    <span className="mono">{feeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={feeXlm} />
+                  </span>
                 </div>
               </div>
 
@@ -935,7 +942,10 @@ function SwapResultView({
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <span className="text-[12px] text-neutral-400">Estimated network fee</span>
-            <span className="mono text-[12.5px] text-neutral-200">{feeXlm} XLM</span>
+            <span className="flex flex-col items-end text-[12.5px] text-neutral-200">
+              <span className="mono">{feeXlm} XLM</span>
+              <XlmFeeFiatValue amount={feeXlm} />
+            </span>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <span className="text-[12px] text-neutral-400">Network</span>

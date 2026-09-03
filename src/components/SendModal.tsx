@@ -54,6 +54,7 @@ import type { SubmissionResult } from "@/lib/submission";
 import type { SettlementSweepIntent } from "@/lib/merchant/settlement";
 import { Button, CopyButton, ErrorText, HashValue, LoadingRegion, Modal, ModalHeader, QrScannerBox, SegmentedControl, Select, Spinner, Tabs } from "./ui";
 import { FiatValue } from "./FiatValue";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
   IconAlert,
@@ -906,8 +907,13 @@ function SendInner({
               )}
               {stealthReview && (
                 <Row label="Sweep fee buffer">
-                  <span className="mono text-[13px] text-neutral-300">
-                    {stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                  <span className="flex flex-col items-end text-[13px] text-neutral-300">
+                    <span className="mono">
+                      {stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                    </span>
+                    <XlmFeeFiatValue
+                      amount={stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))}
+                    />
                   </span>
                 </Row>
               )}
@@ -919,8 +925,11 @@ function SendInner({
                 </Row>
               )}
               <Row label="Network Fee">
-                <span className="mono text-[13px] text-neutral-300">
-                  {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? publicReview?.feeStroops ?? feeStroops} stroops)</span>
+                <span className="flex flex-col items-end text-[13px] text-neutral-300">
+                  <span className="mono">
+                    {reviewedFeeXlm} XLM <span className="text-[11px] text-neutral-500">({stealthReview?.networkFeeStroops ?? publicReview?.feeStroops ?? feeStroops} stroops)</span>
+                  </span>
+                  <XlmFeeFiatValue amount={reviewedFeeXlm} />
                 </span>
               </Row>
               <Row label="Transaction Valid For">
@@ -946,7 +955,10 @@ function SendInner({
               {reviewedAsset?.isNative && (
                 <div className="flex justify-between text-neutral-400">
                   <span>Network Gas Fee</span>
-                  <span className="mono">−{reviewedFeeXlm} XLM</span>
+                  <span className="flex flex-col items-end">
+                    <span className="mono">−{reviewedFeeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={reviewedFeeXlm} />
+                  </span>
                 </div>
               )}
               {stealthReview && (
@@ -965,8 +977,13 @@ function SendInner({
                   </div>
                   <div className="flex justify-between text-neutral-400">
                     <span>Sweep Fee Buffer</span>
-                    <span className="mono">
-                      −{stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                    <span className="flex flex-col items-end">
+                      <span className="mono">
+                        −{stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))} XLM
+                      </span>
+                      <XlmFeeFiatValue
+                        amount={stroopsToAmount(BigInt(stealthReview.sweepFeeBufferStroops))}
+                      />
                     </span>
                   </div>
                 </>
@@ -1365,6 +1382,9 @@ function SendInner({
                   <span className="mono">
                     Normal {normalStroops} · Priority {priorityStroops} · Urgent {urgentStroops} stroops
                   </span>
+                </p>
+                <p className="pt-1 text-[11px] text-neutral-500">
+                  Selected {feeXlm} XLM · <XlmFeeFiatValue amount={feeXlm} />
                 </p>
               </div>
 

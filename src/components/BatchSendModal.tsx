@@ -22,6 +22,7 @@ import { spendableAssetBalance } from "@/lib/transaction-intent";
 import type { SubmissionResult } from "@/lib/submission";
 import { Button, ErrorText, Modal, ModalHeader, Select } from "./ui";
 import { FiatValue } from "./FiatValue";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import { useToast } from "./Toast";
 import { IconAlert, IconCheck, IconLedger, IconPlus, IconTrash, IconTrezor } from "./icons";
 
@@ -339,7 +340,10 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="flex justify-between gap-3 text-neutral-300">
                     <span>Network fee</span>
-                    <span className="mono">{review.feeXlm} XLM</span>
+                    <span className="flex flex-col items-end">
+                      <span className="mono">{review.feeXlm} XLM</span>
+                      <XlmFeeFiatValue amount={review.feeXlm} />
+                    </span>
                   </div>
                   <div className="flex justify-between gap-3 text-neutral-300">
                     <span>Transaction memo</span>
@@ -569,7 +573,10 @@ function BatchSendInner({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="flex justify-between text-neutral-300">
                   <span>Network Fee</span>
-                  <span className="mono">{feeXlm} XLM</span>
+                  <span className="flex flex-col items-end">
+                    <span className="mono">{feeXlm} XLM</span>
+                    <XlmFeeFiatValue amount={feeXlm} />
+                  </span>
                 </div>
                 {compareStellarAmounts(totalAmount, maxSendable) > 0 && (
                   <p className="text-[11px] text-[#FF453A] pt-1">

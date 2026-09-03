@@ -15,6 +15,7 @@ import type { AssetBalance } from "@/lib/types";
 import type { SubmissionResult } from "@/lib/submission";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
 import { IconAlert, IconCheck, IconEyeOff, IconGift, IconPlus } from "./icons";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 
 function hasClaimTrustline(
   item: ClaimableBalanceItem,
@@ -414,7 +415,10 @@ export function ClaimableBalancesModal({
             <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3.5">
               <div className="flex items-center justify-between gap-3 text-[12px]">
                 <span className="text-neutral-400">Selected network fee</span>
-                <span className="mono text-neutral-200">{selectedFee} XLM</span>
+                <span className="flex flex-col items-end text-neutral-200">
+                  <span className="mono">{selectedFee} XLM</span>
+                  <XlmFeeFiatValue amount={selectedFee} />
+                </span>
               </div>
               <p className="mt-1 text-[10.5px] leading-relaxed text-neutral-500">
                 {selectedIds.length} operation{selectedIds.length === 1 ? "" : "s"} · one atomic
