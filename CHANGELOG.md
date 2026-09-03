@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept first-time Private Payments setup in progress through authenticated history synchronization, so success appears only when the selected asset is ready and never hands off to a second preparation screen.
 - Asked for Private Payments consent once per wallet, kept its success confirmation open until Done, and automatically prepared newly selected asset-pinned pools inside Send, Receive, and Add without replacing their modal shells.
 - Kept private-asset readiness and verified balances deployment-specific, and cleared private runtime controls immediately when the active account or network changes.
 - Treated issued-asset trustlines as spendable whenever Horizon reports full authorization, even when it also reports maintain-liabilities capability, and validated leading-zero Private Payment amounts with specific zero/value guidance instead of a generic error.

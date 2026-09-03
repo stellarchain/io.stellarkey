@@ -8,6 +8,7 @@ import {
   usePrivateBalanceRuntimeData,
 } from '@/hooks/usePrivateBalanceRuntime';
 import { triggerHaptic } from '@/lib/haptics';
+import { privatePaymentSetupComplete } from '@/lib/private-balance-bootstrap';
 import { PrivacyDisclosure } from './PrivacyDisclosure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateSuccess } from './PrivateSuccess';
@@ -17,6 +18,7 @@ const SETUP_STEPS = [
   'Creating your keys',
   'Creating your private address',
   'Saving securely on this device',
+  'Checking private history',
 ] as const;
 
 function formatBytes(bytes: number | null): string {
@@ -43,8 +45,9 @@ export function PrivateBalanceSetup({
   open: boolean;
   onClose(): void;
 }) {
-  const { availableAssets } = usePrivateBalanceRuntime();
+  const { availableAssets, selectedDeploymentId } = usePrivateBalanceRuntime();
   const {
+    asset,
     optIn,
     phase,
     configured,
@@ -60,7 +63,22 @@ export function PrivateBalanceSetup({
   const assetList = formatAssetList(
     availableAssets.map(option => option.asset.code),
   );
-  const setupReady = stage === 'running' && configured && privateAddress !== null;
+  const selected = availableAssets.find(
+    option => option.deploymentId === selectedDeploymentId,
+  ) ?? availableAssets[0] ?? null;
+  const selectedAssetCode = selected?.asset.code ?? 'asset';
+  const selectedStateExists = selected?.encryptedStateExists ?? false;
+  const runtimeMatchesSelection = Boolean(
+    selected && asset?.contractId === selected.asset.contractId,
+  );
+  const setupReady = privatePaymentSetupComplete({
+    setupRunning: stage === 'running',
+    phase,
+    configured,
+    privateAddressAvailable: privateAddress !== null,
+    selectedStateExists,
+    runtimeMatchesSelection,
+  });
   const visibleStage = setupReady ? 'done' : stage;
   const visibleSetupError = setupError ?? (
     stage === 'running' && (phase === 'safe-error' || phase === 'status-unknown') && error
@@ -69,9 +87,8 @@ export function PrivateBalanceSetup({
   );
   const working = visibleStage === 'running' && visibleSetupError === null;
 
-  // Setup ends once the encrypted local state and private address are durable.
-  // Past-activity verification continues outside this dialog and keeps
-  // spending locked until the private balance is current.
+  // Setup ends only once the selected asset's authenticated history is current,
+  // so closing the success screen never reveals a second preparation state.
   useEffect(() => {
     if (stage !== 'running' || phase !== 'reading-meta') return;
     const timer = window.setTimeout(() => setAddressBeat(true), 1400);
@@ -80,9 +97,9 @@ export function PrivateBalanceSetup({
   const reachedStep = visibleStage === 'done'
     ? SETUP_STEPS.length
     : phase === 'current'
-      ? 3
+      ? 4
       : phase === 'scanning-live'
-        ? 3
+        ? 4
         : phase === 'reading-meta'
           ? (addressBeat ? 2 : 1)
           : 0;
@@ -114,7 +131,11 @@ export function PrivateBalanceSetup({
     <Modal open={open} onClose={close} dismissable={!working}>
       <ModalHeader
         title="Private Payments"
-        subtitle={visibleStage === 'running' ? 'Setting up on this device' : 'Set up on this device'}
+        subtitle={visibleStage === 'running'
+          ? phase === 'scanning-live'
+            ? `Checking private ${selectedAssetCode}`
+            : 'Setting up on this device'
+          : 'Set up on this device'}
         onClose={working ? undefined : close}
       />
       <div className="p-4 sm:p-6">
@@ -236,7 +257,7 @@ export function PrivateBalanceSetup({
         {visibleStage === 'done' ? (
           <PrivateSuccess
             title="Private Payments is on"
-            subtitle="This wallet is ready. Each supported asset is prepared automatically when you first use it; checking past private activity continues in the background."
+            subtitle={`Private ${selectedAssetCode} is ready to use. Other supported assets are prepared automatically when you first use them.`}
             celebrate={false}
             doneLabel="Done"
             onDone={close}

@@ -474,7 +474,7 @@ test('a wallet without consent opens setup while an available sibling opens priv
   );
   assert.match(setup, /usePrivateBalanceRuntime\(\)/);
   assert.match(setup, /availableAssets/);
-  assert.match(setup, /Each supported asset is prepared automatically when you first use it/);
+  assert.match(setup, /Other supported assets are prepared automatically when you first use them/);
 });
 
 test('asset section headers contain no add-asset links and private details identify the selected asset', () => {
