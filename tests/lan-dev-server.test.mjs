@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -25,4 +26,12 @@ test("Turbopack stays rooted in this repository when a parent lockfile exists", 
 test("development assets keep a stable namespace outside the production shell worker", () => {
   assert.equal(nextConfig.assetPrefix, "/__stellarkey-dev-v2");
   assert.equal(`${nextConfig.assetPrefix}/_next/static/app.js`.startsWith("/_next/static/"), false);
+});
+
+test("development output stays outside the production build directory", () => {
+  const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const gitignore = readFileSync(path.join(repositoryRoot, ".gitignore"), "utf8");
+
+  assert.equal(nextConfig.distDir, ".next-dev");
+  assert.match(gitignore, /^\/\.next-dev\/$/m);
 });
