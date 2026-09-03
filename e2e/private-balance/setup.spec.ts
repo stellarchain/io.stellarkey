@@ -66,6 +66,7 @@ test("keeps Send and its nested setup dialog mounted through consent completion"
   if (await failure.isVisible().catch(() => false)) {
     throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
   }
+  await expect(setupDialog.getByText(/Private Payments is ready for XLM and USDC/)).toBeVisible();
 
   await expect(sendDialog).toHaveAttribute("data-e2e-overlay-identity", "send");
   await expect(setupDialog).toHaveAttribute("data-e2e-overlay-identity", "setup");

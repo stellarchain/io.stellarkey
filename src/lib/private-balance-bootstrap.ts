@@ -48,8 +48,14 @@ export interface PrivatePaymentSetupCompletionInput {
   phase: string;
   configured: boolean;
   privateAddressAvailable: boolean;
-  selectedStateExists: boolean;
+  allAssetsPrepared: boolean;
+  selectedDeploymentRestored: boolean;
   runtimeMatchesSelection: boolean;
+}
+
+export interface PrivatePaymentSetupAsset {
+  deploymentId: string;
+  encryptedStateExists: boolean;
 }
 
 export type PrivateBalanceAccountSupport =
@@ -149,23 +155,41 @@ export function privatePaymentAccessState({
 }
 
 /**
- * First-time setup owns the selected asset's authenticated synchronization.
- * Success must not hand the user back to a second, still-preparing surface.
+ * First-time setup owns every captured asset's authenticated synchronization.
+ * Success must not hand the user back to another still-preparing asset.
  */
 export function privatePaymentSetupComplete({
   setupRunning,
   phase,
   configured,
   privateAddressAvailable,
-  selectedStateExists,
+  allAssetsPrepared,
+  selectedDeploymentRestored,
   runtimeMatchesSelection,
 }: PrivatePaymentSetupCompletionInput): boolean {
   return setupRunning
     && phase === 'current'
     && configured
     && privateAddressAvailable
-    && selectedStateExists
+    && allAssetsPrepared
+    && selectedDeploymentRestored
     && runtimeMatchesSelection;
+}
+
+/**
+ * Prepare the asset the user started from first, then every remaining asset.
+ * Once all are durable, restore that original selection before showing success.
+ */
+export function privatePaymentSetupTarget(
+  assets: readonly PrivatePaymentSetupAsset[],
+  initialDeploymentId: string,
+): string | null {
+  const initial = assets.find(asset => asset.deploymentId === initialDeploymentId);
+  if (initial && !initial.encryptedStateExists) return initial.deploymentId;
+  return assets.find(asset => !asset.encryptedStateExists)?.deploymentId
+    ?? initial?.deploymentId
+    ?? assets[0]?.deploymentId
+    ?? null;
 }
 
 export function selectPrivateBalanceDeploymentId(
