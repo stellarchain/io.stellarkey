@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Unified public and private asset artwork: XLM now uses the Stellar mark on black, while private assets reuse their normal logo with a shield notch labelled "Private asset".
 - Displayed the selected local-currency equivalent beside numeric XLM network fees throughout public and Private Payments flows, retaining useful precision below one cent.
 - Displayed the canonical Stellar mark for native XLM in wallet asset rows and details, matching issued-asset logo treatment.
 - Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.

@@ -31,7 +31,8 @@ import { assetPriceKey } from "@/lib/prices";
 import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
 import { networkFeeXlm } from "@/lib/api";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
-import { IconExternal, IconStellar, IconTrash } from "./icons";
+import { IconExternal, IconTrash } from "./icons";
+import { AssetAvatar } from "./AssetAvatar";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 
 export function AssetDetailModal({
@@ -201,37 +202,13 @@ export function AssetDetailModal({
       />
       <div className="p-4 sm:p-6">
         <div className="flex flex-col items-center pb-2 pt-1">
-          {asset.isNative ? (
-            <span
-              className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl"
-              style={{ background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }}
-            >
-              <IconStellar size={32} />
-            </span>
-          ) : logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              referrerPolicy="no-referrer"
-              alt=""
-              width={56}
-              height={56}
-              className="h-14 w-14 rounded-full object-cover shadow-xl"
-            />
-          ) : (
-            <span
-              className="flex h-14 w-14 items-center justify-center rounded-full text-[18px] font-bold text-white shadow-xl"
-              style={
-                known
-                  ? { background: known.color }
-                  : asset.isNative
-                    ? { background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }
-                    : { background: `hsl(${assetHueOf(asset.key)}, 70%, 50%)` }
-              }
-            >
-              {asset.code.slice(0, 3)}
-            </span>
-          )}
+          <AssetAvatar
+            code={asset.code}
+            isNative={asset.isNative}
+            logoUrl={logoUrl}
+            background={known?.color ?? `hsl(${assetHueOf(asset.key)}, 70%, 50%)`}
+            size={56}
+          />
           <p
             className="balance-display mt-4 text-white"
             data-density={balanceDensity}

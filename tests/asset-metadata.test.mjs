@@ -1,27 +1,37 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 test("remote issuer logos do not receive a wallet-page referrer", () => {
-  for (const path of ["src/components/Dashboard.tsx", "src/components/AssetDetailModal.tsx"]) {
-    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-    const image = source.match(/<img[\s\S]{0,500}?>/g) ?? [];
-    assert.ok(image.length > 0, `${path} should render an issuer logo`);
-    for (const tag of image) assert.match(tag, /referrerPolicy="no-referrer"/);
-  }
+  const path = "src/components/AssetAvatar.tsx";
+  const url = new URL(`../${path}`, import.meta.url);
+  const source = existsSync(url) ? readFileSync(url, "utf8") : "";
+  const image = source.match(/<img[\s\S]{0,500}?>/g) ?? [];
+  assert.ok(image.length > 0, `${path} should render an issuer logo`);
+  for (const tag of image) assert.match(tag, /referrerPolicy="no-referrer"/);
 });
 
-test("native XLM uses the canonical decorative Stellar mark wherever asset logos appear", () => {
+test("public and private asset surfaces share one canonical asset avatar", () => {
   const icons = readFileSync(
     new URL("../src/components/icons.tsx", import.meta.url),
     "utf8",
   );
+  const avatarUrl = new URL("../src/components/AssetAvatar.tsx", import.meta.url);
+  const avatar = existsSync(avatarUrl) ? readFileSync(avatarUrl, "utf8") : "";
   const dashboard = readFileSync(
     new URL("../src/components/Dashboard.tsx", import.meta.url),
     "utf8",
   );
   const details = readFileSync(
     new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    "utf8",
+  );
+  const privateRow = readFileSync(
+    new URL("../src/features/private-balance/components/PrivateBalanceAssetRow.tsx", import.meta.url),
+    "utf8",
+  );
+  const privateDetails = readFileSync(
+    new URL("../src/features/private-balance/components/PrivateAssetDetailModal.tsx", import.meta.url),
     "utf8",
   );
 
@@ -32,8 +42,14 @@ test("native XLM uses the canonical decorative Stellar mark wherever asset logos
   assert.match(stellarIcon, /d=\{STELLAR_MARK_PATH\}/);
   assert.match(stellarIcon, /aria-hidden="true"/);
   assert.match(stellarIcon, /focusable="false"/);
-  assert.match(dashboard, /asset\.isNative[\s\S]*?<IconStellar size=\{20\}/);
-  assert.match(details, /asset\.isNative[\s\S]*?<IconStellar size=\{32\}/);
+  assert.match(avatar, /<IconStellar/);
+  assert.match(avatar, /background:\s*["']#000000["']/);
+  assert.match(avatar, /privatePayment[\s\S]*?<PrivateShieldNotch/);
+  assert.match(avatar, /<PrivateShieldNotch[\s\S]{0,200}?label="Private asset"/);
+  assert.match(dashboard, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
+  assert.match(details, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
+  assert.match(privateRow, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
+  assert.match(privateDetails, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
 });
 
 class MemoryStorage {

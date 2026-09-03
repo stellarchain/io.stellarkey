@@ -381,8 +381,8 @@ test('private asset rows stay concise and testnet value help works on touch', ()
 
   assert.doesNotMatch(row, /Checked through ledger/);
   assert.match(row, /Ready/);
-  assert.match(row, /className="absolute bottom-0 right-0/);
-  assert.doesNotMatch(row, /-bottom-0\.5|-right-0\.5/);
+  assert.match(row, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
+  assert.doesNotMatch(row, /className="absolute bottom-0 right-0/);
   assert.match(details, /Checked through ledger/);
   assert.match(dashboard, /aria-label="About testnet private asset values"/);
   assert.match(dashboard, /setPrivateValueInfoOpen\(true\)/);
@@ -516,7 +516,8 @@ test('wallet activity merges cached private actions and labels their provenance'
   assert.match(notch, /bottom-full left-0/);
   assert.doesNotMatch(notch, /-translate-x-1\/2/);
   assert.doesNotMatch(notch, /group-(?:hover|focus-visible)\/private:/);
-  assert.match(notch, /className="sr-only">Private payment/);
+  assert.match(notch, /label = "Private payment"/);
+  assert.match(notch, /className="sr-only">\{label\}/);
   assert.doesNotMatch(notch, /<button/);
   assert.match(details, /item\.private/);
   assert.match(details, /Verified locally/);
