@@ -2684,25 +2684,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
+      const request = marketRefreshLane.begin();
+      const fallbackRange = priceData?.range ?? null;
       setPriceRangeState(r);
       const cached = priceCache.current[r];
       if (cached) {
         setPriceData(cached);
+        if (request.isCurrent()) setPriceLoading(false);
         return;
       }
       setPriceLoading(true);
       try {
         const api = await loadWalletApi();
-        const series = await api.fetchXlmSeries(r);
-        if (series) {
+        const series = await api.fetchXlmSeries(r, request.signal);
+        if (!request.isCurrent()) return;
+        if (series?.range === r) {
           priceCache.current[r] = series;
           setPriceData(series);
         }
+      } catch {
+        // Retain the correctly labelled previous series. The visible-wallet
+        // poll or another explicit selection will retry market data.
+        if (request.isCurrent() && fallbackRange) setPriceRangeState(fallbackRange);
       } finally {
-        setPriceLoading(false);
+        if (request.isCurrent()) setPriceLoading(false);
       }
     },
-    [],
+    [marketRefreshLane, priceData?.range],
   );
 
   const togglePrivacy = useCallback(() => {

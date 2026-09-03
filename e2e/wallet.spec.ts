@@ -222,3 +222,67 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   expect(failures.pageErrors).toEqual([]);
   expect(failures.consoleErrors).toEqual([]);
 });
+
+test("market range changes retain chart geometry and never relabel stale points", async ({ page }) => {
+  const requestCount = new Map<string, number>();
+  let releaseMonth: (() => void) | null = null;
+  const monthPending = new Promise<void>((resolve) => {
+    releaseMonth = resolve;
+  });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) {
+      await route.fallback();
+      return;
+    }
+    const days = url.searchParams.get("days");
+    requestCount.set(days ?? "missing", (requestCount.get(days ?? "missing") ?? 0) + 1);
+    if (days === "30") await monthPending;
+    const start = ({ "1": 0.21, "7": 0.24, "30": 0.31, "365": 0.41 } as const)[
+      days as "1" | "7" | "30" | "365"
+    ] ?? 0.24;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        prices: [
+          [1_700_000_000_000, start],
+          [1_700_086_400_000, start + 0.02],
+        ],
+      }),
+    });
+  });
+  await importTestWallet(page);
+
+  const sevenDaySummary = page.getByLabel("7D market price summary");
+  await expect(sevenDaySummary).toBeVisible();
+  const startMetric = sevenDaySummary.getByText("Start", { exact: true });
+  const before = await startMetric.boundingBox();
+  expect(before).not.toBeNull();
+
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByRole("button", { name: "1M", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(sevenDaySummary).toBeVisible();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  const during = await startMetric.boundingBox();
+  expect(during?.y).toBe(before?.y);
+
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeVisible();
+  await expect(page.getByText("Stellar Lumens · 1-month range", { exact: true })).toBeVisible();
+
+  for (const [range, label] of [
+    ["1D", "Stellar Lumens · 24-hour range"],
+    ["1Y", "Stellar Lumens · 1-year range"],
+    ["7D", "Stellar Lumens · 7-day range"],
+  ] as const) {
+    await page.getByRole("button", { name: range, exact: true }).click();
+    await expect(page.getByLabel(`${range} market price summary`)).toBeVisible();
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  expect(Object.fromEntries(requestCount)).toEqual({ "1": 1, "7": 1, "30": 1, "365": 1 });
+});
