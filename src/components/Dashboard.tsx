@@ -82,6 +82,7 @@ import type { Contact } from "@/lib/contacts";
 import { FiatValue } from "./FiatValue";
 import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner, Tooltip } from "./ui";
 import { AccountMark } from "./AccountMark";
+import { AssetAvatar } from "./AssetAvatar";
 import { PrivateShieldNotch } from "./PrivateShieldNotch";
 import { WelcomeHome } from "./WelcomeHome";
 import {
@@ -111,7 +112,6 @@ import {
   IconSearch,
   IconSend,
   IconShield,
-  IconStellar,
   IconSwap,
   IconUsers,
   IconWallet,
@@ -2779,36 +2779,13 @@ export function Dashboard() {
                                   : {
                                       background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
                                     };
-                              if (asset.isNative) {
-                                return (
-                                  <span
-                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-inner"
-                                    style={bgStyle}
-                                  >
-                                    <IconStellar size={20} />
-                                  </span>
-                                );
-                              }
-                              if (logoUrl) {
-                                return (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={logoUrl}
-                                    referrerPolicy="no-referrer"
-                                    alt=""
-                                    width={36}
-                                    height={36}
-                                    className="h-9 w-9 shrink-0 rounded-full object-cover shadow-inner"
-                                  />
-                                );
-                              }
                               return (
-                                <span
-                                  className="mono flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-inner"
-                                  style={bgStyle}
-                                >
-                                  {asset.code.slice(0, 3)}
-                                </span>
+                                <AssetAvatar
+                                  code={asset.code}
+                                  isNative={asset.isNative}
+                                  logoUrl={logoUrl}
+                                  background={bgStyle.background}
+                                />
                               );
                             })()}
 
@@ -2911,6 +2888,7 @@ export function Dashboard() {
                             prepared={option.encryptedStateExists && entry !== undefined}
                             separated={index > 0}
                             privacyMode={privacyMode}
+                            network={network}
                             xlmPriceUsd={xlmPriceUsd}
                             fiatCurrency={fiatCurrency}
                             fiatRates={fiatRates}

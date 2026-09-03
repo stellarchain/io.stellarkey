@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { AssetAvatar } from '@/components/AssetAvatar';
 import { Button, HashValue, Modal, ModalHeader } from '@/components/ui';
-import { IconShieldStellar } from '@/components/icons';
+import { lookupKnownAsset } from '@/lib/assets';
 import { fmtFiat, type FiatCurrency } from '@/lib/format';
 import type { NetworkKey } from '@/lib/stellar';
 import type { PrivatePortfolioEntry } from '../runtime/portfolio';
@@ -61,6 +62,7 @@ export function PrivateAssetDetailModal({
       ? 1
       : null;
   const totalUsd = privatePortfolioRepresentativeUsd([entry], xlmPriceUsd);
+  const known = lookupKnownAsset(entry.asset.code, entry.asset.issuer, network);
   const checked = entry.lastVerifiedLedger === null
     ? 'Saved locally; waiting for the first ledger check'
     : `Checked through ledger ${entry.lastVerifiedLedger.toLocaleString('en-US')}`;
@@ -74,13 +76,14 @@ export function PrivateAssetDetailModal({
       />
       <div className="p-4 sm:p-6">
         <div className="flex flex-col items-center pb-2 pt-1 text-center">
-          <span
-            className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl"
-            style={{ background: 'linear-gradient(135deg, #0A84FF, #5E5CE6)' }}
-            aria-hidden="true"
-          >
-            <IconShieldStellar size={25} />
-          </span>
+          <AssetAvatar
+            code={entry.asset.code}
+            isNative={entry.asset.kind === 'native'}
+            logoUrl={known?.iconUrl}
+            background={known?.color}
+            size={56}
+            privatePayment
+          />
           <p className="balance-display mt-4 text-white" data-density={balanceDensity}>
             <span className="balance-display-value">{displayBalance}</span>
             <span className="balance-display-unit">{entry.asset.code}</span>

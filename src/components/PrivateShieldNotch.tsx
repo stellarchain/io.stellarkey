@@ -3,17 +3,18 @@
 import { STELLAR_MARK_PATH } from "./icons";
 
 /**
- * Marks a payment row as private: a small filled shield carrying the Stellar
- * glyph in white, docked onto the corner of the row's leading direction
- * circle. The ground ring matches the panel behind the row so the notch reads
- * as attached rather than stacked.
+ * Marks a payment or asset as private: a small filled shield carrying the
+ * Stellar glyph in white, docked onto the corner of its leading icon. The
+ * ground ring matches the panel behind it so the notch reads as attached.
  */
 export function PrivateShieldNotch({
   ground = 17,
   shield = 13,
+  label = "Private payment",
 }: {
   ground?: number;
   shield?: number;
+  label?: string;
 }) {
   return (
     <>
@@ -34,10 +35,10 @@ export function PrivateShieldNotch({
           aria-hidden="true"
           className="pointer-events-none absolute bottom-full left-0 z-20 mb-1.5 hidden whitespace-nowrap rounded-lg border border-white/10 bg-[#2c2c2e] px-2 py-1 text-[10px] font-semibold text-neutral-100 shadow-lg group-hover/private-notch:block"
         >
-          Private payment
+          {label}
         </span>
       </span>
-      <span className="sr-only">Private payment</span>
+      <span className="sr-only">{label}</span>
     </>
   );
 }
