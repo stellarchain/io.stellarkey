@@ -529,6 +529,25 @@ test('wallet activity merges cached private actions and labels their provenance'
   assert.match(details, /decodePrivateMemoHex/);
 });
 
+test('public private-balance boundary actions expose only real explorer transactions', () => {
+  const walletDetails = read('src/components/TxDetailModal.tsx');
+  const privateDetails = read('src/features/private-balance/components/PrivateActivityDetails.tsx');
+
+  assert.match(
+    walletDetails,
+    /privateBalanceExplorerTxHash\(item\.private\.actionKind, item\.hash\)/,
+  );
+  assert.match(walletDetails, /privateExplorerHash[\s\S]*?explorerTxUrl\(privateExplorerHash\)/);
+  assert.match(
+    privateDetails,
+    /privateBalanceExplorerTxHash\([\s\S]*?transactionHash/,
+  );
+  assert.match(
+    privateDetails,
+    /explorerTxUrl\(explorerTransactionHash\)/,
+  );
+});
+
 test('private runtime publishes through one stable data provider', () => {
   const boundary = read('src/components/PrivateBalanceRuntimeBoundary.tsx');
 

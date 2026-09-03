@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { IconExternal } from '@/components/icons';
 import { Button, Notice } from '@/components/ui';
-import { NETWORKS } from '@/lib/stellar';
+import { NETWORKS, privateBalanceExplorerTxHash } from '@/lib/stellar';
 import type { NetworkKey } from '@/lib/types';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
@@ -89,6 +89,10 @@ export function PrivateActivityDetails({
   const localRecipient = activity?.recipientFingerprint ??
     (pending ? selection.action.recipientFingerprint : undefined);
   const localMemo = memoText(activity?.memoHex ?? (pending ? selection.action.memoHex : undefined));
+  const explorerTransactionHash = privateBalanceExplorerTxHash(
+    kind,
+    activity?.transactionHash ?? (pending ? selection.action.transactionHash : undefined),
+  );
 
   // "Check Status" runs a normal sync; the sync path also resolves an expired
   // payment safely, so this is the one honest answer to "is it done yet?".
@@ -173,6 +177,16 @@ export function PrivateActivityDetails({
         >
           {checking ? 'Checking…' : 'Check Status'}
         </Button>
+      ) : null}
+      {explorerTransactionHash ? (
+        <a
+          href={NETWORKS[network].explorerTxUrl(explorerTransactionHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-secondary flex w-full items-center justify-center gap-2"
+        >
+          View Transaction <IconExternal size={14} />
+        </a>
       ) : null}
       {poolContractId ? (
         <a

@@ -34,4 +34,17 @@ export const NETWORKS: Record<NetworkKey, NetworkConfig> = {
   },
 };
 
+/**
+ * Public/private boundary actions are ordinary Stellar transactions. Return
+ * their canonical hash for explorer links, while keeping private transfers
+ * and synthetic restored-history identifiers out of public explorer URLs.
+ */
+export function privateBalanceExplorerTxHash(
+  actionKind: "deposit" | "transfer" | "withdraw",
+  transactionHash: string | null | undefined,
+): string | null {
+  if (actionKind === "transfer" || !transactionHash) return null;
+  return /^[0-9a-f]{64}$/i.test(transactionHash) ? transactionHash : null;
+}
+
 export const BASE_RESERVE_XLM = 0.5;
