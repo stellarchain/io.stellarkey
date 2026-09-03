@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { IconChevronDown, IconShieldStellar } from '@/components/icons';
 import { Button, Modal, ModalHeader } from '@/components/ui';
 import {
@@ -14,7 +14,8 @@ import {
 } from '@/lib/private-balance-bootstrap';
 import { PrivacyDisclosure } from './PrivacyDisclosure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
-import { PrivateSuccess } from './PrivateSuccess';
+
+const SETUP_COMPLETION_HOLD_MS = 650;
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return 'a small amount of data';
@@ -31,7 +32,7 @@ function formatAssetList(codes: readonly string[]): string {
 /**
  * One-screen setup (D7): the hero, the honest two-row disclosure with a
  * Learn more expansion, one consent checkbox, and "Turn On" — then the live
- * local setup progress and the shared success moment.
+ * local setup progress, which dismisses itself after reaching 100%.
  */
 export function PrivateBalanceSetup({
   open,
@@ -54,7 +55,7 @@ export function PrivateBalanceSetup({
     error,
     deployment,
   } = usePrivateBalanceRuntimeData();
-  const [stage, setStage] = useState<'consent' | 'running' | 'done'>('consent');
+  const [stage, setStage] = useState<'consent' | 'running'>('consent');
   const [accepted, setAccepted] = useState(false);
   const [learnMore, setLearnMore] = useState(false);
   const [setupError, setSetupError] = useState<unknown>(null);
@@ -66,6 +67,18 @@ export function PrivateBalanceSetup({
   } | null>(null);
   const [retryVersion, setRetryVersion] = useState(0);
   const attemptedDeploymentRef = useRef<string | null>(null);
+  const onCloseRef = useRef(onClose);
+  const reset = useCallback(() => {
+    setStage('consent');
+    setAccepted(false);
+    setLearnMore(false);
+    setSetupError(null);
+    setAddressBeatDeploymentId(null);
+    setProgressHighWater(0);
+    setSetupPlan(null);
+    setRetryVersion(0);
+    attemptedDeploymentRef.current = null;
+  }, []);
   const assetList = formatAssetList(
     availableAssets.map(option => option.asset.code),
   );
@@ -119,7 +132,6 @@ export function PrivateBalanceSetup({
   });
   const runtimeMatchesSetupTarget = runtimeMatchesSelection
     && selectedDeploymentId === setupTargetDeploymentId;
-  const visibleStage = setupReady ? 'done' : stage;
   const visibleSetupError = setupError ?? setupPlanError ?? (
     stage === 'running'
       && setupTargetDeploymentId === selectedDeploymentId
@@ -129,7 +141,7 @@ export function PrivateBalanceSetup({
       ? new Error(error)
       : null
   );
-  const working = visibleStage === 'running' && visibleSetupError === null;
+  const working = stage === 'running' && visibleSetupError === null;
   const completedSetupAssets = setupAssets.length - remainingUnpreparedAssets;
   const currentAssetProgress = allAssetsPrepared
     ? 1
@@ -148,14 +160,20 @@ export function PrivateBalanceSetup({
         ((completedSetupAssets + currentAssetProgress) / setupAssets.length) * 100,
       );
   const progressTarget = allAssetsPrepared ? 100 : Math.min(99, measuredProgress);
-  const progressPercent = visibleStage === 'done' ? 100 : progressHighWater;
-  const runningStatus = allAssetsPrepared
-    ? 'Finishing secure setup'
-    : phase === 'scanning-live' && runtimeMatchesSetupTarget
-      ? 'Checking private history'
-      : phase === 'reading-meta' && runtimeMatchesSetupTarget
-        ? (addressBeat ? 'Creating your private address' : 'Creating private keys')
-        : 'Preparing privacy tools';
+  const progressPercent = setupReady ? 100 : progressHighWater;
+  const runningStatus = setupReady
+    ? 'Private Payments ready'
+    : allAssetsPrepared
+      ? 'Finishing secure setup'
+      : phase === 'scanning-live' && runtimeMatchesSetupTarget
+        ? 'Checking private history'
+        : phase === 'reading-meta' && runtimeMatchesSetupTarget
+          ? (addressBeat ? 'Creating your private address' : 'Creating private keys')
+          : 'Preparing privacy tools';
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // One wallet-wide consent prepares every currently verified asset. The
   // provider owns one asset-pinned runtime at a time, so this effect advances
@@ -215,17 +233,15 @@ export function PrivateBalanceSetup({
     return () => window.cancelAnimationFrame(frame);
   }, [progressTarget, stage]);
 
-  const reset = () => {
-    setStage('consent');
-    setAccepted(false);
-    setLearnMore(false);
-    setSetupError(null);
-    setAddressBeatDeploymentId(null);
-    setProgressHighWater(0);
-    setSetupPlan(null);
-    setRetryVersion(0);
-    attemptedDeploymentRef.current = null;
-  };
+  useEffect(() => {
+    if (!open || !setupReady) return;
+    const timer = window.setTimeout(() => {
+      triggerHaptic('success');
+      reset();
+      onCloseRef.current();
+    }, SETUP_COMPLETION_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [open, reset, setupReady]);
 
   const close = () => {
     if (working) return;
@@ -256,7 +272,7 @@ export function PrivateBalanceSetup({
     setRetryVersion(version => version + 1);
   };
 
-  const runningSubtitle = visibleStage === 'running'
+  const runningSubtitle = stage === 'running'
     ? 'Securing this device'
     : 'Set up on this device';
 
@@ -268,7 +284,7 @@ export function PrivateBalanceSetup({
         onClose={working ? undefined : close}
       />
       <div className="p-4 sm:p-6">
-        {visibleStage === 'consent' ? (
+        {stage === 'consent' ? (
           <section aria-labelledby="private-setup-hero">
             <div className="mb-5 flex flex-col items-center text-center">
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0A84FF]/14 text-[#0A84FF]">
@@ -341,15 +357,11 @@ export function PrivateBalanceSetup({
           </section>
         ) : null}
 
-        {visibleStage === 'running' ? (
+        {stage === 'running' ? (
           <section
             aria-label="Setting up Private Payments"
             className="relative overflow-hidden px-1 pb-2 pt-3 sm:px-2 sm:pb-4 sm:pt-5"
           >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute -left-16 top-0 h-28 w-28 rounded-full bg-[#0A84FF]/10 blur-3xl"
-            />
             <div className="relative">
               <div className="flex items-end justify-between gap-6">
                 <div className="min-w-0">
@@ -402,16 +414,6 @@ export function PrivateBalanceSetup({
               </div>
             ) : null}
           </section>
-        ) : null}
-
-        {visibleStage === 'done' ? (
-          <PrivateSuccess
-            title="Private Payments is on"
-            subtitle={`Private Payments is ready for ${assetList}.`}
-            celebrate={false}
-            doneLabel="Done"
-            onDone={close}
-          />
         ) : null}
       </div>
     </Modal>

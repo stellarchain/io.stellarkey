@@ -40,7 +40,7 @@ test("sets up a fresh profile and renders its private receive address", async ({
   await expect(dialog).toBeHidden();
 });
 
-test("keeps Send and its nested setup dialog mounted through consent completion", async ({
+test("keeps Send mounted when its nested setup auto-dismisses after completion", async ({
   context,
   page,
 }) => {
@@ -60,18 +60,17 @@ test("keeps Send and its nested setup dialog mounted through consent completion"
   await setupDialog.getByRole("checkbox").check();
   await setupDialog.getByRole("button", { name: "Turn On", exact: true }).click();
 
-  const success = setupDialog.getByText("Private Payments is on", { exact: true });
   const failure = setupDialog.getByRole("alert");
-  await expect(success.or(failure).first()).toBeVisible({ timeout: 180_000 });
+  await expect.poll(async () => {
+    if (await failure.isVisible().catch(() => false)) return "failure";
+    if (!(await setupDialog.isVisible().catch(() => false))) return "closed";
+    return "running";
+  }, { timeout: 180_000 }).not.toBe("running");
   if (await failure.isVisible().catch(() => false)) {
     throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
   }
-  await expect(setupDialog.getByText(/Private Payments is ready for XLM and USDC/)).toBeVisible();
 
   await expect(sendDialog).toHaveAttribute("data-e2e-overlay-identity", "send");
-  await expect(setupDialog).toHaveAttribute("data-e2e-overlay-identity", "setup");
-  await expect.poll(() => sendDialog.evaluate(node => (node as HTMLElement).inert)).toBe(true);
-  await setupDialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(setupDialog).toBeHidden();
   await expect(sendDialog.getByText(/Preparing private/)).toHaveCount(0);
   await expect(sendDialog.getByLabel("Private recipient", { exact: true })).toBeVisible({

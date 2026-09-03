@@ -45,7 +45,7 @@ test('setup expands Learn more with download size and recovery without an unconf
   assert.doesNotMatch(setup, /estimated anonymity|guaranteed recovery|instant proof/i);
 });
 
-test('one setup prepares every verified asset and finishes on the original selection', () => {
+test('one setup prepares every verified asset, finishes on the original selection, and dismisses itself', () => {
   const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
   const accessGate = read(
     'src/features/private-balance/components/PrivatePaymentAccessGate.tsx',
@@ -75,14 +75,17 @@ test('one setup prepares every verified asset and finishes on the original selec
   assert.doesNotMatch(setup, /stage === 'running' && configured && privateAddress !== null/);
   assert.match(setup, /void optIn\(\{ prefetchArtifacts:/);
   assert.doesNotMatch(setup, /await optIn\(\)/);
-  assert.match(setup, /Private Payments is ready for \$\{assetList\}/);
+  assert.match(setup, /Private Payments ready/);
   assert.doesNotMatch(setup, /prepared automatically when you first use/);
   assert.doesNotMatch(setup, /checking past private activity continues in the background/);
   assert.match(setup, /aria-live="polite"/);
-  // Success is the shared check morph without confetti.
-  assert.match(setup, /PrivateSuccess/);
-  assert.match(setup, /celebrate=\{false\}/);
-  assert.match(setup, /doneLabel="Done"/);
+  // Completion is visible briefly, then setup releases the modal without a
+  // mandatory acknowledgement that leaves the wallet inert.
+  assert.match(setup, /SETUP_COMPLETION_HOLD_MS/);
+  assert.match(setup, /if \(!open \|\| !setupReady\) return/);
+  assert.match(setup, /triggerHaptic\('success'\)/);
+  assert.match(setup, /reset\(\);\s*onCloseRef\.current\(\)/);
+  assert.doesNotMatch(setup, /PrivateSuccess|doneLabel="Done"/);
   // Errors surface humanized with collapsed technical details.
   assert.match(setup, /HumanizedErrorNotice/);
   assert.match(setup, /Try Again/);
