@@ -7,13 +7,17 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url));
 const text = (path) => read(path).toString("utf8");
 const sha256 = (path) => createHash("sha256").update(read(path)).digest("hex");
 
-test("private-payment documentation describes the undeployed Testnet development candidate", () => {
+test("private-payment documentation describes the live Testnet development deployment", () => {
   const model = text("docs/private-balance.md");
-  assert.match(model, /Testnet-only development candidate/is);
-  assert.match(model, /deliberately unavailable/is);
+  assert.match(model, /Live Testnet development deployment/is);
+  assert.match(
+    model,
+    /authenticated deployment\s+catalogue advertises live, asset-pinned XLM and USDC development pools/is,
+  );
   assert.match(model, /single-party setup/i);
   assert.match(model, /passes.*pinned Powers-of-Tau transcript/is);
   assert.match(model, /does not make.*safe for real value/is);
+  assert.match(model, /deliberately Testnet-only/is);
   assert.match(model, /Mainnet.*reject/is);
 });
 

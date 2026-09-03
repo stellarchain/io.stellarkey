@@ -286,7 +286,7 @@ test('manifest: generator binds exact toolchains and defaults to an undeployed b
   assert.match(source, /protocol\/private-balance\/rust-toolchain\.toml/);
   assert.match(source, /protocol\/private-balance\/parameters\/generator\.lock/);
   assert.match(source, /protocol\/private-balance\/scripts\/build-private-balance-artifacts\.mjs/);
-  assert.match(source, /soroban-rpc\.testnet\.stellar\.gateway\.fm/);
+  assert.match(source, /rpc\.ankr\.com\/stellar_testnet_soroban/);
   assert.match(source, /deploymentCheckpoint/);
   assert.match(source, /const zkeyVerified = verifyProvingKey\(\)/);
   assert.doesNotMatch(source, /zkeyVerified:\s*true/);
@@ -324,7 +324,20 @@ test('manifest: deployment publication requires an explicit flag and matching ev
   assert.match(source.slice(0, publicationBranch), /protocol\/private-balance\/manifests\/development\.json/);
 });
 
-test('manifest: generator pins an empty catalogue until replacement pools are deployed', () => {
+test('manifest: generated-file verification reproduces the shipped Testnet catalogue', () => {
+  const source = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/scripts/check-generated.mjs'),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /generate-manifest\.mjs'\s*,\s*'--publish-deployment'/,
+    'the generated-file check must not replace live Testnet manifests with the undeployed template',
+  );
+});
+
+test('manifest: generator pins both verified replacement pools in the authenticated catalogue', () => {
   const catalogueBytes = readFileSync(cataloguePath);
   const catalogueHash = createHash('sha256').update(catalogueBytes).digest('hex');
   const catalogue = assetsModule.validatePrivateBalanceCatalogue(JSON.parse(catalogueBytes));
@@ -334,7 +347,12 @@ test('manifest: generator pins an empty catalogue until replacement pools are de
   );
 
   assert.equal(catalogueHash, assetsModule.EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256);
-  assert.deepEqual(catalogue.deployments, []);
+  assert.equal(catalogue.deployments.length, 2);
+  assert.deepEqual(
+    catalogue.deployments.map(deployment => deployment.asset.code),
+    ['XLM', 'USDC'],
+  );
+  assert.ok(catalogue.deployments.every(deployment => deployment.network === 'testnet'));
   assert.match(generator, /catalogue\.json/);
   assert.match(generator, /private-balance-expected-catalogue\.ts/);
 });

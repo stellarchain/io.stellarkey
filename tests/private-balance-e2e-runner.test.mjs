@@ -31,6 +31,8 @@ test('testnet E2E build pins the exact fixture manifest bytes', () => {
 });
 
 test('testnet E2E runner restores release files and never records browser secrets', () => {
+  assert.match(source, /git.*status.*--porcelain/);
+  assert.match(source, /Refusing to record Testnet E2E evidence from a dirty worktree/);
   assert.match(source, /finally\s*\{[\s\S]*restoreReleaseFiles/);
   assert.match(source, /Keypair\.random/);
   assert.match(source, /friendbot\.stellar\.org/);
@@ -48,6 +50,11 @@ test('testnet E2E runner restores release files and never records browser secret
     senderAccount: 'G' + 'A'.repeat(55),
     nested: { count: 4 },
   });
+});
+
+test('testnet E2E runner selects the native pool from the published two-pool evidence set', () => {
+  assert.match(source, /candidates\.length !== 2/);
+  assert.match(source, /evidence\.asset\?\.kind === 'native'/);
 });
 
 test('minimal testnet E2E suite keeps every required Task 26 surface', () => {

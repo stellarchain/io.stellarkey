@@ -22,6 +22,12 @@ test.setTimeout(900_000);
 
 const PRIVATE_TEST_PASSWORD = "Private-MVP-2026!";
 
+async function authorizePrivateTransaction(dialog: Locator): Promise<void> {
+  const authorization = dialog.page().getByRole("dialog", { name: "Confirm transaction" });
+  await authorization.getByLabel("Wallet Password", { exact: true }).fill(PRIVATE_TEST_PASSWORD);
+  await authorization.getByRole("button", { name: "Authorize" }).click();
+}
+
 async function confirmPreparedAction(
   dialog: Locator,
   options: { confirm: string; success: string },
@@ -39,9 +45,15 @@ async function confirmPreparedAction(
     throw new Error(`Private action preparation failed: ${await failure.textContent()}`);
   }
   await confirm.click();
-  await expect(dialog.getByRole("heading", { name: options.success })).toBeVisible({
+  await authorizePrivateTransaction(dialog);
+  const success = dialog.getByText(options.success, { exact: true });
+  const submissionFailure = dialog.getByRole("alert");
+  await expect(success.or(submissionFailure).first()).toBeVisible({
     timeout: 600_000,
   });
+  if (await submissionFailure.isVisible().catch(() => false)) {
+    throw new Error(`Private action submission failed: ${await submissionFailure.textContent()}`);
+  }
   await dialog.getByRole("button", { name: "Done" }).click();
 }
 
@@ -94,7 +106,6 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     await send.getByLabel("Amount", { exact: true }).fill("2.5");
     await send.getByLabel("Private memo (optional)").fill("lifecycle");
     await send.getByRole("button", { name: "Review Private Send" }).click();
-    await expect(send.getByRole("heading", { name: "Review Private Send" })).toBeVisible();
     await confirmPreparedAction(send, { confirm: "Confirm Send", success: "Sent Privately" });
     await expectPrivateBalance(senderRegion, "0.5");
 
@@ -132,6 +143,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
       );
     }
     await ambiguousConfirm.click();
+    await authorizePrivateTransaction(ambiguousWithdrawal);
     await expect(
       ambiguousWithdrawal.getByRole("heading", { name: /We couldn.t confirm this payment yet/ }),
     ).toBeVisible({ timeout: 180_000 });
@@ -150,7 +162,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     await recipientPage.getByRole("button", { name: /^Activity/ }).first().click();
     const activity = recipientPage.getByRole("main");
     const pendingWithdrawal = activity.getByRole("button", {
-      name: /Private withdrawal.*Confirming.*0\.25 XLM/,
+      name: /Private payment.*Withdrew to public balance.*Confirming.*0\.25 XLM/,
     });
     await expect(pendingWithdrawal).toBeVisible({
       timeout: 60_000,

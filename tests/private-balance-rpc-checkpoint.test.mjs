@@ -39,6 +39,7 @@ function head(actionCount, marker = actionCount) {
 
 function reader({
   networkPassphrase = passphrase,
+  oldestLedger = 1,
   latestLedger = 500,
   ledgerHashes = new Map([
     [100, deploymentCheckpoint.hash],
@@ -50,6 +51,9 @@ function reader({
   return {
     async readNetworkPassphrase() {
       return networkPassphrase;
+    },
+    async readOldestLedgerSequence() {
+      return oldestLedger;
     },
     async readLatestLedgerSequence() {
       return latestLedger;
@@ -137,6 +141,7 @@ test('RPC corroboration rejects a witness that disagrees with the pinned deploym
 
 test('RPC corroboration tolerates primary retention limits but validates retained history', async () => {
   const rollingPrimary = reader();
+  rollingPrimary.readOldestLedgerSequence = async () => deploymentCheckpoint.ledger + 1;
   rollingPrimary.readLedgerIdentity = async sequence => {
     if (sequence === deploymentCheckpoint.ledger) throw new Error('before oldest ledger');
     return { sequence, hash: '50'.repeat(32) };
@@ -160,6 +165,50 @@ test('RPC corroboration tolerates primary retention limits but validates retaine
       deploymentCheckpoint,
     }),
     error => error instanceof PrivateRpcViewsDisagreeError && /deployment checkpoint/i.test(error.message),
+  );
+});
+
+test('RPC corroboration survives the deployment checkpoint aging out of both providers', async () => {
+  const rollingReader = () => {
+    const value = reader({ oldestLedger: deploymentCheckpoint.ledger + 1 });
+    value.readLedgerIdentity = async sequence => {
+      if (sequence === deploymentCheckpoint.ledger) throw new Error('before oldest ledger');
+      return { sequence, hash: '50'.repeat(32) };
+    };
+    return value;
+  };
+
+  const result = await corroboratePrivateRpcCheckpoint({
+    primary: rollingReader(),
+    witness: rollingReader(),
+    expectedNetworkPassphrase: passphrase,
+    deploymentCheckpoint,
+  });
+
+  assert.deepEqual(result.deploymentCheckpoint, {
+    sequence: deploymentCheckpoint.ledger,
+    hash: deploymentCheckpoint.hash,
+  });
+  assert.equal(result.commonLedger.sequence, 500);
+  assert.equal(result.commonLedger.hash, '50'.repeat(32));
+});
+
+test('RPC corroboration rejects a witness failure while its checkpoint is retained', async () => {
+  const witness = reader();
+  const readLedgerIdentity = witness.readLedgerIdentity;
+  witness.readLedgerIdentity = async sequence => {
+    if (sequence === deploymentCheckpoint.ledger) throw new Error('request timed out');
+    return readLedgerIdentity(sequence);
+  };
+
+  await assert.rejects(
+    corroboratePrivateRpcCheckpoint({
+      primary: reader(),
+      witness,
+      expectedNetworkPassphrase: passphrase,
+      deploymentCheckpoint,
+    }),
+    error => error instanceof PrivateRpcWitnessUnavailableError && /unavailable/i.test(error.message),
   );
 });
 

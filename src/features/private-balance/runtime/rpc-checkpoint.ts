@@ -16,6 +16,7 @@ export interface PrivateRpcDeploymentCheckpoint {
 
 export interface PrivateRpcCheckpointReader {
   readNetworkPassphrase(): Promise<string>;
+  readOldestLedgerSequence(): Promise<number>;
   readLatestLedgerSequence(): Promise<number>;
   readLedgerIdentity(sequence: number): Promise<PrivateRpcLedgerIdentity>;
   readHead(): Promise<ArchiveHeadState>;
@@ -199,35 +200,40 @@ export async function corroboratePrivateRpcCheckpoint(input: {
     throw new PrivateRpcViewsDisagreeError('Private Payments RPC network identities disagree.');
   }
 
-  const [primaryDeployment, witnessDeployment] = await Promise.all([
-    input.primary.readLedgerIdentity(deploymentSequence).then(
-      value => ({ retained: true as const, value }),
-      () => ({ retained: false as const }),
-    ),
-    witnessCall(
-      input.signal,
-      () => input.witness.readLedgerIdentity(deploymentSequence),
-    ),
+  const [primaryOldest, witnessOldest] = await Promise.all([
+    input.primary.readOldestLedgerSequence(),
+    witnessCall(input.signal, () => input.witness.readOldestLedgerSequence()),
   ]);
-  const witnessDeploymentIdentity = ledgerIdentity(
-    witnessDeployment,
-    deploymentSequence,
-    'Witness deployment checkpoint',
-  );
-  if (
-    witnessDeploymentIdentity.hash !== expectedDeploymentHash
-  ) {
-    throw new PrivateRpcViewsDisagreeError(
-      'Private Payments RPC deployment checkpoint does not match the manifest.',
-    );
-  }
-  if (primaryDeployment.retained) {
+  throwIfAborted(input.signal);
+  const primaryOldestSequence = u32(primaryOldest, 'Primary oldest retained ledger');
+  const witnessOldestSequence = u32(witnessOldest, 'Witness oldest retained ledger');
+  const [primaryDeployment, witnessDeployment] = await Promise.all([
+    primaryOldestSequence <= deploymentSequence
+      ? input.primary.readLedgerIdentity(deploymentSequence)
+      : undefined,
+    witnessOldestSequence <= deploymentSequence
+      ? witnessCall(input.signal, () => input.witness.readLedgerIdentity(deploymentSequence))
+      : undefined,
+  ]);
+  if (primaryDeployment) {
     const primaryDeploymentIdentity = ledgerIdentity(
-      primaryDeployment.value,
+      primaryDeployment,
       deploymentSequence,
       'Primary deployment checkpoint',
     );
     if (primaryDeploymentIdentity.hash !== expectedDeploymentHash) {
+      throw new PrivateRpcViewsDisagreeError(
+        'Private Payments RPC deployment checkpoint does not match the manifest.',
+      );
+    }
+  }
+  if (witnessDeployment) {
+    const witnessDeploymentIdentity = ledgerIdentity(
+      witnessDeployment,
+      deploymentSequence,
+      'Witness deployment checkpoint',
+    );
+    if (witnessDeploymentIdentity.hash !== expectedDeploymentHash) {
       throw new PrivateRpcViewsDisagreeError(
         'Private Payments RPC deployment checkpoint does not match the manifest.',
       );
@@ -244,6 +250,14 @@ export async function corroboratePrivateRpcCheckpoint(input: {
       u32(primaryLatest, 'Primary latest ledger'),
       u32(witnessLatest, 'Witness latest ledger'),
     );
+    if (
+      primaryOldestSequence > primaryLatest ||
+      witnessOldestSequence > witnessLatest
+    ) {
+      throw new PrivateRpcViewsDisagreeError(
+        'A Private Payments RPC returned an invalid ledger retention window.',
+      );
+    }
     if (commonSequence < deploymentSequence) {
       throw new PrivateRpcViewsDisagreeError(
         'A Private Payments RPC is behind the deployment checkpoint.',

@@ -28,10 +28,13 @@ retained as activity metadata.
 
 Evicted persistent archive records may need a normal Stellar restore-footprint
 transaction. The wallet freshly simulates contiguous exact keys and selects the
-largest safe prefix within the configured footprint and 80% resource margin,
+largest safe prefix within the simulated footprint and an 80%-of-cap
+resource-fee budget,
 shows the restoration fee separately, applies a cumulative fee ceiling,
-waits for final status, rereads each record directly, and persists an encrypted
-resume cursor. It never restores temporary known-root entries.
+waits for final status, rereads each record directly, and reports confirmed-batch
+progress in memory. Only the following canonical sync persists the encrypted
+scan checkpoint; interruption before that sync safely rescans restored records.
+The wallet never restores temporary known-root entries.
 
 ## Interrupted actions
 

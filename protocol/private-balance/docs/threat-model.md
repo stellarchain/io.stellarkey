@@ -8,8 +8,10 @@
   retains one durable dummy nullifier so the same proof cannot be replayed.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
   satisfy the proof.
-- Transcript integrity: commitments, archive records, action count, frontier, Merkle root, and
-  deployment checkpoint must reconcile before state becomes spendable.
+- Transcript integrity: commitments, archive records, action count, frontier, and Merkle root must
+  reconcile before state becomes spendable. Every provider-reported retained copy of the deployment
+  checkpoint must also match the authenticated manifest; after it ages out, current common-ledger
+  and complete-head agreement remain mandatory.
 - Confidentiality: internal-transfer amount, recipient, selected real lanes, change lane, and memo
   are not published as plaintext.
 - Recovery: seed plus authenticated chain data recovers owned notes and sender-authenticated outgoing
@@ -27,8 +29,10 @@ disclosure, or a small anonymity set can correlate activity. Fixed two-input/two
 lane roles; they do not hide the public action kind or guarantee anonymity.
 
 RPC providers and network observers see IP address, timing, selected deployment, ledger ranges,
-simulations, restoration attempts, and submissions. Cross-checking independent providers reduces
-the risk of accepting a fabricated ledger view but exposes access patterns to more operators.
+simulations, restoration attempts, and submissions. Cross-checking different-origin providers
+reduces the risk of accepting a fabricated ledger view when their operators are actually
+independent, but exposes access patterns to more endpoints. The shipped SDF-primary/Ankr-witness
+pair is operator-diverse; the runtime cannot prove the same for a custom primary.
 
 ## 3. Cryptographic and proving boundaries
 
@@ -69,7 +73,7 @@ The protocol has no StellarKey backend, operated relayer, or indexer. The contra
 third-party submission and proof-bound relayer fees, but the current client does not use a relay.
 Availability depends on a usable
 Stellar RPC, retained or restorable ledger state, sufficient public XLM for fees, browser storage,
-and access to the proving artifacts. Independent RPC disagreement intentionally disables spending.
+and access to the proving artifacts. Different-origin RPC disagreement intentionally disables spending.
 
 Archive records receive the configured maximum TTL when written but are not refreshed forever.
 After eviction, seed-only recovery requires paid restore-footprint transactions. The wallet batches

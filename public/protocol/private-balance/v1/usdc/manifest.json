@@ -6,17 +6,17 @@
   "minimumStellarProtocol": 25,
   "networkPassphrase": "Test SDF Network ; September 2015",
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-  "realmId": "53c089acd48bd9635356cc5700b10dbece5317519b897e58396f4d75b7c6cb02",
-  "poolContractId": "CCBBGDSKQG5RV2C7NRD55WOQNMMOZZ4OWUCI4RJ4OSU5IAOJ2UODAZAM",
-  "assetContractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "realmId": "df062ebf1a523f1e289c6f17c72197def95e7d9c6783cf3ebd482bb8956eadb5",
+  "poolContractId": "CCEWY4RL7JZAVU6MZCVYHQBI3QR5PJ3EBXLR7PLQISAAYL657CHAJY2W",
+  "assetContractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
   "guardianAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
   "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
   "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
   "deploymentCheckpoint": {
-    "ledger": 4473139,
-    "hash": "6af42469dd32cba46ae9d2f67ac124849d73112067b84b0c3b5b64cc82d66214"
+    "ledger": 4473142,
+    "hash": "eb3fb30aa7af95a44c07f421c36aad6e5919e50baabd03330d97590f5c9ec12a"
   },
-  "deploymentBindingHash": "15b87333e1eeaed853d5751f36a6920a91878d1e79db3da3b4bbc1ebaf922134",
+  "deploymentBindingHash": "3d69de58ad445c6d0f76bf84059099a3d304a2aabf41804b3a2c7128c13beb1a",
   "artifacts": {
     "r1csSha256": "724f255668714f206aaa187521ae2ea723093034823446575bdb3bff7c57ec97",
     "r1csConstraints": 14574,

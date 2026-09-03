@@ -1131,7 +1131,6 @@ export function PrivateBalanceProvider({
     accountPublicKey,
     asset,
     deploymentId,
-    encryptedStateExists,
     deployment,
     manifest,
     manifestHash,

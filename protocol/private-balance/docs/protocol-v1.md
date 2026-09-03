@@ -6,7 +6,8 @@ Shielded Balance V1 is an opt-in note pool implemented by a Soroban contract, a 
 and a local browser wallet. Each immutable pool is pinned to exactly one Stellar asset contract,
 network, realm, circuit hash, verification-key hash, and Poseidon2 parameter hash. The replacement
 protocol described here has no backward-compatible state migration. Its prior Testnet deployments
-are retired; a fresh deployment and fresh local state are required.
+are retired; the authenticated catalogue publishes fresh development XLM and USDC pools, and fresh
+local state is required.
 
 The committed proving material is development-only. It is suitable for reproducible Testnet work,
 not real value or Mainnet.
@@ -97,7 +98,7 @@ selects these external flows:
 The eleven public signals, in verifier order, are the deployment context field, pinned asset field,
 action kind, anchor root, public value, relayer fee, canonical action field, two nullifiers, and two
 output commitments. The action field is the canonical external hash of the network, realm, pool,
-asset, nonce, roots, complete output packages, public endpoints, and relayer data. Its explicit
+asset, nonce, anchor root, complete output packages, public endpoints, and relayer data. Its explicit
 non-zero circuit constraint gives it a non-zero Groth16 input coefficient; mutating it invalidates a
 proof. The contract derives that field itself and independently validates canonical non-zero,
 distinct slots before accepting the proof.
@@ -128,10 +129,18 @@ and commits an authenticated encrypted checkpoint. Interruption before that sync
 rescan rather than trusting a separately persisted restoration cursor. Restoration fees and RPC retention are
 therefore liveness dependencies, not confidentiality assumptions.
 
-The client corroborates the network, pinned deployment checkpoint, overlapping ledger hashes, and
-contract head through independent RPC providers. Disagreement preserves the last authenticated
-state and disables spending. Multiple providers learn more of the client's access pattern; that
-privacy tradeoff is explicit.
+The client corroborates the network, any retained copy of the pinned deployment-checkpoint ledger,
+a current overlapping ledger hash, and the contract head through different-origin RPC providers for
+initial sync, seed recovery, full-history checks, and routine checks by default. A checkpoint aging
+out of a provider's rolling ledger-retention window does not expire the deployment: the
+authenticated manifest remains the trust anchor, every retained copy must match it, and both RPCs
+must still agree on a current common ledger and complete contract head. A user may disable the
+routine witness after an authenticated checkpoint exists, accepting primary-RPC-only head trust
+for those passes. Witness disagreement preserves the last authenticated state and disables
+spending. The shipped SDF-primary/Ankr-witness defaults are operator-diverse, but the runtime can
+enforce only origin and ledger-view separation; a custom primary under common control with the
+witness defeats the operator-diversity assumption. Multiple endpoints learn more of the client's
+access pattern; that privacy tradeoff is explicit.
 
 ## 9. Replacement and ceremony rule
 

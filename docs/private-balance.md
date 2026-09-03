@@ -1,7 +1,7 @@
 # StellarKey Private Balance Whitepaper
 
 - **Protocol:** V1 replacement design
-- **Implementation status:** Testnet-only development candidate
+- **Implementation status:** Live Testnet development deployment, validated in StellarKey; not for real value
 - **Document revision:** 2026-09-02
 
 ## Abstract
@@ -20,11 +20,13 @@ StellarKey-operated relayer, indexer, hosted viewing-key service, or third-party
 wallet database. Stellar RPC and the asset-pinned pool contract provide the
 canonical public state and encrypted recovery transcript.
 
-This is not a production or Mainnet claim.
-The authenticated deployment catalogue is empty. Development deployment use is
-disabled, and Mainnet independently rejects Private Payments. The checked-in
-artifacts make the replacement protocol reproducible, but no active pool is
-currently advertised.
+This is not a production or Mainnet claim. The authenticated deployment
+catalogue advertises live, asset-pinned XLM and USDC development pools on
+Testnet, and StellarKey explicitly enables those exact hash-pinned manifests.
+Their deployment evidence validates the read-back configuration, pinned assets,
+and initial tree state, and records post-deployment checkpoint hashes. Mainnet independently rejects
+Private Payments. The proving material is still a single-party development
+setup and must not be used for real value.
 
 ## 1. Design goals and non-goals
 
@@ -39,8 +41,9 @@ The implementation targets five properties:
    notes, spent status, outgoing recipient fingerprints, and memos without a
    StellarKey server.
 4. **Fail-closed clients.** A wallet may spend only after its archive transcript,
-   action count, incremental Merkle state, contract head, and independent RPC
-   views agree.
+   action count, incremental Merkle state, and contract head agree. Independent
+   RPC corroboration is mandatory for initial or full-history synchronization
+   and enabled by default for routine synchronization.
 5. **Deployment isolation.** Every pool, key hierarchy, address, artifact set,
    and local record is bound to a network, realm, contract, and single asset.
 
@@ -65,7 +68,7 @@ address format, encryption suite, and deployment-binding hash.
 | Public Merkle cache | Stores authenticated, disposable commitment nodes and checkpoints; it contains no note plaintext. |
 | Pool contract | Verifies proofs, enforces nullifier uniqueness, updates the tree, moves the pinned asset, and appends recovery records. |
 | Primary Stellar RPC | Supplies ledger state, simulation, submission, confirmation, and archive restoration. |
-| Independent witness RPC | Corroborates network identity, ledger hashes, the deployment checkpoint, and the complete contract head. |
+| Different-origin witness RPC | Corroborates network identity, any retained deployment-checkpoint ledger, a current overlapping ledger hash, and the complete contract head during mandatory initial/full-history checks and, by default, routine checks. |
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
 
 The protocol includes a relayer address and fee in transfer and withdrawal
@@ -92,9 +95,15 @@ ID, and Stellar account public key. Domain-separated expansion produces:
 - a separate deployment-bound local-storage key.
 
 A four-byte diversifier derives an address-specific owner commitment and an
-address-specific X25519 key pair. Fresh self-output diversifiers prevent change
-from reusing the displayed receive address. Spending authority stays common to
-the account while issued receive addresses can rotate.
+address-specific X25519 key pair. Each self-output gets a random non-zero
+four-byte self-output diversifier that is unique among self-outputs in that
+action. It does not intentionally reuse the displayed receive diversifier.
+Because self-output diversifiers exclude zero, collision with the default zero
+receive diversifier is impossible. For a rotated non-zero address, the first
+self-output selection collides with probability 1 in `(2^32 - 1)`; later
+self-output selections in the same action are conditioned on the diversifiers
+already used. Spending authority stays common to the account while issued
+receive addresses can rotate.
 
 The current Base58 address format is intentionally shorter than the retired
 format. `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
@@ -109,8 +118,11 @@ payload contains:
 
 The prefix is included in the checksum, and the deployment tag is derived from
 the immutable deployment binding. Wrong-network, wrong-deployment, malformed,
-aliased-key, and mistyped addresses therefore fail before payment construction.
-Address reuse can still correlate the same recipient off-chain.
+and aliased-key addresses fail before payment construction. The four-byte
+checksum makes accidental corruption or a mistyped address overwhelmingly
+likely to fail, but a 32-bit checksum is an error detector, not a guarantee or
+an authentication code. Address reuse can still correlate the same recipient
+off-chain.
 
 ## 4. Cryptographic suite
 
@@ -127,7 +139,9 @@ The implemented V1 suite is:
 
 All field elements are canonical 32-byte big-endian values below `Fr`. Protocol
 integers use fixed-width encodings and private values are bounded to 63 bits.
-The manifest pins every consensus parameter and artifact hash.
+The manifest directly pins the runtime constants and artifact hashes it exposes;
+those hashes transitively bind the remaining circuit, contract, hash, and
+encoding parameters in the authenticated artifacts.
 
 ## 5. Notes, commitments, and output packages
 
@@ -202,7 +216,7 @@ The 11 public inputs, in verifier order, are:
 The private witness proves owner authorization, real-input membership, correct
 real or dummy nullifier derivation, distinct spent leaves, output commitments,
 fixed action shape, and conservation of value. The canonical action field
-hashes the network, realm, pool, asset, nonce, roots, complete outputs, public
+hashes the network, realm, pool, asset, nonce, anchor root, complete outputs, public
 endpoints, relayer, and fee. A non-zero circuit constraint gives this public
 field a non-zero Groth16 input coefficient; a proof-mutation regression confirms
 that changing it invalidates the proof. The contract derives the field itself.
@@ -277,9 +291,11 @@ root, and nullifier rules.
 ## 10. Recipient and sender recovery
 
 The recipient envelope lets the incoming viewing key test and decrypt an owned
-note. Its associated data binds the deployment, context, asset, commitment,
-action nonce, and output index. Wrong-context and tampered ciphertext fail
-authentication.
+note. Its HPKE information and associated data directly bind the protocol
+context (network, realm, and pool), commitment, action nonce, and output index;
+the recomputed commitment binds the pinned asset and note fields. The outgoing
+envelope's associated data additionally binds the deployment-binding hash and
+asset field directly. Wrong-context and tampered ciphertext fail authentication.
 
 The outgoing envelope is authenticated by the outgoing viewing key. During a
 seed-only scan it lets the sender recover an external recipient fingerprint and
@@ -313,8 +329,9 @@ the recovered balance spendable.
 Persistent archive records can move into Stellar state archival after their TTL
 expires. Restoration discovers only the contiguous unavailable prefix, derives
 the exact ledger keys locally, freshly simulates candidate restore footprints,
-and selects the largest safe contiguous batch within the configured fee and 80%
-resource margins. Each bounded restore operation is signed and confirmed against
+and selects the largest safe contiguous batch accepted by fresh simulation and
+whose simulated resource fee fits an 80%-of-configured-cap budget. Each bounded
+restore operation is signed and confirmed against
 its exact transaction hash. A confirmed batch is durable on-chain and advances
 only in-memory restoration progress. After the selected range finishes, the
 canonical sync rereads the records, validates the transcript and tree, and
@@ -329,45 +346,68 @@ recover old history at that time.
 
 ## 12. RPC authenticity and client finality
 
-The wallet uses a primary RPC selected by the user and an independent RPC pinned
-by the deployment manifest. Before accepting a spendable head it compares:
+The wallet uses a primary RPC selected by the user and a different-origin RPC
+pinned by the deployment manifest. The shipped default pairs SDF's
+`https://soroban-testnet.stellar.org` primary with Ankr's
+`https://rpc.ankr.com/stellar_testnet_soroban` witness. The runtime verifies
+different URL origins, network and ledger agreement; it cannot prove operator
+independence if a user selects a custom primary under common control with the
+witness. A second-provider witness check is mandatory when
+there is no authenticated checkpoint, during seed recovery, and for an explicit
+full-history check. Routine witness checks are enabled by default but can be
+disabled in protocol settings. Seed recovery and a full history check always
+require the witness even when routine checks are disabled. When the witness is
+used, the wallet compares:
 
 - both network passphrases;
-- the manifest-pinned deployment checkpoint hash;
+- the manifest-pinned deployment checkpoint hash against each provider that
+  still retains that ledger;
 - an overlapping ledger hash at the latest sequence common to both providers;
 - the complete pool configuration;
 - action count and transcript head; and
 - next leaf index, 34-node frontier, and current root.
 
 The two contract heads may be retried a bounded number of times to allow normal
-ledger skew. An unavailable witness, mismatched overlapping ledger hash, stale
-head, inconsistent tree count, or persistent head disagreement disables
-spending and preserves the last authenticated snapshot. It is never converted
-into a false zero balance.
+ledger skew. If the deployment checkpoint has aged out of either provider's
+rolling retention window, the authenticated manifest remains the pinned trust
+anchor; if it has aged out of both, the wallet still requires agreement on a
+current overlapping ledger and the complete contract head. Any retained copy
+must match the pinned hash. During a witnessed pass, an unavailable witness, mismatched
+overlapping ledger hash, stale head, inconsistent tree count, or persistent head
+disagreement disables spending and preserves the last authenticated snapshot.
+It is never converted into a false zero balance. If the user disables routine
+witnessing after a checkpoint exists, later routine passes trust the selected
+primary RPC's head alone; this weakens protection against a fabricated ledger
+view but does not weaken the mandatory initial, seed-recovery, or full-history
+checks.
 
-Using independent RPC providers reduces reliance on one fabricated ledger view,
-but exposes the wallet's pool, timing, ledger ranges, and recovery access pattern
-to more operators. It is an explicit authenticity/privacy tradeoff, not a
-network-identity-hiding mechanism.
+Using different-origin RPC providers reduces reliance on one fabricated ledger
+view when their operators are actually independent, but exposes the wallet's
+pool, timing, ledger ranges, and recovery access pattern to more endpoints. It
+is an explicit authenticity/privacy tradeoff and an operator-diversity
+assumption, not a network-identity-hiding mechanism.
 
 RPC `PENDING`, Horizon acceptance, and timeouts are not ledger confirmation. The
-wallet keeps preparing, signing, submitting, pending, confirmed, rejected,
-failed, and status-unknown states distinct. Ambiguous submissions keep their
-input notes reserved until canonical evidence proves confirmation or safe
-absence.
+UI and durable action journal distinguish preparation, signing/submission,
+broadcast or ambiguous pending state, canonical confirmation, rejection or
+failure, and runtime status-unknown. Ambiguous submissions keep their input
+notes reserved until canonical evidence proves confirmation or safe absence.
 
 ## 13. Local state and execution boundary
 
-Owned notes, decrypted activity, outgoing metadata, recovery progress,
+Owned notes, decrypted activity, outgoing metadata, canonical scan progress and
 checkpoints, and pending actions are encrypted and authenticated in
 deployment-bound IndexedDB records. A full encrypted wallet backup includes
 these sensitive records but excludes the disposable public Merkle cache.
 
 Private panels and the proving worker load only after explicit intent. Lock,
-account/network change, leadership loss, manifest rejection, or runtime failure
-clears in-memory private state and terminates the worker. One scoped browser tab
-holds the synchronization lease; followers receive only redacted state and may
-take over after lease expiry.
+account/network change, leadership loss, manifest rejection, or a foreground
+safety failure clears in-memory private state and terminates the worker. A
+transient quiet-background failure retains the last verified snapshot and
+worker for a later retry. RPC-authentication disagreement retains the last
+authenticated snapshot in memory but disables actions and reports
+status-unknown. One scoped browser tab holds the synchronization lease;
+followers receive only redacted state and may take over after lease expiry.
 
 JavaScript cannot guarantee physical memory erasure. The design assumes the
 served application, browser, operating system, device, dependencies, artifacts,
@@ -469,21 +509,35 @@ Testnet pools bind different circuit, tree, contract, and verification-key
 hashes; their manifests and fixture evidence were retired rather than relabeled.
 Old balances and addresses are not presented as part of the replacement.
 
+StellarKey's authenticated catalogue now publishes one live Testnet XLM pool
+and one live Testnet USDC pool. The checked-in deployment evidence records each
+pool identity, the locally selected Wasm hash, and a post-deployment checkpoint,
+and validates the read-back immutable configuration, asset pin, deposit-open
+state, and empty initial tree/archive head. It does not contain a deployment
+transaction hash or independently bind the on-chain executable to the recorded
+local Wasm hash. The browser implementation has also been exercised by the live
+Testnet MVP suite covering setup, deposits, consolidation, private transfer,
+withdrawal, encrypted backup, seed-only recovery, RPC switching, manifest
+tamper rejection, and the browser compatibility matrix. This validates the
+implemented development path on StellarKey; it is not an audit, ceremony, or
+real-value approval. A Stellar Testnet reset deletes these pools and requires a
+fresh redeploy, new evidence, and republished manifest hashes.
+
 The current proving key was created by a single-party setup. It passes
-`snarkjs zkey verify` against the repository's pinned Powers-of-Tau transcript,
-PSE's degree-14 Perpetual Powers of Tau, whose complete contribution and
-final-beacon chain also passes `snarkjs powersoftau verify` at its pinned
-SHA-256. That verifies consistency and phase-one provenance; it does not make
+`snarkjs zkey verify` against the repository's
+pinned Powers-of-Tau transcript. Those exact SHA-256-selected bytes are PSE's
+degree-14 Perpetual Powers of Tau. The checked-in gate
+does not run or record a separate `snarkjs powersoftau verify`, so StellarKey
+does not claim to have independently validated the transcript's complete
+contribution or final-beacon chain. The zkey consistency check does not make
 these development artifacts safe for real value. Anyone retaining the phase-2
 secret could forge proofs.
 
-The replacement is deliberately unavailable until fresh asset-pinned Testnet
-pools are deployed and their transactions, checkpoints, contract configuration,
-artifacts, and recovery evidence all bind to the same hashes. Real-value or
-Mainnet promotion additionally requires a public multi-party phase-2 ceremony,
-independent transcript verification, reproducible builds, physical-device
-proving measurements, Soroban resource measurements, external circuit and
-contract review, and end-to-end recovery drills.
+The live development pools are deliberately Testnet-only. Real-value or Mainnet
+promotion additionally requires deployment transaction evidence, a public
+multi-party phase-2 ceremony, independent transcript verification, reproducible
+builds, physical-device proving measurements, Soroban resource measurements,
+external circuit and contract review, and end-to-end recovery drills.
 
 ## 17. Normative sources and operational guidance
 

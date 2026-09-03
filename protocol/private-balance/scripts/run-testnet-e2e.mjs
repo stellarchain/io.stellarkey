@@ -74,10 +74,17 @@ function fixtureEvidencePath(argv) {
   const candidates = readdirSync(FIXTURE_ROOT)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     .sort();
-  if (candidates.length !== 1) {
-    throw new Error(`Expected exactly one committed testnet fixture, found ${candidates.length}.`);
+  if (candidates.length !== 2) {
+    throw new Error(`Expected exactly two committed per-asset testnet fixtures, found ${candidates.length}.`);
   }
-  return path.join(FIXTURE_ROOT, candidates[0]);
+  const nativeCandidates = candidates.filter(name => {
+    const evidence = JSON.parse(readFileSync(path.join(FIXTURE_ROOT, name), 'utf8'));
+    return evidence.asset?.kind === 'native';
+  });
+  if (nativeCandidates.length !== 1) {
+    throw new Error('Expected exactly one native-XLM testnet fixture for the live E2E suite.');
+  }
+  return path.join(FIXTURE_ROOT, nativeCandidates[0]);
 }
 
 function run(command, args, environment = process.env) {
@@ -114,7 +121,19 @@ function gitHead() {
   return result.stdout.trim();
 }
 
+function assertCleanGitTree() {
+  const result = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) throw new Error('Unable to inspect the E2E source worktree.');
+  if (result.stdout.trim().length !== 0) {
+    throw new Error('Refusing to record Testnet E2E evidence from a dirty worktree.');
+  }
+}
+
 export async function runTestnetE2e(argv = process.argv.slice(2)) {
+  assertCleanGitTree();
   const fixturePath = fixtureEvidencePath(argv);
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
   const { bytes: manifestBytes, hash: manifestHash } = buildFixtureManifestBytes(fixture);
@@ -224,7 +243,7 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'ambiguous RPC timeout with reserved inputs persisted across lock and unlock',
       'withdrawal to the public Stellar balance',
       'wallet lock, unlock, and encrypted-state persistence',
-      'encrypted V2 wallet-backup restore with exact private balance',
+      'encrypted wallet-backup restore with exact private balance',
       'local Private Balance data removal',
       'seed-only recovery with exact recovered balance',
       'selected RPC endpoint switch and canonical resync',

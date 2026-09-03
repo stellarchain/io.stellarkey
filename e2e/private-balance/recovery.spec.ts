@@ -65,6 +65,9 @@ test("switches the selected RPC and verifies Private Payments through it", async
   }).click();
   await page.getByLabel("Stellar RPC endpoint").fill(alternateRpc);
   await page.getByRole("button", { name: "Test & Save RPC" }).click();
+  const authorization = page.getByRole("dialog", { name: "Confirm security change" });
+  await authorization.getByLabel("Wallet Password", { exact: true }).fill("Private-MVP-2026!");
+  await authorization.getByRole("button", { name: "Authorize" }).click();
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem("wallet.endpoint.rpc.testnet.v1"),
   )).toBe(alternateRpc);

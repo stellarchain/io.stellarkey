@@ -22,7 +22,7 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the replacement protocol has no stale deployment evidence or published pools', () => {
+test('the replacement protocol publishes exactly the current XLM and USDC Testnet pools', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
@@ -31,19 +31,30 @@ test('the replacement protocol has no stale deployment evidence or published poo
     ? readdirSync(fixtureDirectory)
       .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     : [];
-  assert.deepEqual(fixtureNames, []);
+  assert.equal(fixtureNames.length, 2);
 
   const catalogue = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/catalogue.json', import.meta.url),
     'utf8',
   ));
-  assert.deepEqual(catalogue.deployments, []);
+  assert.equal(catalogue.deployments.length, 2);
+  assert.deepEqual(
+    catalogue.deployments.map(deployment => deployment.asset.code),
+    ['XLM', 'USDC'],
+  );
+  assert.equal(new Set(catalogue.deployments.map(deployment => deployment.manifestUrl)).size, 2);
   const manifest = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
     'utf8',
   ));
   assert.equal(manifest.status, 'development');
-  assert.equal(manifest.deploymentCheckpoint.ledger, 0);
+  assert.equal(
+    manifest.witnessRpcUrl,
+    'https://rpc.ankr.com/stellar_testnet_soroban',
+    'the browser witness must accept cross-origin Stellar SDK requests',
+  );
+  assert.ok(manifest.deploymentCheckpoint.ledger > 0);
+  assert.match(manifest.deploymentCheckpoint.hash, /^[0-9a-f]{64}$/);
 });
 
 test('testnet fixture defaults to a non-mutating plan and requires explicit live consent', () => {

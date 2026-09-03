@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
 - Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
 - Reduced the Private Payments circuit from 23,437 to 14,574 constraints and 11 public inputs by removing redundant lane, range, relayer, and action-binding constraints, deriving output roles, using a ternary tree, and explicitly proof-binding the contract-derived canonical action hash; development proving now fits the pinned `pot14` transcript.
-- Retired the incompatible Testnet Private Payments pools and fixture evidence, regenerated every artifact binding, and published an authenticated empty deployment catalogue until fresh asset-pinned XLM and USDC pools are deployed.
+- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published fresh asset-pinned XLM and USDC development pools with authenticated manifests and deployment evidence.
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 8-output parallel batches selected by paired nine-trial controls while retaining record-order state updates.
 - Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Matched live Private Payments contracts against the binary verifier-key digest published in their manifests, retained initialized workers after first-time setup persistence, automatically resynchronized once when action preparation observes non-current chain state, selected a CORS-capable independent Testnet witness RPC, and kept witnessed checks live after old deployment ledgers age out of rolling RPC retention.
+- Corrected the Private Balance whitepaper and public security copy to match optional routine RPC witnessing, provider-diversity assumptions, deployment and ceremony evidence limits, envelope bindings, diversifier collision bounds, restoration fee margins, runtime failure behavior, and the live Testnet deployment boundary.
 - Kept Private Payments recovery lossless when a browser exposes partial or transiently failing native X25519 by dropping unusable handles and retrying envelope key agreement with the reviewed portable implementation.
 - Paper-wallet certificates now print an imported account's actual secret key, reserve the vault recovery phrase for mnemonic-derived accounts, bind the certificate identity to the revealed material, and state when other account types need separate backups.
 - Kept idle Private Payments pools withdrawable while deposits are paused by refreshing the current spend root atomically in every private send or withdrawal, with the refresh disclosed in review.
