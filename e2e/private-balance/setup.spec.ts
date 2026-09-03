@@ -5,6 +5,7 @@ import {
   openPrivateReceive,
   privateBalanceE2eEnabled,
   recipientSecret,
+  senderSecret,
   setupPrivateBalance,
 } from "./helpers";
 
@@ -37,4 +38,41 @@ test("sets up a fresh profile and renders its private receive address", async ({
   });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toBeHidden();
+});
+
+test("keeps Send and its nested setup dialog mounted through consent completion", async ({
+  context,
+  page,
+}) => {
+  await installPrivateBalanceNetworkSupport(context);
+  await importLiveWallet(page, senderSecret);
+
+  await page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first().click();
+  const sendDialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
+  await sendDialog.getByRole("tablist", { name: "Send type" })
+    .getByRole("tab", { name: "Private", exact: true }).click();
+  await sendDialog.getByRole("button", { name: "Turn On Private Payments", exact: true }).click();
+
+  const setupDialog = page.getByRole("dialog", { name: "Private Payments", exact: true });
+  await expect(setupDialog).toBeVisible();
+  await sendDialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "send"));
+  await setupDialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "setup"));
+  await setupDialog.getByRole("checkbox").check();
+  await setupDialog.getByRole("button", { name: "Turn On", exact: true }).click();
+
+  const success = setupDialog.getByText("Private Payments is on", { exact: true });
+  const failure = setupDialog.getByRole("alert");
+  await expect(success.or(failure).first()).toBeVisible({ timeout: 180_000 });
+  if (await failure.isVisible().catch(() => false)) {
+    throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
+  }
+
+  await expect(sendDialog).toHaveAttribute("data-e2e-overlay-identity", "send");
+  await expect(setupDialog).toHaveAttribute("data-e2e-overlay-identity", "setup");
+  await expect.poll(() => sendDialog.evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  await setupDialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(setupDialog).toBeHidden();
+  await expect(sendDialog.getByLabel("Private recipient", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
 });

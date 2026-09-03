@@ -58,7 +58,8 @@ test('setup finishes at the persisted address milestone while verification conti
   assert.match(setup, /configured && privateAddress/);
   assert.match(setup, /void optIn\(\)/);
   assert.doesNotMatch(setup, /await optIn\(\)/);
-  assert.match(setup, /Checking past private activity continues in the background/);
+  assert.match(setup, /Each supported asset is prepared automatically when you first use it/);
+  assert.match(setup, /checking past private activity continues in the background/);
   assert.match(setup, /aria-live="polite"/);
   // Success is the shared check morph without confetti.
   assert.match(setup, /PrivateSuccess/);

@@ -236,7 +236,7 @@ export function PrivateBalanceSetup({
         {visibleStage === 'done' ? (
           <PrivateSuccess
             title="Private Payments is on"
-            subtitle={`Your private ${assetList} balances are ready. Checking past private activity continues in the background.`}
+            subtitle="This wallet is ready. Each supported asset is prepared automatically when you first use it; checking past private activity continues in the background."
             celebrate={false}
             doneLabel="Done"
             onDone={close}

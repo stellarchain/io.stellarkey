@@ -131,24 +131,24 @@ test("Public and Private remain one continuous Send dialog", async ({ page }) =>
   await expectStableContinuity(page, shellId);
 
   releasePrivateChunk();
-  await expect(dialog.getByText(/Set up private|Review Private Send|Recipient Address/i).first()).toBeVisible();
+  await expect(dialog.getByText(/Turn on Private Payments|Review Private Send|Recipient Address/i).first()).toBeVisible();
 
   for (let index = 0; index < 3; index += 1) {
     await publicTab.click();
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
     await expect(dialog.getByLabel("Asset")).toBeVisible();
-    await expect(dialog.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
+    await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
   }
   await expectStableContinuity(page, shellId);
 
   await publicTab.click();
-  await expect(dialog.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
+  await expect(dialog.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect(page.getByText(/Set up private|Review Private Send/i)).toHaveCount(0);
+  await expect(page.getByText(/Turn on Private Payments|Review Private Send/i)).toHaveCount(0);
 });
 
 test("Public and Private remain one continuous Receive dialog", async ({ page }) => {
@@ -170,21 +170,21 @@ test("Public and Private remain one continuous Receive dialog", async ({ page })
   await privateTab.click();
   await expect(privateTab).toHaveAttribute("aria-selected", "true");
   await expect(privateTab).toBeFocused();
-  await expect(dialog.getByText(/Set up private/i).first()).toBeVisible();
+  await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
   await expectStableContinuity(page, shellId);
 
   for (let index = 0; index < 3; index += 1) {
     await publicTab.click();
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
     await expect(dialog.getByAltText("Address QR code")).toBeVisible();
-    await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
   }
   await expectStableContinuity(page, shellId);
 
   await publicTab.click();
-  await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+  await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
@@ -228,14 +228,14 @@ test("Public and Private remain one continuous Add dialog", async ({ page }) => 
   await privateTab.click();
   await expect(privateTab).toHaveAttribute("aria-selected", "true");
   await expect(privateTab).toBeFocused();
-  await expect(dialog.getByText(/Set up private/i).first()).toBeVisible();
+  await expect(dialog.getByText(/Turn on Private Payments/i).first()).toBeVisible();
   await expectStableContinuity(page, shellId);
 
   for (let index = 0; index < 3; index += 1) {
     await publicTab.click();
     await expect(publicTab).toHaveAttribute("aria-selected", "true");
     await expect(dialog.getByPlaceholder(/Search popular tokens/)).toBeVisible();
-    await expect(dialog.getByText(/Set up private/i)).toHaveCount(0);
+    await expect(dialog.getByText(/Turn on Private Payments/i)).toHaveCount(0);
     await privateTab.click();
     await expect(privateTab).toHaveAttribute("aria-selected", "true");
   }

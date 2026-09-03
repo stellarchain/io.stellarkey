@@ -7,20 +7,24 @@ const dashboard = readFileSync(
   'utf8',
 );
 
-test('a configured private sibling opens details while its cached row is still pending', () => {
+test('only a real private entry opens details while an untouched sibling opens Private Add', () => {
   const openPrivatePayments = dashboard.slice(
     dashboard.indexOf('const openPrivatePayments'),
     dashboard.indexOf('/**\n   * The sheet', dashboard.indexOf('const openPrivatePayments')),
   );
 
   assert.match(openPrivatePayments, /const targetDeploymentId/);
-  assert.match(openPrivatePayments, /if \(!privatePoolConfigured\)/);
+  assert.match(openPrivatePayments, /if \(!privatePaymentsAreEnabled\)/);
   assert.match(openPrivatePayments, /setPrivateAssetDeploymentId\(targetDeploymentId\)/);
   assert.match(openPrivatePayments, /setPrivateAssetOpen\(true\)/);
   assert.doesNotMatch(openPrivatePayments, /if \(!entry\)/);
 
-  assert.match(dashboard, /const privateAssetOption = privateAssetDeploymentId/);
-  assert.match(dashboard, /verifiedBalanceAtomicUnits: "0"/);
-  assert.match(dashboard, /lastVerifiedLedger: null/);
-  assert.match(dashboard, /asset: privateAssetOption\.asset/);
+  assert.match(
+    dashboard,
+    /const privateAssetEntry = privateAssetDeploymentId[\s\S]{0,180}?privatePortfolioEntries\.find[\s\S]{0,120}?\?\? null/,
+  );
+  assert.doesNotMatch(dashboard, /verifiedBalanceAtomicUnits: "0"/);
+  assert.match(dashboard, /if \(!option\.encryptedStateExists \|\| entry === undefined\)/);
+  assert.match(dashboard, /setAddAssetInitialMode\("private"\)/);
+  assert.match(dashboard, /setAddAssetOpen\(true\)/);
 });

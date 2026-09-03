@@ -45,7 +45,7 @@ test('Send reviews reusable private recipients in place without a modal handoff'
   assert.doesNotMatch(send, /openPrivateSend\(destination\.trim\(\)\)[\s\S]{0,300}Reusable private recipient/);
 });
 
-test('Receive offers Public | Private for enabled assets and gates setup per selection', () => {
+test('Receive offers Public | Private and uses the wallet-wide private access gate', () => {
   const receive = read('src/components/ReceiveModal.tsx');
   assert.match(receive, /<Tabs/);
   assert.doesNotMatch(receive, /SegmentedControl/);
@@ -60,7 +60,8 @@ test('Receive offers Public | Private for enabled assets and gates setup per sel
   assert.doesNotMatch(receive, /privateConfigured/);
   assert.match(receive, /const PrivateReceiveContent = dynamic\(/);
   assert.match(receive, /module\.PrivateReceiveContent/);
-  assert.match(receive, /const PrivateSetupContent = dynamic\(/);
+  assert.match(receive, /const PrivatePaymentAccessGate = dynamic\(/);
+  assert.match(receive, /<PrivatePaymentAccessGate action="receive">/);
   assert.match(receive, /PrivateAssetSelector/);
   assert.match(receive, /ssr: false/);
 });
@@ -71,7 +72,8 @@ test('Add uses Public for trustlines and Private for deposits in one mode shell'
   const privateAdd = read('src/features/private-balance/components/AddPrivateFunds.tsx');
   const publicSurface = publicAdd.split('export function ConfirmModal')[0];
 
-  assert.match(shell, /useState<"public" \| "private">\("public"\)/);
+  assert.match(shell, /initialMode = "public"/);
+  assert.match(shell, /useState<"public" \| "private">\(initialMode\)/);
   assert.match(shell, /<Tabs/);
   assert.match(shell, /label: "Public"/);
   assert.match(shell, /label: "Private"/);
@@ -80,7 +82,8 @@ test('Add uses Public for trustlines and Private for deposits in one mode shell'
   assert.match(shell, /const AddAssetPublicPanel = dynamic\(/);
   assert.match(shell, /const PrivateAddFunds = dynamic\(/);
   assert.match(shell, /module\) => module\.AddPrivateFunds/);
-  assert.match(shell, /PrivateSetupContent action="add"/);
+  assert.match(shell, /const PrivatePaymentAccessGate = dynamic\(/);
+  assert.match(shell, /<PrivatePaymentAccessGate action="add">/);
   const privateAddStart = shell.indexOf('<PrivateAddFunds');
   const privateAddEnd = shell.indexOf('/>', privateAddStart);
   assert.ok(privateAddStart >= 0 && privateAddEnd > privateAddStart);
@@ -93,6 +96,14 @@ test('Add uses Public for trustlines and Private for deposits in one mode shell'
   assert.match(privateAdd, /PrivateAssetSelector/);
   assert.match(privateAdd, /onBeforeLeaveChange\?:/);
   assert.doesNotMatch(privateAdd, /modeControl/);
+});
+
+test('Send uses the same wallet-wide private access gate without asset-scoped consent', () => {
+  const send = read('src/components/SendModal.tsx');
+
+  assert.match(send, /const PrivatePaymentAccessGate = dynamic\(/);
+  assert.match(send, /<PrivatePaymentAccessGate action="send">/);
+  assert.doesNotMatch(send, /configured \? \(/);
 });
 
 test('Add switches modes with the familiar tabs without replacing the modal', () => {

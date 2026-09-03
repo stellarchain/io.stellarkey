@@ -45,7 +45,7 @@ test("nested private setup keeps only the top dialog interactive", async ({ page
     test.skip(await privateTab.count() === 0, "Private Payments has no release-approved deployment.");
   }
   await privateTab.click();
-  await sendDialog.getByRole("button", { name: /^Set up private / }).click();
+  await sendDialog.getByRole("button", { name: "Turn On Private Payments", exact: true }).click();
 
   const setupDialog = page.getByRole("dialog", { name: "Private Payments", exact: true });
   await expect(setupDialog).toBeVisible();

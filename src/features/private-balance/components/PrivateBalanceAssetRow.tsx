@@ -19,7 +19,8 @@ import { formatPrivateBalanceAmount } from '../runtime/selectors';
 export function PrivateBalanceAssetRow({
   option,
   entry,
-  configured,
+  paymentsEnabled,
+  prepared,
   separated = false,
   privacyMode,
   xlmPriceUsd,
@@ -29,7 +30,8 @@ export function PrivateBalanceAssetRow({
 }: {
   option: PrivateBalanceAssetOption;
   entry: PrivatePortfolioEntry | null;
-  configured: boolean;
+  paymentsEnabled: boolean;
+  prepared: boolean;
   separated?: boolean;
   privacyMode: boolean;
   xlmPriceUsd: number | null;
@@ -38,18 +40,21 @@ export function PrivateBalanceAssetRow({
   onOpen(): void;
 }) {
   const { asset } = option;
-  const stroops = BigInt(entry?.verifiedBalanceAtomicUnits ?? '0');
+  const ready = prepared && entry !== null;
+  const stroops = ready ? BigInt(entry.verifiedBalanceAtomicUnits) : 0n;
   const decimals = asset.decimals;
   const assetCode = asset.code;
   const amount = formatPrivateBalanceAmount(stroops, decimals);
-  const confirming = (entry?.pendingActions ?? []).filter(action =>
+  const confirming = (ready ? entry.pendingActions : []).filter(action =>
     action.status === 'signed' || action.status === 'broadcast'
   ).length;
-  const detail = !configured
-    ? 'Not set up'
+  const detail = !paymentsEnabled
+    ? 'Not enabled'
+    : !ready
+      ? 'Available'
     : confirming > 0
-    ? `${confirming} ${confirming === 1 ? 'payment' : 'payments'} confirming`
-    : 'Ready';
+      ? `${confirming} ${confirming === 1 ? 'payment' : 'payments'} confirming`
+      : 'Ready';
 
   /*
    * The dot repeats the subtitle in colour so the row's state survives a scan.
@@ -57,9 +62,15 @@ export function PrivateBalanceAssetRow({
    * protocol actually makes — so it must not appear before setup or while a
    * scan is still running.
    */
-  const dot = !configured ? '#636366' : confirming > 0 ? '#FF9F0A' : '#30D158';
+  const dot = !paymentsEnabled
+    ? '#636366'
+    : !ready
+      ? '#0A84FF'
+      : confirming > 0
+        ? '#FF9F0A'
+        : '#30D158';
 
-  const representativeUsd = entry
+  const representativeUsd = ready
     ? privatePortfolioRepresentativeUsd([entry], xlmPriceUsd)
     : null;
   const fiat = !privacyMode && representativeUsd !== null
@@ -70,7 +81,7 @@ export function PrivateBalanceAssetRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Open private ${assetCode}. ${detail}. ${!configured ? 'Set up' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
+      aria-label={`Open private ${assetCode}. ${detail}. ${!paymentsEnabled ? 'Turn on' : !ready ? 'Add funds' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
       className={`row-hover flex w-full min-w-0 items-center gap-3.5 px-4 py-3.5 text-left ${separated ? 'ios-sep' : ''}`}
     >
       <span className="relative shrink-0">
@@ -103,7 +114,7 @@ export function PrivateBalanceAssetRow({
 
       <span className="min-w-0 max-w-[48%] text-right">
         <span className="mono block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]">
-          {!configured ? 'Set up' : privacyMode ? '••••••' : amount}
+          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add funds' : privacyMode ? '••••••' : amount}
         </span>
         {fiat && (
           <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">

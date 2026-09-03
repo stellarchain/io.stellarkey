@@ -4,7 +4,6 @@ import { useCallback, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import {
   usePrivateBalanceRuntime,
-  usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
 import { LoadingRegion, Modal, ModalHeader, Tabs } from "./ui";
 
@@ -24,9 +23,9 @@ const PrivateAddFunds = dynamic(
     loading: () => <LoadingRegion label="Opening private funding" />,
   },
 );
-const PrivateSetupContent = dynamic(
-  () => import("@/features/private-balance/components/PrivateSetupContent").then(
-    (module) => module.PrivateSetupContent,
+const PrivatePaymentAccessGate = dynamic(
+  () => import("@/features/private-balance/components/PrivatePaymentAccessGate").then(
+    (module) => module.PrivatePaymentAccessGate,
   ),
   {
     ssr: false,
@@ -34,10 +33,17 @@ const PrivateSetupContent = dynamic(
   },
 );
 
-export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AddAssetModal({
+  open,
+  initialMode = "public",
+  onClose,
+}: {
+  open: boolean;
+  initialMode?: "public" | "private";
+  onClose: () => void;
+}) {
   const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
-  const { configured } = usePrivateBalanceRuntimeData();
-  const [addMode, setAddMode] = useState<"public" | "private">("public");
+  const [addMode, setAddMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [surfaceBusy, setSurfaceBusy] = useState(false);
   const privateCloseHandler = useRef<(() => void) | null>(null);
@@ -69,7 +75,7 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
     if (leavePrivate) void leavePrivate.catch(() => undefined);
   };
   const panel = addMode === "private" ? (
-    configured ? (
+    <PrivatePaymentAccessGate action="add">
       <PrivateAddFunds
         onClose={close}
         showAssetSelector
@@ -82,9 +88,7 @@ export function AddAssetModal({ open, onClose }: { open: boolean; onClose: () =>
         }}
         onWorkingChange={setSurfaceBusy}
       />
-    ) : (
-      <PrivateSetupContent action="add" />
-    )
+    </PrivatePaymentAccessGate>
   ) : (
     <AddAssetPublicPanel onClose={close} onBusyChange={setSurfaceBusy} embedded />
   );

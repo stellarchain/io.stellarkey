@@ -266,7 +266,7 @@ export default function PrivatePaymentsPage() {
         <tr><td className="g">which notes were spent</td><td>Encrypted. The ledger stores commitments and ciphertext; spend selection stays on the device.</td></tr>
         <tr><td className="g">money moving in or out</td><td>Public. Deposits and withdrawals show their amount, endpoint, and timing, like any Stellar payment.</td></tr>
         <tr><td className="g">the transaction source and fee</td><td>Public. The development client self-submits from your Stellar account; fee sponsorship alone does not hide that inner source.</td></tr>
-        <tr><td className="g">timing and activity</td><td>Public. When the shared pool was used, and how often, is visible to anyone.</td></tr>
+        <tr><td className="g">timing and activity</td><td>Public. When an asset&apos;s pool was used, and how often, is visible to anyone.</td></tr>
         </tbody></table></div>
         <div className="tbl" style={{ padding: "1.25rem" }}><SplitDiagram /></div></section>
 

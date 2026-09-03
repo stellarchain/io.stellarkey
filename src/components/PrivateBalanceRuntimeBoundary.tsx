@@ -402,6 +402,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!active) return;
+        registerAvailableAssets([], null);
         setBootstrap({
           key: bootstrapKey,
           ready: [],
@@ -599,8 +600,10 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 }
 
 export function PrivateBalanceRuntimeBoundary({ children }: { children: ReactNode }) {
+  const { activeAccount, network } = useWalletIdentity();
+  const controlScopeKey = activeAccount ? `${network}:${activeAccount.id}` : null;
   return (
-    <PrivateBalanceRuntimeControlProvider>
+    <PrivateBalanceRuntimeControlProvider scopeKey={controlScopeKey}>
       <PrivateBalanceRuntimeBootstrap>{children}</PrivateBalanceRuntimeBootstrap>
     </PrivateBalanceRuntimeControlProvider>
   );

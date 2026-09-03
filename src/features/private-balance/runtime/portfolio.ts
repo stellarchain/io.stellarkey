@@ -67,10 +67,9 @@ export interface PrivatePortfolioPoolAsset {
 }
 
 /**
- * Private Payments setup belongs to the shared pool, while balances belong to
- * individual assets. Configure or remove every pool row together, preserving
- * an already-loaded sibling balance and using an honest zero until that asset
- * runtime publishes its own verified snapshot.
+ * Keep entries belonging to one pool aligned with its durable state. Current
+ * catalogue pools are asset-pinned, but the grouping keeps cleanup exact if a
+ * catalogue ever exposes more than one view of the same deployment.
  */
 export function updatePrivatePortfolioPoolEntries(
   entries: readonly PrivatePortfolioEntry[],

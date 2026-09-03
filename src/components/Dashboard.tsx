@@ -22,7 +22,7 @@ import {
 import {
   ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
 } from "@/lib/private-balance-expected-manifest";
-import { privateBalancePoolConfigured } from "@/lib/private-balance-bootstrap";
+import { privatePaymentsEnabled } from "@/lib/private-balance-bootstrap";
 import { NETWORKS } from "@/lib/stellar";
 import {
   getHorizonUrl,
@@ -364,8 +364,8 @@ export function Dashboard() {
     selectAsset: selectPrivateAsset,
   } = usePrivateBalanceRuntime();
   const { entries: privatePortfolioEntries } = usePrivateBalancePortfolio();
-  const privatePoolConfigured =
-    privateBalancePoolConfigured(privateAvailableAssets) || privatePortfolioEntries.length > 0;
+  const privatePaymentsAreEnabled =
+    privatePaymentsEnabled(privateAvailableAssets) || privatePortfolioEntries.length > 0;
   const privateBalanceRuntime = usePrivateBalanceRuntimeData();
   const privateWithdrawEntry =
     privatePortfolioEntries.find((entry) => entry.asset.kind === "native") ??
@@ -431,6 +431,7 @@ export function Dashboard() {
   const [swapPrefill, setSwapPrefill] = useState<SettlementSwapIntent | null>(null);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [addAssetOpen, setAddAssetOpen] = useState(false);
+  const [addAssetInitialMode, setAddAssetInitialMode] = useState<"public" | "private">("public");
   const [settingsSub, setSettingsSub] = useState<SettingsSub>("root");
   const [settingsKey, setSettingsKey] = useState(0);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -438,22 +439,8 @@ export function Dashboard() {
   const [networkStatsOpen, setNetworkStatsOpen] = useState(false);
   const [renamingAccount, setRenamingAccount] = useState<AccountMeta | null>(null);
   const [activityAssetFilter, setActivityAssetFilter] = useState<string>("all");
-  const privateAssetOption = privateAssetDeploymentId
-    ? privateAvailableAssets.find((option) => option.deploymentId === privateAssetDeploymentId) ?? null
-    : null;
   const privateAssetEntry = privateAssetDeploymentId
-    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateAssetDeploymentId) ??
-      (privatePoolConfigured && privateAssetOption
-        ? {
-            deploymentId: privateAssetDeploymentId,
-            asset: privateAssetOption.asset,
-            verifiedBalanceAtomicUnits: "0",
-            lastVerifiedLedger: null,
-            lastVerifiedActionIndex: null,
-            activities: [],
-            pendingActions: [],
-          }
-        : null)
+    ? privatePortfolioEntries.find((entry) => entry.deploymentId === privateAssetDeploymentId) ?? null
     : null;
   const privateWithdrawActiveDeploymentId = privateWithdrawDeploymentId
     ? selectedPrivateDeploymentId ?? privateWithdrawDeploymentId
@@ -1319,7 +1306,7 @@ export function Dashboard() {
 
     selectPrivateAsset(targetDeploymentId);
     requestPrivateRuntime();
-    if (!privatePoolConfigured) {
+    if (!privatePaymentsAreEnabled) {
       setPrivateSetupOpen(true);
       return;
     }
@@ -1328,7 +1315,7 @@ export function Dashboard() {
     setPrivateAssetOpen(true);
   }, [
     privateAvailableAssets,
-    privatePoolConfigured,
+    privatePaymentsAreEnabled,
     privateWithdrawEntry,
     requestPrivateRuntime,
     selectPrivateAsset,
@@ -2909,7 +2896,8 @@ export function Dashboard() {
                             key={option.deploymentId}
                             option={option}
                             entry={entry ?? null}
-                            configured={privatePoolConfigured}
+                            paymentsEnabled={privatePaymentsAreEnabled}
+                            prepared={option.encryptedStateExists && entry !== undefined}
                             separated={index > 0}
                             privacyMode={privacyMode}
                             xlmPriceUsd={xlmPriceUsd}
@@ -2917,9 +2905,15 @@ export function Dashboard() {
                             fiatRates={fiatRates}
                             onOpen={() => {
                               selectPrivateAsset(option.deploymentId);
-                              if (!privatePoolConfigured) {
+                              if (!privatePaymentsAreEnabled) {
                                 requestPrivateRuntime();
                                 setPrivateSetupOpen(true);
+                                return;
+                              }
+                              if (!option.encryptedStateExists || entry === undefined) {
+                                requestPrivateRuntime();
+                                setAddAssetInitialMode("private");
+                                setAddAssetOpen(true);
                                 return;
                               }
                               openPrivatePayments(option.deploymentId);
@@ -3337,7 +3331,16 @@ export function Dashboard() {
           }}
         />
       )}
-      <AddAssetModal open={addAssetOpen} onClose={() => setAddAssetOpen(false)} />
+      {addAssetOpen && (
+        <AddAssetModal
+          open
+          initialMode={addAssetInitialMode}
+          onClose={() => {
+            setAddAssetOpen(false);
+            setAddAssetInitialMode("public");
+          }}
+        />
+      )}
       {claimableBalancesOpen && (
         <ClaimableBalancesModal
           open

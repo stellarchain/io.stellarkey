@@ -6,7 +6,6 @@ import QRCode from "qrcode";
 import { useWalletIdentity, useWalletLedger } from "@/hooks/useWallet";
 import {
   usePrivateBalanceRuntime,
-  usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
 import { NETWORKS } from "@/lib/stellar";
 import { buildSep7PayUri } from "@/lib/payuri";
@@ -37,10 +36,10 @@ const PrivateAssetSelector = dynamic(
     loading: () => <LoadingRegion label="Opening private asset" className="min-h-16" />,
   },
 );
-const PrivateSetupContent = dynamic(
+const PrivatePaymentAccessGate = dynamic(
   () =>
-    import("@/features/private-balance/components/PrivateSetupContent").then(
-      (module) => module.PrivateSetupContent,
+    import("@/features/private-balance/components/PrivatePaymentAccessGate").then(
+      (module) => module.PrivatePaymentAccessGate,
     ),
   {
     ssr: false,
@@ -71,7 +70,6 @@ function ReceiveInner({
   const { activeAccount, network } = useWalletIdentity();
   const { balances } = useWalletLedger();
   const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
-  const { configured } = usePrivateBalanceRuntimeData();
   const [receiveMode, setReceiveMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [selectedAssetKey, setSelectedAssetKey] = useState("native");
@@ -361,16 +359,14 @@ function ReceiveInner({
     </div>
   );
   const panel = receiveMode === "private" ? (
-    configured ? (
+    <PrivatePaymentAccessGate action="receive">
       <>
         <div className="flex justify-center px-4 pt-4 sm:px-6">
           <PrivateAssetSelector />
         </div>
         <PrivateReceiveContent />
       </>
-    ) : (
-      <PrivateSetupContent action="receive" />
-    )
+    </PrivatePaymentAccessGate>
   ) : publicPanel;
 
   return (

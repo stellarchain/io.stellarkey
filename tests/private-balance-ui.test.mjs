@@ -417,7 +417,7 @@ test('the XLM balance and active sidebar account include cached private XLM', ()
   assert.doesNotMatch(dashboard, /Public XLM balance|Public XLM across all accounts/);
 });
 
-test('home renders every enabled private asset with shared pool readiness', () => {
+test('home keeps wallet consent separate from each private asset readiness state', () => {
   const dashboard = read('src/components/Dashboard.tsx');
   const row = read('src/features/private-balance/components/PrivateBalanceAssetRow.tsx');
 
@@ -428,16 +428,23 @@ test('home renders every enabled private asset with shared pool readiness', () =
   assert.match(dashboard, /selectPrivateAsset\(option\.deploymentId\)/);
   assert.match(dashboard, /option=\{option\}/);
   assert.match(dashboard, /entry=\{entry \?\? null\}/);
-  assert.match(dashboard, /privateBalancePoolConfigured\(privateAvailableAssets\)/);
-  assert.match(dashboard, /configured=\{privatePoolConfigured\}/);
+  assert.match(dashboard, /privatePaymentsEnabled\(privateAvailableAssets\)/);
+  assert.match(dashboard, /paymentsEnabled=\{privatePaymentsAreEnabled\}/);
+  assert.match(dashboard, /prepared=\{option\.encryptedStateExists && entry !== undefined\}/);
+  assert.doesNotMatch(
+    dashboard,
+    /verifiedBalanceAtomicUnits:\s*["']0["'][\s\S]{0,160}?lastVerifiedLedger:\s*null/,
+  );
   assert.doesNotMatch(dashboard, /asset\.isNative && \(privateBalanceAvailable \|\| showPrivatePayments\)/);
   assert.match(row, /option:\s*PrivateBalanceAssetOption/);
   assert.match(row, /entry:\s*PrivatePortfolioEntry \| null/);
-  assert.match(row, /configured:\s*boolean/);
-  assert.match(row, /const detail = !configured/);
-  assert.match(row, /!configured \? 'Set up'/);
-  assert.match(row, /Not set up/);
-  assert.match(row, /Set up/);
+  assert.match(row, /paymentsEnabled:\s*boolean/);
+  assert.match(row, /prepared:\s*boolean/);
+  assert.match(row, /prepared && entry/);
+  assert.match(row, /Available/);
+  assert.match(row, /Add funds/);
+  assert.match(row, /Not enabled/);
+  assert.match(row, /Turn on/);
 });
 
 test('development keeps the private-assets section visible during bootstrap', () => {
@@ -450,23 +457,24 @@ test('development keeps the private-assets section visible during bootstrap', ()
   assert.match(dashboard, /Checking private assets/);
 });
 
-test('an unconfigured private asset opens Private Payments setup directly', () => {
+test('a wallet without consent opens setup while an available sibling opens private Add', () => {
   const dashboard = read('src/components/Dashboard.tsx');
   const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
 
   assert.match(dashboard, /const PrivateBalanceSetup = dynamic\(/);
   assert.match(dashboard, /privateSetupOpen/);
-  assert.match(
-    dashboard,
-    /selectPrivateAsset\(option\.deploymentId\);[\s\S]{0,180}?if \(!privatePoolConfigured\)[\s\S]{0,180}?requestPrivateRuntime\(\);[\s\S]{0,180}?setPrivateSetupOpen\(true\);[\s\S]{0,180}?return;[\s\S]{0,180}?openPrivatePayments\(option\.deploymentId\);/,
-  );
+  assert.match(dashboard, /if \(!privatePaymentsAreEnabled\)/);
+  assert.match(dashboard, /setPrivateSetupOpen\(true\)/);
+  assert.match(dashboard, /if \(!option\.encryptedStateExists \|\| entry === undefined\)/);
+  assert.match(dashboard, /setAddAssetInitialMode\("private"\)/);
+  assert.match(dashboard, /initialMode=\{addAssetInitialMode\}/);
   assert.match(
     dashboard,
     /\{privateSetupOpen && \([\s\S]{0,120}?<PrivateBalanceSetup[\s\S]{0,120}?open[\s\S]{0,120}?setPrivateSetupOpen\(false\)/,
   );
   assert.match(setup, /usePrivateBalanceRuntime\(\)/);
   assert.match(setup, /availableAssets/);
-  assert.match(setup, /Your private \$\{assetList\} balances are ready/);
+  assert.match(setup, /Each supported asset is prepared automatically when you first use it/);
 });
 
 test('asset section headers contain no add-asset links and private details identify the selected asset', () => {
@@ -566,22 +574,30 @@ test('private payments select and label the verified asset without eager note op
   assert.match(setup, /asset\.code/);
 });
 
-test('private action tabs share asset selection and a focused setup gate', () => {
+test('private action tabs share asset selection and one wallet-wide access gate', () => {
   const send = read('src/features/private-balance/components/SendPrivate.tsx');
-  const setupUrl = new URL(
-    '../src/features/private-balance/components/PrivateSetupContent.tsx',
+  const gateUrl = new URL(
+    '../src/features/private-balance/components/PrivatePaymentAccessGate.tsx',
     import.meta.url,
   );
-  assert.equal(existsSync(setupUrl), true, 'private action setup content should exist');
+  assert.equal(existsSync(gateUrl), true, 'private action access gate should exist');
   const setup = read('src/features/private-balance/components/PrivateSetupContent.tsx');
+  const gate = read('src/features/private-balance/components/PrivatePaymentAccessGate.tsx');
 
   assert.match(send, /modeControl\?: ReactNode/);
   assert.match(send, /\{modeControl\}/);
   assert.match(send, /PrivateAssetSelector/);
-  assert.match(setup, /PrivateAssetSelector/);
-  assert.match(setup, /PrivateBalanceSetup/);
-  assert.match(setup, /Set up private/);
+  assert.match(setup, /Turn On Private Payments/);
+  assert.doesNotMatch(setup, /Set up private/);
   assert.match(setup, /action/);
+  assert.match(gate, /privatePaymentsEnabled/);
+  assert.match(gate, /privatePaymentAccessState/);
+  assert.match(gate, /Preparing private/);
+  assert.match(gate, /void optIn\(\)/);
+  assert.match(gate, /<PrivateBalanceSetup[\s\S]{0,160}?open=\{setupOpen\}/);
+  assert.match(gate, /setSetupOpen\(false\)/);
+  assert.match(setup, /onTurnOn/);
+  assert.doesNotMatch(setup, /<PrivateBalanceSetup/);
 });
 
 test('private payment browser helpers open the current destination', () => {
