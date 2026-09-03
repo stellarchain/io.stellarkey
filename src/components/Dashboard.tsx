@@ -111,6 +111,7 @@ import {
   IconSearch,
   IconSend,
   IconShield,
+  IconStellar,
   IconSwap,
   IconUsers,
   IconWallet,
@@ -2778,6 +2779,16 @@ export function Dashboard() {
                                   : {
                                       background: `linear-gradient(135deg, hsl(${hue}, 70%, 45%), hsl(${(hue + 60) % 360}, 70%, 35%))`,
                                     };
+                              if (asset.isNative) {
+                                return (
+                                  <span
+                                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-inner"
+                                    style={bgStyle}
+                                  >
+                                    <IconStellar size={20} />
+                                  </span>
+                                );
+                              }
                               if (logoUrl) {
                                 return (
                                   // eslint-disable-next-line @next/next/no-img-element

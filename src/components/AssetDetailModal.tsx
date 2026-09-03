@@ -31,7 +31,7 @@ import { assetPriceKey } from "@/lib/prices";
 import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
 import { networkFeeXlm } from "@/lib/api";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
-import { IconExternal, IconTrash } from "./icons";
+import { IconExternal, IconStellar, IconTrash } from "./icons";
 
 export function AssetDetailModal({
   asset,
@@ -199,7 +199,14 @@ export function AssetDetailModal({
       />
       <div className="p-4 sm:p-6">
         <div className="flex flex-col items-center pb-2 pt-1">
-          {logoUrl ? (
+          {asset.isNative ? (
+            <span
+              className="flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl"
+              style={{ background: "linear-gradient(135deg, #0A84FF, #5E5CE6)" }}
+            >
+              <IconStellar size={32} />
+            </span>
+          ) : logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}

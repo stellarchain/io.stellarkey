@@ -11,6 +11,31 @@ test("remote issuer logos do not receive a wallet-page referrer", () => {
   }
 });
 
+test("native XLM uses the canonical decorative Stellar mark wherever asset logos appear", () => {
+  const icons = readFileSync(
+    new URL("../src/components/icons.tsx", import.meta.url),
+    "utf8",
+  );
+  const dashboard = readFileSync(
+    new URL("../src/components/Dashboard.tsx", import.meta.url),
+    "utf8",
+  );
+  const details = readFileSync(
+    new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const stellarIcon = icons.slice(
+    icons.indexOf("export function IconStellar"),
+    icons.indexOf("export function LogoMark"),
+  );
+  assert.match(stellarIcon, /d=\{STELLAR_MARK_PATH\}/);
+  assert.match(stellarIcon, /aria-hidden="true"/);
+  assert.match(stellarIcon, /focusable="false"/);
+  assert.match(dashboard, /asset\.isNative[\s\S]*?<IconStellar size=\{20\}/);
+  assert.match(details, /asset\.isNative[\s\S]*?<IconStellar size=\{32\}/);
+});
+
 class MemoryStorage {
   #items = new Map();
 
