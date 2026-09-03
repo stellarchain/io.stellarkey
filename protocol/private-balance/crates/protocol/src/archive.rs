@@ -1,7 +1,6 @@
 use crate::constants::{DOMAIN_ARCHIVE_GENESIS, DOMAIN_ARCHIVE_RECORD};
 use crate::encoding::{
-    encode_domain, encode_optional_address, encode_u16_be, encode_u32_be,
-    encode_u64_be,
+    encode_domain, encode_optional_address, encode_u16_be, encode_u32_be, encode_u64_be,
 };
 use crate::encryption::OutputPackage;
 use alloc::vec::Vec;

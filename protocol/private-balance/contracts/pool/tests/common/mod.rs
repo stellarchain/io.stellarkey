@@ -1,5 +1,5 @@
 use private_balance_pool::{
-    PrivateBalancePool,
+    PrivateBalancePool, PrivateBalancePoolClient,
     generated_artifacts::{
         EXPECTED_CIRCUIT_HASH, EXPECTED_POSEIDON2_PARAMETER_HASH, EXPECTED_VERIFICATION_KEY_HASH,
     },
@@ -64,6 +64,7 @@ pub struct PoolFixture {
     pub pool_id: Address,
     pub asset: Address,
     pub guardian: Address,
+    pub asset_admin: Address,
 }
 
 pub fn payload(address: &Address) -> (u8, [u8; 32]) {
@@ -88,12 +89,13 @@ pub fn register_pool(env: &Env) -> PoolFixture {
         .deployed_address();
     env.register_at(&asset, MockNativeToken, ());
     let guardian = Address::generate(env);
+    let asset_admin = Address::generate(env);
     let deployment_binding_hash = DeploymentBinding {
         protocol_version: PROTOCOL_VERSION,
         network_id: network_id.to_array(),
         realm_id: realm_id.to_array(),
         pool_id: payload(&pool_id).1,
-        asset: payload(&asset),
+        asset_admin: payload(&asset_admin),
         guardian: payload(&guardian),
         poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
         circuit_hash: EXPECTED_CIRCUIT_HASH,
@@ -119,7 +121,7 @@ pub fn register_pool(env: &Env) -> PoolFixture {
             &network_id,
             &realm_id,
             &guardian,
-            &asset,
+            &asset_admin,
             &BytesN::from_array(env, &EXPECTED_POSEIDON2_PARAMETER_HASH),
             &BytesN::from_array(env, &EXPECTED_CIRCUIT_HASH),
             &BytesN::from_array(env, &EXPECTED_VERIFICATION_KEY_HASH),
@@ -128,10 +130,13 @@ pub fn register_pool(env: &Env) -> PoolFixture {
             &BytesN::from_array(env, &deployment_binding_hash),
         ),
     );
+    let pool_client = PrivateBalancePoolClient::new(env, &pool_id);
+    assert_eq!(pool_client.add_asset(&asset), 0);
 
     PoolFixture {
         pool_id,
         asset,
         guardian,
+        asset_admin,
     }
 }

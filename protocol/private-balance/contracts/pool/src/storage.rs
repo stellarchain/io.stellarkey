@@ -13,6 +13,7 @@ pub struct PoolConfig {
     pub network_id: BytesN<32>,
     pub realm_id: BytesN<32>,
     pub guardian: Address,
+    pub initial_asset_admin: Address,
     pub poseidon2_parameter_hash: BytesN<32>,
     pub circuit_hash: BytesN<32>,
     pub verification_key_hash: BytesN<32>,
@@ -21,7 +22,22 @@ pub struct PoolConfig {
     pub deployment_binding_hash: BytesN<32>,
     pub context_hash: BytesN<32>,
     pub context_field: BytesN<32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AssetStatus {
+    Active,
+    ExitOnly,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetConfig {
+    pub index: u32,
+    pub asset: Address,
     pub asset_field: BytesN<32>,
+    pub status: AssetStatus,
 }
 
 #[contracttype]
@@ -43,7 +59,11 @@ pub struct KnownRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Config,
-    Asset,
+    AssetAdmin,
+    PendingAssetAdmin,
+    AssetCount,
+    RegisteredAsset(u32),
+    RegisteredAssetIndex(Address),
     DepositPause,
     Tree,
     Meta,
@@ -52,12 +72,65 @@ pub enum DataKey {
     ArchiveRecord(u32),
 }
 
-pub fn get_asset(env: &Env) -> Option<Address> {
-    env.storage().instance().get(&DataKey::Asset)
+pub fn get_asset_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::AssetAdmin)
 }
 
-pub fn set_asset(env: &Env, asset: &Address) {
-    env.storage().instance().set(&DataKey::Asset, asset);
+pub fn set_asset_admin(env: &Env, admin: &Address) {
+    env.storage().instance().set(&DataKey::AssetAdmin, admin);
+}
+
+pub fn get_pending_asset_admin(env: &Env) -> Option<Address> {
+    env.storage().instance().get(&DataKey::PendingAssetAdmin)
+}
+
+pub fn set_pending_asset_admin(env: &Env, admin: &Address) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingAssetAdmin, admin);
+}
+
+pub fn clear_pending_asset_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAssetAdmin);
+}
+
+pub fn asset_count(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::AssetCount)
+        .unwrap_or(0)
+}
+
+pub fn set_asset_count(env: &Env, count: u32) {
+    env.storage().instance().set(&DataKey::AssetCount, &count);
+}
+
+pub fn get_registered_asset(env: &Env, index: u32) -> Option<AssetConfig> {
+    let key = DataKey::RegisteredAsset(index);
+    env.storage().persistent().get(&key)
+}
+
+pub fn set_registered_asset(env: &Env, config: &AssetConfig) {
+    let key = DataKey::RegisteredAsset(config.index);
+    env.storage().persistent().set(&key, config);
+    let max_ttl = env.storage().max_ttl();
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, max_ttl, max_ttl);
+}
+
+pub fn registered_asset_index(env: &Env, asset: &Address) -> Option<u32> {
+    let key = DataKey::RegisteredAssetIndex(asset.clone());
+    env.storage().persistent().get(&key)
+}
+
+pub fn set_registered_asset_index(env: &Env, asset: &Address, index: u32) {
+    let key = DataKey::RegisteredAssetIndex(asset.clone());
+    env.storage().persistent().set(&key, &index);
+    let max_ttl = env.storage().max_ttl();
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, max_ttl, max_ttl);
 }
 
 pub fn get_config(env: &Env) -> Option<PoolConfig> {

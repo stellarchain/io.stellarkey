@@ -1,7 +1,9 @@
 mod common;
 
 use common::{MockNativeTokenClient, register_pool};
-use private_balance_pool::{OutputPackage, PoolError, PrivateBalancePoolClient, WithdrawAction};
+use private_balance_pool::{
+    AssetStatus, OutputPackage, PoolError, PrivateBalancePoolClient, WithdrawAction,
+};
 use private_balance_protocol::constants::ROOT_WINDOW_LEDGERS;
 use private_balance_verifier::types::ProofBytes;
 use serde::Deserialize;
@@ -74,8 +76,6 @@ fn test_pool_withdrawal() {
     let pool_client = PrivateBalancePoolClient::new(&env, &fixture.pool_id);
     let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32]))
         .to_address(&env);
-    let relayer = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[6; 32]))
-        .to_address(&env);
 
     // Read proofs-v1.json
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/proofs-v1.json");
@@ -88,10 +88,11 @@ fn test_pool_withdrawal() {
 
     let ctx_bytes = field_str_to_bytes(&wd_item.public_signals[0]);
     let anchor_root_bytes = field_str_to_bytes(&wd_item.public_signals[3]);
-    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
-    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
-    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
-    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
+    let nf0_bytes = field_str_to_bytes(&wd_item.public_signals[6]);
+    let nf1_bytes = field_str_to_bytes(&wd_item.public_signals[7]);
+    let out_cm0_bytes = field_str_to_bytes(&wd_item.public_signals[8]);
+    let out_cm1_bytes = field_str_to_bytes(&wd_item.public_signals[9]);
+    let out_cm2_bytes = field_str_to_bytes(&wd_item.public_signals[10]);
 
     let context_field = BytesN::from_array(&env, &ctx_bytes);
     let anchor_root = BytesN::from_array(&env, &anchor_root_bytes);
@@ -99,6 +100,7 @@ fn test_pool_withdrawal() {
     let nf1 = BytesN::from_array(&env, &nf1_bytes);
     let out_cm0 = BytesN::from_array(&env, &out_cm0_bytes);
     let out_cm1 = BytesN::from_array(&env, &out_cm1_bytes);
+    let out_cm2 = BytesN::from_array(&env, &out_cm2_bytes);
 
     assert_eq!(pool_client.config().context_field, context_field);
 
@@ -126,14 +128,17 @@ fn test_pool_withdrawal() {
             recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
         },
+        output_2: OutputPackage {
+            commitment: out_cm2,
+            recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
+        },
+        asset_index: 0,
         public_value: 7_000_000,
         public_recipient: recipient.clone(),
-        relayer_fee: 2_000,
-        relayer: relayer.clone(),
     };
 
     assert_eq!(token_client.balance(&recipient), 0);
-    assert_eq!(token_client.balance(&relayer), 0);
     assert!(!env.as_contract(&fixture.pool_id, || {
         private_balance_pool::nullifier::is_spent(&env, &nf0)
     }));
@@ -151,18 +156,18 @@ fn test_pool_withdrawal() {
     assert_eq!(pool_client.tree_state().next_index, 0);
 
     token_client.mint(&fixture.pool_id, &4_000_000);
+    pool_client.set_asset_status(&0, &AssetStatus::ExitOnly);
 
     // Execute withdraw of 7,000,000 stroops
     let action_index = pool_client.withdraw(&action, &proof);
 
     assert_eq!(action_index, 0);
     assert_eq!(token_client.balance(&recipient), 7_000_000);
-    assert_eq!(token_client.balance(&relayer), 2_000);
-    assert_eq!(token_client.balance(&fixture.pool_id), 2_998_000);
+    assert_eq!(token_client.balance(&fixture.pool_id), 3_000_000);
     assert!(env.as_contract(&fixture.pool_id, || {
         private_balance_pool::nullifier::is_spent(&env, &nf0)
     }));
-    assert_eq!(pool_client.tree_state().next_index, 2);
+    assert_eq!(pool_client.tree_state().next_index, 3);
 }
 
 #[test]
@@ -175,8 +180,6 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
     let pool_client = PrivateBalancePoolClient::new(&env, &fixture.pool_id);
     let recipient = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[5; 32]))
         .to_address(&env);
-    let relayer = AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[6; 32]))
-        .to_address(&env);
 
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../vectors/proofs-v1.json");
     let json_str = fs::read_to_string(path).expect("read proofs-v1.json");
@@ -184,10 +187,11 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
     let wd_item = &file.proofs[2];
     let proof = proof_from_snarkjs(&wd_item.proof).to_contract_proof(&env);
     let anchor_root = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[3]));
-    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
-    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
-    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
-    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
+    let nf0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[6]));
+    let nf1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[7]));
+    let out_cm0 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[8]));
+    let out_cm1 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[9]));
+    let out_cm2 = BytesN::from_array(&env, &field_str_to_bytes(&wd_item.public_signals[10]));
     let action = WithdrawAction {
         action_nonce: BytesN::from_array(&env, &[0x33; 32]),
         anchor_root: anchor_root.clone(),
@@ -203,10 +207,14 @@ fn paused_idle_pool_can_refresh_current_root_and_withdraw() {
             recipient_envelope: BytesN::from_array(&env, &[0xdf; 181]),
             outgoing_envelope: BytesN::from_array(&env, &[0xe0; 157]),
         },
+        output_2: OutputPackage {
+            commitment: out_cm2,
+            recipient_envelope: BytesN::from_array(&env, &[0xe1; 181]),
+            outgoing_envelope: BytesN::from_array(&env, &[0xe2; 157]),
+        },
+        asset_index: 0,
         public_value: 7_000_000,
         public_recipient: recipient.clone(),
-        relayer_fee: 2_000,
-        relayer,
     };
 
     token_client.mint(&fixture.pool_id, &10_000_000);

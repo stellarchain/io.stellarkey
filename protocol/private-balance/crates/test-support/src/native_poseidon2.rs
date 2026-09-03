@@ -177,9 +177,7 @@ impl NativeTreeHashContext {
         TreeState {
             root: self.empty_roots[TREE_DEPTH],
             next_leaf_index: 0,
-            frontier: core::array::from_fn(|level| {
-                [self.empty_roots[level]; TREE_FRONTIER_WIDTH]
-            }),
+            frontier: core::array::from_fn(|level| [self.empty_roots[level]; TREE_FRONTIER_WIDTH]),
         }
     }
 

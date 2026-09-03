@@ -59,14 +59,9 @@ fn outgoing_envelopes_recover_real_and_dummy_outputs_and_bind_context() {
     let action_nonce = [7u8; 32];
     let aad =
         compute_outgoing_aad(&binding, &context, &asset, &commitment, &action_nonce, 0).unwrap();
-    assert!(compute_outgoing_aad(
-        &binding,
-        &context,
-        &asset,
-        &commitment,
-        &action_nonce,
-        2,
-    ).is_ok());
+    assert!(
+        compute_outgoing_aad(&binding, &context, &asset, &commitment, &action_nonce, 2,).is_ok()
+    );
 
     for (index, plaintext) in [outgoing_plaintext(false), outgoing_plaintext(true)]
         .into_iter()

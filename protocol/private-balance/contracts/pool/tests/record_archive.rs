@@ -14,6 +14,8 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
     commitment[28..].copy_from_slice(&(index + 1).to_be_bytes());
     let mut second_commitment = [0; 32];
     second_commitment[28..].copy_from_slice(&(index + 101).to_be_bytes());
+    let mut third_commitment = [0; 32];
+    third_commitment[28..].copy_from_slice(&(index + 151).to_be_bytes());
     let mut first_nullifier = [0; 32];
     first_nullifier[28..].copy_from_slice(&(index + 201).to_be_bytes());
     let mut second_nullifier = [0; 32];
@@ -21,7 +23,8 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
     Action {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Deposit,
-        asset,
+        asset_index: Some(0),
+        asset: Some(asset),
         action_nonce: [index as u8; 32],
         anchor_root: [0; 32],
         nullifiers: [first_nullifier, second_nullifier],
@@ -32,6 +35,11 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
                 outgoing_envelope: [index as u8 + 2; 157],
             },
             OutputPackage {
+                cm: third_commitment,
+                recipient_envelope: [index as u8 + 5; 181],
+                outgoing_envelope: [index as u8 + 6; 157],
+            },
+            OutputPackage {
                 cm: second_commitment,
                 recipient_envelope: [index as u8 + 3; 181],
                 outgoing_envelope: [index as u8 + 4; 157],
@@ -40,8 +48,6 @@ fn deposit(index: u32, source: (u8, [u8; 32]), asset: (u8, [u8; 32])) -> Action 
         public_value: 1,
         deposit_source: Some(source),
         public_recipient: None,
-        relayer_fee: 0,
-        relayer: None,
     }
 }
 
@@ -51,6 +57,9 @@ fn actions_are_written_once_as_independent_archive_records() {
     env.mock_all_auths();
     let fixture = register_pool(&env);
     let config = env.as_contract(&fixture.pool_id, || storage::get_config(&env).unwrap());
+    let asset = env.as_contract(&fixture.pool_id, || {
+        storage::get_registered_asset(&env, 0).unwrap()
+    });
     let source = payload(&fixture.guardian);
 
     for index in 0..3 {
@@ -62,12 +71,11 @@ fn actions_are_written_once_as_independent_archive_records() {
             archive::append_record(
                 &env,
                 &action,
-                &fixture.asset,
+                Some(&asset),
                 &signals,
-                u64::from(index) * 2,
+                u64::from(index) * 3,
                 &BytesN::from_array(&env, &[index as u8 + 1; 32]),
                 Some(&fixture.guardian),
-                None,
             )
             .unwrap();
         });
