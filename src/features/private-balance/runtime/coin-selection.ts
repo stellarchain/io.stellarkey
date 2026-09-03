@@ -32,7 +32,7 @@ export function parsePrivateAmount(raw: string, decimals = 7): bigint {
     throw new Error('Private asset decimals are invalid.');
   }
   const normalized = raw.trim();
-  if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(normalized)) {
+  if (!/^[0-9]+(?:\.[0-9]+)?$/.test(normalized)) {
     throw new Error('Private amount is invalid.');
   }
   const [whole, fraction = ''] = normalized.split('.');

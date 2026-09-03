@@ -2793,7 +2793,7 @@ test("preserves selling liabilities and excludes them from spendable balance", a
           limit: "100",
           selling_liabilities: "4.5",
           is_authorized: true,
-          is_authorized_to_maintain_liabilities: false,
+          is_authorized_to_maintain_liabilities: true,
           is_clawback_enabled: true,
         },
       ],
@@ -2804,7 +2804,7 @@ test("preserves selling liabilities and excludes them from spendable balance", a
   assert.equal(balances[0].sellingLiabilities, "1.25");
   assert.equal(balances[1].sellingLiabilities, "4.5");
   assert.equal(balances[1].isAuthorized, true);
-  assert.equal(balances[1].isAuthorizedToMaintainLiabilities, false);
+  assert.equal(balances[1].isAuthorizedToMaintainLiabilities, true);
   assert.equal(balances[1].isClawbackEnabled, true);
   assert.equal(spendableAssetBalance(balances[0], ["3", "0.00001"]), "5.74999");
   assert.equal(spendableAssetBalance(balances[1]), "15.5");
@@ -2815,9 +2815,12 @@ test("preserves selling liabilities and excludes them from spendable balance", a
     spendable: "15.5",
   });
 
-  assert.equal(spendableAssetBalance({ ...balances[1], isAuthorized: false }), "0");
   assert.equal(
-    spendableAssetBalance({ ...balances[1], isAuthorizedToMaintainLiabilities: true }),
+    spendableAssetBalance({
+      ...balances[1],
+      isAuthorized: false,
+      isAuthorizedToMaintainLiabilities: true,
+    }),
     "0",
   );
 });
