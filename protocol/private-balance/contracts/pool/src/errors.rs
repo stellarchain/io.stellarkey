@@ -20,4 +20,9 @@ pub enum PoolError {
     ActionCountOverflow = 14,
     ArchiveCorrupt = 15,
     UnauthorizedGuardian = 16,
+    AssetAlreadyRegistered = 17,
+    UnknownAsset = 18,
+    AssetExitOnly = 19,
+    AssetIndexOverflow = 20,
+    NoPendingAssetAdmin = 21,
 }

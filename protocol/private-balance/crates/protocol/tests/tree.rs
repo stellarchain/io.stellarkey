@@ -1,4 +1,7 @@
-use private_balance_protocol::{constants::{TREE_ARITY, TREE_DEPTH}, tree::*};
+use private_balance_protocol::{
+    constants::{TREE_ARITY, TREE_DEPTH},
+    tree::*,
+};
 
 #[test]
 fn test_tree_empty_and_append() {

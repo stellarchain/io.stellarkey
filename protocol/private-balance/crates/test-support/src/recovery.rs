@@ -112,7 +112,8 @@ fn replay_record(
         3 => ActionKind::Withdraw,
         _ => return Err(format!("Invalid action kind at action {action_index}")),
     };
-    let current_asset_balance = record.asset
+    let current_asset_balance = record
+        .asset
         .and_then(|asset| accumulator.asset_public_balances.get(&asset).copied())
         .unwrap_or(0);
     let next_asset_balance = match kind {
@@ -181,7 +182,9 @@ fn replay_record(
     }
 
     if let Some(asset) = record.asset {
-        accumulator.asset_public_balances.insert(asset, next_asset_balance);
+        accumulator
+            .asset_public_balances
+            .insert(asset, next_asset_balance);
     }
     accumulator.total_public_balance = accumulator
         .asset_public_balances

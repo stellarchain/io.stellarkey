@@ -6,8 +6,15 @@ fn protocol_v1_note_round_trips_asset_index_and_diversifier_in_exact_128_byte_la
     owner[31] = 7;
     let mut rho = [0u8; 32];
     rho[31] = 9;
-    let note =
-        NotePlaintext::new(5_000_000, 0x0102_0304, [1, 2, 3, 4], owner, rho, "Payment for dinner").unwrap();
+    let note = NotePlaintext::new(
+        5_000_000,
+        0x0102_0304,
+        [1, 2, 3, 4],
+        owner,
+        rho,
+        "Payment for dinner",
+    )
+    .unwrap();
     let serialized = note.serialize();
     assert_eq!(serialized.len(), 128);
     assert_eq!(&serialized[12..16], &[1, 2, 3, 4]);

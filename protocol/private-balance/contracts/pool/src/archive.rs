@@ -1,7 +1,7 @@
 use crate::{
     action::{OutputPackage, address_payload},
     errors::PoolError,
-    storage::{self, PoolConfig},
+    storage::{self, AssetConfig, PoolConfig},
 };
 use private_balance_protocol::{
     action::Action,
@@ -18,7 +18,8 @@ pub struct ArchiveRecord {
     pub ledger_sequence: u32,
     pub starting_leaf_index: u32,
     pub action_kind: u32,
-    pub asset: Address,
+    pub asset_index: Option<u32>,
+    pub asset: Option<Address>,
     pub action_nonce: BytesN<32>,
     pub anchor_root: BytesN<32>,
     pub tree_root_after: BytesN<32>,
@@ -26,11 +27,10 @@ pub struct ArchiveRecord {
     pub nullifier_1: BytesN<32>,
     pub output_0: OutputPackage,
     pub output_1: OutputPackage,
+    pub output_2: OutputPackage,
     pub public_value: u64,
     pub deposit_source: Option<Address>,
     pub public_recipient: Option<Address>,
-    pub relayer_fee: u64,
-    pub relayer: Option<Address>,
 }
 
 #[contracttype]
@@ -58,7 +58,8 @@ pub(crate) fn protocol_record(record: &ArchiveRecord) -> Result<ProtocolArchiveR
         ledger_sequence: record.ledger_sequence,
         starting_leaf_index: record.starting_leaf_index,
         action_kind: u8::try_from(record.action_kind).map_err(|_| PoolError::ArchiveCorrupt)?,
-        asset: address_payload(&record.asset)?,
+        asset_index: record.asset_index,
+        asset: optional_payload(&record.asset)?,
         action_nonce: record.action_nonce.to_array(),
         anchor_root: record.anchor_root.to_array(),
         tree_root_after: record.tree_root_after.to_array(),
@@ -66,12 +67,11 @@ pub(crate) fn protocol_record(record: &ArchiveRecord) -> Result<ProtocolArchiveR
         outputs: [
             protocol_output(&record.output_0),
             protocol_output(&record.output_1),
+            protocol_output(&record.output_2),
         ],
         public_value: record.public_value,
         deposit_source: optional_payload(&record.deposit_source)?,
         public_recipient: optional_payload(&record.public_recipient)?,
-        relayer_fee: record.relayer_fee,
-        relayer: optional_payload(&record.relayer)?,
     })
 }
 
@@ -85,25 +85,28 @@ pub fn genesis_record_hash(config: &PoolConfig) -> [u8; 32] {
 pub fn append_record(
     env: &Env,
     action: &Action,
-    asset: &Address,
+    asset: Option<&AssetConfig>,
     signals: &[[u8; 32]; 11],
     starting_leaf_index: u64,
     tree_root_after: &BytesN<32>,
     public_address: Option<&Address>,
-    relayer_address: Option<&Address>,
 ) -> Result<ArchiveRecord, PoolError> {
     let mut meta = storage::get_meta(env);
     let action_index = meta.action_count;
     let starting_leaf_index =
         u32::try_from(starting_leaf_index).map_err(|_| PoolError::TreeFull)?;
-    if signals[7] != action.nullifiers[0]
-        || signals[8] != action.nullifiers[1]
-        || signals[9] != action.outputs[0].cm
-        || signals[10] != action.outputs[1].cm
+    if signals[6] != action.nullifiers[0]
+        || signals[7] != action.nullifiers[1]
+        || signals[8] != action.outputs[0].cm
+        || signals[9] != action.outputs[1].cm
+        || signals[10] != action.outputs[2].cm
     {
         return Err(PoolError::ArchiveCorrupt);
     }
-    if action.asset != address_payload(asset)? {
+    let expected_asset = asset
+        .map(|value| address_payload(&value.asset))
+        .transpose()?;
+    if action.asset != expected_asset || action.asset_index != asset.map(|value| value.index) {
         return Err(PoolError::ArchiveCorrupt);
     }
 
@@ -129,29 +132,13 @@ pub fn append_record(
             (None, Some(recipient.clone()))
         }
     };
-    let relayer = match action.kind {
-        private_balance_protocol::action::ActionKind::Deposit => {
-            if relayer_address.is_some() || action.relayer.is_some() || action.relayer_fee != 0 {
-                return Err(PoolError::InvalidActionShape);
-            }
-            None
-        }
-        private_balance_protocol::action::ActionKind::PrivateTransfer
-        | private_balance_protocol::action::ActionKind::Withdraw => {
-            let relayer = relayer_address.ok_or(PoolError::InvalidActionShape)?;
-            if action.relayer != Some(address_payload(relayer)?) {
-                return Err(PoolError::ArchiveCorrupt);
-            }
-            Some(relayer.clone())
-        }
-    };
-
     let record = ArchiveRecord {
         action_index,
         ledger_sequence: env.ledger().sequence(),
         starting_leaf_index,
         action_kind: action.kind as u32,
-        asset: asset.clone(),
+        asset_index: asset.map(|value| value.index),
+        asset: asset.map(|value| value.asset.clone()),
         action_nonce: BytesN::from_array(env, &action.action_nonce),
         anchor_root: BytesN::from_array(env, &action.anchor_root),
         tree_root_after: tree_root_after.clone(),
@@ -167,11 +154,14 @@ pub fn append_record(
             recipient_envelope: BytesN::from_array(env, &action.outputs[1].recipient_envelope),
             outgoing_envelope: BytesN::from_array(env, &action.outputs[1].outgoing_envelope),
         },
+        output_2: OutputPackage {
+            commitment: BytesN::from_array(env, &action.outputs[2].cm),
+            recipient_envelope: BytesN::from_array(env, &action.outputs[2].recipient_envelope),
+            outgoing_envelope: BytesN::from_array(env, &action.outputs[2].outgoing_envelope),
+        },
         public_value: action.public_value,
         deposit_source,
         public_recipient,
-        relayer_fee: action.relayer_fee,
-        relayer,
     };
     let record_hash = protocol_record(&record)?
         .compute_record_hash(PROTOCOL_VERSION, &meta.transcript_head.to_array());

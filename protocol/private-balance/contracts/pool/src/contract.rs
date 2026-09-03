@@ -123,12 +123,8 @@ fn execute_action(
     action: &ProtocolAction,
     proof: &Proof,
     public_address: Option<&Address>,
-    relayer_address: Option<&Address>,
+    asset: Option<&AssetConfig>,
 ) -> Result<u32, PoolError> {
-    let asset = get_asset(env).ok_or(PoolError::InvalidConfiguration)?;
-    if action.asset != address_payload(&asset)? || contract_payload(&asset)? != action.asset.1 {
-        return Err(PoolError::NoncanonicalEncoding);
-    }
     if action.kind == ActionKind::Deposit && deposits_paused(env) {
         return Err(PoolError::DepositsPaused);
     }
@@ -155,7 +151,7 @@ fn execute_action(
         nullifier::require_unspent(env, &BytesN::from_array(env, nullifier))?;
     }
 
-    if tree_before.next_index > TREE_CAPACITY - 2 {
+    if tree_before.next_index > TREE_CAPACITY - 3 {
         return Err(PoolError::TreeFull);
     }
 
@@ -182,36 +178,29 @@ fn execute_action(
     let record = archive::append_record(
         env,
         action,
-        &asset,
+        asset,
         &signals,
         starting_leaf_index,
         &tree.current_root,
         public_address,
-        relayer_address,
     )?;
     debug_assert_eq!(action_index, record.action_index);
 
     match action.kind {
         ActionKind::Deposit => {
             let source = public_address.ok_or(PoolError::InvalidActionShape)?;
-            token::deposit(env, &asset, source, action.public_value);
+            let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
+            token::deposit(env, &boundary_asset.asset, source, action.public_value);
         }
         ActionKind::PrivateTransfer => {
-            if public_address.is_some() {
+            if public_address.is_some() || asset.is_some() {
                 return Err(PoolError::InvalidActionShape);
-            }
-            let relayer = relayer_address.ok_or(PoolError::InvalidActionShape)?;
-            if action.relayer_fee > 0 {
-                token::withdraw(env, &asset, relayer, action.relayer_fee);
             }
         }
         ActionKind::Withdraw => {
             let recipient = public_address.ok_or(PoolError::InvalidActionShape)?;
-            token::withdraw(env, &asset, recipient, action.public_value);
-            let relayer = relayer_address.ok_or(PoolError::InvalidActionShape)?;
-            if action.relayer_fee > 0 {
-                token::withdraw(env, &asset, relayer, action.relayer_fee);
-            }
+            let boundary_asset = asset.ok_or(PoolError::InvalidActionShape)?;
+            token::withdraw(env, &boundary_asset.asset, recipient, action.public_value);
         }
     }
     emit_shielded_action(env, &record);
@@ -227,7 +216,7 @@ impl PrivateBalancePool {
         network_id: BytesN<32>,
         realm_id: BytesN<32>,
         guardian: Address,
-        asset: Address,
+        asset_admin: Address,
         poseidon2_parameter_hash: BytesN<32>,
         circuit_hash: BytesN<32>,
         verification_key_hash: BytesN<32>,
@@ -258,8 +247,8 @@ impl PrivateBalancePool {
             Ok(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
             Err(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
         };
-        let asset_payload = match contract_payload(&asset) {
-            Ok(value) => (1, value),
+        let asset_admin_payload = match address_payload(&asset_admin) {
+            Ok(value) => value,
             Err(_) => panic_with_error!(&env, PoolError::InvalidConfiguration),
         };
         let expected_deployment_binding = DeploymentBinding {
@@ -267,7 +256,7 @@ impl PrivateBalancePool {
             network_id: network_id.to_array(),
             realm_id: realm_id.to_array(),
             pool_id,
-            asset: asset_payload,
+            asset_admin: asset_admin_payload,
             guardian: guardian_payload,
             poseidon2_parameter_hash: EXPECTED_POSEIDON2_PARAMETER_HASH,
             circuit_hash: EXPECTED_CIRCUIT_HASH,
@@ -297,8 +286,6 @@ impl PrivateBalancePool {
             &pool_id,
         );
         let context_field = compute_context_field(&context_hash);
-        let asset_field = compute_asset_field(asset_payload);
-
         let current_root = BytesN::from_array(&env, &EMPTY_ROOTS[TREE_DEPTH]);
 
         let mut frontier_vec = Vec::new(&env);
@@ -319,6 +306,7 @@ impl PrivateBalancePool {
             network_id,
             realm_id,
             guardian,
+            initial_asset_admin: asset_admin.clone(),
             poseidon2_parameter_hash,
             circuit_hash,
             verification_key_hash,
@@ -327,7 +315,6 @@ impl PrivateBalancePool {
             deployment_binding_hash,
             context_hash: BytesN::from_array(&env, &context_hash),
             context_field: BytesN::from_array(&env, &context_field),
-            asset_field: BytesN::from_array(&env, &asset_field),
         };
         let meta = ArchiveMeta {
             action_count: 0,
@@ -335,7 +322,8 @@ impl PrivateBalancePool {
         };
 
         set_config(&env, &config);
-        set_asset(&env, &asset);
+        set_asset_admin(&env, &asset_admin);
+        set_asset_count(&env, 0);
         crate::storage::set_deposits_paused(&env, false);
         set_tree(&env, &tree);
         set_meta(&env, &meta);
@@ -350,24 +338,26 @@ impl PrivateBalancePool {
             return Err(PoolError::DepositsPaused);
         }
         let source = action.deposit_source.clone();
-        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let asset =
+            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
+        if asset.status != AssetStatus::Active {
+            return Err(PoolError::AssetExitOnly);
+        }
         let action = from_deposit(&action, &asset)?;
-        execute_action(&env, &config, &action, &proof, Some(&source), None)
+        execute_action(&env, &config, &action, &proof, Some(&source), Some(&asset))
     }
 
     pub fn transfer(env: Env, action: TransferAction, proof: Proof) -> Result<u32, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
-        let relayer = action.relayer.clone();
-        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
-        let action = from_transfer(&action, &asset)?;
-        execute_action(&env, &config, &action, &proof, None, Some(&relayer))
+        let action = from_transfer(&action)?;
+        execute_action(&env, &config, &action, &proof, None, None)
     }
 
     pub fn withdraw(env: Env, action: WithdrawAction, proof: Proof) -> Result<u32, PoolError> {
         let config = get_config(&env).ok_or(PoolError::InvalidConfiguration)?;
         let recipient = action.public_recipient.clone();
-        let relayer = action.relayer.clone();
-        let asset = get_asset(&env).ok_or(PoolError::InvalidConfiguration)?;
+        let asset =
+            get_registered_asset(&env, action.asset_index).ok_or(PoolError::UnknownAsset)?;
         let action = from_withdraw(&action, &asset)?;
         execute_action(
             &env,
@@ -375,7 +365,7 @@ impl PrivateBalancePool {
             &action,
             &proof,
             Some(&recipient),
-            Some(&relayer),
+            Some(&asset),
         )
     }
 
@@ -383,8 +373,76 @@ impl PrivateBalancePool {
         get_config(&env).unwrap_or_else(|| panic_with_error!(&env, PoolError::InvalidConfiguration))
     }
 
-    pub fn asset(env: Env) -> Address {
-        get_asset(&env).unwrap_or_else(|| panic_with_error!(&env, PoolError::InvalidConfiguration))
+    pub fn asset_admin(env: Env) -> Address {
+        get_asset_admin(&env)
+            .unwrap_or_else(|| panic_with_error!(&env, PoolError::InvalidConfiguration))
+    }
+
+    pub fn pending_asset_admin(env: Env) -> Option<Address> {
+        get_pending_asset_admin(&env)
+    }
+
+    pub fn asset_count(env: Env) -> u32 {
+        asset_count(&env)
+    }
+
+    pub fn asset(env: Env, index: u32) -> Result<AssetConfig, PoolError> {
+        get_registered_asset(&env, index).ok_or(PoolError::UnknownAsset)
+    }
+
+    pub fn asset_index(env: Env, asset: Address) -> Option<u32> {
+        registered_asset_index(&env, &asset)
+    }
+
+    pub fn add_asset(env: Env, asset: Address) -> Result<u32, PoolError> {
+        let admin = get_asset_admin(&env).ok_or(PoolError::InvalidConfiguration)?;
+        admin.require_auth();
+        let asset_payload = contract_payload(&asset)?;
+        if registered_asset_index(&env, &asset).is_some() {
+            return Err(PoolError::AssetAlreadyRegistered);
+        }
+        let index = asset_count(&env);
+        let next_count = index.checked_add(1).ok_or(PoolError::AssetIndexOverflow)?;
+        let config = AssetConfig {
+            index,
+            asset: asset.clone(),
+            asset_field: BytesN::from_array(&env, &compute_asset_field((1, asset_payload))),
+            status: AssetStatus::Active,
+        };
+        set_registered_asset(&env, &config);
+        set_registered_asset_index(&env, &asset, index);
+        set_asset_count(&env, next_count);
+        emit_asset_added(&env, index, &asset);
+        Ok(index)
+    }
+
+    pub fn set_asset_status(env: Env, index: u32, status: AssetStatus) -> Result<(), PoolError> {
+        let admin = get_asset_admin(&env).ok_or(PoolError::InvalidConfiguration)?;
+        admin.require_auth();
+        let mut asset = get_registered_asset(&env, index).ok_or(PoolError::UnknownAsset)?;
+        asset.status = status.clone();
+        set_registered_asset(&env, &asset);
+        emit_asset_status_changed(&env, index, &status);
+        Ok(())
+    }
+
+    pub fn propose_asset_admin(env: Env, next: Address) -> Result<(), PoolError> {
+        let admin = get_asset_admin(&env).ok_or(PoolError::InvalidConfiguration)?;
+        admin.require_auth();
+        address_payload(&next)?;
+        set_pending_asset_admin(&env, &next);
+        emit_asset_admin_proposed(&env, &next);
+        Ok(())
+    }
+
+    pub fn accept_asset_admin(env: Env) -> Result<(), PoolError> {
+        let next = get_pending_asset_admin(&env).ok_or(PoolError::NoPendingAssetAdmin)?;
+        next.require_auth();
+        let previous = get_asset_admin(&env).ok_or(PoolError::InvalidConfiguration)?;
+        set_asset_admin(&env, &next);
+        clear_pending_asset_admin(&env);
+        emit_asset_admin_changed(&env, &previous, &next);
+        Ok(())
     }
 
     pub fn archive_meta(env: Env) -> ArchiveMeta {

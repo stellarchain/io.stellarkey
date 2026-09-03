@@ -93,7 +93,8 @@ impl PoolModel {
         action
             .validate_public_shape()
             .map_err(|error| format!("Invalid action shape: {error:?}"))?;
-        let current_asset_balance = action.asset
+        let current_asset_balance = action
+            .asset
             .and_then(|asset| self.asset_public_balances.get(&asset).copied())
             .unwrap_or(0);
         let next_asset_balance = match action.kind {
@@ -136,7 +137,9 @@ impl PoolModel {
                 &mut next_tree,
                 &action.outputs.clone().map(|output| output.cm),
             ),
-            None => next_tree.append_three_commitments(&action.outputs.clone().map(|output| output.cm)),
+            None => {
+                next_tree.append_three_commitments(&action.outputs.clone().map(|output| output.cm))
+            }
         }
         .map_err(|error| format!("{error:?}"))?;
 

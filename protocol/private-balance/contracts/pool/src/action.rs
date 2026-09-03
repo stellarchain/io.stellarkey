@@ -1,4 +1,7 @@
-use crate::{errors::PoolError, storage::PoolConfig};
+use crate::{
+    errors::PoolError,
+    storage::{AssetConfig, PoolConfig},
+};
 use private_balance_protocol::{
     action::{Action as ProtocolAction, ActionKind},
     constants::PROTOCOL_VERSION,
@@ -27,6 +30,8 @@ pub struct DepositAction {
     pub nullifier_1: BytesN<32>,
     pub output_0: OutputPackage,
     pub output_1: OutputPackage,
+    pub output_2: OutputPackage,
+    pub asset_index: u32,
     pub public_value: u64,
     pub deposit_source: Address,
 }
@@ -40,9 +45,8 @@ pub struct TransferAction {
     pub nullifier_1: BytesN<32>,
     pub output_0: OutputPackage,
     pub output_1: OutputPackage,
+    pub output_2: OutputPackage,
     pub public_value: u64,
-    pub relayer_fee: u64,
-    pub relayer: Address,
 }
 
 #[contracttype]
@@ -54,10 +58,10 @@ pub struct WithdrawAction {
     pub nullifier_1: BytesN<32>,
     pub output_0: OutputPackage,
     pub output_1: OutputPackage,
+    pub output_2: OutputPackage,
+    pub asset_index: u32,
     pub public_value: u64,
     pub public_recipient: Address,
-    pub relayer_fee: u64,
-    pub relayer: Address,
 }
 
 pub(crate) fn address_payload(address: &Address) -> Result<(u8, [u8; 32]), PoolError> {
@@ -100,7 +104,7 @@ fn protocol_output(output: &OutputPackage) -> Result<ProtocolOutputPackage, Pool
 fn validate_slots(
     anchor_root: &[u8; 32],
     nullifiers: &[[u8; 32]; 2],
-    outputs: &[ProtocolOutputPackage; 2],
+    outputs: &[ProtocolOutputPackage; 3],
     is_deposit: bool,
 ) -> Result<(), PoolError> {
     if !is_canonical_field(anchor_root) || !nullifiers.iter().all(is_canonical_field) {
@@ -115,7 +119,10 @@ fn validate_slots(
     {
         return Err(PoolError::InvalidActionShape);
     }
-    if outputs[0].cm == outputs[1].cm {
+    if outputs[0].cm == outputs[1].cm
+        || outputs[0].cm == outputs[2].cm
+        || outputs[1].cm == outputs[2].cm
+    {
         return Err(PoolError::InvalidCommitment);
     }
     if nullifiers[0] == nullifiers[1] {
@@ -139,20 +146,14 @@ fn checked_value(value: u64, must_be_zero: bool) -> Result<u64, PoolError> {
     Ok(value)
 }
 
-fn checked_relayer_fee(value: u64) -> Result<u64, PoolError> {
-    if value > MAX_PUBLIC_VALUE {
-        return Err(PoolError::InvalidAmount);
-    }
-    Ok(value)
-}
-
 pub(crate) fn from_deposit(
     action: &DepositAction,
-    asset: &Address,
+    asset: &AssetConfig,
 ) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
+        protocol_output(&action.output_2)?,
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
@@ -160,7 +161,8 @@ pub(crate) fn from_deposit(
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Deposit,
-        asset: (1, contract_payload(asset)?),
+        asset_index: Some(action.asset_index),
+        asset: Some((1, contract_payload(&asset.asset)?)),
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -168,18 +170,14 @@ pub(crate) fn from_deposit(
         public_value: checked_value(action.public_value, false)?,
         deposit_source: Some(address_payload(&action.deposit_source)?),
         public_recipient: None,
-        relayer_fee: 0,
-        relayer: None,
     })
 }
 
-pub(crate) fn from_transfer(
-    action: &TransferAction,
-    asset: &Address,
-) -> Result<ProtocolAction, PoolError> {
+pub(crate) fn from_transfer(action: &TransferAction) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
+        protocol_output(&action.output_2)?,
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
@@ -187,7 +185,8 @@ pub(crate) fn from_transfer(
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::PrivateTransfer,
-        asset: (1, contract_payload(asset)?),
+        asset_index: None,
+        asset: None,
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -195,18 +194,17 @@ pub(crate) fn from_transfer(
         public_value: checked_value(action.public_value, true)?,
         deposit_source: None,
         public_recipient: None,
-        relayer_fee: checked_relayer_fee(action.relayer_fee)?,
-        relayer: Some(address_payload(&action.relayer)?),
     })
 }
 
 pub(crate) fn from_withdraw(
     action: &WithdrawAction,
-    asset: &Address,
+    asset: &AssetConfig,
 ) -> Result<ProtocolAction, PoolError> {
     let outputs = [
         protocol_output(&action.output_0)?,
         protocol_output(&action.output_1)?,
+        protocol_output(&action.output_2)?,
     ];
     let nullifiers = [action.nullifier_0.to_array(), action.nullifier_1.to_array()];
     let anchor_root = action.anchor_root.to_array();
@@ -214,7 +212,8 @@ pub(crate) fn from_withdraw(
     Ok(ProtocolAction {
         protocol_version: PROTOCOL_VERSION,
         kind: ActionKind::Withdraw,
-        asset: (1, contract_payload(asset)?),
+        asset_index: Some(action.asset_index),
+        asset: Some((1, contract_payload(&asset.asset)?)),
         action_nonce: action.action_nonce.to_array(),
         anchor_root,
         nullifiers,
@@ -222,8 +221,6 @@ pub(crate) fn from_withdraw(
         public_value: checked_value(action.public_value, false)?,
         deposit_source: None,
         public_recipient: Some(address_payload(&action.public_recipient)?),
-        relayer_fee: checked_relayer_fee(action.relayer_fee)?,
-        relayer: Some(address_payload(&action.relayer)?),
     })
 }
 
@@ -233,12 +230,11 @@ pub fn public_signals(
     action: &ProtocolAction,
 ) -> Result<[[u8; 32]; 11], PoolError> {
     let pool_id = contract_payload(&env.current_contract_address())?;
-    Ok(action.compute_public_signals_with_asset_field(
+    Ok(action.compute_public_signals(
         &config.context_field.to_array(),
         &config.network_id.to_array(),
         &config.realm_id.to_array(),
         &pool_id,
-        &config.asset_field.to_array(),
     ))
 }
 
@@ -249,8 +245,13 @@ mod tests {
     #[test]
     fn full_withdrawal_without_private_change_is_valid() {
         let env = Env::default();
-        let asset =
-            AddressPayload::ContractIdHash(BytesN::from_array(&env, &[5; 32])).to_address(&env);
+        let asset = AssetConfig {
+            index: 0,
+            asset: AddressPayload::ContractIdHash(BytesN::from_array(&env, &[5; 32]))
+                .to_address(&env),
+            asset_field: BytesN::from_array(&env, &[6; 32]),
+            status: crate::storage::AssetStatus::Active,
+        };
         let action = WithdrawAction {
             action_nonce: BytesN::from_array(&env, &[0x33; 32]),
             anchor_root: BytesN::from_array(&env, &[1; 32]),
@@ -266,14 +267,17 @@ mod tests {
                 recipient_envelope: BytesN::from_array(&env, &[8; 181]),
                 outgoing_envelope: BytesN::from_array(&env, &[9; 157]),
             },
+            output_2: OutputPackage {
+                commitment: BytesN::from_array(&env, &[10; 32]),
+                recipient_envelope: BytesN::from_array(&env, &[11; 181]),
+                outgoing_envelope: BytesN::from_array(&env, &[12; 157]),
+            },
+            asset_index: 0,
             public_value: 1,
             public_recipient: AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(
                 &env, &[3; 32],
             ))
             .to_address(&env),
-            relayer_fee: 0,
-            relayer: AddressPayload::AccountIdPublicKeyEd25519(BytesN::from_array(&env, &[4; 32]))
-                .to_address(&env),
         };
 
         assert!(from_withdraw(&action, &asset).is_ok());
