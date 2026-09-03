@@ -130,6 +130,35 @@ test('archive client reads exact RPC network and ledger identities', async () =>
   assert.deepEqual(calls, [{ startLedger: 499, pagination: { limit: 1 } }]);
 });
 
+test('sparse ledger close-time reads use bounded RPC concurrency', async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const calls = [];
+  const server = {
+    async getLedgers(request) {
+      calls.push(request);
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise(resolve => setTimeout(resolve, 8));
+      active -= 1;
+      return {
+        ledgers: [{
+          sequence: request.startLedger,
+          ledgerCloseTime: String(1_700 + request.startLedger),
+        }],
+      };
+    },
+  };
+  const client = new PrivateBalanceArchiveClient('https://rpc.example', manifest, server);
+  const sequences = [100, 400, 700, 1_000, 1_300, 1_600];
+
+  const closedAt = await client.readLedgerCloseTimes(sequences);
+
+  assert.equal(calls.length, sequences.length);
+  assert.equal(maximumActive, 4);
+  assert.deepEqual(Object.keys(closedAt).map(Number), sequences);
+});
+
 test('archive client reads the public asset balance through a read-only SAC call', async () => {
   const calls = [];
   const server = {
