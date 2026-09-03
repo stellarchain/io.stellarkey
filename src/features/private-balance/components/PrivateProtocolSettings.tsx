@@ -117,7 +117,7 @@ export function PrivateProtocolSettings({
     setResult(null);
     try {
       await runFullVerification();
-      setResult('Private history checked against two independent network providers.');
+      setResult('Private history checked against two different-origin network providers.');
     } catch (cause: unknown) {
       setError(cause ?? new Error('Private history verification stopped safely.'));
     } finally {
@@ -208,13 +208,13 @@ export function PrivateProtocolSettings({
               <div className="min-w-0">
                 <p className="text-[13.5px] font-semibold text-white">Use witness during routine checks</p>
                 <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">
-                  Compare public ledger and contract state with an independently operated provider.
+                  Compare public ledger and contract state with a different-origin provider.
                 </p>
               </div>
               <Toggle
                 checked={rpcWitnessEnabled}
                 onChange={enabled => setRpcWitnessEnabled(Boolean(enabled))}
-                label="Use independent RPC witness during routine checks"
+                label="Use a second RPC witness during routine checks"
               />
             </div>
             <p className="border-t border-white/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-neutral-500">

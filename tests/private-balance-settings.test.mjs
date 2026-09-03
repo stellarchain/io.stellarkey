@@ -20,7 +20,8 @@ test('advanced privacy keeps unique diagnostics concise and protects local remov
   assert.match(settings, /Technical details/);
   assert.match(settings, /aria-expanded/);
   assert.match(settings, /aria-live="polite"/);
-  assert.match(settings, /Private history checked against two independent network providers/);
+  assert.match(settings, /Private history checked against two different-origin network providers/);
+  assert.doesNotMatch(settings, /independently operated/);
   assert.match(settings, /Use witness during routine checks/);
   assert.match(settings, /public network access timing and pattern/);
   assert.match(settings, /never signs, and never submits transactions/);

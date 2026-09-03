@@ -31,6 +31,7 @@ const manifest = {
   artifacts: {
     r1csSha256: '0d'.repeat(32),
     vkJsonSha256: '0e'.repeat(32),
+    vkBinSha256: '0f'.repeat(32),
   },
   constants: { treeDepth: 17 },
 };
@@ -100,6 +101,9 @@ test('archive client reads exact RPC network and ledger identities', async () =>
     async getNetwork() {
       return { passphrase: manifest.networkPassphrase };
     },
+    async getHealth() {
+      return { oldestLedger: 400 };
+    },
     async getLatestLedger() {
       return { sequence: 500 };
     },
@@ -117,6 +121,7 @@ test('archive client reads exact RPC network and ledger identities', async () =>
   const client = new PrivateBalanceArchiveClient('https://rpc.example', manifest, server);
 
   assert.equal(await client.readNetworkPassphrase(), manifest.networkPassphrase);
+  assert.equal(await client.readOldestLedgerSequence(), 400);
   assert.equal(await client.readLatestLedgerSequence(), 500);
   assert.deepEqual(await client.readLedgerIdentity(499), {
     sequence: 499,
@@ -189,7 +194,7 @@ test('archive client reads manifest-bound state and canonical record storage key
           guardian: account,
           poseidon2_parameter_hash: bytes(12),
           circuit_hash: bytes(13),
-          verification_key_hash: bytes(14),
+          verification_key_hash: bytes(15),
           tree_depth: 17,
           root_window_ledgers: 1_440,
           deployment_binding_hash: Buffer.from(deploymentBindingHash, 'hex'),

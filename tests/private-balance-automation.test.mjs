@@ -40,6 +40,16 @@ test('the leader reuses one worker session per epoch instead of recreating it', 
   assert.match(provider, /clearDecryptedState/);
 });
 
+test('persisting first-time setup does not restart and terminate the active worker session', () => {
+  // The runtime updates encryptedStateExistsRef before publishing setup to the
+  // parent. The reflected prop must not tear down the effect that owns the
+  // initialized worker while the first action is opening.
+  assert.doesNotMatch(
+    provider,
+    /deploymentId,\s*encryptedStateExists,\s*deployment,/,
+  );
+});
+
 test('a failed quiet background pass keeps the current snapshot instead of wiping it', () => {
   // The catch honors the same quiet split as the happy path: a transient
   // failure on a routine tick stashes its error and returns without
@@ -106,6 +116,10 @@ test('the final chained step keeps the post-broadcast outcome watcher', () => {
 test('stale chain state auto-resyncs and retries the preparation once', () => {
   assert.match(provider, /error instanceof PrivateStaleChainStateError && attempt === 0/);
   const actionFlow = source('src/features/private-balance/runtime/action-flow.ts');
+  assert.match(
+    actionFlow,
+    /new PrivateStaleChainStateError\('Sync Private Balance before creating an action\.'\)/,
+  );
   assert.match(actionFlow, /new PrivateStaleChainStateError\('Private Balance root changed/);
   assert.doesNotMatch(actionFlow, /root is too close to expiry|readKnownRoot/);
   assert.match(actionFlow, /head\.latestLedger \+ input\.manifest\.constants\.rootWindowLedgers/);

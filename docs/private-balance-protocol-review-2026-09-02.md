@@ -38,11 +38,14 @@ The machine-readable evidence is
 
 The resulting circuit fits the 2¹⁴ Groth16 domain. The generated development zkey is 8,971,612
 bytes and its point-compressed transport is 6,120,542 bytes (2,427,581-byte Brotli-11 wire size).
-The PSE degree-14 phase-one transcript was accepted only after its pinned SHA-256 and full
-contribution/final-beacon chain passed `snarkjs powersoftau verify`. The prior Testnet pools bind
-different circuit and contract hashes, so they were not relabeled. The replacement artifacts ship
-with an authenticated empty deployment catalogue and development use disabled until fresh
-asset-pinned Testnet pools are deployed and verified.
+The PSE degree-14 phase-one transcript is pinned by SHA-256 and the development zkey passes
+`snarkjs zkey verify` against those exact bytes. The checked-in gate does not run or record a
+separate `snarkjs powersoftau verify`, so it does not independently evidence the transcript's full
+contribution/final-beacon chain. The prior Testnet pools bind
+different circuit and contract hashes, so they were not relabeled. Fresh asset-pinned XLM and USDC
+development pools are deployed on Testnet, their configuration and checkpoints are captured in
+checked-in evidence, and their exact manifests are enabled through the authenticated catalogue.
+This is implementation-validation evidence, not ceremony, audit, beta, or real-value approval.
 
 The original analysis below is retained as the review record. Where a prototype caveat conflicts
 with this section, this section records the completed implementation and test result.

@@ -27,12 +27,13 @@ interface ArchiveManifest extends Pick<
   | 'poolContractId'
   | 'deploymentBindingHash'
 > {
-  artifacts: Pick<PrivateBalanceManifest['artifacts'], 'r1csSha256' | 'vkJsonSha256'>;
+  artifacts: Pick<PrivateBalanceManifest['artifacts'], 'r1csSha256' | 'vkBinSha256'>;
   constants: Pick<PrivateBalanceManifest['constants'], 'treeDepth'>;
 }
 
 interface ArchiveRpc {
   getNetwork(): Promise<{ passphrase: string }>;
+  getHealth(): Promise<{ oldestLedger: number }>;
   getLatestLedger(): Promise<{ sequence: number }>;
   queryContract<T>(
     contractId: string,
@@ -318,6 +319,11 @@ export class PrivateBalanceArchiveClient {
     return u32(latest.sequence, 'Latest ledger');
   }
 
+  public async readOldestLedgerSequence(): Promise<number> {
+    const health = await this.server.getHealth();
+    return u32(health.oldestLedger, 'Oldest retained ledger');
+  }
+
   public async readLedgerIdentity(sequence: number): Promise<{
     sequence: number;
     hash: string;
@@ -560,7 +566,7 @@ export class PrivateBalanceArchiveClient {
       ) ||
       !equalBytes(
         config.verificationKeyHash,
-        hex32(this.manifest.artifacts.vkJsonSha256, 'Manifest verification key hash'),
+        hex32(this.manifest.artifacts.vkBinSha256, 'Manifest verification key hash'),
       ) ||
       !equalBytes(config.contextHash, contextHash) ||
       !equalBytes(config.contextField, computeContextField(contextHash))

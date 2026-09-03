@@ -49,7 +49,9 @@ test("fails closed when the pinned Private Payments catalogue bytes are modified
   await expect.poll(() => tamperedRequests).toBeGreaterThan(0);
 
   expect(await manifestRequested).toBe(false);
-  await expect(page.getByRole("region", { name: "Your Private Assets", exact: true })).toHaveCount(0);
+  const privateAssets = page.getByRole("region", { name: "Your Private Assets", exact: true });
+  await expect(privateAssets).toBeVisible();
+  await expect(privateAssets.getByText("Private Balance catalogue hash mismatch.")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Open private XLM\./ })).toHaveCount(0);
   await expect(page.getByText("Private Payments is on")).toHaveCount(0);
   expect(observed.join("\n")).not.toContain(testSecret);

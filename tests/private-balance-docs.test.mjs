@@ -18,8 +18,8 @@ test('private balance documentation states exact privacy, recovery, and support 
   const support = read('private-balance-support.md');
   const combined = `${product}\n${recovery}\n${incident}\n${support}`;
 
-  assert.match(product, /Testnet-only development candidate/is);
-  assert.match(product, /catalogue is\s+empty/is);
+  assert.match(product, /Live Testnet development deployment/is);
+  assert.match(product, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(product, /single-party setup/i);
   assert.match(product, /passes.*pinned Powers-of-Tau transcript/is);
   assert.match(product, /does not make.*safe for real value/is);
@@ -85,6 +85,10 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /two input lanes.*two output lanes/is);
   assert.match(paper, /randomiz(?:e|es|ed|ing).*lane ordering/is);
   assert.match(paper, /randomizes.*input lane ordering.*output lane ordering/is);
+  assert.match(paper, /four-byte self-output diversifier.*2\^32/is);
+  assert.match(paper, /collision.*default zero.*impossible/is);
+  assert.match(paper, /checksum.*overwhelmingly\s+likely.*not.*guarantee/is);
+  assert.doesNotMatch(paper, /diversifiers prevent change from reusing/i);
   assert.match(paper, /zero-value dummy notes/i);
   assert.match(paper, /at least one output is real.*private outputs sum to.*deposited value/is);
   assert.doesNotMatch(paper, /at least one output has the deposited value/i);
@@ -102,13 +106,22 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /ordinary sends.*full private address.*encrypted recent-recipient/is);
   assert.match(paper, /`tskpay_`.*128.*`skpay_`.*127/is);
   assert.match(paper, /asset-pinned pool/i);
-  assert.match(paper, /independent RPC.*overlapping ledger hash/is);
+  assert.match(paper, /routine.*witness.*enabled by default/is);
+  assert.match(paper, /routine.*witness.*disabled/is);
+  assert.match(paper, /seed recovery.*full history.*always\s+require.*witness/is);
+  assert.match(paper, /different-origin RPC.*overlapping ledger hash/is);
+  assert.match(paper, /cannot prove operator\s+independence.*custom primary/is);
+  assert.match(paper, /deployment checkpoint.*aged out.*current overlapping ledger.*contract head/is);
   assert.match(paper, /largest safe.*contiguous.*batch/is);
   assert.match(paper, /confirmed.*durable on-chain.*sync.*rereads.*encrypted.*checkpoint/is);
   assert.match(paper, /interruption before.*sync.*rescan/is);
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
   assert.match(paper, /no backward-compatible.*migration/i);
-  assert.match(paper, /authenticated deployment catalogue is empty/is);
+  assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
+  assert.match(paper, /live Testnet.*validated/is);
+  assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
+  assert.match(paper, /does not run or record.*powersoftau verify/is);
+  assert.match(paper, /Testnet reset.*redeploy/is);
   assert.match(paper, /BLS12-381.*not selected/is);
   assert.match(paper, /recursive proofs.*not implemented/is);
   assert.match(paper, /protocol\/private-balance\/docs\/protocol-v1\.md/);
@@ -134,10 +147,10 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.ok(paper.includes(`${evidence.x25519.pkcs8MedianImprovementPercent}% median improvement`));
 });
 
-test('the public private-payments page describes the undeployed Testnet candidate consistently', () => {
+test('the public private-payments page describes the live development Testnet deployment consistently', () => {
   const page = readSource('src/app/private/page.tsx');
-  assert.match(page, /publishes no active Private Payments deployment/is);
-  assert.match(page, /fresh Testnet pools/is);
+  assert.match(page, /live.*Testnet.*XLM.*USDC/is);
+  assert.match(page, /development.*single-party/is);
   assert.doesNotMatch(page, /current key fails.*production availability is off/is);
 });
 

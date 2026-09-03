@@ -83,7 +83,14 @@ export async function setupPrivateBalance(page: Page): Promise<Locator> {
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Turn On" }).click();
-  await expect(dialog.getByText("Private Payments is on")).toBeVisible({ timeout: 180_000 });
+  const success = dialog.getByText("Private Payments is on");
+  const failure = dialog.getByRole("alert");
+  await expect(success.or(failure).first()).toBeVisible({ timeout: 180_000 });
+  if (await failure.isVisible().catch(() => false)) {
+    const details = failure.getByRole("button", { name: "Technical details" });
+    if (await details.isVisible().catch(() => false)) await details.click();
+    throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
+  }
   await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toBeHidden();
   await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
@@ -130,7 +137,7 @@ export async function openPrivateSend(page: Page): Promise<Locator> {
   await expect(dialog.getByRole("heading", { name: "Send Payment", exact: true })).toBeVisible();
   await dialog.getByRole("tablist", { name: "Send type" })
     .getByRole("tab", { name: "Private", exact: true }).click();
-  await expect(dialog.getByLabel("Recipient Address", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Private recipient", { exact: true })).toBeVisible();
   return dialog;
 }
 

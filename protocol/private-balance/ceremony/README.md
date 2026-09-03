@@ -2,9 +2,9 @@
 
 ## Current status
 
-The replacement protocol is not currently deployed. Its local candidate uses single-party
-development proving material. No file in this directory is testnet-beta, audit, production, or
-mainnet approval. A public multi-contributor phase-2 ceremony and an
+The replacement protocol is deployed in two explicitly enabled development pools for XLM and USDC
+on Testnet. It uses single-party development proving material. No file in this directory is
+testnet-beta, audit, production, or mainnet approval. A public multi-contributor phase-2 ceremony and an
 independent transcript verification are mandatory before a testnet beta can hold external funds.
 Mainnet requires a separate go/no-go record and a newly approved ceremony; testnet artifacts are
 never promoted automatically.

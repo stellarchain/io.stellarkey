@@ -348,7 +348,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       input.storageDriver,
     );
     if (!state || state.account.syncStatus !== 'current') {
-      throw new Error('Sync Private Balance before creating an action.');
+      throw new PrivateStaleChainStateError('Sync Private Balance before creating an action.');
     }
     if (state.pendingActions.some(action =>
       action.status === 'signed' || action.broadcastAttempts > 0)) {

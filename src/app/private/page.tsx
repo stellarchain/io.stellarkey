@@ -28,7 +28,7 @@ const description =
 const highlights = [
   "Private: the amount, the recipient, and the memo of a private transfer stay encrypted. Public: money moving in or out, network fees paid by your Stellar account, and timing.",
   "Proofs are created on this device. There is no application backend, relayer, indexer, or hosted key service anywhere in the flow.",
-  "A Testnet development candidate. The replacement deployment is disabled until fresh pools and evidence match the new protocol; Mainnet remains blocked.",
+  "A live Testnet development implementation for XLM and USDC, validated by deployment and browser evidence. It is not safe for real value; Mainnet remains blocked.",
 ] as const;
 
 const sections = [
@@ -249,7 +249,7 @@ export default function PrivatePaymentsPage() {
     >
         <section id="private-what"><h2><DocShieldDots />What it is</h2>
         <p>Private Payments is a shielded pool for configured XLM and USDC, driven from the wallet you already have. Funds you move into it are held as encrypted notes on this device and can change hands without publishing the amount, the recipient, or the memo; a zero-knowledge proof convinces a contract on the public Stellar ledger that every rule held, without showing it the contents. That one sentence is the whole promise. The rest of this page is the mechanism.</p>
-        <p>Release {APPLICATION_VERSION} hosts the hash-pinned replacement artifacts but publishes no active Private Payments deployment. The wallet disables development deployment use until fresh Testnet pools and their evidence match the new circuit and contract hashes, and it refuses Mainnet independently. The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge proofs. A public multi-party ceremony, independent review, and fresh deployment are required before real-value use.</p></section>
+        <p>Release {APPLICATION_VERSION} publishes live, hash-pinned XLM and USDC development pools on Testnet. Their checked-in evidence records the pool identities, locally selected Wasm hash, post-deployment checkpoints, and read-back configuration; it does not include a deployment transaction hash or an independent on-chain executable-hash check. The live browser suite exercises setup, deposits, private transfer, withdrawal, backup, and recovery through StellarKey. The wallet still refuses Mainnet independently. The single-party key passes circuit/Powers-of-Tau compatibility verification, but anyone retaining its setup secret could forge proofs. A public multi-party ceremony and independent review are required before real-value use.</p></section>
 
         <section id="private-pockets"><h2><DocCoin />One wallet, two pockets</h2>
         <p>Your Stellar account is a public pocket: anyone can look up its balance and history, and that openness is what makes the ledger checkable. The private balance is a second pocket beside it. Crossings between the two — deposits in, withdrawals out — are ordinary public transactions by design; only life inside the pocket is encrypted.</p>
@@ -292,13 +292,13 @@ export default function PrivatePaymentsPage() {
         <p>A SHA-256 mismatch on any artifact stops the feature rather than degrading it, and the content-security policy that limits WebAssembly to this hash-verified prover is documented on the Security page.</p></section>
 
         <section id="private-receiving"><h2><DocFingerprint />Receiving privately</h2>
-        <p>A deployment-bound shielded address is 128 characters of Base58 — <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tskpay_…</span> on Testnet — with a checksum, so a mistyped or wrong-deployment address fails instead of paying quietly. It never appears as an account on the public ledger, and there is no on-chain registration step.</p>
-        <p>Addresses are diversified: from one incoming viewing key, the wallet derives many addresses, one per four-byte diversifier, all spendable by the same wallet. The current recipient envelope publishes that diversifier, so repeated payments to the same address can be correlated on-chain and the zero diversifier used for self/change is distinguishable from a rotated recipient address. Separate addresses still reduce counterparty-level reuse, but they are not unlinkable by sight in this protocol version.</p>
+        <p>A deployment-bound shielded address is 128 characters of Base58 — <span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tskpay_…</span> on Testnet — with deployment binding and a four-byte checksum. Wrong-deployment addresses fail; ordinary mistyping is overwhelmingly likely to fail, although a 32-bit checksum is not a guarantee. It never appears as an account on the public ledger, and there is no on-chain registration step.</p>
+        <p>Addresses are diversified: from one incoming viewing key, the wallet derives many addresses, one per four-byte diversifier, all spendable by the same wallet. The recipient envelope publishes that diversifier, so repeated payments to the same address can be correlated on-chain. Self/change outputs use fresh random non-zero diversifiers rather than intentionally reusing the displayed receive address. Separate addresses still reduce counterparty-level reuse, but they are not unlinkable by sight in this protocol version.</p>
         <p>Sharing happens out of band, over a channel you already trust. Beside the QR code the wallet shows a short verification code derived from the address — the drawn panel below shows one, FC42 C9CF — and the sender&apos;s wallet derives the same code from whatever it is about to pay. Matching codes mean the address survived the copy intact.</p>
         <p>The receive screen also offers a reusable stealth address (<span style={{ fontFamily: "var(--mono)", fontSize: ".85em" }}>tsm1…</span>): a two-key meta-address, one scan key and one spend key, from which a sender derives a fresh one-time destination per payment. Only your scan key can link those destinations back together. It is the same discipline — publish nothing that connects your payments — applied to a different receiving pattern.</p></section>
 
         <section id="private-screens"><h2><DocFile />What it looks like</h2>
-        <p>The surfaces below illustrate the Testnet development candidate: the setup disclosure, a shielded receive with its verification code, and a private send review. The replacement deployment and Mainnet remain unavailable.</p>
+        <p>The surfaces below illustrate the live Testnet development implementation: the setup disclosure, a shielded receive with its verification code, and a private send review. XLM and USDC are available on Testnet; Mainnet remains unavailable.</p>
         <div className="panel-grid">
         <PanelDeal />
         <PanelReceive />
@@ -324,7 +324,7 @@ export default function PrivatePaymentsPage() {
         <li>Obscurity. What stays public — fees, timing, deposits, withdrawals — is written on this page so you can plan around it.</li>
         </ul></div>
         </div>
-        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current development key passes circuit and transcript compatibility checks but has no public ceremony or independent audit evidence. No replacement pool is currently published, and Mainnet stays refused.</p></section>
+        <p>The bar for any non-development release is written down and enforced in code: a proving key verified against its pinned phase-one transcript, reproducible artifacts, a completed trusted-setup ceremony, independent contract and circuit review, immutable deployment evidence, and recovery drills, all tied to the same hashes. The current development key passes circuit and transcript compatibility checks but has no public ceremony or independent audit evidence. The published XLM and USDC pools are therefore Testnet development deployments only, and Mainnet stays refused.</p></section>
 
         <section id="private-faq"><h2><DocQuestion />The awkward questions</h2>
         <div className="faq">
