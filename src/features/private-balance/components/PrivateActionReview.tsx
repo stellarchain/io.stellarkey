@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { FiatValue } from '@/components/FiatValue';
+import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
 import { Button, HashValue } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
 import { triggerHaptic } from '@/lib/haptics';
@@ -251,12 +252,19 @@ export function PrivateActionReview({
             <dd className="mt-0.5 font-medium text-neutral-100">
               Sends in {chained.approval.steps} steps · total max fee{' '}
               {fmtAmount(formatPrivateBalanceXlm(BigInt(chained.approval.cumulativeMaxFeeStroops)))} XLM
+              <XlmFeeFiatValue
+                amount={formatPrivateBalanceXlm(BigInt(chained.approval.cumulativeMaxFeeStroops))}
+                className="mt-0.5 block"
+              />
             </dd>
           </div>
         ) : (
           <ReviewRow label="Network Fee (max)" pulse={pulsedRows.has('fee')}>
             {maximumFeeStroops !== null ? (
-              `${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM`
+              <span className="flex flex-col items-end">
+                <span>{fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM</span>
+                <XlmFeeFiatValue amount={formatPrivateBalanceXlm(maximumFeeStroops)} />
+              </span>
             ) : preparing ? (
               <span className="skeleton inline-block rounded-md px-2.5 py-0.5 text-[12px] font-normal text-neutral-400">
                 {progressLabel(progress ?? 'checking-chain')}

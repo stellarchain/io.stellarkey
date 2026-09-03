@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, HashValue, Spinner } from '@/components/ui';
+import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
 import { fmtAmount } from '@/lib/format';
 import {
   type PreparedStealthSweep,
@@ -161,8 +162,9 @@ export function StealthReceipts() {
                   <Spinner size={12} /> {progressLabel(progress ?? 'checking-chain')}
                 </span>
               ) : (
-                <span className="mono text-white">
-                  {fmtAmount(formatPrivateBalanceXlm(maximumFee))} XLM
+                <span className="flex flex-col items-end text-white">
+                  <span className="mono">{fmtAmount(formatPrivateBalanceXlm(maximumFee))} XLM</span>
+                  <XlmFeeFiatValue amount={formatPrivateBalanceXlm(maximumFee)} />
                 </span>
               )}
             </ReviewRow>

@@ -24,6 +24,7 @@ import {
   toggleTrustlineSelection,
 } from "@/lib/transaction-intent";
 import { Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
   IconLedger,
@@ -352,9 +353,10 @@ export function AddAssetPublicPanel({
             </div>
           )}
           {selected.length > 0 && (
-            <p className="pt-2 text-[11px] text-neutral-400">
-              Fee: {selectedFeeXlm} XLM — one atomic transaction.
-            </p>
+            <div className="pt-2 text-[11px] text-neutral-400">
+              <p>Fee: {selectedFeeXlm} XLM — one atomic transaction.</p>
+              <XlmFeeFiatValue amount={selectedFeeXlm} className="mt-0.5 block" />
+            </div>
           )}
         </div>
 

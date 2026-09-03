@@ -8,6 +8,7 @@ import {
   useWalletTransactions,
 } from "@/hooks/useWallet";
 import { useToast } from "./Toast";
+import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import { fetchCanonicalAccountSignerInfo, type AccountSignerInfo } from "@/lib/api";
 import { isValidPublicAddress } from "@/lib/vault";
 import {
@@ -1083,7 +1084,10 @@ function StudioInner({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="flex items-center justify-between gap-4 py-2.5">
                     <span className="shrink-0 text-neutral-400">Network fee</span>
-                    <span className="mono text-neutral-300">{review.feeXlm} XLM</span>
+                    <span className="flex flex-col items-end text-neutral-300">
+                      <span className="mono">{review.feeXlm} XLM</span>
+                      <XlmFeeFiatValue amount={review.feeXlm} />
+                    </span>
                   </div>
                   <div className="flex items-center justify-between gap-4 py-2.5">
                     <span className="shrink-0 text-neutral-400">Minimum time</span>

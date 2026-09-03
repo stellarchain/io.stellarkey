@@ -286,3 +286,21 @@ test("market range changes retain chart geometry and never relabel stale points"
   }
   expect(Object.fromEntries(requestCount)).toEqual({ "1": 1, "7": 1, "30": 1, "365": 1 });
 });
+
+test("network fees include the selected local-currency equivalent", async ({ page }) => {
+  await importTestWallet(page);
+  const currency = page.getByTitle(/Click to cycle currency/);
+  await currency.click();
+  await currency.click();
+  await expect(currency).toContainText("GBP");
+
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const send = page.getByRole("dialog", { name: "Send Payment" });
+  await send.getByPlaceholder("0.00").fill("1");
+  await send.getByRole("textbox", { name: "Recipient Address or Federation" }).fill(testPayer);
+  await send.getByRole("button", { name: "Review Transfer" }).click();
+
+  const equivalents = send.locator("[data-xlm-fee-fiat]");
+  await expect(equivalents.first()).toHaveText("≈ £0.00000195");
+  await expect(equivalents).toHaveCount(2);
+});
