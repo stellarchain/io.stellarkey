@@ -153,6 +153,13 @@ test('artifact prefetch starts only after explicit private-payment opt-in', () =
     provider.indexOf('prefetchCircuitArtifacts(manifest)') >
       provider.indexOf('const optIn = useCallback'),
   );
+  assert.ok(
+    provider.indexOf('prefetchCircuitArtifacts(manifest)') >
+      provider.indexOf('await performSync(true)'),
+    'artifact expansion must not compete with authenticated first-time setup',
+  );
+  assert.match(provider, /options\.prefetchArtifacts !== false/);
+  assert.match(provider, /requestAnimationFrame/);
   const artifacts = source('src/lib/private-balance-artifacts.ts');
   assert.match(artifacts, /export function prefetchCircuitArtifacts/);
   assert.match(artifacts, /inFlightLoad/);

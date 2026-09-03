@@ -20,6 +20,7 @@ import {
   PrivateBalanceRuntimeDataProvider,
   type PrivateBalanceDeploymentSummary,
   type PrivateBalanceDurableRuntimeSummary,
+  type PrivateBalanceOptInOptions,
   type PrivateBalanceRuntimeDataValue,
   type PrivateBalanceRuntimePhase,
   type PreparedStealthSweep,
@@ -150,7 +151,7 @@ interface PrivateBalanceContextValue {
   networkLabel: 'Testnet' | 'Mainnet';
   protocolVersion: number;
   noteCount: number;
-  optIn(): Promise<void>;
+  optIn(options?: PrivateBalanceOptInOptions): Promise<void>;
   refreshSync(): Promise<void>;
   prepareAction(
     draft: PrivateActionDraft,
@@ -1143,14 +1144,19 @@ export function PrivateBalanceProvider({
     syncReadySignal,
   ]);
 
-  const optIn = useCallback(async () => {
+  const optIn = useCallback(async (options: PrivateBalanceOptInOptions = {}) => {
     if (!performSyncRef.current) await syncReadySignal.promise;
     const performSync = performSyncRef.current;
     if (!performSync) throw new Error('Private Balance runtime is not ready.');
-    // Start the artifact download alongside setup so the first payment does
-    // not stall on it.
-    prefetchCircuitArtifacts(manifest);
     await performSync(true);
+    // Artifact expansion is CPU-heavy. Keep it outside authenticated setup so
+    // it cannot contend with key derivation and history scanning. The final
+    // setup asset starts this shared warm-up immediately after it is current.
+    if (options.prefetchArtifacts !== false) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => prefetchCircuitArtifacts(manifest));
+      });
+    }
   }, [manifest, syncReadySignal]);
 
   const refreshSync = useCallback(async () => {

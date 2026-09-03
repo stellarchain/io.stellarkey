@@ -177,17 +177,21 @@ export function privatePaymentSetupComplete({
 }
 
 /**
- * Prepare the asset the user started from first, then every remaining asset.
- * Once all are durable, restore that original selection before showing success.
+ * Prepare every other asset before the one the user started from. Finishing on
+ * the original selection avoids a third runtime mount and authenticated sync.
  */
 export function privatePaymentSetupTarget(
   assets: readonly PrivatePaymentSetupAsset[],
   initialDeploymentId: string,
 ): string | null {
   const initial = assets.find(asset => asset.deploymentId === initialDeploymentId);
+  const remaining = assets.find(asset => (
+    asset.deploymentId !== initialDeploymentId && !asset.encryptedStateExists
+  ));
+  if (remaining) return remaining.deploymentId;
   if (initial && !initial.encryptedStateExists) return initial.deploymentId;
-  return assets.find(asset => !asset.encryptedStateExists)?.deploymentId
-    ?? initial?.deploymentId
+  return initial?.deploymentId
+    ?? assets.find(asset => !asset.encryptedStateExists)?.deploymentId
     ?? assets[0]?.deploymentId
     ?? null;
 }
