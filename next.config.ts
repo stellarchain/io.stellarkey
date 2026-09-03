@@ -37,10 +37,12 @@ export function sourceTreeIsDirty(cwd = projectRoot): boolean {
 const buildCommit = resolveBuildCommit();
 const buildDirty = sourceTreeIsDirty();
 const developmentAssetPrefix = "/__stellarkey-dev-v2";
+const developmentDistDir = ".next-dev";
 
 const nextConfig: NextConfig = {
   output: "export",
   assetPrefix: process.env.NODE_ENV === "production" ? undefined : developmentAssetPrefix,
+  distDir: process.env.NODE_ENV === "production" ? undefined : developmentDistDir,
   env: {
     NEXT_PUBLIC_BUILD_COMMIT: buildCommit,
     NEXT_PUBLIC_BUILD_DIRTY: String(buildDirty),
