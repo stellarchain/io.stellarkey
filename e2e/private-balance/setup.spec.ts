@@ -72,6 +72,7 @@ test("keeps Send and its nested setup dialog mounted through consent completion"
   await expect.poll(() => sendDialog.evaluate(node => (node as HTMLElement).inert)).toBe(true);
   await setupDialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(setupDialog).toBeHidden();
+  await expect(sendDialog.getByText(/Preparing private/)).toHaveCount(0);
   await expect(sendDialog.getByLabel("Private recipient", { exact: true })).toBeVisible({
     timeout: 30_000,
   });

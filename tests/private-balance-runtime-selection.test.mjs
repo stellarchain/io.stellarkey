@@ -127,6 +127,33 @@ test('wallet consent and selected-asset readiness are separate access states', a
   }), 'ready');
 });
 
+test('setup completes only after the selected private asset reaches authenticated current state', async () => {
+  const { privatePaymentSetupComplete } = await bootstrapDomain();
+  const ready = {
+    setupRunning: true,
+    phase: 'current',
+    configured: true,
+    privateAddressAvailable: true,
+    selectedStateExists: true,
+    runtimeMatchesSelection: true,
+  };
+
+  assert.equal(privatePaymentSetupComplete(ready), true);
+  assert.equal(
+    privatePaymentSetupComplete({ ...ready, phase: 'reading-meta' }),
+    false,
+    'persisting the address is not the final success milestone',
+  );
+  assert.equal(
+    privatePaymentSetupComplete({ ...ready, phase: 'scanning-live' }),
+    false,
+    'the setup dialog must own the scan instead of handing off to Preparing',
+  );
+  assert.equal(privatePaymentSetupComplete({ ...ready, selectedStateExists: false }), false);
+  assert.equal(privatePaymentSetupComplete({ ...ready, runtimeMatchesSelection: false }), false);
+  assert.equal(privatePaymentSetupComplete({ ...ready, setupRunning: false }), false);
+});
+
 test('advisory render publication cannot undo durable setup or removal authority', async () => {
   const { mergePrivateRuntimePublication } = await runtimePublicationDomain();
   const key = 'testnet:account:pool:manifest';

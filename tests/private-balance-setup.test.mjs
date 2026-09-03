@@ -45,7 +45,7 @@ test('setup expands Learn more with download size and recovery without an unconf
   assert.doesNotMatch(setup, /estimated anonymity|guaranteed recovery|instant proof/i);
 });
 
-test('setup finishes at the persisted address milestone while verification continues outside the modal', () => {
+test('setup owns verification and finishes only when the selected asset is ready', () => {
   const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
 
   for (const label of [
@@ -53,13 +53,17 @@ test('setup finishes at the persisted address milestone while verification conti
     'Creating your keys',
     'Creating your private address',
     'Saving securely on this device',
+    'Checking private history',
   ]) assert.match(setup, new RegExp(label.replace(/[&]/g, '&')));
   assert.doesNotMatch(setup, /Catching up with the network/);
-  assert.match(setup, /configured && privateAddress/);
+  assert.match(setup, /privatePaymentSetupComplete/);
+  assert.match(setup, /selectedStateExists/);
+  assert.match(setup, /runtimeMatchesSelection/);
+  assert.doesNotMatch(setup, /stage === 'running' && configured && privateAddress !== null/);
   assert.match(setup, /void optIn\(\)/);
   assert.doesNotMatch(setup, /await optIn\(\)/);
-  assert.match(setup, /Each supported asset is prepared automatically when you first use it/);
-  assert.match(setup, /checking past private activity continues in the background/);
+  assert.match(setup, /Other supported assets are prepared automatically when you first use them/);
+  assert.doesNotMatch(setup, /checking past private activity continues in the background/);
   assert.match(setup, /aria-live="polite"/);
   // Success is the shared check morph without confetti.
   assert.match(setup, /PrivateSuccess/);

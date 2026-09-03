@@ -43,6 +43,15 @@ export interface PrivatePaymentAccessInput {
   runtimeMatchesSelection: boolean;
 }
 
+export interface PrivatePaymentSetupCompletionInput {
+  setupRunning: boolean;
+  phase: string;
+  configured: boolean;
+  privateAddressAvailable: boolean;
+  selectedStateExists: boolean;
+  runtimeMatchesSelection: boolean;
+}
+
 export type PrivateBalanceAccountSupport =
   | { ready: true }
   | { ready: false; reason: string };
@@ -137,6 +146,26 @@ export function privatePaymentAccessState({
   return selectedStateExists && runtimeConfigured && runtimeMatchesSelection
     ? 'ready'
     : 'preparing';
+}
+
+/**
+ * First-time setup owns the selected asset's authenticated synchronization.
+ * Success must not hand the user back to a second, still-preparing surface.
+ */
+export function privatePaymentSetupComplete({
+  setupRunning,
+  phase,
+  configured,
+  privateAddressAvailable,
+  selectedStateExists,
+  runtimeMatchesSelection,
+}: PrivatePaymentSetupCompletionInput): boolean {
+  return setupRunning
+    && phase === 'current'
+    && configured
+    && privateAddressAvailable
+    && selectedStateExists
+    && runtimeMatchesSelection;
 }
 
 export function selectPrivateBalanceDeploymentId(
