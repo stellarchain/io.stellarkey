@@ -66,7 +66,8 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
         let action = Action {
             protocol_version: PROTOCOL_VERSION,
             kind,
-            asset: (1, [4; 32]),
+            asset_index: (kind != ActionKind::PrivateTransfer).then_some(0),
+            asset: (kind != ActionKind::PrivateTransfer).then_some((1, [4; 32])),
             action_nonce: field(index + 1),
             anchor_root: if kind == ActionKind::Deposit {
                 [0; 32]
@@ -77,12 +78,11 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
             outputs: [
                 output(first_commitment, 0xa1),
                 output(rng.gen_range(1..=2_000_000_000u32), 0xb2),
+                output(rng.gen_range(1..=2_000_000_000u32), 0xc3),
             ],
             public_value,
             deposit_source: (kind == ActionKind::Deposit).then_some((0, [7; 32])),
             public_recipient: (kind == ActionKind::Withdraw).then_some((0, [8; 32])),
-            relayer_fee: 0,
-            relayer: (kind != ActionKind::Deposit).then_some((0, [9; 32])),
         };
 
         model
@@ -105,6 +105,7 @@ fn one_hundred_thousand_seeded_actions_recover_exactly_and_detect_corruption() {
     for (activity, record) in recovered.activities.iter().zip(&model.records) {
         assert_eq!(activity.action_index, record.action_index);
         assert_eq!(activity.action_kind as u8, record.action_kind);
+        assert_eq!(activity.asset_index, record.asset_index);
         assert_eq!(activity.asset, record.asset);
         assert_eq!(activity.public_value, record.public_value);
     }

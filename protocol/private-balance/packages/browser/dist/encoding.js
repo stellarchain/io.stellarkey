@@ -141,7 +141,8 @@ function validateOutgoingPlaintext(plaintext) {
     requireLength('Outgoing owner commitment', plaintext.ownerCommitment, 32);
     requireLength('Outgoing recipient HPKE key', plaintext.recipientHpkePublicKey, 32);
     requireLength('Outgoing memo', plaintext.memo, 32);
-    requireLength('Outgoing reserved field', plaintext.reserved, 15);
+    requireUnsignedInteger(plaintext.assetIndex, 0xffff_ffff, 'Outgoing asset index');
+    requireLength('Outgoing reserved field', plaintext.reserved, 11);
     if (!isCanonicalField(plaintext.ownerCommitment) || plaintext.ownerCommitment.every(byte => byte === 0)) {
         throw new Error('Invalid outgoing owner commitment');
     }
@@ -174,7 +175,11 @@ export function encodeOutgoingPlaintext(plaintext) {
     output.set(plaintext.recipientHpkePublicKey, 48);
     output[80] = plaintext.memoLength;
     output.set(plaintext.memo, 81);
-    output.set(plaintext.reserved, 113);
+    output[113] = (plaintext.assetIndex >>> 24) & 0xff;
+    output[114] = (plaintext.assetIndex >>> 16) & 0xff;
+    output[115] = (plaintext.assetIndex >>> 8) & 0xff;
+    output[116] = plaintext.assetIndex & 0xff;
+    output.set(plaintext.reserved, 117);
     return output;
 }
 export function decodeOutgoingPlaintext(bytes) {
@@ -191,7 +196,11 @@ export function decodeOutgoingPlaintext(bytes) {
         recipientHpkePublicKey: bytes.slice(48, 80),
         memoLength: bytes[80],
         memo: bytes.slice(81, 113),
-        reserved: bytes.slice(113, 128),
+        assetIndex: (bytes[113] * 0x100_0000
+            + bytes[114] * 0x1_0000
+            + bytes[115] * 0x100
+            + bytes[116]),
+        reserved: bytes.slice(117, 128),
     };
     validateOutgoingPlaintext(plaintext);
     return plaintext;
@@ -202,8 +211,9 @@ export function deriveOutgoingAad(deploymentBindingHash, contextHash, assetField
     requireLength('Asset field', assetField, 32);
     requireLength('Commitment', cm, 32);
     requireLength('Action nonce', actionNonce, 32);
-    if (outputIndex !== 0 && outputIndex !== 1)
+    if (outputIndex !== 0 && outputIndex !== 1 && outputIndex !== 2) {
         throw new Error('Invalid output index');
+    }
     const output = [];
     encodeDomain(DOMAIN_OUTGOING_AAD, output);
     output.push(...deploymentBindingHash, ...contextHash, ...assetField, ...cm, ...actionNonce, outputIndex);

@@ -29,7 +29,8 @@ pub struct OutgoingPlaintext {
     pub recipient_hpke_public_key: [u8; 32],
     pub memo_length: u8,
     pub memo: [u8; 32],
-    pub reserved: [u8; 15],
+    pub asset_index: u32,
+    pub reserved: [u8; 11],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,7 +63,7 @@ impl OutgoingPlaintext {
                 .iter()
                 .any(|byte| *byte != 0)
             || (self.flags == OUTGOING_DUMMY_FLAG && self.memo_length != 0)
-            || self.reserved != [0u8; 15]
+            || self.reserved != [0u8; 11]
         {
             return Err(EncryptionError::InvalidPlaintext);
         }
@@ -80,7 +81,8 @@ impl OutgoingPlaintext {
         output[48..80].copy_from_slice(&self.recipient_hpke_public_key);
         output[80] = self.memo_length;
         output[81..113].copy_from_slice(&self.memo);
-        output[113..128].copy_from_slice(&self.reserved);
+        output[113..117].copy_from_slice(&self.asset_index.to_be_bytes());
+        output[117..128].copy_from_slice(&self.reserved);
         Ok(output)
     }
 
@@ -93,8 +95,9 @@ impl OutgoingPlaintext {
         recipient_hpke_public_key.copy_from_slice(&bytes[48..80]);
         let mut memo = [0u8; 32];
         memo.copy_from_slice(&bytes[81..113]);
-        let mut reserved = [0u8; 15];
-        reserved.copy_from_slice(&bytes[113..128]);
+        let asset_index = u32::from_be_bytes(bytes[113..117].try_into().unwrap());
+        let mut reserved = [0u8; 11];
+        reserved.copy_from_slice(&bytes[117..128]);
         let plaintext = Self {
             protocol_version: u16::from_be_bytes([bytes[0], bytes[1]]),
             flags: u16::from_be_bytes([bytes[2], bytes[3]]),
@@ -104,6 +107,7 @@ impl OutgoingPlaintext {
             recipient_hpke_public_key,
             memo_length: bytes[80],
             memo,
+            asset_index,
             reserved,
         };
         plaintext.validate()?;
@@ -168,7 +172,7 @@ pub fn compute_outgoing_aad(
     action_nonce: &[u8; 32],
     output_index: u8,
 ) -> Result<Vec<u8>, EncryptionError> {
-    if output_index > 1 {
+    if output_index > 2 {
         return Err(EncryptionError::InvalidOutputIndex);
     }
     let mut output = Vec::new();

@@ -2,6 +2,7 @@
   "version": 1,
   "input": {
     "value": "5000000",
+    "assetIndex": 0,
     "assetId": "5555555555555555555555555555555555555555555555555555555555555555",
     "assetField": "21e106c47c562c4ea774a79f55409bd71edc621f69b5b40386a49c213c3a5d74",
     "diversifier": "00000000",

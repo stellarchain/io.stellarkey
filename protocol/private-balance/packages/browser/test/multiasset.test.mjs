@@ -36,6 +36,7 @@ test('one pool context supports asset-bound notes and actions', async () => {
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: 0,
     asset: xlm,
     actionNonce: bytes(8),
     anchorRoot: zero,
@@ -43,9 +44,9 @@ test('one pool context supports asset-bound notes and actions', async () => {
     outputs: [
       { cm: commitment, recipientEnvelope: new Uint8Array(181).fill(1), outgoingEnvelope: new Uint8Array(157).fill(2) },
       { cm: bytes(12), recipientEnvelope: new Uint8Array(181).fill(3), outgoingEnvelope: new Uint8Array(157).fill(4) },
+      { cm: bytes(13), recipientEnvelope: new Uint8Array(181).fill(5), outgoingEnvelope: new Uint8Array(157).fill(6) },
     ],
     publicValue: 10n,
-    relayerFee: 0n,
     depositSource: { kind: 0, payload: bytes(9) },
   };
   const signals = await computePublicSignals(
@@ -58,4 +59,15 @@ test('one pool context supports asset-bound notes and actions', async () => {
 
   assert.equal(signals.length, 11);
   assert.deepEqual(signals[1], xlmField);
+
+  const transferSignals = await computePublicSignals({
+    ...action,
+    kind: ActionKind.PrivateTransfer,
+    asset: undefined,
+    assetIndex: undefined,
+    anchorRoot: bytes(14),
+    publicValue: 0n,
+    depositSource: undefined,
+  }, contextField, networkId, realmId, poolId);
+  assert.deepEqual(transferSignals[1], zero);
 });

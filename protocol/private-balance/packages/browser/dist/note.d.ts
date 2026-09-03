@@ -13,6 +13,7 @@ export interface NotePlaintext {
     rho: Uint8Array;
     memoLength: number;
     memo: Uint8Array;
+    assetIndex: number;
     reserved: Uint8Array;
 }
 export declare function encodeNotePlaintext(note: NotePlaintext): Uint8Array;

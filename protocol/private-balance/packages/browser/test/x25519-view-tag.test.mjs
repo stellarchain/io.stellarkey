@@ -135,7 +135,8 @@ test('recipient opening retries portable X25519 after a native deriveBits failur
     rho,
     memoLength: 0,
     memo: new Uint8Array(32),
-    reserved: new Uint8Array(15),
+    assetIndex: 0,
+    reserved: new Uint8Array(11),
   });
   const commitment = computeCommitment(
     contextField,

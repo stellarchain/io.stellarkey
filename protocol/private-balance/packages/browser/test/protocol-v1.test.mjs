@@ -19,6 +19,9 @@ import {
   PRIVATE_ADDRESS_TESTNET_ASCII_BYTES,
   encodeNotePlaintext,
   decodeNotePlaintext,
+  encodeOutgoingPlaintext,
+  decodeOutgoingPlaintext,
+  deriveOutgoingAad,
   computeDummyNullifier,
   serializeCanonicalActionBytes,
   computePublicSignals,
@@ -120,7 +123,7 @@ test('private address deployment tags bind 32-byte deployment hashes', () => {
   assert.throws(() => derivePrivateAddressDeploymentTag(new Uint8Array(31)));
 });
 
-test('protocol V1 note encoding binds a diversifier in the normative 128-byte layout', () => {
+test('protocol V1 note encoding binds an immutable asset index in the normative 128-byte layout', () => {
   const note = {
     protocolVersion: 1,
     flags: 0,
@@ -130,7 +133,8 @@ test('protocol V1 note encoding binds a diversifier in the normative 128-byte la
     rho: bigintTo32Bytes(9n),
     memoLength: 3,
     memo: Uint8Array.from([0x61, 0x62, 0x63, ...new Array(29).fill(0)]),
-    reserved: new Uint8Array(15),
+    assetIndex: 0x0102_0304,
+    reserved: new Uint8Array(11),
   };
 
   const encoded = encodeNotePlaintext(note);
@@ -138,12 +142,42 @@ test('protocol V1 note encoding binds a diversifier in the normative 128-byte la
   assert.deepEqual(decodeNotePlaintext(encoded), note);
 
   const nonzeroTail = encoded.slice();
-  nonzeroTail[124] = 1;
+  nonzeroTail[123] = 1;
   assert.throws(() => decodeNotePlaintext(nonzeroTail));
 
   const nonzeroReserved = encoded.slice();
   nonzeroReserved[127] = 1;
   assert.throws(() => decodeNotePlaintext(nonzeroReserved));
+
+  assert.deepEqual(Array.from(encoded.slice(113, 117)), [1, 2, 3, 4]);
+});
+
+test('outgoing plaintext carries the same asset index and supports output lane two AAD', () => {
+  const outgoing = {
+    protocolVersion: 1,
+    flags: 0,
+    value: 9n,
+    diversifier: Uint8Array.of(4, 3, 2, 1),
+    ownerCommitment: bigintTo32Bytes(7n),
+    recipientHpkePublicKey: new Uint8Array(32).fill(8),
+    memoLength: 0,
+    memo: new Uint8Array(32),
+    assetIndex: 23,
+    reserved: new Uint8Array(11),
+  };
+
+  const encoded = encodeOutgoingPlaintext(outgoing);
+  assert.equal(encoded.length, 128);
+  assert.deepEqual(decodeOutgoingPlaintext(encoded), outgoing);
+  assert.deepEqual(Array.from(encoded.slice(113, 117)), [0, 0, 0, 23]);
+  assert.doesNotThrow(() => deriveOutgoingAad(
+    new Uint8Array(32),
+    new Uint8Array(32),
+    new Uint8Array(32),
+    bigintTo32Bytes(1n),
+    new Uint8Array(32),
+    2,
+  ));
 });
 
 test('dummy nullifiers are derived from fresh secrets without exposing lane order', () => {
@@ -175,6 +209,7 @@ test('context and action encoders reject malformed fixed-width fields', () => {
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: 0,
     asset: { kind: 1, payload: bytes32 },
     actionNonce: bytes32,
     anchorRoot: bytes32,
@@ -182,9 +217,9 @@ test('context and action encoders reject malformed fixed-width fields', () => {
     outputs: [
       { cm: bytes32, recipientEnvelope: new Uint8Array(181) },
       { cm: bytes32, recipientEnvelope: new Uint8Array(181) },
+      { cm: bytes32, recipientEnvelope: new Uint8Array(181) },
     ],
     publicValue: 1n,
-    relayerFee: 0n,
     depositSource: { kind: 0, payload: new Uint8Array(31) },
   };
   assert.throws(() => serializeCanonicalActionBytes(action, bytes32, bytes32, bytes32));
@@ -197,6 +232,7 @@ test('canonical action encoding permits a full withdrawal without private change
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
+    assetIndex: 7,
     asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: nonzero,
@@ -212,33 +248,34 @@ test('canonical action encoding permits a full withdrawal without private change
         recipientEnvelope: new Uint8Array(181).fill(5),
         outgoingEnvelope: new Uint8Array(157).fill(6),
       },
+      {
+        cm: bigintTo32Bytes(5n),
+        recipientEnvelope: new Uint8Array(181).fill(7),
+        outgoingEnvelope: new Uint8Array(157).fill(8),
+      },
     ],
     publicValue: 1n,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(0x44) },
-    relayerFee: 0n,
-    relayer: { kind: 0, payload: new Uint8Array(32).fill(0x45) },
   };
 
   const encoded = serializeCanonicalActionBytes(action, zero, zero, zero);
-  assert.equal(encoded.length, 1134);
+  assert.equal(encoded.length, 1467);
   assert.throws(() => serializeCanonicalActionBytes({
     ...action,
     nullifiers: [nonzero, zero],
   }, zero, zero, zero));
   assert.throws(() => serializeCanonicalActionBytes({
     ...action,
-    outputs: [{ ...action.outputs[0], cm: zero }, action.outputs[1]],
+    outputs: [{ ...action.outputs[0], cm: zero }, action.outputs[1], action.outputs[2]],
   }, zero, zero, zero));
 });
 
-test('private transfer binds its asset, relayer, and fee into eleven public signals', async () => {
+test('private transfer hides its asset and binds three outputs into eleven public signals', async () => {
   const zero = new Uint8Array(32);
   const one = bigintTo32Bytes(1n);
-  const relayer = { kind: 0, payload: new Uint8Array(32).fill(0x45) };
   const action = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
-    asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: one,
     nullifiers: [one, bigintTo32Bytes(2n)],
@@ -253,37 +290,28 @@ test('private transfer binds its asset, relayer, and fee into eleven public sign
         recipientEnvelope: new Uint8Array(181).fill(5),
         outgoingEnvelope: new Uint8Array(157).fill(6),
       },
+      {
+        cm: bigintTo32Bytes(5n),
+        recipientEnvelope: new Uint8Array(181).fill(7),
+        outgoingEnvelope: new Uint8Array(157).fill(8),
+      },
     ],
     publicValue: 0n,
-    relayerFee: 25n,
-    relayer,
   };
 
   const signals = await computePublicSignals(action, one, zero, zero, zero);
   assert.equal(signals.length, 11);
-  assert.equal(signals[1].some((byte) => byte !== 0), true);
-  assert.deepEqual(signals[5], bigintTo32Bytes(25n));
-  assert.equal(signals[6].some((byte) => byte !== 0), true);
+  assert.deepEqual(signals[1], zero);
+  assert.equal(signals[5].some((byte) => byte !== 0), true);
+  assert.deepEqual(signals[8], action.outputs[0].cm);
+  assert.deepEqual(signals[9], action.outputs[1].cm);
+  assert.deepEqual(signals[10], action.outputs[2].cm);
 
-  const changedRelayerSignals = await computePublicSignals(
-    { ...action, relayer: { ...relayer, payload: new Uint8Array(32).fill(0x47) } },
-    one,
-    zero,
-    zero,
-    zero,
-  );
-  assert.notDeepEqual(changedRelayerSignals[6], signals[6]);
-
-  const changedFee = serializeCanonicalActionBytes(
-    { ...action, relayerFee: 26n },
-    zero,
-    zero,
-    zero,
-  );
-  assert.notDeepEqual(
-    changedFee,
-    serializeCanonicalActionBytes(action, zero, zero, zero),
-  );
+  assert.throws(() => serializeCanonicalActionBytes({
+    ...action,
+    assetIndex: 0,
+    asset: { kind: 1, payload: new Uint8Array(32).fill(0x46) },
+  }, zero, zero, zero), /transfer.*asset|asset.*transfer/i);
 });
 
 test('Soroban proof encoding rejects malformed and non-field coordinates', () => {

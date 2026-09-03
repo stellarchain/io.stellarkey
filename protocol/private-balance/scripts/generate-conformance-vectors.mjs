@@ -126,7 +126,8 @@ const note = {
   rho,
   memoLength: 4,
   memo,
-  reserved: new Uint8Array(15),
+  assetIndex: 0,
+  reserved: new Uint8Array(11),
 };
 const noteBytes = encodeNotePlaintext(note);
 const commitment = computeCommitment(contextField, assetField, keys.ownerCommitment, note.value, rho);
@@ -135,6 +136,7 @@ write('notes-v1.json', {
   version: 1,
   input: {
     value: note.value.toString(),
+    assetIndex: note.assetIndex,
     assetId: hex(assetId),
     assetField: hex(assetField),
     diversifier: hex(diversifier),
@@ -161,9 +163,10 @@ const outgoingPlaintext = encodeOutgoingPlaintext({
   diversifier,
   ownerCommitment: keys.ownerCommitment,
   recipientHpkePublicKey: keys.hpkePublicKey,
-  memoLength: note.memoLength,
-  memo,
-  reserved: new Uint8Array(15),
+    memoLength: note.memoLength,
+    memo,
+    assetIndex: 0,
+    reserved: new Uint8Array(11),
 });
 const outgoingAad = deriveOutgoingAad(
   deploymentBindingHashForOutgoing,
@@ -209,11 +212,13 @@ const tree = await createEmptyTree();
 const emptyRoot = tree.currentRoot.slice();
 const secondCommitment = new Uint8Array(32);
 secondCommitment[31] = 2;
-await appendCommitments(tree, [commitment, secondCommitment]);
+const thirdCommitment = new Uint8Array(32);
+thirdCommitment[31] = 3;
+await appendCommitments(tree, [commitment, secondCommitment, thirdCommitment]);
 write('tree-v1.json', {
   version: 1,
-  input: { leaves: [hex(commitment), hex(secondCommitment)] },
-  expected: { emptyRoot: hex(emptyRoot), rootAfter: hex(tree.currentRoot), nextIndex: 2 },
+  input: { leaves: [hex(commitment), hex(secondCommitment), hex(thirdCommitment)] },
+  expected: { emptyRoot: hex(emptyRoot), rootAfter: hex(tree.currentRoot), nextIndex: 3 },
 });
 
 const zero32 = new Uint8Array(32);
@@ -222,6 +227,7 @@ const secondDummyNullifier = fill(0x02, 32);
 const action = {
   protocolVersion: 1,
   kind: ActionKind.Deposit,
+  assetIndex: 0,
   asset,
   actionNonce,
   anchorRoot: zero32,
@@ -237,9 +243,13 @@ const action = {
       recipientEnvelope: fill(0xb1, 181),
       outgoingEnvelope: fill(0xb2, 157),
     },
+    {
+      cm: thirdCommitment,
+      recipientEnvelope: fill(0xc1, 181),
+      outgoingEnvelope: fill(0xc2, 157),
+    },
   ],
   publicValue: 5_000_000n,
-  relayerFee: 0n,
   depositSource: { kind: 0, payload: accountPublicKey },
 };
 const actionBytes = serializeCanonicalActionBytes(action, networkId, realmId, poolId);
@@ -255,17 +265,21 @@ write('actions-v1.json', {
   version: 1,
   input: {
     kind: 'deposit',
+    assetIndex: action.assetIndex,
     publicValue: action.publicValue.toString(),
     actionNonce: hex(actionNonce),
     assetId: hex(assetId),
     output0Commitment: hex(commitment),
     output1Commitment: hex(secondCommitment),
+    output2Commitment: hex(thirdCommitment),
     nullifier0: hex(firstDummyNullifier),
     nullifier1: hex(secondDummyNullifier),
     output0RecipientEnvelope: hex(action.outputs[0].recipientEnvelope),
     output0OutgoingEnvelope: hex(action.outputs[0].outgoingEnvelope),
     output1RecipientEnvelope: hex(action.outputs[1].recipientEnvelope),
     output1OutgoingEnvelope: hex(action.outputs[1].outgoingEnvelope),
+    output2RecipientEnvelope: hex(action.outputs[2].recipientEnvelope),
+    output2OutgoingEnvelope: hex(action.outputs[2].outgoingEnvelope),
     depositSource: hex(accountPublicKey),
   },
   expected: {
@@ -280,6 +294,7 @@ const archiveRecord = {
   ledgerSequence: 100,
   startingLeafIndex: 0,
   actionKind: 1,
+  assetIndex: 0,
   asset: { kind: 1, payload: fill(0x88, 32) },
   actionNonce: fill(0x11, 32),
   anchorRoot: fill(0x22, 32),
@@ -288,12 +303,11 @@ const archiveRecord = {
   outputs: [
     { cm: fill(0x03, 32), recipientEnvelope: fill(0x04, 181), outgoingEnvelope: fill(0x05, 157) },
     { cm: fill(0x06, 32), recipientEnvelope: fill(0x07, 181), outgoingEnvelope: fill(0x08, 157) },
+    { cm: fill(0x09, 32), recipientEnvelope: fill(0x0a, 181), outgoingEnvelope: fill(0x0b, 157) },
   ],
   publicValue: 1_000n,
   depositSource: { kind: 0, payload: fill(0xaa, 32) },
   publicRecipient: undefined,
-  relayerFee: 0n,
-  relayer: undefined,
 };
 write('archive-v1.json', {
   schemaVersion: 1,
@@ -303,6 +317,7 @@ write('archive-v1.json', {
     ledgerSequence: archiveRecord.ledgerSequence,
     startingLeafIndex: archiveRecord.startingLeafIndex,
     actionKind: archiveRecord.actionKind,
+    assetIndex: archiveRecord.assetIndex,
     assetKind: archiveRecord.asset.kind,
     assetPayloadFill: 0x88,
     actionNonceFill: 0x11,
@@ -316,8 +331,10 @@ write('archive-v1.json', {
     output1CommitmentFill: 0x06,
     output1RecipientEnvelopeFill: 0x07,
     output1OutgoingEnvelopeFill: 0x08,
+    output2CommitmentFill: 0x09,
+    output2RecipientEnvelopeFill: 0x0a,
+    output2OutgoingEnvelopeFill: 0x0b,
     publicValue: Number(archiveRecord.publicValue),
-    relayerFee: Number(archiveRecord.relayerFee),
     depositSourceKind: archiveRecord.depositSource.kind,
     depositSourcePayloadFill: 0xaa,
     priorRecordHashFill: 0x55,

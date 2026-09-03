@@ -10,6 +10,11 @@ function requireLength(name, bytes, expected) {
     if (bytes.length !== expected)
         throw new Error(`${name} must be ${expected} bytes`);
 }
+function requireU32(value, name) {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffff_ffff) {
+        throw new Error(`${name} must be an unsigned 32-bit integer`);
+    }
+}
 function validateNote(note) {
     if (note.protocolVersion !== 1)
         throw new Error('Unsupported note protocol version');
@@ -24,7 +29,8 @@ function validateNote(note) {
     requireLength('Owner commitment', note.ownerCommitment, 32);
     requireLength('Rho', note.rho, 32);
     requireLength('Memo', note.memo, MEMO_BYTES);
-    requireLength('Reserved field', note.reserved, 15);
+    requireU32(note.assetIndex, 'Asset index');
+    requireLength('Reserved field', note.reserved, 11);
     if (!isCanonicalField(note.ownerCommitment) || note.ownerCommitment.every((byte) => byte === 0)) {
         throw new Error('Invalid owner commitment');
     }
@@ -55,7 +61,11 @@ export function encodeNotePlaintext(note) {
     output.set(note.rho, 48);
     output[80] = note.memoLength;
     output.set(note.memo, 81);
-    output.set(note.reserved, 113);
+    output[113] = (note.assetIndex >>> 24) & 0xff;
+    output[114] = (note.assetIndex >>> 16) & 0xff;
+    output[115] = (note.assetIndex >>> 8) & 0xff;
+    output[116] = note.assetIndex & 0xff;
+    output.set(note.reserved, 117);
     return output;
 }
 export function decodeNotePlaintext(bytes) {
@@ -73,7 +83,11 @@ export function decodeNotePlaintext(bytes) {
         rho: bytes.slice(48, 80),
         memoLength: bytes[80],
         memo: bytes.slice(81, 113),
-        reserved: bytes.slice(113, 128),
+        assetIndex: (bytes[113] * 0x100_0000
+            + bytes[114] * 0x1_0000
+            + bytes[115] * 0x100
+            + bytes[116]),
+        reserved: bytes.slice(117, 128),
     };
     validateNote(note);
     return note;

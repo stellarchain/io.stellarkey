@@ -191,7 +191,9 @@ export async function createOutputPackage(
   if (contextHash.length !== 32 || cm.length !== 32 || actionNonce.length !== 32) {
     throw new Error('Invalid output package context');
   }
-  if (outputIndex !== 0 && outputIndex !== 1) throw new Error('Invalid output index');
+  if (outputIndex !== 0 && outputIndex !== 1 && outputIndex !== 2) {
+    throw new Error('Invalid output index');
+  }
   const info = deriveHpkeInfo(2, contextHash);
   const aad = deriveHpkeAad(contextHash, cm, actionNonce, outputIndex);
   let ephemeralPrivateKey: Uint8Array | null = null;

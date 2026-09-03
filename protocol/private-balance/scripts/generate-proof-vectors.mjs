@@ -113,10 +113,19 @@ async function generateVectors() {
     rho: '88888',
     value: '0',
   });
+  const depSecondDummyOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '335',
+    nk: '446',
+    rho: '88889',
+    value: '0',
+  });
   const depDummyNullifiers = [dummyNullifier('901'), dummyNullifier('902')];
   const depAction = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x11),
     anchorRoot: zero32,
@@ -124,9 +133,9 @@ async function generateVectors() {
     outputs: [
       outputPackage(depGadgets.noteCommitment, 0xaa, 0xab),
       outputPackage(depDummyOutput.noteCommitment, 0xac, 0xad),
+      outputPackage(depSecondDummyOutput.noteCommitment, 0xae, 0xaf),
     ],
     publicValue: 5_000_000n,
-    relayerFee: 0n,
     depositSource: { kind: 0, payload: new Uint8Array(32).fill(4) },
   };
   const depActionField = actionFieldDecimal(depAction);
@@ -134,13 +143,17 @@ async function generateVectors() {
   const depInputs = {
     contextField,
     assetField,
+    actionAssetField: assetField,
     actionKindField: depActionKindField,
     anchorRoot: depAnchorRoot,
     publicValueField: depPublicValueField,
-    relayerFeeField: '0',
     actionField: depActionField,
     nullifier: depDummyNullifiers,
-    outputCommitment: [depGadgets.noteCommitment, depDummyOutput.noteCommitment],
+    outputCommitment: [
+      depGadgets.noteCommitment,
+      depDummyOutput.noteCommitment,
+      depSecondDummyOutput.noteCommitment,
+    ],
 
     ask: '0',
     nk: '0',
@@ -154,9 +167,13 @@ async function generateVectors() {
     inputSiblings: [emptySiblings(), emptySiblings()],
     inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputOwnerCommitment: [depGadgets.ownerCommitment, depDummyOutput.ownerCommitment],
-    outputValue: ['5000000', '0'],
-    outputRho: ['77777', '88888'],
+    outputOwnerCommitment: [
+      depGadgets.ownerCommitment,
+      depDummyOutput.ownerCommitment,
+      depSecondDummyOutput.ownerCommitment,
+    ],
+    outputValue: ['5000000', '0', '0'],
+    outputRho: ['77777', '88888', '88889'],
   };
 
   const depositRes = await snarkjs.groth16.fullProve(depInputs, wasmPath, zkeyPath);
@@ -193,11 +210,18 @@ async function generateVectors() {
     rho: '55555',
     value: '3999000',
   });
+  const trFeeOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '12121',
+    nk: '23232',
+    rho: '56565',
+    value: '1000',
+  });
   const trDummyNullifier = dummyNullifier('903');
   const trAction = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
-    asset,
     actionNonce: new Uint8Array(32).fill(0x22),
     anchorRoot: fromHex(BigInt(in0Res.merkleRoot).toString(16).padStart(64, '0')),
     nullifiers: [
@@ -207,23 +231,22 @@ async function generateVectors() {
     outputs: [
       outputPackage(out0Res.noteCommitment, 0xbb, 0xbc),
       outputPackage(out1Res.noteCommitment, 0xcc, 0xcd),
+      outputPackage(trFeeOutput.noteCommitment, 0xce, 0xcf),
     ],
     publicValue: 0n,
-    relayerFee: 1_000n,
-    relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const trActionField = actionFieldDecimal(trAction);
 
   const trInputs = {
     contextField,
-    assetField,
+    assetField: '0',
+    actionAssetField: assetField,
     actionKindField: trActionKindField,
     anchorRoot: in0Res.merkleRoot,
     publicValueField: trPublicValueField,
-    relayerFeeField: '1000',
     actionField: trActionField,
     nullifier: [in0Res.nullifier, trDummyNullifier],
-    outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment],
+    outputCommitment: [out0Res.noteCommitment, out1Res.noteCommitment, trFeeOutput.noteCommitment],
 
     ask: '11111',
     nk: '22222',
@@ -237,9 +260,9 @@ async function generateVectors() {
     inputSiblings: [emptySiblings(), emptySiblings()],
     inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment],
-    outputValue: ['6000000', '3999000'],
-    outputRho: ['44444', '55555'],
+    outputOwnerCommitment: [out0Res.ownerCommitment, out1Res.ownerCommitment, trFeeOutput.ownerCommitment],
+    outputValue: ['6000000', '3999000', '1000'],
+    outputRho: ['44444', '55555', '56565'],
   };
 
   const transferRes = await snarkjs.groth16.fullProve(trInputs, wasmPath, zkeyPath);
@@ -275,10 +298,19 @@ async function generateVectors() {
     rho: '99999',
     value: '0',
   });
+  const wdFeeOutput = await evalGadgets({
+    contextField,
+    assetField,
+    ask: '889',
+    nk: '990',
+    rho: '99998',
+    value: '2000',
+  });
   const wdDummyNullifier = dummyNullifier('904');
   const wdAction = {
     protocolVersion: 1,
     kind: ActionKind.Withdraw,
+    assetIndex: 0,
     asset,
     actionNonce: new Uint8Array(32).fill(0x33),
     anchorRoot: fromHex(BigInt(wdIn0Res.merkleRoot).toString(16).padStart(64, '0')),
@@ -289,24 +321,23 @@ async function generateVectors() {
     outputs: [
       outputPackage(wdOut0Res.noteCommitment, 0xdd, 0xde),
       outputPackage(wdDummyOutput.noteCommitment, 0xdf, 0xe0),
+      outputPackage(wdFeeOutput.noteCommitment, 0xe1, 0xe2),
     ],
     publicValue: 7_000_000n,
     publicRecipient: { kind: 0, payload: new Uint8Array(32).fill(5) },
-    relayerFee: 2_000n,
-    relayer: { kind: 0, payload: new Uint8Array(32).fill(6) },
   };
   const wdActionField = actionFieldDecimal(wdAction);
 
   const wdInputs = {
     contextField,
     assetField,
+    actionAssetField: assetField,
     actionKindField: wdActionKindField,
     anchorRoot: wdIn0Res.merkleRoot,
     publicValueField: wdPublicValueField,
-    relayerFeeField: '2000',
     actionField: wdActionField,
     nullifier: [wdIn0Res.nullifier, wdDummyNullifier],
-    outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment],
+    outputCommitment: [wdOut0Res.noteCommitment, wdDummyOutput.noteCommitment, wdFeeOutput.noteCommitment],
 
     ask: '11111',
     nk: '22222',
@@ -320,9 +351,9 @@ async function generateVectors() {
     inputSiblings: [emptySiblings(), emptySiblings()],
     inputPositions: [positionsFor(0), positionsFor(0)],
 
-    outputOwnerCommitment: [wdOut0Res.ownerCommitment, wdDummyOutput.ownerCommitment],
-    outputValue: ['2998000', '0'],
-    outputRho: ['66666', '99999'],
+    outputOwnerCommitment: [wdOut0Res.ownerCommitment, wdDummyOutput.ownerCommitment, wdFeeOutput.ownerCommitment],
+    outputValue: ['2998000', '0', '2000'],
+    outputRho: ['66666', '99999', '99998'],
   };
 
   const withdrawRes = await snarkjs.groth16.fullProve(wdInputs, wasmPath, zkeyPath);

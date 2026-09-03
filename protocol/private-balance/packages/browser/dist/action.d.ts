@@ -13,25 +13,21 @@ export interface OutputPackageModel {
 export interface ActionModel {
     protocolVersion: number;
     kind: ActionKind;
-    asset: {
+    assetIndex?: number;
+    asset?: {
         kind: number;
         payload: Uint8Array;
     };
     actionNonce: Uint8Array;
     anchorRoot: Uint8Array;
     nullifiers: [Uint8Array, Uint8Array];
-    outputs: [OutputPackageModel, OutputPackageModel];
+    outputs: [OutputPackageModel, OutputPackageModel, OutputPackageModel];
     publicValue: bigint;
     depositSource?: {
         kind: number;
         payload: Uint8Array;
     };
     publicRecipient?: {
-        kind: number;
-        payload: Uint8Array;
-    };
-    relayerFee: bigint;
-    relayer?: {
         kind: number;
         payload: Uint8Array;
     };

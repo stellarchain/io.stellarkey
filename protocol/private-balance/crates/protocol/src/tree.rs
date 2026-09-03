@@ -180,6 +180,19 @@ impl TreeState {
         self.append_frontier(cm1)?;
         Ok(self.refresh_root())
     }
+
+    pub fn append_three_commitments(
+        &mut self,
+        commitments: &[[u8; 32]; 3],
+    ) -> Result<[u8; 32], TreeError> {
+        if self.next_leaf_index > TREE_CAPACITY - 3 {
+            return Err(TreeError::TreeFull);
+        }
+        for commitment in commitments {
+            self.append_frontier(commitment)?;
+        }
+        Ok(self.refresh_root())
+    }
 }
 
 impl Default for TreeState {

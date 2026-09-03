@@ -93,7 +93,9 @@ impl PoolModel {
         action
             .validate_public_shape()
             .map_err(|error| format!("Invalid action shape: {error:?}"))?;
-        let current_asset_balance = *self.asset_public_balances.get(&action.asset).unwrap_or(&0);
+        let current_asset_balance = action.asset
+            .and_then(|asset| self.asset_public_balances.get(&asset).copied())
+            .unwrap_or(0);
         let next_asset_balance = match action.kind {
             ActionKind::Deposit => {
                 if action.public_value == 0 {
@@ -108,8 +110,6 @@ impl PoolModel {
                     return Err("Non-zero transfer public value".into());
                 }
                 current_asset_balance
-                    .checked_sub(action.relayer_fee)
-                    .ok_or_else(|| "Invalid relayer fee".to_string())?
             }
             ActionKind::Withdraw => {
                 if action.public_value == 0 || action.public_value > current_asset_balance {
@@ -117,8 +117,7 @@ impl PoolModel {
                 }
                 current_asset_balance
                     .checked_sub(action.public_value)
-                    .and_then(|value| value.checked_sub(action.relayer_fee))
-                    .ok_or_else(|| "Invalid withdrawal or relayer fee".to_string())?
+                    .ok_or_else(|| "Invalid withdrawal".to_string())?
             }
         };
 
@@ -133,12 +132,11 @@ impl PoolModel {
             .map_err(|_| "Starting leaf index exceeds u32".to_string())?;
         let mut next_tree = self.tree.clone();
         let root_after = match tree_hash_context {
-            Some(context) => context.append_two_commitments(
+            Some(context) => context.append_three_commitments(
                 &mut next_tree,
-                &action.outputs[0].cm,
-                &action.outputs[1].cm,
+                &action.outputs.clone().map(|output| output.cm),
             ),
-            None => next_tree.append_two_commitments(&action.outputs[0].cm, &action.outputs[1].cm),
+            None => next_tree.append_three_commitments(&action.outputs.clone().map(|output| output.cm)),
         }
         .map_err(|error| format!("{error:?}"))?;
 
@@ -148,6 +146,7 @@ impl PoolModel {
             ledger_sequence,
             starting_leaf_index,
             action_kind: action.kind as u8,
+            asset_index: action.asset_index,
             asset: action.asset,
             action_nonce: action.action_nonce,
             anchor_root: action.anchor_root,
@@ -157,14 +156,13 @@ impl PoolModel {
             public_value: action.public_value,
             deposit_source: action.deposit_source,
             public_recipient: action.public_recipient,
-            relayer_fee: action.relayer_fee,
-            relayer: action.relayer,
         };
         let next_transcript_head =
             rec.compute_record_hash(action.protocol_version, &self.transcript_head);
 
-        self.asset_public_balances
-            .insert(action.asset, next_asset_balance);
+        if let Some(asset) = action.asset {
+            self.asset_public_balances.insert(asset, next_asset_balance);
+        }
         self.total_public_balance = self
             .asset_public_balances
             .values()

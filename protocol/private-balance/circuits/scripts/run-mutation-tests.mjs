@@ -27,8 +27,20 @@ const mutations = [
   {
     name: 'duplicate output prevention',
     testName: 'duplicate real output commitments',
-    needle: '    duplicateOutput.out === 0;',
-    replacement: '    duplicateOutput.out * 0 === 0;',
+    needle: '    duplicateOutput[0].out === 0;',
+    replacement: '    duplicateOutput[0].out * 0 === 0;',
+  },
+  {
+    name: 'hidden transfer asset sentinel',
+    testName: 'rejects a public transfer asset and an invalid private asset',
+    needle: '    isTransfer * assetField === 0;',
+    replacement: '    isTransfer * assetField * 0 === 0;',
+  },
+  {
+    name: 'nonzero private action asset',
+    testName: 'rejects a public transfer asset and an invalid private asset',
+    needle: '    actionAssetZero.out === 0;',
+    replacement: '    actionAssetZero.out * 0 === 0;',
   },
   {
     name: 'dummy nullifier derivation',

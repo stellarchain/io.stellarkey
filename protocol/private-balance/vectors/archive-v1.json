@@ -6,6 +6,7 @@
     "ledgerSequence": 100,
     "startingLeafIndex": 0,
     "actionKind": 1,
+    "assetIndex": 0,
     "assetKind": 1,
     "assetPayloadFill": 136,
     "actionNonceFill": 17,
@@ -19,11 +20,13 @@
     "output1CommitmentFill": 6,
     "output1RecipientEnvelopeFill": 7,
     "output1OutgoingEnvelopeFill": 8,
+    "output2CommitmentFill": 9,
+    "output2RecipientEnvelopeFill": 10,
+    "output2OutgoingEnvelopeFill": 11,
     "publicValue": 1000,
-    "relayerFee": 0,
     "depositSourceKind": 0,
     "depositSourcePayloadFill": 170,
     "priorRecordHashFill": 85
   },
-  "expectedRecordHash": "bfc506616e57bbe383308a7aae2fe2c2481cddfef230185b1c79e624698e7d9c"
+  "expectedRecordHash": "3067686e1b72c42760b582864cab6f413f8887560aa6514cee78916310363b95"
 }
