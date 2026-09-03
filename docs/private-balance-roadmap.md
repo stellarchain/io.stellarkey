@@ -1,6 +1,6 @@
 # Private Balance Roadmap
 
-**Updated:** 2026-09-03
+**Updated:** 2026-09-04
 
 This file records prospective Private Balance work. Checked items are complete;
 unchecked items are hypotheses that still require the stated validation. Nothing
@@ -8,6 +8,38 @@ in this file changes the behavior or guarantees documented in
 [`private-balance.md`](private-balance.md).
 
 ## Planned experiments
+
+- [ ] Remove the observed clear-diversifier output-role fingerprint without
+  breaking scanning or recovery.
+  - First test a matched-lane mitigation: use the same clear diversifier for
+    both outputs in each action while retaining the reviewed X25519 HPKE
+    envelope.
+  - Keep a fully hidden diversifier as a separate cryptographic workstream. Do
+    not delete the current four bytes: the scanner needs them before decryption.
+  - Require an independently reviewed diversified-key-agreement specification,
+    cross-language vectors, seed-only recovery proof, and physical-phone scan
+    benchmarks before replacing HPKE.
+  - Evidence and gates are recorded in
+    [`private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md`](private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md).
+
+- [ ] Design and prototype one immutable asset-private XLM/USDC pool on
+  testnet.
+  - Hide the asset only for internal transfers; deposits and withdrawals retain
+    their unavoidable public SAC, amount, and endpoint boundary data.
+  - Bind the ordered two-asset allowlist into the deployment, put a compact
+    asset index in both recipient and outgoing encrypted plaintext, and bind
+    the full private asset field into every note commitment. Use the public
+    zero sentinel—not the hidden asset—in outgoing authenticated data so
+    seed-only sender recovery is not circular.
+  - Do not add arbitrary asset admission or a mutable token registry.
+  - Start with two outputs. Treat a third private-relayer-fee output as a
+    separate measured decision because it increases tree/archive growth and
+    changes peer failover semantics.
+  - Freeze the circuit only after cross-asset mutation tests, Soroban resource
+    simulations, tree-capacity analysis, and physical-phone proving/scanning
+    measurements pass. A changed R1CS requires a fresh phase-2 ceremony.
+  - Evidence and gates are recorded in
+    [`private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md`](private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md).
 
 - [ ] Prototype optional peer-relayed submission for private transfers and
   withdrawals.
@@ -26,6 +58,10 @@ in this file changes the behavior or guarantees documented in
   - Evaluate a protocol change in which the proof binds the relayer fee but not
     a particular fee recipient. The submitting peer must authenticate its
     payout address, allowing the same proof to fail over without reproving.
+  - Resolve the unified-pool fee conflict before selecting that design: a
+    public SAC payout reveals the asset of an otherwise asset-private transfer,
+    while an encrypted fee note normally binds a selected peer and makes
+    failover require reproving.
   - Keep "use a privacy relay" and "help relay payments" as separate settings.
     Relaying for other users must be explicit opt-in with local fee and spending
     limits.
