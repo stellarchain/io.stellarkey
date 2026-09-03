@@ -72,9 +72,13 @@ function encodeOutput(output: ContractOutputPackage, index: number): xdr.ScVal {
 
 function relayerEntries(
   action: Pick<TransferContractAction, 'relayerFee' | 'relayer'>,
+  poolContractId: string,
 ): Array<readonly [string, xdr.ScVal]> {
   if (action.relayerFee < 0n || action.relayerFee > (1n << 63n) - 1n) {
     throw new Error('Relayer fee must fit the protocol amount range');
+  }
+  if (action.relayerFee === 0n && action.relayer !== poolContractId) {
+    throw new Error('Zero-fee relayer must be the pool contract address');
   }
   return [
     ['relayer_fee', nativeToScVal(action.relayerFee)],
@@ -103,9 +107,11 @@ function commonActionEntries(action: CommonContractAction): Array<readonly [stri
 
 export class PrivateBalanceTransactionBuilder {
   private readonly contract: Contract;
+  private readonly poolContractId: string;
 
   constructor(manifest: Pick<PrivateBalanceManifest, 'poolContractId'>) {
     this.contract = new Contract(manifest.poolContractId);
+    this.poolContractId = manifest.poolContractId;
   }
 
   public buildTouchRootOperation(): xdr.Operation {
@@ -129,7 +135,10 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     return this.contract.call(
       'transfer',
-      scMap([...commonActionEntries(params.action), ...relayerEntries(params.action)]),
+      scMap([
+        ...commonActionEntries(params.action),
+        ...relayerEntries(params.action, this.poolContractId),
+      ]),
       encodeProof(params.proof),
     );
   }
@@ -141,7 +150,7 @@ export class PrivateBalanceTransactionBuilder {
     const action = scMap([
       ...commonActionEntries(params.action),
       ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
-      ...relayerEntries(params.action),
+      ...relayerEntries(params.action, this.poolContractId),
     ]);
     return this.contract.call('withdraw', action, encodeProof(params.proof));
   }

@@ -71,7 +71,7 @@ function reviewedFixture() {
       ],
       publicValue: 0n,
       relayerFee: 0n,
-      relayer: signer.publicKey(),
+      relayer: poolContractId,
     },
     proof: { a: bytes(64, 8), b: bytes(128, 9), c: bytes(64, 10) },
   });

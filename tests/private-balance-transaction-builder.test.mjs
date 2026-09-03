@@ -28,7 +28,8 @@ const output = (value) => ({
   recipientEnvelope: bytes(181, value),
   outgoingEnvelope: bytes(157, value),
 });
-const relayer = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+const accountRelayer = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+const relayer = manifest.poolContractId;
 
 function invocation(operation) {
   return operation.body.invokeHostFunctionOp.hostFunction.invokeContract;
@@ -88,6 +89,30 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   const touchRoot = invocation(builder.buildTouchRootOperation());
   assert.equal(touchRoot.functionName.toString(), 'touch_root');
   assert.equal(touchRoot.args.length, 0);
+});
+
+test('zero-fee private actions require the pool contract as the relayer sentinel', () => {
+  const builder = new PrivateBalanceTransactionBuilder(manifest);
+  const common = {
+    actionNonce: bytes(32, 4),
+    anchorRoot: bytes(32, 5),
+    nullifiers: [bytes(32, 6), bytes(32, 7)],
+    outputs: [output(8), output(9)],
+    publicValue: 0n,
+    relayerFee: 0n,
+  };
+
+  assert.throws(
+    () => builder.buildTransferOperation({
+      action: { ...common, relayer: accountRelayer },
+      proof,
+    }),
+    /zero-fee relayer must be the pool contract/i,
+  );
+  assert.doesNotThrow(() => builder.buildTransferOperation({
+    action: { ...common, relayer: manifest.poolContractId },
+    proof,
+  }));
 });
 
 test('private transaction builder rejects malformed fixed proof widths', () => {

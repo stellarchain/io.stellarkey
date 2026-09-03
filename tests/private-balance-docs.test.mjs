@@ -27,6 +27,8 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.match(product, /no application backend/i);
   assert.match(product, /transaction source.*public|public.*transaction source/is);
   assert.match(product, /self-submits.*public Stellar account|public Stellar account.*self-submits/is);
+  assert.match(product, /zero-fee.*pool contract.*relayer|relayer.*pool contract.*zero-fee/is);
+  assert.doesNotMatch(product, /own public Stellar account as relayer/i);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);
   assert.match(product, /RPC.*IP|IP.*RPC/is);
   assert.match(recovery, /encrypted backup/i);
