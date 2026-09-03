@@ -54,7 +54,7 @@ import {
   requiredWeightForTx,
 } from "../src/lib/multisig.ts";
 import * as multisig from "../src/lib/multisig.ts";
-import { NETWORKS } from "../src/lib/stellar.ts";
+import * as stellarDomain from "../src/lib/stellar.ts";
 import {
   assetMetadataCacheKey,
   extractCurrencyInfo,
@@ -78,6 +78,20 @@ import {
 import * as transactionReview from "../src/lib/transaction-review.ts";
 
 const { knownAssetIssuer, lookupKnownAsset, POPULAR_ASSETS } = assetDirectory;
+const { NETWORKS } = stellarDomain;
+
+test("private balance explorer links require a real public boundary transaction", () => {
+  assert.equal(typeof stellarDomain.privateBalanceExplorerTxHash, "function");
+  const hash = "ab".repeat(32);
+
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("deposit", hash), hash);
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("withdraw", hash), hash);
+  assert.equal(stellarDomain.privateBalanceExplorerTxHash?.("transfer", hash), null);
+  assert.equal(
+    stellarDomain.privateBalanceExplorerTxHash?.("deposit", "private:testnet-xlm-v1:restored"),
+    null,
+  );
+});
 
 test("amount validation rejects values outside Stellar's signed int64 range", () => {
   assert.equal(isValidAmount("922337203685.4775807"), true);

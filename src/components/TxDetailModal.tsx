@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { useWalletIdentity, useWalletPreferences } from "@/hooks/useWallet";
-import { NETWORKS } from "@/lib/stellar";
+import { NETWORKS, privateBalanceExplorerTxHash } from "@/lib/stellar";
 import { activityAmountLines, opTypeLabel } from "@/lib/format";
 import type { ActivityItem } from "@/lib/types";
 import { triggerHaptic } from "@/lib/haptics";
@@ -69,6 +69,9 @@ export function TxDetailModal({
   const presentedAsset = activityAssetPresentation(item);
   const amountLines = activityAmountLines(item);
   const privateMemo = decodePrivateMemoHex(item.private?.memoHex);
+  const privateExplorerHash = item.private
+    ? privateBalanceExplorerTxHash(item.private.actionKind, item.hash)
+    : null;
 
   const explorerUrl = NETWORKS[network].explorerTxUrl(item.hash);
   const labUrl = `https://laboratory.stellar.org/#explorer?resource=transactions&endpoint=single&values=${encodeURIComponent(
@@ -252,6 +255,14 @@ Explorer: ${explorerUrl}`;
               />
             </Row>
           )}
+          {privateExplorerHash ? (
+            <Row label="Tx Hash">
+              <HashValue
+                value={privateExplorerHash}
+                className="justify-end text-[12px] text-neutral-400"
+              />
+            </Row>
+          ) : null}
           {item.private?.actionKind === "transfer" && (
             <Row label="Private memo">
               <span className="max-w-[65%] break-words text-right text-[13px] text-white">
@@ -316,6 +327,21 @@ Explorer: ${explorerUrl}`;
             Stellar Lab <IconExternal size={11} />
           </a>
         </div>}
+
+        {privateExplorerHash ? (
+          <div className="mt-5 flex flex-wrap gap-2">
+            <CopyButton value={privateExplorerHash} label="Copy Hash" className="chip flex-1 justify-center" />
+            <a
+              className="chip flex-1 justify-center"
+              href={NETWORKS[network].explorerTxUrl(privateExplorerHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => triggerHaptic("light")}
+            >
+              Stellarchain <IconExternal size={11} />
+            </a>
+          </div>
+        ) : null}
 
         <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
           Close
