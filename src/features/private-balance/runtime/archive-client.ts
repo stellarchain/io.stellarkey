@@ -16,6 +16,7 @@ import type { PrivateBalanceManifest } from '../../../lib/private-balance-manife
 // One getLedgers range read covers at most this many ledgers (the RPC's own
 // per-request page cap); sequences further apart start a fresh batch.
 const MAX_LEDGER_CLOSE_TIME_BATCH_SPAN = 200;
+const MAX_LEDGER_CLOSE_TIME_CONCURRENCY = 4;
 export const MAX_ARCHIVE_RECORD_BATCH = 200;
 
 interface ArchiveManifest extends Pick<
@@ -433,10 +434,10 @@ export class PrivateBalanceArchiveClient {
 
   /**
    * Resolves ledger close times (unix seconds) for the requested sequences.
-   * Near-contiguous sequences batch into single getLedgers range reads, so a
-   * page's worth of records costs a handful of round-trips instead of one
-   * per record. Sequences outside RPC retention (or missing from a short
-   * range response) are silently omitted so callers keep their
+   * Near-contiguous sequences batch into single getLedgers range reads, and
+   * sparse ranges use bounded concurrency instead of blocking setup on each
+   * round-trip in series. Sequences outside RPC retention (or missing from a
+   * short range response) are silently omitted so callers keep their
    * zero-timestamp fallback for them.
    */
   public async readLedgerCloseTimes(
@@ -445,6 +446,7 @@ export class PrivateBalanceArchiveClient {
     const unique = [...new Set(sequences.map(sequence => u32(sequence, 'Ledger sequence')))]
       .sort((left, right) => left - right);
     const closedAt: Record<number, number> = {};
+    const ranges: Array<{ start: number; end: number; wanted: Set<number> }> = [];
     let index = 0;
     while (index < unique.length) {
       const start = unique[index];
@@ -455,24 +457,41 @@ export class PrivateBalanceArchiveClient {
       ) {
         end += 1;
       }
-      const wanted = new Set(unique.slice(index, end + 1));
-      try {
-        const response = await this.server.getLedgers({
-          startLedger: start,
-          pagination: { limit: unique[end] - start + 1 },
-        });
-        for (const ledger of response.ledgers) {
-          if (!wanted.has(ledger.sequence)) continue;
-          if (!/^(?:0|[1-9][0-9]*)$/.test(String(ledger.ledgerCloseTime))) continue;
-          const closeTime = Number(ledger.ledgerCloseTime);
-          if (!Number.isSafeInteger(closeTime) || closeTime <= 0) continue;
-          closedAt[ledger.sequence] = closeTime;
-        }
-      } catch {
-        // Outside retention or transiently unavailable; keep the fallback.
-      }
+      ranges.push({
+        start,
+        end: unique[end],
+        wanted: new Set(unique.slice(index, end + 1)),
+      });
       index = end + 1;
     }
+
+    let nextRange = 0;
+    const readRange = async () => {
+      while (nextRange < ranges.length) {
+        const range = ranges[nextRange];
+        nextRange += 1;
+        const { start, end, wanted } = range;
+        try {
+          const response = await this.server.getLedgers({
+            startLedger: start,
+            pagination: { limit: end - start + 1 },
+          });
+          for (const ledger of response.ledgers) {
+            if (!wanted.has(ledger.sequence)) continue;
+            if (!/^(?:0|[1-9][0-9]*)$/.test(String(ledger.ledgerCloseTime))) continue;
+            const closeTime = Number(ledger.ledgerCloseTime);
+            if (!Number.isSafeInteger(closeTime) || closeTime <= 0) continue;
+            closedAt[ledger.sequence] = closeTime;
+          }
+        } catch {
+          // Outside retention or transiently unavailable; keep the fallback.
+        }
+      }
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(MAX_LEDGER_CLOSE_TIME_CONCURRENCY, ranges.length) },
+      readRange,
+    ));
     return closedAt;
   }
 
