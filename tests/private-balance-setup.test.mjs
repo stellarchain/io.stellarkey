@@ -25,7 +25,7 @@ test('private payments setup is one consent screen with an honest disclosure and
   assert.match(setup, /use testnet funds only/);
   assert.match(setup, /Turn On/);
   assert.match(setup, /Not Now/);
-  assert.match(setup, /void optIn\(\)/);
+  assert.match(setup, /void optIn\(\{ prefetchArtifacts:/);
   assert.doesNotMatch(setup, /creating an account|connecting to (?:our|a) server/i);
 });
 
@@ -45,16 +45,24 @@ test('setup expands Learn more with download size and recovery without an unconf
   assert.doesNotMatch(setup, /estimated anonymity|guaranteed recovery|instant proof/i);
 });
 
-test('one setup prepares every verified asset and restores the original selection before success', () => {
+test('one setup prepares every verified asset and finishes on the original selection', () => {
   const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const accessGate = read(
+    'src/features/private-balance/components/PrivatePaymentAccessGate.tsx',
+  );
 
-  for (const label of [
-    'Preparing privacy tools',
-    'Creating your keys',
-    'Creating your private address',
-    'Saving securely on this device',
-    'Checking private history',
-  ]) assert.match(setup, new RegExp(label.replace(/[&]/g, '&')));
+  assert.match(setup, /role="progressbar"/);
+  assert.match(setup, /aria-valuemin=\{0\}/);
+  assert.match(setup, /aria-valuemax=\{100\}/);
+  assert.match(setup, /aria-valuenow=\{progressPercent\}/);
+  assert.match(setup, /progressHighWater/);
+  assert.match(setup, /runtimeMatchesSetupTarget/);
+  assert.doesNotMatch(setup, /<ol\b|SETUP_STEPS/);
+  assert.match(
+    accessGate,
+    /if \(\s*setupOpen \|\|\s*accessState !== 'preparing'/,
+    'the underlying action gate must not start a second sync while setup owns the flow',
+  );
   assert.doesNotMatch(setup, /Catching up with the network/);
   assert.match(setup, /privatePaymentSetupTarget/);
   assert.match(setup, /privatePaymentSetupComplete/);
@@ -62,8 +70,10 @@ test('one setup prepares every verified asset and restores the original selectio
   assert.match(setup, /selectedDeploymentRestored/);
   assert.match(setup, /runtimeMatchesSelection/);
   assert.match(setup, /selectAsset/);
+  assert.match(setup, /remainingUnpreparedAssets/);
+  assert.match(setup, /prefetchArtifacts:\s*remainingUnpreparedAssets === 1/);
   assert.doesNotMatch(setup, /stage === 'running' && configured && privateAddress !== null/);
-  assert.match(setup, /void optIn\(\)/);
+  assert.match(setup, /void optIn\(\{ prefetchArtifacts:/);
   assert.doesNotMatch(setup, /await optIn\(\)/);
   assert.match(setup, /Private Payments is ready for \$\{assetList\}/);
   assert.doesNotMatch(setup, /prepared automatically when you first use/);
@@ -76,6 +86,9 @@ test('one setup prepares every verified asset and restores the original selectio
   // Errors surface humanized with collapsed technical details.
   assert.match(setup, /HumanizedErrorNotice/);
   assert.match(setup, /Try Again/);
+  assert.match(setup, /Preparing Private Payments/);
+  assert.match(setup, /Checking private history/);
+  assert.doesNotMatch(setup, /\(\$\{Math\.max\(0, setupTargetIndex\) \+ 1\} of \$\{setupPlan\.deploymentIds\.length\}\)/);
   // Old protocol vocabulary stays off the setup surface.
   assert.doesNotMatch(setup, /manifest|artifact download|canonical archive|checkpoint|\bpool\b/i);
 });

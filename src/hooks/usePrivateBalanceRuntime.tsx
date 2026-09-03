@@ -68,6 +68,11 @@ export interface PrivateBalanceRecoveryEvidence {
   feeRange: string;
 }
 
+export interface PrivateBalanceOptInOptions {
+  /** Warm shared proving files after authenticated setup finishes. */
+  prefetchArtifacts?: boolean;
+}
+
 export interface PrivateBalanceDeploymentSummary {
   manifestStatus: 'development' | 'testnet-preview' | 'testnet-beta' | 'production' | null;
   network: 'testnet' | 'mainnet' | null;
@@ -129,7 +134,7 @@ export interface PrivateBalanceRuntimeDataValue {
   stealthLatestLedger: number | null;
   stealthSyncing: boolean;
   stealthError: string | null;
-  optIn(): Promise<void>;
+  optIn(options?: PrivateBalanceOptInOptions): Promise<void>;
   refreshSync(): Promise<void>;
   restorePrivateHistory(
     onProgress?: (progress: PrivateArchiveRestorationProgress) => void,

@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shortened first-time Private Payments setup by preventing the underlying action gate from launching a duplicate sync, preparing the originally selected asset last, and moving shared proving-file warm-up out of the critical path while presenting XLM and USDC as one monotonic progress bar.
 - Kept the market chart geometry stable while switching periods, labelled retained data with its real range, and cancelled stale range requests before they could overwrite the latest selection.
 - Kept first-time Private Payments setup in progress while every verified asset synchronizes, restoring the originally selected asset before success so XLM and USDC never hand off to separate preparation screens.
 - Asked for Private Payments consent once per wallet, kept its success confirmation open until Done, and automatically prepared newly selected asset-pinned pools inside Send, Receive, and Add without replacing their modal shells.

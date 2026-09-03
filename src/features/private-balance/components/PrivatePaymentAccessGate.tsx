@@ -77,6 +77,7 @@ export function PrivatePaymentAccessGate({
 
   useEffect(() => {
     if (
+      setupOpen ||
       accessState !== 'preparing' ||
       !paymentsEnabled ||
       selected?.encryptedStateExists ||
@@ -92,6 +93,7 @@ export function PrivatePaymentAccessGate({
     paymentsEnabled,
     runtimeMatchesSelection,
     selected,
+    setupOpen,
   ]);
 
   const code = selected?.asset.code ?? 'asset';

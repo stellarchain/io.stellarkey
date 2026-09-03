@@ -127,7 +127,7 @@ test('wallet consent and selected-asset readiness are separate access states', a
   }), 'ready');
 });
 
-test('wallet setup prepares every asset then restores the original selection before completion', async () => {
+test('wallet setup prepares other assets first and finishes on the original selection', async () => {
   const {
     privatePaymentSetupComplete,
     privatePaymentSetupTarget,
@@ -136,8 +136,16 @@ test('wallet setup prepares every asset then restores the original selection bef
     { deploymentId: 'testnet-xlm', encryptedStateExists: false },
     { deploymentId: 'testnet-usdc', encryptedStateExists: false },
   ];
-  assert.equal(privatePaymentSetupTarget(xlmFirst, 'testnet-xlm'), 'testnet-xlm');
-  assert.equal(privatePaymentSetupTarget(xlmFirst, 'testnet-usdc'), 'testnet-usdc');
+  assert.equal(
+    privatePaymentSetupTarget(xlmFirst, 'testnet-xlm'),
+    'testnet-usdc',
+    'finishing on XLM avoids remounting and resynchronizing it after setup',
+  );
+  assert.equal(
+    privatePaymentSetupTarget(xlmFirst, 'testnet-usdc'),
+    'testnet-xlm',
+    'finishing on USDC avoids remounting and resynchronizing it after setup',
+  );
   assert.equal(privatePaymentSetupTarget([
     { ...xlmFirst[0], encryptedStateExists: true },
     xlmFirst[1],

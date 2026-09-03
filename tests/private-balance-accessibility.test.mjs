@@ -12,6 +12,9 @@ test('private balance setup and status expose accessible dialog and progress sem
   assert.match(setup, /<Modal\b/);
   assert.match(setup, /<ModalHeader\b/);
   assert.match(setup, /aria-live="polite"/);
+  assert.match(setup, /role="progressbar"/);
+  assert.match(setup, /aria-label="Private Payments setup progress"/);
+  assert.match(setup, /motion-reduce:transition-none/);
   assert.match(status, /role="status"/);
   assert.match(status, /aria-label=/);
   assert.match(card, /grid-cols-4/);

@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { IconCheck, IconChevronDown, IconShieldStellar } from '@/components/icons';
-import { Button, Modal, ModalHeader, Spinner } from '@/components/ui';
+import { IconChevronDown, IconShieldStellar } from '@/components/icons';
+import { Button, Modal, ModalHeader } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -15,14 +15,6 @@ import {
 import { PrivacyDisclosure } from './PrivacyDisclosure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateSuccess } from './PrivateSuccess';
-
-const SETUP_STEPS = [
-  'Preparing privacy tools',
-  'Creating your keys',
-  'Creating your private address',
-  'Saving securely on this device',
-  'Checking private history',
-] as const;
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return 'a small amount of data';
@@ -39,7 +31,7 @@ function formatAssetList(codes: readonly string[]): string {
 /**
  * One-screen setup (D7): the hero, the honest two-row disclosure with a
  * Learn more expansion, one consent checkbox, and "Turn On" — then the live
- * local setup stepper and the shared success moment.
+ * local setup progress and the shared success moment.
  */
 export function PrivateBalanceSetup({
   open,
@@ -66,7 +58,8 @@ export function PrivateBalanceSetup({
   const [accepted, setAccepted] = useState(false);
   const [learnMore, setLearnMore] = useState(false);
   const [setupError, setSetupError] = useState<unknown>(null);
-  const [addressBeat, setAddressBeat] = useState(false);
+  const [addressBeatDeploymentId, setAddressBeatDeploymentId] = useState<string | null>(null);
+  const [progressHighWater, setProgressHighWater] = useState(0);
   const [setupPlan, setSetupPlan] = useState<{
     deploymentIds: string[];
     initialDeploymentId: string;
@@ -99,6 +92,10 @@ export function PrivateBalanceSetup({
   const setupTarget = setupAssets.find(
     option => option.deploymentId === setupTargetDeploymentId,
   ) ?? null;
+  const addressBeat = addressBeatDeploymentId === setupTargetDeploymentId;
+  const remainingUnpreparedAssets = setupAssets.filter(
+    option => !option.encryptedStateExists,
+  ).length;
   const setupPlanError = setupPlan !== null && !setupCatalogueStable
     ? new Error('The verified Private Payments asset list changed during setup.')
     : setupPlan !== null && setupTargetDeploymentId === null
@@ -120,6 +117,8 @@ export function PrivateBalanceSetup({
     selectedDeploymentRestored,
     runtimeMatchesSelection,
   });
+  const runtimeMatchesSetupTarget = runtimeMatchesSelection
+    && selectedDeploymentId === setupTargetDeploymentId;
   const visibleStage = setupReady ? 'done' : stage;
   const visibleSetupError = setupError ?? setupPlanError ?? (
     stage === 'running'
@@ -131,10 +130,37 @@ export function PrivateBalanceSetup({
       : null
   );
   const working = visibleStage === 'running' && visibleSetupError === null;
+  const completedSetupAssets = setupAssets.length - remainingUnpreparedAssets;
+  const currentAssetProgress = allAssetsPrepared
+    ? 1
+    : !runtimeMatchesSetupTarget
+      ? 0
+      : phase === 'current'
+        ? 1
+        : phase === 'scanning-live'
+          ? 0.75
+          : phase === 'reading-meta'
+            ? (addressBeat ? 0.5 : 0.25)
+            : 0.08;
+  const measuredProgress = setupAssets.length === 0
+    ? 0
+    : Math.round(
+        ((completedSetupAssets + currentAssetProgress) / setupAssets.length) * 100,
+      );
+  const progressTarget = allAssetsPrepared ? 100 : Math.min(99, measuredProgress);
+  const progressPercent = visibleStage === 'done' ? 100 : progressHighWater;
+  const runningStatus = allAssetsPrepared
+    ? 'Finishing secure setup'
+    : phase === 'scanning-live' && runtimeMatchesSetupTarget
+      ? 'Checking private history'
+      : phase === 'reading-meta' && runtimeMatchesSetupTarget
+        ? (addressBeat ? 'Creating your private address' : 'Creating private keys')
+        : 'Preparing privacy tools';
 
   // One wallet-wide consent prepares every currently verified asset. The
   // provider owns one asset-pinned runtime at a time, so this effect advances
-  // them sequentially and restores the user's original selection at the end.
+  // them sequentially and finishes on the user's original selection. Only the
+  // final pass starts the shared proving-file warm-up, after setup is current.
   useEffect(() => {
     if (stage !== 'running' || setupPlan === null || setupError !== null) return;
     if (!setupCatalogueStable || setupTargetDeploymentId === null) return;
@@ -148,7 +174,7 @@ export function PrivateBalanceSetup({
     if (attemptedDeploymentRef.current === setupTargetDeploymentId) return;
 
     attemptedDeploymentRef.current = setupTargetDeploymentId;
-    void optIn().catch((cause: unknown) => {
+    void optIn({ prefetchArtifacts: remainingUnpreparedAssets === 1 }).catch((cause: unknown) => {
       if (attemptedDeploymentRef.current !== setupTargetDeploymentId) return;
       setSetupError(cause ?? new Error(
         `Private ${setupTargetCode} setup stopped safely.`,
@@ -156,6 +182,7 @@ export function PrivateBalanceSetup({
     });
   }, [
     optIn,
+    remainingUnpreparedAssets,
     retryVersion,
     runtimeMatchesSelection,
     selectAsset,
@@ -169,29 +196,32 @@ export function PrivateBalanceSetup({
     stage,
   ]);
 
-  // Setup ends only after every asset is durable and the original asset has
-  // returned to authenticated current state.
+  // Setup ends only after every asset is durable and the original asset is in
+  // authenticated current state.
   useEffect(() => {
     if (stage !== 'running' || phase !== 'reading-meta') return;
-    const timer = window.setTimeout(() => setAddressBeat(true), 1400);
+    const timer = window.setTimeout(
+      () => setAddressBeatDeploymentId(setupTargetDeploymentId),
+      1400,
+    );
     return () => window.clearTimeout(timer);
-  }, [phase, stage]);
-  const reachedStep = visibleStage === 'done'
-    ? SETUP_STEPS.length
-    : phase === 'current'
-      ? 4
-      : phase === 'scanning-live'
-        ? 4
-        : phase === 'reading-meta'
-          ? (addressBeat ? 2 : 1)
-          : 0;
+  }, [phase, setupTargetDeploymentId, stage]);
+
+  useEffect(() => {
+    if (stage !== 'running') return;
+    const frame = window.requestAnimationFrame(() => {
+      setProgressHighWater(current => Math.max(current, progressTarget));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [progressTarget, stage]);
 
   const reset = () => {
     setStage('consent');
     setAccepted(false);
     setLearnMore(false);
     setSetupError(null);
-    setAddressBeat(false);
+    setAddressBeatDeploymentId(null);
+    setProgressHighWater(0);
     setSetupPlan(null);
     setRetryVersion(0);
     attemptedDeploymentRef.current = null;
@@ -207,6 +237,7 @@ export function PrivateBalanceSetup({
     triggerHaptic('selection');
     setStage('running');
     setSetupError(null);
+    setProgressHighWater(0);
     attemptedDeploymentRef.current = null;
     const initialDeploymentId = selected?.deploymentId ?? availableAssets[0]?.deploymentId;
     if (!initialDeploymentId || availableAssets.length === 0) {
@@ -225,25 +256,15 @@ export function PrivateBalanceSetup({
     setRetryVersion(version => version + 1);
   };
 
-  const setupTargetIndex = setupPlan?.deploymentIds.indexOf(
-    setupTargetDeploymentId ?? '',
-  ) ?? -1;
-  const setupProgress = setupPlan && setupPlan.deploymentIds.length > 1
-    ? ` (${Math.max(0, setupTargetIndex) + 1} of ${setupPlan.deploymentIds.length})`
-    : '';
-  const runningSubtitle = allAssetsPrepared
-    ? 'Finishing Private Payments'
-    : phase === 'scanning-live' && runtimeMatchesSelection
-      ? `Checking private ${setupTargetCode}${setupProgress}`
-      : `Preparing private ${setupTargetCode}${setupProgress}`;
+  const runningSubtitle = visibleStage === 'running'
+    ? 'Preparing Private Payments'
+    : 'Set up on this device';
 
   return (
     <Modal open={open} onClose={close} dismissable={!working}>
       <ModalHeader
         title="Private Payments"
-        subtitle={visibleStage === 'running'
-          ? runningSubtitle
-          : 'Set up on this device'}
+        subtitle={runningSubtitle}
         onClose={working ? undefined : close}
       />
       <div className="p-4 sm:p-6">
@@ -322,34 +343,29 @@ export function PrivateBalanceSetup({
 
         {visibleStage === 'running' ? (
           <section aria-label="Setting up Private Payments">
-            <ol className="space-y-0.5 rounded-2xl border border-white/[0.09] bg-white/[0.025] p-2.5">
-              {SETUP_STEPS.map((label, index) => {
-                const done = index < reachedStep;
-                const active = index === reachedStep && visibleSetupError === null;
-                return (
-                  <li key={label} className="flex min-h-11 items-center gap-3 px-2 text-[13px]">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-                      {done ? (
-                        <IconCheck size={15} className="text-[#30D158]" />
-                      ) : active ? (
-                        <span className="text-[#0A84FF]"><Spinner size={14} /></span>
-                      ) : (
-                        <span className="h-1.5 w-1.5 rounded-full bg-white/[0.18]" />
-                      )}
-                    </span>
-                    <span className={
-                      done
-                        ? 'text-neutral-400'
-                        : active
-                          ? 'font-semibold text-white'
-                          : 'text-neutral-600'
-                    }>
-                      {label}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
+            <div className="rounded-2xl border border-white/[0.09] bg-white/[0.025] p-4">
+              <div className="mb-3 flex items-center justify-between gap-4 text-[13px]">
+                <span className="font-semibold text-white">Setting up securely</span>
+                <span className="tabular-nums text-neutral-400">{progressPercent}%</span>
+              </div>
+              <div
+                role="progressbar"
+                aria-label="Private Payments setup progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent}
+                aria-valuetext={`${progressPercent}% complete. ${runningStatus}.`}
+                className="h-2 overflow-hidden rounded-full bg-white/[0.09]"
+              >
+                <div
+                  className="h-full rounded-full bg-[#0A84FF] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <p aria-live="polite" className="mt-3 text-[12px] text-neutral-400">
+                {runningStatus}
+              </p>
+            </div>
             <div aria-live="polite" className="mt-4">
               {visibleSetupError !== null ? <HumanizedErrorNotice cause={visibleSetupError} /> : null}
             </div>
