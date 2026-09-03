@@ -2,7 +2,7 @@
 
 - **Protocol:** V1 replacement design
 - **Implementation status:** Live Testnet development deployment, validated in StellarKey; not for real value
-- **Document revision:** 2026-09-02
+- **Document revision:** 2026-09-03
 
 ## Abstract
 
@@ -73,13 +73,16 @@ address format, encryption suite, and deployment-binding hash.
 
 The protocol includes a relayer address and fee in transfer and withdrawal
 actions, and the contract permits third-party submission without user account
-authorization. No operated relayer exists today. The development client binds
-its own public Stellar account as relayer, uses a zero relayer fee, signs an
-inner transaction from that account, and self-submits it. This directly links
-the shielded action to the public account. A fee-bump sponsor changes the outer
-fee source but leaves the inner transaction source public, so fee bumping alone
-is not a privacy improvement. Any non-zero relayer fee is public and is paid by
-the pool only when the proof authorizes it.
+authorization. No operated relayer exists today. For every zero-fee action, the
+pool contract address is the relayer sentinel. That constant is proof-bound and
+stored in the archive, but carries no user-specific identity; the contract moves
+no relayer payment when the fee is zero. The development client still signs an
+inner transaction from the user's public Stellar account and self-submits it, so
+the transaction source links the shielded action to that account. A fee-bump
+sponsor changes the outer fee source but leaves the inner transaction source
+public, so fee bumping alone is not a privacy improvement. Any non-zero relayer
+fee and its actual recipient are public and are paid by the pool only when the
+proof authorizes them.
 
 ## 3. Deployment-bound keys and private addresses
 
@@ -182,8 +185,8 @@ slots do not disclose the private `inputReal` selectors.
 | Action | Public information | Private statement |
 | --- | --- | --- |
 | Deposit | Kind, source, amount, pool, asset, commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
-| Transfer | Kind, pool, asset, anchor root, relayer and fee, commitments, nullifiers, timing and fee payer | At least one owned input and one real output; recipient, amount, note count and change role remain private. |
-| Withdraw | Kind, public recipient and amount, pool, asset, anchor root, relayer and fee, commitments, nullifiers, timing and fee payer | At least one owned input; any remainder becomes private change. |
+| Transfer | Kind, pool, asset, anchor root, relayer field and fee (currently the pool sentinel and zero), commitments, nullifiers, timing and fee payer | At least one owned input and one real output; recipient, amount, note count and change role remain private. |
+| Withdraw | Kind, public recipient and amount, pool, asset, anchor root, relayer field and fee (currently the pool sentinel and zero), commitments, nullifiers, timing and fee payer | At least one owned input; any remainder becomes private change. |
 
 For all actions the circuit enforces:
 
@@ -316,7 +319,9 @@ are cleared in `finally` paths where the runtime permits.
 Every accepted action writes one immutable persistent archive record keyed by
 its action index. It includes the action/ledger indices, starting leaf index,
 kind, asset, nonce, anchor and resulting roots, two nullifiers, two complete
-output packages, public value and endpoint, and relayer data. Each record hash
+output packages, public value and endpoint, and relayer data. For the current
+zero-fee transfers and withdrawals, the archived relayer is the common pool
+contract address rather than the submitting user's account. Each record hash
 commits to the prior transcript head, so deletion, reordering, insertion, or
 mutation breaks recovery.
 
@@ -422,7 +427,7 @@ can defeat every browser-level privacy control.
 | Recipient private address | Public action kind |
 | Which note lanes are real | Anchor root, two nullifiers and two commitments |
 | Whether a real output is recipient or change | Fixed-size encrypted output packages |
-| Memo plaintext | Relayer address/fee and public transaction source |
+| Memo plaintext | Pool-address relayer sentinel, zero relayer fee, and public transaction source |
 | Spending and viewing secrets | Transaction timing and network metadata |
 
 Deposits reveal their public source and amount. Withdrawals reveal their public

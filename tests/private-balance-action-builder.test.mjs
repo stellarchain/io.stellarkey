@@ -100,6 +100,20 @@ test('action flow snapshots selected durable notes for a fresh worker session', 
   assert.throws(() => privateActionNoteSnapshot([], [note.id]), /unavailable/i);
 });
 
+test('action flow binds every zero-fee relayer field to the pool contract', () => {
+  const source = readFileSync(
+    new URL('../src/features/private-balance/runtime/action-flow.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /const zeroFeeRelayerAddress = input\.manifest\.poolContractId;/);
+  assert.match(source, /const zeroFeeRelayerPayload = publicAddressPayload\(zeroFeeRelayerAddress\);/);
+  assert.equal((source.match(/relayer: zeroFeeRelayerPayload/g) ?? []).length, 3);
+  assert.equal((source.match(/relayer: zeroFeeRelayerAddress/g) ?? []).length, 2);
+  assert.doesNotMatch(source, /relayer:\s*input\.accountPublicKey/);
+  assert.doesNotMatch(source, /selfRelayer/);
+});
+
 test('spend preparation never reconstructs a Merkle tree from pool history', () => {
   const source = readFileSync(
     new URL('../src/features/private-balance/worker/action-builder.ts', import.meta.url),

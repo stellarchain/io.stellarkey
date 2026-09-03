@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Replaced user-specific zero-fee Private Payments relayer fields with the common pool-contract sentinel and made the client transaction builder reject any other zero-fee relayer, removing that identity from permanent action archives while leaving self-submitted transaction sources public.
 - Retained audited RFC 9180 note encryption, asset-pinned pool isolation, and Soroban-native Poseidon2 hashing after rejecting unreviewed consensus alternatives in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
 - Bound the reduced eleven-signal Groth16 statement to the exact canonical action field and added a proof-mutation regression for that public input.

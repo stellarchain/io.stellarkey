@@ -398,7 +398,8 @@ export async function preparePrivateBalanceActionFlow(input: {
     let publicRecipient: string | null = null;
     let intent: Parameters<PrivateBalanceWorkerClient['buildAction']>[1] | null = null;
     let merklePaths: MerklePathWitness[] = [];
-    const selfRelayer = publicAddressPayload(input.accountPublicKey);
+    const zeroFeeRelayerAddress = input.manifest.poolContractId;
+    const zeroFeeRelayerPayload = publicAddressPayload(zeroFeeRelayerAddress);
 
     if (input.draft.kind === 'deposit') {
       amount = depositAmount!;
@@ -435,7 +436,7 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           relayerFee: '0',
-          relayer: selfRelayer,
+          relayer: zeroFeeRelayerPayload,
         };
       } else {
         amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
@@ -471,7 +472,7 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorExpiresAtLedger,
           memo,
           relayerFee: '0',
-          relayer: selfRelayer,
+          relayer: zeroFeeRelayerPayload,
         };
       } else if (input.draft.kind === 'withdraw') {
         publicRecipient = input.draft.publicRecipient;
@@ -484,7 +485,7 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           relayerFee: '0',
-          relayer: selfRelayer,
+          relayer: zeroFeeRelayerPayload,
         };
       }
     }
@@ -573,7 +574,7 @@ export async function preparePrivateBalanceActionFlow(input: {
               ...common,
               publicRecipient: publicRecipient!,
               relayerFee: prepared.action.relayerFee,
-              relayer: input.accountPublicKey,
+              relayer: zeroFeeRelayerAddress,
             },
             proof,
           })
@@ -581,7 +582,7 @@ export async function preparePrivateBalanceActionFlow(input: {
             action: {
               ...common,
               relayerFee: prepared.action.relayerFee,
-              relayer: input.accountPublicKey,
+              relayer: zeroFeeRelayerAddress,
             },
             proof,
           });
