@@ -43,7 +43,8 @@ fn outgoing_plaintext(dummy: bool) -> OutgoingPlaintext {
         recipient_hpke_public_key: [6u8; 32],
         memo_length: if dummy { 0 } else { 4 },
         memo,
-        reserved: [0u8; 15],
+        asset_index: 23,
+        reserved: [0u8; 11],
     }
 }
 
@@ -58,6 +59,14 @@ fn outgoing_envelopes_recover_real_and_dummy_outputs_and_bind_context() {
     let action_nonce = [7u8; 32];
     let aad =
         compute_outgoing_aad(&binding, &context, &asset, &commitment, &action_nonce, 0).unwrap();
+    assert!(compute_outgoing_aad(
+        &binding,
+        &context,
+        &asset,
+        &commitment,
+        &action_nonce,
+        2,
+    ).is_ok());
 
     for (index, plaintext) in [outgoing_plaintext(false), outgoing_plaintext(true)]
         .into_iter()

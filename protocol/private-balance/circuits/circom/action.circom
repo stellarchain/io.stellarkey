@@ -32,14 +32,19 @@ template CheckBits(BITS) {
 template ActionCircuit() {
     // The verifier receives exactly these eleven public signals, in this order.
     signal input contextField;
+    // Public only at transparent deposit and withdrawal boundaries. Internal
+    // transfers use the zero sentinel.
     signal input assetField;
     signal input actionKindField;
     signal input anchorRoot;
     signal input publicValueField;
-    signal input relayerFeeField;
     signal input actionField;
     signal input nullifier[2];
-    signal input outputCommitment[2];
+    signal input outputCommitment[3];
+
+    // The real asset is private for transfers and must bind every real note in
+    // the action. Boundaries prove that it matches the public registry asset.
+    signal input actionAssetField;
 
     // One spending authority controls every real input in an action.
     signal input ask;
@@ -55,9 +60,9 @@ template ActionCircuit() {
     signal input inputSiblings[2][17][2];
     signal input inputPositions[2][17];
 
-    signal input outputOwnerCommitment[2];
-    signal input outputValue[2];
-    signal input outputRho[2];
+    signal input outputOwnerCommitment[3];
+    signal input outputValue[3];
+    signal input outputRho[3];
 
     // A public input that appears in no constraint gets a zero IC coefficient
     // and would not be proof-bound. Prove actionField is nonzero so the proof
@@ -67,9 +72,9 @@ template ActionCircuit() {
     actionFieldZero.in <== actionField;
     actionFieldZero.out === 0;
 
-    component assetZero = IsZero();
-    assetZero.in <== assetField;
-    assetZero.out === 0;
+    component actionAssetZero = IsZero();
+    actionAssetZero.in <== actionAssetField;
+    actionAssetZero.out === 0;
 
     // actionKindField must be exactly Deposit (1), Transfer (2), or Withdraw (3).
     signal kindMinusOne;
@@ -100,9 +105,6 @@ template ActionCircuit() {
     component publicValueZero = IsZero();
     publicValueRange.in <== publicValueField;
     publicValueZero.in <== publicValueField;
-    component relayerFeeRange = CheckBits(63);
-    relayerFeeRange.in <== relayerFeeField;
-
     // Shared owner authorization is computed once and selected by every real input.
     component actionOwner = OwnerCommitment();
     actionOwner.contextField <== contextField;
@@ -174,7 +176,7 @@ template ActionCircuit() {
 
         inputNote[i] = NoteCommitment();
         inputNote[i].contextField <== contextField;
-        inputNote[i].assetField <== assetField;
+        inputNote[i].assetField <== actionAssetField;
         inputNote[i].ownerCommitment <== inputOwnerCommitment[i];
         inputNote[i].value <== inputValue[i];
         inputNote[i].rho <== inputRho[i];
@@ -219,16 +221,16 @@ template ActionCircuit() {
     duplicateNullifier.out === 0;
     bothInputsReal * duplicateLeafIndex.out === 0;
 
-    component outputValueRange[2];
-    component outputValueZero[2];
-    component outputOwnerZero[2];
-    component outputRhoZero[2];
-    component outputCommitmentZero[2];
-    component outputNote[2];
-    signal outputReal[2];
-    signal outputDummy[2];
+    component outputValueRange[3];
+    component outputValueZero[3];
+    component outputOwnerZero[3];
+    component outputRhoZero[3];
+    component outputCommitmentZero[3];
+    component outputNote[3];
+    signal outputReal[3];
+    signal outputDummy[3];
 
-    for (var j = 0; j < 2; j++) {
+    for (var j = 0; j < 3; j++) {
         outputValueRange[j] = CheckBits(63);
         outputValueRange[j].in <== outputValue[j];
         outputValueZero[j] = IsZero();
@@ -250,20 +252,29 @@ template ActionCircuit() {
 
         outputNote[j] = NoteCommitment();
         outputNote[j].contextField <== contextField;
-        outputNote[j].assetField <== assetField;
+        outputNote[j].assetField <== actionAssetField;
         outputNote[j].ownerCommitment <== outputOwnerCommitment[j];
         outputNote[j].value <== outputValue[j];
         outputNote[j].rho <== outputRho[j];
         outputNote[j].out === outputCommitment[j];
     }
 
-    signal bothOutputsReal;
+    signal realOutputCount;
     signal hasRealOutput;
-    bothOutputsReal <== outputReal[0] * outputReal[1];
-    hasRealOutput <== outputReal[0] + outputReal[1] - bothOutputsReal;
-    component duplicateOutput = IsZero();
-    duplicateOutput.in <== outputCommitment[0] - outputCommitment[1];
-    duplicateOutput.out === 0;
+    realOutputCount <== outputReal[0] + outputReal[1] + outputReal[2];
+    component noRealOutput = IsZero();
+    noRealOutput.in <== realOutputCount;
+    hasRealOutput <== 1 - noRealOutput.out;
+    component duplicateOutput[3];
+    duplicateOutput[0] = IsZero();
+    duplicateOutput[0].in <== outputCommitment[0] - outputCommitment[1];
+    duplicateOutput[0].out === 0;
+    duplicateOutput[1] = IsZero();
+    duplicateOutput[1].in <== outputCommitment[0] - outputCommitment[2];
+    duplicateOutput[1].out === 0;
+    duplicateOutput[2] = IsZero();
+    duplicateOutput[2].in <== outputCommitment[1] - outputCommitment[2];
+    duplicateOutput[2].out === 0;
 
     signal depositValue;
     signal withdrawValue;
@@ -272,7 +283,7 @@ template ActionCircuit() {
     depositValue <== isDeposit * publicValueField;
     withdrawValue <== isWithdraw * publicValueField;
     totalInput <== inputValue[0] + inputValue[1] + depositValue;
-    totalOutput <== outputValue[0] + outputValue[1] + withdrawValue + relayerFeeField;
+    totalOutput <== outputValue[0] + outputValue[1] + outputValue[2] + withdrawValue;
     totalInput === totalOutput;
 
     component totalInputRange = CheckBits(63);
@@ -286,18 +297,20 @@ template ActionCircuit() {
     isDeposit * hasRealInput === 0;
     isDeposit * (1 - hasRealOutput) === 0;
     isDeposit * publicValueZero.out === 0;
-    isDeposit * relayerFeeField === 0;
+    isDeposit * (assetField - actionAssetField) === 0;
 
     // Transfer: nonzero anchor, at least one real input/output, and no public value.
     isTransfer * anchorZero.out === 0;
     isTransfer * (1 - hasRealInput) === 0;
     isTransfer * (1 - hasRealOutput) === 0;
     isTransfer * publicValueField === 0;
+    isTransfer * assetField === 0;
 
     // Withdraw: nonzero anchor/real input and a positive public withdrawal amount.
     isWithdraw * anchorZero.out === 0;
     isWithdraw * (1 - hasRealInput) === 0;
     isWithdraw * publicValueZero.out === 0;
+    isWithdraw * (assetField - actionAssetField) === 0;
 }
 
-component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, relayerFeeField, actionField, nullifier, outputCommitment]} = ActionCircuit();
+component main {public [contextField, assetField, actionKindField, anchorRoot, publicValueField, actionField, nullifier, outputCommitment]} = ActionCircuit();

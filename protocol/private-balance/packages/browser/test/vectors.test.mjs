@@ -116,7 +116,8 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     rho: fromHex(noteInput.rho),
     memoLength: fromHex(noteInput.memo).length,
     memo,
-    reserved: new Uint8Array(15),
+    assetIndex: noteInput.assetIndex,
+    reserved: new Uint8Array(11),
   });
   assert.equal(toHex(noteBytes), noteVector.expected.plaintext);
   const cm = computeCommitment(
@@ -155,7 +156,8 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
     recipientHpkePublicKey: keys.hpkePublicKey,
     memoLength: fromHex(noteInput.memo).length,
     memo,
-    reserved: new Uint8Array(15),
+    assetIndex: noteInput.assetIndex,
+    reserved: new Uint8Array(11),
   });
   const outgoingAad = deriveOutgoingAad(
     fromHex(encryptionVector.input.deploymentBindingHash),
@@ -188,6 +190,7 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: actionVector.input.assetIndex,
     asset,
     actionNonce: fromHex(actionVector.input.actionNonce),
     anchorRoot: zero,
@@ -203,9 +206,13 @@ test('fixed protocol V1 conformance snapshots match every primitive', async () =
         recipientEnvelope: fromHex(actionVector.input.output1RecipientEnvelope),
         outgoingEnvelope: fromHex(actionVector.input.output1OutgoingEnvelope),
       },
+      {
+        cm: fromHex(actionVector.input.output2Commitment),
+        recipientEnvelope: fromHex(actionVector.input.output2RecipientEnvelope),
+        outgoingEnvelope: fromHex(actionVector.input.output2OutgoingEnvelope),
+      },
     ],
     publicValue: BigInt(actionVector.input.publicValue),
-    relayerFee: 0n,
     depositSource: { kind: 0, payload: fromHex(actionVector.input.depositSource) },
   };
   assert.equal(toHex(serializeCanonicalActionBytes(
@@ -255,7 +262,8 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
     recipientHpkePublicKey: fill(6),
     memoLength: 4,
     memo,
-    reserved: new Uint8Array(15),
+    assetIndex: 23,
+    reserved: new Uint8Array(11),
   };
   const dummy = {
     ...real,
@@ -374,7 +382,8 @@ test('outgoing viewing key recovers fixed real and dummy envelopes and binds all
     rho: recipientRho,
     memoLength: 0,
     memo: recipientMemo,
-    reserved: new Uint8Array(15),
+    assetIndex: 23,
+    reserved: new Uint8Array(11),
   });
   const recipientCommitment = computeCommitment(
     recipientContextField,
@@ -425,6 +434,7 @@ test('archive: Rust and TypeScript record hashes match', () => {
     ledgerSequence: vector.record.ledgerSequence,
     startingLeafIndex: vector.record.startingLeafIndex,
     actionKind: vector.record.actionKind,
+    assetIndex: vector.record.assetIndex,
     asset: {
       kind: vector.record.assetKind,
       payload: fill(vector.record.assetPayloadFill, 32),
@@ -444,6 +454,11 @@ test('archive: Rust and TypeScript record hashes match', () => {
         recipientEnvelope: fill(vector.record.output1RecipientEnvelopeFill, 181),
         outgoingEnvelope: fill(vector.record.output1OutgoingEnvelopeFill, 157),
       },
+      {
+        cm: fill(vector.record.output2CommitmentFill, 32),
+        recipientEnvelope: fill(vector.record.output2RecipientEnvelopeFill, 181),
+        outgoingEnvelope: fill(vector.record.output2OutgoingEnvelopeFill, 157),
+      },
     ],
     publicValue: BigInt(vector.record.publicValue),
     depositSource: {
@@ -451,8 +466,6 @@ test('archive: Rust and TypeScript record hashes match', () => {
       payload: fill(vector.record.depositSourcePayloadFill, 32),
     },
     publicRecipient: undefined,
-    relayerFee: BigInt(vector.record.relayerFee ?? 0),
-    relayer: undefined,
   };
   const priorRecordHash = fill(vector.record.priorRecordHashFill, 32);
   const recordHash = computeRecordHash(
@@ -517,7 +530,8 @@ test('note: encode and decode plaintext', () => {
     rho: new Uint8Array(32).fill(0x11), // canonical Fr (< 0x30...)
     memoLength: 32,
     memo: new Uint8Array(32).fill(0x22),
-    reserved: new Uint8Array(15),
+    assetIndex: 7,
+    reserved: new Uint8Array(11),
   };
 
   const encoded = encodeNotePlaintext(note);

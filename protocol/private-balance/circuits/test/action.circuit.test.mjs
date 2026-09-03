@@ -41,11 +41,48 @@ async function getHelper() {
   return wcHelper;
 }
 
+async function normalizeActionInputs(input) {
+  const normalized = {
+    ...input,
+    outputCommitment: [...input.outputCommitment],
+    outputOwnerCommitment: [...input.outputOwnerCommitment],
+    outputValue: [...input.outputValue],
+    outputRho: [...input.outputRho],
+    actionAssetField: input.actionAssetField ?? input.assetField,
+    assetField: String(input.actionKindField) === '2' && !input.preservePublicAsset
+      ? '0'
+      : input.assetField,
+  };
+  delete normalized.preservePublicAsset;
+  const privateFee = normalized.relayerFeeField ?? '0';
+  delete normalized.relayerFeeField;
+  if (normalized.outputCommitment.length === 2) {
+    const feeOutput = await evalGadgets({
+      contextField: normalized.contextField,
+      assetField: normalized.actionAssetField,
+      ask: '919191',
+      nk: '929292',
+      rho: '939393',
+      value: privateFee,
+    });
+    normalized.outputCommitment.push(feeOutput.noteCommitment);
+    normalized.outputOwnerCommitment.push(feeOutput.ownerCommitment);
+    normalized.outputValue.push(String(privateFee));
+    normalized.outputRho.push('939393');
+  }
+  return normalized;
+}
+
 async function getActionCalculator() {
   if (!actionCalculator) {
     const wasm = readFileSync(wasmPath);
     const wcModule = await import('../node_modules/circom_runtime/js/witness_calculator.js');
-    actionCalculator = await wcModule.default(wasm);
+    const rawCalculator = await wcModule.default(wasm);
+    actionCalculator = {
+      async calculateWitness(input) {
+        return rawCalculator.calculateWitness(await normalizeActionInputs(input));
+      },
+    };
   }
   return actionCalculator;
 }
@@ -127,13 +164,14 @@ test('action circuit: every deposit exposes two nonzero nullifiers and commitmen
   });
 });
 
-async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
+async function buildOneInputTransfer(inputLane = 0, outputLane = 0, actionAssetField = '84') {
   const contextField = '42';
   const actionField = '7654321';
   const ask = '11111';
   const nk = '22222';
   const input = await evalGadgets({
     contextField,
+    assetField: actionAssetField,
     actionField,
     ask,
     nk,
@@ -143,6 +181,7 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
   });
   const realOutput = await evalGadgets({
     contextField,
+    assetField: actionAssetField,
     actionField,
     ask: '88888',
     nk: '99999',
@@ -151,6 +190,7 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
   });
   const dummyOutput = await evalGadgets({
     contextField,
+    assetField: actionAssetField,
     actionField,
     ask: '55555',
     nk: '66666',
@@ -163,7 +203,7 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
 
   return {
     contextField,
-    assetField: '84',
+    assetField: actionAssetField,
     actionKindField: '2',
     anchorRoot: input.merkleRoot,
     publicValueField: '0',
@@ -199,6 +239,46 @@ async function buildOneInputTransfer(inputLane = 0, outputLane = 0) {
     outputRho: atLane('44444', '77777', outputLane),
   };
 }
+
+test('action circuit hides a transfer asset while binding three private-asset outputs', async () => {
+  const witness = await buildOneInputTransfer(0, 0);
+  const third = await evalGadgets({
+    contextField: witness.contextField,
+    assetField: '84',
+    ask: '31337',
+    nk: '31338',
+    rho: '31339',
+    value: '0',
+  });
+  witness.actionAssetField = '84';
+  witness.assetField = '0';
+  delete witness.relayerFeeField;
+  witness.outputCommitment.push(third.noteCommitment);
+  witness.outputOwnerCommitment.push(third.ownerCommitment);
+  witness.outputValue.push('0');
+  witness.outputRho.push('31339');
+
+  await (await getActionCalculator()).calculateWitness(witness);
+});
+
+test('action circuit rejects a public transfer asset and an invalid private asset', async () => {
+  const calculator = await getActionCalculator();
+  const canonical = await normalizeActionInputs(await buildOneInputTransfer(0, 0));
+  await assert.rejects(
+    calculator.calculateWitness({ ...canonical, assetField: '84', preservePublicAsset: true }),
+    /Assert Failed|Error/,
+  );
+  await assert.rejects(
+    calculator.calculateWitness(await normalizeActionInputs(
+      await buildOneInputTransfer(0, 0, '0'),
+    )),
+    /Assert Failed|Error/,
+  );
+  await assert.rejects(
+    calculator.calculateWitness({ ...canonical, actionAssetField: '85' }),
+    /Assert Failed|Error/,
+  );
+});
 
 test('action circuit: real input and output roles can occupy either lane', async () => {
   const calculator = await getActionCalculator();
@@ -422,7 +502,11 @@ test('action circuit: deposit proof generation and verification', async () => {
     outputRho: [outRho0, '88888'],
   };
 
-  const { proof, publicSignals } = await snarkjs.groth16.fullProve(circuitInputs, wasmPath, zkeyPath);
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    await normalizeActionInputs(circuitInputs),
+    wasmPath,
+    zkeyPath,
+  );
   assert.equal(publicSignals.length, 11);
   assert.equal(publicSignals[0], contextField);
   assert.equal(publicSignals[1], '84');
@@ -438,7 +522,7 @@ test('action circuit: deposit proof generation and verification', async () => {
   assert.ok(!badVerified, 'Mutated proof must fail verification');
 
   const mutatedActionSignals = [...publicSignals];
-  mutatedActionSignals[6] = (BigInt(mutatedActionSignals[6]) + 1n).toString();
+  mutatedActionSignals[5] = (BigInt(mutatedActionSignals[5]) + 1n).toString();
   assert.equal(
     await snarkjs.groth16.verify(vk, mutatedActionSignals, proof),
     false,
@@ -536,7 +620,11 @@ test('action circuit: private transfer proof generation and verification', async
     outputRho: [outRho0, outRho1],
   };
 
-  const { proof, publicSignals } = await snarkjs.groth16.fullProve(circuitInputs, wasmPath, zkeyPath);
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    await normalizeActionInputs(circuitInputs),
+    wasmPath,
+    zkeyPath,
+  );
   const verified = await snarkjs.groth16.verify(vk, publicSignals, proof);
   assert.ok(verified, 'Transfer proof verified successfully');
 });
@@ -626,7 +714,11 @@ test('action circuit: withdrawal proof generation and verification', async () =>
     outputRho: [outRho0, '77777'],
   };
 
-  const { proof, publicSignals } = await snarkjs.groth16.fullProve(circuitInputs, wasmPath, zkeyPath);
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    await normalizeActionInputs(circuitInputs),
+    wasmPath,
+    zkeyPath,
+  );
   const verified = await snarkjs.groth16.verify(vk, publicSignals, proof);
   assert.ok(verified, 'Withdrawal proof verified successfully');
 });

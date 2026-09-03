@@ -7,7 +7,8 @@ fn test_action_canonical_bytes_and_signals() {
     let action = Action {
         protocol_version: 1,
         kind: ActionKind::PrivateTransfer,
-        asset: (1, [0x88; 32]),
+        asset_index: None,
+        asset: None,
         action_nonce: [0x11u8; 32],
         anchor_root: bytes_to_field(&[0x22u8; 32]),
         nullifiers: [bytes_to_field(&[0x33u8; 32]), bytes_to_field(&[0x44u8; 32])],
@@ -22,12 +23,15 @@ fn test_action_canonical_bytes_and_signals() {
                 recipient_envelope: [0x77; 181],
                 outgoing_envelope: [0x88; 157],
             },
+            OutputPackage {
+                cm: bytes_to_field(&[0x13u8; 32]),
+                recipient_envelope: [0x99; 181],
+                outgoing_envelope: [0xaa; 157],
+            },
         ],
         public_value: 0,
         deposit_source: None,
         public_recipient: None,
-        relayer_fee: 25,
-        relayer: Some((0, [0x45; 32])),
     };
 
     let net_id = [0x55u8; 32];
@@ -38,11 +42,19 @@ fn test_action_canonical_bytes_and_signals() {
     let signals = action.compute_public_signals(&context_field, &net_id, &realm_id, &pool_id);
     assert_eq!(signals.len(), 11);
     assert_eq!(signals[0], context_field);
-    assert_eq!(signals[1], action.compute_asset_field());
+    assert_eq!(signals[1], [0; 32]);
     assert_eq!(signals[3], action.anchor_root);
-    assert_eq!(&signals[5][24..], &25u64.to_be_bytes());
-    assert_ne!(signals[6], [0; 32]);
+    assert_ne!(signals[5], [0; 32]);
+    assert_eq!(signals[10], action.outputs[2].cm);
     assert!(action.validate_public_shape().is_ok());
+
+    let mut leaked_asset = action.clone();
+    leaked_asset.asset_index = Some(0);
+    leaked_asset.asset = Some((1, [0x88; 32]));
+    assert_eq!(
+        leaked_asset.validate_public_shape(),
+        Err(ActionError::InvalidSlots)
+    );
 
     let mut zero_lane = action.clone();
     zero_lane.nullifiers[1] = [0; 32];

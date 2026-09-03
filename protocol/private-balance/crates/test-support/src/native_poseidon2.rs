@@ -251,6 +251,74 @@ impl NativeTreeHashContext {
         tree.root = current;
         Ok(current)
     }
+
+    pub fn append_three_commitments(
+        &self,
+        tree: &mut TreeState,
+        commitments: &[[u8; 32]; 3],
+    ) -> Result<[u8; 32], TreeError> {
+        if tree.next_leaf_index > TREE_CAPACITY - 3 {
+            return Err(TreeError::TreeFull);
+        }
+        for commitment in commitments {
+            let mut current = *commitment;
+            let mut index = tree.next_leaf_index;
+            let mut level = 0;
+            loop {
+                match index % TREE_ARITY as u64 {
+                    0 => {
+                        tree.frontier[level][0] = current;
+                        break;
+                    }
+                    1 => {
+                        tree.frontier[level][1] = current;
+                        break;
+                    }
+                    2 => {
+                        current = native_poseidon2_hash(&[
+                            tree.frontier[level][0],
+                            tree.frontier[level][1],
+                            current,
+                        ]);
+                        index /= TREE_ARITY as u64;
+                        level += 1;
+                        if level == TREE_DEPTH {
+                            tree.root = current;
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            tree.next_leaf_index += 1;
+        }
+
+        let mut current = self.empty_roots[0];
+        let mut index = tree.next_leaf_index;
+        for level in 0..TREE_DEPTH {
+            current = match index % TREE_ARITY as u64 {
+                0 => native_poseidon2_hash(&[
+                    current,
+                    self.empty_roots[level],
+                    self.empty_roots[level],
+                ]),
+                1 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    current,
+                    self.empty_roots[level],
+                ]),
+                2 => native_poseidon2_hash(&[
+                    tree.frontier[level][0],
+                    tree.frontier[level][1],
+                    current,
+                ]),
+                _ => unreachable!(),
+            };
+            index /= TREE_ARITY as u64;
+        }
+        tree.root = current;
+        Ok(current)
+    }
 }
 
 impl Default for NativeTreeHashContext {
