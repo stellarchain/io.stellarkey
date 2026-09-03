@@ -287,48 +287,98 @@ export interface PrivateBalancePortfolioValue {
 
 const PrivateBalancePortfolioContext = createContext<PrivateBalancePortfolioValue>({ entries: [] });
 
+interface PrivateBalanceRuntimeControlState {
+  scopeKey: string | null;
+  requested: boolean;
+  runtimeRequestVersion: number;
+  availableAssets: PrivateBalanceAssetOption[];
+  selectedDeploymentId: string | null;
+}
+
+function emptyRuntimeControlState(scopeKey: string | null): PrivateBalanceRuntimeControlState {
+  return {
+    scopeKey,
+    requested: false,
+    runtimeRequestVersion: 0,
+    availableAssets: [],
+    selectedDeploymentId: null,
+  };
+}
+
 export function PrivateBalanceRuntimeControlProvider({
   children,
+  scopeKey,
   availabilityReason = null,
 }: {
   children: ReactNode;
+  scopeKey: string | null;
   availabilityReason?: string | null;
 }) {
-  const [requested, setRequested] = useState(false);
-  const [runtimeRequestVersion, setRuntimeRequestVersion] = useState(0);
-  const [availableAssets, setAvailableAssets] = useState<PrivateBalanceAssetOption[]>([]);
-  const [selectedDeploymentId, setSelectedDeploymentId] = useState<string | null>(null);
-  const requestRuntime = useCallback(() => setRequested(true), []);
+  const [state, setState] = useState<PrivateBalanceRuntimeControlState>(
+    () => emptyRuntimeControlState(scopeKey),
+  );
+  // Account/network changes must publish an empty control view during this
+  // render, before asynchronous catalogue discovery for the new scope begins.
+  const scopedState = state.scopeKey === scopeKey
+    ? state
+    : emptyRuntimeControlState(scopeKey);
+  const requestRuntime = useCallback(() => {
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return scoped.requested ? scoped : { ...scoped, requested: true };
+    });
+  }, [scopeKey]);
   const retryRuntime = useCallback(() => {
-    setRequested(true);
-    setRuntimeRequestVersion(current => current + 1);
-  }, []);
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return {
+        ...scoped,
+        requested: true,
+        runtimeRequestVersion: scoped.runtimeRequestVersion + 1,
+      };
+    });
+  }, [scopeKey]);
   const selectAsset = useCallback((deploymentId: string) => {
     // Selection is user intent, while the verified catalogue is asynchronous.
     // Retain the intent here and let selectPrivateBalanceDeploymentId validate
     // it against the verified deployment list before a runtime can mount.
-    setSelectedDeploymentId(deploymentId);
-  }, []);
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      return { ...scoped, selectedDeploymentId: deploymentId };
+    });
+  }, [scopeKey]);
   const registerAvailableAssets = useCallback((
     assets: PrivateBalanceAssetOption[],
     preferredDeploymentId: string | null,
   ) => {
-    setAvailableAssets(assets);
-    setSelectedDeploymentId(current => {
-      if (current && assets.some(option => option.deploymentId === current)) return current;
-      if (preferredDeploymentId && assets.some(option => option.deploymentId === preferredDeploymentId)) {
-        return preferredDeploymentId;
-      }
-      return assets[0]?.deploymentId ?? null;
+    setState(current => {
+      const scoped = current.scopeKey === scopeKey
+        ? current
+        : emptyRuntimeControlState(scopeKey);
+      const selectedDeploymentId =
+        scoped.selectedDeploymentId &&
+        assets.some(option => option.deploymentId === scoped.selectedDeploymentId)
+          ? scoped.selectedDeploymentId
+          : preferredDeploymentId &&
+              assets.some(option => option.deploymentId === preferredDeploymentId)
+            ? preferredDeploymentId
+            : assets[0]?.deploymentId ?? null;
+      return { ...scoped, availableAssets: assets, selectedDeploymentId };
     });
-  }, []);
+  }, [scopeKey]);
   const value = useMemo(
     () => ({
-      requested,
-      runtimeRequestVersion,
+      requested: scopedState.requested,
+      runtimeRequestVersion: scopedState.runtimeRequestVersion,
       availabilityReason,
-      availableAssets,
-      selectedDeploymentId,
+      availableAssets: scopedState.availableAssets,
+      selectedDeploymentId: scopedState.selectedDeploymentId,
       requestRuntime,
       retryRuntime,
       selectAsset,
@@ -336,14 +386,14 @@ export function PrivateBalanceRuntimeControlProvider({
     }),
     [
       availabilityReason,
-      availableAssets,
       registerAvailableAssets,
       requestRuntime,
-      requested,
       retryRuntime,
-      runtimeRequestVersion,
+      scopedState.availableAssets,
+      scopedState.requested,
+      scopedState.runtimeRequestVersion,
+      scopedState.selectedDeploymentId,
       selectAsset,
-      selectedDeploymentId,
     ],
   );
   return (

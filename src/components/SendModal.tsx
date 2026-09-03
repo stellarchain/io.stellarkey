@@ -13,7 +13,6 @@ import {
 } from "@/hooks/useWallet";
 import {
   usePrivateBalanceRuntime,
-  usePrivateBalanceRuntimeData,
 } from "@/hooks/usePrivateBalanceRuntime";
 import { isValidPaymentAddress } from "@/lib/vault";
 import { NETWORKS } from "@/lib/stellar";
@@ -83,9 +82,9 @@ const PrivateSend = dynamic(
     loading: () => <LoadingRegion label="Opening private payment" />,
   },
 );
-const PrivateSetupContent = dynamic(
-  () => import("@/features/private-balance/components/PrivateSetupContent").then(
-    (module) => module.PrivateSetupContent,
+const PrivatePaymentAccessGate = dynamic(
+  () => import("@/features/private-balance/components/PrivatePaymentAccessGate").then(
+    (module) => module.PrivatePaymentAccessGate,
   ),
   {
     ssr: false,
@@ -112,7 +111,6 @@ export function SendModal({
     availableAssets,
     requestRuntime,
   } = usePrivateBalanceRuntime();
-  const { configured } = usePrivateBalanceRuntimeData();
   const [sendMode, setSendMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [privatePrefill, setPrivatePrefill] = useState<string | undefined>(undefined);
@@ -156,7 +154,7 @@ export function SendModal({
     startRuntimeTransition(requestRuntime);
   };
   const panel = sendMode === "private" ? (
-    configured ? (
+    <PrivatePaymentAccessGate action="send">
       <PrivateSend
         onClose={close}
         prefill={privatePrefill ? { recipient: privatePrefill } : undefined}
@@ -170,9 +168,7 @@ export function SendModal({
         }}
         onWorkingChange={setSurfaceBusy}
       />
-    ) : (
-      <PrivateSetupContent action="send" />
-    )
+    </PrivatePaymentAccessGate>
   ) : (
     <SendInner
       onClose={close}

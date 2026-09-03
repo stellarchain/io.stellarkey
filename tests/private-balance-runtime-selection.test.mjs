@@ -57,40 +57,74 @@ test('private runtime selection preserves choice then prefers stored state and n
   assert.equal(selectPrivateBalanceDeploymentId([], null), null);
 });
 
-test('durable pool state updates every asset option before a runtime remount', async () => {
+test('durable pool state updates only its asset-pinned deployment before a runtime remount', async () => {
   const { updatePrivateBalancePoolStorageState } = await bootstrapDomain();
   const deployments = [
-    { ...deployment('pool-v2:native', 'native'), poolDeploymentId: 'pool-v2' },
-    { ...deployment('pool-v2:USDC:issuer', 'stellar'), poolDeploymentId: 'pool-v2' },
-    { ...deployment('other-pool:native', 'native'), poolDeploymentId: 'other-pool' },
+    { ...deployment('testnet-xlm-v1', 'native'), poolDeploymentId: 'testnet-xlm-v1' },
+    { ...deployment('testnet-usdc-v1', 'stellar'), poolDeploymentId: 'testnet-usdc-v1' },
   ];
 
-  const configured = updatePrivateBalancePoolStorageState(deployments, 'pool-v2', true);
+  const configured = updatePrivateBalancePoolStorageState(deployments, 'testnet-xlm-v1', true);
   assert.deepEqual(
     configured.map(item => item.encryptedStateExists),
-    [true, true, false],
-    'every asset view sharing the durable pool record must remount as configured',
+    [true, false],
+    'another asset pool must not inherit the selected pool state',
   );
 
-  const removed = updatePrivateBalancePoolStorageState(configured, 'pool-v2', false);
-  assert.deepEqual(removed.map(item => item.encryptedStateExists), [false, false, false]);
+  const removed = updatePrivateBalancePoolStorageState(configured, 'testnet-xlm-v1', false);
+  assert.deepEqual(removed.map(item => item.encryptedStateExists), [false, false]);
 });
 
-test('one configured asset marks the shared private payments pool ready', async () => {
-  const { privateBalancePoolConfigured } = await bootstrapDomain();
+test('one configured asset marks Private Payments enabled for the wallet', async () => {
+  const { privatePaymentsEnabled } = await bootstrapDomain();
 
-  assert.equal(privateBalancePoolConfigured([
+  assert.equal(privatePaymentsEnabled([
     deployment('testnet-xlm-v1', 'native'),
     deployment('testnet-usdc-v1', 'stellar'),
   ]), false);
-  assert.equal(privateBalancePoolConfigured([
+  assert.equal(privatePaymentsEnabled([
     deployment('testnet-xlm-v1', 'native', true),
     deployment('testnet-usdc-v1', 'stellar'),
   ]), true);
-  assert.equal(privateBalancePoolConfigured([
+  assert.equal(privatePaymentsEnabled([
     deployment('testnet-xlm-v1', 'native'),
     deployment('testnet-usdc-v1', 'stellar', true),
   ]), true);
+});
+
+test('wallet consent and selected-asset readiness are separate access states', async () => {
+  const { privatePaymentAccessState } = await bootstrapDomain();
+
+  assert.equal(privatePaymentAccessState({
+    paymentsEnabled: false,
+    selectedStateExists: false,
+    runtimeConfigured: false,
+    runtimeMatchesSelection: false,
+  }), 'needs-consent');
+  assert.equal(privatePaymentAccessState({
+    paymentsEnabled: true,
+    selectedStateExists: false,
+    runtimeConfigured: false,
+    runtimeMatchesSelection: true,
+  }), 'preparing');
+  assert.equal(privatePaymentAccessState({
+    paymentsEnabled: true,
+    selectedStateExists: true,
+    runtimeConfigured: false,
+    runtimeMatchesSelection: true,
+  }), 'preparing');
+  assert.equal(privatePaymentAccessState({
+    paymentsEnabled: true,
+    selectedStateExists: true,
+    runtimeConfigured: true,
+    runtimeMatchesSelection: false,
+  }), 'preparing');
+  assert.equal(privatePaymentAccessState({
+    paymentsEnabled: true,
+    selectedStateExists: true,
+    runtimeConfigured: true,
+    runtimeMatchesSelection: true,
+  }), 'ready');
 });
 
 test('advisory render publication cannot undo durable setup or removal authority', async () => {
@@ -129,7 +163,30 @@ test('private runtime boundary loads the catalogue and scopes one mounted worker
   assert.match(runtimeHook, /selectAsset/);
 });
 
-test('private runtime identity includes the selected asset option even when assets share one pool', () => {
+test('runtime controls are scoped immediately to the active account and network', () => {
+  const boundary = readFileSync(
+    new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
+    'utf8',
+  );
+  const runtimeHook = readFileSync(
+    new URL('../src/hooks/usePrivateBalanceRuntime.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(runtimeHook, /scopeKey:\s*string \| null/);
+  assert.match(runtimeHook, /state\.scopeKey === scopeKey/);
+  assert.match(boundary, /controlScopeKey/);
+  assert.match(
+    boundary,
+    /<PrivateBalanceRuntimeControlProvider scopeKey=\{controlScopeKey\}>/,
+  );
+  assert.match(
+    boundary,
+    /\.catch\([\s\S]{0,360}?registerAvailableAssets\(\[\], null\)/,
+  );
+});
+
+test('private runtime identity includes the selected asset-pinned deployment', () => {
   const boundary = readFileSync(
     new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
     'utf8',
@@ -138,7 +195,7 @@ test('private runtime identity includes the selected asset option even when asse
   assert.match(
     boundary,
     /activeAccount\.id}:\$\{deployment\.id}:\$\{deployment\.poolDeploymentId}/,
-    'switching between assets in one pool must remount the asset-scoped runtime',
+    'switching asset-pinned pools must remount the selected runtime',
   );
 });
 
@@ -151,7 +208,7 @@ test('private asset intent is retained while the verified catalogue catches up',
   const registrationStart = runtimeHook.indexOf('const registerAvailableAssets', selectionStart);
   const selection = runtimeHook.slice(selectionStart, registrationStart);
 
-  assert.match(selection, /setSelectedDeploymentId\(deploymentId\)/);
+  assert.match(selection, /selectedDeploymentId:\s*deploymentId/);
   assert.doesNotMatch(
     selection,
     /availableAssets/,
@@ -339,7 +396,7 @@ test('private portfolio restores an already-scanned incoming memo from its encry
   assert.equal(entry.activities[0].memoHex, memoHex);
 });
 
-test('one private pool setup configures and removes every asset without sharing balances', async () => {
+test('asset-pinned pool updates preserve unrelated private balances', async () => {
   const { updatePrivatePortfolioPoolEntries } = await portfolioDomain();
   const asset = (code, kind, contractByte, decimals) => ({
     code,
@@ -352,10 +409,8 @@ test('one private pool setup configures and removes every asset without sharing 
   });
   const xlm = asset('XLM', 'native', 'A', 7);
   const usdc = asset('USDC', 'stellar', 'B', 7);
-  const poolAssets = [
-    { deploymentId: 'pool-v2:native', asset: xlm },
-    { deploymentId: 'pool-v2:USDC:issuer', asset: usdc },
-  ];
+  const xlmPool = [{ deploymentId: 'testnet-xlm-v1', asset: xlm }];
+  const usdcPool = [{ deploymentId: 'testnet-usdc-v1', asset: usdc }];
   const entry = (deploymentId, selectedAsset, balance) => ({
     deploymentId,
     asset: selectedAsset,
@@ -368,18 +423,18 @@ test('one private pool setup configures and removes every asset without sharing 
 
   const afterXlmSetup = updatePrivatePortfolioPoolEntries(
     [],
-    poolAssets,
-    entry('pool-v2:native', xlm, '25000000'),
+    xlmPool,
+    entry('testnet-xlm-v1', xlm, '25000000'),
   );
   assert.deepEqual(
     afterXlmSetup.map(candidate => [candidate.asset.code, candidate.verifiedBalanceAtomicUnits]),
-    [['XLM', '25000000'], ['USDC', '0']],
+    [['XLM', '25000000']],
   );
 
   const afterUsdcLoad = updatePrivatePortfolioPoolEntries(
     afterXlmSetup,
-    poolAssets,
-    entry('pool-v2:USDC:issuer', usdc, '7000000'),
+    usdcPool,
+    entry('testnet-usdc-v1', usdc, '7000000'),
   );
   assert.deepEqual(
     afterUsdcLoad.map(candidate => [candidate.asset.code, candidate.verifiedBalanceAtomicUnits]),
@@ -389,10 +444,10 @@ test('one private pool setup configures and removes every asset without sharing 
   const unrelated = entry('other-pool:native', xlm, '90000000');
   const removed = updatePrivatePortfolioPoolEntries(
     [...afterUsdcLoad, unrelated],
-    poolAssets,
+    xlmPool,
     null,
   );
-  assert.deepEqual(removed, [unrelated]);
+  assert.deepEqual(removed, [afterUsdcLoad[1], unrelated]);
 });
 
 test('private portfolio representative value prices configured XLM and USDC without claiming testnet value', async () => {

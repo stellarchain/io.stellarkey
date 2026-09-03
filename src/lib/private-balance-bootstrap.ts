@@ -34,6 +34,15 @@ interface PrivateBalanceConfiguredCandidate {
   encryptedStateExists: boolean;
 }
 
+export type PrivatePaymentAccessState = 'needs-consent' | 'preparing' | 'ready';
+
+export interface PrivatePaymentAccessInput {
+  paymentsEnabled: boolean;
+  selectedStateExists: boolean;
+  runtimeConfigured: boolean;
+  runtimeMatchesSelection: boolean;
+}
+
 export type PrivateBalanceAccountSupport =
   | { ready: true }
   | { ready: false; reason: string };
@@ -106,11 +115,28 @@ export function shouldMountPrivateBalanceRuntime({
   return accountReady && deploymentReady && requested;
 }
 
-/** Private Payments is enabled for the shared pool when any asset sees its durable state. */
-export function privateBalancePoolConfigured(
+/** Private Payments has wallet-wide consent once any asset has durable encrypted state. */
+export function privatePaymentsEnabled(
   deployments: readonly PrivateBalanceConfiguredCandidate[],
 ): boolean {
   return deployments.some(deployment => deployment.encryptedStateExists);
+}
+
+/**
+ * Consent belongs to Private Payments as a wallet capability. Each asset still
+ * has an isolated runtime and encrypted store, so an enabled wallet may need a
+ * short preparation pass before the selected asset can render its action UI.
+ */
+export function privatePaymentAccessState({
+  paymentsEnabled,
+  selectedStateExists,
+  runtimeConfigured,
+  runtimeMatchesSelection,
+}: PrivatePaymentAccessInput): PrivatePaymentAccessState {
+  if (!paymentsEnabled) return 'needs-consent';
+  return selectedStateExists && runtimeConfigured && runtimeMatchesSelection
+    ? 'ready'
+    : 'preparing';
 }
 
 export function selectPrivateBalanceDeploymentId(

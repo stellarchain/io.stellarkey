@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Asked for Private Payments consent once per wallet, kept its success confirmation open until Done, and automatically prepared newly selected asset-pinned pools inside Send, Receive, and Add without replacing their modal shells.
+- Kept private-asset readiness and verified balances deployment-specific, and cleared private runtime controls immediately when the active account or network changes.
 - Treated issued-asset trustlines as spendable whenever Horizon reports full authorization, even when it also reports maintain-liabilities capability, and validated leading-zero Private Payment amounts with specific zero/value guidance instead of a generic error.
 - Retried one semantically read-only RPC `getNetwork` probe after a transient transport or malformed-body response, preventing Firefox from rejecting a healthy endpoint while preserving fail-closed network-identity checks.
 - Matched live Private Payments contracts against the binary verifier-key digest published in their manifests, retained initialized workers after first-time setup persistence, automatically resynchronized once when action preparation observes non-current chain state, selected a CORS-capable independent Testnet witness RPC, and kept witnessed checks live after old deployment ledgers age out of rolling RPC retention.
