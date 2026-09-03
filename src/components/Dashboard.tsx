@@ -3953,12 +3953,13 @@ function PriceCard() {
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
   const [chartInspection, setChartInspection] = useState<PriceChartInspection | null>(null);
+  const displayedRange = priceData?.range ?? priceRange;
   const periodLabel = ({
     "1D": "24-hour",
     "7D": "7-day",
     "1M": "1-month",
     "1Y": "1-year",
-  } satisfies Record<PriceRangeT, string>)[priceRange];
+  } satisfies Record<PriceRangeT, string>)[displayedRange];
 
   const totalAllXlm = useMemo(
     () => Object.values(accountBalances).reduce((sum, n) => sum + n, 0),
@@ -4021,7 +4022,7 @@ function PriceCard() {
                 setChartInspection(null);
                 setChartMode(opt.id);
               }}
-              className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+              className={`flex-1 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-[color,background-color,box-shadow] ${
                 mode === opt.id
                   ? "bg-[#0A84FF] text-white shadow-sm"
                   : "text-neutral-400 hover:text-white"
@@ -4042,7 +4043,7 @@ function PriceCard() {
               : `${periodLabel} estimate · current balance`}
           </p>
         </div>
-        <div className="min-w-0 justify-self-end text-right">
+        <div className="relative min-w-0 justify-self-end text-right">
           <div className="flex flex-nowrap items-center justify-end gap-2.5 text-right">
             <span className="whitespace-nowrap text-[24px] font-bold tracking-tight text-white">
               {displayedValue !== null
@@ -4067,7 +4068,7 @@ function PriceCard() {
           {priceLoading && (
             <p
               aria-live="polite"
-              className="mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-neutral-500"
+              className="absolute right-0 top-full mt-0.5 flex items-center justify-end gap-1.5 text-[10px] text-neutral-500"
             >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0A84FF]" aria-hidden="true" />
               Updating
@@ -4075,11 +4076,11 @@ function PriceCard() {
           )}
         </div>
       </div>
-      <div className="mt-3">
+      <div className="mt-3" aria-busy={priceLoading}>
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
           <PriceChart
             points={portfolioPoints}
-            range={priceRange}
+            range={displayedRange}
             currency={fiatCurrency}
             rates={fiatRates}
             onInspect={setChartInspection}
@@ -4087,7 +4088,7 @@ function PriceCard() {
         ) : priceData && priceData.points.length > 1 ? (
           <PriceChart
             points={priceData.points}
-            range={priceRange}
+            range={displayedRange}
             currency={fiatCurrency}
             rates={fiatRates}
             marketPrecision
