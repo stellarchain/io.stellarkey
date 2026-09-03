@@ -177,6 +177,27 @@ test("RPC endpoint health uses getNetwork and rejects a wrong passphrase", async
   );
 });
 
+test("RPC endpoint health retries one transient empty getNetwork response", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    requests += 1;
+    if (requests === 1) return new Response("", { status: 200 });
+    const request = JSON.parse(init.body);
+    return new Response(JSON.stringify({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        passphrase: "Test SDF Network ; September 2015",
+        protocolVersion: 28,
+      },
+    }), { status: 200 });
+  });
+
+  const result = await testRpcEndpoint("testnet", "https://rpc.example");
+  assert.equal(requests, 2);
+  assert.equal(result.protocolVersion, 28);
+});
+
 test("network settings expose test, save, and reset controls without bundled keys", () => {
   const settings = readFileSync(new URL("../src/components/SettingsPage.tsx", import.meta.url), "utf8");
   assert.match(settings, /Test & Save Horizon/);

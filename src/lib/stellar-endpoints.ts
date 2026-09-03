@@ -1,4 +1,4 @@
-import { getHorizonJson } from "./horizon";
+import { getHorizonJson, HorizonRequestError } from "./horizon";
 import { NETWORKS, type NetworkKey } from "./stellar";
 
 export type StellarEndpointKind = "horizon" | "rpc";
@@ -228,17 +228,29 @@ export async function testRpcEndpoint(
     id?: unknown;
     result?: { passphrase?: unknown; protocolVersion?: unknown };
     error?: unknown;
-  };
-  try {
-    response = await getHorizonJson(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id, method: "getNetwork" }),
-      signal: options.signal,
-    }, options.timeoutMs ?? 8_000);
-  } catch (cause) {
+  } | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      response = await getHorizonJson(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id, method: "getNetwork" }),
+        signal: options.signal,
+      }, options.timeoutMs ?? 8_000);
+      break;
+    } catch (cause) {
+      lastError = cause;
+      const retryable = cause instanceof HorizonRequestError &&
+        ["network", "unknown", "rate_limited", "server"].includes(cause.kind) &&
+        !options.signal?.aborted;
+      if (attempt === 0 && retryable) continue;
+      break;
+    }
+  }
+  if (!response) {
     throw new Error(
-      `RPC endpoint could not be verified: ${cause instanceof Error ? cause.message : "request failed"}`,
+      `RPC endpoint could not be verified: ${lastError instanceof Error ? lastError.message : "request failed"}`,
     );
   }
   if (response.jsonrpc !== "2.0" || response.id !== id || !response.result || response.error) {
