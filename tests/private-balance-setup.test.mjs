@@ -86,7 +86,7 @@ test('one setup prepares every verified asset and finishes on the original selec
   // Errors surface humanized with collapsed technical details.
   assert.match(setup, /HumanizedErrorNotice/);
   assert.match(setup, /Try Again/);
-  assert.match(setup, /Preparing Private Payments/);
+  assert.match(setup, /Securing this device/);
   assert.match(setup, /Checking private history/);
   assert.doesNotMatch(setup, /\(\$\{Math\.max\(0, setupTargetIndex\) \+ 1\} of \$\{setupPlan\.deploymentIds\.length\}\)/);
   // Old protocol vocabulary stays off the setup surface.

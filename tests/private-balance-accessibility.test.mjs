@@ -36,3 +36,18 @@ test('the review keeps one persistent live region so readiness is announced', ()
   // The transient fee skeleton itself carries no live region any more.
   assert.doesNotMatch(review, /aria-live="polite"\s*\n?\s*className="skeleton/);
 });
+
+test('private setup progress is one flat instrument inside the modal shell', () => {
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const start = setup.indexOf("{visibleStage === 'running' ? (");
+  const end = setup.indexOf("{visibleStage === 'done' ? (");
+  assert.ok(start >= 0 && end > start);
+  const running = setup.slice(start, end);
+
+  assert.doesNotMatch(running, /rounded-2xl border/);
+  assert.doesNotMatch(running, /Setting up securely/);
+  assert.match(running, /transition-transform/);
+  assert.match(running, /scaleX\(\$\{progressPercent \/ 100\}\)/);
+  assert.match(running, /Encrypted on this device/);
+  assert.match(running, /Keys stay local/);
+});

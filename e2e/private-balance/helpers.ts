@@ -74,7 +74,7 @@ export async function expectPrivateBalance(region: Locator, amount: string): Pro
 
 /**
  * Drives the one-screen setup: hero + disclosure + single consent checkbox +
- * "Turn On", then the live five-step stepper, then the success moment.
+ * "Turn On", then the live monotonic progress instrument and success moment.
  */
 export async function setupPrivateBalance(page: Page): Promise<Locator> {
   const region = await openPrivateBalance(page);

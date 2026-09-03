@@ -257,7 +257,7 @@ export function PrivateBalanceSetup({
   };
 
   const runningSubtitle = visibleStage === 'running'
-    ? 'Preparing Private Payments'
+    ? 'Securing this device'
     : 'Set up on this device';
 
   return (
@@ -342,11 +342,33 @@ export function PrivateBalanceSetup({
         ) : null}
 
         {visibleStage === 'running' ? (
-          <section aria-label="Setting up Private Payments">
-            <div className="rounded-2xl border border-white/[0.09] bg-white/[0.025] p-4">
-              <div className="mb-3 flex items-center justify-between gap-4 text-[13px]">
-                <span className="font-semibold text-white">Setting up securely</span>
-                <span className="tabular-nums text-neutral-400">{progressPercent}%</span>
+          <section
+            aria-label="Setting up Private Payments"
+            className="relative overflow-hidden px-1 pb-2 pt-3 sm:px-2 sm:pb-4 sm:pt-5"
+          >
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -left-16 top-0 h-28 w-28 rounded-full bg-[#0A84FF]/10 blur-3xl"
+            />
+            <div className="relative">
+              <div className="flex items-end justify-between gap-6">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#64D2FF]">
+                    On-device setup
+                  </p>
+                  <p
+                    aria-live="polite"
+                    className="mt-2 text-[18px] font-semibold leading-tight tracking-[-0.015em] text-white sm:text-[20px]"
+                  >
+                    {runningStatus}
+                  </p>
+                </div>
+                <p
+                  aria-hidden="true"
+                  className="mono shrink-0 text-[34px] font-medium leading-none tracking-[-0.06em] text-white sm:text-[38px]"
+                >
+                  {progressPercent}<span className="ml-0.5 text-[15px] tracking-normal text-neutral-500">%</span>
+                </p>
               </div>
               <div
                 role="progressbar"
@@ -355,16 +377,20 @@ export function PrivateBalanceSetup({
                 aria-valuemax={100}
                 aria-valuenow={progressPercent}
                 aria-valuetext={`${progressPercent}% complete. ${runningStatus}.`}
-                className="h-2 overflow-hidden rounded-full bg-white/[0.09]"
+                className="relative mt-7 h-[3px] overflow-hidden rounded-full bg-white/[0.1]"
               >
                 <div
-                  className="h-full rounded-full bg-[#0A84FF] transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                  style={{ width: `${progressPercent}%` }}
+                  className="absolute inset-0 origin-left rounded-full bg-[#0A84FF] shadow-[0_0_14px_rgba(10,132,255,0.5)] transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+                  style={{ transform: `scaleX(${progressPercent / 100})` }}
                 />
               </div>
-              <p aria-live="polite" className="mt-3 text-[12px] text-neutral-400">
-                {runningStatus}
-              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-[11px] text-neutral-500">
+                <p className="flex items-center gap-2">
+                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#30D158] shadow-[0_0_8px_rgba(48,209,88,0.45)]" />
+                  Encrypted on this device
+                </p>
+                <p>Keys stay local</p>
+              </div>
             </div>
             <div aria-live="polite" className="mt-4">
               {visibleSetupError !== null ? <HumanizedErrorNotice cause={visibleSetupError} /> : null}
