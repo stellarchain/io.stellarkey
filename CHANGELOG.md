@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept Private Payments setup on the modal's neutral surface and automatically dismissed it after the completed progress state, removing the tinted panel and mandatory final acknowledgement.
 - Reduced first-time Private Payments setup latency by reading independent historical ledger timestamps with bounded RPC concurrency while preserving both authenticated head checks.
 - Shortened first-time Private Payments setup by preventing the underlying action gate from launching a duplicate sync, preparing the originally selected asset last, and moving shared proving-file warm-up out of the critical path while presenting XLM and USDC as one monotonic progress bar.
 - Kept the market chart geometry stable while switching periods, labelled retained data with its real range, and cancelled stale range requests before they could overwrite the latest selection.

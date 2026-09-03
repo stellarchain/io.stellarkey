@@ -74,7 +74,7 @@ export async function expectPrivateBalance(region: Locator, amount: string): Pro
 
 /**
  * Drives the one-screen setup: hero + disclosure + single consent checkbox +
- * "Turn On", then the live monotonic progress instrument and success moment.
+ * "Turn On", then the live monotonic progress instrument through auto-dismiss.
  */
 export async function setupPrivateBalance(page: Page): Promise<Locator> {
   const region = await openPrivateBalance(page);
@@ -83,15 +83,17 @@ export async function setupPrivateBalance(page: Page): Promise<Locator> {
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Turn On" }).click();
-  const success = dialog.getByText("Private Payments is on");
   const failure = dialog.getByRole("alert");
-  await expect(success.or(failure).first()).toBeVisible({ timeout: 180_000 });
+  await expect.poll(async () => {
+    if (await failure.isVisible().catch(() => false)) return "failure";
+    if (!(await dialog.isVisible().catch(() => false))) return "closed";
+    return "running";
+  }, { timeout: 180_000 }).not.toBe("running");
   if (await failure.isVisible().catch(() => false)) {
     const details = failure.getByRole("button", { name: "Technical details" });
     if (await details.isVisible().catch(() => false)) await details.click();
     throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
   }
-  await dialog.getByRole("button", { name: "Done" }).click();
   await expect(dialog).toBeHidden();
   await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({
     timeout: 180_000,
