@@ -144,6 +144,11 @@ paths, with no automatic fix available. The high findings concern the nested
 blocks a green complete release verification and must not be described as a
 release-ready security clearance.
 
+`npm run release:verify` was also run from a clean implementation worktree. It
+passed generated-artifact verification, typechecking, all 1,367 tests and lint,
+then stopped at that production dependency audit. Build, bundle and browser
+results above were run separately; the complete release command did not pass.
+
 No user secrets or live user payment transactions were used as test fixtures.
 Live multi-wallet relayed-chain lifecycle testing, physical iPhone checks,
 human VoiceOver/NVDA checks, independent contract/circuit review and a complete
