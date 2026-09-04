@@ -12,6 +12,7 @@ import {
   BoundedPrivateRelayTransport,
   validatePrivateRelayUrls,
 } from '../src/features/private-balance/relay/transport.ts';
+import { firstAcceptedPrivateRelayPublish } from '../src/features/private-balance/relay/nostr.ts';
 
 const NOW = 1_800_000_000;
 
@@ -80,4 +81,33 @@ test('bounded transport closes every relay subscription on abort', async () => {
   transport.close();
   assert.ok(closed.includes('wss://relay.one/'));
   assert.ok(closed.includes('wss://relay.two/'));
+});
+
+test('relay publishing unblocks when the first configured relay accepts', async () => {
+  let acceptSlowRelay;
+  const slowRelay = new Promise(resolve => { acceptSlowRelay = resolve; });
+
+  const outcome = await Promise.race([
+    firstAcceptedPrivateRelayPublish(
+      ['wss://relay.one/', 'wss://relay.two/'],
+      [Promise.resolve(), slowRelay],
+    ),
+    new Promise(resolve => setTimeout(() => resolve('timed-out'), 100)),
+  ]);
+
+  assert.ok(outcome instanceof Map);
+  assert.deepEqual([...outcome], [['wss://relay.one/', true]]);
+  acceptSlowRelay();
+});
+
+test('relay publishing reports failure only after every configured relay rejects', async () => {
+  const outcome = await firstAcceptedPrivateRelayPublish(
+    ['wss://relay.one/', 'wss://relay.two/'],
+    [Promise.reject(new Error('one failed')), Promise.reject(new Error('two failed'))],
+  );
+
+  assert.deepEqual([...outcome], [
+    ['wss://relay.one/', false],
+    ['wss://relay.two/', false],
+  ]);
 });
