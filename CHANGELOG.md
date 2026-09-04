@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Excluded the active Stellar account from privacy-relay availability and transaction offers, and expired helper request/quote state so self-relay and repeated probes cannot undermine the bounded peer workflow.
+- Excluded the active Stellar account from privacy-relay availability and transaction offers, capped untrusted quote collection, and expired helper request/quote state so self-relay, flooding, and repeated probes cannot undermine the bounded peer workflow.
 - Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
 - Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.
 - Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool and browser peer relay in explicit decision records.

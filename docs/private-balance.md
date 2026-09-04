@@ -440,7 +440,8 @@ are not relayable because their public source must authorize the asset transfer.
 The **Check available peers** control is an explicit live quote request, not a
 background presence beacon. It reveals no asset, amount, destination, note, or
 proof input. Responses are kept only in memory, deduplicated by public source
-account, ordered by fee, and labelled with the time of the check. The active Stellar account
+account, capped at 32 unique replies, ordered by fee, and labelled with the time
+of the check. The active Stellar account
 is excluded so self-relay is never presented as privacy. Available when checked is not a
 guarantee that a peer will remain available; transaction
 submission obtains fresh short-lived offers and requires a new explicit choice.

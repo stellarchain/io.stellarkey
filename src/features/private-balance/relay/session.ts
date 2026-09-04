@@ -37,6 +37,7 @@ import { rankPrivateRelayQuotes } from './availability';
 const DEFAULT_MESSAGE_TTL_SECONDS = 120;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 20_000;
 const MAX_QUOTE_WINDOW_MS = 20_000;
+const MAX_RELAY_QUOTES = 32;
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
@@ -266,7 +267,11 @@ export class PrivateRelaySenderSession {
       encrypted: true,
       onMessage: ({ message }) => {
         if (message.type !== 'quote' || message.requestId !== request.requestId) return;
-        quotes.set(message.quoteId, message);
+        const existing = quotes.get(message.peerAccount);
+        if (!existing && quotes.size >= MAX_RELAY_QUOTES) return;
+        if (!existing || BigInt(message.feeAtomic) < BigInt(existing.feeAtomic)) {
+          quotes.set(message.peerAccount, message);
+        }
       },
     }, controller.signal);
     try {
