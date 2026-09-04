@@ -84,6 +84,7 @@ export function PrivateRelayHelperManager() {
     const negotiations = negotiationsRef.current;
     const signed = signedRef.current;
     const requestIds = new Set<string>();
+    const requestExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     void PrivateRelayHelperSession.create(preferences.relayUrls).then(session => {
       if (!active) {
@@ -99,13 +100,21 @@ export function PrivateRelayHelperManager() {
           requestIds.size >= MAX_OPEN_QUOTES
         ) return;
         requestIds.add(request.requestId);
+        const forgetRequest = () => {
+          requestIds.delete(request.requestId);
+          const timer = requestExpiryTimers.get(request.requestId);
+          if (timer) clearTimeout(timer);
+          requestExpiryTimers.delete(request.requestId);
+        };
+        requestExpiryTimers.set(
+          request.requestId,
+          setTimeout(forgetRequest, Math.max(0, request.expiresAt * 1_000 - Date.now())),
+        );
         void session.offerQuote({
           request,
           peerAccount: publicAddress,
           feeAtomic: preferences.feeAtomic,
-        }, controller.signal).catch(() => {
-          requestIds.delete(request.requestId);
-        });
+        }, controller.signal).catch(forgetRequest);
       }, controller.signal);
       session.listenForPrivateMessages((message, quote) => {
         if (message.type === 'selection') {
@@ -210,6 +219,8 @@ export function PrivateRelayHelperManager() {
       sessionRef.current = null;
       negotiations.clear();
       signed.clear();
+      for (const timer of requestExpiryTimers.values()) clearTimeout(timer);
+      requestExpiryTimers.clear();
       requestIds.clear();
       pendingRef.current = null;
       setPending(null);

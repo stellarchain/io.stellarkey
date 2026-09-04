@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an explicit, memory-only privacy-relay availability check that shows unique responding peers and their current fees, ordered with the lowest fee first.
 - Added explicit peer selection for private relay submission, showing every responding peer's public source account, private fee, and offer expiry before negotiation.
 - Added a visible Earn by relaying action beneath Home's private assets, with live participation status and focused helper controls that retain manual approval for every transaction.
 - Linked public Private Payments deposits and withdrawals to their exact Stellar explorer transactions while rejecting synthetic restored-history identifiers.
@@ -99,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Excluded the active Stellar account from privacy-relay availability and transaction offers, and expired helper request/quote state so self-relay and repeated probes cannot undermine the bounded peer workflow.
 - Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
 - Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.
 - Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool and browser peer relay in explicit decision records.

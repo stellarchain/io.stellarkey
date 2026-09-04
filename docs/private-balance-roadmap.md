@@ -67,6 +67,11 @@ in this file changes the behavior or guarantees documented in
     the fee note is proof-bound to that peer's private address.
   - Keep "use a privacy relay" and "help relay payments" as separate settings.
     Helping is explicit opt-in and every job requires a manual modal approval.
+  - Let the person explicitly probe current availability without publishing an
+    asset, amount, destination, note, or proof input. Keep the result in memory,
+    exclude the active account, rank unique peers by fee, and label it as a
+    point-in-time observation rather than durable connectivity. Obtain fresh
+    proof-bound quotes again for the actual payment.
   - Before approval, the helper validates the exact unsigned transaction,
     source, network, pool method, time bounds and fee caps; decrypts exactly one
     matching fee note; and simulates the exact transaction. Signed XDR is
