@@ -23,9 +23,13 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
 
   assert.match(dashboard, /PrivateRelayEntry/);
   const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const helperStatus = read('src/features/private-balance/relay/helper-status.ts');
   assert.match(entry, /Earn by relaying/);
   assert.match(entry, /PRIVATE_RELAY_PREFERENCES_EVENT/);
   assert.match(entry, /preferences\.helpRelay/);
+  assert.match(entry, /useSyncExternalStore/);
+  assert.match(entry, /Listening/);
+  assert.match(entry, /Reconnecting/);
   assert.match(entry, /aria-haspopup="dialog"/);
   assert.match(entry, /<Modal/);
   assert.match(entry, /<PrivateRelaySettings helperOnly/);
@@ -34,6 +38,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(settings, /onSaved/);
   assert.doesNotMatch(settings, /Relay settings saved on this device/);
   assert.match(settings, /StellarKey is open and unlocked/);
+  assert.doesNotMatch(helperStatus, /localStorage|sessionStorage|indexedDB/);
 });
 
 test('relay modal checks live peer availability only after explicit intent', () => {
@@ -98,6 +103,8 @@ test('helper mode presents a manual approval only after strict local review', ()
   assert.match(manager, /never signs automatically/i);
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
   assert.match(manager, /requestExpiryTimers/);
+  assert.match(manager, /waitUntilConnected/);
+  assert.match(manager, /publishPrivateRelayHelperStatus/);
   assert.match(manager, /requestIds\.delete\(request\.requestId\)/);
   assert.match(manager, /clearTimeout/);
   assert.match(session, /quoteExpiryTimers/);

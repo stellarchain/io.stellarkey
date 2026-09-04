@@ -13,6 +13,7 @@ import {
   validatePrivateRelayUrls,
 } from '../src/features/private-balance/relay/transport.ts';
 import { firstAcceptedPrivateRelayPublish } from '../src/features/private-balance/relay/nostr.ts';
+import { readFileSync } from 'node:fs';
 
 const NOW = 1_800_000_000;
 
@@ -67,6 +68,8 @@ test('bounded transport closes every relay subscription on abort', async () => {
       void args;
       return { close: () => closed.push('closed') };
     },
+    waitUntilConnected: async urls => new Map(urls.map((url, index) => [url, index === 0])),
+    connectionStatus: async urls => new Map(urls.map((url, index) => [url, index === 0])),
     close: urls => closed.push(...urls),
   };
   const transport = new BoundedPrivateRelayTransport(
@@ -81,6 +84,32 @@ test('bounded transport closes every relay subscription on abort', async () => {
   transport.close();
   assert.ok(closed.includes('wss://relay.one/'));
   assert.ok(closed.includes('wss://relay.two/'));
+});
+
+test('bounded transport reports at-least-one relay readiness without weakening the two-origin policy', async () => {
+  const adapter = {
+    publish: async () => new Map(),
+    subscribe: () => ({ close() {} }),
+    waitUntilConnected: async urls => new Map(urls.map((url, index) => [url, index === 1])),
+    connectionStatus: async urls => new Map(urls.map((url, index) => [url, index === 1])),
+    close() {},
+  };
+  const transport = new BoundedPrivateRelayTransport(
+    ['wss://relay.one', 'wss://relay.two'],
+    adapter,
+  );
+
+  assert.deepEqual(await transport.waitUntilConnected(), { connected: 1, total: 2 });
+  assert.deepEqual(await transport.connectionStatus(), { connected: 1, total: 2 });
+});
+
+test('the production Nostr pool keeps subscriptions reconnectable after a dropped socket', () => {
+  const source = readFileSync(
+    new URL('../src/features/private-balance/relay/nostr.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /enableReconnect:\s*true/);
+  assert.match(source, /enablePing:\s*true/);
 });
 
 test('relay publishing unblocks when the first configured relay accepts', async () => {

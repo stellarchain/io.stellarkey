@@ -7,6 +7,11 @@ export interface PrivateRelaySubscription {
   close(): void;
 }
 
+export interface PrivateRelayConnectionStatus {
+  connected: number;
+  total: number;
+}
+
 export interface PrivateRelayTransportAdapter {
   publish(urls: readonly string[], event: VerifiedEvent, signal?: AbortSignal): Promise<Map<string, boolean>>;
   subscribe(
@@ -14,6 +19,8 @@ export interface PrivateRelayTransportAdapter {
     filters: readonly PrivateRelayFilter[],
     onEvent: (event: Event) => void,
   ): PrivateRelaySubscription;
+  waitUntilConnected(urls: readonly string[], signal?: AbortSignal): Promise<Map<string, boolean>>;
+  connectionStatus(urls: readonly string[]): Promise<Map<string, boolean>>;
   close(urls: readonly string[]): void;
 }
 
@@ -87,6 +94,27 @@ export class BoundedPrivateRelayTransport {
     if (signal?.aborted) close();
     else signal?.addEventListener('abort', abort, { once: true });
     return subscription;
+  }
+
+  private summarizeConnectionStatus(outcomes: ReadonlyMap<string, boolean>): PrivateRelayConnectionStatus {
+    return {
+      connected: this.urls.reduce((count, url) => count + (outcomes.get(url) ? 1 : 0), 0),
+      total: this.urls.length,
+    };
+  }
+
+  async waitUntilConnected(signal?: AbortSignal): Promise<PrivateRelayConnectionStatus> {
+    if (this.closed) throw new Error('Private relay transport is closed');
+    if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
+    const outcomes = await this.adapter.waitUntilConnected(this.urls, signal);
+    const status = this.summarizeConnectionStatus(outcomes);
+    if (status.connected === 0) throw new Error('No configured privacy relay is reachable');
+    return status;
+  }
+
+  async connectionStatus(): Promise<PrivateRelayConnectionStatus> {
+    if (this.closed) return { connected: 0, total: this.urls.length };
+    return this.summarizeConnectionStatus(await this.adapter.connectionStatus(this.urls));
   }
 
   close(): void {
