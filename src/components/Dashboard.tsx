@@ -166,6 +166,12 @@ const PrivateBalanceAssetRow = dynamic(
     ),
   { ssr: false },
 );
+const PrivateRelayEntry = dynamic(
+  () => import("@/features/private-balance/components/PrivateRelayEntry").then(
+    (module) => module.PrivateRelayEntry,
+  ),
+  { ssr: false },
+);
 const PrivateAssetDetailModal = dynamic(
   () => import("@/features/private-balance/components/PrivateAssetDetailModal").then(
     (module) => module.PrivateAssetDetailModal,
@@ -2911,6 +2917,7 @@ export function Dashboard() {
                         );
                       })}
                     </div>
+                    {privatePaymentsAreEnabled ? <PrivateRelayEntry /> : null}
                   </section>
                 )}
                 </div>
