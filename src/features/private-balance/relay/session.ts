@@ -32,6 +32,7 @@ import {
   BoundedPrivateRelayTransport,
   type PrivateRelaySubscription,
 } from './transport';
+import { rankPrivateRelayQuotes } from './availability';
 
 const DEFAULT_MESSAGE_TTL_SECONDS = 120;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 20_000;
@@ -278,7 +279,7 @@ export class PrivateRelaySenderSession {
         if (signal?.aborted) abortWait();
         else signal?.addEventListener('abort', abortWait, { once: true });
       });
-      return { request, quotes: [...quotes.values()].sort((left, right) => BigInt(left.feeAtomic) < BigInt(right.feeAtomic) ? -1 : 1) };
+      return { request, quotes: rankPrivateRelayQuotes([...quotes.values()], nowSeconds()) };
     } finally {
       controller.abort();
       subscription.close();
