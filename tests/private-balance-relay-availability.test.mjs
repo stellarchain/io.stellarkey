@@ -307,6 +307,27 @@ test('quote discovery aborts before either discovery timer completes', async () 
   assert.equal(controlled.closed(), 1);
 });
 
+test('quote discovery rejects a signal that was already aborted', async () => {
+  const controlled = controlledSenderSession();
+  const controller = new AbortController();
+  controller.abort();
+  const startedAt = performance.now();
+
+  await assert.rejects(
+    controlled.session.requestQuotes({
+      networkId: NETWORK_ID,
+      poolContractId: POOL,
+      actionKind: 'transfer',
+      quoteWindowMs: 1_000,
+      settleWindowMs: 70,
+    }, controller.signal),
+    error => error instanceof DOMException && error.name === 'AbortError',
+  );
+
+  assert.ok(performance.now() - startedAt < 300);
+  assert.equal(controlled.closed(), 1);
+});
+
 test('quote discovery bounds untrusted replies before retaining them', () => {
   assert.match(sessionSource, /MAX_RELAY_QUOTES/);
   assert.match(sessionSource, /quotes\.size >= MAX_RELAY_QUOTES/);
