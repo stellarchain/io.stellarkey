@@ -245,36 +245,14 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return { sequence, closedAt };
   }
 
-  async #ledgerClosedAt(sequence: number): Promise<number> {
-    const ledger = await this.#request(`${this.#baseUrl}/ledgers/${sequence}`) as RawLedger;
-    if (positiveInteger(ledger.sequence) !== sequence) {
-      throw new Error('Horizon returned the wrong ledger during stealth discovery');
-    }
-    const closedAt = timestamp(ledger.closed_at);
-    if (closedAt === null) throw new Error('Horizon ledger close time is invalid');
-    return closedAt;
-  }
-
-  async #lowerBoundCursor(lowerBoundCreatedAt: number, latest: { sequence: number; closedAt: number }): Promise<string> {
-    if (!Number.isFinite(lowerBoundCreatedAt) || lowerBoundCreatedAt < 0) {
-      throw new Error('Stealth discovery lower bound is invalid');
-    }
-    if (latest.closedAt < lowerBoundCreatedAt) return highWaterCursor(latest.sequence);
+  async #retainedHistoryCursor(latest: { sequence: number; closedAt: number }): Promise<string> {
     const earliest = await this.#earliestLedger();
     if (earliest.sequence > latest.sequence || earliest.closedAt > latest.closedAt) {
       throw new Error('Horizon returned an invalid retained ledger range for stealth discovery');
     }
-    if (earliest.closedAt >= lowerBoundCreatedAt) {
-      return highWaterCursor(Math.max(0, earliest.sequence - 1));
-    }
-    let low = earliest.sequence;
-    let high = latest.sequence;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (await this.#ledgerClosedAt(middle) < lowerBoundCreatedAt) low = middle + 1;
-      else high = middle;
-    }
-    return highWaterCursor(Math.max(0, low - 1));
+    // Wallet creation is not a key birthday. Every fresh scan uses the same
+    // retained-history boundary, including callers with legacy birthday data.
+    return highWaterCursor(Math.max(0, earliest.sequence - 1));
   }
 
   async #operations(transactionHash: string): Promise<RawOperation[]> {
@@ -326,10 +304,7 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
   }): Promise<StealthAnnouncementPage> {
     const limit = Math.min(Math.max(Math.floor(input.limit), 1), 200);
     const latest = await this.#latestLedger();
-    const startCursor = input.cursor ?? await this.#lowerBoundCursor(
-      input.lowerBoundCreatedAt,
-      latest,
-    );
+    const startCursor = input.cursor ?? await this.#retainedHistoryCursor(latest);
     if (!POSITIVE_DECIMAL.test(startCursor)) throw new Error('Stealth discovery cursor is invalid');
 
     const paymentPage = await this.#payments(startCursor, limit);
