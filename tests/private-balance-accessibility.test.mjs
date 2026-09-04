@@ -53,3 +53,12 @@ test('private setup progress is one flat instrument inside the modal shell', () 
   assert.match(running, /Encrypted on this device/);
   assert.match(running, /Keys stay local/);
 });
+
+test('private asset administration keeps labels, live status, and explicit buttons accessible', () => {
+  const admin = read('src/features/private-balance/components/PrivateAssetRegistryAdmin.tsx');
+  assert.match(admin, /<Field label="Stellar Asset Contract address">/);
+  assert.match(admin, /aria-live="polite"/);
+  assert.match(admin, /aria-labelledby="private-asset-admin-title"/);
+  assert.doesNotMatch(admin, /<button(?![^>]*type=)/);
+  assert.doesNotMatch(admin, /transition-all|transition:\s*all/);
+});

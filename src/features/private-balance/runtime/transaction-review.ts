@@ -8,9 +8,16 @@ import {
 } from '@stellar/stellar-sdk';
 import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
 
+export type PrivateBalanceTransactionManifest = Pick<
+  PrivateBalanceManifest,
+  'networkPassphrase' | 'poolContractId'
+> & {
+  assets: ReadonlyArray<{ index: number; contractId: string }>;
+};
+
 export interface PrivateBalanceTransactionReviewRequest {
   envelopeXdr: string;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assets'>;
+  manifest: PrivateBalanceTransactionManifest;
   source: string;
   sequence: string;
   timeBounds: { minTime: string; maxTime: string };

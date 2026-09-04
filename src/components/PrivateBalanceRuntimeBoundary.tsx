@@ -196,12 +196,14 @@ function summarizeManifest(
   manifest: LoadedPrivateBalanceDeployment['manifest'],
   network: 'testnet' | 'mainnet',
   manifestHash: string,
+  assetAdminAddress: string,
 ): PrivateBalanceDeploymentSummary {
   return {
     manifestStatus: manifest.status,
     network,
     poolContractId: manifest.poolContractId,
     assetContractId: null,
+    assetAdminAddress,
     realmId: manifest.realmId,
     artifactVersion: manifest.artifactVersion,
     manifestHash,
@@ -362,7 +364,12 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
         const candidates = await Promise.all(loadedDeployments.map(async loaded => {
           let deployment = deploymentsByPool.get(loaded.poolDeploymentId);
           if (!deployment) {
-            deployment = summarizeManifest(loaded.manifest, network, loaded.manifestHash);
+            deployment = summarizeManifest(
+              loaded.manifest,
+              network,
+              loaded.manifestHash,
+              loaded.assetAdminAddress,
+            );
             deploymentsByPool.set(loaded.poolDeploymentId, deployment);
           }
           const availability = privateBalanceAvailability(loaded.manifest, network, {
@@ -478,6 +485,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
     network,
     publishAvailableDeployments,
     registerAvailableAssets,
+    runtimeRequestVersion,
   ]);
 
   const currentBootstrap: BootstrapState = bootstrap.key === bootstrapKey

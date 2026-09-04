@@ -46,6 +46,8 @@ export interface LoadedPrivateBalanceDeployment {
   manifestSha256: string;
   manifest: PrivateBalanceManifest;
   manifestHash: string;
+  /** Current on-chain administrator, corroborated across both RPC views. */
+  assetAdminAddress: string;
 }
 
 const HEX_32 = /^[0-9a-f]{64}$/;
@@ -163,6 +165,7 @@ export function reconcilePrivateBalanceRegistry(input: {
       ...template,
       id: `${template.poolDeploymentId}:${live.index}`,
       asset,
+      assetAdminAddress: input.registry.adminAddress,
     };
   });
 }
@@ -308,6 +311,7 @@ export async function loadPrivateBalanceDeployments(input: {
     manifestSha256: deployment.manifestSha256,
     manifest: loaded.manifest,
     manifestHash: loaded.manifestHash,
+    assetAdminAddress: loaded.manifest.assetAdminAddress,
   })));
 }
 
