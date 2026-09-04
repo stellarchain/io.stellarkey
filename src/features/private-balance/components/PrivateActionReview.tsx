@@ -211,6 +211,8 @@ export function PrivateActionReview({
     ? `Ready to confirm. Maximum network fee ${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM.`
     : chained !== null
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
+      : preparing && relayProgress === 'comparing-fees'
+        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer found' : 'offers found'}. Comparing relay fees briefly.`
       : relayQuotes.length > 0
         ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer is' : 'offers are'} available. Choose a peer to continue.`
       : preparing
@@ -289,6 +291,8 @@ export function PrivateActionReview({
               <span className="skeleton inline-block rounded-md px-2.5 py-0.5 text-[12px] font-normal text-neutral-400">
                 {relayProgress === 'finding-peer'
                   ? 'Finding a privacy relay…'
+                  : relayProgress === 'comparing-fees'
+                    ? 'Comparing relay fees…'
                   : relayProgress === 'agreeing-fee'
                     ? 'Agreeing relay fee…'
                     : progressLabel(progress ?? 'checking-chain')}
@@ -393,6 +397,7 @@ export function PrivateActionReview({
           code={code}
           decimals={decimals}
           disabled={preparing || working}
+          comparing={preparing && relayProgress === 'comparing-fees'}
           onSelect={onSelectRelayQuote}
         />
       ) : null}

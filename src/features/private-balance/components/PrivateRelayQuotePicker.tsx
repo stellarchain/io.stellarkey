@@ -10,27 +10,33 @@ export function PrivateRelayQuotePicker({
   code,
   decimals,
   disabled,
+  comparing,
   onSelect,
 }: {
   quotes: readonly PrivateRelayQuote[];
   code: string;
   decimals: number;
   disabled: boolean;
+  comparing: boolean;
   onSelect(quoteId: string): void;
 }) {
   return (
-    <section aria-labelledby="private-relay-quotes-title" className="panel-inset overflow-hidden">
+    <section
+      aria-labelledby="private-relay-quotes-title"
+      aria-busy={comparing}
+      className="panel-inset overflow-hidden"
+    >
       <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.08] px-4 py-3">
         <div>
           <h3 id="private-relay-quotes-title" className="text-[13px] font-semibold text-white">
             Available peers
           </h3>
           <p className="mt-0.5 text-[11.5px] text-neutral-500">
-            Choose who submits this transaction
+            {comparing ? 'Checking briefly for a better fee' : 'Choose who submits this transaction'}
           </p>
         </div>
         <span className="text-[11.5px] font-medium text-neutral-400">
-          {quotes.length} {quotes.length === 1 ? 'offer' : 'offers'}
+          {quotes.length} {quotes.length === 1 ? 'offer' : 'offers'}{comparing ? ' found' : ''}
         </span>
       </div>
       <div className="divide-y divide-white/[0.08]">

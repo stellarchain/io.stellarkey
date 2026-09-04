@@ -141,10 +141,17 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(controller, /selectRelayQuote/);
   assert.match(controller, /relaySelectionRef/);
   assert.match(controller, /excludePeerAccounts.*publicAddress/s);
+  assert.match(controller, /onQuotes:\s*quotes\s*=>/);
+  assert.match(controller, /setRelayProgress\('comparing-fees'\)/);
   assert.doesNotMatch(controller, /quotes\[0\]/);
   assert.match(review, /PrivateRelayQuotePicker/);
   assert.match(review, /onSelectRelayQuote/);
+  assert.match(review, /relayProgress === 'comparing-fees'/);
+  assert.match(review, /Comparing relay fees/);
+  assert.match(review, /comparing=\{preparing && relayProgress === 'comparing-fees'\}/);
   assert.match(picker, /Available peers/);
+  assert.match(picker, /aria-busy=\{comparing\}/);
+  assert.match(picker, /Checking briefly for a better fee/);
   assert.match(picker, /quote\.peerAccount/);
   assert.match(picker, /quote\.feeAtomic/);
   assert.match(picker, /Choose peer/);

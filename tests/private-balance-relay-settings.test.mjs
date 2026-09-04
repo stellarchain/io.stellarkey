@@ -44,6 +44,10 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(availability, /Check available peers/);
   assert.match(availability, /onClick=\{\(\) => void check\(\)\}/);
   assert.match(availability, /checkPrivateRelayAvailability/);
+  assert.match(availability, /onQuotes:/);
+  assert.match(availability, /Finding peers…/);
+  assert.match(availability, /Comparing fees…/);
+  assert.match(availability, /First offer received/);
   assert.match(availability, /excludePeerAccounts.*publicAddress/s);
   assert.match(availability, /AbortController/);
   assert.match(availability, /aria-live="polite"/);
@@ -57,6 +61,7 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(entry, /code=\{asset\?\.code/);
   assert.match(entry, /decimals=\{asset\?\.decimals/);
   assert.doesNotMatch(availability, /savePrivateRelayPreferences|localStorage/);
+  assert.doesNotMatch(availability, /transition-all/);
 });
 
 test('relay fees use normal seven-decimal asset units instead of atomic units', () => {

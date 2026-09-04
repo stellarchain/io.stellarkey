@@ -51,6 +51,9 @@ export function PrivateRelayAvailability({
         poolContractId,
         quoteWindowMs: AVAILABILITY_WINDOW_MS,
         excludePeerAccounts: publicAddress ? [publicAddress] : [],
+        onQuotes: snapshot => {
+          if (!controller.signal.aborted) setResult(snapshot);
+        },
       }, controller.signal);
       if (!controller.signal.aborted) setResult(next);
     } catch (cause: unknown) {
@@ -66,8 +69,11 @@ export function PrivateRelayAvailability({
   };
 
   const count = result?.quotes.length ?? null;
+  const hasOffers = count !== null && count > 0;
   const status = checking
-    ? 'Checking'
+    ? hasOffers
+      ? `${count} found`
+      : 'Checking'
     : error
       ? 'Unavailable'
       : count === null
@@ -111,11 +117,17 @@ export function PrivateRelayAvailability({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[13.5px] font-semibold text-white">
-              {checking ? 'Looking for peers…' : 'Check available peers'}
+              {checking
+                ? hasOffers
+                  ? 'Comparing fees…'
+                  : 'Finding peers…'
+                : 'Check available peers'}
             </span>
             <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
               {checking
-                ? 'Waiting briefly for live fee offers'
+                ? hasOffers
+                  ? 'First offer received. Checking briefly for a better fee'
+                  : 'Waiting for the first live offer'
                 : 'No payment details are included in this check'}
             </span>
           </span>
@@ -131,6 +143,8 @@ export function PrivateRelayAvailability({
             <div className="ios-sep px-4 py-2.5 text-[11px] leading-relaxed text-neutral-500">
               {count === 0
                 ? 'No peers answered. This does not prove every peer is offline.'
+                : checking
+                  ? `${count} ${count === 1 ? 'peer has' : 'peers have'} answered. Comparing live fees now.`
                 : `${count} ${count === 1 ? 'peer was' : 'peers were'} available when checked at ${checkedAt}. Availability can change before payment.`}
             </div>
             {result.quotes.map((quote, index) => {

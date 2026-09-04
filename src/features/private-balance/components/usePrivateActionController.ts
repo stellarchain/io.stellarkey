@@ -26,7 +26,7 @@ import type {
 } from '../relay/protocol';
 
 export type PrivateSubmissionMode = 'relay' | 'direct';
-export type PrivateRelayProgress = 'finding-peer' | 'agreeing-fee';
+export type PrivateRelayProgress = 'finding-peer' | 'comparing-fees' | 'agreeing-fee';
 
 export type PrivateSubmissionOutcome = 'broadcast' | 'ambiguous';
 
@@ -139,6 +139,11 @@ export function usePrivateActionController(
           poolContractId: deployment.poolContractId,
           actionKind: draft.kind,
           excludePeerAccounts: publicAddress ? [publicAddress] : [],
+          onQuotes: quotes => {
+            if (controller.signal.aborted) return;
+            setRelayQuotes([...quotes]);
+            setRelayProgress('comparing-fees');
+          },
         }, controller.signal);
         if (quotes.length === 0) {
           session.close();
