@@ -27,7 +27,7 @@ import {
   type PrivateRecordDriver,
 } from './storage';
 import { PrivateBalanceTransactionBuilder, type ContractProof } from './transaction-builder';
-import { prepareReviewedPrivateBalanceTransaction } from './action-transaction';
+import { prepareReviewedPrivateBalanceTransaction, type PrivateRelayPreparationCallbacks } from './action-transaction';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
 import type {
   PrivateBalanceDurableState,
@@ -336,6 +336,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   assetDecimals: number;
   draft: PrivateActionDraft;
   signal?: AbortSignal;
+  relayPreparation?: PrivateRelayPreparationCallbacks;
   onProgress?(stage: PrivateActionProgressStage): void;
   now?: () => number;
 }): Promise<{ review: PreparedPrivateActionReview; state: PrivateBalanceDurableState }> {
@@ -349,6 +350,7 @@ export async function preparePrivateBalanceActionFlow(input: {
     ? input.draft.relay
     : undefined;
   if (relay) {
+    if (!input.relayPreparation) throw new Error('Private relay preparation is unavailable. Find a helper again.');
     if (
       !StrKey.isValidEd25519PublicKey(relay.sourceAccount) ||
       !/^[0-9a-f]{64}$/u.test(relay.requestId) ||
@@ -630,9 +632,12 @@ export async function preparePrivateBalanceActionFlow(input: {
     const endpoint = new URL(input.rpcUrl);
     const allowHttp = endpoint.protocol === 'http:' &&
       ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-    const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    const rpc = relay ? undefined : new SorobanRpc.Server(endpoint.toString(), { allowHttp });
     const transaction = await prepareReviewedPrivateBalanceTransaction({
       rpc,
+      submissionMode: relay ? 'relay' : 'direct',
+      relayPreparation: input.relayPreparation,
+      signal: input.signal,
       operation,
       manifest: {
         networkPassphrase: input.manifest.networkPassphrase,

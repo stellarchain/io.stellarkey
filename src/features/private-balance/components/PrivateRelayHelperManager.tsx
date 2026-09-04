@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, HashValue, Modal, ModalHeader, Notice } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
@@ -22,6 +22,7 @@ import type {
   PrivateRelaySubmitJob,
 } from '../relay/protocol';
 import type { PrivateRelayJobReview } from '../relay/review';
+import { PrivateRelayPreparationLease, PrivateRelayQuoteExpiries, releasePrivateRelayHelperQuote } from '../relay/preparation';
 import {
   publishPrivateRelayHelperStatus,
   resetPrivateRelayHelperStatus,
@@ -47,6 +48,7 @@ export function PrivateRelayHelperManager() {
     derivePrivateRelayPayout,
     phase,
     publicAddress,
+    preparePrivateRelayJob,
     reviewPrivateRelayJob,
     signPrivateRelayJob,
     submitPrivateRelayJob,
@@ -60,6 +62,22 @@ export function PrivateRelayHelperManager() {
   const pendingRef = useRef<PendingRelayApproval | null>(null);
   const negotiationsRef = useRef(new Map<string, RelayNegotiation>());
   const signedRef = useRef(new Map<string, PrivateRelaySignedJob>());
+  const preparationLeaseRef = useRef(new PrivateRelayPreparationLease());
+  const quoteExpiriesRef = useRef(new PrivateRelayQuoteExpiries());
+  const reviewingRef = useRef<{ quoteId: string } | null>(null);
+  const forgetNegotiation = useCallback((quoteId: string) => {
+    quoteExpiriesRef.current.forget(quoteId);
+    if (reviewingRef.current?.quoteId === quoteId) reviewingRef.current = null;
+    releasePrivateRelayHelperQuote(quoteId, {
+      negotiations: negotiationsRef.current, signed: signedRef.current,
+      preparationLease: preparationLeaseRef.current, pending: pendingRef,
+      onPendingReleased: released => {
+        setPending(current => current === released ? null : current);
+        setWorking(false);
+        setError(null);
+      },
+    });
+  }, []);
 
   useEffect(() => {
     const update = (event: Event) => {
@@ -97,6 +115,9 @@ export function PrivateRelayHelperManager() {
     const controller = new AbortController();
     const negotiations = negotiationsRef.current;
     const signed = signedRef.current;
+    const preparationLease = preparationLeaseRef.current;
+    const quoteExpiries = quoteExpiriesRef.current;
+    const selectingQuotes = new Set<string>();
     const requestIds = new Set<string>();
     const requestExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
     publishPrivateRelayHelperStatus({
@@ -119,11 +140,17 @@ export function PrivateRelayHelperManager() {
           requestIds.size >= MAX_OPEN_QUOTES
         ) return;
         requestIds.add(request.requestId);
+        let offeredQuoteId: string | null = null;
         const forgetRequest = () => {
           requestIds.delete(request.requestId);
           const timer = requestExpiryTimers.get(request.requestId);
           if (timer) clearTimeout(timer);
           requestExpiryTimers.delete(request.requestId);
+          if (offeredQuoteId) forgetNegotiation(offeredQuoteId);
+          for (const [quoteId, negotiation] of negotiations) {
+            if (negotiation.quote.requestId !== request.requestId) continue;
+            forgetNegotiation(quoteId);
+          }
         };
         requestExpiryTimers.set(
           request.requestId,
@@ -133,24 +160,25 @@ export function PrivateRelayHelperManager() {
           request,
           peerAccount: publicAddress,
           feeAtomic: preferences.feeAtomic,
-          signAccountQuote: (request, quote) => signOptedInPrivateRelayQuote({
-            request,
-            quote,
-            expectedAccount: publicAddress,
-            expectedNetworkId: networkId,
-            expectedPoolContractId: poolContractId,
-            signal: controller.signal,
-          }),
+          signAccountQuote: (request, quote) => {
+            offeredQuoteId = quote.quoteId;
+            quoteExpiries.watch(quote, () => { if (active) forgetRequest(); });
+            return signOptedInPrivateRelayQuote({
+              request, quote, expectedAccount: publicAddress, expectedNetworkId: networkId,
+              expectedPoolContractId: poolContractId, signal: controller.signal,
+            });
+          },
         }, controller.signal).catch(forgetRequest);
       }, controller.signal);
       session.listenForPrivateMessages((message, quote) => {
         if (message.type === 'selection') {
-          if (negotiations.size >= MAX_OPEN_QUOTES || negotiations.has(message.quoteId)) return;
+          if (negotiations.size + selectingQuotes.size >= MAX_OPEN_QUOTES || negotiations.has(message.quoteId) || selectingQuotes.has(message.quoteId)) return;
+          selectingQuotes.add(message.quoteId);
           void derivePrivateRelayPayout({
             assetIndex: message.assetIndex,
             actionDiversifier: message.actionDiversifier,
           }).then(privateFeeAddress => {
-            if (!active) return;
+            if (!active || !requestIds.has(message.requestId) || quote.expiresAt * 1_000 <= Date.now()) return;
             const negotiation = { quote, selection: message };
             negotiations.set(message.quoteId, negotiation);
             return session.sendPayout({
@@ -159,19 +187,51 @@ export function PrivateRelayHelperManager() {
               privateFeeAddress,
             }, controller.signal);
           }).catch(() => {
+            forgetNegotiation(message.quoteId);
             void session.rejectForQuote({
               requestId: message.requestId,
               quoteId: message.quoteId,
               reason: 'policy',
               expiresAt: message.expiresAt,
             }, controller.signal).catch(() => undefined);
+          }).finally(() => { selectingQuotes.delete(message.quoteId); });
+          return;
+        }
+        if (message.type === 'prepare-job') {
+          const negotiation = negotiations.get(message.quoteId);
+          if (!negotiation) return;
+          const preparationToken = pendingRef.current || reviewingRef.current || signed.size > 0 ? null : preparationLease.begin(message.quoteId);
+          if (!preparationToken) {
+            void session.rejectForQuote({ ...message, reason: 'busy' }, controller.signal).catch(() => undefined);
+            return;
+          }
+          void preparePrivateRelayJob({
+            job: message, sourceAccount: quote.peerAccount,
+            assetIndex: negotiation.selection.assetIndex, actionDiversifier: negotiation.selection.actionDiversifier,
+            feeAtomic: quote.feeAtomic, expectedMethod: negotiation.selection.actionKind, quoteExpiresAt: quote.expiresAt,
+          }, controller.signal).then(prepared => {
+            if (!active || controller.signal.aborted || quote.expiresAt * 1_000 <= Date.now() ||
+              negotiations.get(message.quoteId) !== negotiation) {
+              preparationLease.cancel(preparationToken);
+              return;
+            }
+            if (!preparationLease.complete(preparationToken, prepared)) return;
+            return session.sendPrepared({ job: message, ...prepared }, controller.signal);
+          }).catch(() => {
+            preparationLease.cancel(preparationToken);
+            void session.rejectForQuote({ ...message, reason: 'simulation' }, controller.signal).catch(() => undefined);
           });
           return;
         }
         if (message.type === 'sign-job') {
           const negotiation = negotiations.get(message.quoteId);
           if (!negotiation) return;
-          if (pendingRef.current) {
+          const prepared = preparationLease.get(message.quoteId);
+          if (!prepared || prepared.preparedEnvelopeXdr !== message.unsignedEnvelopeXdr) {
+            void session.rejectForQuote({ ...message, reason: 'invalid' }, controller.signal).catch(() => undefined);
+            return;
+          }
+          if (pendingRef.current || reviewingRef.current) {
             void session.rejectForQuote({
               requestId: message.requestId,
               quoteId: message.quoteId,
@@ -180,6 +240,8 @@ export function PrivateRelayHelperManager() {
             }, controller.signal).catch(() => undefined);
             return;
           }
+          const reviewToken = { quoteId: message.quoteId };
+          reviewingRef.current = reviewToken;
           void reviewPrivateRelayJob({
             unsignedEnvelopeXdr: message.unsignedEnvelopeXdr,
             transactionHash: message.transactionHash,
@@ -188,18 +250,22 @@ export function PrivateRelayHelperManager() {
             actionDiversifier: negotiation.selection.actionDiversifier,
             feeAtomic: quote.feeAtomic,
           }).then(review => {
-            if (!active || pendingRef.current) return;
+            if (!active || reviewingRef.current !== reviewToken || pendingRef.current || quote.expiresAt * 1_000 <= Date.now() ||
+              negotiations.get(message.quoteId) !== negotiation || preparationLease.get(message.quoteId) !== prepared) return;
             const approval = { ...negotiation, job: message, review };
             pendingRef.current = approval;
             setPending(approval);
             setError(null);
           }).catch(() => {
+            if (negotiations.get(message.quoteId) === negotiation) forgetNegotiation(message.quoteId);
             void session.rejectForQuote({
               requestId: message.requestId,
               quoteId: message.quoteId,
               reason: 'simulation',
               expiresAt: message.expiresAt,
             }, controller.signal).catch(() => undefined);
+          }).finally(() => {
+            if (reviewingRef.current === reviewToken) reviewingRef.current = null;
           });
           return;
         }
@@ -226,8 +292,7 @@ export function PrivateRelayHelperManager() {
           quote,
           rpcStatus: response.status,
         }, controller.signal)).then(() => {
-          signed.delete(submittedJob.quoteId);
-          negotiations.delete(submittedJob.quoteId);
+          forgetNegotiation(submittedJob.quoteId);
         }).catch(() => {
           void session.rejectForQuote({
             requestId: submittedJob.requestId,
@@ -300,6 +365,10 @@ export function PrivateRelayHelperManager() {
       sessionRef.current = null;
       negotiations.clear();
       signed.clear();
+      preparationLease.clear();
+      quoteExpiries.clear();
+      reviewingRef.current = null;
+      selectingQuotes.clear();
       for (const timer of requestExpiryTimers.values()) clearTimeout(timer);
       requestExpiryTimers.clear();
       requestIds.clear();
@@ -314,10 +383,12 @@ export function PrivateRelayHelperManager() {
     preferences.helpRelay,
     preferences.relayUrls,
     derivePrivateRelayPayout,
+    forgetNegotiation,
     networkId,
     phase,
     poolContractId,
     publicAddress,
+    preparePrivateRelayJob,
     reviewPrivateRelayJob,
     submitPrivateRelayJob,
   ]);
@@ -351,27 +422,32 @@ export function PrivateRelayHelperManager() {
         reason: 'policy',
         expiresAt: pending.job.expiresAt,
       });
-      negotiationsRef.current.delete(pending.job.quoteId);
-      clearPending();
     } catch {
-      clearPending();
+      // Local rejection releases the sequence lease even if the peer is offline.
+    } finally {
+      forgetNegotiation(pending.job.quoteId);
     }
   };
 
   const approve = async () => {
     if (!pending || !sessionRef.current) return;
+    const approval = pending;
+    const session = sessionRef.current;
     setWorking(true);
     setError(null);
     try {
       const signedEnvelopeXdr = await signPrivateRelayJob(pending.review);
-      const signed = await sessionRef.current.sendSigned({
+      if (pendingRef.current !== approval || sessionRef.current !== session || approval.quote.expiresAt * 1_000 <= Date.now()) return;
+      const signed = await session.sendSigned({
         job: pending.job,
         quote: pending.quote,
         signedEnvelopeXdr,
       });
+      if (pendingRef.current !== approval || sessionRef.current !== session) return;
       signedRef.current.set(pending.job.quoteId, signed);
       clearPending();
     } catch {
+      if (pendingRef.current !== approval) return;
       setError('This relay job was not signed. Reject it or try approval again before it expires.');
       setWorking(false);
     }

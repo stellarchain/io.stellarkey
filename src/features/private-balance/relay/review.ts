@@ -1,9 +1,11 @@
 import {
   Address,
   FeeBumpTransaction,
+  Operation,
   scValToNative,
   Transaction,
   TransactionBuilder,
+  type xdr,
 } from '@stellar/stellar-sdk';
 
 const HEX_32 = /^[0-9a-f]{64}$/u;
@@ -60,6 +62,48 @@ function sorobanResourceFee(transaction: Transaction): bigint {
     throw new Error('Private relay transaction is missing Soroban resource data');
   }
   return BigInt(envelope.value.tx.ext.value.resourceFee.toString());
+}
+
+export type PrivateRelayOperationReview = Pick<PrivateRelayJobReview, 'method' | 'assetIndex' | 'actionNonce' | 'outputs'>;
+
+/** Validate the locally selected pool action before any helper RPC request. */
+export function reviewPrivateRelayOperation(input: {
+  operation: xdr.Operation;
+  poolContractId: string;
+  assetIndex: number;
+  actionDiversifier: string;
+  expectedMethod?: 'transfer' | 'withdraw';
+}): PrivateRelayOperationReview {
+  if (!HEX_4.test(input.actionDiversifier)) throw new Error('Private relay action diversifier is invalid');
+  if (!Number.isSafeInteger(input.assetIndex) || input.assetIndex < 0 || input.assetIndex > 255) {
+    throw new Error('Private relay asset index is invalid');
+  }
+  const operation = Operation.fromXDRObject(input.operation);
+  if (operation.type !== 'invokeHostFunction' || operation.source !== undefined ||
+    operation.func.type !== 'hostFunctionTypeInvokeContract') {
+    throw new Error('Private relay transaction must invoke the private pool directly');
+  }
+  if ((operation.auth?.length ?? 0) !== 0) throw new Error('Private relay transaction contains authorization entries');
+  const invocation = operation.func.invokeContract;
+  if (Address.fromScAddress(invocation.contractAddress).toString() !== input.poolContractId) {
+    throw new Error('Private relay transaction targets another contract');
+  }
+  const method = invocation.functionName.toString();
+  if (method !== 'transfer' && method !== 'withdraw') throw new Error('Private relay helper only signs a private transfer or withdraw');
+  if (input.expectedMethod && method !== input.expectedMethod) throw new Error('Private relay method does not match the selected request');
+  if (invocation.args.length !== 2) throw new Error('Private relay pool invocation is malformed');
+  const action = object(scValToNative(invocation.args[0]), 'action');
+  const actionNonce = bytes(action.action_nonce, 32, 'action nonce');
+  const outputs = [output(action.output_0, 0), output(action.output_1, 1), output(action.output_2, 2)] as PrivateRelayJobReview['outputs'];
+  for (const candidate of outputs) {
+    if (bytesToHex(candidate.recipientEnvelope.slice(1, 5)) !== input.actionDiversifier) {
+      throw new Error('Private relay action does not use the selected lane diversifier');
+    }
+  }
+  if (typeof action.public_value !== 'bigint') throw new Error('Private relay public value is malformed');
+  if (method === 'transfer' && action.public_value !== 0n) throw new Error('Private relay transfer exposes an unexpected public value');
+  if (method === 'withdraw' && action.asset_index !== input.assetIndex) throw new Error('Private relay withdrawal uses another asset');
+  return { method, assetIndex: input.assetIndex, actionNonce, outputs };
 }
 
 /**
@@ -119,47 +163,9 @@ export function reviewPrivateRelayJob(input: {
     throw new Error('Private relay transaction time window is invalid');
   }
 
-  const operation = parsed.operations[0];
-  if (
-    operation.type !== 'invokeHostFunction' ||
-    operation.source !== undefined ||
-    operation.func.type !== 'hostFunctionTypeInvokeContract'
-  ) {
-    throw new Error('Private relay transaction must invoke the private pool directly');
-  }
-  if ((operation.auth?.length ?? 0) !== 0) {
-    throw new Error('Private relay transaction contains authorization entries');
-  }
-  const invocation = operation.func.invokeContract;
-  if (Address.fromScAddress(invocation.contractAddress).toString() !== input.poolContractId) {
-    throw new Error('Private relay transaction targets another contract');
-  }
-  const functionName = invocation.functionName.toString();
-  if (functionName !== 'transfer' && functionName !== 'withdraw') {
-    throw new Error('Private relay helper only signs a private transfer or withdraw');
-  }
-  if (invocation.args.length !== 2) throw new Error('Private relay pool invocation is malformed');
-  const action = object(scValToNative(invocation.args[0]), 'action');
-  const actionNonce = bytes(action.action_nonce, 32, 'action nonce');
-  const outputs = [
-    output(action.output_0, 0),
-    output(action.output_1, 1),
-    output(action.output_2, 2),
-  ] as [PrivateRelayReviewedOutput, PrivateRelayReviewedOutput, PrivateRelayReviewedOutput];
-  for (const candidate of outputs) {
-    if (bytesToHex(candidate.recipientEnvelope.slice(1, 5)) !== input.actionDiversifier) {
-      throw new Error('Private relay action does not use the selected lane diversifier');
-    }
-  }
-  if (typeof action.public_value !== 'bigint') {
-    throw new Error('Private relay public value is malformed');
-  }
-  if (functionName === 'transfer' && action.public_value !== 0n) {
-    throw new Error('Private relay transfer exposes an unexpected public value');
-  }
-  if (functionName === 'withdraw' && action.asset_index !== input.assetIndex) {
-    throw new Error('Private relay withdrawal uses another asset');
-  }
+  const envelope = parsed.toEnvelope();
+  if (envelope.type !== 'envelopeTypeTx') throw new Error('Private relay envelope is unsupported');
+  const operationReview = reviewPrivateRelayOperation({ ...input, operation: envelope.value.tx.operations[0] });
 
   const resourceFeeStroops = sorobanResourceFee(parsed);
   const totalFeeStroops = BigInt(parsed.fee);
@@ -173,11 +179,8 @@ export function reviewPrivateRelayJob(input: {
   return {
     transaction: parsed,
     transactionHash,
-    method: functionName,
+    ...operationReview,
     source: parsed.source,
-    assetIndex: input.assetIndex,
-    actionNonce,
-    outputs,
     classicFeeStroops,
     resourceFeeStroops,
     expiresAt,

@@ -37,7 +37,6 @@ function accountQuoteStatement(
     canonicalRequest.version,
     canonicalRequest.networkId,
     canonicalRequest.poolContractId,
-    canonicalRequest.actionKind,
     canonicalRequest.requestId,
     canonicalRequest.replyPubkey,
     canonicalRequest.nonce,

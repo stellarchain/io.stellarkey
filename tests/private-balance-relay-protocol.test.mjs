@@ -25,7 +25,6 @@ function request(overrides = {}) {
     requestId: REQUEST_ID,
     networkId: NETWORK_ID,
     poolContractId: POOL,
-    actionKind: 'transfer',
     replyPubkey: NOSTR_KEY,
     nonce: NONCE,
     expiresAt: NOW + 60,
@@ -38,6 +37,8 @@ test('relay messages use canonical bounded encodings with no sender Stellar iden
   assert.equal(encoded, JSON.stringify(request()));
   assert.deepEqual(decodePrivateRelayMessage(encoded, NOW), request());
   assert.doesNotMatch(encoded, /sender(?:Account|Address)|accountPublicKey|depositSource/iu);
+  assert.doesNotMatch(encoded, /actionKind|assetIndex|diversifier/iu);
+  assert.throws(() => encodePrivateRelayMessage(request({ actionKind: 'transfer' }), NOW), /fields/iu);
   assert.ok(new TextEncoder().encode(encoded).byteLength < PRIVATE_RELAY_MAX_PLAINTEXT_BYTES);
 });
 

@@ -125,6 +125,8 @@ import {
   reviewPrivateRelayJob as reviewUntrustedPrivateRelayJob,
   type PrivateRelayJobReview,
 } from '../relay/review';
+import { assertPrivateRelayAccountSequence, preparePrivateRelayJob as prepareUntrustedPrivateRelayJob, type PrivateRelayPreparationContext } from '../relay/preparation';
+import type { PrivateRelayPreparationCallbacks } from './action-transaction';
 import { diffIncomingPrivateTransfers, syncPrivateBalance } from './sync-machine';
 import {
   PrivateRpcViewsDisagreeError,
@@ -167,6 +169,7 @@ interface PrivateBalanceContextValue {
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
+    relayPreparation?: PrivateRelayPreparationCallbacks,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
   submitAction(
@@ -1394,6 +1397,44 @@ export function PrivateBalanceProvider({
     }
   }, [registryAssets, snapshot.phase]);
 
+  const preparePrivateRelayJob = useCallback(async (input: PrivateRelayPreparationContext, signal?: AbortSignal) => {
+    if (signal?.aborted || !leaderRef.current || snapshot.phase !== 'current' || input.sourceAccount !== accountPublicKey) {
+      throw new Error('Private relay preparation requires the current active helper account.');
+    }
+    if (!registryAssets.some(candidate => candidate.index === input.assetIndex)) {
+      throw new Error('Private relay preparation uses an unregistered asset.');
+    }
+    const worker = workerRef.current;
+    if (!worker || worker.failed) throw new Error('Private Balance worker is not ready.');
+    return prepareUntrustedPrivateRelayJob({
+      ...input,
+      source: accountPublicKey,
+      manifest: { networkPassphrase: manifest.networkPassphrase, poolContractId: manifest.poolContractId, assets: registryAssets },
+      maximumClassicFeeStroops: BigInt(recommendedBaseFeeStroops),
+      maximumResourceFeeStroops: MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS,
+      signal,
+      verifyFee: async reviewed => {
+        const diversifier = Uint8Array.from(input.actionDiversifier.match(/../g) ?? [], byte => Number.parseInt(byte, 16));
+        try {
+          await worker.verifyRelayFee({
+            actionNonce: reviewed.actionNonce, outputs: reviewed.outputs, assetIndex: input.assetIndex,
+            feeAtomic: input.feeAtomic, actionDiversifier: diversifier,
+          });
+          if (signal?.aborted || workerRef.current !== worker || !leaderRef.current) {
+            throw new DOMException('Private relay preparation cancelled.', 'AbortError');
+          }
+        } finally { diversifier.fill(0); }
+      },
+      createRpc: () => {
+        const rpcUrl = getRpcUrl(network);
+        if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint before helping a relay peer.');
+        const endpoint = new URL(rpcUrl);
+        const allowHttp = endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+        return new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+      },
+    });
+  }, [accountPublicKey, manifest.networkPassphrase, manifest.poolContractId, network, recommendedBaseFeeStroops, registryAssets, snapshot.phase]);
+
   const reviewPrivateRelayJob = useCallback(async (input: {
     unsignedEnvelopeXdr: string;
     transactionHash: string;
@@ -1475,12 +1516,19 @@ export function PrivateBalanceProvider({
     if (Math.floor(Date.now() / 1000) >= review.expiresAt) {
       throw new Error('Private relay transaction review expired.');
     }
+    const rpcUrl = getRpcUrl(network);
+    if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint before signing a relay job.');
+    const endpoint = new URL(rpcUrl);
+    const allowHttp = endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+    const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    assertPrivateRelayAccountSequence(review.transaction, await rpc.getAccount(review.source));
+    if (Math.floor(Date.now() / 1000) >= review.expiresAt) throw new Error('Private relay transaction review expired.');
     return signPrivateBalanceEnvelope({
       envelopeXdr: review.transaction.toXdr(),
       expectedTransactionHash: review.transactionHash,
       networkPassphrase: manifest.networkPassphrase,
     });
-  }, [manifest.networkPassphrase, signPrivateBalanceEnvelope]);
+  }, [manifest.networkPassphrase, network, signPrivateBalanceEnvelope]);
 
   const submitPrivateRelayJob = useCallback(async (input: {
     signedEnvelopeXdr: string;
@@ -1539,6 +1587,7 @@ export function PrivateBalanceProvider({
     signal?: AbortSignal,
     sourcePublicKey = accountPublicKey,
     depositSourceMinimumBalanceStroops?: bigint,
+    relayPreparation?: PrivateRelayPreparationCallbacks,
   ): Promise<PreparedPrivateActionReview> => {
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
@@ -1579,6 +1628,7 @@ export function PrivateBalanceProvider({
               assetDecimals: asset.decimals,
               draft,
               signal,
+              relayPreparation,
               onProgress,
             }),
           );
@@ -1633,11 +1683,12 @@ export function PrivateBalanceProvider({
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
+    relayPreparation?: PrivateRelayPreparationCallbacks,
   ): Promise<PreparedPrivateActionReview> => {
     if (actionBusyRef.current) throw new Error('Another Private Balance action is already open.');
     actionBusyRef.current = true;
     try {
-      return await prepareActionInternal(draft, onProgress, signal);
+      return await prepareActionInternal(draft, onProgress, signal, undefined, undefined, relayPreparation);
     } finally {
       actionBusyRef.current = false;
     }
@@ -2368,6 +2419,7 @@ export function PrivateBalanceProvider({
     cancelAction,
     submitAction,
     derivePrivateRelayPayout,
+    preparePrivateRelayJob,
     reviewPrivateRelayJob,
     signPrivateRelayJob,
     submitPrivateRelayJob,
@@ -2393,6 +2445,7 @@ export function PrivateBalanceProvider({
     prepareAction,
     prepareChainedSend,
     prepareStealthSweep,
+    preparePrivateRelayJob,
     refreshSync,
     restorePrivateHistory,
     refreshStealth,

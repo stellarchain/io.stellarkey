@@ -12,9 +12,12 @@ import {
   decodePrivateRelayMessage,
   encodePrivateRelayMessage,
   PRIVATE_RELAY_MAX_PLAINTEXT_BYTES,
+  PRIVATE_RELAY_MAX_TTL_SECONDS,
   PrivateRelayReplayGuard,
   type PrivateRelayMessage,
   type PrivateRelayPayout,
+  type PrivateRelayPrepareJob,
+  type PrivateRelayPreparedJob,
   type PrivateRelayQuote,
   type PrivateRelayUnsignedQuote,
   type PrivateRelayRejected,
@@ -37,7 +40,7 @@ import {
 import { rankPrivateRelayQuotes } from './availability';
 import { verifyPrivateRelayQuoteAuthorization } from './account-authorization';
 
-const DEFAULT_MESSAGE_TTL_SECONDS = 120;
+const DEFAULT_MESSAGE_TTL_SECONDS = PRIVATE_RELAY_MAX_TTL_SECONDS;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 20_000;
 const DEFAULT_QUOTE_SETTLE_MS = 700;
 const MAX_QUOTE_WINDOW_MS = 20_000;
@@ -191,6 +194,7 @@ export class PrivateRelayMessenger {
       peerPublicKey: string;
       requestId: string;
       quoteId: string;
+      prepareId?: string;
       types: readonly PrivateRelayMessage['type'][];
       timeoutMs?: number;
       publish(): Promise<void>;
@@ -227,6 +231,7 @@ export class PrivateRelayMessenger {
             message.requestId !== input.requestId ||
             !('quoteId' in message) ||
             message.quoteId !== input.quoteId ||
+            (message.type === 'prepared-job' && message.prepareId !== input.prepareId) ||
             !input.types.includes(message.type)
           ) return;
           cleanup();
@@ -295,10 +300,9 @@ export class PrivateRelaySenderSession {
       requestId: createPrivateRelayId(),
       networkId: input.networkId,
       poolContractId: input.poolContractId,
-      actionKind: input.actionKind,
       replyPubkey: this.publicKey,
       nonce: createPrivateRelayId(),
-      expiresAt: nowSeconds() + Math.ceil(quoteWindowMs / 1_000) + 30,
+      expiresAt: nowSeconds() + PRIVATE_RELAY_MAX_TTL_SECONDS,
     };
     const quotes = new Map<string, PrivateRelayQuote>();
     const excludedPeerAccounts = new Set(input.excludePeerAccounts ?? []);
@@ -392,6 +396,7 @@ export class PrivateRelaySenderSession {
   async selectQuote(input: {
     request: PrivateRelayRequest;
     quote: PrivateRelayQuote;
+    actionKind: 'transfer' | 'withdraw';
     assetIndex: number;
     actionDiversifier: string;
   }, signal?: AbortSignal): Promise<PrivateRelayPayout> {
@@ -411,6 +416,7 @@ export class PrivateRelaySenderSession {
       type: 'selection',
       requestId: request.requestId,
       quoteId: quote.quoteId,
+      actionKind: input.actionKind,
       assetIndex: input.assetIndex,
       actionDiversifier: input.actionDiversifier,
       nonce: createPrivateRelayId(),
@@ -430,6 +436,37 @@ export class PrivateRelaySenderSession {
     if (response.type !== 'payout') throw new Error('Privacy relay returned the wrong selection response');
     if (response.peerAccount !== quote.peerAccount || response.feeAtomic !== quote.feeAtomic) {
       throw new Error('Privacy relay changed its quoted account or fee');
+    }
+    return response;
+  }
+
+  async requestPreparation(input: {
+    quote: PrivateRelayQuote;
+    payout: PrivateRelayPayout;
+    operationXdr: string;
+    maxTime: number;
+    classicFeeStroops: string;
+    maximumResourceFeeStroops: string;
+  }, signal?: AbortSignal): Promise<PrivateRelayPreparedJob> {
+    if (input.quote.requestId !== input.payout.requestId || input.quote.quoteId !== input.payout.quoteId ||
+      input.quote.peerAccount !== input.payout.peerAccount || input.quote.feeAtomic !== input.payout.feeAtomic ||
+      input.maxTime > Math.min(input.quote.expiresAt, input.payout.expiresAt)) {
+      throw new Error('Private relay preparation context changed');
+    }
+    const job: PrivateRelayPrepareJob = {
+      version: 2, type: 'prepare-job', requestId: input.quote.requestId, quoteId: input.quote.quoteId,
+      prepareId: createPrivateRelayId(), operationXdr: input.operationXdr, maxTime: input.maxTime,
+      classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: input.maximumResourceFeeStroops,
+      nonce: createPrivateRelayId(), expiresAt: input.maxTime,
+    };
+    const response = await this.messenger.waitFor({
+      peerPublicKey: input.quote.peerPubkey, requestId: job.requestId, quoteId: job.quoteId,
+      prepareId: job.prepareId, types: ['prepared-job', 'rejected'], timeoutMs: 60_000,
+      publish: () => this.messenger.publish(job, input.quote.peerPubkey, signal),
+    }, signal);
+    if (response.type === 'rejected') throw new Error(`Privacy relay preparation rejected: ${response.reason}`);
+    if (response.type !== 'prepared-job' || response.prepareId !== job.prepareId) {
+      throw new Error('Private relay preparation response does not match');
     }
     return response;
   }
@@ -499,6 +536,7 @@ export class PrivateRelaySenderSession {
 
 export class PrivateRelayHelperSession {
   private readonly quotes = new Map<string, PrivateRelayQuote>();
+  private closed = false;
   private readonly senderByQuote = new Map<string, string>();
   private readonly quoteExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly messenger: PrivateRelayMessenger;
@@ -531,10 +569,11 @@ export class PrivateRelayHelperSession {
     this.quoteExpiryTimers.delete(quoteId);
   }
 
-  private rememberQuote(quote: PrivateRelayQuote, senderPublicKey: string): void {
+  private rememberQuote(quote: PrivateRelayQuote, request: PrivateRelayRequest): void {
+    if (this.closed) throw new Error('Private relay helper is closed');
     this.forgetQuote(quote.quoteId);
     this.quotes.set(quote.quoteId, quote);
-    this.senderByQuote.set(quote.quoteId, senderPublicKey);
+    this.senderByQuote.set(quote.quoteId, request.replyPubkey);
     const remainingMs = Math.max(0, quote.expiresAt * 1_000 - Date.now());
     this.quoteExpiryTimers.set(
       quote.quoteId,
@@ -556,7 +595,7 @@ export class PrivateRelayHelperSession {
 
   listenForPrivateMessages(
     onMessage: (
-      message: PrivateRelaySelection | PrivateRelaySignJob | PrivateRelaySubmitJob,
+      message: PrivateRelaySelection | PrivateRelayPrepareJob | PrivateRelaySignJob | PrivateRelaySubmitJob,
       quote: PrivateRelayQuote,
     ) => void,
     signal?: AbortSignal,
@@ -566,12 +605,14 @@ export class PrivateRelayHelperSession {
       onMessage: ({ event, message }) => {
         if (
           message.type !== 'selection' &&
+          message.type !== 'prepare-job' &&
           message.type !== 'sign-job' &&
           message.type !== 'submit-job'
         ) return;
         const quote = this.quotes.get(message.quoteId);
         const senderPublicKey = this.senderByQuote.get(message.quoteId);
-        if (!quote || quote.requestId !== message.requestId || event.pubkey !== senderPublicKey) return;
+        if (this.closed || !quote || quote.requestId !== message.requestId || event.pubkey !== senderPublicKey ||
+          quote.expiresAt <= nowSeconds() || message.expiresAt > quote.expiresAt || message.expiresAt <= nowSeconds()) return;
         onMessage(message, quote);
       },
     }, signal);
@@ -583,6 +624,7 @@ export class PrivateRelayHelperSession {
     feeAtomic: string;
     signAccountQuote(request: PrivateRelayRequest, quote: PrivateRelayUnsignedQuote): Promise<string>;
   }, signal?: AbortSignal): Promise<PrivateRelayQuote> {
+    if (this.closed || this.quotes.size >= MAX_RELAY_QUOTES) throw new Error('Private relay helper is unavailable');
     const request = { ...input.request };
     const unsignedQuote: PrivateRelayUnsignedQuote = {
       version: 2,
@@ -604,9 +646,15 @@ export class PrivateRelayHelperSession {
     if (!verifyPrivateRelayQuoteAuthorization(request, quote)) {
       throw new Error('Private relay quote account authentication failed');
     }
-    await this.messenger.publish(quote, request.replyPubkey, signal);
-    this.rememberQuote(quote, request.replyPubkey);
-    return quote;
+    this.rememberQuote(quote, request);
+    try {
+      await this.messenger.publish(quote, request.replyPubkey, signal);
+      if (this.closed || signal?.aborted) throw abortError();
+      return quote;
+    } catch (cause) {
+      this.forgetQuote(quote.quoteId);
+      throw cause;
+    }
   }
 
   async sendPayout(input: {
@@ -629,6 +677,24 @@ export class PrivateRelayHelperSession {
     if (!senderPublicKey) throw new Error('Private relay sender key is unavailable');
     await this.messenger.publish(payout, senderPublicKey, signal);
     return payout;
+  }
+
+  async sendPrepared(input: {
+    job: PrivateRelayPrepareJob;
+    preparedEnvelopeXdr: string;
+    accountSequence: string;
+    simulationLedger: number;
+  }, signal?: AbortSignal): Promise<PrivateRelayPreparedJob> {
+    const senderPublicKey = this.senderByQuote.get(input.job.quoteId);
+    if (!senderPublicKey) throw new Error('Private relay sender key is unavailable');
+    const response: PrivateRelayPreparedJob = {
+      version: 2, type: 'prepared-job', requestId: input.job.requestId, quoteId: input.job.quoteId,
+      prepareId: input.job.prepareId, preparedEnvelopeXdr: input.preparedEnvelopeXdr,
+      accountSequence: input.accountSequence, simulationLedger: input.simulationLedger,
+      nonce: createPrivateRelayId(), expiresAt: input.job.expiresAt,
+    };
+    await this.messenger.publish(response, senderPublicKey, signal);
+    return response;
   }
 
   async sendSigned(input: {
@@ -703,6 +769,7 @@ export class PrivateRelayHelperSession {
   }
 
   close(): void {
+    this.closed = true;
     for (const timer of this.quoteExpiryTimers.values()) clearTimeout(timer);
     this.quoteExpiryTimers.clear();
     this.quotes.clear();

@@ -17,7 +17,6 @@ function request(overrides = {}) {
     requestId: '10'.repeat(32),
     networkId: NETWORK_ID,
     poolContractId: POOL,
-    actionKind: 'transfer',
     replyPubkey: '22'.repeat(32),
     nonce: '66'.repeat(32),
     expiresAt: Math.floor(Date.now() / 1_000) + 60,
@@ -32,7 +31,6 @@ function statement(request, quote) {
     request.version,
     request.networkId,
     request.poolContractId,
-    request.actionKind,
     request.requestId,
     request.replyPubkey,
     request.nonce,
@@ -167,6 +165,7 @@ test('selection rejects modified account, fee, keys, context and stale offers be
     await assert.rejects(session.selectQuote({
       request: { ...originalRequest, ...requestChange },
       quote: { ...originalQuote, ...quoteChange },
+      actionKind: 'transfer',
       assetIndex: 0,
       actionDiversifier: '01020304',
     }), /authenticat|expired|context/iu, name);
@@ -219,7 +218,7 @@ test('selection rechecks expiry immediately before publication and snapshots the
     async publish() { publications += 1; },
   };
   await assert.rejects(new PrivateRelaySenderSession(messenger).selectQuote({
-    request: original, quote, assetIndex: 0, actionDiversifier: '01020304',
+    request: original, quote, actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304',
   }), /expired/iu);
   assert.equal(publications, 0);
 
@@ -232,7 +231,7 @@ test('selection rechecks expiry immediately before publication and snapshots the
   };
   messenger.publish = async (_selection, peer) => { selectedPeer = peer; };
   await new PrivateRelaySenderSession(messenger).selectQuote({
-    request: original, quote, assetIndex: 0, actionDiversifier: '01020304',
+    request: original, quote, actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304',
   });
   assert.equal(selectedPeer, originalPeer);
 });
@@ -311,6 +310,12 @@ test('real encrypted helper negotiation authenticates the account before selecti
       }));
     });
     helper.listenForPrivateMessages((selection, quote) => {
+      if (selection.type === 'prepare-job') {
+        const result = { preparedEnvelopeXdr: 'AQIDBA==', accountSequence: '7', simulationLedger: 123 };
+        operations.push(helper.sendPrepared({ job: { ...selection, prepareId: '99'.repeat(32) }, ...result })
+          .then(() => helper.sendPrepared({ job: selection, ...result })));
+        return;
+      }
       assert.equal(selection.type, 'selection');
       operations.push(helper.sendPayout({ selection, quote, privateFeeAddress: 'synthetic-private-fee-address' }));
     });
@@ -318,20 +323,29 @@ test('real encrypted helper negotiation authenticates the account before selecti
       networkId: NETWORK_ID, poolContractId: POOL, actionKind: 'transfer',
       quoteWindowMs: 1_000, settleWindowMs: 25,
     });
+    assert.ok(discovery.request.expiresAt - Math.floor(Date.now() / 1_000) >= 290);
     assert.equal(discovery.quotes.length, 1);
     assert.equal(verifyPrivateRelayQuoteAuthorization(discovery.request, discovery.quotes[0]), true);
     const payout = await sender.selectQuote({
       request: discovery.request,
       quote: discovery.quotes[0],
+      actionKind: 'transfer',
       assetIndex: 0,
       actionDiversifier: '01020304',
     });
     assert.equal(payout.peerAccount, signer.publicKey());
+    const prepared = await sender.requestPreparation({
+      quote: discovery.quotes[0], payout, operationXdr: 'AAAA',
+      maxTime: payout.expiresAt, classicFeeStroops: '100', maximumResourceFeeStroops: '1000',
+    });
+    assert.equal(prepared.accountSequence, '7');
+    assert.notEqual(prepared.prepareId, '99'.repeat(32));
     await Promise.all(operations);
-    assert.equal(events.length, 4);
+    assert.equal(events.length, 7);
     const publicEvents = events.filter(event => !event.tags.some(tag => tag[0] === 'p'));
     assert.equal(publicEvents.length, 1);
     assert.equal(JSON.parse(publicEvents[0].content).type, 'request');
+    assert.doesNotMatch(publicEvents[0].content, /actionKind|assetIndex|actionDiversifier/iu);
     for (const event of events) {
       assert.equal(JSON.stringify(event).includes(signer.publicKey()), false);
       assert.equal(JSON.stringify(event).includes(discovery.quotes[0].accountSignature), false);
@@ -340,4 +354,38 @@ test('real encrypted helper negotiation authenticates the account before selecti
     sender.close();
     helper.close();
   }
+});
+
+test('helper retains negotiation before publish acknowledgement and rolls back after failure', async () => {
+  const signer = Keypair.random();
+  const current = request();
+  let receive;
+  let received = 0;
+  let publishedQuote;
+  const helper = new PrivateRelayHelperSession({
+    publicKey: '33'.repeat(32),
+    subscribe(input) { receive = input.onMessage; return { close() {} }; },
+    async publish(quote) {
+      publishedQuote = quote;
+      receive({ event: { pubkey: current.replyPubkey }, message: {
+        version: 2, type: 'selection', requestId: current.requestId, quoteId: quote.quoteId,
+        actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304', nonce: '77'.repeat(32), expiresAt: quote.expiresAt,
+      } });
+      assert.equal(received, 1, 'selection was dropped before quote publication acknowledged');
+      throw new Error('acknowledgement failed');
+    },
+    close() {},
+  });
+  helper.listenForPrivateMessages(() => { received += 1; });
+  try {
+    await assert.rejects(helper.offerQuote({
+      request: current, peerAccount: signer.publicKey(), feeAtomic: '10000',
+      async signAccountQuote(request, quote) { return signPrivateRelayQuoteAuthorization(request, quote, signer); },
+    }), /acknowledgement failed/iu);
+    receive({ event: { pubkey: current.replyPubkey }, message: {
+      version: 2, type: 'selection', requestId: current.requestId, quoteId: publishedQuote.quoteId,
+      actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304', nonce: '88'.repeat(32), expiresAt: publishedQuote.expiresAt,
+    } });
+    assert.equal(received, 1);
+  } finally { helper.close(); }
 });

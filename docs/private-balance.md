@@ -475,6 +475,11 @@ inside NIP-44 to the same 24 KiB plaintext size, including quotes and rejections
 Padding costs bandwidth and does not hide the Nostr peer graph, timing, message
 count, IP addresses, or the clear discovery request.
 
+The public discovery request carries neither an asset nor a transfer/withdrawal
+kind. The selected helper receives the kind only in the authenticated encrypted
+selection. Offers are valid for at most five minutes, independently of the short
+quote-collection window; preparation cannot extend the signed offer's lifetime.
+
 The **Check available peers** control is an explicit live quote request, not a
 background presence beacon. It reveals no asset, amount, destination, note, or
 proof input. The UI changes from finding peers to comparing fees when the first
@@ -532,12 +537,25 @@ offer. The sanitized observations are in
 The selected peer gives the sender a quote and a diversified private fee
 address. The sender builds a new proof with the peer's same-asset fee as one of
 the three shuffled encrypted outputs and the peer's Stellar account as the
-transaction source. The peer validates the exact unsigned transaction, source,
-network, pool method, time bounds, fee caps, absence of extra operations/auth,
-and matched envelope diversifiers; decrypts exactly one real fee note matching
-the quote; and simulates the exact transaction. Only then does it show a manual
-approval modal. The peer signs, rechecks the signed XDR, submits through its RPC,
-and reports the exact transaction hash.
+transaction source. The sender sends the proof-bound operation through encrypted
+negotiation, not its own RPC. Before any RPC preparation, the helper checks the
+selected pool/method, matched diversifiers and exactly one real fee note matching
+the quote. It prepares and simulates an unsigned envelope through its RPC and
+returns that envelope with the account sequence and an advisory simulation ledger.
+
+The sender independently checks the exact locally retained operation, helper
+source, time bounds, classic fee, resource-fee cap and absence of signatures,
+extra operations or authorization. It does not independently simulate the helper's
+footprint, resource estimates or account sequence: a dishonest helper can affect
+liveness or public metadata within those limits. The simulation ledger is not
+chain evidence. There is no sender-RPC preparation fallback.
+
+The helper only accepts its retained prepared envelope for signing, simulates it
+again before manual review, and checks that its account sequence is still current
+at signing. Only then can the user approve a signature. The peer rechecks the
+signed XDR, submits through its RPC, and reports the exact transaction hash. One
+bounded preparation lease is released on rejection, expiry or session cleanup;
+late results cannot revive a rejected job.
 
 StellarKey operates no relay or signaling server and stores no relay jobs.
 Public Nostr infrastructure is still server infrastructure: its operators see
