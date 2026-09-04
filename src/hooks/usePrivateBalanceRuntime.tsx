@@ -31,6 +31,9 @@ import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
 import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
 import type { PrivateRelayJobReview } from '@/features/private-balance/relay/review';
+import type { PrivateRelayPreparationCallbacks } from '@/features/private-balance/runtime/action-transaction';
+import type { PrivateRelayPreparationContext } from '@/features/private-balance/relay/preparation';
+import type { PrivateRelayPreparedEnvelope } from '@/features/private-balance/relay/prepared-envelope';
 
 export type PrivateBalanceRuntimePhase =
   | 'disabled'
@@ -171,6 +174,7 @@ export interface PrivateBalanceRuntimeDataValue {
     draft: PrivateActionDraft,
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
+    relayPreparation?: PrivateRelayPreparationCallbacks,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
   submitAction(
@@ -189,6 +193,7 @@ export interface PrivateBalanceRuntimeDataValue {
     actionDiversifier: string;
     feeAtomic: string;
   }): Promise<PrivateRelayJobReview>;
+  preparePrivateRelayJob(input: PrivateRelayPreparationContext, signal?: AbortSignal): Promise<PrivateRelayPreparedEnvelope>;
   signPrivateRelayJob(review: PrivateRelayJobReview): Promise<string>;
   submitPrivateRelayJob(input: {
     signedEnvelopeXdr: string;
@@ -336,6 +341,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   submitAction: unavailableSubmission,
   derivePrivateRelayPayout: unavailableRelayPayout,
   reviewPrivateRelayJob: unavailableRelayReview,
+  preparePrivateRelayJob: async () => { throw new Error('Private Balance is unavailable.'); },
   signPrivateRelayJob: unavailableRelaySign,
   submitPrivateRelayJob: unavailableRelaySubmit,
   prepareChainedSend: unavailableChainedApproval,

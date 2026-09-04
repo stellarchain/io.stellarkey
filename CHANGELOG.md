@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Moved relayed transaction preparation and simulation to the authenticated helper, rejected returned envelopes that change locally approved operations or fee/time bounds, and removed payment kind from public discovery. Helpers retain manual signing approval and relayed senders have no direct preparation fallback.
 - Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
 - Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
 - Persisted the approved direct/relay route in encrypted private-action journals, blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery, and required independently corroborated scanned-ledger time before expiry release. Legacy envelopes retain conservative recovery without guessing their route.

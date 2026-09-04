@@ -32,7 +32,7 @@ function consent(storage, helpRelay = true, feeAtomic = '10000') {
 function quoteInput(account, overrides = {}) {
   const request = {
     version: 2, type: 'request', requestId: '11'.repeat(32), networkId: NETWORK_ID,
-    poolContractId: POOL, actionKind: 'transfer', replyPubkey: '22'.repeat(32),
+    poolContractId: POOL, replyPubkey: '22'.repeat(32),
     nonce: '33'.repeat(32), expiresAt: Math.floor(Date.now() / 1_000) + 60,
   };
   return {

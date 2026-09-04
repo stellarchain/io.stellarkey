@@ -19,7 +19,6 @@ export interface PrivateRelayRequest {
   requestId: string;
   networkId: string;
   poolContractId: string;
-  actionKind: PrivateRelayActionKind;
   replyPubkey: string;
   nonce: string;
   expiresAt: number;
@@ -46,6 +45,7 @@ export interface PrivateRelaySelection {
   type: 'selection';
   requestId: string;
   quoteId: string;
+  actionKind: PrivateRelayActionKind;
   assetIndex: number;
   actionDiversifier: string;
   nonce: string;
@@ -71,6 +71,33 @@ export interface PrivateRelaySignJob {
   quoteId: string;
   transactionHash: string;
   unsignedEnvelopeXdr: string;
+  nonce: string;
+  expiresAt: number;
+}
+
+export interface PrivateRelayPrepareJob {
+  version: 2;
+  type: 'prepare-job';
+  requestId: string;
+  quoteId: string;
+  prepareId: string;
+  operationXdr: string;
+  maxTime: number;
+  classicFeeStroops: string;
+  maximumResourceFeeStroops: string;
+  nonce: string;
+  expiresAt: number;
+}
+
+export interface PrivateRelayPreparedJob {
+  version: 2;
+  type: 'prepared-job';
+  requestId: string;
+  quoteId: string;
+  prepareId: string;
+  preparedEnvelopeXdr: string;
+  accountSequence: string;
+  simulationLedger: number;
   nonce: string;
   expiresAt: number;
 }
@@ -123,6 +150,8 @@ export type PrivateRelayMessage =
   | PrivateRelayQuote
   | PrivateRelaySelection
   | PrivateRelayPayout
+  | PrivateRelayPrepareJob
+  | PrivateRelayPreparedJob
   | PrivateRelaySignJob
   | PrivateRelaySignedJob
   | PrivateRelaySubmitJob
@@ -225,19 +254,15 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
 
   switch (type) {
     case 'request': {
-      exactKeys(source, ['version', 'type', 'requestId', 'networkId', 'poolContractId', 'actionKind', 'replyPubkey', 'nonce', 'expiresAt']);
+      exactKeys(source, ['version', 'type', 'requestId', 'networkId', 'poolContractId', 'replyPubkey', 'nonce', 'expiresAt']);
       const poolContractId = text(source.poolContractId, 'pool contract', 56);
       if (!StrKey.isValidContract(poolContractId)) throw new Error('Private relay pool contract is invalid');
-      if (source.actionKind !== 'transfer' && source.actionKind !== 'withdraw') {
-        throw new Error('Private relay action kind is invalid');
-      }
       return {
         version: 2,
         type: 'request',
         requestId: common.requestId,
         networkId: hex32(source.networkId, 'network ID'),
         poolContractId,
-        actionKind: source.actionKind,
         replyPubkey: hex32(source.replyPubkey, 'reply public key'),
         nonce: common.nonce,
         expiresAt: common.expiresAt,
@@ -258,7 +283,10 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         expiresAt: common.expiresAt,
       };
     case 'selection': {
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'assetIndex', 'actionDiversifier', 'nonce', 'expiresAt']);
+      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'actionKind', 'assetIndex', 'actionDiversifier', 'nonce', 'expiresAt']);
+      if (source.actionKind !== 'transfer' && source.actionKind !== 'withdraw') {
+        throw new Error('Private relay action kind is invalid');
+      }
       if (!Number.isSafeInteger(source.assetIndex) || (source.assetIndex as number) < 0 || (source.assetIndex as number) > 255) {
         throw new Error('Private relay asset index is invalid');
       }
@@ -271,6 +299,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         type: 'selection',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
+        actionKind: source.actionKind,
         assetIndex: source.assetIndex as number,
         actionDiversifier,
         nonce: common.nonce,
@@ -302,6 +331,34 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         nonce: common.nonce,
         expiresAt: common.expiresAt,
       };
+    case 'prepare-job': {
+      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'prepareId', 'operationXdr', 'maxTime', 'classicFeeStroops', 'maximumResourceFeeStroops', 'nonce', 'expiresAt']);
+      const maxTime = expiry(source.maxTime, nowSeconds);
+      if (maxTime <= nowSeconds || maxTime > common.expiresAt) throw new Error('Private relay preparation time window is invalid');
+      return {
+        version: 2, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
+        prepareId: hex32(source.prepareId, 'preparation ID'),
+        operationXdr: xdr(source.operationXdr, 'operation'), maxTime,
+        classicFeeStroops: decimal(source.classicFeeStroops, 'classic fee'),
+        maximumResourceFeeStroops: decimal(source.maximumResourceFeeStroops, 'resource fee cap', true),
+        nonce: common.nonce, expiresAt: common.expiresAt,
+      };
+    }
+    case 'prepared-job': {
+      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'prepareId', 'preparedEnvelopeXdr', 'accountSequence', 'simulationLedger', 'nonce', 'expiresAt']);
+      if (!Number.isSafeInteger(source.simulationLedger) || (source.simulationLedger as number) < 1 || (source.simulationLedger as number) > 0xffff_ffff) {
+        throw new Error('Private relay simulation ledger is invalid');
+      }
+      const accountSequence = decimal(source.accountSequence, 'account sequence', true);
+      if (BigInt(accountSequence) >= 0x7fff_ffff_ffff_ffffn) throw new Error('Private relay account sequence is invalid');
+      return {
+        version: 2, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
+        prepareId: hex32(source.prepareId, 'preparation ID'),
+        preparedEnvelopeXdr: xdr(source.preparedEnvelopeXdr, 'prepared envelope'),
+        accountSequence, simulationLedger: source.simulationLedger as number,
+        nonce: common.nonce, expiresAt: common.expiresAt,
+      };
+    }
     case 'signed-job':
     case 'submit-job': {
       const xdrKey = type === 'signed-job' ? 'signedEnvelopeXdr' : 'signedEnvelopeXdr';

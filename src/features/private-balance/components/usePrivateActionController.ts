@@ -274,6 +274,7 @@ export function usePrivateActionController(
       const payout = await discovery.session.selectQuote({
         request: discovery.request,
         quote,
+        actionKind: discovery.draft.kind,
         assetIndex: discovery.assetIndex,
         actionDiversifier,
       }, controller.signal);
@@ -300,7 +301,10 @@ export function usePrivateActionController(
         },
       }, stage => {
         if (!controller.signal.aborted) setProgress(stage);
-      }, controller.signal);
+      }, controller.signal, {
+        expiresAt: Math.min(quote.expiresAt, payout.expiresAt),
+        prepare: (request, signal) => discovery.session.requestPreparation({ ...request, quote, payout }, signal),
+      });
       if (controller.signal.aborted) {
         void cancelAction(prepared.id).catch(() => undefined);
         discovery.session.close();
