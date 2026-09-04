@@ -29,8 +29,20 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(entry, /aria-haspopup="dialog"/);
   assert.match(entry, /<Modal/);
   assert.match(entry, /<PrivateRelaySettings helperOnly/);
+  assert.match(entry, /onSaved=\{\(\) => setOpen\(false\)\}/);
   assert.match(settings, /helperOnly/);
+  assert.match(settings, /onSaved/);
+  assert.doesNotMatch(settings, /Relay settings saved on this device/);
   assert.match(settings, /StellarKey is open and unlocked/);
+});
+
+test('relay fees use normal seven-decimal asset units instead of atomic units', () => {
+  const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
+
+  assert.match(settings, /formatPrivateBalanceXlm/);
+  assert.match(settings, /parsePrivateAmount/);
+  assert.doesNotMatch(settings, /atomic units/i);
+  assert.match(settings, /inputMode="decimal"/);
 });
 
 test('relay preferences persist only non-secret policy and validate two secure origins', () => {
