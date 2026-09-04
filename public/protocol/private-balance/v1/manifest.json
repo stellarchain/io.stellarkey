@@ -6,10 +6,10 @@
   "minimumStellarProtocol": 25,
   "networkPassphrase": "Test SDF Network ; September 2015",
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-  "realmId": "ea66f34cadf368b0be532036aef9b6541fc7396ec749d3c65bed423f8b21bb85",
-  "poolContractId": "CBPCEN4YFOZEIXSM7FQ6DEYSGGADEDBSFD4STWAVCFQAZVLMXFBGCGAD",
-  "guardianAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
-  "assetAdminAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+  "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+  "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
+  "guardianAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
   "assets": [
     {
       "index": 0,
@@ -34,18 +34,18 @@
       "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
     }
   ],
-  "stealthAnnouncerAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+  "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
   "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
   "deploymentCheckpoint": {
-    "ledger": 4491712,
-    "hash": "03943e87f3eec48cb578bd3a44ffb76f5bc89d37c5bbbb1b618be55aacfbed0a"
+    "ledger": 4491845,
+    "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
   },
   "registryCheckpoint": {
-    "ledger": 4491714,
-    "hash": "ddb6735bc4711f48ab464bab2d19bfac82c601144e545686d51949f9b3a27277",
+    "ledger": 4491848,
+    "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
     "assetCount": 2
   },
-  "deploymentBindingHash": "3e5eea7235f64eee6d2c272045951c020eb764cf0dcc4408d7a48119ead389ac",
+  "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
   "artifacts": {
     "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
     "r1csConstraints": 15114,
