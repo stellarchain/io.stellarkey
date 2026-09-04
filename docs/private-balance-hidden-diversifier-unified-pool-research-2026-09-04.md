@@ -85,11 +85,17 @@ after 100,000, so a future redesigned format should use a wider diversifier.
 #### A. Delete the field and enumerate known addresses — reject
 
 Trying every previously issued diversifier for every output changes scanning to
-work proportional to `history × address count`. More importantly, StellarKey
-currently persists only the active receive address. Historical rotated
+work proportional to `history × address count`. At the time of the experiment,
+StellarKey persisted only the active receive address. Historical rotated
 diversifiers remain recoverable precisely because each envelope carries its
 diversifier. Enumeration would make seed-only recovery incomplete unless the
 wallet introduced another backed-up address index or list.
+
+Implementation note, 2026-09-04: the client hardening now keeps a bounded encrypted
+local issuance history to reject accidental reuse. This is not a seed-complete
+list of unused addresses and does not change the rejection of enumeration-based
+recovery. See the [next-format migration contract](private-payments-next-format-migration.md)
+for the separate reviewed suite and compatibility gates.
 
 #### B. Use one static X25519 scanning key — reject for the privacy target
 
