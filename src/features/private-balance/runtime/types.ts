@@ -83,6 +83,8 @@ export interface PrivatePendingAction {
   assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   status: PendingActionStatus;
+  /** Missing on legacy records: reconcile only; never infer a direct route. */
+  submissionMode?: 'direct' | 'relay';
   reservedNoteIds: string[];
   actionField: string;
   nullifiers: string[];

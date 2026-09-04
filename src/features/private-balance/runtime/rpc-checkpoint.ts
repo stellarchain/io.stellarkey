@@ -91,6 +91,35 @@ function ledgerIdentity(
   return Object.freeze({ sequence, hash: hash(value?.hash, `${name} hash`) });
 }
 
+/** Expiry evidence for an already scanned ledger, never a newer unscanned head. */
+export async function corroboratePrivateLedgerCloseTime(input: {
+  primary: Pick<PrivateRpcCheckpointReader, 'readLedgerIdentity'> & {
+    readLedgerCloseTimes(sequences: readonly number[]): Promise<Record<number, number>>;
+  };
+  witness: Pick<PrivateRpcCheckpointReader, 'readLedgerIdentity'> & {
+    readLedgerCloseTimes(sequences: readonly number[]): Promise<Record<number, number>>;
+  };
+  sequence: number;
+}): Promise<number> {
+  const sequence = u32(input.sequence, 'Scanned ledger');
+  const [primary, witness, primaryTimes, witnessTimes] = await Promise.all([
+    input.primary.readLedgerIdentity(sequence),
+    input.witness.readLedgerIdentity(sequence),
+    input.primary.readLedgerCloseTimes([sequence]),
+    input.witness.readLedgerCloseTimes([sequence]),
+  ]);
+  const closeTime = primaryTimes[sequence];
+  if (
+    ledgerIdentity(primary, sequence, 'Primary expiry ledger').hash !==
+      ledgerIdentity(witness, sequence, 'Witness expiry ledger').hash ||
+    !Number.isSafeInteger(closeTime) || closeTime <= 0 ||
+    closeTime !== witnessTimes[sequence]
+  ) {
+    throw new PrivateRpcViewsDisagreeError('Private Payments expiry ledger time is not corroborated.');
+  }
+  return closeTime;
+}
+
 function headFingerprint(head: ArchiveHeadState, name: string): string {
   u32(head?.latestLedger, `${name} latest ledger`);
   const config = head?.config;

@@ -111,6 +111,7 @@ import {
 import {
   broadcastPrivateBalanceAction,
   pollBroadcastPrivateBalanceTransaction,
+  pollPrivateBalanceCanonicalOutcome,
   recoverPrivateBalanceAction,
   resumeSignedPrivateBalanceActions,
   signReviewedPrivateBalanceAction,
@@ -127,6 +128,7 @@ import {
   PrivateRpcViewsDisagreeError,
   PrivateRpcWitnessUnavailableError,
   corroboratePrivateRpcCheckpoint,
+  corroboratePrivateLedgerCloseTime,
 } from './rpc-checkpoint';
 import type {
   PrivateBalanceDurableState,
@@ -669,6 +671,7 @@ export function PrivateBalanceProvider({
                 manifest,
               );
             }
+            let scannedHeadLedger: number | undefined;
             const readAuthenticatedHead = async () => {
               const verifiedHead = witnessArchive
                 ? (await corroboratePrivateRpcCheckpoint({
@@ -678,6 +681,7 @@ export function PrivateBalanceProvider({
                     deploymentCheckpoint: manifest.deploymentCheckpoint,
                   })).head
                 : await archive.readHead();
+              scannedHeadLedger = verifiedHead.latestLedger;
               setSnapshot(current => ({
                 ...current,
                 deployment: {
@@ -736,9 +740,8 @@ export function PrivateBalanceProvider({
               progress.durable = durable;
             }
             if (durable.pendingActions.some(action => action.status === 'signed')) {
-              // A crash between the sign and broadcast commits may or may not
-              // have reached Stellar; resending resolves it (DUPLICATE lands
-              // the action safely in 'broadcast').
+              // Only explicitly direct routes may resume over sender RPC.
+              // Relayed/legacy envelopes wait for canonical inclusion/expiry.
               durable = await resumeSignedPrivateBalanceActions({
                 context: storageScope,
                 storageKey,
@@ -860,9 +863,9 @@ export function PrivateBalanceProvider({
             try {
               const nowSeconds = Math.floor(Date.now() / 1000);
               for (const pending of durable.pendingActions) {
-                if (pending.status !== 'broadcast' && pending.status !== 'ambiguous') continue;
+                if (!['signed', 'broadcast', 'ambiguous'].includes(pending.status)) continue;
                 if (
-                  pending.expiresAtSeconds === undefined ||
+                  pending.expiresAtSeconds !== undefined &&
                   nowSeconds <= pending.expiresAtSeconds + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS
                 ) {
                   continue;
@@ -871,14 +874,27 @@ export function PrivateBalanceProvider({
                 // field and its nullifiers is decisive once the chain has
                 // closed past the envelope expiry.
                 const canonical = durable;
+                let headCloseTimeSeconds: number | undefined;
+                if (pending.submissionMode !== 'direct' && scannedHeadLedger !== undefined) {
+                  if (new URL(rpcUrl).origin === new URL(manifest.witnessRpcUrl).origin) {
+                    throw new PrivateRpcViewsDisagreeError('Expiry recovery requires an independent witness.');
+                  }
+                  headCloseTimeSeconds = await corroboratePrivateLedgerCloseTime({
+                    primary: archive,
+                    witness: witnessArchive ?? new PrivateBalanceArchiveClient(manifest.witnessRpcUrl, manifest),
+                    sequence: scannedHeadLedger,
+                  });
+                }
                 const recovered = await recoverPrivateBalanceAction({
                   context: storageScope,
                   storageKey,
                   actionId: pending.id,
+                  networkPassphrase: manifest.networkPassphrase,
                   rpc,
                   scanCanonicalTranscript: async () => ({
                     actionFields: canonical.activities.map(activity => activity.id),
                     nullifiers: canonical.activities.flatMap(activity => activity.nullifiers),
+                    ...(headCloseTimeSeconds !== undefined ? { headCloseTimeSeconds } : {}),
                   }),
                   storageDriver: driver,
                 });
@@ -1678,7 +1694,22 @@ export function PrivateBalanceProvider({
     rpc: SorobanRpc.Server,
     context: DeploymentContext,
     driver: IndexedDbEncryptedRecordDriver,
+    submissionMode: 'direct' | 'relay',
   ) => {
+    if (submissionMode === 'relay') {
+      void pollPrivateBalanceCanonicalOutcome({
+        reconcile: async () => {
+          const performSync = performSyncRef.current;
+          if (!performSync) return false;
+          await performSync(false, { background: true });
+          return withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
+            const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
+            return !!current && !current.pendingActions.some(action => action.id === actionId);
+          });
+        },
+      }).catch(() => undefined);
+      return;
+    }
     // Read-only trigger: the poll never holds the mutex; the canonical sync
     // (and, for FAILED, the recovery classifier) stays the sole mutator.
     void pollBroadcastPrivateBalanceTransaction({
@@ -1747,6 +1778,10 @@ export function PrivateBalanceProvider({
         withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
           const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
           if (!current) throw new Error('Private Balance state is unavailable.');
+          const submissionMode = options.relay ? 'relay' : 'direct';
+          if (current.pendingActions.find(action => action.id === preparedReview.id)?.submissionMode !== submissionMode) {
+            throw new Error('Private Balance submission route differs from the approved route');
+          }
           await options.beforeSign?.({ sessionRoot, storageKey });
           const signed = await signReviewedPrivateBalanceAction({
             context: storageScope,
@@ -1776,6 +1811,7 @@ export function PrivateBalanceProvider({
             expectedRevision: signed.revision,
             actionId: preparedReview.id,
             networkPassphrase: manifest.networkPassphrase,
+            submissionMode,
             rpc: options.relay ? {
               sendTransaction: transaction => options.relay!.requestSubmission({
                 signedEnvelopeXdr: transaction.toXdr(),
@@ -1822,6 +1858,7 @@ export function PrivateBalanceProvider({
           rpc,
           context,
           driver,
+          options.relay ? 'relay' : 'direct',
         );
       }
       return status;

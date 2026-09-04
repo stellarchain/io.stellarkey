@@ -131,6 +131,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     classicFeeCapStroops: '1000',
     resourceFeeCapStroops: '500000',
     amountStroops: '4000000',
+    submissionMode: 'relay',
     changeValueStroops: '1000000',
     broadcastAttempts: 0,
     createdAt: 3,
@@ -157,16 +158,21 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   assert.equal(reserved.notes[0].reservedAt, 3);
   assert.deepEqual(reserved.pendingActions, [pendingAction]);
   assert.deepEqual(await loadPrivateBalanceState(context, key, driver), reserved);
+  await assert.rejects(commitPrivateBalanceState(context, key, {
+    ...reserved, revision: 3,
+    pendingActions: [{ ...pendingAction, submissionMode: 'automatic' }],
+  }, 2, driver), /schema/i);
 
   const reviewed = await transitionPrivatePendingAction(
     context,
     key,
     2,
     pendingAction.id,
-    { from: 'prepared', to: 'reviewed', transactionHash: '11'.repeat(32), updatedAt: 4 },
+    { from: 'prepared', to: 'reviewed', submissionMode: 'direct', transactionHash: '11'.repeat(32), updatedAt: 4 },
     driver,
   );
   assert.equal(reviewed.pendingActions[0].status, 'reviewed');
+  assert.equal(reviewed.pendingActions[0].submissionMode, 'relay');
   assert.equal(reviewed.pendingActions[0].transactionHash, '11'.repeat(32));
 
   await assert.rejects(
@@ -190,11 +196,13 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
       to: 'signed',
       signedEnvelopeXdr: 'AAAA',
       expiresAtSeconds: 1_700_000_300,
+      submissionMode: 'direct',
       updatedAt: 5,
     },
     driver,
   );
   assert.equal(signed.pendingActions[0].status, 'signed');
+  assert.equal(signed.pendingActions[0].submissionMode, 'relay');
   assert.equal(signed.pendingActions[0].signedEnvelopeXdr, 'AAAA');
   assert.equal(signed.pendingActions[0].expiresAtSeconds, 1_700_000_300);
   assert.equal(signed.pendingActions[0].amountStroops, '4000000');
@@ -216,10 +224,11 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
     key,
     4,
     pendingAction.id,
-    { from: 'signed', to: 'ambiguous', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
+    { from: 'signed', to: 'ambiguous', submissionMode: 'direct', latestRpcStatus: 'NOT_FOUND', updatedAt: 6 },
     driver,
   );
   assert.equal(ambiguous.pendingActions[0].status, 'ambiguous');
+  assert.equal(ambiguous.pendingActions[0].submissionMode, 'relay');
   assert.equal(ambiguous.pendingActions[0].broadcastAttempts, 1);
   assert.equal(ambiguous.notes[0].status, 'reserved');
 
@@ -245,6 +254,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
   }, driver);
   const deposit = await commitPrivateBuildReservation(context, key, 7, 'deposit-1', {
     ...pendingAction,
+    submissionMode: 'direct',
     id: 'deposit-1',
     kind: 'deposit',
     assetContractId: ASSET_CONTRACT_ID,

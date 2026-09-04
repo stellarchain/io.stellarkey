@@ -255,6 +255,8 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     typeof action.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(action.assetContractId) &&
     ['prepared', 'reviewed', 'signed', 'broadcast', 'ambiguous'].includes(action.status ?? '') &&
+    (action.submissionMode === undefined || action.submissionMode === 'direct' ||
+      (action.submissionMode === 'relay' && action.kind !== 'deposit')) &&
     Array.isArray(action.reservedNoteIds) &&
     (action.kind === 'deposit'
       ? action.reservedNoteIds.length === 0
@@ -999,8 +1001,8 @@ export async function releasePrivatePendingAction(
   }
   const mayReleaseRejectedReview =
     ['prepared', 'reviewed'].includes(pending.status) && pending.broadcastAttempts === 0;
-  const mayReleaseDefinitiveFailure =
-    ['broadcast', 'ambiguous'].includes(pending.status) && pending.broadcastAttempts > 0;
+  const mayReleaseDefinitiveFailure = pending.status === 'signed' ||
+    (['broadcast', 'ambiguous'].includes(pending.status) && pending.broadcastAttempts > 0);
   if (
     (release.reason === 'pre-broadcast-rejection' && !mayReleaseRejectedReview) ||
     (release.reason === 'definitive-failure-nullifiers-absent' && !mayReleaseDefinitiveFailure)

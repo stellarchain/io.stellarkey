@@ -425,6 +425,18 @@ broadcast or ambiguous pending state, canonical confirmation, rejection or
 failure, and runtime status-unknown. Ambiguous submissions keep their input
 notes reserved until canonical evidence proves confirmation or safe absence.
 
+Prepared actions persist their direct/relay submission route in encrypted state;
+signing and broadcasting must use that route. Restart only rebroadcasts explicitly
+direct signed actions. Relayed and old records with no route are reconciled from
+the common archive without sender-RPC transaction-hash lookups. Their input notes
+remain reserved until inclusion or non-inclusion past the envelope expiry is
+established. Expiry requires agreeing ledger identities and close times from two
+independent RPCs for the already-scanned ledger, even when optional routine
+witness checks are disabled. Missing legacy expiry metadata can be recovered
+from the exact hash-checked signed envelope; an unbounded or invalid envelope
+never establishes expiry. A timeout, helper acknowledgement, or removed pending
+record alone is not a success receipt.
+
 ## 13. Optional browser peer relay
 
 For each private transfer or withdrawal, the review UI requires an explicit

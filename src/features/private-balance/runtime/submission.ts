@@ -26,6 +26,27 @@ export class PrivateActionReviewExpiredError extends Error {
   }
 }
 
+/** Relayed payments poll only the common archive; never disclose a payment hash. */
+export async function pollPrivateBalanceCanonicalOutcome(input: {
+  reconcile(): Promise<boolean>;
+  delays?: readonly number[];
+  sleep?: (milliseconds: number) => Promise<void>;
+}): Promise<'reconciled' | 'pending'> {
+  const sleep = input.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)));
+  for (const delay of input.delays ?? PRIVATE_BROADCAST_POLL_DELAYS_MS) {
+    if (!Number.isSafeInteger(delay) || delay < 0) {
+      throw new Error('Private Balance broadcast polling delay is invalid');
+    }
+    await sleep(delay);
+    try {
+      if (await input.reconcile()) return 'reconciled';
+    } catch {
+      // An unavailable archive never establishes finality or releases notes.
+    }
+  }
+  return 'pending';
+}
+
 /**
  * Polls the read-only RPC transaction status after a broadcast, purely as a
  * TRIGGER for canonical reconciliation. The status alone never finalizes or
@@ -237,20 +258,26 @@ export async function recoverPrivateBalanceAction(input: {
   context: PrivateStorageContext;
   storageKey: Uint8Array;
   actionId: string;
+  networkPassphrase?: string;
   rpc: PrivateBalanceRpcLookup;
-  scanCanonicalTranscript(): Promise<{ actionFields: string[]; nullifiers: string[] }>;
+  scanCanonicalTranscript(): Promise<{
+    actionFields: string[];
+    nullifiers: string[];
+    /** Close time of the common ledger through which the transcript was verified. */
+    headCloseTimeSeconds?: number;
+  }>;
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
 }): Promise<PrivateRecoveryResult> {
   const initial = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   const action = initial?.pendingActions.find(candidate => candidate.id === input.actionId);
-  if (!initial || !action || !['broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash) {
+  if (!initial || !action || !['signed', 'broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash) {
     throw new Error('Private Balance action is not awaiting canonical recovery');
   }
 
-  let rpcStatus: PrivateCanonicalTransactionStatus;
+  let rpcStatus: PrivateCanonicalTransactionStatus = 'UNAVAILABLE';
   let headCloseTimeSeconds: number | undefined;
-  try {
+  if (action.submissionMode === 'direct') try {
     const response = await input.rpc.getTransaction(action.transactionHash);
     if (response.txHash && response.txHash.toLowerCase() !== action.transactionHash) {
       throw new Error('RPC returned a different private transaction hash');
@@ -266,12 +293,30 @@ export async function recoverPrivateBalanceAction(input: {
   const transcript = await input.scanCanonicalTranscript();
   if (
     !transcript.actionFields.every(value => HEX_32.test(value)) ||
-    !transcript.nullifiers.every(value => HEX_32.test(value))
+    !transcript.nullifiers.every(value => HEX_32.test(value)) ||
+    (transcript.headCloseTimeSeconds !== undefined &&
+      (!Number.isSafeInteger(transcript.headCloseTimeSeconds) || transcript.headCloseTimeSeconds <= 0))
   ) {
     throw new Error('Private Balance canonical recovery transcript is invalid');
   }
+  if (action.submissionMode !== 'direct' && transcript.headCloseTimeSeconds !== undefined) {
+    // NOT_FOUND here denotes non-inclusion in the verified common transcript,
+    // not a private transaction lookup. Expiry is still required for release.
+    rpcStatus = 'NOT_FOUND';
+    headCloseTimeSeconds = transcript.headCloseTimeSeconds;
+  }
+  let expiresAtSeconds = action.expiresAtSeconds;
+  if (expiresAtSeconds === undefined && action.signedEnvelopeXdr && input.networkPassphrase) {
+    const signed = validateSignedPrivateBalanceEnvelope({
+      signedEnvelopeXdr: action.signedEnvelopeXdr,
+      networkPassphrase: input.networkPassphrase,
+      expectedTransactionHash: action.transactionHash,
+    });
+    const maxTime = Number(signed.transaction.timeBounds?.maxTime);
+    if (Number.isSafeInteger(maxTime) && maxTime > 0) expiresAtSeconds = maxTime;
+  }
   const decision = classifyPrivateActionRecovery(
-    action,
+    { ...action, expiresAtSeconds },
     rpcStatus,
     transcript.actionFields,
     transcript.nullifiers,
@@ -302,6 +347,9 @@ export async function recoverPrivateBalanceAction(input: {
     );
     return { state, outcome: decision, rpcStatus };
   }
+  if (currentAction.status === 'signed') {
+    return { state: current, outcome: decision, rpcStatus };
+  }
   const state = await recordPrivatePendingActionRpcStatus(
     input.context,
     input.storageKey,
@@ -320,6 +368,7 @@ export async function broadcastPrivateBalanceAction(input: {
   expectedRevision: number;
   actionId: string;
   networkPassphrase: string;
+  submissionMode: 'direct' | 'relay';
   rpc: PrivateBalanceRpcSender;
   storageDriver?: PrivateRecordDriver;
   now?: () => number;
@@ -331,6 +380,9 @@ export async function broadcastPrivateBalanceAction(input: {
   const action = state.pendingActions.find(candidate => candidate.id === input.actionId);
   if (!action || !['signed', 'broadcast', 'ambiguous'].includes(action.status)) {
     throw new Error('Private Balance action is not ready for broadcast');
+  }
+  if (!action.submissionMode || action.submissionMode !== input.submissionMode) {
+    throw new Error('Private Balance submission route differs from the approved route');
   }
   if (!action.signedEnvelopeXdr || !action.transactionHash) {
     throw new Error('Private Balance signed recovery envelope is missing');
@@ -417,11 +469,11 @@ export async function broadcastPrivateBalanceAction(input: {
 }
 
 /**
- * Re-drives every persisted 'signed' action through broadcast at leader sync
+ * Re-drives explicitly direct 'signed' actions through broadcast at leader sync
  * start. A crash between the sign and broadcast commits leaves 'signed' with
  * zero recorded attempts even though the RPC send may already have fired, so
- * the only safe resolution is to resend: DUPLICATE lands it in 'broadcast'
- * and the canonical sync remains the sole authority on the outcome.
+ * a direct resend is safe for that route. Relayed and legacy actions retain
+ * their reservations until canonical inclusion or expiry proves the outcome.
  */
 export async function resumeSignedPrivateBalanceActions(input: {
   context: PrivateStorageContext;
@@ -434,7 +486,7 @@ export async function resumeSignedPrivateBalanceActions(input: {
   let state = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   if (!state) return null;
   const signedIds = state.pendingActions
-    .filter(action => action.status === 'signed')
+    .filter(action => action.status === 'signed' && action.submissionMode === 'direct')
     .map(action => action.id);
   for (const actionId of signedIds) {
     const resumed = await broadcastPrivateBalanceAction({
@@ -443,6 +495,7 @@ export async function resumeSignedPrivateBalanceActions(input: {
       expectedRevision: state.revision,
       actionId,
       networkPassphrase: input.networkPassphrase,
+      submissionMode: 'direct',
       rpc: input.rpc,
       storageDriver: input.storageDriver,
       now: input.now,
