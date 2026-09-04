@@ -2,7 +2,7 @@
 
 - **Protocol:** V1 replacement design
 - **Implementation status:** Live Testnet development deployment, validated in StellarKey; not for real value
-- **Document revision:** 2026-09-03
+- **Document revision:** 2026-09-04
 
 ## Abstract
 
@@ -17,14 +17,15 @@ The implemented system is deliberately local-first. Key derivation, archive
 scanning, note selection, witness construction, proof generation, transaction
 review, and signing run in the browser. There is no application backend,
 StellarKey-operated relayer, indexer, hosted viewing-key service, or third-party
-wallet database. Stellar RPC and the asset-pinned pool contract provide the
+wallet database. Stellar RPC and the unified pool contract provide the
 canonical public state and encrypted recovery transcript.
 
 This is not a production or Mainnet claim. The authenticated deployment
-catalogue advertises live, asset-pinned XLM and USDC development pools on
-Testnet, and StellarKey explicitly enables those exact hash-pinned manifests.
-Their deployment evidence validates the read-back configuration, pinned assets,
-and initial tree state, and records post-deployment checkpoint hashes. Mainnet independently rejects
+catalogue advertises one live XLM/USDC development pool on Testnet, and
+StellarKey explicitly enables its exact hash-pinned manifest. Its deployment
+evidence validates the read-back configuration, append-only asset registry,
+and initial tree state, and records deployment and post-registry checkpoint
+hashes. Mainnet independently rejects
 Private Payments. The proving material is still a single-party development
 setup and must not be used for real value.
 
@@ -33,8 +34,8 @@ setup and must not be used for real value.
 The implementation targets five properties:
 
 1. **Value conservation.** A proof and the pool contract jointly enforce exact
-   63-bit integer balance across private inputs, private outputs, public value,
-   and any relayer fee.
+   63-bit integer balance across private inputs, three private outputs, and
+   public value. An optional peer fee is one of the private outputs.
 2. **Private internal transfers.** A transfer does not publish its private
    amount, recipient, selected notes, or change role.
 3. **Seed-based recovery.** Seed plus authenticated chain data can recover owned
@@ -44,45 +45,53 @@ The implementation targets five properties:
    action count, incremental Merkle state, and contract head agree. Independent
    RPC corroboration is mandatory for initial or full-history synchronization
    and enabled by default for routine synchronization.
-5. **Deployment isolation.** Every pool, key hierarchy, address, artifact set,
-   and local record is bound to a network, realm, contract, and single asset.
+5. **Deployment and asset binding.** Every key hierarchy, address, artifact set,
+   and local record is bound to a network, realm, and contract. Every note also
+   binds one immutable on-chain registry index and its full asset field.
 
-The design does not hide network metadata, the pool or asset, action timing, the
-transaction source, deposits, withdrawals, or the public action kind. The
-development client self-submits from the user's public Stellar account. It
+The design does not hide network metadata, the pool, action timing, the
+transaction source, deposits, withdrawals, or the public action kind. Deposits
+and withdrawals reveal their asset; an internal transfer does not publish it.
+Direct mode self-submits from the user's public Stellar account. Optional relay
+mode uses an explicitly opted-in peer's account instead. It
 does not guarantee a minimum privacy set, protect a compromised browser, or
 make an unaudited single-party proving setup safe for real value.
 
 ## 2. System architecture
 
-Each immutable asset-pinned pool is a separate privacy and state domain.
-There is no shared arbitrary-asset tree: a deployment constructor pins exactly
-one Stellar Asset Contract together with the network ID, realm, guardian,
-circuit hash, verification-key hash, Poseidon2 parameter hash, tree parameters,
-address format, encryption suite, and deployment-binding hash.
+One deployment is one privacy and state domain. Its constructor binds the
+network ID, realm, initial asset administrator, guardian, circuit hash,
+verification-key hash, Poseidon2 parameter hash, tree parameters, address
+format, encryption suite, and deployment-binding hash. The contract maintains
+one shared tree and an append-only asset registry. The administrator can add
+assets or set them `Active`/`ExitOnly`; entries cannot be deleted or reindexed.
 
 | Component | Implemented responsibility |
 | --- | --- |
 | Browser vault | Holds the Stellar seed and derives deployment-bound private keys only after explicit user intent. |
 | Isolated worker | Scans ciphertext, maintains private note state, constructs witnesses, and proves actions. |
 | Public Merkle cache | Stores authenticated, disposable commitment nodes and checkpoints; it contains no note plaintext. |
-| Pool contract | Verifies proofs, enforces nullifier uniqueness, updates the tree, moves the pinned asset, and appends recovery records. |
+| Pool contract | Verifies proofs, enforces nullifier uniqueness, updates the shared tree and registry, moves boundary assets, and appends recovery records. |
 | Primary Stellar RPC | Supplies ledger state, simulation, submission, confirmation, and archive restoration. |
 | Different-origin witness RPC | Corroborates network identity, any retained deployment-checkpoint ledger, a current overlapping ledger hash, and the complete contract head during mandatory initial/full-history checks and, by default, routine checks. |
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
+| Public Nostr relays | Optionally carry bounded peer discovery and encrypted selected-peer messages. They are not operated by StellarKey and see connection metadata. |
 
-The protocol includes a relayer address and fee in transfer and withdrawal
-actions, and the contract permits third-party submission without user account
-authorization. No operated relayer exists today. For every zero-fee action, the
-pool contract address is the relayer sentinel. That constant is proof-bound and
-stored in the archive, but carries no user-specific identity; the contract moves
-no relayer payment when the fee is zero. The development client still signs an
-inner transaction from the user's public Stellar account and self-submits it, so
-the transaction source links the shielded action to that account. A fee-bump
-sponsor changes the outer fee source but leaves the inner transaction source
-public, so fee bumping alone is not a privacy improvement. Any non-zero relayer
-fee and its actual recipient are public and are paid by the pool only when the
-proof authorizes them.
+Transfer and withdrawal need no user Soroban authorization: the proof authorizes
+the state transition. Direct mode still signs an inner transaction from the
+user's public Stellar account, so that source links the action to the account.
+A fee-bump sponsor changes the outer fee source but leaves the inner source
+public.
+
+Optional privacy-relay mode discovers another opted-in browser wallet through
+at least two configured public Nostr relay origins. The selected helper supplies
+the Stellar transaction source, pays the public network fee, manually approves
+the exact reviewed transaction, and earns a proof-bound encrypted note in the
+same asset. No public relayer address or fee exists in the contract action or
+archive. StellarKey runs no relay backend and never silently falls back from
+relay to direct mode. Public Nostr operators still observe connection IPs,
+timing, and discovery messages; the selected peer sees the action asset, fee,
+proof, and exact transaction.
 
 ## 3. Deployment-bound keys and private addresses
 
@@ -98,15 +107,15 @@ ID, and Stellar account public key. Domain-separated expansion produces:
 - a separate deployment-bound local-storage key.
 
 A four-byte diversifier derives an address-specific owner commitment and an
-address-specific X25519 key pair. Each self-output gets a random non-zero
-four-byte self-output diversifier that is unique among self-outputs in that
-action. It does not intentionally reuse the displayed receive diversifier.
-Because self-output diversifiers exclude zero, collision with the default zero
-receive diversifier is impossible. For a rotated non-zero address, the first
-self-output selection collides with probability 1 in `(2^32 - 1)`; later
-self-output selections in the same action are conditioned on the diversifiers
-already used. Spending authority stays common to the account while issued
-receive addresses can rotate.
+address-specific X25519 key pair. All three outputs in one action deliberately
+carry one common clear action diversifier. For a transfer this is the recipient
+address diversifier; change, peer-fee, and dummy lanes are constructed to match
+it. Deposits and direct withdrawals choose a fresh random action diversifier;
+a relayed withdrawal uses the peer fee-address diversifier. This prevents the
+clear bytes from identifying output roles inside an action while retaining the
+reviewed X25519 scan path. It does not hide the diversifier: reusing a receive
+address can still link the whole actions that carry it. Spending authority stays
+common to the account while issued receive addresses can rotate.
 
 The current Base58 address format is intentionally shorter than the retired
 format. `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
@@ -150,14 +159,15 @@ encoding parameters in the authenticated artifacts.
 
 A 128-byte decrypted note plaintext contains the protocol version, a real/dummy
 flag, value, diversifier, owner commitment, note randomness `rho`, an optional
-memo of at most 32 bytes, and reserved zero bytes.
+memo of at most 32 bytes, the immutable four-byte asset-registry index, and 11
+reserved zero bytes.
 
 The note commitment binds the deployment context field, asset field, owner
 commitment, value, and `rho`. The owner commitment already incorporates the
 address diversifier. The memo is authenticated by encryption but is not a
 separate circuit input or note-commitment field.
 
-Every action publishes exactly two non-zero, distinct commitments.
+Every action publishes exactly three non-zero, pairwise-distinct commitments.
 Zero-value dummy notes represent unused outputs; they are never absent or zero
 commitments. Each receives fresh randomness, owner material, diversifier,
 recipient ciphertext, outgoing ciphertext, and a normal-looking commitment.
@@ -171,12 +181,12 @@ Each 370-byte output package consists of:
 - a 157-byte outgoing envelope.
 
 The wallet independently randomizes real/dummy input lane ordering and
-recipient/change or real/dummy output lane ordering before building commitments
+recipient/change/peer-fee/dummy output lane ordering before building commitments
 and encryption envelopes.
 
 ## 6. Fixed-shape actions
 
-Every Deposit, Transfer, and Withdraw has two input lanes and two output lanes.
+Every Deposit, Transfer, and Withdraw has two input lanes and three output lanes.
 Real inputs carry a note witness and a depth-17 membership path. Dummy inputs
 carry a fresh secret that produces a non-zero public dummy nullifier, while
 their unused membership data has one canonical private zero form. The public
@@ -184,15 +194,15 @@ slots do not disclose the private `inputReal` selectors.
 
 | Action | Public information | Private statement |
 | --- | --- | --- |
-| Deposit | Kind, source, amount, pool, asset, commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
-| Transfer | Kind, pool, asset, anchor root, relayer field and fee (currently the pool sentinel and zero), commitments, nullifiers, timing and fee payer | At least one owned input and one real output; recipient, amount, note count and change role remain private. |
-| Withdraw | Kind, public recipient and amount, pool, asset, anchor root, relayer field and fee (currently the pool sentinel and zero), commitments, nullifiers, timing and fee payer | At least one owned input; any remainder becomes private change. |
+| Deposit | Kind, source, amount, pool, registry index, asset, three commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
+| Transfer | Kind, pool, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input and one real output; asset, recipient, amount, peer fee, note count and output roles remain private. |
+| Withdraw | Kind, public recipient and amount, pool, registry index, asset, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input; any remainder and optional encrypted peer fee occupy private outputs. |
 
 For all actions the circuit enforces:
 
 ```text
 sum(private inputs) + public deposit
-  = sum(private outputs) + public withdrawal + relayer fee
+  = sum(private outputs) + public withdrawal
 ```
 
 Each individual value and one post-equality total receive a 63-bit range check.
@@ -200,27 +210,29 @@ The public action kind selects which public term is active.
 
 ## 7. Groth16 statement
 
-The production-shaped development circuit has 14,574 constraints, 11 public
-inputs, and 124 private inputs when compiled with Circom 2.2.3 and `--O2`. It
+The production-shaped development circuit has 15,114 constraints, 11 public
+inputs, and 128 private inputs when compiled with Circom 2.2.3 and `--O2`. It
 fits a `2^14` Groth16 domain.
 
 The 11 public inputs, in verifier order, are:
 
 1. deployment context field;
-2. pinned asset field;
+2. boundary asset field (zero for an internal transfer);
 3. action kind;
 4. anchor root;
 5. public deposit or withdrawal value;
-6. relayer fee;
-7. canonical action field;
-8. and 9. two nullifiers; and
-10. and 11. two output commitments.
+6. canonical action field;
+7. and 8. two nullifiers; and
+9. through 11. three output commitments.
 
-The private witness proves owner authorization, real-input membership, correct
-real or dummy nullifier derivation, distinct spent leaves, output commitments,
-fixed action shape, and conservation of value. The canonical action field
-hashes the network, realm, pool, asset, nonce, anchor root, complete outputs, public
-endpoints, relayer, and fee. A non-zero circuit constraint gives this public
+The private witness includes the full action asset field and proves owner
+authorization, real-input membership, correct real or dummy nullifier
+derivation, distinct spent leaves, three output commitments, fixed action shape,
+and conservation of value. Deposits and withdrawals prove that the private full
+asset field equals the public registered boundary asset; transfers require the
+public boundary field to be zero. The canonical action field hashes the network,
+realm, pool, optional boundary asset/index, nonce, anchor root, complete outputs,
+and public endpoints. It contains no relayer metadata. A non-zero circuit constraint gives this public
 field a non-zero Groth16 input coefficient; a proof-mutation regression confirms
 that changing it invalidates the proof. The contract derives the field itself.
 
@@ -233,8 +245,9 @@ submission, but the protocol cannot repair deliberately malformed ciphertext.
 ## 8. Ternary incremental Merkle tree
 
 The commitment tree is ternary and depth-17. Its capacity is
-`3^17 = 129,140,163` leaves. Because every action appends two commitments, the
-public leaf count advances by exactly two per accepted action.
+`3^17 = 129,140,163` leaves. Because every action appends three commitments, the
+public leaf count advances by exactly three per accepted action, for a maximum
+of 43,046,721 complete actions.
 
 A parent is the raw three-input Poseidon2 permutation over ordered left, middle,
 and right children. All three rate elements are occupied, so the Merkle parent
@@ -246,7 +259,7 @@ roots, the length IV, and the domain-slot convention are consensus parameters.
 
 The contract and browser use the same generated empty roots and canonical hash
 implementation. The contract maintains a 34-node frontier—two slots for each of
-17 levels—and recomputes the current root after the two appends.
+17 levels—and recomputes the current root after the three appends.
 
 The browser persists an authenticated incremental Merkle node store. Its
 checkpoint binds the deployment, archive cursor, transcript head, commitment
@@ -265,20 +278,27 @@ without moving value.
 The pool constructor rejects any network or artifact configuration that differs
 from the compiled constants and recomputed deployment binding. The implemented
 contract exposes Deposit, Transfer, Withdraw, read-only configuration/head
-methods, permissionless current-root refresh, and guardian-authorized deposit
-pause. It has no arbitrary-asset entrypoint.
+methods, permissionless current-root refresh, guardian-authorized deposit
+pause, and an administrator-authorized append-only asset registry.
+
+Registry indices are permanent and contiguous. The asset administrator can add
+a Stellar Asset Contract, switch it between `Active` and `ExitOnly`, and hand
+authority to a new administrator through a propose/accept sequence. `ExitOnly`
+blocks deposits but preserves transfers and withdrawals for existing notes.
+The contract cannot delete, replace, or reindex an entry.
 
 For an action, the contract atomically:
 
-1. checks the pinned asset and canonical action encoding;
+1. resolves and checks the public registered asset for a deposit/withdrawal, or
+   requires no public asset for a transfer, and checks canonical encoding;
 2. enforces the deposit pause or verifies a recent anchor root;
 3. rejects already-spent durable nullifiers;
 4. checks remaining tree capacity;
 5. reconstructs the 11 public signals and verifies the Groth16 proof;
 6. persists replay protection;
-7. appends both commitments and updates the root/frontier;
+7. appends all three commitments and updates the root/frontier;
 8. appends the authenticated archive record and transcript head;
-9. moves the pinned asset for a deposit, withdrawal, or relayer fee; and
+9. moves the registered asset only for a deposit or withdrawal; and
 10. emits the shielded-action event.
 
 Any failure, including token movement or budget failure, rolls back the whole
@@ -287,16 +307,18 @@ real inputs and their public kind reveals that fact, so the contract stores only
 the first dummy nullifier as an exact-proof replay key. Storing zero would allow
 proof replay; storing the second adds no replay protection.
 
-The guardian can pause new deposits but cannot rewrite history or bypass proof
-verification. Transfers and withdrawals remain governed by their normal proof,
-root, and nullifier rules.
+The guardian can pause all new deposits but cannot rewrite history or bypass
+proof verification. The separate asset administrator controls admission and
+status but cannot spend notes or alter historical registry identities.
+Transfers and withdrawals remain governed by their normal proof, root, and
+nullifier rules.
 
 ## 10. Recipient and sender recovery
 
 The recipient envelope lets the incoming viewing key test and decrypt an owned
 note. Its HPKE information and associated data directly bind the protocol
 context (network, realm, and pool), commitment, action nonce, and output index;
-the recomputed commitment binds the pinned asset and note fields. The outgoing
+the recomputed commitment binds the recovered registered asset and note fields. The outgoing
 envelope's associated data additionally binds the deployment-binding hash and
 asset field directly. Wrong-context and tampered ciphertext fail authentication.
 
@@ -318,16 +340,17 @@ are cleared in `finally` paths where the runtime permits.
 
 Every accepted action writes one immutable persistent archive record keyed by
 its action index. It includes the action/ledger indices, starting leaf index,
-kind, asset, nonce, anchor and resulting roots, two nullifiers, two complete
-output packages, public value and endpoint, and relayer data. For the current
-zero-fee transfers and withdrawals, the archived relayer is the common pool
-contract address rather than the submitting user's account. Each record hash
+kind, nonce, anchor and resulting roots, two nullifiers, three complete output
+packages, and public value and endpoint. Deposit and withdrawal records include
+the public registry index and asset; transfer records contain neither. No record
+contains a relayer, fee recipient, or public peer-fee amount. Each record hash
 commits to the prior transcript head, so deletion, reordering, insertion, or
 mutation breaks recovery.
 
 A seed-only recovery starts at the deployment genesis, reads records in order,
 recomputes each record hash and action field, rebuilds the incremental tree,
-opens incoming and outgoing envelopes, derives owned nullifiers, and reconciles
+trial-decrypts transfer envelopes against the corroborated registry, validates
+the encrypted asset index and full commitment, derives owned nullifiers, and reconciles
 the final action count, transcript head, frontier, and Merkle root. Only then is
 the recovered balance spendable.
 
@@ -398,7 +421,35 @@ broadcast or ambiguous pending state, canonical confirmation, rejection or
 failure, and runtime status-unknown. Ambiguous submissions keep their input
 notes reserved until canonical evidence proves confirmation or safe absence.
 
-## 13. Local state and execution boundary
+## 13. Optional browser peer relay
+
+For each private transfer or withdrawal, the review UI requires an explicit
+choice between **Privacy relay** and **My account**. Relay mode first publishes a
+short-lived quote request through at least two user-configurable public Nostr
+relay origins. Sender and helper use ephemeral Nostr identities; messages after
+discovery are NIP-44 v2 encrypted to the selected peer. Deposits are not
+relayable because their public source must authorize the asset transfer.
+
+The selected peer gives the sender a quote and a diversified private fee
+address. The sender builds a new proof with the peer's same-asset fee as one of
+the three shuffled encrypted outputs and the peer's Stellar account as the
+transaction source. The peer validates the exact unsigned transaction, source,
+network, pool method, time bounds, fee caps, absence of extra operations/auth,
+and matched envelope diversifiers; decrypts exactly one real fee note matching
+the quote; and simulates the exact transaction. Only then does it show a manual
+approval modal. The peer signs, rechecks the signed XDR, submits through its RPC,
+and reports the exact transaction hash.
+
+StellarKey operates no relay or signaling server and stores no relay jobs.
+Public Nostr infrastructure is still server infrastructure: its operators see
+connections, IP addresses, timing, and the public discovery request. The
+selected helper learns the asset, fee, proof, and transaction. NIP-44 does not
+provide forward secrecy or post-quantum confidentiality. A helper can refuse or
+delay service. Relay mode never silently falls back to direct submission;
+changing peers requires a new proof because the encrypted fee note is bound to
+the selected peer.
+
+## 14. Local state and execution boundary
 
 Owned notes, decrypted activity, outgoing metadata, canonical scan progress and
 checkpoints, and pending actions are encrypted and authenticated in
@@ -419,26 +470,30 @@ served application, browser, operating system, device, dependencies, artifacts,
 and reviewed transaction are not compromised. A malicious extension or origin
 can defeat every browser-level privacy control.
 
-## 14. Privacy boundary
+## 15. Privacy boundary
 
 | Hidden for an internal transfer | Public or observable |
 | --- | --- |
-| Private transfer amount | Pool contract and pinned asset |
+| Private transfer amount and asset | Pool contract and action timing |
 | Recipient private address | Public action kind |
-| Which note lanes are real | Anchor root, two nullifiers and two commitments |
-| Whether a real output is recipient or change | Fixed-size encrypted output packages |
-| Memo plaintext | Pool-address relayer sentinel, zero relayer fee, and public transaction source |
+| Which note lanes are real | Anchor root, two nullifiers and three commitments |
+| Whether a real output is recipient, change, or peer fee | Three fixed-size encrypted output packages |
+| Memo plaintext | Direct-mode user source or relay-mode peer source, and public Stellar fee |
 | Spending and viewing secrets | Transaction timing and network metadata |
 
-Deposits reveal their public source and amount. Withdrawals reveal their public
-recipient and amount. The asset is public for every action, so the privacy set is
-per asset-pinned pool rather than cross-asset. Fixed two-by-two arity and
-randomized lanes obscure input/output roles but cannot create a large privacy
-set when the pool is small or activity is uniquely timed.
+Deposits reveal their public source, asset, and amount. Withdrawals reveal their
+public recipient, asset, and amount. Internal transfers publish neither the
+asset contract nor registry index, and all registered assets share one action
+set. Fixed two-input/three-output arity, randomized lanes, and one matched clear
+diversifier per action obscure output roles, but they cannot create a large
+privacy set when the pool is small or activity is uniquely timed. Reusing a
+private receive address still links whole actions through the clear diversifier.
 
 The RPC operator and a network observer can see the user's IP address, request
 timing, selected pool, queried ledger ranges, simulations, restoration attempts,
-and submitted transactions. Timing and pool activity remain public. Pool size,
+and submitted transactions. Optional public Nostr relays additionally see peer
+discovery metadata, and the selected helper sees the asset, fee, proof, and job.
+Timing and pool activity remain public. Pool size,
 deposits, withdrawals, repeated public endpoints, private-address reuse,
 voluntary disclosure, or browser compromise may correlate otherwise hidden
 transfers.
@@ -452,24 +507,24 @@ fresh classic destination without proving, but the asset, amount, sender,
 timing, account creation, and later sweep can remain linkable. The two systems
 retain separate keys, recovery, sync, and user-facing guarantees.
 
-## 15. Measured implementation
+## 16. Measured implementation
 
 The protocol-review harness compiles each circuit variant sequentially and
 records machine-readable results. The accepted replacement measures:
 
 | Metric | Implemented result |
 | --- | ---: |
-| Constraints | 14,574, down from 23,437 (37.82%) |
-| Public / private inputs | 11 / 124 |
-| R1CS | 6,848,312 bytes |
-| Witness Wasm | 152,217 bytes |
-| Development proving key | 8,971,612 bytes |
-| Point-compressed proving-key transport | 6,120,542 bytes |
-| Compressed HTTP wire size recorded in manifest | 2,427,581 bytes |
+| Constraints | 15,114, down from the 23,437 baseline (35.51%) |
+| Public / private inputs | 11 / 128 |
+| R1CS | 7,107,072 bytes |
+| Witness Wasm | 154,930 bytes |
+| Development proving key | 9,264,916 bytes |
+| Point-compressed proving-key transport | 6,327,606 bytes |
+| Compressed HTTP wire size recorded in manifest | 2,498,167 bytes |
 | Canonical BN254 proof | 256 bytes |
 | Tree | Ternary depth 17, 129,140,163 leaves |
 | Transfer verification | 29,287,953 Soroban test-budget instructions |
-| Pool Wasm | 66,377 bytes raw; 57,042 bytes after `stellar contract optimize` |
+| Pool Wasm | 71,277 bytes raw; 61,067 bytes after `stellar contract optimize` |
 
 In the recorded three-trial Node.js run on an Apple M3 Max, native X25519 p50
 fell from 371.708 microseconds with JWK import to 84.792 microseconds with
@@ -483,13 +538,15 @@ latency evidence.
 
 The pool size comparison is also like-for-like: baseline revision `69335bd`
 and the replacement were built with Stellar CLI 27.0.0, Rust 1.97.1, locked
-dependencies, and identical optimization commands. Raw Wasm fell from 93,504
-to 66,377 bytes (29.01%), while optimized Wasm fell from 80,245 to 57,042
-bytes (28.92%).
+dependencies, and identical optimization commands. The current governed pool
+is 71,277 bytes raw and 61,067 bytes after `stellar contract optimize`, 23.77%
+and 23.90% below that baseline respectively. The optimized size was remeasured
+locally for this revision; the deployed fixture intentionally uses the exact
+unoptimized 71,277-byte manifest-pinned Wasm.
 
 A standalone additional depth-17 association-set membership path compiled to
-4,573 constraints. It would raise the current action to at least 19,147
-constraints (+31.38%) before any policy logic. No association-set feature is
+4,573 constraints. It would raise the current action to at least 19,687
+constraints (+30.26%) before any policy logic. No association-set feature is
 included without a concrete governance model and end-to-end device and Soroban
 measurements. Cross-origin isolation is likewise deferred until a complete
 subresource audit and physical-device benchmark exist.
@@ -506,7 +563,7 @@ as a possible scan optimization, but replacing the current RFC 9180 KEM without
 a complete reviewed variable-base X25519/cofactor construction would trade
 performance for protocol risk.
 
-## 16. Deployment and trust status
+## 17. Deployment and trust status
 
 The replacement remains Protocol V1 and deliberately replaces the old Testnet
 design in place. There is no backward-compatible state migration. Previous
@@ -514,18 +571,19 @@ Testnet pools bind different circuit, tree, contract, and verification-key
 hashes; their manifests and fixture evidence were retired rather than relabeled.
 Old balances and addresses are not presented as part of the replacement.
 
-StellarKey's authenticated catalogue now publishes one live Testnet XLM pool
-and one live Testnet USDC pool. The checked-in deployment evidence records each
-pool identity, the locally selected Wasm hash, and a post-deployment checkpoint,
-and validates the read-back immutable configuration, asset pin, deposit-open
-state, and empty initial tree/archive head. It does not contain a deployment
+StellarKey's authenticated catalogue now publishes one live Testnet pool,
+`CBQI…DRUI`, with XLM at registry index 0 and USDC at index 1. Both entries were
+read back as `Active`. The checked-in deployment evidence records the pool
+identity, locally selected Wasm hash, deployment checkpoint at ledger 4,491,845,
+and post-registry checkpoint at ledger 4,491,848. It validates the immutable
+configuration, registry contents, deposit-open state, and empty initial
+tree/archive head. It does not contain a deployment
 transaction hash or independently bind the on-chain executable to the recorded
-local Wasm hash. The browser implementation has also been exercised by the live
-Testnet MVP suite covering setup, deposits, consolidation, private transfer,
-withdrawal, encrypted backup, seed-only recovery, RPC switching, manifest
-tamper rejection, and the browser compatibility matrix. This validates the
-implemented development path on StellarKey; it is not an audit, ceremony, or
-real-value approval. A Stellar Testnet reset deletes these pools and requires a
+local Wasm hash. Contract deployment, both registry additions, and their
+readbacks succeeded against the public Testnet RPC. The complete browser payment
+suite is rerun as a separate release gate; no claim in this document treats a
+fixture readback as an end-to-end payment test. This is not an audit, ceremony,
+or real-value approval. A Stellar Testnet reset deletes this pool and requires a
 fresh redeploy, new evidence, and republished manifest hashes.
 
 The current proving key was created by a single-party setup. It passes
@@ -538,13 +596,13 @@ contribution or final-beacon chain. The zkey consistency check does not make
 these development artifacts safe for real value. Anyone retaining the phase-2
 secret could forge proofs.
 
-The live development pools are deliberately Testnet-only. Real-value or Mainnet
+The live development pool is deliberately Testnet-only. Real-value or Mainnet
 promotion additionally requires deployment transaction evidence, a public
 multi-party phase-2 ceremony, independent transcript verification, reproducible
 builds, physical-device proving measurements, Soroban resource measurements,
 external circuit and contract review, and end-to-end recovery drills.
 
-## 17. Normative sources and operational guidance
+## 18. Normative sources and operational guidance
 
 This whitepaper explains the implemented design. Consensus and byte-level rules
 remain normative in the repository sources:

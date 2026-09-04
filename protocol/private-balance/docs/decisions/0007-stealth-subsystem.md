@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 The application contains two privacy systems. The shielded Soroban pool hides note ownership,
-internal amounts, recipients, and lane roles for one asset-pinned pool, at the cost of setup,
+internal assets, amounts, recipients, and lane roles within one governed shared pool, at the cost of setup,
 proving, recovery scanning, and contract state. The Horizon stealth path derives a fresh one-time
 classic account from a reusable meta-address without a proof or pool, but leaves the transferred
 asset, amount, source, timing, and eventual sweep behaviour public.

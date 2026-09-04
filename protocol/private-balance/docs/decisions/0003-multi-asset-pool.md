@@ -1,7 +1,8 @@
 # ADR 0003: Retain Asset-Pinned Pools
 
 ## Status
-Rejected
+Superseded on 2026-09-04 by
+[`0008-governed-asset-private-pool.md`](0008-governed-asset-private-pool.md).
 
 ## Context
 The review proposed making the asset field private for transfers and replacing each immutable

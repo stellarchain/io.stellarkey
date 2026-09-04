@@ -12,7 +12,7 @@ test("private-payment documentation describes the live Testnet development deplo
   assert.match(model, /Live Testnet development deployment/is);
   assert.match(
     model,
-    /authenticated deployment\s+catalogue advertises live, asset-pinned XLM and USDC development pools/is,
+    /catalogue advertises one live XLM\/USDC development pool on Testnet/is,
   );
   assert.match(model, /single-party setup/i);
   assert.match(model, /passes.*pinned Powers-of-Tau transcript/is);

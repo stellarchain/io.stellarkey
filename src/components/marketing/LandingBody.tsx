@@ -329,8 +329,8 @@ export function LandingBody() {
           <div className="head">
             <p className="mono-label">act three<span className="sep">{"//"}</span>the same wallet, in private</p>
             <h2 className="display-sm">Then it goes quiet.</h2>
-            <p className="lede"><strong>Private Payments is the same wallet with a second pocket.</strong> Move XLM or USDC into a private balance and send it where the amount, the recipient, and the memo stay encrypted. The proof is built on this device; a contract on the public Stellar ledger verifies it without reading it.</p>
-            <p className="lede">It ships today as a preview on Stellar testnet, and it is honest about its edges. Money moving in or out of the private balance is public by design. Network fees are paid by your Stellar account, and timing is public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
+            <p className="lede"><strong>Private Payments is the same wallet with a second pocket.</strong> Move XLM or USDC into one private pool and send internally while the asset, amount, recipient, optional peer fee, and memo stay encrypted. The proof is built on this device; a contract on the public Stellar ledger verifies it without reading it.</p>
+            <p className="lede">It ships today as a preview on Stellar testnet, and it is honest about its edges. Money moving in or out of the private balance is public by design. Direct mode exposes your account as the network-fee payer; optional relay mode exposes an explicitly selected peer instead. Timing is public. Privacy grows with more independent activity — it is context, not a guarantee.</p>
           </div>
           <div className="rv"><PanelDeal /></div>
         </div>
@@ -340,7 +340,7 @@ export function LandingBody() {
         <div className="head">
           <p className="mono-label">a private payment<span className="sep">{"//"}</span>proved here<span className="sep">{"//"}</span>verified there</p>
           <h2 className="display-sm">Payments that keep the amount to themselves.</h2>
-          <p className="lede">There is no relayer, no indexer, and no key service under this. The wallet downloads hash-pinned proving files once, builds each proof in an isolated worker, and talks straight to the Stellar RPC endpoint you chose. This is the whole journey.</p>
+          <p className="lede">There is no StellarKey relay backend, indexer, or key service under this. The wallet downloads hash-pinned proving files once, builds each proof in an isolated worker, and talks straight to the Stellar RPC endpoint you chose. Optional peer submission uses configurable public Nostr services and another opted-in browser wallet.</p>
         </div>
         <div className="demo inline rv" data-demo="quiet">
           <div className="bar"><span className="dot" data-dot></span><b data-label>a private payment, start to finish</b>
