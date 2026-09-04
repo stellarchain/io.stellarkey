@@ -5,7 +5,7 @@ import {
   deriveStealthMetaKeys,
   deriveStealthRecipient,
 } from '@stellarkey/private-balance';
-import { loadStealthDiscoveryCache } from '../src/features/private-balance/runtime/stealth-cache.ts';
+import { loadStealthDiscoveryCache, createEmptyStealthDiscoveryCache, commitStealthDiscoveryCache } from '../src/features/private-balance/runtime/stealth-cache.ts';
 import { syncStealthAnnouncements } from '../src/features/private-balance/runtime/stealth-sync.ts';
 
 class MemoryDriver {
@@ -33,6 +33,26 @@ const context = {
   deploymentBindingHash: '04'.repeat(32),
 };
 const storageKey = bytes(5);
+
+test('legacy birthday cache resumes its cursor without rejecting older retained announcements', async () => {
+  const driver = new MemoryDriver();
+  const data = await fixture();
+  await commitStealthDiscoveryCache(context, storageKey, {
+    ...createEmptyStealthDiscoveryCache(2_000), lowerBoundCreatedAt: 2_000,
+  }, null, driver);
+  const state = await syncStealthAnnouncements({
+    context, storageKey, keys: data.keys, network: 'testnet', storageDriver: driver,
+    implementation: 'portable', now: () => 3_000,
+    reader: { async readPage(input) {
+      assert.equal(input.lowerBoundCreatedAt, 0);
+      assert.equal(input.cursor, null);
+      return { announcements: [data.firstOwned], nextCursor: data.firstOwned.pagingToken,
+        latestLedger: 100, hasMore: false };
+    } },
+  });
+  assert.equal(state.lowerBoundCreatedAt, 0);
+  assert.equal(state.payments.length, 1);
+});
 
 async function fixture() {
   const keys = deriveStealthMetaKeys(bytes(11), 'testnet', bytes(4));

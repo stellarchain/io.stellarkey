@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
 - Persisted the approved direct/relay route in encrypted private-action journals, blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery, and required independently corroborated scanned-ledger time before expiry release. Legacy envelopes retain conservative recovery without guessing their route.
 - Required encrypted, context-bound Stellar account-key proofs before accepting or selecting privacy-relay offers, moved negotiation to an incompatible v2 topic, and padded encrypted message classes to a common bounded size. Helper opt-in authorizes offer signatures; transactions still require manual approval.
 - Excluded the active Stellar account from privacy-relay availability and transaction offers, capped untrusted quote collection, and expired helper request/quote state so self-relay, flooding, and repeated probes cannot undermine the bounded peer workflow.

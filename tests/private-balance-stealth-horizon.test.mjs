@@ -158,7 +158,7 @@ test('Horizon reader skips malformed announcer spam but advances to its returned
   assert.equal(page.nextCursor, (499n << 32n | 8n).toString());
 });
 
-test('Horizon reader binary-searches the first ledger inside the requested recovery window', async () => {
+test('Horizon recovery requests never reveal a birthday through ledger probes or a starting cursor', async () => {
   const requestedLedgers = [];
   let paymentsCursor = null;
   const request = async url => {
@@ -179,16 +179,24 @@ test('Horizon reader binary-searches the first ledger inside the requested recov
     }
     throw new Error(`Unexpected request ${url}`);
   };
-  const page = await new HorizonStealthAnnouncementReader({
+  const reader = new HorizonStealthAnnouncementReader({
     network: 'testnet',
     announcerPublicKey: announcer,
     request,
-  }).readPage({ cursor: null, lowerBoundCreatedAt: 5_000, limit: 200 });
+  });
+  const page = await reader.readPage({ cursor: null, lowerBoundCreatedAt: 5_000, limit: 200 });
 
-  assert.ok(requestedLedgers.length <= 4);
-  assert.equal(paymentsCursor, (4n << 32n | 0xffffffffn).toString());
+  assert.deepEqual(requestedLedgers, []);
+  assert.equal(paymentsCursor, '4294967295');
   assert.equal(page.nextCursor, paymentsCursor);
   assert.equal(page.latestLedger, 10);
+  for (const birthday of [0, 4_999, 5_001, 100_000]) {
+    await reader.readPage({ cursor: null, lowerBoundCreatedAt: birthday, limit: 200 });
+    assert.equal(paymentsCursor, page.nextCursor);
+    assert.deepEqual(requestedLedgers, []);
+  }
+  await reader.readPage({ cursor: '123', lowerBoundCreatedAt: 5_000, limit: 200 });
+  assert.equal(paymentsCursor, '123', 'a durable forward cursor remains usable');
 });
 
 test('Horizon reader never probes ledgers before the retained history boundary', async () => {
