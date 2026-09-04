@@ -12,7 +12,10 @@ import {
   BoundedPrivateRelayTransport,
   validatePrivateRelayUrls,
 } from '../src/features/private-balance/relay/transport.ts';
-import { firstAcceptedPrivateRelayPublish } from '../src/features/private-balance/relay/nostr.ts';
+import {
+  firstAcceptedPrivateRelayPublish,
+  privateRelayConnectionOutcomes,
+} from '../src/features/private-balance/relay/nostr.ts';
 import { readFileSync } from 'node:fs';
 
 const NOW = 1_800_000_000;
@@ -110,6 +113,22 @@ test('the production Nostr pool keeps subscriptions reconnectable after a droppe
   );
   assert.match(source, /enableReconnect:\s*true/);
   assert.match(source, /enablePing:\s*true/);
+});
+
+test('Nostr connection status preserves root relay URL identity', () => {
+  assert.deepEqual(
+    [...privateRelayConnectionOutcomes(
+      ['wss://relay.one/', 'wss://relay.two/path/'],
+      new Map([
+        ['wss://relay.one/', true],
+        ['wss://relay.two/path', true],
+      ]),
+    )],
+    [
+      ['wss://relay.one/', true],
+      ['wss://relay.two/path/', true],
+    ],
+  );
 });
 
 test('relay publishing unblocks when the first configured relay accepts', async () => {
