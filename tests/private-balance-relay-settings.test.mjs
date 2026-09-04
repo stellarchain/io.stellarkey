@@ -54,6 +54,8 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(availability, /aria-live="polite"/);
   assert.match(availability, /available when checked/);
   assert.match(availability, /No peers answered/);
+  assert.match(availability, /same Stellar account/);
+  assert.match(availability, /different Testnet account/);
   assert.match(availability, /Lowest fee/);
   assert.match(availability, /quote\.peerAccount/);
   assert.match(availability, /quote\.feeAtomic/);

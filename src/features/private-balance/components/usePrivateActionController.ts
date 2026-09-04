@@ -134,7 +134,7 @@ export function usePrivateActionController(
         const session = await PrivateRelaySenderSession.create(preferences.relayUrls);
         pendingRelaySession = session;
         setRelayProgress('finding-peer');
-        const { request, quotes } = await session.requestQuotes({
+        const { request, quotes, ineligiblePeerAccounts } = await session.requestQuotes({
           networkId: deployment.networkId,
           poolContractId: deployment.poolContractId,
           actionKind: draft.kind,
@@ -147,7 +147,9 @@ export function usePrivateActionController(
         }, controller.signal);
         if (quotes.length === 0) {
           session.close();
-          throw new Error('No privacy relay peer answered. Try again or explicitly choose direct submission.');
+          throw new Error(ineligiblePeerAccounts > 0
+            ? 'A helper using this same Stellar account answered, but self-relaying would not improve privacy. Use a different account in the other browser.'
+            : 'No privacy relay peer answered. Try again or explicitly choose direct submission.');
         }
         relayDiscoveryRef.current = {
           session,

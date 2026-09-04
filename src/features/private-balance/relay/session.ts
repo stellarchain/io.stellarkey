@@ -246,7 +246,12 @@ export class PrivateRelaySenderSession {
     settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
     onQuotes?: (quotes: readonly PrivateRelayQuote[]) => void;
-  }, signal?: AbortSignal): Promise<{ request: PrivateRelayRequest; quotes: PrivateRelayQuote[] }> {
+    onIneligiblePeerAccounts?: (count: number) => void;
+  }, signal?: AbortSignal): Promise<{
+    request: PrivateRelayRequest;
+    quotes: PrivateRelayQuote[];
+    ineligiblePeerAccounts: number;
+  }> {
     const quoteWindowMs = input.quoteWindowMs ?? 6_000;
     if (!Number.isSafeInteger(quoteWindowMs) || quoteWindowMs < 1_000 || quoteWindowMs > MAX_QUOTE_WINDOW_MS) {
       throw new Error('Private relay quote window is invalid');
@@ -272,6 +277,7 @@ export class PrivateRelaySenderSession {
     };
     const quotes = new Map<string, PrivateRelayQuote>();
     const excludedPeerAccounts = new Set(input.excludePeerAccounts ?? []);
+    const ineligiblePeerAccounts = new Set<string>();
     const controller = new AbortController();
     const abort = () => controller.abort();
     let hardDeadline: ReturnType<typeof setTimeout> | null = null;
@@ -300,7 +306,21 @@ export class PrivateRelaySenderSession {
       encrypted: true,
       onMessage: ({ message }) => {
         if (message.type !== 'quote' || message.requestId !== request.requestId) return;
-        if (message.expiresAt <= nowSeconds() || excludedPeerAccounts.has(message.peerAccount)) return;
+        if (message.expiresAt <= nowSeconds()) return;
+        if (excludedPeerAccounts.has(message.peerAccount)) {
+          const previousSize = ineligiblePeerAccounts.size;
+          ineligiblePeerAccounts.add(message.peerAccount);
+          if (ineligiblePeerAccounts.size !== previousSize) {
+            try {
+              input.onIneligiblePeerAccounts?.(ineligiblePeerAccounts.size);
+            } catch {
+              // UI observers cannot interfere with the authenticated relay session.
+            }
+            if (settleDeadline) clearTimeout(settleDeadline);
+            settleDeadline = setTimeout(finishDiscovery, settleWindowMs);
+          }
+          return;
+        }
         const existing = quotes.get(message.peerAccount);
         if (!existing && quotes.size >= MAX_RELAY_QUOTES) return;
         if (existing && BigInt(message.feeAtomic) >= BigInt(existing.feeAtomic)) return;
@@ -331,6 +351,7 @@ export class PrivateRelaySenderSession {
           nowSeconds(),
           input.excludePeerAccounts,
         ),
+        ineligiblePeerAccounts: ineligiblePeerAccounts.size,
       };
     } finally {
       if (hardDeadline) clearTimeout(hardDeadline);
