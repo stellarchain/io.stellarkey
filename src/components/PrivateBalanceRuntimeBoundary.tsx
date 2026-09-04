@@ -367,7 +367,9 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 
     void loadExpectedPrivateBalanceCatalogue()
       .then(({ catalogue }) => loadPrivateBalanceDeployments({ catalogue, network }))
-      .then(loadedDeployments => loadLivePrivateBalanceRegistry(loadedDeployments, network))
+      .then(loadedDeployments => requested
+        ? loadLivePrivateBalanceRegistry(loadedDeployments, network)
+        : loadedDeployments)
       .then(async loadedDeployments => {
         if (!active) return;
         // The verified catalogue is sufficient to render asset rows. Local
@@ -515,6 +517,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
     network,
     publishAvailableDeployments,
     registerAvailableAssets,
+    requested,
     runtimeRequestVersion,
   ]);
 

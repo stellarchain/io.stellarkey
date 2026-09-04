@@ -30,10 +30,10 @@ const LANDING_ENTRY = "index.html";
 /** Incremental bytes needed to enter each named journey. */
 export const JOURNEY_BUDGETS = Object.freeze({
   initial: { rawBytes: INITIAL_JS_RAW_BUDGET, gzipBytes: INITIAL_JS_GZIP_BUDGET },
-  // v1.3 integrates private-asset summaries, signing authorization, and the
-  // unified activity shell here; proving, full merchant, and hardware code
-  // remain independently lazy and budgeted below.
-  unlocked: { rawBytes: 750_000, gzipBytes: 165_000 },
+  // v1.4 adds authenticated asset-registry discovery and explicit relay
+  // controls to the unlocked shell. Proving, relay transport, full merchant,
+  // and hardware code remain independently lazy and budgeted below.
+  unlocked: { rawBytes: 765_000, gzipBytes: 170_000 },
   merchant: { rawBytes: 545_000, gzipBytes: 150_000 },
   hardware: { rawBytes: 1_100_000, gzipBytes: 225_000 },
 });

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery and relay controls while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
 - Flattened the Private Payments setup progress into the modal shell with a clearer live status, prominent percentage, and transform-animated progress rail.
 - Unified public and private asset artwork: XLM now uses the Stellar mark on black, while private assets reuse their normal logo with a shield notch labelled "Private asset".
 - Displayed the selected local-currency equivalent beside numeric XLM network fees throughout public and Private Payments flows, retaining useful precision below one cent.
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Deferred live Private Payments registry RPC corroboration until explicit private-payment intent, preventing ordinary wallet unlocks from issuing privacy-specific requests or delaying unrelated navigation.
 - Kept verified Private Payments asset readiness stable across React bootstrap restarts and reused loaded contract specifications across corroborated reads, preventing lock/unlock from reverting ready balances while reducing setup RPC bursts.
 - Isolated local Next.js development output from production builds so verification cannot strand an open test session on stale UI chunks.
 - Kept Private Payments setup on the modal's neutral surface and automatically dismissed it after the completed progress state, removing the tinted panel and mandatory final acknowledgement.
