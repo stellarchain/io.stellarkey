@@ -68,6 +68,7 @@ export function usePrivateActionController(
     asset,
     deployment,
     networkLabel,
+    publicAddress,
   } = usePrivateBalanceRuntimeData();
   const abortRef = useRef<AbortController | null>(null);
   const draftRef = useRef<PrivateActionDraft | null>(null);
@@ -137,6 +138,7 @@ export function usePrivateActionController(
           networkId: deployment.networkId,
           poolContractId: deployment.poolContractId,
           actionKind: draft.kind,
+          excludePeerAccounts: publicAddress ? [publicAddress] : [],
         }, controller.signal);
         if (quotes.length === 0) {
           session.close();
@@ -205,7 +207,7 @@ export function usePrivateActionController(
       setProgress(null);
       setRelayProgress(null);
     }
-  }, [asset, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend]);
+  }, [asset, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend, publicAddress]);
 
   const selectRelayQuote = useCallback(async (quoteId: string) => {
     if (relaySelectionRef.current) return;

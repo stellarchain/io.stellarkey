@@ -140,6 +140,7 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(controller, /relayQuotes/);
   assert.match(controller, /selectRelayQuote/);
   assert.match(controller, /relaySelectionRef/);
+  assert.match(controller, /excludePeerAccounts.*publicAddress/s);
   assert.doesNotMatch(controller, /quotes\[0\]/);
   assert.match(review, /PrivateRelayQuotePicker/);
   assert.match(review, /onSelectRelayQuote/);
@@ -147,6 +148,7 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(picker, /quote\.peerAccount/);
   assert.match(picker, /quote\.feeAtomic/);
   assert.match(picker, /Choose peer/);
+  assert.match(picker, /Lowest fee/);
   assert.match(send, /relayQuotes=\{flow\.relayQuotes\}/);
   assert.match(withdraw, /relayQuotes=\{flow\.relayQuotes\}/);
 });

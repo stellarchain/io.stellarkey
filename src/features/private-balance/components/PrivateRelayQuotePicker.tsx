@@ -53,7 +53,14 @@ export function PrivateRelayQuotePicker({
             >
               <AccountMark publicKey={quote.peerAccount} size={32} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-white">Peer {index + 1}</span>
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-white">
+                  Peer {index + 1}
+                  {index === 0 ? (
+                    <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-[#30D158]">
+                      Lowest fee
+                    </span>
+                  ) : null}
+                </span>
                 <span className="mt-0.5 block font-mono text-[10.5px] text-neutral-500" title={quote.peerAccount}>
                   {peer}
                 </span>

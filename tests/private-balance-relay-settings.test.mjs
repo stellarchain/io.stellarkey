@@ -36,6 +36,25 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(settings, /StellarKey is open and unlocked/);
 });
 
+test('relay modal checks live peer availability only after explicit intent', () => {
+  const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const availability = read('src/features/private-balance/components/PrivateRelayAvailability.tsx');
+
+  assert.match(entry, /PrivateRelayAvailability/);
+  assert.match(availability, /Check available peers/);
+  assert.match(availability, /onClick=\{\(\) => void check\(\)\}/);
+  assert.match(availability, /checkPrivateRelayAvailability/);
+  assert.match(availability, /excludePeerAccounts.*publicAddress/s);
+  assert.match(availability, /AbortController/);
+  assert.match(availability, /aria-live="polite"/);
+  assert.match(availability, /available when checked/);
+  assert.match(availability, /No peers answered/);
+  assert.match(availability, /Lowest fee/);
+  assert.match(availability, /quote\.peerAccount/);
+  assert.match(availability, /quote\.feeAtomic/);
+  assert.doesNotMatch(availability, /savePrivateRelayPreferences|localStorage/);
+});
+
 test('relay fees use normal seven-decimal asset units instead of atomic units', () => {
   const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
 
