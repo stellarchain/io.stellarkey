@@ -215,21 +215,25 @@ test('the pending line sums confirming amounts net of change', async () => {
   assert.equal(privateBalancePendingLine([confirming({ kind: 'transfer' })], 7, 'XLM'), null);
 });
 
-test('the pending line counts only signed/broadcast actions, masks privacy mode, and never shows consolidations as spends', async () => {
+test('the pending line distinguishes undisclosed work from unsigned exposed spends and masks private amounts', async () => {
   const { privateBalancePendingLine, isConfirmingPendingAction, isInternalPendingAction } = await import(
     '../src/features/private-balance/components/PrivateBalanceStatusLine.ts'
   );
 
-  // A merely prepared/reviewed action (review screen open or abandoned) is
-  // not "confirming": nothing was signed, nothing reached the network.
+  // Only an explicitly local proof can still be treated as undisclosed.
   for (const status of ['prepared', 'reviewed']) {
     assert.equal(
       privateBalancePendingLine([
-        { kind: 'transfer', status, broadcastAttempts: 0, amountStroops: '250000000', recipientFingerprint: 'AAAA BBBB' },
+        { kind: 'transfer', status, proofExposure: 'local', broadcastAttempts: 0, amountStroops: '250000000', recipientFingerprint: 'AAAA BBBB' },
       ], 7, 'XLM'),
       null,
     );
     assert.equal(isConfirmingPendingAction({ status, broadcastAttempts: 0 }), false);
+    for (const proofExposure of ['shared', undefined]) {
+      const exposed = { kind: 'transfer', status, proofExposure, broadcastAttempts: 0, amountStroops: '250000000', recipientFingerprint: 'AAAA BBBB' };
+      assert.equal(isConfirmingPendingAction(exposed), true);
+      assert.equal(privateBalancePendingLine([exposed], 7, 'XLM'), 'Payment status unknown · inputs remain reserved');
+    }
   }
   assert.equal(isConfirmingPendingAction({ status: 'signed', broadcastAttempts: 0 }), true);
   assert.equal(isConfirmingPendingAction({ status: 'broadcast', broadcastAttempts: 1 }), true);
@@ -326,6 +330,16 @@ test('the review balance simulation stays protocol-true before and after inputs 
     }),
     { beforeStroops: 750000000n, afterStroops: 850000000n },
   );
+});
+
+test('relay proof-sharing and prepared balance previews subtract the private fee exactly once', async () => {
+  const { privateReviewBalanceSimulation } = await import('../src/features/private-balance/components/PrivateReviewSimulation.ts');
+  const expected = { beforeStroops: 1000n, afterStroops: 400n };
+  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'transfer', liveUnspentStroops: 1000n, amountStroops: 500n, privateFeeStroops: 100n, review: null }), expected);
+  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'transfer', liveUnspentStroops: 200n, amountStroops: 500n, privateFeeStroops: 100n,
+    review: { kind: 'transfer', amountStroops: '500', changeValueStroops: '200', relay: { feeAtomic: '100' } } }), expected);
+  assert.deepEqual(privateReviewBalanceSimulation({ kind: 'withdraw', liveUnspentStroops: 200n, amountStroops: 500n, privateFeeStroops: 100n,
+    review: { kind: 'withdraw', amountStroops: '500', changeValueStroops: '200', relay: { feeAtomic: '100' } } }), expected);
 });
 
 test('private spend review discloses its atomic idle-pool refresh', () => {

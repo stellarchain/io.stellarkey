@@ -17,16 +17,19 @@ export function privateReviewBalanceSimulation(input: {
   kind: 'deposit' | 'transfer' | 'withdraw';
   liveUnspentStroops: bigint;
   amountStroops: bigint;
-  review: Pick<PreparedPrivateActionReview, 'kind' | 'amountStroops' | 'changeValueStroops'> | null;
+  /** Quoted private reward shown before external proof preparation. */
+  privateFeeStroops?: bigint;
+  review: (Pick<PreparedPrivateActionReview, 'kind' | 'amountStroops' | 'changeValueStroops'> & Partial<Pick<PreparedPrivateActionReview, 'relay'>>) | null;
 }): { beforeStroops: bigint; afterStroops: bigint } {
+  const privateFee = input.review ? BigInt(input.review.relay?.feeAtomic ?? '0') : input.privateFeeStroops ?? 0n;
   const reservedInputs =
     input.review !== null && input.review.kind !== 'deposit'
-      ? BigInt(input.review.amountStroops) + BigInt(input.review.changeValueStroops)
+      ? BigInt(input.review.amountStroops) + BigInt(input.review.changeValueStroops) + privateFee
       : 0n;
   const beforeStroops = input.liveUnspentStroops + reservedInputs;
   const afterStroops =
     input.kind === 'deposit'
       ? beforeStroops + input.amountStroops
-      : beforeStroops - input.amountStroops;
+      : beforeStroops - input.amountStroops - privateFee;
   return { beforeStroops, afterStroops };
 }

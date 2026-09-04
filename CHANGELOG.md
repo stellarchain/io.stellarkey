@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added relayed preparation of fragmented private balances with fresh helper selection for every step, fixed input plans, separately bounded private and network fees, and canonical owned-output checks before continuing.
 - Added an explicit, memory-only privacy-relay availability check that shows unique responding peers and their current fees, ordered with the lowest fee first.
 - Added explicit peer selection for private relay submission, showing every responding peer's public source account, private fee, and offer expiry before negotiation.
 - Added a visible Earn by relaying action beneath Home's private assets, with live participation status and focused helper controls that retain manual approval for every transaction.
@@ -103,6 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing helper or RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
+- Bound relayed consolidation consent to one account, deployment, asset, fixed note trace and expiry; issued a fresh verified own address for each merge and stopped on cancellation, context changes or uncertain confirmation without switching to direct submission.
 - Moved relayed transaction preparation and simulation to the authenticated helper, rejected returned envelopes that change locally approved operations or fee/time bounds, and removed payment kind from public discovery. Helpers retain manual signing approval and relayed senders have no direct preparation fallback.
 - Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
 - Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.

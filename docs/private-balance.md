@@ -437,14 +437,24 @@ notes reserved until canonical evidence proves confirmation or safe absence.
 Prepared actions persist their direct/relay submission route in encrypted state;
 signing and broadcasting must use that route. Restart only rebroadcasts explicitly
 direct signed actions. Relayed and old records with no route are reconciled from
-the common archive without sender-RPC transaction-hash lookups. Their input notes
-remain reserved until inclusion or non-inclusion past the envelope expiry is
-established. Expiry requires agreeing ledger identities and close times from two
-independent RPCs for the already-scanned ledger, even when optional routine
-witness checks are disabled. Missing legacy expiry metadata can be recovered
-from the exact hash-checked signed envelope; an unbounded or invalid envelope
-never establishes expiry. A timeout, helper acknowledgement, or removed pending
-record alone is not a success receipt.
+the common archive without sender-RPC transaction-hash lookups. A disclosed spend
+proof is reusable in a fresh transaction: envelope failure or maximum-time expiry
+does not revoke it, and a current anchor can be refreshed. The client durably
+records exposure before proof-bearing helper/RPC preparation and keeps those
+inputs reserved on cancellation, rejection, timeout or envelope expiry, including
+legacy spend records with unknown exposure. Canonical inclusion or observed
+consumed nullifiers resolve the notes. Unsigned exposed preparations are visibly
+status-unknown; they are not silently discarded as unsubmitted drafts.
+
+This conservative client does not yet automatically prove a non-current anchor
+permanently unusable, so an absent exposed spend can remain reserved indefinitely.
+The old recorded anchor expiry is not sufficient. A proof-bound execution deadline
+requires a contract/circuit migration. Seed-only recovery cannot reconstruct an
+unconfirmed proof shared before local journals were lost; absence from the chain
+is not proof that no such authorization exists. Envelope-based expiry remains relevant to
+non-reusable deposit authorization; conservative common-ledger corroboration and
+exact-envelope validation still apply there. A timeout, helper acknowledgement,
+or removed pending record alone is not a success receipt.
 
 ## 13. Optional browser peer relay
 
@@ -543,6 +553,13 @@ selected pool/method, matched diversifiers and exactly one real fee note matchin
 the quote. It prepares and simulates an unsigned envelope through its RPC and
 returns that envelope with the account sequence and an advisory simulation ledger.
 
+Before a transfer or withdrawal proof leaves the browser, a separate **Authorize
+Proof Sharing** step shows the exact spend intent and fee bounds and explains that
+proof disclosure authorizes that payment independently of the later envelope
+signature. Approved chains use their bounded consent instead. Input exposure and
+chain fee authorization are durably recorded before disclosure. Final transaction
+review/signing remains separate; cancelling it cannot retract the earlier proof.
+
 The sender independently checks the exact locally retained operation, helper
 source, time bounds, classic fee, resource-fee cap and absence of signatures,
 extra operations or authorization. It does not independently simulate the helper's
@@ -565,6 +582,26 @@ provide forward secrecy or post-quantum confidentiality. A helper can refuse or
 delay service. Relay mode never silently falls back to direct submission;
 changing peers requires a new proof because the encrypted fee note is bound to
 the selected peer.
+
+Fragmented balances can remain in relay mode. The wallet creates a bounded,
+fixed note-merge plan with at most 64 transactions and reserves an approved
+private-asset fee allowance for every step, including the final send. It also
+tracks a separate cumulative helper-paid XLM network-fee cap; the sender does
+not need a public XLM balance to select this path. The plan checks both maximum
+and minimum possible intermediate values so cheaper quotes cannot overflow
+the protocol's signed-64-bit amount bound. It is a deterministic valid trace,
+not a claim of globally optimal coin selection.
+
+Consent expires after 15 minutes and is bound to the account, deployment,
+asset, final intent and original notes. Each merge receives a freshly issued,
+fully verified own private address without replacing the displayed receive
+address. Each step, including the final send, opens fresh discovery and waits
+for an explicit helper choice within the approved fee cap. Before signing, an
+atomic journal update binds the exact step and accounts for both fee budgets.
+The next step requires canonical action inclusion and the exact expected owned,
+spendable output; a missing pending row or a helper's acceptance is insufficient.
+There is no automatic chain resume or direct fallback. Cancellation stops new
+local steps; it cannot retract a valid proof already shared with a helper.
 
 WebRTC was evaluated and not added as a supposedly faster rendezvous path.
 Browser WebRTC still needs signalling before two unknown wallets can connect,

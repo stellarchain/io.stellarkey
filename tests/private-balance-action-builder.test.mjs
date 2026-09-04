@@ -316,6 +316,7 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.deepEqual(prepared.reservedNoteIds, [noteId]);
   assert.equal(prepared.inputValue, '10');
   assert.equal(prepared.changeValue, '4');
+  assert.equal(prepared.recipientOutputCommitment, hex(prepared.action.outputs[prepared.circuitInputs.outputValue.indexOf('6')].cm));
   assert.deepEqual([...prepared.circuitInputs.inputReal].sort(), ['0', '1']);
   assert.deepEqual([...prepared.circuitInputs.outputValue].sort(), ['0', '4', '6']);
   assert.equal(prepared.action.asset, undefined, 'private transfers must not publish an asset');

@@ -1,6 +1,9 @@
 import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
+import { hasExposedPrivateSpend } from './proof-exposure';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
+import { advancePrivateRelayChain, assertPrivateRelayChainApproval, isPrivateRelayChainJournal, privateRelayChainContextKey, resolvePrivateRelayChainInputs,
+  type PrivateRelayChainApproval, type PrivateRelayChainStep } from './relay-chain-policy';
 import {
   privateBalanceSensitivePrefix,
   privateBalanceStateRecordKey,
@@ -257,6 +260,8 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     typeof action.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(action.assetContractId) &&
     ['prepared', 'reviewed', 'signed', 'broadcast', 'ambiguous'].includes(action.status ?? '') &&
+    (action.proofExposure === undefined || action.proofExposure === 'local' || action.proofExposure === 'shared') &&
+    (action.directChainApprovalId === undefined || (typeof action.directChainApprovalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(action.directChainApprovalId) && action.submissionMode === 'direct')) &&
     (action.submissionMode === undefined || action.submissionMode === 'direct' ||
       (action.submissionMode === 'relay' && action.kind !== 'deposit')) &&
     Array.isArray(action.reservedNoteIds) &&
@@ -311,6 +316,13 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     )) &&
     (action.recipientFingerprint === undefined || RECIPIENT_FINGERPRINT_PATTERN.test(action.recipientFingerprint)) &&
     (action.memoHex === undefined || /^(?:[0-9a-f]{2}){1,32}$/.test(action.memoHex)) &&
+    (action.relayChain === undefined || (
+      action.submissionMode === 'relay' && action.kind === 'transfer' && typeof action.relayChain.approvalId === 'string' && action.relayChain.approvalId.length <= 128 &&
+      isSafeIndex(action.relayChain.step) && action.relayChain.step < 64 && typeof action.relayChain.feeAtomic === 'string' && /^[1-9][0-9]{0,20}$/.test(action.relayChain.feeAtomic) &&
+      isHex(action.relayChain.quoteId, 32) && isHex(action.relayChain.requestId, 32) && typeof action.relayChain.sourceAccount === 'string' && action.relayChain.sourceAccount.length <= 128 &&
+      typeof action.relayChain.recipientAddress === 'string' && action.relayChain.recipientAddress.length <= 256 &&
+      isHex(action.relayChain.recipientOutputCommitment, 32) && isSafeIndex(action.relayChain.expiresAtSeconds)
+    )) &&
     (action.kind === 'transfer' || (
       action.recipientFingerprint === undefined && action.memoHex === undefined
     )) &&
@@ -327,6 +339,7 @@ function isBuildReservation(value: unknown): value is PrivateBuildReservation {
     typeof reservation.id === 'string' &&
     /^[A-Za-z0-9._:-]{1,128}$/.test(reservation.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(reservation.kind ?? '') &&
+    (reservation.proofExposure === undefined || reservation.proofExposure === 'local') &&
     typeof reservation.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(reservation.assetContractId) &&
     Array.isArray(reservation.reservedNoteIds) &&
@@ -426,6 +439,7 @@ function isDurableState(
         state.recentPrivateRecipients.length
     )) ||
     !(state.chainedApproval === undefined || isChainedApproval(state.chainedApproval)) ||
+    !(state.relayChainedApproval === undefined || (isPrivateRelayChainJournal(state.relayChainedApproval) && state.relayChainedApproval.approval.contextKey === privateRelayChainContextKey(context, state.relayChainedApproval.approval.assetContractId))) ||
     !Array.isArray(state.notes) ||
     !state.notes.every(isNote) ||
     new Set(state.notes.map(note => note.id)).size !== state.notes.length ||
@@ -610,6 +624,25 @@ export async function commitPrivateBuildReservation(
     buildReservations: current.buildReservations.filter(item => item.id !== reservationId),
     pendingActions: [...current.pendingActions, { ...pendingAction }],
   };
+  // A relay has spend authority as soon as it sees the operation, before it
+  // returns simulation data. Reserve the independently chosen MAXIMUM XLM
+  // budget, not a later helper-provided simulated amount, in this same CAS.
+  if (pendingAction.proofExposure === 'shared' && pendingAction.relayChain) {
+    const binding = pendingAction.relayChain;
+    const step: PrivateRelayChainStep = { actionId: pendingAction.id, actionField: pendingAction.actionField,
+      step: binding.step, inputNoteIds: [...pendingAction.reservedNoteIds], outputCommitment: binding.recipientOutputCommitment,
+      amountAtomic: pendingAction.amountStroops!, recipientAddress: binding.recipientAddress, privateFeeAtomic: binding.feeAtomic,
+      networkFeeStroops: (BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops)).toString(),
+      quoteId: binding.quoteId, requestId: binding.requestId, sourceAccount: binding.sourceAccount, expiresAtSeconds: binding.expiresAtSeconds };
+    next.relayChainedApproval = authorizedPrivateRelayChain(next, binding.approvalId, step, Math.floor(pendingAction.updatedAt / 1000));
+  }
+  if (pendingAction.proofExposure === 'shared' && pendingAction.directChainApprovalId) {
+    const approval = current.chainedApproval;
+    const fee = BigInt(pendingAction.classicFeeCapStroops) + BigInt(pendingAction.resourceFeeCapStroops);
+    if (!approval || approval.id !== pendingAction.directChainApprovalId || Math.floor(pendingAction.updatedAt / 1000) >= approval.expiresAtSeconds ||
+      fee > BigInt(approval.perStepMaxFeeStroops) || BigInt(approval.accumulatedFeeStroops) + fee > BigInt(approval.cumulativeMaxFeeStroops)) throw new Error('Private chain disclosure exceeds its approved fee or lifetime.');
+    next.chainedApproval = { ...approval, accumulatedFeeStroops: (BigInt(approval.accumulatedFeeStroops) + fee).toString(), updatedAt: pendingAction.updatedAt };
+  }
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
 }
@@ -631,6 +664,7 @@ export async function releasePrivateBuildReservation(
   if (!isTimestamp(updatedAt) || updatedAt < reservation.updatedAt) {
     throw new Error('Private Balance build reservation timestamp is invalid.');
   }
+  if (hasExposedPrivateSpend(reservation)) throw new Error('A legacy possibly exposed private proof cannot be released.');
   const reserved = new Set(reservation.reservedNoteIds);
   const next: PrivateBalanceDurableState = {
     ...current,
@@ -646,8 +680,8 @@ export async function releasePrivateBuildReservation(
 
 /**
  * Releases every build reservation past the TTL in one commit. Reservations
- * are pre-proof by construction — the only path to signed/broadcast deletes
- * the reservation atomically — so an expired one was provably never sent.
+ * explicitly marked local never reached a proof-bearing network boundary.
+ * Legacy spend reservations remain reserved because their exposure is unknown.
  */
 export async function releaseExpiredPrivateBuildReservations(
   context: PrivateStorageContext,
@@ -660,7 +694,7 @@ export async function releaseExpiredPrivateBuildReservations(
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current) return null;
   const expired = current.buildReservations.filter(
-    reservation => now - reservation.createdAt >= ttlMilliseconds,
+    reservation => !hasExposedPrivateSpend(reservation) && now - reservation.createdAt >= ttlMilliseconds,
   );
   if (expired.length === 0) return current;
   const released = new Set(expired.flatMap(reservation => reservation.reservedNoteIds));
@@ -680,10 +714,8 @@ export async function releaseExpiredPrivateBuildReservations(
 /**
  * Releases every stale pre-broadcast pending action in one commit, using the
  * exact pre-broadcast-rejection guard: status 'prepared' or 'reviewed' with
- * zero broadcast attempts was provably never signed or sent. A tab closed or
- * locked mid-review, or a chain that died between preparing a step and
- * advancing its fee, leaves such an orphan holding reserved notes; past the
- * TTL it only locks value, so the leader sync sweeps it.
+ * zero broadcast attempts AND explicitly local proof exposure. Unsigned shared
+ * spend proofs can still execute in another envelope, even after this TTL.
  */
 export async function releaseStalePrivatePendingActions(
   context: PrivateStorageContext,
@@ -699,6 +731,7 @@ export async function releaseStalePrivatePendingActions(
   if (!current) return null;
   const stale = current.pendingActions.filter(action =>
     ['prepared', 'reviewed'].includes(action.status) &&
+    !hasExposedPrivateSpend(action) &&
     action.broadcastAttempts === 0 &&
     now - action.updatedAt >= ttlMilliseconds);
   if (stale.length === 0) return current;
@@ -723,12 +756,24 @@ export async function recordPrivateBalanceAddress(
   privateAddress: string,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
+  return recordPrivateAddressIssuance(context, key, expectedRevision, privateAddress, true, candidate);
+}
+
+export async function recordPrivateBalanceInternalAddress(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, candidate?: PrivateRecordDriver, chainApprovalId?: string,
+): Promise<PrivateBalanceDurableState> {
+  return recordPrivateAddressIssuance(context, key, expectedRevision, privateAddress, false, candidate, chainApprovalId);
+}
+
+async function recordPrivateAddressIssuance(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, replaceDisplay: boolean, candidate?: PrivateRecordDriver, chainApprovalId?: string,
+): Promise<PrivateBalanceDurableState> {
   const diversifier = await assertPrivateAddress(privateAddress, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
   }
-  if (current.privateAddress === privateAddress) return current;
+  if (replaceDisplay && current.privateAddress === privateAddress) return current;
   const issued = new Set(current.issuedAddressDiversifiers ?? []);
   if (current.privateAddress) issued.add(await assertPrivateAddress(current.privateAddress, context));
   if (issued.has(diversifier)) {
@@ -738,11 +783,14 @@ export async function recordPrivateBalanceAddress(
     throw new Error('Private address rotation reached its local safety limit. Existing addresses still receive payments.');
   }
   issued.add(diversifier);
+  const chain = chainApprovalId ? current.relayChainedApproval : null;
+  if (chainApprovalId && (!chain || chain.approval.id !== chainApprovalId || chain.selfAddresses.length !== chain.authorized.length || chain.selfAddresses.length >= chain.approval.steps - 1)) throw new Error('Private relay address issuance is out of order.');
   const next: PrivateBalanceDurableState = {
     ...current,
     revision: current.revision + 1,
-    privateAddress,
+    ...(replaceDisplay ? { privateAddress } : {}),
     issuedAddressDiversifiers: [...issued],
+    ...(chain ? { relayChainedApproval: { ...chain, selfAddresses: [...chain.selfAddresses, privateAddress] } } : {}),
   };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
@@ -814,6 +862,69 @@ export async function commitPrivateBalanceState(
  * A previous approval must be finished, dead, or expired; the driver never
  * resumes an interrupted chain without fresh consent.
  */
+export async function beginPrivateRelayChainApproval(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approval: PrivateRelayChainApproval, nowSeconds: number, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  assertPrivateRelayChainApproval(approval);
+  if (approval.contextKey !== privateRelayChainContextKey(context, approval.assetContractId) || nowSeconds >= approval.expiresAtSeconds) throw new Error('Private relay chain context changed or approval expired.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
+  if ((current.relayChainedApproval && current.relayChainedApproval.approval.expiresAtSeconds > nowSeconds) || current.chainedApproval || current.pendingActions.length || current.buildReservations.length) throw new Error('Another Private Balance action is already open.');
+  const journal = { approval: structuredClone(approval), authorized: [], privateFeeAtomic: '0', networkFeeStroops: '0', selfAddresses: [] };
+  // Check all original inputs, not just the first pair, before accepting consent.
+  for (const original of approval.plan.inputNotes) {
+    if (!current.notes.some(note => note.id === original.id && note.commitment === original.commitment && note.value === original.value && note.assetIndex === approval.assetIndex && note.assetContractId === approval.assetContractId && note.status === 'unspent')) throw new Error('An approved private relay input changed.');
+  }
+  resolvePrivateRelayChainInputs(journal, current);
+  const next = { ...current, revision: current.revision + 1, relayChainedApproval: journal };
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+export async function authorizePrivateRelayChainStep(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approvalId: string, step: PrivateRelayChainStep, nowSeconds: number, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
+  const next = { ...current, revision: current.revision + 1, relayChainedApproval: authorizedPrivateRelayChain(current, approvalId, step, nowSeconds) };
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+function authorizedPrivateRelayChain(current: PrivateBalanceDurableState, approvalId: string, step: PrivateRelayChainStep, nowSeconds: number) {
+  const journal = current.relayChainedApproval;
+  const pending = current.pendingActions.find(action => action.id === step.actionId);
+  const binding = pending?.relayChain;
+  if (!journal || journal.approval.id !== approvalId || !pending || !['prepared', 'reviewed'].includes(pending.status) || pending.submissionMode !== 'relay' || pending.assetContractId !== journal.approval.assetContractId || pending.assetIndex !== journal.approval.assetIndex ||
+    !binding || binding.approvalId !== approvalId || binding.step !== step.step || binding.feeAtomic !== step.privateFeeAtomic || binding.quoteId !== step.quoteId || binding.requestId !== step.requestId || binding.sourceAccount !== step.sourceAccount || binding.expiresAtSeconds !== step.expiresAtSeconds ||
+    binding.recipientAddress !== step.recipientAddress || binding.recipientOutputCommitment !== step.outputCommitment || pending.actionField !== step.actionField || !pending.outputCommitments.includes(step.outputCommitment) || pending.amountStroops !== step.amountAtomic ||
+    JSON.stringify(pending.reservedNoteIds) !== JSON.stringify(step.inputNoteIds) ||
+    (BigInt(pending.classicFeeCapStroops) + BigInt(pending.resourceFeeCapStroops)).toString() !== step.networkFeeStroops) throw new Error('Private relay authorization differs from the reviewed step or route.');
+  if (step.step < journal.approval.steps - 1 && journal.selfAddresses[step.step] !== step.recipientAddress) throw new Error('Private relay consolidation address was not issued for this step.');
+  return advancePrivateRelayChain(journal, step, nowSeconds, current);
+}
+
+export async function clearPrivateRelayChainApproval(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, approvalId: string, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
+  if (current.relayChainedApproval?.approval.id !== approvalId) return current;
+  const next = { ...current, revision: current.revision + 1 };
+  delete next.relayChainedApproval;
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+export async function releaseExpiredPrivateRelayChainApproval(
+  context: PrivateStorageContext, key: Uint8Array, nowSeconds: number, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState | null> {
+  if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) throw new Error('Private relay chain expiry time is invalid.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current?.relayChainedApproval || current.relayChainedApproval.approval.expiresAtSeconds > nowSeconds) return current;
+  return clearPrivateRelayChainApproval(context, key, current.revision, current.relayChainedApproval.approval.id, candidate);
+}
+
 export async function beginPrivateChainedApproval(
   context: PrivateStorageContext,
   key: Uint8Array,
@@ -919,6 +1030,8 @@ export type PrivatePendingActionTransition =
     from: 'prepared';
     to: 'reviewed';
     transactionHash: string;
+    classicFeeCapStroops?: string;
+    resourceFeeCapStroops?: string;
     updatedAt: number;
   }
   | {
@@ -959,10 +1072,14 @@ export async function transitionPrivatePendingAction(
 
   let updated: PrivatePendingAction;
   if (transition.to === 'reviewed') {
+    if ((transition.classicFeeCapStroops !== undefined && (!/^(0|[1-9][0-9]*)$/.test(transition.classicFeeCapStroops) || BigInt(transition.classicFeeCapStroops) > BigInt(existing.classicFeeCapStroops))) ||
+      (transition.resourceFeeCapStroops !== undefined && (!/^(0|[1-9][0-9]*)$/.test(transition.resourceFeeCapStroops) || BigInt(transition.resourceFeeCapStroops) > BigInt(existing.resourceFeeCapStroops)))) throw new Error('Prepared network fee exceeds the pre-disclosure authorization.');
     updated = {
       ...existing,
       status: transition.to,
       transactionHash: transition.transactionHash,
+      classicFeeCapStroops: transition.classicFeeCapStroops ?? existing.classicFeeCapStroops,
+      resourceFeeCapStroops: transition.resourceFeeCapStroops ?? existing.resourceFeeCapStroops,
       updatedAt: transition.updatedAt,
     };
   } else if (transition.to === 'signed') {
@@ -1062,6 +1179,7 @@ export async function releasePrivatePendingAction(
   const mayReleaseDefinitiveFailure = pending.status === 'signed' ||
     (['broadcast', 'ambiguous'].includes(pending.status) && pending.broadcastAttempts > 0);
   if (
+    hasExposedPrivateSpend(pending) ||
     (release.reason === 'pre-broadcast-rejection' && !mayReleaseRejectedReview) ||
     (release.reason === 'definitive-failure-nullifiers-absent' && !mayReleaseDefinitiveFailure)
   ) {

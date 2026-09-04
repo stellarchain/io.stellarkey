@@ -238,10 +238,11 @@ export function SendPrivate({
     return () => onBeforeLeaveChange?.(null);
   }, [flow.cancelPrepared, onBeforeLeaveChange]);
 
+  const blocksNavigation = flow.working && !flow.chained?.relayApproval;
   useEffect(() => {
-    onWorkingChange?.(flow.working);
+    onWorkingChange?.(blocksNavigation);
     return () => onWorkingChange?.(false);
-  }, [flow.working, onWorkingChange]);
+  }, [blocksNavigation, onWorkingChange]);
 
   const content = (
     <>
@@ -260,7 +261,7 @@ export function SendPrivate({
               ? 'Verify details before confirming'
               : 'Amount and recipient stay encrypted'
         }
-        onClose={flow.working ? undefined : flow.close}
+        onClose={blocksNavigation ? undefined : flow.close}
       />}
       {modeControl}
       {flow.submission ? (
@@ -286,6 +287,7 @@ export function SendPrivate({
           progress={flow.progress}
           relayProgress={flow.relayProgress}
           relayQuotes={flow.relayQuotes}
+          disclosure={flow.disclosure}
           preparing={flow.preparing}
           working={flow.working}
           error={flow.error}
@@ -493,7 +495,7 @@ export function SendPrivate({
   if (embedded) return content;
 
   return (
-    <Modal open onClose={flow.close} dismissable={!flow.working}>
+    <Modal open onClose={flow.close} dismissable={!blocksNavigation}>
       {content}
     </Modal>
   );

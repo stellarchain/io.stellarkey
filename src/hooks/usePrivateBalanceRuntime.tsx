@@ -19,6 +19,9 @@ import type {
   PrivateChainedSendProgress,
   PrivateChainedSendResult,
 } from '@/features/private-balance/runtime/chained-send';
+import type { PrivateRelayChainApproval } from '@/features/private-balance/runtime/relay-chain-policy';
+import type { SelectPrivateRelayChainPeer } from '@/features/private-balance/runtime/relay-chained-send';
+import type { AuthorizePrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
 import type { IncomingPrivateTransferSummary } from '@/features/private-balance/runtime/sync-machine';
 import type {
   PrivatePendingAction,
@@ -175,6 +178,7 @@ export interface PrivateBalanceRuntimeDataValue {
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
     relayPreparation?: PrivateRelayPreparationCallbacks,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
   submitAction(
@@ -203,6 +207,8 @@ export interface PrivateBalanceRuntimeDataValue {
     hash: string;
   }>;
   prepareChainedSend(draft: PrivateChainedSendDraft): Promise<PrivateChainedSendApproval>;
+  prepareRelayChainedSend(draft: PrivateChainedSendDraft, feeAtomic: string): Promise<PrivateRelayChainApproval | null>;
+  submitRelayChainedSend(approval: PrivateRelayChainApproval, selectPeer: SelectPrivateRelayChainPeer, signal: AbortSignal, onProgress?: (progress: PrivateChainedSendProgress) => void): Promise<PrivateChainedSendResult>;
   submitChainedSend(
     approval: PrivateChainedSendApproval,
     draft: PrivateChainedSendDraft,
@@ -345,6 +351,8 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   signPrivateRelayJob: unavailableRelaySign,
   submitPrivateRelayJob: unavailableRelaySubmit,
   prepareChainedSend: unavailableChainedApproval,
+  prepareRelayChainedSend: unavailableChainedApproval as () => Promise<never>,
+  submitRelayChainedSend: unavailableChainedSubmission,
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},
   takeoverLeadership: () => {},

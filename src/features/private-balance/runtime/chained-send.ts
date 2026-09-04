@@ -22,7 +22,7 @@ export interface PrivateChainedSendApproval {
 export interface PrivateChainedSendProgress {
   step: number;
   totalSteps: number;
-  stage: 'preparing' | 'confirming' | 'waiting';
+  stage: 'choosing-peer' | 'preparing' | 'confirming' | 'waiting';
 }
 
 export interface PrivateChainedSendResult {

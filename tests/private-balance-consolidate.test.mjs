@@ -59,6 +59,18 @@ test('the chained review shows the step count, cumulative fee cap, and honest ti
   assert.doesNotMatch(review, /quick(?:ly)?[.!]/i);
 });
 
+test('relayed chained review separates private rewards from helper-paid XLM and keeps per-step choice cancellable', () => {
+  const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
+  assert.match(review, /Your private fee cap/);
+  assert.match(review, /Helper-paid network fee cap/);
+  assert.match(review, /Choose a helper for each step/);
+  assert.match(review, /cannot retract a proof already shared with a helper/);
+  assert.match(review, /disabled=\{preparing \|\| \(working && !choosingChainPeer\)\}/);
+  assert.match(review, /disabled=\{working && !chained\?\.relayApproval\}/);
+  const send = read('src/features/private-balance/components/SendPrivate.tsx');
+  assert.match(send, /const blocksNavigation = flow\.working && !flow\.chained\?\.relayApproval/);
+});
+
 test('the chained fee preflight shortfall gets humanized copy with the missing amount', () => {
   const errorPanel = read('src/features/private-balance/components/PrivateActionError.tsx');
 

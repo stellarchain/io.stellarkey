@@ -9,6 +9,7 @@ import {
   type PrivateStorageContext,
 } from './storage';
 import type { PrivateBalanceDurableState } from './types';
+import { hasExposedPrivateSpend } from './proof-exposure';
 
 const SENSITIVE_PREFIX = 'private:sensitive:v1:';
 const MAX_RECORDS = 4_096;
@@ -224,7 +225,7 @@ export async function preparePrivateBalanceBackupArchive(input: {
       if (!state) throw new Error('Private Balance backup record is missing from staging.');
       await input.validateContext(context, state);
       const preProofNoteIds = new Set(
-        state.buildReservations.flatMap(reservation => reservation.reservedNoteIds),
+        state.buildReservations.filter(reservation => !hasExposedPrivateSpend(reservation)).flatMap(reservation => reservation.reservedNoteIds),
       );
       const requiresReconciliation: PrivateBalanceDurableState = {
         ...state,
@@ -237,7 +238,9 @@ export async function preparePrivateBalanceBackupArchive(input: {
         notes: state.notes.map(note => preProofNoteIds.has(note.id)
           ? { ...note, status: 'unspent' as const, reservedAt: undefined }
           : { ...note }),
-        buildReservations: [],
+        // Old spend reservations can predate durable exposure metadata. Their
+        // proof may already be shared; restoring a backup cannot revoke it.
+        buildReservations: state.buildReservations.filter(hasExposedPrivateSpend),
       };
       await commitPrivateBalanceState(
         context,

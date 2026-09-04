@@ -86,7 +86,7 @@ test('verified activity keeps encrypted local recipient and memo metadata only w
   }]), [activity]);
 });
 
-test('sync commits verified record progress and marks current only after head reconciliation', async () => {
+for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spent', 'legacy-held']) test(`sync commits verified progress and reconciles only canonical spends of ${holdCase} inputs`, async () => {
   const contextHash = bytes(1);
   const deploymentBindingHash = bytes(2);
   const manifestHash = hex(bytes(3));
@@ -188,7 +188,7 @@ test('sync commits verified record progress and marks current only after head re
       return {
         notes: [
           note,
-          { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0 },
+          holdCase === 'legacy-held' ? spentInput : { ...spentInput, status: 'spent', reservedAt: undefined, spentInActionIndex: 0 },
           survivingInput,
         ],
         activities: [{
@@ -262,6 +262,11 @@ test('sync commits verified record progress and marks current only after head re
       updatedAt: 1,
     }],
   };
+  if (holdCase !== 'pending') {
+    initial.pendingActions.pop();
+    initial.buildReservations = [{ id: 'legacy-build', kind: holdCase === 'legacy-withdraw-spent' ? 'withdraw' : 'transfer',
+      assetContractId: ASSET_CONTRACT_ID, reservedNoteIds: [spentInput.id, survivingInput.id], createdAt: 1, updatedAt: 1 }];
+  }
   await commitPrivateBalanceState(
     storageContext,
     storageKey,
@@ -293,10 +298,11 @@ test('sync commits verified record progress and marks current only after head re
   assert.equal(result.checkpoint.lastRecordHash, hex(recordHash));
   assert.equal(result.checkpoint.latestLedger, 500);
   assert.deepEqual(result.pendingActions, []);
+  assert.equal(result.buildReservations.length, holdCase === 'legacy-held' ? 1 : 0);
   const notesById = new Map(result.notes.map(item => [item.id, item]));
-  assert.equal(notesById.get(spentInput.id).status, 'spent');
-  assert.equal(notesById.get(survivingInput.id).status, 'unspent');
-  assert.equal(notesById.get(survivingInput.id).reservedAt, undefined);
+  assert.equal(notesById.get(spentInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'spent');
+  assert.equal(notesById.get(survivingInput.id).status, holdCase === 'legacy-held' ? 'reserved' : 'unspent');
+  assert.equal(notesById.get(survivingInput.id).reservedAt, holdCase === 'legacy-held' ? 1 : undefined);
   assert.deepEqual(
     await loadPrivateBalanceState(storageContext, storageKey, driver),
     JSON.parse(JSON.stringify(result)),

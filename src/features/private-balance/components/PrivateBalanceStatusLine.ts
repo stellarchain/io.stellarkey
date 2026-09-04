@@ -3,6 +3,7 @@ import { fmtAmount } from '@/lib/format';
 import { humanizePrivateError, STATUS_LINE } from '../copy';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import type { PrivatePendingAction } from '../runtime/types';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 
 export interface PrivateStatusLine {
   label: string;
@@ -56,15 +57,14 @@ export function privateBalanceStatusLine(input: {
 }
 
 /**
- * A pending action is only "confirming" once something could actually be on
- * the network: it was signed, or a broadcast was attempted. A merely
- * prepared/reviewed action (the review screen is still open, or was
- * abandoned) must never read as an in-flight payment.
+ * Include any payment that could reach the network, including unsigned exposed
+ * spend proofs. Presentation distinguishes their status-unknown state from a
+ * submitted envelope; explicitly local work stays off the activity list.
  */
 export function isConfirmingPendingAction(
-  action: Pick<PrivatePendingAction, 'status' | 'broadcastAttempts'>,
+  action: Pick<PrivatePendingAction, 'status' | 'broadcastAttempts'> & Partial<Pick<PrivatePendingAction, 'kind' | 'proofExposure'>>,
 ): boolean {
-  return action.status === 'signed' || action.broadcastAttempts > 0;
+  return hasExposedPrivateSpend(action) || action.status === 'signed' || action.broadcastAttempts > 0;
 }
 
 /**
@@ -91,13 +91,14 @@ export function privateBalancePendingLine(
   pendingActions: ReadonlyArray<
     Pick<
       PrivatePendingAction,
-      'kind' | 'status' | 'broadcastAttempts' | 'amountStroops' | 'recipientFingerprint'
+      'kind' | 'status' | 'broadcastAttempts' | 'amountStroops' | 'recipientFingerprint' | 'proofExposure'
     >
   >,
   decimals: number,
   code: string,
   options?: { privacyMode?: boolean },
 ): string | null {
+  if (pendingActions.some(action => hasExposedPrivateSpend(action) && ['prepared', 'reviewed'].includes(action.status))) return 'Payment status unknown · inputs remain reserved';
   let outgoing = 0n;
   let incoming = 0n;
   let preparingBalance = false;

@@ -212,15 +212,24 @@ function reconcilePendingActions(
   notes: ShieldedNoteRecord[],
   activities: ShieldedActivityRecord[],
 ): { pendingActions: PrivatePendingAction[]; notes: ShieldedNoteRecord[] } {
-  const notesById = new Map(notes.map(note => [note.id, note]));
   const verifiedActionFields = new Set(activities.map(activity => activity.id));
+  const reconciled = reconcileCanonicallySpentInputs(pendingActions.filter(action => !verifiedActionFields.has(action.actionField)), notes);
+  return { pendingActions: reconciled.holds, notes: reconciled.notes };
+}
+
+/** An absent action, clock or envelope failure cannot revoke a proof. A
+ * canonically spent input does: no proof using that input can execute again. */
+function reconcileCanonicallySpentInputs<T extends { reservedNoteIds: string[] }>(
+  holds: T[], notes: ShieldedNoteRecord[],
+): { holds: T[]; notes: ShieldedNoteRecord[] } {
+  const notesById = new Map(notes.map(note => [note.id, note]));
   const releasedNoteIds = new Set<string>();
-  const reconciled = pendingActions.filter(action => {
-    if (verifiedActionFields.has(action.actionField)) return false;
+  const reconciled = holds.filter(action => {
     if (action.reservedNoteIds.length === 0) return true;
     const reserved = action.reservedNoteIds.map(noteId => {
       const note = notesById.get(noteId);
       if (!note) throw new Error('Pending Private Balance action references a missing note');
+      if (note.status !== 'reserved' && note.status !== 'spent') throw new Error('Private proof hold lost its reserved input without a canonical spend');
       return note.status === 'reserved';
     });
     if (reserved.every(Boolean)) return true;
@@ -232,7 +241,7 @@ function reconcilePendingActions(
     return false;
   });
   return {
-    pendingActions: reconciled,
+    holds: reconciled,
     notes: releasedNoteIds.size === 0
       ? notes
       : notes.map(note => releasedNoteIds.has(note.id)
@@ -503,7 +512,8 @@ async function syncPrivateBalanceOnce(
 
     const reconciled = reconcilePendingActions(state.pendingActions, notes, activities);
     const pendingActions = reconciled.pendingActions;
-    notes = reconciled.notes;
+    const buildHolds = reconcileCanonicallySpentInputs(state.buildReservations, reconciled.notes);
+    notes = buildHolds.notes;
     const checkpointTime = now();
     const nextState: PrivateBalanceDurableState = {
       ...state,
@@ -528,6 +538,7 @@ async function syncPrivateBalanceOnce(
         updatedAt: checkpointTime,
       },
       pendingActions,
+      buildReservations: buildHolds.holds,
     };
     await commitPrivateBalanceState(
       input.storageContext,

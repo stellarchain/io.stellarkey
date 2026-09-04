@@ -12,6 +12,7 @@ import { triggerHaptic } from '@/lib/haptics';
 import { activityKindLabel } from '../copy';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import type { PrivatePendingAction, ShieldedActivityRecord } from '../runtime/types';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { isInternalPendingAction } from './PrivateBalanceStatusLine';
 
@@ -55,18 +56,19 @@ export function PrivateActivityDetails({
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<unknown>(null);
   const pending = selection.type === 'pending';
+  const unsignedExposure = pending && hasExposedPrivateSpend(selection.action) && !selection.action.signedEnvelopeXdr;
   const activity = selection.type === 'verified' ? selection.activity : null;
-  // A chained send's internal consolidation step or a verified self-transfer:
-  // the protocol-true balance delta is zero, and there is no counterparty.
+  // A chained send's consolidation step or a verified self-transfer. An
+  // optional helper fee can still leave the balance during consolidation.
   const internal = pending
     ? isInternalPendingAction(selection.action)
     : activity !== null && activity.direction === 'internal';
   const kind = activity ? activity.actionKind : pending ? selection.action.kind : 'transfer';
   const inflow = activity !== null && activity.direction === 'inflow';
-  // An outgoing private transfer — the one case whose recipient/memo live
-  // only in this device's local journal.
+  // An outgoing transfer can recover recipient/memo details from its encrypted
+  // outgoing envelopes as well as the local journal. Absence is not proof of erasure.
   const sentTransfer = kind === 'transfer' && !internal && !inflow;
-  const title = internal
+  const title = unsignedExposure ? 'Status unknown' : internal
     ? pending
       ? 'Preparing balance…'
       : activityKindLabel('transfer', 'internal')
@@ -94,8 +96,8 @@ export function PrivateActivityDetails({
     activity?.transactionHash ?? (pending ? selection.action.transactionHash : undefined),
   );
 
-  // "Check Status" runs a normal sync; the sync path also resolves an expired
-  // payment safely, so this is the one honest answer to "is it done yet?".
+  // "Check Status" uses common canonical history. An exposed proof can outlive
+  // its original envelope; absence must not be presented as cancellation.
   const checkStatus = async () => {
     triggerHaptic('light');
     setChecking(true);
@@ -116,13 +118,15 @@ export function PrivateActivityDetails({
         <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
       </div>
       <dl className="ios-group overflow-hidden">
-        {/* Internal steps move nothing in or out — no amount to show. */}
-        {internal && pending ? null : <DetailRow name="Amount" value={amount} />}
-        <DetailRow name="Verification" value={pending ? 'Confirming…' : 'Verified locally'} />
+        {/* Canonical outflows include any helper fee, not just the recipient's payment. */}
+        {internal && pending ? null : (
+          <DetailRow name={activity?.direction === 'outflow' ? 'Net private balance change' : 'Amount'} value={amount} />
+        )}
+        <DetailRow name="Verification" value={unsignedExposure ? 'Status unknown' : pending ? 'Confirming…' : 'Verified locally'} />
         {activity ? <DetailRow name="Action index" value={activity.actionIndex.toLocaleString()} /> : null}
         {activity?.timestamp ? <DetailRow name="Time" value={new Date(activity.timestamp).toLocaleString()} /> : null}
-        {/* Recipient, told honestly per kind: only SENT transfers depend on
-            this device's journal — everything else is either you or public. */}
+        {/* Sent metadata may be locally saved or recovered from outgoing
+            envelopes. Other recipients are this wallet or publicly recorded. */}
         {internal ? null : kind === 'deposit' ? (
           <DetailRow name="Recipient" value="Your private balance" />
         ) : kind === 'withdraw' ? (
@@ -138,33 +142,39 @@ export function PrivateActivityDetails({
                 <span className="mono">{localRecipient}</span>
               </span>
             ) : (
-              'Unavailable after seed recovery'
+              'Unavailable in recovered history'
             )}
           />
         )}
-        {/* Private memos exist only on transfers. A sent transfer with an
-            intact journal but no memo simply had none; an inflow's memo shows
+        {/* Private memos exist only on transfers. A sent transfer with
+            recovered recipient metadata but no memo had none; an inflow's memo shows
             when it was decrypted into this activity, and is never claimed
             lost — the note plaintext carries it through seed recovery. */}
         {sentTransfer ? (
           <DetailRow
             name="Memo"
-            value={localMemo ?? (localRecipient ? 'None' : 'Unavailable after seed recovery')}
+            value={localMemo ?? (localRecipient ? 'None' : 'Unavailable in recovered history')}
           />
         ) : kind === 'transfer' && inflow && localMemo ? (
           <DetailRow name="Memo" value={localMemo} />
         ) : null}
       </dl>
+      {unsignedExposure ? (
+        <Notice tone="warn">
+          A spend proof was shared before a signed transaction was recorded. A party holding it can still execute this exact payment.
+          Inputs remain reserved while its outcome is unknown; cancellation or transaction expiry does not revoke the proof.
+        </Notice>
+      ) : null}
       <Notice>
         {internal
-          ? 'This step prepared your balance for a payment — nothing left your private balance, and the amounts involved stay encrypted.'
+          ? 'This step combines notes in your private balance. If you selected a helper, its approved private fee leaves your balance. The amounts stay encrypted.'
           : kind === 'deposit'
             ? 'Adding funds is public on Stellar; the private balance it creates stays encrypted, and your recovery phrase alone restores it.'
             : kind === 'withdraw'
               ? 'This withdrawal is public on Stellar like any payment — its amount, recipient, and timing appear on the public record.'
               : inflow
                 ? 'Received payments travel encrypted with the payment itself, so your recovery phrase alone restores them — amount and memo included. The public record cannot prove the hidden amount.'
-                : 'Recipient and memo for payments you sent are saved only in this device’s encrypted history — a recovery from your phrase alone cannot reconstruct them. The public record cannot prove the hidden recipient or amount.'}
+                : 'When included, sent recipient and memo details can be recovered from archived encrypted outgoing records using your recovery phrase. Missing details here do not prove those records never existed. The public record cannot prove the hidden recipient or amount.'}
       </Notice>
       {checkError !== null ? <HumanizedErrorNotice cause={checkError} /> : null}
       {pending ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { decodePrivateAddress } from '@stellarkey/private-balance';
 import { triggerHaptic } from '@/lib/haptics';
@@ -18,6 +18,12 @@ import type {
 import { PrivateActionReviewExpiredError } from '../runtime/submission';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { PrivateRelaySenderSession } from '../relay/session';
+import { PrivateRelayChainChoice } from '../relay/chain-choice';
+import type { PrivateRelayChainApproval } from '../runtime/relay-chain-policy';
+import type { SelectPrivateRelayChainPeer } from '../runtime/relay-chained-send';
+import { completePrivateActionOperation } from './private-action-operation';
+import { PrivateProofConsent, type PrivateProofDisclosure } from '../runtime/proof-disclosure';
+import { PrivateProofExposedError } from '../runtime/proof-exposure';
 import type {
   PrivateRelayPayout,
   PrivateRelayQuote,
@@ -41,6 +47,7 @@ export type PrivateSubmissionOutcome = 'broadcast' | 'ambiguous';
 export interface PrivateChainedReview {
   approval: PrivateChainedSendApproval;
   draft: PrivateChainedSendDraft;
+  relayApproval?: PrivateRelayChainApproval;
 }
 
 interface PrivateRelayDiscovery {
@@ -69,6 +76,8 @@ export function usePrivateActionController(
     submitAction,
     prepareChainedSend,
     submitChainedSend,
+    prepareRelayChainedSend,
+    submitRelayChainedSend,
     asset,
     deployment,
     networkLabel,
@@ -85,6 +94,9 @@ export function usePrivateActionController(
   } | null>(null);
   const relayDiscoveryRef = useRef<PrivateRelayDiscovery | null>(null);
   const relaySelectionRef = useRef<AbortController | null>(null);
+  const relayChainChoiceRef = useRef(new PrivateRelayChainChoice());
+  const proofConsentRef = useRef(new PrivateProofConsent());
+  const [disclosure, setDisclosure] = useState<Readonly<PrivateProofDisclosure> | null>(null);
   const [review, setReview] = useState<PreparedPrivateActionReview | null>(null);
   const [chained, setChained] = useState<PrivateChainedReview | null>(null);
   const [chainProgress, setChainProgress] = useState<PrivateChainedSendProgress | null>(null);
@@ -104,11 +116,88 @@ export function usePrivateActionController(
   /** The broadcast transaction hash, for the success screen's explorer link. */
   const [submittedHash, setSubmittedHash] = useState<string | null>(null);
 
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    proofConsentRef.current.cancel();
+    relayChainChoiceRef.current.cancel();
+    relayDiscoveryRef.current?.session.close();
+    relayRef.current?.session.close();
+  }, [asset?.contractId, deployment.networkId, deployment.poolContractId, publicAddress]);
+
+  const authorizeDisclosure = useCallback(async (request: Readonly<PrivateProofDisclosure>) => {
+    const controller = abortRef.current;
+    if (!controller || controller.signal.aborted) throw new DOMException('Private proof sharing cancelled.', 'AbortError');
+    const waiting = proofConsentRef.current.wait(request.actionId, controller.signal);
+    setDisclosure(request);
+    setPreparing(false);
+    setProgress(null);
+    try { await waiting; } finally {
+      if (abortRef.current === controller) { setDisclosure(null); setPreparing(!controller.signal.aborted); }
+    }
+  }, []);
+
+  const selectChainPeer = useCallback<SelectPrivateRelayChainPeer>(async (step, signal) => {
+    if (!asset || !deployment.networkId || !deployment.poolContractId) throw new Error('Private relay deployment information is unavailable.');
+    const check = () => { if (signal.aborted) throw new DOMException('Private relay chain cancelled.', 'AbortError'); };
+    check();
+    setPreparing(true);
+    setRelayProgress('finding-peer');
+    setRelayQuotes([]);
+    const session = await PrivateRelaySenderSession.create(loadPrivateRelayPreferences().relayUrls);
+    const closeOnAbort = () => session.close();
+    signal.addEventListener('abort', closeOnAbort, { once: true });
+    try {
+      check();
+      const { request, quotes } = await session.requestQuotes({ networkId: deployment.networkId, poolContractId: deployment.poolContractId,
+        actionKind: 'transfer', excludePeerAccounts: publicAddress ? [publicAddress] : [],
+        onQuotes: quotes => { if (!signal.aborted) { setRelayQuotes(quotes.filter(quote => BigInt(quote.feeAtomic) <= BigInt(step.maximumPrivateFeeAtomic))); setRelayProgress('comparing-fees'); } },
+      }, signal);
+      check();
+      const eligible = quotes.filter(quote => BigInt(quote.feeAtomic) <= BigInt(step.maximumPrivateFeeAtomic));
+      const waiting = relayChainChoiceRef.current.wait(eligible, step.maximumPrivateFeeAtomic, signal);
+      setRelayQuotes(eligible);
+      setPreparing(false);
+      setRelayProgress(null);
+      const quote = await waiting;
+      check();
+      setRelayQuotes([]);
+      setPreparing(true);
+      setRelayProgress('agreeing-fee');
+      const decoded = await decodePrivateAddress(step.recipientAddress, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
+      const payout = await session.selectQuote({ request, quote, actionKind: 'transfer', assetIndex: asset.index,
+        actionDiversifier: Array.from(decoded.diversifier, byte => byte.toString(16).padStart(2, '0')).join('') }, signal);
+      check();
+      let signed: PrivateRelaySignedJob | null = null;
+      setRelayProgress(null);
+      return {
+        binding: { feeAtomic: payout.feeAtomic, privateFeeAddress: payout.privateFeeAddress, sourceAccount: payout.peerAccount,
+          requestId: payout.requestId, quoteId: payout.quoteId, peerPublicKey: quote.peerPubkey },
+        preparation: { expiresAt: Math.min(quote.expiresAt, payout.expiresAt), prepare: (request, activeSignal) => session.requestPreparation({ ...request, quote, payout }, activeSignal) },
+        submission: {
+          requestSignature: async request => { check(); signed = await session.requestSignature({ quote, payout, unsignedEnvelopeXdr: request.envelopeXdr, transactionHash: request.transactionHash }, signal); check(); return signed.signedEnvelopeXdr; },
+          requestSubmission: async request => {
+            check();
+            if (!signed || signed.transactionHash !== request.transactionHash || signed.signedEnvelopeXdr !== request.signedEnvelopeXdr) throw new Error('Private relay signed step changed.');
+            const submitted = await session.requestSubmission({ quote, signed }, signal);
+            return { status: submitted.rpcStatus, hash: submitted.transactionHash };
+          },
+        },
+        close: () => { signal.removeEventListener('abort', closeOnAbort); session.close(); },
+      };
+    } catch (error) {
+      signal.removeEventListener('abort', closeOnAbort); session.close(); throw error;
+    } finally {
+      if (!signal.aborted) { setPreparing(false); setRelayProgress(null); setRelayQuotes([]); }
+    }
+  }, [asset, deployment.networkId, deployment.poolContractId, networkLabel, publicAddress]);
+
   const prepare = useCallback(async (
     draft: PrivateActionDraft,
     submissionMode: PrivateSubmissionMode = 'direct',
   ) => {
     const controller = new AbortController();
+    abortRef.current?.abort();
     let pendingRelaySession: PrivateRelaySenderSession | null = null;
     relayDiscoveryRef.current?.session.close();
     relayDiscoveryRef.current = null;
@@ -118,11 +207,13 @@ export function usePrivateActionController(
     draftRef.current = draft;
     submissionModeRef.current = submissionMode;
     setPreparing(true);
+    setWorking(false);
     setError(null);
     setErrorCause(null);
     setSubmission(null);
     setSubmittedHash(null);
     setChained(null);
+    setDisclosure(null);
     setRelayQuotes([]);
     setProgress('checking-chain');
     try {
@@ -155,6 +246,7 @@ export function usePrivateActionController(
             setRelayProgress('same-account-peer');
           },
         }, controller.signal);
+        if (controller.signal.aborted || abortRef.current !== controller) return;
         if (quotes.length === 0) {
           session.close();
           throw new Error(ineligiblePeerAccounts > 0
@@ -179,6 +271,8 @@ export function usePrivateActionController(
           if (!controller.signal.aborted) setProgress(stage);
         },
         controller.signal,
+        undefined,
+        authorizeDisclosure,
       );
       if (controller.signal.aborted) {
         // The person already went back; release the late preparation quietly.
@@ -187,8 +281,8 @@ export function usePrivateActionController(
       }
       setReview(prepared);
     } catch (cause: unknown) {
-      if (submissionMode === 'relay') setRelayQuotes([]);
       if (controller.signal.aborted) return;
+      if (submissionMode === 'relay') setRelayQuotes([]);
       if (
         cause instanceof PrivateConsolidationRequiredError &&
         draft.kind === 'transfer' &&
@@ -220,14 +314,20 @@ export function usePrivateActionController(
       setErrorCause(cause instanceof Error ? cause : null);
     } finally {
       pendingRelaySession?.close();
-      if (abortRef.current === controller) abortRef.current = null;
-      setPreparing(false);
-      setProgress(null);
-      setRelayProgress(null);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setPreparing(false);
+        setProgress(null);
+        setRelayProgress(null);
+      }
     }
-  }, [asset, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend, publicAddress]);
+  }, [asset, authorizeDisclosure, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend, publicAddress]);
 
   const selectRelayQuote = useCallback(async (quoteId: string) => {
+    if (relayChainChoiceRef.current.pending) {
+      if (!relayChainChoiceRef.current.choose(quoteId)) setError('That helper quote expired or exceeds the approved fee. Cancel and review the chain again.');
+      return;
+    }
     if (relaySelectionRef.current) return;
     const discovery = relayDiscoveryRef.current;
     const quote = discovery?.quotes.find(candidate => candidate.quoteId === quoteId);
@@ -255,6 +355,19 @@ export function usePrivateActionController(
     setError(null);
     setErrorCause(null);
     try {
+      if (discovery.draft.kind === 'transfer') {
+        const finalDraft: PrivateChainedSendDraft = { kind: 'transfer', amount: discovery.draft.amount,
+          recipientAddress: discovery.draft.recipientAddress, ...(discovery.draft.memo ? { memo: discovery.draft.memo } : {}) };
+        const approval = await prepareRelayChainedSend(finalDraft, quote.feeAtomic);
+        if (controller.signal.aborted) return;
+        if (approval) {
+          discovery.session.close();
+          relayDiscoveryRef.current = null;
+          setRelayQuotes([]);
+          setChained({ approval, draft: finalDraft, relayApproval: approval });
+          return;
+        }
+      }
       let diversifier: Uint8Array;
       if (discovery.draft.kind === 'transfer') {
         const prefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
@@ -281,7 +394,6 @@ export function usePrivateActionController(
       if (controller.signal.aborted) {
         discovery.session.close();
         if (relayDiscoveryRef.current === discovery) relayDiscoveryRef.current = null;
-        setRelayQuotes([]);
         return;
       }
 
@@ -304,7 +416,7 @@ export function usePrivateActionController(
       }, controller.signal, {
         expiresAt: Math.min(quote.expiresAt, payout.expiresAt),
         prepare: (request, signal) => discovery.session.requestPreparation({ ...request, quote, payout }, signal),
-      });
+      }, authorizeDisclosure);
       if (controller.signal.aborted) {
         void cancelAction(prepared.id).catch(() => undefined);
         discovery.session.close();
@@ -316,22 +428,29 @@ export function usePrivateActionController(
       discovery.session.close();
       if (relayDiscoveryRef.current === discovery) relayDiscoveryRef.current = null;
       if (relayRef.current?.session === discovery.session) relayRef.current = null;
-      setRelayQuotes([]);
       if (controller.signal.aborted) return;
+      setRelayQuotes([]);
       triggerHaptic('error');
       setError(cause instanceof Error ? cause.message : 'Private relay selection stopped safely.');
       setErrorCause(cause instanceof Error ? cause : null);
     } finally {
       if (relaySelectionRef.current === controller) relaySelectionRef.current = null;
-      if (abortRef.current === controller) abortRef.current = null;
-      setPreparing(false);
-      setProgress(null);
-      setRelayProgress(null);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setPreparing(false);
+        setProgress(null);
+        setRelayProgress(null);
+      }
     }
-  }, [asset, cancelAction, networkLabel, prepareAction]);
+  }, [asset, authorizeDisclosure, cancelAction, networkLabel, prepareAction, prepareRelayChainedSend]);
 
   const cancelPrepared = useCallback(async () => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    proofConsentRef.current.cancel();
+    setDisclosure(null);
+    relaySelectionRef.current = null;
+    relayChainChoiceRef.current.cancel();
     relayDiscoveryRef.current?.session.close();
     relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
@@ -340,6 +459,10 @@ export function usePrivateActionController(
     setReview(null);
     setChained(null);
     setChainProgress(null);
+    setWorking(false);
+    setPreparing(false);
+    setProgress(null);
+    setRelayProgress(null);
     setRelayQuotes([]);
     setError(null);
     setErrorCause(null);
@@ -355,6 +478,9 @@ export function usePrivateActionController(
 
   const close = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    proofConsentRef.current.cancel();
+    relayChainChoiceRef.current.cancel();
     relayDiscoveryRef.current?.session.close();
     relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
@@ -366,37 +492,48 @@ export function usePrivateActionController(
   const submit = useCallback(async () => {
     setError(null);
     setErrorCause(null);
+    if (disclosure) { proofConsentRef.current.approve(disclosure.actionId); return; }
     if (chained) {
+      const controller = new AbortController();
+      abortRef.current = controller;
       setWorking(true);
       setChainProgress({ step: 1, totalSteps: chained.approval.steps, stage: 'preparing' });
-      try {
-        // The runtime resolves the chained outcome; newer contracts also carry
-        // the final send's transaction hash for the success screen's explorer
-        // chip. Read both shapes defensively so either contract works.
-        const outcome = (await submitChainedSend(
-          chained.approval,
-          chained.draft,
-          setChainProgress,
-        )) as
-          | PrivateSubmissionOutcome
-          | { status: PrivateSubmissionOutcome; finalTransactionHash?: string };
-        const status = typeof outcome === 'string' ? outcome : outcome.status;
-        if (typeof outcome !== 'string' && outcome.finalTransactionHash) {
-          setSubmittedHash(outcome.finalTransactionHash);
-        }
-        setSubmission(status);
-        onSubmission?.(status);
-      } catch (cause: unknown) {
-        // A chained approval dies on its first failure; continuing needs a
-        // fresh consent, so the person returns to the form.
-        setChained(null);
-        triggerHaptic('error');
-        setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
-        setErrorCause(cause instanceof Error ? cause : null);
-      } finally {
-        setWorking(false);
-        setChainProgress(null);
-      }
+      await completePrivateActionOperation({
+        controller, current: abortRef,
+        run: async () => {
+          // Accept both supported runtime outcome shapes for the explorer chip.
+          const updateProgress = (value: PrivateChainedSendProgress) => {
+            if (abortRef.current === controller && !controller.signal.aborted) setChainProgress(value);
+          };
+          return (await (chained.relayApproval
+            ? submitRelayChainedSend(chained.relayApproval, selectChainPeer, controller.signal, updateProgress)
+            : submitChainedSend(chained.approval, chained.draft, updateProgress))) as
+              | PrivateSubmissionOutcome
+              | { status: PrivateSubmissionOutcome; finalTransactionHash?: string };
+        },
+        success: outcome => {
+          const status = typeof outcome === 'string' ? outcome : outcome.status;
+          if (typeof outcome !== 'string' && outcome.finalTransactionHash) {
+            setSubmittedHash(outcome.finalTransactionHash);
+          }
+          setSubmission(status);
+          onSubmission?.(status);
+        },
+        failure: cause => {
+          // A failed chain needs fresh consent; only its own UI is invalidated.
+          setChained(null);
+          triggerHaptic('error');
+          setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
+          setErrorCause(cause instanceof Error ? cause : null);
+        },
+        finish: () => {
+          relayChainChoiceRef.current.cancel();
+          setWorking(false);
+          setPreparing(false);
+          setRelayQuotes([]);
+          setChainProgress(null);
+        },
+      });
       return;
     }
     if (!review) return;
@@ -432,7 +569,7 @@ export function usePrivateActionController(
       setSubmittedHash(review.transaction.transactionHash);
       onSubmission?.(status);
     } catch (cause: unknown) {
-      if (cause instanceof PrivateActionReviewExpiredError && draftRef.current) {
+      if (cause instanceof PrivateActionReviewExpiredError && draftRef.current?.kind === 'deposit') {
         // The review sat open past its window. Nothing was signed; release
         // the expired action and rebuild the review from the same draft — at
         // most once per confirm tap, and never auto-submitting the result.
@@ -448,8 +585,9 @@ export function usePrivateActionController(
       }
       setReview(null);
       triggerHaptic('error');
-      setError(cause instanceof Error ? cause.message : 'Private action was not signed.');
-      setErrorCause(cause instanceof Error ? cause : null);
+      const visible = review.kind === 'deposit' ? cause : new PrivateProofExposedError(cause);
+      setError(visible instanceof Error ? visible.message : 'Private action was not signed.');
+      setErrorCause(visible instanceof Error ? visible : null);
     } finally {
       setWorking(false);
       if (relayRef.current === submittingRelay) {
@@ -457,10 +595,11 @@ export function usePrivateActionController(
         relayRef.current = null;
       }
     }
-  }, [cancelAction, chained, onSubmission, prepare, review, submitAction, submitChainedSend]);
+  }, [cancelAction, chained, disclosure, onSubmission, prepare, review, selectChainPeer, submitAction, submitChainedSend, submitRelayChainedSend]);
 
   return {
     review,
+    disclosure,
     chained,
     chainProgress,
     progress,

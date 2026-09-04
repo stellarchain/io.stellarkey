@@ -20,6 +20,7 @@ import type { PrivateRelayQuote } from '../relay/protocol';
 import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionError';
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
 import { PrivateRelayQuotePicker } from './PrivateRelayQuotePicker';
+import type { PrivateProofDisclosure } from '../runtime/proof-disclosure';
 import type {
   PrivateChainedReview,
   PrivateRelayProgress,
@@ -57,7 +58,7 @@ function ReviewRow({
 }
 
 function chainStageLabel(stage: PrivateChainedSendProgress['stage']): string {
-  return stage === 'preparing' ? 'Preparing your balance…' : 'Confirming…';
+  return stage === 'choosing-peer' ? 'Choose a helper for this step' : stage === 'preparing' ? 'Preparing your balance…' : 'Confirming…';
 }
 
 /**
@@ -69,6 +70,7 @@ function chainStageLabel(stage: PrivateChainedSendProgress['stage']): string {
 export function PrivateActionReview({
   draft,
   review,
+  disclosure = null,
   chained,
   chainProgress,
   progress,
@@ -86,6 +88,7 @@ export function PrivateActionReview({
 }: {
   draft: PrivateReviewDraft;
   review: PreparedPrivateActionReview | null;
+  disclosure?: Readonly<PrivateProofDisclosure> | null;
   chained: PrivateChainedReview | null;
   chainProgress: PrivateChainedSendProgress | null;
   progress: PrivateActionProgressStage | null;
@@ -119,6 +122,12 @@ export function PrivateActionReview({
   // Render-integrity: a prepared review may only enable confirm when it
   // byte-matches the draft the person is looking at.
   const mismatch = useMemo<PrivateReviewMismatchError | null>(() => {
+    if (disclosure) {
+      const memoHex = Array.from(new TextEncoder().encode(draft.memo?.trim() ?? ''), byte => byte.toString(16).padStart(2, '0')).join('') || null;
+      if (disclosure.kind !== draft.kind || disclosure.assetContractId !== asset?.contractId || disclosure.amountStroops !== amountStroops?.toString() ||
+        (draft.kind === 'transfer' && (disclosure.recipientAddress !== draft.recipientAddress || disclosure.memoHex !== memoHex)) ||
+        (draft.kind === 'withdraw' && disclosure.publicRecipient !== draft.publicRecipient)) return new PrivateReviewMismatchError('proof-sharing intent changed');
+    }
     if (!review) return null;
     if (amountStroops === null) return new PrivateReviewMismatchError('draft amount is unreadable');
     if (review.kind !== draft.kind) {
@@ -139,7 +148,7 @@ export function PrivateActionReview({
       return new PrivateReviewMismatchError('public recipient changed');
     }
     return null;
-  }, [amountStroops, draft, review]);
+  }, [amountStroops, asset?.contractId, disclosure, draft, review]);
 
   const maximumFeeStroops = review
     ? review.transaction.classicFeeStroops + review.transaction.resourceFeeStroops
@@ -186,16 +195,19 @@ export function PrivateActionReview({
   // balance (unspent-only) has already dropped by their full value; the
   // simulation adds them back so Before/After stay protocol-true both while
   // preparing and after the review lands.
-  const simulation = amountStroops === null
+  const privateChainFee = chained?.relayApproval ? BigInt(chained.relayApproval.plan.cumulativeMaxPrivateFeeAtomic) : 0n;
+  const choosingChainPeer = !!chained?.relayApproval && chainProgress?.stage === 'choosing-peer';
+  const simulation = amountStroops === null || (working && chained?.relayApproval)
     ? null
     : privateReviewBalanceSimulation({
         kind: draft.kind,
         liveUnspentStroops: balanceBeforeStroops,
-        amountStroops,
+        amountStroops: amountStroops + privateChainFee,
+        privateFeeStroops: disclosure ? BigInt(disclosure.privateFeeAtomic) : 0n,
         review,
       });
   const displayCause = errorCause ?? (error ? new Error(error) : null) ?? mismatch;
-  const ready = chained !== null || (review !== null && mismatch === null);
+  const ready = chained !== null || ((review !== null || disclosure !== null) && mismatch === null);
   const validUntil = review
     ? new Date(review.transaction.expiresAt * 1000).toLocaleTimeString([], {
         hour: '2-digit',
@@ -207,7 +219,9 @@ export function PrivateActionReview({
   // announce reliably when they stay mounted and their content changes, so
   // this span never unmounts — it carries the progress labels and then the
   // readiness announcement with the final maximum fee.
-  const liveStatus = review !== null && maximumFeeStroops !== null
+  const liveStatus = disclosure ? 'Review the exact payment and maximum fees before authorizing proof sharing.' : choosingChainPeer && relayQuotes.length > 0
+    ? `Step ${chainProgress?.step} of ${chainProgress?.totalSteps}. Choose a helper for this step.`
+    : review !== null && maximumFeeStroops !== null
     ? `Ready to confirm. Maximum network fee ${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM.`
     : chained !== null
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
@@ -269,7 +283,13 @@ export function PrivateActionReview({
         {draft.memo ? <ReviewRow label="Memo">{draft.memo}</ReviewRow> : null}
         {chained ? (
           <div className="py-2.5 text-[13px]">
-            <dt className="text-neutral-400">Network Fee</dt>
+            {chained.relayApproval ? <>
+              <dt className="text-neutral-400">Your private fee cap</dt>
+              <dd className="mb-2 mt-0.5 font-medium text-neutral-100">
+                {privateAmount(BigInt(chained.relayApproval.plan.perStepMaxPrivateFeeAtomic))} per step · {privateAmount(privateChainFee)} total
+              </dd>
+            </> : null}
+            <dt className="text-neutral-400">{chained.relayApproval ? 'Helper-paid network fee cap' : 'Network Fee'}</dt>
             <dd className="mt-0.5 font-medium text-neutral-100">
               Sends in {chained.approval.steps} steps · total max fee{' '}
               {fmtAmount(formatPrivateBalanceXlm(BigInt(chained.approval.cumulativeMaxFeeStroops)))} XLM
@@ -337,7 +357,7 @@ export function PrivateActionReview({
             </span>
           </div>
           <div className="flex justify-between border-t border-white/10 pt-1.5 font-semibold text-white">
-            <span>Balance After</span>
+            <span>{chained?.relayApproval ? 'Balance After Max Fees' : 'Balance After'}</span>
             <span className="mono">{privateAmount(simulation.afterStroops)}</span>
           </div>
         </div>
@@ -354,7 +374,7 @@ export function PrivateActionReview({
               <span className="mono">{privateAmount(changeStroops)}</span>
             </div>
           ) : null}
-          {review?.relay ? (
+          {review?.relay || chained?.relayApproval ? (
             <div className="flex items-center justify-between gap-4">
               <span className="shrink-0 text-neutral-400">Submitted by</span>
               <span>Privacy relay peer</span>
@@ -369,6 +389,8 @@ export function PrivateActionReview({
             <p className="leading-relaxed text-neutral-400">
               This runs as {chained.approval.steps} public transactions on Stellar, one after
               another — their timing is visible, the amounts moving privately are not.
+              {' Confirming authorizes sharing a spend proof for each approved step. A shared proof can execute even after cancellation or transaction expiry; unresolved inputs remain reserved.'}
+              {chained.relayApproval ? ' Choose a helper for each step. Helpers pay the public XLM fees; private rewards are deducted from your balance. Cancelling stops future local steps, but cannot retract a proof already shared with a helper or undo a submitted payment.' : ''}
             </p>
           ) : null}
           <p className="leading-relaxed text-neutral-400">{WHAT_STAYS_PUBLIC[draft.kind]}</p>
@@ -400,7 +422,7 @@ export function PrivateActionReview({
           quotes={relayQuotes}
           code={code}
           decimals={decimals}
-          disabled={preparing || working}
+          disabled={preparing || (working && !choosingChainPeer)}
           comparing={preparing && relayProgress === 'comparing-fees'}
           onSelect={onSelectRelayQuote}
         />
@@ -408,17 +430,27 @@ export function PrivateActionReview({
 
       {displayCause ? <PrivateActionError cause={displayCause} /> : null}
 
+      {disclosure ? (
+        <div className="panel-inset space-y-2 p-3.5 text-[12px] text-neutral-300">
+          <p className="font-semibold text-white">Authorize this payment before sharing its proof</p>
+          <p>Sharing authorizes the exact payment above. The {disclosure.submissionMode === 'relay' ? 'helper' : 'RPC provider'} can submit that proof in another transaction, even if you later cancel or this transaction expires.</p>
+          <p>Maximum network fee: {fmtAmount(formatPrivateBalanceXlm(BigInt(disclosure.maximumNetworkFeeStroops)))} XLM{disclosure.submissionMode === 'relay' ? ' (paid by the helper)' : ''}.</p>
+          {BigInt(disclosure.privateFeeAtomic) > 0n ? <p>Your private helper fee: {privateAmount(disclosure.privateFeeAtomic)}.</p> : null}
+          <p>If preparation fails after sharing, these inputs stay reserved with status unknown until canonical reconciliation. You cannot reset or retry them as unspent.</p>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-3 pt-1">
         <Button
           type="button"
           variant="ghost"
-          disabled={working}
+          disabled={working && !chained?.relayApproval}
           onClick={() => {
             triggerHaptic('selection');
             onBack();
           }}
         >
-          Back
+          {working && chained?.relayApproval ? 'Cancel Chain' : 'Back'}
         </Button>
         <Button
           type="button"
@@ -429,7 +461,7 @@ export function PrivateActionReview({
             onConfirm();
           }}
         >
-          {confirmLabel}
+          {disclosure ? 'Authorize Proof Sharing' : confirmLabel}
         </Button>
       </div>
     </div>
