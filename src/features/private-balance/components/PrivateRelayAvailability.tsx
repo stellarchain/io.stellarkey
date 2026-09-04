@@ -59,6 +59,7 @@ export function PrivateRelayAvailability({
     } catch (cause: unknown) {
       if (controller.signal.aborted) return;
       void cause;
+      setResult(null);
       setError('Could not check peers safely. Check your connection and try again.');
     } finally {
       if (controllerRef.current === controller) {

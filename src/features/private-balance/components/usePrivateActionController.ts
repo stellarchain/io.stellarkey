@@ -175,6 +175,7 @@ export function usePrivateActionController(
       }
       setReview(prepared);
     } catch (cause: unknown) {
+      if (submissionMode === 'relay') setRelayQuotes([]);
       if (controller.signal.aborted) return;
       if (
         cause instanceof PrivateConsolidationRequiredError &&

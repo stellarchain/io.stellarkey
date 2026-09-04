@@ -143,6 +143,7 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(controller, /excludePeerAccounts.*publicAddress/s);
   assert.match(controller, /onQuotes:\s*quotes\s*=>/);
   assert.match(controller, /setRelayProgress\('comparing-fees'\)/);
+  assert.match(controller, /catch \(cause: unknown\)[\s\S]{0,180}submissionMode === 'relay'[\s\S]{0,100}setRelayQuotes\(\[\]\)/);
   assert.doesNotMatch(controller, /quotes\[0\]/);
   assert.match(review, /PrivateRelayQuotePicker/);
   assert.match(review, /onSelectRelayQuote/);
