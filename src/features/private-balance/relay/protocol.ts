@@ -1,6 +1,6 @@
 import { StrKey } from '@stellar/stellar-sdk';
 
-export const PRIVATE_RELAY_PROTOCOL_VERSION = 1 as const;
+export const PRIVATE_RELAY_PROTOCOL_VERSION = 2 as const;
 export const PRIVATE_RELAY_MAX_PLAINTEXT_BYTES = 24 * 1024;
 export const PRIVATE_RELAY_MAX_ENCRYPTED_BYTES = 40 * 1024;
 export const PRIVATE_RELAY_MAX_CLOCK_SKEW_SECONDS = 30;
@@ -14,7 +14,7 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/u;
 export type PrivateRelayActionKind = 'transfer' | 'withdraw';
 
 export interface PrivateRelayRequest {
-  version: 1;
+  version: 2;
   type: 'request';
   requestId: string;
   networkId: string;
@@ -26,19 +26,23 @@ export interface PrivateRelayRequest {
 }
 
 export interface PrivateRelayQuote {
-  version: 1;
+  version: 2;
   type: 'quote';
   requestId: string;
   quoteId: string;
   peerPubkey: string;
   peerAccount: string;
   feeAtomic: string;
+  /** Proof of account-key possession; never a claim about ledger signer thresholds. */
+  accountSignature: string;
   nonce: string;
   expiresAt: number;
 }
 
+export type PrivateRelayUnsignedQuote = Omit<PrivateRelayQuote, 'accountSignature'>;
+
 export interface PrivateRelaySelection {
-  version: 1;
+  version: 2;
   type: 'selection';
   requestId: string;
   quoteId: string;
@@ -49,7 +53,7 @@ export interface PrivateRelaySelection {
 }
 
 export interface PrivateRelayPayout {
-  version: 1;
+  version: 2;
   type: 'payout';
   requestId: string;
   quoteId: string;
@@ -61,7 +65,7 @@ export interface PrivateRelayPayout {
 }
 
 export interface PrivateRelaySignJob {
-  version: 1;
+  version: 2;
   type: 'sign-job';
   requestId: string;
   quoteId: string;
@@ -72,7 +76,7 @@ export interface PrivateRelaySignJob {
 }
 
 export interface PrivateRelaySignedJob {
-  version: 1;
+  version: 2;
   type: 'signed-job';
   requestId: string;
   quoteId: string;
@@ -83,7 +87,7 @@ export interface PrivateRelaySignedJob {
 }
 
 export interface PrivateRelaySubmitJob {
-  version: 1;
+  version: 2;
   type: 'submit-job';
   requestId: string;
   quoteId: string;
@@ -94,7 +98,7 @@ export interface PrivateRelaySubmitJob {
 }
 
 export interface PrivateRelaySubmitted {
-  version: 1;
+  version: 2;
   type: 'submitted';
   requestId: string;
   quoteId: string;
@@ -105,7 +109,7 @@ export interface PrivateRelaySubmitted {
 }
 
 export interface PrivateRelayRejected {
-  version: 1;
+  version: 2;
   type: 'rejected';
   requestId: string;
   quoteId: string;
@@ -198,6 +202,14 @@ function stellarAccount(value: unknown): string {
   return parsed;
 }
 
+function accountSignature(value: unknown): string {
+  const parsed = text(value, 'account signature', 128);
+  if (!/^[0-9a-f]{128}$/u.test(parsed)) {
+    throw new Error('Private relay account signature is invalid');
+  }
+  return parsed;
+}
+
 function xdr(value: unknown, name: string): string {
   const parsed = text(value, name, PRIVATE_RELAY_MAX_PLAINTEXT_BYTES);
   if (!BASE64.test(parsed) || parsed.length % 4 !== 0) {
@@ -220,7 +232,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay action kind is invalid');
       }
       return {
-        version: 1,
+        version: 2,
         type: 'request',
         requestId: common.requestId,
         networkId: hex32(source.networkId, 'network ID'),
@@ -232,15 +244,16 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
       };
     }
     case 'quote':
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'peerPubkey', 'peerAccount', 'feeAtomic', 'nonce', 'expiresAt']);
+      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'peerPubkey', 'peerAccount', 'feeAtomic', 'accountSignature', 'nonce', 'expiresAt']);
       return {
-        version: 1,
+        version: 2,
         type: 'quote',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
         peerPubkey: hex32(source.peerPubkey, 'peer public key'),
         peerAccount: stellarAccount(source.peerAccount),
         feeAtomic: decimal(source.feeAtomic, 'fee'),
+        accountSignature: accountSignature(source.accountSignature),
         nonce: common.nonce,
         expiresAt: common.expiresAt,
       };
@@ -254,7 +267,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay action diversifier is invalid');
       }
       return {
-        version: 1,
+        version: 2,
         type: 'selection',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -267,7 +280,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
     case 'payout':
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'peerAccount', 'feeAtomic', 'privateFeeAddress', 'nonce', 'expiresAt']);
       return {
-        version: 1,
+        version: 2,
         type: 'payout',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -280,7 +293,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
     case 'sign-job':
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'transactionHash', 'unsignedEnvelopeXdr', 'nonce', 'expiresAt']);
       return {
-        version: 1,
+        version: 2,
         type: 'sign-job',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -294,7 +307,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
       const xdrKey = type === 'signed-job' ? 'signedEnvelopeXdr' : 'signedEnvelopeXdr';
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'transactionHash', xdrKey, 'nonce', 'expiresAt']);
       const result = {
-        version: 1 as const,
+        version: 2 as const,
         type,
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -312,7 +325,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay RPC status is invalid');
       }
       return {
-        version: 1,
+        version: 2,
         type: 'submitted',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -329,7 +342,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay rejection reason is invalid');
       }
       return {
-        version: 1,
+        version: 2,
         type: 'rejected',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),

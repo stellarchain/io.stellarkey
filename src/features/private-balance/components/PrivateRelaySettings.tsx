@@ -143,8 +143,10 @@ export function PrivateRelaySettings({
           </Field>
           <Notice>
             No StellarKey backend is involved. The browser connects to two public Nostr relays;
-            those operators can observe your IP address and connection timing. Helping never signs
-            automatically: every exact transaction still requires your approval.
+            those operators can observe your IP address and connection timing. Helping
+            automatically signs encrypted account-possession offers while unlocked;
+            every exact transaction still requires your approval. An offer proves control
+            of the account key, not that the account meets its transaction signing threshold.
           </Notice>
           {error ? <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p> : null}
           <Button type="button" className="w-full" onClick={save}>

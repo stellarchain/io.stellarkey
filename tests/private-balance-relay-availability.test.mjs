@@ -1,16 +1,28 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { Keypair } from '@stellar/stellar-sdk';
 
 import {
   checkPrivateRelayAvailability,
   rankPrivateRelayQuotes,
 } from '../src/features/private-balance/relay/availability.ts';
 import { PrivateRelaySenderSession } from '../src/features/private-balance/relay/session.ts';
+import { signPrivateRelayQuoteAuthorization } from '../src/features/private-balance/relay/account-authorization.ts';
 
 const NOW_SECONDS = 1_800_000_000;
 const NETWORK_ID = '11'.repeat(32);
 const POOL = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM';
+const namedSigners = new Map();
+const accountSigners = new Map();
+function account(name) {
+  if (!namedSigners.has(name)) {
+    const signer = Keypair.random();
+    namedSigners.set(name, signer);
+    accountSigners.set(signer.publicKey(), signer);
+  }
+  return namedSigners.get(name).publicKey();
+}
 
 const sessionSource = readFileSync(
   new URL('../src/features/private-balance/relay/session.ts', import.meta.url),
@@ -26,13 +38,14 @@ function quote({
   expiresAt = NOW_SECONDS + 30,
 }) {
   return {
-    version: 1,
+    version: 2,
     type: 'quote',
     requestId,
     quoteId,
     peerPubkey,
     peerAccount,
     feeAtomic,
+    accountSignature: '00'.repeat(64),
     nonce: '33'.repeat(32),
     expiresAt,
   };
@@ -58,10 +71,15 @@ function controlledSenderSession() {
     emit(input) {
       assert.ok(onMessage);
       assert.ok(publishedRequest);
-      onMessage({
-        event: {},
-        message: quote({ ...input, requestId: publishedRequest.requestId }),
+      const message = quote({
+        ...input,
+        requestId: publishedRequest.requestId,
+        expiresAt: publishedRequest.expiresAt,
       });
+      message.accountSignature = signPrivateRelayQuoteAuthorization(
+        publishedRequest, message, accountSigners.get(message.peerAccount),
+      );
+      onMessage({ event: { pubkey: message.peerPubkey }, message });
     },
     closed: () => closed,
   };
@@ -72,33 +90,33 @@ test('availability ranks unique live peers by their lowest quoted fee', () => {
     quote({
       quoteId: '41'.repeat(32),
       peerPubkey: '51'.repeat(32),
-      peerAccount: 'GPEERB',
+      peerAccount: account('GPEERB'),
       feeAtomic: '40000',
     }),
     quote({
       quoteId: '42'.repeat(32),
       peerPubkey: '52'.repeat(32),
-      peerAccount: 'GPEERA',
+      peerAccount: account('GPEERA'),
       feeAtomic: '30000',
     }),
     quote({
       quoteId: '43'.repeat(32),
       peerPubkey: '53'.repeat(32),
-      peerAccount: 'GPEERA',
+      peerAccount: account('GPEERA'),
       feeAtomic: '10000',
     }),
     quote({
       quoteId: '44'.repeat(32),
       peerPubkey: '54'.repeat(32),
-      peerAccount: 'GEXPIRED',
+      peerAccount: account('GEXPIRED'),
       feeAtomic: '1',
       expiresAt: NOW_SECONDS - 1,
     }),
   ], NOW_SECONDS);
 
   assert.deepEqual(ranked.map(item => [item.peerAccount, item.feeAtomic]), [
-    ['GPEERA', '10000'],
-    ['GPEERB', '40000'],
+    [account('GPEERA'), '10000'],
+    [account('GPEERB'), '40000'],
   ]);
 });
 
@@ -107,18 +125,18 @@ test('availability excludes the active account so self-relay never looks private
     quote({
       quoteId: '47'.repeat(32),
       peerPubkey: '57'.repeat(32),
-      peerAccount: 'GMYACCOUNT',
+      peerAccount: account('GMYACCOUNT'),
       feeAtomic: '1',
     }),
     quote({
       quoteId: '48'.repeat(32),
       peerPubkey: '58'.repeat(32),
-      peerAccount: 'GUNRELATED',
+      peerAccount: account('GUNRELATED'),
       feeAtomic: '20000',
     }),
-  ], NOW_SECONDS, ['GMYACCOUNT']);
+  ], NOW_SECONDS, [account('GMYACCOUNT')]);
 
-  assert.deepEqual(ranked.map(item => item.peerAccount), ['GUNRELATED']);
+  assert.deepEqual(ranked.map(item => item.peerAccount), [account('GUNRELATED')]);
 });
 
 test('availability check returns ranked peers and closes its ephemeral session', async () => {
@@ -139,7 +157,7 @@ test('availability check returns ranked peers and closes its ephemeral session',
         quote({
           quoteId: '49'.repeat(32),
           peerPubkey: '59'.repeat(32),
-          peerAccount: 'GLIVE',
+          peerAccount: account('GLIVE'),
           feeAtomic: '15000',
         }),
       ]);
@@ -149,13 +167,13 @@ test('availability check returns ranked peers and closes its ephemeral session',
           quote({
             quoteId: '45'.repeat(32),
             peerPubkey: '55'.repeat(32),
-            peerAccount: 'GSECOND',
+            peerAccount: account('GSECOND'),
             feeAtomic: '20000',
           }),
           quote({
             quoteId: '46'.repeat(32),
             peerPubkey: '56'.repeat(32),
-            peerAccount: 'GFIRST',
+            peerAccount: account('GFIRST'),
             feeAtomic: '10000',
           }),
         ],
@@ -167,9 +185,9 @@ test('availability check returns ranked peers and closes its ephemeral session',
   assert.equal(requestInput.actionKind, 'transfer');
   assert.equal(requestInput.quoteWindowMs, 1_000);
   assert.equal(requestInput.settleWindowMs, 80);
-  assert.deepEqual(progressive.map(snapshot => snapshot.quotes[0]?.peerAccount), ['GLIVE']);
+  assert.deepEqual(progressive.map(snapshot => snapshot.quotes[0]?.peerAccount), [account('GLIVE')]);
   assert.equal(typeof progressive[0]?.checkedAt, 'number');
-  assert.deepEqual(result.quotes.map(item => item.peerAccount), ['GFIRST', 'GSECOND']);
+  assert.deepEqual(result.quotes.map(item => item.peerAccount), [account('GFIRST'), account('GSECOND')]);
   assert.equal(typeof result.checkedAt, 'number');
   assert.equal(closed, 1);
 });
@@ -208,13 +226,13 @@ test('quote discovery streams offers immediately and settles after quote traffic
   setTimeout(() => controlled.emit({
     quoteId: '61'.repeat(32),
     peerPubkey: '71'.repeat(32),
-    peerAccount: 'GPEERB',
+    peerAccount: account('GPEERB'),
     feeAtomic: '40000',
   }), 10);
   setTimeout(() => controlled.emit({
     quoteId: '62'.repeat(32),
     peerPubkey: '72'.repeat(32),
-    peerAccount: 'GPEERA',
+    peerAccount: account('GPEERA'),
     feeAtomic: '10000',
   }), 60);
 
@@ -224,10 +242,10 @@ test('quote discovery streams offers immediately and settles after quote traffic
   assert.ok(elapsedMs >= 110, `settled before the last offer's quiet window: ${elapsedMs}ms`);
   assert.ok(elapsedMs < 350, `waited near the hard deadline: ${elapsedMs}ms`);
   assert.deepEqual(snapshots, [
-    [['GPEERB', '40000']],
-    [['GPEERA', '10000'], ['GPEERB', '40000']],
+    [[account('GPEERB'), '40000']],
+    [[account('GPEERA'), '10000'], [account('GPEERB'), '40000']],
   ]);
-  assert.deepEqual(result.quotes.map(item => item.peerAccount), ['GPEERA', 'GPEERB']);
+  assert.deepEqual(result.quotes.map(item => item.peerAccount), [account('GPEERA'), account('GPEERB')]);
   assert.equal(controlled.closed(), 1);
 });
 
@@ -240,26 +258,26 @@ test('quote discovery excludes self and emits a lower replacement fee once', asy
     actionKind: 'transfer',
     quoteWindowMs: 1_000,
     settleWindowMs: 70,
-    excludePeerAccounts: ['GMYACCOUNT'],
+    excludePeerAccounts: [account('GMYACCOUNT')],
     onQuotes: quotes => snapshots.push(quotes.map(item => item.feeAtomic)),
   });
 
   setTimeout(() => controlled.emit({
     quoteId: '63'.repeat(32),
     peerPubkey: '73'.repeat(32),
-    peerAccount: 'GMYACCOUNT',
+    peerAccount: account('GMYACCOUNT'),
     feeAtomic: '1',
   }), 5);
   setTimeout(() => controlled.emit({
     quoteId: '64'.repeat(32),
     peerPubkey: '74'.repeat(32),
-    peerAccount: 'GPEER',
+    peerAccount: account('GPEER'),
     feeAtomic: '30000',
   }), 10);
   setTimeout(() => controlled.emit({
     quoteId: '65'.repeat(32),
     peerPubkey: '75'.repeat(32),
-    peerAccount: 'GPEER',
+    peerAccount: account('GPEER'),
     feeAtomic: '10000',
   }), 30);
 
@@ -279,7 +297,7 @@ test('a same-account helper is reported immediately but never becomes an eligibl
     actionKind: 'transfer',
     quoteWindowMs: 1_000,
     settleWindowMs: 70,
-    excludePeerAccounts: ['GMYACCOUNT'],
+    excludePeerAccounts: [account('GMYACCOUNT')],
     onIneligiblePeerAccounts: count => {
       firstExcludedAt ??= performance.now();
       excludedSnapshots.push(count);
@@ -289,7 +307,7 @@ test('a same-account helper is reported immediately but never becomes an eligibl
   setTimeout(() => controlled.emit({
     quoteId: '66'.repeat(32),
     peerPubkey: '76'.repeat(32),
-    peerAccount: 'GMYACCOUNT',
+    peerAccount: account('GMYACCOUNT'),
     feeAtomic: '1',
   }), 10);
 
@@ -310,24 +328,24 @@ test('an ineligible quote cannot end discovery before a slower eligible peer arr
     actionKind: 'transfer',
     quoteWindowMs: 1_000,
     settleWindowMs: 100,
-    excludePeerAccounts: ['GMYACCOUNT'],
+    excludePeerAccounts: [account('GMYACCOUNT')],
   });
 
   setTimeout(() => controlled.emit({
     quoteId: '67'.repeat(32),
     peerPubkey: '77'.repeat(32),
-    peerAccount: 'GMYACCOUNT',
+    peerAccount: account('GMYACCOUNT'),
     feeAtomic: '1',
   }), 10);
   setTimeout(() => controlled.emit({
     quoteId: '68'.repeat(32),
     peerPubkey: '78'.repeat(32),
-    peerAccount: 'GELIGIBLE',
+    peerAccount: account('GELIGIBLE'),
     feeAtomic: '10000',
   }), 180);
 
   const result = await pending;
-  assert.deepEqual(result.quotes.map(quote => quote.peerAccount), ['GELIGIBLE']);
+  assert.deepEqual(result.quotes.map(quote => quote.peerAccount), [account('GELIGIBLE')]);
   assert.equal(result.ineligiblePeerAccounts, 1);
 });
 
