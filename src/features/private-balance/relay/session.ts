@@ -36,6 +36,7 @@ import { rankPrivateRelayQuotes } from './availability';
 
 const DEFAULT_MESSAGE_TTL_SECONDS = 120;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 20_000;
+const DEFAULT_QUOTE_SETTLE_MS = 700;
 const MAX_QUOTE_WINDOW_MS = 20_000;
 const MAX_RELAY_QUOTES = 32;
 
@@ -242,11 +243,21 @@ export class PrivateRelaySenderSession {
     poolContractId: string;
     actionKind: 'transfer' | 'withdraw';
     quoteWindowMs?: number;
+    settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
+    onQuotes?: (quotes: readonly PrivateRelayQuote[]) => void;
   }, signal?: AbortSignal): Promise<{ request: PrivateRelayRequest; quotes: PrivateRelayQuote[] }> {
     const quoteWindowMs = input.quoteWindowMs ?? 6_000;
     if (!Number.isSafeInteger(quoteWindowMs) || quoteWindowMs < 1_000 || quoteWindowMs > MAX_QUOTE_WINDOW_MS) {
       throw new Error('Private relay quote window is invalid');
+    }
+    const settleWindowMs = input.settleWindowMs ?? DEFAULT_QUOTE_SETTLE_MS;
+    if (
+      !Number.isSafeInteger(settleWindowMs) ||
+      settleWindowMs < 25 ||
+      settleWindowMs > quoteWindowMs
+    ) {
+      throw new Error('Private relay quote settle window is invalid');
     }
     const request: PrivateRelayRequest = {
       version: 1,
@@ -260,31 +271,58 @@ export class PrivateRelaySenderSession {
       expiresAt: nowSeconds() + Math.ceil(quoteWindowMs / 1_000) + 30,
     };
     const quotes = new Map<string, PrivateRelayQuote>();
+    const excludedPeerAccounts = new Set(input.excludePeerAccounts ?? []);
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
+    let hardDeadline: ReturnType<typeof setTimeout> | null = null;
+    let settleDeadline: ReturnType<typeof setTimeout> | null = null;
+    let settleDiscovery: (() => void) | null = null;
+    let rejectDiscovery: ((cause: unknown) => void) | null = null;
+    const discovery = new Promise<void>((resolve, reject) => {
+      settleDiscovery = resolve;
+      rejectDiscovery = reject;
+    });
+    const finishDiscovery = () => {
+      settleDiscovery?.();
+      settleDiscovery = null;
+      rejectDiscovery = null;
+    };
+    const abortDiscovery = () => {
+      rejectDiscovery?.(abortError());
+      settleDiscovery = null;
+      rejectDiscovery = null;
+    };
+    controller.signal.addEventListener('abort', abortDiscovery, { once: true });
+    hardDeadline = setTimeout(finishDiscovery, quoteWindowMs);
     const subscription = this.messenger.subscribe({
       encrypted: true,
       onMessage: ({ message }) => {
         if (message.type !== 'quote' || message.requestId !== request.requestId) return;
+        if (message.expiresAt <= nowSeconds() || excludedPeerAccounts.has(message.peerAccount)) return;
         const existing = quotes.get(message.peerAccount);
         if (!existing && quotes.size >= MAX_RELAY_QUOTES) return;
-        if (!existing || BigInt(message.feeAtomic) < BigInt(existing.feeAtomic)) {
-          quotes.set(message.peerAccount, message);
+        if (existing && BigInt(message.feeAtomic) >= BigInt(existing.feeAtomic)) return;
+        quotes.set(message.peerAccount, message);
+        const ranked = rankPrivateRelayQuotes(
+          [...quotes.values()],
+          nowSeconds(),
+          input.excludePeerAccounts,
+        );
+        try {
+          input.onQuotes?.(ranked);
+        } catch {
+          // UI observers cannot interfere with the authenticated relay session.
         }
+        if (settleDeadline) clearTimeout(settleDeadline);
+        settleDeadline = setTimeout(finishDiscovery, settleWindowMs);
       },
     }, controller.signal);
     try {
-      await this.messenger.publish(request, undefined, signal);
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, quoteWindowMs);
-        const abortWait = () => {
-          clearTimeout(timer);
-          reject(abortError());
-        };
-        if (signal?.aborted) abortWait();
-        else signal?.addEventListener('abort', abortWait, { once: true });
-      });
+      await Promise.all([
+        this.messenger.publish(request, undefined, controller.signal),
+        discovery,
+      ]);
       return {
         request,
         quotes: rankPrivateRelayQuotes(
@@ -294,6 +332,9 @@ export class PrivateRelaySenderSession {
         ),
       };
     } finally {
+      if (hardDeadline) clearTimeout(hardDeadline);
+      if (settleDeadline) clearTimeout(settleDeadline);
+      controller.signal.removeEventListener('abort', abortDiscovery);
       controller.abort();
       subscription.close();
       signal?.removeEventListener('abort', abort);
