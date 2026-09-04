@@ -1,6 +1,7 @@
 import {
   Address,
   StrKey,
+  contract,
   rpc as SorobanRpc,
   scValToNative,
   xdr,
@@ -169,6 +170,13 @@ function bytes(value: unknown, length: number, name: string): Uint8Array {
 function string(value: unknown, name: string): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} is invalid`);
   return value;
+}
+
+function unwrapContractResult(value: unknown, name: string): unknown {
+  if (!(value instanceof contract.Ok)) {
+    throw new Error(`${name} did not return a successful contract result`);
+  }
+  return value.unwrap();
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
@@ -491,7 +499,10 @@ export class PrivateBalanceArchiveClient {
     if (calls.some(call => !call.isReadCall)) {
       throw new Error('Private asset registry entry query was not read-only');
     }
-    const assets = calls.map((call, index) => decodeAssetConfig(call.result, index));
+    const assets = calls.map((call, index) => decodeAssetConfig(
+      unwrapContractResult(call.result, `Private asset ${index}`),
+      index,
+    ));
     if (new Set(assets.map(asset => asset.contractId)).size !== assets.length) {
       throw new Error('Private asset registry contains a duplicate contract');
     }
