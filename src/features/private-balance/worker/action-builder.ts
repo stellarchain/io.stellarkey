@@ -38,6 +38,7 @@ export interface PublicAddressPayload {
 
 interface DepositIntent {
   kind: 'deposit';
+  assetIndex: number;
   assetContractId: string;
   publicValue: string;
   depositSource: PublicAddressPayload;
@@ -46,6 +47,7 @@ interface DepositIntent {
 
 interface TransferIntent {
   kind: 'transfer';
+  assetIndex: number;
   assetContractId: string;
   amount: string;
   recipientAddress: string;
@@ -53,20 +55,19 @@ interface TransferIntent {
   anchorRoot: Uint8Array;
   anchorExpiresAtLedger: number;
   memo?: Uint8Array;
-  relayerFee: string;
-  relayer: PublicAddressPayload;
+  peerFee?: { amount: string; recipientAddress: string };
 }
 
 interface WithdrawIntent {
   kind: 'withdraw';
+  assetIndex: number;
   assetContractId: string;
   publicValue: string;
   publicRecipient: PublicAddressPayload;
   selectedNoteIds: string[];
   anchorRoot: Uint8Array;
   anchorExpiresAtLedger: number;
-  relayerFee: string;
-  relayer: PublicAddressPayload;
+  peerFee?: { amount: string; recipientAddress: string };
 }
 
 export type BuildActionIntent = DepositIntent | TransferIntent | WithdrawIntent;
@@ -202,6 +203,27 @@ function shuffled<T>(values: [T, T]): [T, T] {
   return randomBit() === 0 ? values : [values[1], values[0]];
 }
 
+function randomBelow(limit: number): number {
+  const cutoff = 256 - (256 % limit);
+  for (;;) {
+    const entropy = randomBytes32();
+    try {
+      if (entropy[0] < cutoff) return entropy[0] % limit;
+    } finally {
+      entropy.fill(0);
+    }
+  }
+}
+
+function shuffledThree<T>(values: [T, T, T]): [T, T, T] {
+  const result: [T, T, T] = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomBelow(index + 1);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
 function dummyInput(contextField: Uint8Array): InputWitness {
   const dummySecret = sampleNonzeroField();
   return {
@@ -231,6 +253,7 @@ async function createOutput(input: {
   contextHash: Uint8Array;
   contextField: Uint8Array;
   assetField: Uint8Array;
+  assetIndex: number;
   actionNonce: Uint8Array;
   deploymentBindingHash: Uint8Array;
   outgoingViewingKey: Uint8Array;
@@ -284,7 +307,8 @@ async function createOutput(input: {
       rho,
       memoLength: memo.length,
       memo: memo.bytes,
-      reserved: new Uint8Array(15),
+      assetIndex: input.assetIndex,
+      reserved: new Uint8Array(11),
     });
     const output = await createOutputPackage(
       input.recipientHpkePublicKey,
@@ -304,7 +328,8 @@ async function createOutput(input: {
       recipientHpkePublicKey: input.recipientHpkePublicKey,
       memoLength: memo.length,
       memo: memo.bytes,
-      reserved: new Uint8Array(15),
+      assetIndex: input.assetIndex,
+      reserved: new Uint8Array(11),
     });
     const outgoingAad = deriveOutgoingAad(
       input.deploymentBindingHash,
@@ -389,6 +414,9 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
     if (!note || note.status !== 'unspent') throw new Error('Selected private note is unavailable');
     if (note.assetContractId !== input.intent.assetContractId) {
       throw new Error('Selected private note belongs to another asset');
+    }
+    if (note.assetIndex !== input.intent.assetIndex) {
+      throw new Error('Selected private note belongs to another asset index');
     }
     if (note.id !== noteId || !/^[0-9a-f]{64}$/.test(note.id)) {
       throw new Error('Selected private note identity is inconsistent');
@@ -475,13 +503,15 @@ export async function preparePrivateAction(
   const asset = { kind: 1, payload: assetPayload };
   const assetField = computeAssetField(asset);
   const actionNonce = randomBytes32();
+  if (!Number.isSafeInteger(input.intent.assetIndex) || input.intent.assetIndex < 0 || input.intent.assetIndex > 0xffff_ffff) {
+    throw new Error('Private asset index is invalid');
+  }
   const preparedInputs = await prepareInputs(input);
   let publicValue: bigint;
   let kind: ActionKind;
   let depositSource: PublicAddressPayload | undefined;
   let publicRecipient: PublicAddressPayload | undefined;
-  let relayer: PublicAddressPayload | undefined;
-  let relayerFee = 0n;
+  let peerFee = 0n;
   let outputSpecs: Array<{
     real: boolean;
     ownerCommitment: Uint8Array;
@@ -495,13 +525,10 @@ export async function preparePrivateAction(
     };
   }>;
 
-  const usedSelfDiversifiers: Uint8Array[] = [];
+  let actionDiversifier: Uint8Array | null = null;
   const selfOutput = async (value: bigint, memo?: Uint8Array) => {
-    let diversifier: Uint8Array;
-    do {
-      diversifier = randomDiversifier();
-    } while (usedSelfDiversifiers.some(existing => equalBytes(existing, diversifier)));
-    usedSelfDiversifiers.push(diversifier);
+    const diversifier = actionDiversifier ?? randomDiversifier();
+    actionDiversifier = diversifier;
     const identity = await deriveDiversifiedAddressKeys(
       input.esk.baseOwnerCommitment,
       input.esk.hpkePrivateKey,
@@ -531,7 +558,7 @@ export async function preparePrivateAction(
         real: false,
         ownerCommitment: sampleNonzeroField(),
         hpkePublicKey: deriveX25519PublicKey(privateKey),
-        diversifier: randomDiversifier(),
+        diversifier: (actionDiversifier ??= randomDiversifier()),
         value: 0n,
       };
     } finally {
@@ -548,16 +575,14 @@ export async function preparePrivateAction(
     kind = ActionKind.PrivateTransfer;
     publicValue = 0n;
     const amount = parseValue(input.intent.amount, 'Private transfer value');
-    relayerFee = input.intent.relayerFee === '0'
-      ? 0n
-      : parseValue(input.intent.relayerFee, 'Relayer fee');
-    relayer = input.intent.relayer;
-    if (preparedInputs.total < amount + relayerFee) throw new Error('Private balance is insufficient');
+    peerFee = input.intent.peerFee ? parseValue(input.intent.peerFee.amount, 'Peer relay fee') : 0n;
+    if (preparedInputs.total < amount + peerFee) throw new Error('Private balance is insufficient');
     const recipient = await decodePrivateAddress(
       input.intent.recipientAddress,
       input.keyContext.addressPrefix,
       input.keyContext.deploymentBindingHash,
     );
+    actionDiversifier = recipient.diversifier;
     outputSpecs = [{
       real: true,
       ownerCommitment: recipient.ownerCommitment,
@@ -566,7 +591,7 @@ export async function preparePrivateAction(
       value: amount,
       memo: input.intent.memo,
     }];
-    const change = preparedInputs.total - amount - relayerFee;
+    const change = preparedInputs.total - amount - peerFee;
     if (change > 0n) {
       outputSpecs.push(await selfOutput(change));
     }
@@ -575,17 +600,44 @@ export async function preparePrivateAction(
     publicValue = parseValue(input.intent.publicValue, 'Withdrawal value');
     if (preparedInputs.total < publicValue) throw new Error('Private balance is insufficient');
     publicRecipient = input.intent.publicRecipient;
-    relayerFee = input.intent.relayerFee === '0'
-      ? 0n
-      : parseValue(input.intent.relayerFee, 'Relayer fee');
-    relayer = input.intent.relayer;
-    if (preparedInputs.total < publicValue + relayerFee) throw new Error('Private balance is insufficient');
-    const change = preparedInputs.total - publicValue - relayerFee;
+    peerFee = input.intent.peerFee ? parseValue(input.intent.peerFee.amount, 'Peer relay fee') : 0n;
+    if (preparedInputs.total < publicValue + peerFee) throw new Error('Private balance is insufficient');
+    if (input.intent.peerFee) {
+      const relayRecipient = await decodePrivateAddress(
+        input.intent.peerFee.recipientAddress,
+        input.keyContext.addressPrefix,
+        input.keyContext.deploymentBindingHash,
+      );
+      actionDiversifier = relayRecipient.diversifier;
+    }
+    const change = preparedInputs.total - publicValue - peerFee;
     outputSpecs = change > 0n ? [await selfOutput(change)] : [];
   }
 
-  while (outputSpecs.length < 2) outputSpecs.push(dummyOutput());
-  const arrangedOutputSpecs = shuffled(outputSpecs as [typeof outputSpecs[number], typeof outputSpecs[number]]);
+  if (input.intent.kind !== 'deposit' && input.intent.peerFee) {
+    const relayRecipient = await decodePrivateAddress(
+      input.intent.peerFee.recipientAddress,
+      input.keyContext.addressPrefix,
+      input.keyContext.deploymentBindingHash,
+    );
+    if (actionDiversifier && !equalBytes(actionDiversifier, relayRecipient.diversifier)) {
+      throw new Error('Peer relay quote is bound to another action diversifier');
+    }
+    actionDiversifier = relayRecipient.diversifier;
+    outputSpecs.push({
+      real: true,
+      ownerCommitment: relayRecipient.ownerCommitment,
+      hpkePublicKey: relayRecipient.hpkePublicKey,
+      diversifier: relayRecipient.diversifier,
+      value: peerFee,
+    });
+  }
+
+  while (outputSpecs.length < 3) outputSpecs.push(dummyOutput());
+  if (outputSpecs.length !== 3) throw new Error('Private action exceeds its three output lanes');
+  const arrangedOutputSpecs = shuffledThree(outputSpecs as [
+    typeof outputSpecs[number], typeof outputSpecs[number], typeof outputSpecs[number],
+  ]);
 
   const outputWitnesses: OutputWitness[] = [];
   for (const [outputIndex, spec] of arrangedOutputSpecs.entries()) {
@@ -599,6 +651,7 @@ export async function preparePrivateAction(
       contextHash,
       contextField: input.keyContext.contextField,
       assetField,
+      assetIndex: input.intent.assetIndex,
       actionNonce,
       deploymentBindingHash: input.keyContext.deploymentBindingHash,
       outgoingViewingKey: input.esk.outgoingViewingKey,
@@ -607,12 +660,12 @@ export async function preparePrivateAction(
       selfIdentity: spec.selfIdentity,
     }));
   }
-  const outputs = outputWitnesses as [OutputWitness, OutputWitness];
+  const outputs = outputWitnesses as [OutputWitness, OutputWitness, OutputWitness];
   const anchorRoot = input.intent.kind === 'deposit' ? ZERO_32.slice() : input.intent.anchorRoot.slice();
   const action: ActionModel = {
     protocolVersion: input.keyContext.protocolVersion,
     kind,
-    asset,
+    ...(kind === ActionKind.PrivateTransfer ? {} : { assetIndex: input.intent.assetIndex, asset }),
     actionNonce,
     anchorRoot,
     nullifiers: [
@@ -630,12 +683,15 @@ export async function preparePrivateAction(
         recipientEnvelope: outputs[1].recipientEnvelope,
         outgoingEnvelope: outputs[1].outgoingEnvelope,
       },
+      {
+        cm: outputs[2].commitment,
+        recipientEnvelope: outputs[2].recipientEnvelope,
+        outgoingEnvelope: outputs[2].outgoingEnvelope,
+      },
     ],
     publicValue,
     depositSource,
     publicRecipient,
-    relayerFee,
-    relayer,
   };
   const publicSignalBytes = await computePublicSignals(
     action,
@@ -646,22 +702,22 @@ export async function preparePrivateAction(
   );
   const publicSignals = publicSignalBytes.map(fieldString);
   const selectedInputTotal = preparedInputs.total;
-  const privateOutputTotal = outputs[0].value + outputs[1].value;
+  const privateOutputTotal = outputs.reduce((sum, output) => sum + output.value, 0n);
   const changeValue = input.intent.kind === 'transfer'
-    ? selectedInputTotal - parseValue(input.intent.amount, 'Private transfer value') - relayerFee
+    ? selectedInputTotal - parseValue(input.intent.amount, 'Private transfer value') - peerFee
     : input.intent.kind === 'withdraw'
-      ? selectedInputTotal - publicValue - relayerFee
+      ? selectedInputTotal - publicValue - peerFee
       : 0n;
   const circuitInputs: CircuitInputs = {
     contextField: publicSignals[0],
     assetField: publicSignals[1],
+    actionAssetField: fieldString(assetField),
     actionKindField: publicSignals[2],
     anchorRoot: publicSignals[3],
     publicValueField: publicSignals[4],
-    relayerFeeField: publicSignals[5],
-    actionField: publicSignals[6],
-    nullifier: [publicSignals[7], publicSignals[8]],
-    outputCommitment: [publicSignals[9], publicSignals[10]],
+    actionField: publicSignals[5],
+    nullifier: [publicSignals[6], publicSignals[7]],
+    outputCommitment: [publicSignals[8], publicSignals[9], publicSignals[10]],
     ask: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.ask),
     nk: kind === ActionKind.Deposit ? '0' : fieldString(input.esk.nk),
     inputReal: preparedInputs.witnesses.map(witness => witness.real ? '1' : '0'),
@@ -680,13 +736,13 @@ export async function preparePrivateAction(
     outputRho: outputs.map(output => fieldString(output.rho)),
   };
   if (selectedInputTotal + (kind === ActionKind.Deposit ? publicValue : 0n) !==
-      privateOutputTotal + (kind === ActionKind.Withdraw ? publicValue : 0n) + relayerFee) {
+      privateOutputTotal + (kind === ActionKind.Withdraw ? publicValue : 0n)) {
     throw new Error('Private action value conservation failed');
   }
 
   return {
     action,
-    actionField: publicSignalBytes[6],
+    actionField: publicSignalBytes[5],
     publicSignals,
     circuitInputs,
     reservedNoteIds: preparedInputs.selectedNoteIds,

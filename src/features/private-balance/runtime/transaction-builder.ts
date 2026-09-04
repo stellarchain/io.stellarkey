@@ -17,23 +17,20 @@ interface CommonContractAction {
   actionNonce: Uint8Array;
   anchorRoot: Uint8Array;
   nullifiers: [Uint8Array, Uint8Array];
-  outputs: [ContractOutputPackage, ContractOutputPackage];
+  outputs: [ContractOutputPackage, ContractOutputPackage, ContractOutputPackage];
   publicValue: bigint;
 }
 
 export interface DepositContractAction extends CommonContractAction {
+  assetIndex: number;
   depositSource: string;
 }
 
-export interface TransferContractAction extends CommonContractAction {
-  relayerFee: bigint;
-  relayer: string;
-}
+export type TransferContractAction = CommonContractAction;
 
 export interface WithdrawContractAction extends CommonContractAction {
+  assetIndex: number;
   publicRecipient: string;
-  relayerFee: bigint;
-  relayer: string;
 }
 
 function requireLength(name: string, bytes: Uint8Array, expected: number): void {
@@ -70,22 +67,6 @@ function encodeOutput(output: ContractOutputPackage, index: number): xdr.ScVal {
   ]);
 }
 
-function relayerEntries(
-  action: Pick<TransferContractAction, 'relayerFee' | 'relayer'>,
-  poolContractId: string,
-): Array<readonly [string, xdr.ScVal]> {
-  if (action.relayerFee < 0n || action.relayerFee > (1n << 63n) - 1n) {
-    throw new Error('Relayer fee must fit the protocol amount range');
-  }
-  if (action.relayerFee === 0n && action.relayer !== poolContractId) {
-    throw new Error('Zero-fee relayer must be the pool contract address');
-  }
-  return [
-    ['relayer_fee', nativeToScVal(action.relayerFee)],
-    ['relayer', Address.fromString(action.relayer).toScVal()],
-  ];
-}
-
 function commonActionEntries(action: CommonContractAction): Array<readonly [string, xdr.ScVal]> {
   requireLength('Action nonce', action.actionNonce, 32);
   requireLength('Anchor root', action.anchorRoot, 32);
@@ -101,17 +82,16 @@ function commonActionEntries(action: CommonContractAction): Array<readonly [stri
     ['nullifier_1', xdr.ScVal.scvBytes(action.nullifiers[1])],
     ['output_0', encodeOutput(action.outputs[0], 0)],
     ['output_1', encodeOutput(action.outputs[1], 1)],
+    ['output_2', encodeOutput(action.outputs[2], 2)],
     ['public_value', nativeToScVal(action.publicValue)],
   ];
 }
 
 export class PrivateBalanceTransactionBuilder {
   private readonly contract: Contract;
-  private readonly poolContractId: string;
 
   constructor(manifest: Pick<PrivateBalanceManifest, 'poolContractId'>) {
     this.contract = new Contract(manifest.poolContractId);
-    this.poolContractId = manifest.poolContractId;
   }
 
   public buildTouchRootOperation(): xdr.Operation {
@@ -124,6 +104,7 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     const action = scMap([
       ...commonActionEntries(params.action),
+      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
       ['deposit_source', Address.fromString(params.action.depositSource).toScVal()],
     ]);
     return this.contract.call('deposit', action, encodeProof(params.proof));
@@ -135,10 +116,7 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     return this.contract.call(
       'transfer',
-      scMap([
-        ...commonActionEntries(params.action),
-        ...relayerEntries(params.action, this.poolContractId),
-      ]),
+      scMap(commonActionEntries(params.action)),
       encodeProof(params.proof),
     );
   }
@@ -149,8 +127,8 @@ export class PrivateBalanceTransactionBuilder {
   }): xdr.Operation {
     const action = scMap([
       ...commonActionEntries(params.action),
+      ['asset_index', nativeToScVal(params.action.assetIndex, { type: 'u32' })],
       ['public_recipient', Address.fromString(params.action.publicRecipient).toScVal()],
-      ...relayerEntries(params.action, this.poolContractId),
     ]);
     return this.contract.call('withdraw', action, encodeProof(params.proof));
   }

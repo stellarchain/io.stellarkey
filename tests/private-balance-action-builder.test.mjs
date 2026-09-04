@@ -45,6 +45,7 @@ async function fixture() {
     deploymentBindingHash: bytes(9),
     contextField: computeContextField(contextHash),
     addressPrefix: 'tskpay_',
+    assets: [{ index: 0, contractId: assetContractId }],
   };
   const owner = await deriveExpandedSpendingKey(
     new Uint8Array(64).fill(6),
@@ -80,6 +81,7 @@ test('action flow snapshots selected durable notes for a fresh worker session', 
     id: '05'.repeat(32),
     commitment: '05'.repeat(32),
     value: '10',
+    assetIndex: 0,
     assetContractId: StrKey.encodeContract(bytes(4)),
     diversifier: '00000000',
     ownerCommitment: '06'.repeat(32),
@@ -100,18 +102,13 @@ test('action flow snapshots selected durable notes for a fresh worker session', 
   assert.throws(() => privateActionNoteSnapshot([], [note.id]), /unavailable/i);
 });
 
-test('action flow binds every zero-fee relayer field to the pool contract', () => {
+test('direct action flow emits no public relayer identity or fee fields', () => {
   const source = readFileSync(
     new URL('../src/features/private-balance/runtime/action-flow.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(source, /const zeroFeeRelayerAddress = input\.manifest\.poolContractId;/);
-  assert.match(source, /const zeroFeeRelayerPayload = publicAddressPayload\(zeroFeeRelayerAddress\);/);
-  assert.equal((source.match(/relayer: zeroFeeRelayerPayload/g) ?? []).length, 3);
-  assert.equal((source.match(/relayer: zeroFeeRelayerAddress/g) ?? []).length, 2);
-  assert.doesNotMatch(source, /relayer:\s*input\.accountPublicKey/);
-  assert.doesNotMatch(source, /selfRelayer/);
+  assert.doesNotMatch(source, /relayerFee|relayer_fee|selfRelayer|zeroFeeRelayer/);
 });
 
 test('spend preparation never reconstructs a Merkle tree from pool history', () => {
@@ -169,6 +166,7 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
     merklePaths: [],
     intent: {
       kind: 'deposit',
+      assetIndex: 0,
       assetContractId,
       publicValue: '5000000',
       depositSource: { kind: 0, payload: keyContext.accountPublicKey },
@@ -187,7 +185,7 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
   assert.equal(prepared.circuitInputs.nk, '0');
   assert.deepEqual(
     [...prepared.circuitInputs.outputValue].sort((left, right) => Number(left) - Number(right)),
-    ['0', '5000000'],
+    ['0', '0', '5000000'],
   );
   assert.equal(prepared.action.outputs.every(output => (
     output.cm.some(byte => byte !== 0)
@@ -218,7 +216,9 @@ test('action builder creates a fixed-shape deposit with private dummy lanes', as
     assert.ok(plaintext);
     outgoingFlags.push(decodeOutgoingPlaintext(plaintext).flags);
   }
-  assert.deepEqual(outgoingFlags.sort(), [0, 1]);
+  assert.deepEqual(outgoingFlags.sort(), [0, 1, 1]);
+  const outgoingDiversifiers = prepared.action.outputs.map(output => hex(output.recipientEnvelope.slice(1, 5)));
+  assert.equal(new Set(outgoingDiversifiers).size, 1, 'all lanes hide behind one clear action diversifier');
   assert.equal(prepared.publicSignals.length, 11);
 });
 
@@ -240,6 +240,7 @@ test('rotating the receive address cannot corrupt canonical self outputs', async
     merklePaths: [],
     intent: {
       kind: 'deposit',
+      assetIndex: 0,
       assetContractId,
       publicValue: '5000000',
       depositSource: { kind: 0, payload: keyContext.accountPublicKey },
@@ -278,6 +279,7 @@ test('action builder creates an exact one-note transfer witness with self change
     id: noteId,
     commitment: noteId,
     value: '10',
+    assetIndex: 0,
     assetContractId,
     diversifier: '00000000',
     ownerCommitment: hex(owner.ownerCommitment),
@@ -300,6 +302,7 @@ test('action builder creates an exact one-note transfer witness with self change
     merklePaths: [merklePath],
     intent: {
       kind: 'transfer',
+      assetIndex: 0,
       assetContractId,
       amount: '6',
       recipientAddress,
@@ -307,8 +310,6 @@ test('action builder creates an exact one-note transfer witness with self change
       anchorRoot: tree.currentRoot,
       anchorExpiresAtLedger: 1234,
       memo: new Uint8Array([0x68, 0x69]),
-      relayerFee: '0',
-      relayer: { kind: 0, payload: keyContext.accountPublicKey },
     },
   });
 
@@ -316,7 +317,11 @@ test('action builder creates an exact one-note transfer witness with self change
   assert.equal(prepared.inputValue, '10');
   assert.equal(prepared.changeValue, '4');
   assert.deepEqual([...prepared.circuitInputs.inputReal].sort(), ['0', '1']);
-  assert.equal(prepared.circuitInputs.outputValue.every(value => value !== '0'), true);
+  assert.deepEqual([...prepared.circuitInputs.outputValue].sort(), ['0', '4', '6']);
+  assert.equal(prepared.action.asset, undefined, 'private transfers must not publish an asset');
+  assert.equal(prepared.action.assetIndex, undefined, 'private transfers must not publish an asset index');
+  assert.equal(prepared.circuitInputs.assetField, '0');
+  assert.equal(prepared.circuitInputs.actionAssetField, BigInt(`0x${hex(assetField)}`).toString());
   const realInputLane = prepared.circuitInputs.inputReal.indexOf('1');
   assert.equal(prepared.circuitInputs.inputLeafIndex[realInputLane], '0');
   assert.equal(prepared.circuitInputs.inputSiblings[realInputLane].length, 17);
@@ -340,14 +345,13 @@ test('action builder creates an exact one-note transfer witness with self change
       merklePaths: [tamperedPath],
       intent: {
         kind: 'transfer',
+        assetIndex: 0,
         assetContractId,
         amount: '6',
         recipientAddress,
         selectedNoteIds: [noteId],
         anchorRoot: tree.currentRoot,
         anchorExpiresAtLedger: 1234,
-        relayerFee: '0',
-        relayer: { kind: 0, payload: keyContext.accountPublicKey },
       },
     }),
     /Merkle witness/i,
@@ -360,14 +364,13 @@ test('action builder creates an exact one-note transfer witness with self change
       merklePaths: [merklePath],
       intent: {
         kind: 'transfer',
+        assetIndex: 1,
         assetContractId: StrKey.encodeContract(bytes(9)),
         amount: '6',
         recipientAddress,
         selectedNoteIds: [noteId],
         anchorRoot: tree.currentRoot,
         anchorExpiresAtLedger: 1234,
-        relayerFee: '0',
-        relayer: { kind: 0, payload: keyContext.accountPublicKey },
       },
     }),
     /another asset/i,
@@ -386,14 +389,13 @@ test('action builder creates an exact one-note transfer witness with self change
       merklePaths: [merklePath],
       intent: {
         kind: 'transfer',
+        assetIndex: 0,
         assetContractId,
         amount: '6',
         recipientAddress: foreignDeploymentAddress,
         selectedNoteIds: [noteId],
         anchorRoot: tree.currentRoot,
         anchorExpiresAtLedger: 1234,
-        relayerFee: '0',
-        relayer: { kind: 0, payload: keyContext.accountPublicKey },
       },
     }),
     /deployment/i,

@@ -59,7 +59,9 @@ export function PrivateBalanceAssetRow({
       ? 'Available'
     : confirming > 0
       ? `${confirming} ${confirming === 1 ? 'payment' : 'payments'} confirming`
-      : 'Ready';
+      : asset.status === 'exit-only'
+        ? 'Exit only'
+        : 'Ready';
 
   const representativeUsd = ready
     ? privatePortfolioRepresentativeUsd([entry], xlmPriceUsd)

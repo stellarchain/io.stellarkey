@@ -6,6 +6,7 @@ import {
   xdr,
 } from '@stellar/stellar-sdk';
 import {
+  computeAssetField,
   computeContextField,
   computeContextHash,
   TREE_FRONTIER_SIZE,
@@ -26,6 +27,7 @@ interface ArchiveManifest extends Pick<
   | 'networkId'
   | 'realmId'
   | 'poolContractId'
+  | 'assetAdminAddress'
   | 'deploymentBindingHash'
 > {
   artifacts: Pick<PrivateBalanceManifest['artifacts'], 'r1csSha256' | 'vkBinSha256'>;
@@ -63,6 +65,7 @@ interface PoolConfigState {
   networkId: Uint8Array;
   realmId: Uint8Array;
   guardian: string;
+  initialAssetAdmin: string;
   poseidon2ParameterHash: Uint8Array;
   circuitHash: Uint8Array;
   verificationKeyHash: Uint8Array;
@@ -97,6 +100,28 @@ export interface KnownRootState {
   liveUntilLedger: number;
   latestLedger: number;
 }
+
+export type PrivateAssetRegistryStatus = 'active' | 'exit-only';
+
+export interface PrivateAssetRegistryEntry {
+  index: number;
+  contractId: string;
+  assetField: Uint8Array;
+  status: PrivateAssetRegistryStatus;
+}
+
+export interface PrivateAssetRegistryState {
+  adminAddress: string;
+  assets: PrivateAssetRegistryEntry[];
+}
+
+export interface PrivateAssetTokenMetadata {
+  name: string;
+  symbol: string;
+  decimals: number;
+}
+
+const MAX_PRIVATE_ASSET_REGISTRY_ENTRIES = 256;
 
 export class ArchiveRecordUnavailableError extends Error {
   public readonly actionIndex: number;
@@ -187,12 +212,20 @@ function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
   const actionKind = u32(record.action_kind, `${name}.action_kind`);
   if (actionKind < 1 || actionKind > 3) throw new Error(`${name}.action_kind is invalid`);
   const asset = addressPayload(record.asset, `${name}.asset`);
-  if (!asset || asset.kind !== 1) throw new Error(`${name}.asset must be a contract address`);
+  const assetIndex = record.asset_index === null || record.asset_index === undefined
+    ? undefined
+    : u32(record.asset_index, `${name}.asset_index`);
+  const boundaryAction = actionKind !== 2;
+  if (boundaryAction !== Boolean(asset) || boundaryAction !== (assetIndex !== undefined)) {
+    throw new Error(`${name} asset and index do not match the action kind`);
+  }
+  if (asset && asset.kind !== 1) throw new Error(`${name}.asset must be a contract address`);
   return {
     actionIndex: u32(record.action_index, `${name}.action_index`),
     ledgerSequence: u32(record.ledger_sequence, `${name}.ledger_sequence`),
     startingLeafIndex: u32(record.starting_leaf_index, `${name}.starting_leaf_index`),
     actionKind,
+    assetIndex,
     asset,
     actionNonce: bytes(record.action_nonce, 32, `${name}.action_nonce`),
     anchorRoot: bytes(record.anchor_root, 32, `${name}.anchor_root`),
@@ -204,10 +237,9 @@ function decodeRecord(value: unknown, name: string): ArchiveRecordModel {
     outputs: [
       decodeOutput(record.output_0, `${name}.output_0`),
       decodeOutput(record.output_1, `${name}.output_1`),
+      decodeOutput(record.output_2, `${name}.output_2`),
     ],
     publicValue: u64(record.public_value, `${name}.public_value`),
-    relayerFee: u64(record.relayer_fee, `${name}.relayer_fee`),
-    relayer: addressPayload(record.relayer, `${name}.relayer`),
     depositSource: addressPayload(record.deposit_source, `${name}.deposit_source`),
     publicRecipient: addressPayload(record.public_recipient, `${name}.public_recipient`),
   };
@@ -220,6 +252,7 @@ function decodeConfig(value: unknown): PoolConfigState {
     networkId: bytes(config.network_id, 32, 'Pool config network_id'),
     realmId: bytes(config.realm_id, 32, 'Pool config realm_id'),
     guardian: string(config.guardian, 'Pool config guardian'),
+    initialAssetAdmin: string(config.initial_asset_admin, 'Pool config initial_asset_admin'),
     poseidon2ParameterHash: bytes(config.poseidon2_parameter_hash, 32, 'Pool config poseidon2_parameter_hash'),
     circuitHash: bytes(config.circuit_hash, 32, 'Pool config circuit_hash'),
     verificationKeyHash: bytes(config.verification_key_hash, 32, 'Pool config verification_key_hash'),
@@ -250,6 +283,37 @@ function decodeTree(value: unknown): ArchiveTreeState {
     nextIndex: Number(nextIndex),
     frontier: tree.frontier.map((node, index) => bytes(node, 32, `Archive tree frontier ${index}`)),
     currentRoot: bytes(tree.current_root, 32, 'Archive tree current_root'),
+  };
+}
+
+function decodeAssetStatus(value: unknown, name: string): PrivateAssetRegistryStatus {
+  const status = object(value, name);
+  if (status.tag === 'Active') return 'active';
+  if (status.tag === 'ExitOnly') return 'exit-only';
+  throw new Error(`${name} is invalid`);
+}
+
+function decodeAssetConfig(value: unknown, expectedIndex: number): PrivateAssetRegistryEntry {
+  const config = object(value, `Private asset ${expectedIndex}`);
+  const index = u32(config.index, `Private asset ${expectedIndex}.index`);
+  if (index !== expectedIndex) throw new Error('Private asset registry index is not canonical');
+  const contractId = string(config.asset, `Private asset ${expectedIndex}.asset`);
+  if (!StrKey.isValidContract(contractId)) {
+    throw new Error(`Private asset ${expectedIndex}.asset is not a contract address`);
+  }
+  const assetField = bytes(config.asset_field, 32, `Private asset ${expectedIndex}.asset_field`);
+  const expectedField = computeAssetField({
+    kind: 1,
+    payload: new Uint8Array(StrKey.decodeContract(contractId)),
+  });
+  if (!equalBytes(assetField, expectedField)) {
+    throw new Error(`Private asset ${expectedIndex}.asset_field is not canonical`);
+  }
+  return {
+    index,
+    contractId,
+    assetField,
+    status: decodeAssetStatus(config.status, `Private asset ${expectedIndex}.status`),
   };
 }
 
@@ -388,6 +452,92 @@ export class PrivateBalanceArchiveClient {
       throw new Error('Private Balance deposit-pause query was not a valid read-only result');
     }
     return call.result;
+  }
+
+  public async readAssetRegistry(): Promise<PrivateAssetRegistryState> {
+    const [adminCall, countCall] = await Promise.all([
+      this.server.queryContract<unknown>(
+        this.manifest.poolContractId,
+        'asset_admin',
+        undefined,
+        this.manifest.networkPassphrase,
+      ),
+      this.server.queryContract<unknown>(
+        this.manifest.poolContractId,
+        'asset_count',
+        undefined,
+        this.manifest.networkPassphrase,
+      ),
+    ]);
+    if (!adminCall.isReadCall || !countCall.isReadCall) {
+      throw new Error('Private asset registry query was not read-only');
+    }
+    const adminAddress = string(adminCall.result, 'Private asset administrator');
+    if (!StrKey.isValidEd25519PublicKey(adminAddress) && !StrKey.isValidContract(adminAddress)) {
+      throw new Error('Private asset administrator is not a Stellar address');
+    }
+    const count = u32(countCall.result, 'Private asset count');
+    if (count > MAX_PRIVATE_ASSET_REGISTRY_ENTRIES) {
+      throw new Error('Private asset registry exceeds the client safety limit');
+    }
+    const calls = await Promise.all(Array.from({ length: count }, (_, index) => (
+      this.server.queryContract<unknown>(
+        this.manifest.poolContractId,
+        'asset',
+        { index },
+        this.manifest.networkPassphrase,
+      )
+    )));
+    if (calls.some(call => !call.isReadCall)) {
+      throw new Error('Private asset registry entry query was not read-only');
+    }
+    const assets = calls.map((call, index) => decodeAssetConfig(call.result, index));
+    if (new Set(assets.map(asset => asset.contractId)).size !== assets.length) {
+      throw new Error('Private asset registry contains a duplicate contract');
+    }
+    return { adminAddress, assets };
+  }
+
+  public async readAssetTokenMetadata(contractId: string): Promise<PrivateAssetTokenMetadata> {
+    if (!StrKey.isValidContract(contractId)) {
+      throw new Error('Private Balance asset contract is invalid');
+    }
+    const [nameCall, symbolCall, decimalsCall] = await Promise.all([
+      this.server.queryContract<unknown>(
+        contractId,
+        'name',
+        undefined,
+        this.manifest.networkPassphrase,
+      ),
+      this.server.queryContract<unknown>(
+        contractId,
+        'symbol',
+        undefined,
+        this.manifest.networkPassphrase,
+      ),
+      this.server.queryContract<unknown>(
+        contractId,
+        'decimals',
+        undefined,
+        this.manifest.networkPassphrase,
+      ),
+    ]);
+    if (!nameCall.isReadCall || !symbolCall.isReadCall || !decimalsCall.isReadCall) {
+      throw new Error('Private asset metadata query was not read-only');
+    }
+    const name = string(nameCall.result, 'Private asset name');
+    const symbol = string(symbolCall.result, 'Private asset symbol');
+    const decimals = u32(decimalsCall.result, 'Private asset decimals');
+    if (
+      name.length > 64
+      || symbol.length > 12
+      || decimals > 18
+      || /[\u0000-\u001f\u007f]/u.test(name)
+      || /[\u0000-\u001f\u007f]/u.test(symbol)
+    ) {
+      throw new Error('Private asset metadata exceeds client limits');
+    }
+    return { name, symbol, decimals };
   }
 
   public async readAssetBalance(assetContractId: string, accountPublicKey: string): Promise<bigint> {
@@ -575,6 +725,7 @@ export class PrivateBalanceArchiveClient {
       !equalBytes(config.networkId, networkId) ||
       !equalBytes(config.realmId, realmId) ||
       config.treeDepth !== this.manifest.constants.treeDepth ||
+      config.initialAssetAdmin !== this.manifest.assetAdminAddress ||
       !equalBytes(
         config.deploymentBindingHash,
         hex32(this.manifest.deploymentBindingHash, 'Manifest deployment binding hash'),
@@ -592,8 +743,49 @@ export class PrivateBalanceArchiveClient {
     ) {
       throw new Error('Private Balance contract configuration does not match the manifest');
     }
-    if (tree.nextIndex !== meta.actionCount * 2) {
+    if (tree.nextIndex !== meta.actionCount * 3) {
       throw new Error('Private Balance contract head is internally inconsistent');
     }
   }
+}
+
+function registryFingerprint(registry: PrivateAssetRegistryState): string {
+  return JSON.stringify({
+    adminAddress: registry.adminAddress,
+    assets: registry.assets.map(asset => ({
+      index: asset.index,
+      contractId: asset.contractId,
+      assetField: Array.from(asset.assetField, byte => byte.toString(16).padStart(2, '0')).join(''),
+      status: asset.status,
+    })),
+  });
+}
+
+export async function readCorroboratedPrivateAssetRegistry(
+  primary: PrivateBalanceArchiveClient,
+  witness: PrivateBalanceArchiveClient,
+): Promise<PrivateAssetRegistryState> {
+  const [primaryRegistry, witnessRegistry] = await Promise.all([
+    primary.readAssetRegistry(),
+    witness.readAssetRegistry(),
+  ]);
+  if (registryFingerprint(primaryRegistry) !== registryFingerprint(witnessRegistry)) {
+    throw new Error('Private Balance RPC views disagree on the asset registry');
+  }
+  return primaryRegistry;
+}
+
+export async function readCorroboratedPrivateAssetTokenMetadata(
+  contractId: string,
+  primary: PrivateBalanceArchiveClient,
+  witness: PrivateBalanceArchiveClient,
+): Promise<PrivateAssetTokenMetadata> {
+  const [primaryMetadata, witnessMetadata] = await Promise.all([
+    primary.readAssetTokenMetadata(contractId),
+    witness.readAssetTokenMetadata(contractId),
+  ]);
+  if (JSON.stringify(primaryMetadata) !== JSON.stringify(witnessMetadata)) {
+    throw new Error(`Private Balance RPC views disagree on metadata for ${contractId}`);
+  }
+  return primaryMetadata;
 }

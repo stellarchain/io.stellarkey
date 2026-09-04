@@ -53,7 +53,6 @@ function reviewedFixture() {
   const signer = Keypair.random();
   const operation = new PrivateBalanceTransactionBuilder({ poolContractId }).buildTransferOperation({
     action: {
-      assetContractId: ASSET_CONTRACT_ID,
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
@@ -68,10 +67,13 @@ function reviewedFixture() {
           recipientEnvelope: bytes(181, 8),
           outgoingEnvelope: bytes(157, 9),
         },
+        {
+          commitment: bytes(32, 10),
+          recipientEnvelope: bytes(181, 11),
+          outgoingEnvelope: bytes(157, 12),
+        },
       ],
       publicValue: 0n,
-      relayerFee: 0n,
-      relayer: poolContractId,
     },
     proof: { a: bytes(64, 8), b: bytes(128, 9), c: bytes(64, 10) },
   });
@@ -83,7 +85,11 @@ function reviewedFixture() {
   }).addOperation(operation).setSorobanData(data).build();
   const review = reviewPrivateBalanceTransaction({
     envelopeXdr: transaction.toXdr(),
-    manifest: { networkPassphrase, poolContractId, assetContractId: ASSET_CONTRACT_ID },
+    manifest: {
+      networkPassphrase,
+      poolContractId,
+      assets: [{ index: 0, contractId: ASSET_CONTRACT_ID }],
+    },
     source: signer.publicKey(),
     sequence: '8',
     timeBounds: { minTime: '1', maxTime: '2000000000' },
@@ -167,6 +173,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     id: '13'.repeat(32),
     commitment: '13'.repeat(32),
     value: '5000000',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: '14'.repeat(32),
@@ -189,12 +196,13 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
   const pending = {
     id: 'action-1',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '17'.repeat(32),
     nullifiers: ['18'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['19'.repeat(32), '1a'.repeat(32)],
+    outputCommitments: ['19'.repeat(32), '1a'.repeat(32), '1d'.repeat(32)],
     anchorRoot: '1b'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '1c'.repeat(32),
@@ -350,6 +358,7 @@ test('accepted private broadcasts remain conservatively journaled across a concu
     id: '27'.repeat(32),
     commitment: '27'.repeat(32),
     value: '5000000',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: '28'.repeat(32),
@@ -372,12 +381,13 @@ test('accepted private broadcasts remain conservatively journaled across a concu
   const pending = {
     id: 'concurrent-action',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '2b'.repeat(32),
     nullifiers: ['2c'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['2d'.repeat(32), '2e'.repeat(32)],
+    outputCommitments: ['2d'.repeat(32), '2e'.repeat(32), '31'.repeat(32)],
     anchorRoot: '2f'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '30'.repeat(32),
@@ -476,6 +486,7 @@ function stateFixture(accountId) {
       id: '36'.repeat(32),
       commitment: '36'.repeat(32),
       value: '5000000',
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
       diversifier: '00000000',
       ownerCommitment: '37'.repeat(32),
@@ -523,12 +534,13 @@ test('persisted signed actions resume through broadcast and release after time-b
   const pending = {
     id: 'resume-action',
     kind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     status: 'prepared',
     reservedNoteIds: [note.id],
     actionField: '3a'.repeat(32),
     nullifiers: ['3b'.repeat(32), '00'.repeat(32)],
-    outputCommitments: ['3c'.repeat(32), '3d'.repeat(32)],
+    outputCommitments: ['3c'.repeat(32), '3d'.repeat(32), '40'.repeat(32)],
     anchorRoot: '3e'.repeat(32),
     anchorExpiresAtLedger: 500,
     proofHash: '3f'.repeat(32),
@@ -657,12 +669,13 @@ test('prepare refuses while a previous payment is still confirming', async () =>
       pendingActions: [{
         id: 'inflight-action',
         kind: 'transfer',
+        assetIndex: 0,
         assetContractId: ASSET_CONTRACT_ID,
         status: 'broadcast',
         reservedNoteIds: [note.id],
         actionField: '41'.repeat(32),
         nullifiers: ['42'.repeat(32), '00'.repeat(32)],
-        outputCommitments: ['43'.repeat(32), '44'.repeat(32)],
+        outputCommitments: ['43'.repeat(32), '44'.repeat(32), '49'.repeat(32)],
         anchorRoot: '45'.repeat(32),
         anchorExpiresAtLedger: 500,
         proofHash: '46'.repeat(32),
@@ -684,7 +697,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
 
   await assert.rejects(
     () => preparePrivateBalanceActionFlow({
-      manifest: { assetContractId: ASSET_CONTRACT_ID },
+      manifest: { assets: [{ index: 0, contractId: ASSET_CONTRACT_ID }] },
       accountPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       privateAddress: `tskpay_${'2'.repeat(121)}`,
       storageContext: context,
@@ -693,6 +706,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
       worker: {},
       rpcUrl: 'http://localhost',
       classicFeeStroops: 100n,
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
       assetCode: 'XLM',
       assetDecimals: 7,

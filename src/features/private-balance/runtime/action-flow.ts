@@ -154,6 +154,7 @@ function commonContractAction(action: ActionModel) {
     })) as [
       { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
       { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
+      { commitment: Uint8Array; recipientEnvelope: Uint8Array; outgoingEnvelope: Uint8Array },
     ],
     publicValue: action.publicValue,
   };
@@ -319,6 +320,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   classicFeeStroops: bigint;
   depositSourceMinimumBalanceStroops?: bigint;
   assetContractId: string;
+  assetIndex: number;
   assetCode: string;
   assetDecimals: number;
   draft: PrivateActionDraft;
@@ -332,8 +334,13 @@ export async function preparePrivateBalanceActionFlow(input: {
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
   }
-  if (input.assetContractId !== input.manifest.assetContractId) {
-    throw new Error('Private Balance asset does not match the selected pool.');
+  const manifestAsset = input.manifest.assets[input.assetIndex];
+  if (
+    !manifestAsset
+    || manifestAsset.index !== input.assetIndex
+    || manifestAsset.contractId !== input.assetContractId
+  ) {
+    throw new Error('Private Balance asset does not match the authenticated registry metadata.');
   }
   let reserved = false;
   const progress = (stage: PrivateActionProgressStage) => {
@@ -398,13 +405,11 @@ export async function preparePrivateBalanceActionFlow(input: {
     let publicRecipient: string | null = null;
     let intent: Parameters<PrivateBalanceWorkerClient['buildAction']>[1] | null = null;
     let merklePaths: MerklePathWitness[] = [];
-    const zeroFeeRelayerAddress = input.manifest.poolContractId;
-    const zeroFeeRelayerPayload = publicAddressPayload(zeroFeeRelayerAddress);
-
     if (input.draft.kind === 'deposit') {
       amount = depositAmount!;
       intent = {
         kind: 'deposit',
+        assetIndex: input.assetIndex,
         assetContractId: input.assetContractId,
         publicValue: amount.toString(),
         depositSource: publicAddressPayload(input.accountPublicKey),
@@ -429,14 +434,13 @@ export async function preparePrivateBalanceActionFlow(input: {
         )).fingerprint;
         intent = {
           kind: 'transfer',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           amount: amount.toString(),
           recipientAddress: input.privateAddress,
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          relayerFee: '0',
-          relayer: zeroFeeRelayerPayload,
         };
       } else {
         amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
@@ -464,6 +468,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         localMemoHex = memo ? hex(memo) : undefined;
         intent = {
           kind: 'transfer',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           amount: amount.toString(),
           recipientAddress: input.draft.recipientAddress,
@@ -471,21 +476,18 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           memo,
-          relayerFee: '0',
-          relayer: zeroFeeRelayerPayload,
         };
       } else if (input.draft.kind === 'withdraw') {
         publicRecipient = input.draft.publicRecipient;
         intent = {
           kind: 'withdraw',
+          assetIndex: input.assetIndex,
           assetContractId: input.assetContractId,
           publicValue: amount.toString(),
           publicRecipient: publicAddressPayload(publicRecipient),
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
-          relayerFee: '0',
-          relayer: zeroFeeRelayerPayload,
         };
       }
     }
@@ -508,7 +510,7 @@ export async function preparePrivateBalanceActionFlow(input: {
             deploymentBindingHash: checkpoint.deploymentBindingHash,
             cursor: checkpoint.lastActionIndex + 1,
             transcriptHead: checkpoint.lastRecordHash,
-            commitmentCount: (checkpoint.lastActionIndex + 1) * 2,
+            commitmentCount: (checkpoint.lastActionIndex + 1) * 3,
             root: checkpoint.treeRoot,
             frontier: [...checkpoint.treeFrontier],
           },
@@ -565,25 +567,24 @@ export async function preparePrivateBalanceActionFlow(input: {
     const common = commonContractAction(prepared.action);
     const operation = input.draft.kind === 'deposit'
       ? builder.buildDepositOperation({
-          action: { ...common, depositSource: input.accountPublicKey },
+          action: {
+            ...common,
+            assetIndex: input.assetIndex,
+            depositSource: input.accountPublicKey,
+          },
           proof,
         })
       : input.draft.kind === 'withdraw'
         ? builder.buildWithdrawOperation({
             action: {
               ...common,
+              assetIndex: input.assetIndex,
               publicRecipient: publicRecipient!,
-              relayerFee: prepared.action.relayerFee,
-              relayer: zeroFeeRelayerAddress,
             },
             proof,
           })
         : builder.buildTransferOperation({
-            action: {
-              ...common,
-              relayerFee: prepared.action.relayerFee,
-              relayer: zeroFeeRelayerAddress,
-            },
+            action: common,
             proof,
           });
     progress('simulating');
@@ -605,6 +606,7 @@ export async function preparePrivateBalanceActionFlow(input: {
     const pendingAction: PrivatePendingAction = {
       id: actionId,
       kind: reservationKind,
+      assetIndex: input.assetIndex,
       assetContractId: input.assetContractId,
       status: 'prepared',
       reservedNoteIds: prepared.reservedNoteIds,

@@ -30,8 +30,10 @@ import {
 import {
   loadExpectedPrivateBalanceCatalogue,
   loadPrivateBalanceDeployments,
+  reconcilePrivateBalanceRegistry,
   type LoadedPrivateBalanceDeployment,
 } from '@/lib/private-balance-assets';
+import { getRpcUrl } from '@/lib/stellar-endpoints';
 import {
   ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
 } from '@/lib/private-balance-expected-manifest';
@@ -218,6 +220,57 @@ function summarizeManifest(
   };
 }
 
+async function loadLivePrivateBalanceRegistry(
+  deployments: LoadedPrivateBalanceDeployment[],
+  network: 'testnet' | 'mainnet',
+): Promise<LoadedPrivateBalanceDeployment[]> {
+  if (deployments.length === 0) return [];
+  const rpcUrl = getRpcUrl(network);
+  if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Payments.');
+  const byPool = new Map<string, LoadedPrivateBalanceDeployment[]>();
+  for (const deployment of deployments) {
+    const current = byPool.get(deployment.poolDeploymentId) ?? [];
+    current.push(deployment);
+    byPool.set(deployment.poolDeploymentId, current);
+  }
+  const [{
+    PrivateBalanceArchiveClient,
+    readCorroboratedPrivateAssetRegistry,
+    readCorroboratedPrivateAssetTokenMetadata,
+  }, { corroboratePrivateRpcCheckpoint }] = await Promise.all([
+    import('@/features/private-balance/runtime/archive-client'),
+    import('@/features/private-balance/runtime/rpc-checkpoint'),
+  ]);
+  const resolved = await Promise.all([...byPool.values()].map(async poolDeployments => {
+    const manifest = poolDeployments[0].manifest;
+    if (new URL(rpcUrl).origin === new URL(manifest.witnessRpcUrl).origin) {
+      throw new Error('Private Payments primary and witness RPCs must use independent origins.');
+    }
+    const primary = new PrivateBalanceArchiveClient(rpcUrl, manifest);
+    const witness = new PrivateBalanceArchiveClient(manifest.witnessRpcUrl, manifest);
+    await corroboratePrivateRpcCheckpoint({
+      primary,
+      witness,
+      expectedNetworkPassphrase: manifest.networkPassphrase,
+      deploymentCheckpoint: manifest.deploymentCheckpoint,
+    });
+    const registry = await readCorroboratedPrivateAssetRegistry(primary, witness);
+    const curatedContracts = new Set(manifest.assets.map(asset => asset.contractId));
+    const metadataEntries = await Promise.all(registry.assets
+      .filter(asset => !curatedContracts.has(asset.contractId))
+      .map(async asset => [
+        asset.contractId,
+        await readCorroboratedPrivateAssetTokenMetadata(asset.contractId, primary, witness),
+      ] as const));
+    return reconcilePrivateBalanceRegistry({
+      deployments: poolDeployments,
+      registry,
+      metadataByContract: new Map(metadataEntries),
+    });
+  }));
+  return resolved.flat();
+}
+
 function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
   const { activeAccount, network } = useWalletIdentity();
   const { phase } = useWalletPhase();
@@ -296,6 +349,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 
     void loadExpectedPrivateBalanceCatalogue()
       .then(({ catalogue }) => loadPrivateBalanceDeployments({ catalogue, network }))
+      .then(loadedDeployments => loadLivePrivateBalanceRegistry(loadedDeployments, network))
       .then(async loadedDeployments => {
         // The verified catalogue is sufficient to render asset rows. Local
         // storage determines setup state, but must never hide the catalogue if
@@ -578,6 +632,12 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
           encryptedStateExists={deployment.encryptedStateExists}
           deployment={deployment.deployment}
           asset={deployment.asset}
+          registryAssets={currentBootstrap.ready
+            .filter(candidate => candidate.poolDeploymentId === deployment.poolDeploymentId)
+            .map(candidate => ({
+              index: candidate.asset.index,
+              contractId: candidate.asset.contractId,
+            }))}
           runtimeKey={runtimeKey}
           portfolioKey={bootstrapKey}
           deploymentId={deployment.id}

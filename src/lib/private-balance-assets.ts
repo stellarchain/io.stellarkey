@@ -1,22 +1,31 @@
-import { loadExpectedPrivateBalanceManifest, type PrivateBalanceManifest } from './private-balance-manifest';
+import {
+  loadExpectedPrivateBalanceManifest,
+  type PrivateBalanceManifest,
+  type PrivateBalanceManifestAsset,
+} from './private-balance-manifest';
 import { EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256 } from './private-balance-expected-catalogue';
+import { Asset } from '@stellar/stellar-sdk';
+import type {
+  PrivateAssetRegistryState,
+  PrivateAssetRegistryStatus,
+} from '@/features/private-balance/runtime/archive-client';
 
 export type PrivateBalanceNetwork = 'testnet' | 'mainnet';
+export interface PrivateBalanceAsset extends Omit<PrivateBalanceManifestAsset, 'kind'> {
+  kind: PrivateBalanceManifestAsset['kind'] | 'contract';
+  /** Authoritative current state read from the pool contract. */
+  status: PrivateAssetRegistryStatus;
+}
 
-export interface PrivateBalanceAsset {
-  kind: 'native' | 'stellar';
-  code: string;
-  issuer: string | null;
+export interface PrivateBalanceTokenMetadata {
   name: string;
+  symbol: string;
   decimals: number;
-  displayDecimals: number;
-  contractId: string;
 }
 
 export interface PrivateBalanceCatalogueDeployment {
   id: string;
   network: PrivateBalanceNetwork;
-  asset: PrivateBalanceAsset;
   manifestUrl: string;
   manifestSha256: string;
 }
@@ -27,8 +36,9 @@ export interface PrivateBalanceCatalogue {
 }
 
 export interface LoadedPrivateBalanceDeployment {
-  /** Stable ID for this single-asset pool deployment. */
+  /** Selection identity for one asset in the shared pool. */
   id: string;
+  /** Stable identity shared by every admitted asset in this pool. */
   poolDeploymentId: string;
   network: PrivateBalanceNetwork;
   asset: PrivateBalanceAsset;
@@ -39,12 +49,9 @@ export interface LoadedPrivateBalanceDeployment {
 }
 
 const HEX_32 = /^[0-9a-f]{64}$/;
-const CONTRACT_ADDRESS = /^C[A-Z2-7]{55}$/;
-const ACCOUNT_ADDRESS = /^G[A-Z2-7]{55}$/;
-const ASSET_CODE = /^[A-Z0-9]{1,12}$/;
 const DEPLOYMENT_ID = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const MAX_CATALOGUE_BYTES = 64 * 1024;
-const MAX_DEPLOYMENTS = 32;
+const MAX_DEPLOYMENTS = 8;
 
 function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -58,71 +65,106 @@ function string(value: unknown, name: string): string {
   return value;
 }
 
-function integer(value: unknown, name: string, maximum: number): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maximum) {
-    throw new Error(`${name} is invalid.`);
-  }
-  return value as number;
-}
-
 function safeManifestUrl(value: unknown): string {
   const url = string(value, 'manifestUrl');
   if (!url.startsWith('/') || url.startsWith('//') || url.includes('\\')) {
     throw new Error('manifestUrl must be a same-origin absolute path.');
   }
-  let parsed: URL;
-  try {
-    parsed = new URL(url, 'https://stellarkey.local');
-  } catch {
-    throw new Error('manifestUrl is invalid.');
-  }
-  if (parsed.origin !== 'https://stellarkey.local' || parsed.search || parsed.hash || !parsed.pathname.endsWith('.json')) {
+  const parsed = new URL(url, 'https://stellarkey.local');
+  if (
+    parsed.origin !== 'https://stellarkey.local'
+    || parsed.search
+    || parsed.hash
+    || !parsed.pathname.endsWith('.json')
+  ) {
     throw new Error('manifestUrl must be a same-origin JSON path without query or fragment.');
   }
   return parsed.pathname;
 }
 
-function validateAsset(value: unknown, deploymentIndex: number): PrivateBalanceAsset {
-  const path = `deployments[${deploymentIndex}].asset`;
-  const asset = object(value, path);
-  if (asset.kind !== 'native' && asset.kind !== 'stellar') {
-    throw new Error(`${path}.kind is invalid.`);
-  }
-  const code = string(asset.code, `${path}.code`);
-  if (!ASSET_CODE.test(code)) throw new Error(`${path}.code is invalid.`);
-  const name = string(asset.name, `${path}.name`);
-  if (name !== name.trim() || name.length > 64 || /[\u0000-\u001f\u007f]/u.test(name)) {
-    throw new Error(`${path}.name is invalid.`);
-  }
-  const contractId = string(asset.contractId, `${path}.contractId`);
-  if (!CONTRACT_ADDRESS.test(contractId)) {
-    throw new Error(`${path}.contractId is invalid.`);
-  }
-  const decimals = integer(asset.decimals, `${path}.decimals`, 18);
-  const displayDecimals = integer(
-    asset.displayDecimals,
-    `${path}.displayDecimals`,
-    decimals,
-  );
-  let issuer: string | null;
-  if (asset.kind === 'native') {
-    if (code !== 'XLM' || asset.issuer !== null || decimals !== 7) {
-      throw new Error(`${path} native code, issuer, or decimals are invalid.`);
-    }
-    issuer = null;
-  } else {
-    issuer = string(asset.issuer, `${path}.issuer`);
-    if (!ACCOUNT_ADDRESS.test(issuer) || decimals !== 7) {
-      throw new Error(`${path} issuer or decimals are invalid.`);
-    }
-  }
-  return { kind: asset.kind, code, issuer, name, decimals, displayDecimals, contractId };
+export function privateBalanceAssetKey(
+  asset: Pick<PrivateBalanceAsset, 'kind' | 'code' | 'issuer' | 'contractId'>,
+): string {
+  return asset.kind === 'native'
+    ? 'native'
+    : asset.kind === 'contract'
+      ? `contract:${asset.contractId}`
+      : `${asset.code}:${asset.issuer ?? ''}`;
 }
 
-export function privateBalanceAssetKey(
-  asset: Pick<PrivateBalanceAsset, 'kind' | 'code' | 'issuer'>,
-): string {
-  return asset.kind === 'native' ? 'native' : `${asset.code}:${asset.issuer ?? ''}`;
+export function privateBalanceAssetMatchesPublicBalance(
+  asset: Pick<PrivateBalanceAsset, 'contractId'>,
+  balance: { isNative: boolean; code: string; issuer: string | null },
+  networkPassphrase: string,
+): boolean {
+  try {
+    const publicAsset = balance.isNative
+      ? Asset.native()
+      : new Asset(balance.code, balance.issuer ?? undefined);
+    return publicAsset.contractId(networkPassphrase) === asset.contractId;
+  } catch {
+    return false;
+  }
+}
+
+function safeRuntimeTokenText(value: string, fallback: string, maximum: number): string {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(trimmed)
+    ? trimmed
+    : fallback;
+}
+
+/**
+ * Treats the append-only contract registry as admission authority. The signed
+ * manifest can label its checkpointed prefix, but cannot add, delete, reorder,
+ * or reactivate an entry.
+ */
+export function reconcilePrivateBalanceRegistry(input: {
+  deployments: LoadedPrivateBalanceDeployment[];
+  registry: PrivateAssetRegistryState;
+  metadataByContract?: ReadonlyMap<string, PrivateBalanceTokenMetadata>;
+}): LoadedPrivateBalanceDeployment[] {
+  if (input.deployments.length === 0) return [];
+  const template = input.deployments[0];
+  if (input.deployments.some(candidate => (
+    candidate.poolDeploymentId !== template.poolDeploymentId
+    || candidate.manifestHash !== template.manifestHash
+  ))) {
+    throw new Error('Private asset registry reconciliation requires exactly one pool.');
+  }
+  if (input.registry.assets.length < template.manifest.registryCheckpoint.assetCount) {
+    throw new Error('Private asset registry is older than its authenticated checkpoint.');
+  }
+  const curated = new Map(template.manifest.assets.map(asset => [asset.index, asset]));
+  for (const asset of template.manifest.assets) {
+    const live = input.registry.assets[asset.index];
+    if (!live || live.index !== asset.index || live.contractId !== asset.contractId) {
+      throw new Error(`Private asset registry changed immutable index ${asset.index}.`);
+    }
+  }
+  return input.registry.assets.map(live => {
+    const known = curated.get(live.index);
+    const metadata = input.metadataByContract?.get(live.contractId);
+    const fallbackCode = `A${live.index}`;
+    const asset: PrivateBalanceAsset = known
+      ? { ...known, status: live.status }
+      : {
+          index: live.index,
+          kind: 'contract',
+          code: safeRuntimeTokenText(metadata?.symbol ?? '', fallbackCode, 12).toUpperCase(),
+          issuer: null,
+          name: safeRuntimeTokenText(metadata?.name ?? '', `Contract asset ${live.index}`, 64),
+          decimals: metadata?.decimals ?? 7,
+          displayDecimals: Math.min(metadata?.decimals ?? 7, 7),
+          contractId: live.contractId,
+          status: live.status,
+        };
+    return {
+      ...template,
+      id: `${template.poolDeploymentId}:${live.index}`,
+      asset,
+    };
+  });
 }
 
 export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCatalogue {
@@ -132,8 +174,7 @@ export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCat
     throw new Error('Private Balance catalogue deployments are invalid.');
   }
   const ids = new Set<string>();
-  const assets = new Set<string>();
-  const contractIds = new Set<string>();
+  const networks = new Set<PrivateBalanceNetwork>();
   const deployments = value.deployments.map((candidate, index) => {
     const deployment = object(candidate, `deployments[${index}]`);
     const id = string(deployment.id, `deployments[${index}].id`);
@@ -144,23 +185,23 @@ export function validatePrivateBalanceCatalogue(raw: unknown): PrivateBalanceCat
       throw new Error(`deployments[${index}].network is invalid.`);
     }
     const network: PrivateBalanceNetwork = deployment.network;
-    const asset = validateAsset(deployment.asset, index);
-    const assetKey = `${network}:${privateBalanceAssetKey(asset)}`;
-    if (assets.has(assetKey)) throw new Error(`Private Balance catalogue contains duplicate asset ${assetKey}.`);
-    assets.add(assetKey);
-    const contractKey = `${network}:${asset.contractId}`;
-    if (contractIds.has(contractKey)) {
-      throw new Error(`Private Balance catalogue contains duplicate asset contract ${asset.contractId}.`);
+    if (networks.has(network)) {
+      throw new Error(`Private Balance catalogue contains more than one ${network} pool.`);
     }
-    contractIds.add(contractKey);
-    const manifestSha256 = string(deployment.manifestSha256, `deployments[${index}].manifestSha256`).toLowerCase();
+    networks.add(network);
+    const manifestSha256 = string(
+      deployment.manifestSha256,
+      `deployments[${index}].manifestSha256`,
+    ).toLowerCase();
     if (!HEX_32.test(manifestSha256)) {
       throw new Error(`deployments[${index}].manifestSha256 is invalid.`);
+    }
+    if ('asset' in deployment || 'assets' in deployment || 'assetAdminAddress' in deployment) {
+      throw new Error('The catalogue cannot claim asset admission authority.');
     }
     return {
       id,
       network,
-      asset,
       manifestUrl: safeManifestUrl(deployment.manifestUrl),
       manifestSha256,
     };
@@ -256,21 +297,18 @@ export async function loadPrivateBalanceDeployments(input: {
     if (loaded.manifest.networkPassphrase !== expectedPassphrase) {
       throw new Error(`Private Balance deployment ${deployment.id} network does not match its manifest.`);
     }
-    if (loaded.manifest.assetContractId !== deployment.asset.contractId) {
-      throw new Error(`Private Balance deployment ${deployment.id} asset does not match its manifest.`);
-    }
     return { deployment, loaded };
   }));
-  return pools.map(({ deployment, loaded }) => ({
-    id: deployment.id,
+  return pools.flatMap(({ deployment, loaded }) => loaded.manifest.assets.map(asset => ({
+    id: `${deployment.id}:${asset.index}`,
     poolDeploymentId: deployment.id,
     network: deployment.network,
-    asset: deployment.asset,
+    asset: { ...asset, status: 'active' as const },
     manifestUrl: deployment.manifestUrl,
     manifestSha256: deployment.manifestSha256,
     manifest: loaded.manifest,
     manifestHash: loaded.manifestHash,
-  }));
+  })));
 }
 
 export { EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256 } from './private-balance-expected-catalogue';

@@ -216,6 +216,7 @@ interface PrivateBalanceProviderProps {
   encryptedStateExists: boolean;
   deployment: PrivateBalanceDeploymentSummary;
   asset: PrivateBalanceAsset;
+  registryAssets: ReadonlyArray<{ index: number; contractId: string }>;
   runtimeKey: string;
   portfolioKey: string;
   deploymentId: string;
@@ -321,6 +322,7 @@ export function PrivateBalanceProvider({
   encryptedStateExists,
   deployment,
   asset,
+  registryAssets,
   runtimeKey,
   portfolioKey,
   deploymentId,
@@ -753,6 +755,7 @@ export function PrivateBalanceProvider({
                 accountPublicKey,
                 sessionRoot,
                 durable.privateAddress,
+                registryAssets,
               );
               workerIdentityRef.current = identity;
             }
@@ -1130,6 +1133,7 @@ export function PrivateBalanceProvider({
   }, [
     accountId,
     accountPublicKey,
+    registryAssets,
     asset,
     deploymentId,
     deployment,
@@ -1373,6 +1377,9 @@ export function PrivateBalanceProvider({
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
     }
+    if (draft.kind === 'deposit' && asset.status === 'exit-only') {
+      throw new Error(`${asset.code} is exit-only. New private deposits are disabled, but withdrawals remain available.`);
+    }
     const rpcUrl = getRpcUrl(network);
     if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Balance.');
     const context = deploymentContext(manifest);
@@ -1400,6 +1407,7 @@ export function PrivateBalanceProvider({
               classicFeeStroops: BigInt(recommendedBaseFeeStroops),
               depositSourceMinimumBalanceStroops,
               assetContractId: asset.contractId,
+              assetIndex: asset.index,
               assetCode: asset.code,
               assetDecimals: asset.decimals,
               draft,
@@ -1441,6 +1449,7 @@ export function PrivateBalanceProvider({
   }, [
     accountId,
     accountPublicKey,
+    asset.status,
     asset.code,
     asset.contractId,
     asset.decimals,

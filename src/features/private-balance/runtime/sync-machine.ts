@@ -105,7 +105,7 @@ function reconstructTree(state: PrivateBalanceDurableState): MerkleTree | undefi
   const checkpoint = state.checkpoint;
   if (!checkpoint) return undefined;
   return {
-    nextIndex: (checkpoint.lastActionIndex + 1) * 2,
+    nextIndex: (checkpoint.lastActionIndex + 1) * 3,
     frontier: checkpoint.treeFrontier.map((node, index) =>
       hex32(node, `Checkpoint tree frontier ${index}`)),
     currentRoot: hex32(checkpoint.treeRoot, 'Checkpoint tree root'),
@@ -120,7 +120,7 @@ function stateMerkleCheckpoint(
     deploymentBindingHash: state.checkpoint.deploymentBindingHash,
     cursor: state.checkpoint.lastActionIndex + 1,
     transcriptHead: state.checkpoint.lastRecordHash,
-    commitmentCount: (state.checkpoint.lastActionIndex + 1) * 2,
+    commitmentCount: (state.checkpoint.lastActionIndex + 1) * 3,
     root: state.checkpoint.treeRoot,
     frontier: [...state.checkpoint.treeFrontier],
   };
@@ -162,8 +162,8 @@ async function readAllArchiveCommitments(
     for (const [offset, record] of records.entries()) {
       if (
         record.actionIndex !== cursor + offset ||
-        record.startingLeafIndex !== record.actionIndex * 2 ||
-        record.outputs.length !== 2
+        record.startingLeafIndex !== record.actionIndex * 3 ||
+        record.outputs.length !== 3
       ) {
         throw new Error('Private Balance archive Merkle rebuild records are not sequential');
       }

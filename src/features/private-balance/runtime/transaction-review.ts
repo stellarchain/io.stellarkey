@@ -10,7 +10,7 @@ import type { PrivateBalanceManifest } from '../../../lib/private-balance-manife
 
 export interface PrivateBalanceTransactionReviewRequest {
   envelopeXdr: string;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assetContractId'>;
+  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assets'>;
   source: string;
   sequence: string;
   timeBounds: { minTime: string; maxTime: string };
@@ -123,12 +123,20 @@ function validateDepositAuthorization(
   ) {
     throw new Error('Private deposit source or amount does not match the reviewed action');
   }
+  const assetIndex = fields.asset_index;
+  if (typeof assetIndex !== 'number' || !Number.isSafeInteger(assetIndex)) {
+    throw new Error('Private deposit asset index is malformed');
+  }
+  const asset = request.manifest.assets[assetIndex];
+  if (!asset || asset.index !== assetIndex) {
+    throw new Error('Private deposit asset is not in the authenticated registry metadata');
+  }
 
   const transferInvocation = root.subInvocations[0];
   const transfer = contractInvocation(transferInvocation);
   const transferArgs = transfer.args.map(value => scValToNative(value) as unknown);
   if (
-    Address.fromScAddress(transfer.contractAddress).toString() !== request.manifest.assetContractId ||
+    Address.fromScAddress(transfer.contractAddress).toString() !== asset.contractId ||
     transfer.functionName.toString() !== 'transfer' ||
     transferInvocation.subInvocations.length !== 0 ||
     transferArgs.length !== 3 ||

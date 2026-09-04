@@ -30,6 +30,7 @@ export interface PrivateBalanceKeyContext {
   contextField: Uint8Array;
   deploymentBindingHash: Uint8Array;
   addressPrefix: 'tskpay_' | 'skpay_';
+  assets: Array<{ index: number; contractId: string }>;
 }
 
 export type WorkerRequest =

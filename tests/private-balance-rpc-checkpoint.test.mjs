@@ -19,6 +19,7 @@ function head(actionCount, marker = actionCount) {
       networkId: bytes(1),
       realmId: bytes(2),
       guardian: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+      initialAssetAdmin: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       poseidon2ParameterHash: bytes(3),
       circuitHash: bytes(4),
       verificationKeyHash: bytes(5),
@@ -30,7 +31,7 @@ function head(actionCount, marker = actionCount) {
     },
     meta: { actionCount, transcriptHead: bytes(marker) },
     tree: {
-      nextIndex: actionCount * 2,
+      nextIndex: actionCount * 3,
       frontier: Array.from({ length: 34 }, () => bytes(marker)),
       currentRoot: bytes(marker),
     },

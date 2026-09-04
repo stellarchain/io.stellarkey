@@ -263,6 +263,7 @@ export class PrivateBalanceWorkerClient {
     accountPublicKey: string,
     sessionRoot: Uint8Array,
     currentAddress?: string,
+    registryAssets?: ReadonlyArray<{ index: number; contractId: string }>,
   ): Promise<{ ownerCommitmentHex: string; address: string }> {
     this.assertNotFailed();
     if (
@@ -274,6 +275,17 @@ export class PrivateBalanceWorkerClient {
       throw new Error('Privacy session root must use a standalone 64-byte buffer.');
     }
     const parsedManifest = validateManifest(manifest);
+    const assets = registryAssets ?? parsedManifest.assets;
+    if (
+      assets.length < parsedManifest.assets.length
+      || assets.some((asset, index) => (
+        asset.index !== index || !StrKey.isValidContract(asset.contractId)
+      ))
+      || parsedManifest.assets.some(asset => assets[asset.index]?.contractId !== asset.contractId)
+      || new Set(assets.map(asset => asset.contractId)).size !== assets.length
+    ) {
+      throw new Error('Private asset registry is invalid or conflicts with the manifest checkpoint.');
+    }
     const networkId = hex32(parsedManifest.networkId);
     const realmId = hex32(parsedManifest.realmId);
     const poolId = new Uint8Array(StrKey.decodeContract(parsedManifest.poolContractId));
@@ -310,6 +322,10 @@ export class PrivateBalanceWorkerClient {
         contextField: computeContextField(contextHash),
         deploymentBindingHash,
         addressPrefix,
+        assets: assets.map(asset => ({
+          index: asset.index,
+          contractId: asset.contractId,
+        })),
       },
       sessionRoot: transferredRoot,
       addressDiversifier,

@@ -21,7 +21,7 @@ interface PrivateBalanceRuntimeMountInput {
 
 interface PrivateBalanceDeploymentCandidate {
   id: string;
-  asset: { kind: 'native' | 'stellar' };
+  asset: { kind: 'native' | 'stellar' | 'contract' };
   encryptedStateExists: boolean;
 }
 

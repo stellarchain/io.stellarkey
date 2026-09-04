@@ -58,6 +58,7 @@ test('verified activity keeps encrypted local recipient and memo metadata only w
     id: '09'.repeat(32),
     actionIndex: 4,
     actionKind: 'transfer',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     amount: '6000000',
     direction: 'outflow',
@@ -93,12 +94,14 @@ test('sync commits verified record progress and marks current only after head re
   const verifiedTree = await createEmptyTree();
   await appendFrontier(verifiedTree, bytes(6));
   await appendFrontier(verifiedTree, bytes(7));
+  await appendFrontier(verifiedTree, bytes(8));
   await refreshTreeRoot(verifiedTree);
   const record = {
     actionIndex: 0,
     ledgerSequence: 123,
     startingLeafIndex: 0,
     actionKind: 1,
+    assetIndex: 0,
     asset: ASSET,
     actionNonce: bytes(4),
     anchorRoot: bytes(0),
@@ -107,10 +110,9 @@ test('sync commits verified record progress and marks current only after head re
     outputs: [
       { cm: bytes(6), recipientEnvelope: bytes(7, 181), outgoingEnvelope: bytes(8, 157) },
       { cm: bytes(7), recipientEnvelope: bytes(9, 181), outgoingEnvelope: bytes(10, 157) },
+      { cm: bytes(8), recipientEnvelope: bytes(11, 181), outgoingEnvelope: bytes(12, 157) },
     ],
     publicValue: 5_000_000n,
-    relayerFee: 0n,
-    relayer: undefined,
     depositSource: { kind: 0, payload: bytes(8) },
   };
   const recordHash = computeRecordHash(record, 1, priorRecordHash);
@@ -123,7 +125,7 @@ test('sync commits verified record progress and marks current only after head re
       transcriptHead: recordHash,
     },
     tree: {
-      nextIndex: 2,
+      nextIndex: 3,
       frontier: verifiedTree.frontier,
       currentRoot: record.treeRootAfter,
     },
@@ -150,6 +152,7 @@ test('sync commits verified record progress and marks current only after head re
     id: hex(bytes(6)),
     commitment: hex(bytes(6)),
     value: '5000000',
+    assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
     diversifier: '00000000',
     ownerCommitment: hex(bytes(10)),
@@ -192,6 +195,7 @@ test('sync commits verified record progress and marks current only after head re
           id: hex(actionField),
           actionIndex: 0,
           actionKind: 'deposit',
+          assetIndex: 0,
           assetContractId: ASSET_CONTRACT_ID,
           amount: '5000000',
           direction: 'inflow',
@@ -221,6 +225,7 @@ test('sync commits verified record progress and marks current only after head re
     pendingActions: [{
       id: 'deposit-1',
       kind: 'deposit',
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
       status: 'prepared',
       reservedNoteIds: [],
@@ -240,12 +245,13 @@ test('sync commits verified record progress and marks current only after head re
       // transfer can never land and its surviving input must be released.
       id: 'foreign-loser',
       kind: 'transfer',
+      assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
       status: 'prepared',
       reservedNoteIds: [spentInput.id, survivingInput.id],
       actionField: hex(bytes(28)),
       nullifiers: [hex(bytes(29)), '00'.repeat(32)],
-      outputCommitments: [hex(bytes(30)), hex(bytes(31))],
+      outputCommitments: [hex(bytes(30)), hex(bytes(31)), hex(bytes(34))],
       anchorRoot: hex(bytes(32)),
       anchorExpiresAtLedger: 600,
       proofHash: hex(bytes(33)),
@@ -511,6 +517,8 @@ test('incoming diffs collapse only new inbound transfers into one event', () => 
     id: hex(bytes(actionIndex + 50)),
     actionIndex,
     actionKind,
+    assetIndex: 0,
+    assetContractId: ASSET_CONTRACT_ID,
     amount,
     direction,
     timestamp: 0,
