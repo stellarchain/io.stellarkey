@@ -83,10 +83,12 @@ in this file changes the behavior or guarantees documented in
     outages and rejected subscriptions, and automatically reconnect and
     resubscribe after a dropped WebSocket, beginning with a one-second retry and
     bounded exponential backoff. Do not equate a connected socket with proof
-    that a relay accepted every subscription.
+    that a relay accepted every subscription. Own and cancel the connection
+    deadline, socket, and retry timers when the helper session ends.
   - Keep helpers using the active Stellar account ineligible. If one answers,
     explain immediately that testing requires a different Testnet account while
-    retaining the normal discovery deadline. An ineligible reply must never
+    retaining the normal discovery deadline, both in the availability check and
+    the live transfer or withdrawal review. An ineligible reply must never
     suppress a slower eligible peer.
   - Before approval, the helper validates the exact unsigned transaction,
     source, network, pool method, time bounds and fee caps; decrypts exactly one

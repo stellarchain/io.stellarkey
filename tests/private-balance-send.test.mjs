@@ -143,12 +143,15 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(controller, /relaySelectionRef/);
   assert.match(controller, /excludePeerAccounts.*publicAddress/s);
   assert.match(controller, /onQuotes:\s*quotes\s*=>/);
+  assert.match(controller, /onIneligiblePeerAccounts:[\s\S]{0,180}setRelayProgress\('same-account-peer'\)/);
   assert.match(controller, /setRelayProgress\('comparing-fees'\)/);
   assert.match(controller, /catch \(cause: unknown\)[\s\S]{0,180}submissionMode === 'relay'[\s\S]{0,100}setRelayQuotes\(\[\]\)/);
   assert.doesNotMatch(controller, /quotes\[0\]/);
   assert.match(review, /PrivateRelayQuotePicker/);
   assert.match(review, /onSelectRelayQuote/);
   assert.match(review, /relayProgress === 'comparing-fees'/);
+  assert.match(review, /relayProgress === 'same-account-peer'/);
+  assert.match(review, /different Stellar account/);
   assert.match(review, /Comparing relay fees/);
   assert.match(review, /comparing=\{preparing && relayProgress === 'comparing-fees'\}/);
   assert.match(picker, /Available peers/);

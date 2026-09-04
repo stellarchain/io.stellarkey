@@ -13,6 +13,7 @@ import {
   validatePrivateRelayUrls,
 } from '../src/features/private-balance/relay/transport.ts';
 import {
+  connectPrivateRelayWithDeadline,
   createResilientPrivateRelaySubscription,
   firstAcceptedPrivateRelayPublish,
   PRIVATE_RELAY_RECONNECT_BACKOFF_MS,
@@ -163,6 +164,31 @@ test('closing a rejected subscription cancels its pending retry', async () => {
   subscription.close();
   await new Promise(resolve => setTimeout(resolve, 35));
   assert.equal(attempts, 1);
+});
+
+test('aborting an in-flight relay connection closes it and rejects promptly', async () => {
+  const closed = [];
+  const pool = {
+    ensureRelay: () => new Promise(() => {}),
+    close: urls => closed.push(...urls),
+  };
+  const controller = new AbortController();
+  const pending = connectPrivateRelayWithDeadline(
+    pool,
+    'wss://relay.one/',
+    controller.signal,
+    10_000,
+  );
+  controller.abort();
+
+  await assert.rejects(
+    Promise.race([
+      pending,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('connection abort timed out')), 100)),
+    ]),
+    error => error instanceof DOMException && error.name === 'AbortError',
+  );
+  assert.deepEqual(closed, ['wss://relay.one/']);
 });
 
 test('Nostr connection status preserves root relay URL identity', () => {
