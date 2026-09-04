@@ -14,6 +14,8 @@ import {
 import { StrKey, rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { hasExposedPrivateSpend } from './proof-exposure';
 import type { AuthorizePrivateProofDisclosure } from './proof-disclosure';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
+import { changePrivateOutgoingHistory } from './outgoing-history-change';
 import {
   computeContextHash,
   deriveStealthRootKey,
@@ -90,6 +92,7 @@ import {
   recordPrivateBalanceAddress,
   recordPrivateBalanceInternalAddress,
   recordPrivateRecentRecipient,
+  recordPrivateOutgoingHistoryMode,
   releaseExpiredPrivateBuildReservations,
   releasePrivatePendingAction,
   releaseStalePrivatePendingActions,
@@ -371,6 +374,7 @@ export function PrivateBalanceProvider({
     deployment,
   }));
   const [encryptedStorageBytes, setEncryptedStorageBytes] = useState<number | null>(null);
+  const [outgoingHistoryMode, setOutgoingHistoryModeState] = useState<PrivateOutgoingHistoryMode>('recoverable');
   const [rpcWitnessEnabled, setRpcWitnessEnabledState] = useState(
     () => loadRpcWitnessPreference(manifest),
   );
@@ -527,6 +531,7 @@ export function PrivateBalanceProvider({
     });
 
     const clearDecryptedState = (error: string | null) => {
+      setOutgoingHistoryModeState('recoverable');
       workerRef.current?.terminate();
       workerRef.current = null;
       workerIdentityRef.current = null;
@@ -540,6 +545,7 @@ export function PrivateBalanceProvider({
       address: string,
       ownerCommitmentHex: string,
     ) => {
+      setOutgoingHistoryModeState(privateOutgoingHistoryMode(durable.outgoingHistoryMode));
       dispatch({ type: 'RESET' });
       dispatch({ type: 'SET_OPTED_IN', optedIn: true });
       dispatch({
@@ -1321,6 +1327,7 @@ export function PrivateBalanceProvider({
   ]);
 
   const reflectDurableState = useCallback((durable: PrivateBalanceDurableState) => {
+    setOutgoingHistoryModeState(privateOutgoingHistoryMode(durable.outgoingHistoryMode));
     dispatch({ type: 'SET_NOTES', notes: durable.notes });
     dispatch({ type: 'SET_ACTIVITIES', activities: durable.activities });
     dispatch({ type: 'SET_PENDING_ACTIONS', pendingActions: durable.pendingActions });
@@ -1337,6 +1344,26 @@ export function PrivateBalanceProvider({
       error: null,
     }));
   }, []);
+
+  const setOutgoingHistoryMode = useCallback(async (mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }): Promise<void> => {
+    const worker = workerRef.current;
+    const context = deploymentContext(manifest);
+    const driver = new IndexedDbEncryptedRecordDriver();
+    const next = await changePrivateOutgoingHistory({
+      busy: actionBusyRef,
+      access: () => ({ mounted: providerMountedRef.current, leader: leaderRef.current, unlocked: walletPhaseRef.current === 'unlocked',
+        authenticatedCurrent: lastSyncCurrentRef.current,
+        contextCurrent: !!worker && !worker.failed && workerRef.current === worker }),
+      change: check => mutexRef.current.runExclusive(() => withPrivacySessionRoot(accountId, context, async (_root, key) => {
+        check();
+        const current = await loadPrivateBalanceState(storageScope, key, driver);
+        check();
+        if (!current || current.account.syncStatus !== 'current') throw new Error('Sync Private Balance before changing outgoing history.');
+        return recordPrivateOutgoingHistoryMode(storageScope, key, current.revision, mode, options, driver);
+      })),
+    });
+    reflectDurableState(next);
+  }, [accountId, manifest, reflectDurableState, storageScope]);
 
   const rotatePrivateAddress = useCallback(async (): Promise<string> => {
     if (!leaderRef.current) {
@@ -1866,9 +1893,11 @@ export function PrivateBalanceProvider({
           const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
           if (!current) throw new Error('Private Balance state is unavailable.');
           const submissionMode = options.relay ? 'relay' : 'direct';
-          if (current.pendingActions.find(action => action.id === preparedReview.id)?.submissionMode !== submissionMode) {
+          const pending = current.pendingActions.find(action => action.id === preparedReview.id);
+          if (pending?.submissionMode !== submissionMode) {
             throw new Error('Private Balance submission route differs from the approved route');
           }
+          if (privateOutgoingHistoryMode(pending.outgoingHistoryMode) !== privateOutgoingHistoryMode(preparedReview.outgoingHistoryMode)) throw new Error('Private outgoing-history policy differs from the prepared proof.');
           await options.beforeSign?.({ sessionRoot, storageKey });
           const signed = await signReviewedPrivateBalanceAction({
             context: storageScope,
@@ -1910,6 +1939,7 @@ export function PrivateBalanceProvider({
           let latest = broadcast.state;
           if (
             broadcast.status === 'broadcast' &&
+            privateOutgoingHistoryMode(preparedReview.outgoingHistoryMode) === 'recoverable' &&
             preparedReview.kind === 'transfer' &&
             preparedReview.recipientAddress &&
             preparedReview.recipientFingerprint
@@ -1925,6 +1955,7 @@ export function PrivateBalanceProvider({
                   lastUsedAt: Date.now(),
                 },
                 driver,
+                preparedReview.id,
               );
             } catch {
               // Recents are a convenience; the durable journal already holds the send.
@@ -2450,6 +2481,7 @@ export function PrivateBalanceProvider({
       lastSyncCurrentRef.current = false;
       dispatch({ type: 'RESET' });
       setEncryptedStorageBytes(0);
+      setOutgoingHistoryModeState('recoverable');
       setStealthSnapshot(INITIAL_STEALTH_SNAPSHOT);
       setSnapshot(current => ({
         ...current,
@@ -2536,6 +2568,8 @@ export function PrivateBalanceProvider({
     activities: selectedState.activities,
     pendingActions: selectedState.pendingActions,
     recentPrivateRecipients: state.recentRecipients,
+    outgoingHistoryMode,
+    setOutgoingHistoryMode,
     checkpoint: state.checkpoint,
     selectedRpc: getRpcUrl(network),
     witnessRpc: manifest.witnessRpcUrl,
@@ -2583,6 +2617,7 @@ export function PrivateBalanceProvider({
     network,
     onIncomingPrivatePayment,
     optIn,
+    outgoingHistoryMode,
     prepareAction,
     prepareChainedSend,
     prepareRelayChainedSend,
@@ -2596,6 +2631,7 @@ export function PrivateBalanceProvider({
     rpcWitnessEnabled,
     runFullVerification,
     setRpcWitnessEnabled,
+    setOutgoingHistoryMode,
     snapshot,
     stealthSnapshot,
     selectedState.activities,

@@ -1,10 +1,20 @@
 import type { NextConfig } from "next";
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const fullCommitPattern = /^[0-9a-f]{40}$/;
+
+export function assertNoPrivateComponentFixture(cwd = projectRoot): void {
+  if (existsSync(path.join(cwd, "src/app/private-component-fixture"))) {
+    throw new Error("Remove the synthetic private-component fixture before building production.");
+  }
+}
+
+// A killed test process cannot run its cleanup. Never export its temporary page.
+if (process.env.NODE_ENV === "production") assertNoPrivateComponentFixture();
 
 function gitOutput(args: string[], cwd = projectRoot): string {
   return execFileSync("git", args, {

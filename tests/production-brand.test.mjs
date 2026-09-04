@@ -10,6 +10,19 @@ import nextConfig, { sourceTreeIsDirty } from "../next.config.ts";
 const root = new URL("../", import.meta.url);
 const read = (relativePath) => readFileSync(new URL(relativePath, root), "utf8");
 
+test("production configuration rejects a synthetic route left by an interrupted browser check", async () => {
+  const { assertNoPrivateComponentFixture } = await import("../next.config.ts");
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "private-component-build-guard-"));
+  try {
+    assert.doesNotThrow(() => assertNoPrivateComponentFixture(fixtureRoot));
+    await mkdir(path.join(fixtureRoot, "src/app/private-component-fixture"), { recursive: true });
+    assert.throws(() => assertNoPrivateComponentFixture(fixtureRoot), /synthetic private-component fixture/i);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+  assert.match(read("next.config.ts"), /process\.env\.NODE_ENV === "production"\) assertNoPrivateComponentFixture\(\)/);
+});
+
 function trackedTextFiles(relativePath) {
   const absolute = new URL(relativePath, root);
   if (!existsSync(absolute)) return [];

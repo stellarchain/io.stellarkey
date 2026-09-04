@@ -18,7 +18,6 @@ import {
   hashMerkleNode,
   randomBytes32,
   sampleNonzeroField,
-  sealOutgoingEnvelope,
   type ActionModel,
   type ExpandedSpendingKey,
   type MerklePathWitness,
@@ -26,6 +25,8 @@ import {
 import { StrKey } from '@stellar/stellar-sdk';
 import type { ShieldedNoteRecord } from '../runtime/types';
 import type { PrivateBalanceKeyContext } from './messages';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from '../runtime/outgoing-history';
+import { createPrivateOutgoingEnvelope } from './outgoing-envelope';
 
 const MAX_VALUE = (1n << 63n) - 1n;
 const ZERO_32 = new Uint8Array(32);
@@ -70,7 +71,9 @@ interface WithdrawIntent {
   peerFee?: { amount: string; recipientAddress: string };
 }
 
-export type BuildActionIntent = DepositIntent | TransferIntent | WithdrawIntent;
+export type BuildActionIntent = (DepositIntent | TransferIntent | WithdrawIntent) & {
+  outgoingHistory?: PrivateOutgoingHistoryMode;
+};
 
 type CircuitInputs = Record<string, string | string[] | string[][] | string[][][]>;
 
@@ -258,6 +261,7 @@ async function createOutput(input: {
   actionNonce: Uint8Array;
   deploymentBindingHash: Uint8Array;
   outgoingViewingKey: Uint8Array;
+  outgoingHistory: PrivateOutgoingHistoryMode;
   outputIndex: number;
   priorCommitments: Uint8Array[];
   selfIdentity?: {
@@ -320,18 +324,6 @@ async function createOutput(input: {
       input.actionNonce,
       input.outputIndex,
     );
-    const outgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 1,
-      flags: input.real ? 0 : 1,
-      value: input.value,
-      diversifier: input.diversifier,
-      ownerCommitment: input.recipientOwnerCommitment,
-      recipientHpkePublicKey: input.recipientHpkePublicKey,
-      memoLength: memo.length,
-      memo: memo.bytes,
-      assetIndex: input.assetIndex,
-      reserved: new Uint8Array(11),
-    });
     const outgoingAad = deriveOutgoingAad(
       input.deploymentBindingHash,
       input.contextHash,
@@ -340,20 +332,22 @@ async function createOutput(input: {
       input.actionNonce,
       input.outputIndex,
     );
-    const outgoingNonceEntropy = randomBytes32();
     let outgoingEnvelope: Uint8Array;
     try {
-      outgoingEnvelope = await sealOutgoingEnvelope(
-        input.outgoingViewingKey,
-        output.recipientEnvelope.slice(5, 37),
-        outgoingPlaintext,
-        outgoingAad,
-        outgoingNonceEntropy.slice(0, 12),
-      );
+      outgoingEnvelope = await createPrivateOutgoingEnvelope({
+        mode: input.outgoingHistory,
+        outgoingViewingKey: input.outgoingViewingKey,
+        ephemeralPublicKey: output.recipientEnvelope.slice(5, 37),
+        aad: outgoingAad,
+        plaintext: () => encodeOutgoingPlaintext({
+          protocolVersion: 1, flags: input.real ? 0 : 1, value: input.value,
+          diversifier: input.diversifier, ownerCommitment: input.recipientOwnerCommitment,
+          recipientHpkePublicKey: input.recipientHpkePublicKey, memoLength: memo.length,
+          memo: memo.bytes, assetIndex: input.assetIndex, reserved: new Uint8Array(11),
+        }),
+      });
     } finally {
       noteBytes.fill(0);
-      outgoingPlaintext.fill(0);
-      outgoingNonceEntropy.fill(0);
       output.outputPackage.fill(0);
     }
     return {
@@ -494,6 +488,7 @@ async function prepareInputs(input: PreparePrivateActionInput): Promise<{
 export async function preparePrivateAction(
   input: PreparePrivateActionInput,
 ): Promise<PreparedPrivateAction> {
+  const outgoingHistory = privateOutgoingHistoryMode(input.intent.outgoingHistory);
   const contextHash = computeContextHash(
     input.keyContext.protocolVersion,
     input.keyContext.networkId,
@@ -657,6 +652,7 @@ export async function preparePrivateAction(
       actionNonce,
       deploymentBindingHash: input.keyContext.deploymentBindingHash,
       outgoingViewingKey: input.esk.outgoingViewingKey,
+      outgoingHistory,
       outputIndex,
       priorCommitments: outputWitnesses.map(output => output.commitment),
       selfIdentity: spec.selfIdentity,

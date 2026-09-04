@@ -14,6 +14,7 @@ import {
 import type { PrivateBalanceKeyContext, WorkerRequest, WorkerResponse } from './messages';
 import { PRIVATE_BALANCE_WORKER_MESSAGE_VERSION } from './messages';
 import { redactSensitiveData } from './redaction';
+import { wipePrivateBalanceSpendingKey } from './key-hygiene';
 import { scanArchiveRecords } from '../runtime/scanner';
 import { preparePrivateAction, type PreparedPrivateAction } from './action-builder';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -37,12 +38,7 @@ function toHex(bytes: Uint8Array): string {
 function clearCurrentEsk(): void {
   clearPreparedAction();
   if (currentEsk) {
-    currentEsk.ask.fill(0);
-    currentEsk.nk.fill(0);
-    currentEsk.baseOwnerCommitment.fill(0);
-    currentEsk.ownerCommitment.fill(0);
-    currentEsk.hpkePrivateKey.fill(0);
-    currentEsk.hpkePublicKey.fill(0);
+    wipePrivateBalanceSpendingKey(currentEsk);
   }
   currentEsk = null;
   currentSessionId = null;

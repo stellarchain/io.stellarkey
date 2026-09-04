@@ -39,8 +39,8 @@ The implementation targets five properties:
 2. **Private internal transfers.** A transfer does not publish its private
    amount, recipient, selected notes, or change role.
 3. **Seed-based recovery.** Seed plus authenticated chain data can recover owned
-   notes, spent status, outgoing recipient fingerprints, and memos without a
-   StellarKey server.
+   notes and spent status without a StellarKey server. Outgoing recipient
+   fingerprints and memos also recover when the sender included recovery records.
 4. **Fail-closed clients.** A wallet may spend only after its archive transcript,
    action count, incremental Merkle state, and contract head agree. Independent
    RPC corroboration is mandatory for initial or full-history synchronization
@@ -331,13 +331,33 @@ the recomputed commitment binds the recovered registered asset and note fields. 
 envelope's associated data additionally binds the deployment-binding hash and
 asset field directly. Wrong-context and tampered ciphertext fail authentication.
 
-The outgoing envelope is authenticated by the outgoing viewing key. During a
+By default, the outgoing envelope is authenticated by the outgoing viewing key. During a
 seed-only scan it lets the sender recover an external recipient fingerprint and
 memo, even when prior local note history is absent. Seed-recovered activity
 retains the fingerprint, not the full reusable address. Ordinary sends
 separately retain the full private address in the encrypted recent-recipient
 list for convenience. Change and dummy outputs use the same envelope sizes and
 are not presented as external payments.
+
+Advanced privacy offers an account- and deployment-scoped **Recover outgoing
+payment details** preference. Recovery stays enabled by default. Disabling it
+requires a separate warning and confirmation while the runtime is idle. The
+selected mode is encrypted and snapshotted before each action is built; it cannot
+rewrite an already prepared proof. In minimized mode all three outgoing lanes
+contain independent random 157-byte fillers instead of sender-recoverable
+envelopes. Incoming envelopes and the action's fixed shape are unchanged.
+
+Minimized actions do not add recent recipients or copy pending outgoing
+fingerprints, memos or transaction hashes into permanent activity. Pending safety
+journals still need payment details until canonical reconciliation. Seed scans
+continue to recover owned notes, spent status and incoming information; a
+canonical outgoing amount describes the net private-balance debit, including any
+private helper fee, not necessarily the recipient's amount. Self-payments may
+still be recoverable as incoming payments. This is not deletion or forward
+secrecy: recipients retain their own information, and older outgoing records and
+backups remain readable. The scanner always tries older recoverable records even
+when the current preference is minimized. Full encrypted backups and verification
+rebuilds preserve the setting; a seed-only restore defaults to recovery enabled.
 
 Native WebCrypto imports raw X25519 private material through PKCS#8 and avoids a
 redundant JavaScript base-point multiplication. The portable implementation

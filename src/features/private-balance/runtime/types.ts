@@ -1,4 +1,5 @@
 import type { PrivateRelayChainJournal } from './relay-chain-policy';
+import type { PrivateOutgoingHistoryMode } from './outgoing-history';
 
 export interface DeploymentContext {
   protocolVersion: number;
@@ -89,6 +90,8 @@ export interface PrivatePendingAction {
   submissionMode?: 'direct' | 'relay';
   /** Persisted before any proof-bearing network call. Missing legacy spends are shared. */
   proofExposure?: 'local' | 'shared';
+  /** Immutable policy selected before building this proof. */
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   directChainApprovalId?: string;
   reservedNoteIds: string[];
   actionField: string;
@@ -138,6 +141,7 @@ export interface PrivateBuildReservation {
   kind: 'deposit' | 'transfer' | 'withdraw';
   /** New reservations never leave the device; legacy reservations are uncertain. */
   proofExposure?: 'local';
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   assetContractId: string; // Canonical SAC contract address
   reservedNoteIds: string[];
   createdAt: number;
@@ -167,6 +171,8 @@ export interface PrivateBalanceDurableState {
   lastValidatedManifestHash: string;
   account: PrivateAccountState;
   privateAddress?: string; // Derived at opt-in so Receive works without a sync
+  /** Account+deployment scoped; missing legacy and seed-only state is recoverable. */
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   /** Encrypted local issuance history; never sent to discovery or the worker. */
   issuedAddressDiversifiers?: string[];
   notes: ShieldedNoteRecord[];
