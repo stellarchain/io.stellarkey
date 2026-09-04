@@ -182,6 +182,7 @@ function isNote(value: unknown): value is ShieldedNoteRecord {
     /^[1-9][0-9]*$/.test(note.value) &&
     typeof note.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(note.assetContractId) &&
+    isSafeIndex(note.assetIndex) &&
     isHex(note.diversifier, 4) &&
     isHex(note.ownerCommitment, 32) &&
     isSafeIndex(note.leafIndex) &&
@@ -208,6 +209,7 @@ function isActivity(value: unknown): value is ShieldedActivityRecord {
     ['deposit', 'transfer', 'withdraw'].includes(activity.actionKind ?? '') &&
     typeof activity.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(activity.assetContractId) &&
+    isSafeIndex(activity.assetIndex) &&
     typeof activity.amount === 'string' &&
     /^(?:0|[1-9][0-9]*)$/.test(activity.amount) &&
     ['inflow', 'outflow', 'internal'].includes(activity.direction ?? '') &&
@@ -249,6 +251,7 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     typeof action.id === 'string' &&
     /^[A-Za-z0-9._:-]{1,128}$/.test(action.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(action.kind ?? '') &&
+    isSafeIndex(action.assetIndex) &&
     typeof action.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(action.assetContractId) &&
     ['prepared', 'reviewed', 'signed', 'broadcast', 'ambiguous'].includes(action.status ?? '') &&
@@ -263,7 +266,7 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     action.nullifiers.length === 2 &&
     action.nullifiers.every(item => isHex(item, 32)) &&
     Array.isArray(action.outputCommitments) &&
-    action.outputCommitments.length === 2 &&
+    action.outputCommitments.length === 3 &&
     action.outputCommitments.every(item => isHex(item, 32)) &&
     isHex(action.anchorRoot, 32) &&
     isSafeIndex(action.anchorExpiresAtLedger) &&

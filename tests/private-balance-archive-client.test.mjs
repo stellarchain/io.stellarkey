@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Address, StrKey, nativeToScVal, scValToNative, xdr } from '@stellar/stellar-sdk';
-import { computeContextField, computeContextHash } from '@stellarkey/private-balance';
+import { computeAssetField, computeContextField, computeContextHash } from '@stellarkey/private-balance';
 import {
   ArchiveRecordUnavailableError,
   PrivateBalanceArchiveClient,
+  readCorroboratedPrivateAssetRegistry,
+  readCorroboratedPrivateAssetTokenMetadata,
 } from '../src/features/private-balance/runtime/archive-client.ts';
 
 const networkId = '01'.repeat(32);
@@ -27,6 +29,7 @@ const manifest = {
   networkId,
   realmId,
   poolContractId,
+  assetAdminAddress: account,
   deploymentBindingHash,
   artifacts: {
     r1csSha256: '0d'.repeat(32),
@@ -41,6 +44,7 @@ const recordNative = {
     ledger_sequence: 123,
     starting_leaf_index: 0,
     action_kind: 1,
+    asset_index: 0,
     asset: assetContractId,
     action_nonce: bytes(4),
     anchor_root: bytes(0),
@@ -57,11 +61,14 @@ const recordNative = {
       recipient_envelope: bytes(11, 181),
       outgoing_envelope: bytes(12, 157),
     },
+    output_2: {
+      commitment: bytes(13),
+      recipient_envelope: bytes(14, 181),
+      outgoing_envelope: bytes(15, 157),
+    },
     public_value: 5_000_000n,
     deposit_source: account,
     public_recipient: null,
-    relayer_fee: 0n,
-    relayer: null,
 };
 
 const mapScVal = entries => xdr.ScVal.scvMap(
@@ -78,6 +85,7 @@ const outputScVal = output => mapScVal({
 const recordScVal = record => mapScVal({
   action_index: xdr.ScVal.scvU32(record.action_index),
   action_kind: xdr.ScVal.scvU32(record.action_kind),
+  asset_index: xdr.ScVal.scvU32(record.asset_index),
   asset: Address.fromString(record.asset).toScVal(),
   action_nonce: nativeToScVal(record.action_nonce),
   anchor_root: nativeToScVal(record.anchor_root),
@@ -87,10 +95,9 @@ const recordScVal = record => mapScVal({
   nullifier_1: nativeToScVal(record.nullifier_1),
   output_0: outputScVal(record.output_0),
   output_1: outputScVal(record.output_1),
+  output_2: outputScVal(record.output_2),
   public_recipient: xdr.ScVal.scvVoid(),
   public_value: xdr.ScVal.scvU64(record.public_value),
-  relayer: xdr.ScVal.scvVoid(),
-  relayer_fee: xdr.ScVal.scvU64(record.relayer_fee),
   starting_leaf_index: xdr.ScVal.scvU32(record.starting_leaf_index),
   tree_root_after: nativeToScVal(record.tree_root_after),
 });
@@ -204,6 +211,43 @@ test('archive client rejects a non-read-only public asset balance response', asy
   );
 });
 
+test('asset registry and token metadata require two identical RPC views', async () => {
+  const registry = {
+    adminAddress: account,
+    assets: [{
+      index: 0,
+      contractId: assetContractId,
+      assetField: computeAssetField({
+        kind: 1,
+        payload: new Uint8Array(StrKey.decodeContract(assetContractId)),
+      }),
+      status: 'active',
+    }],
+  };
+  const metadata = { name: 'Stellar Lumens', symbol: 'XLM', decimals: 7 };
+  const primary = {
+    async readAssetRegistry() { return registry; },
+    async readAssetTokenMetadata() { return metadata; },
+  };
+  const witness = {
+    async readAssetRegistry() { return structuredClone(registry); },
+    async readAssetTokenMetadata() { return { ...metadata }; },
+  };
+  assert.deepEqual(await readCorroboratedPrivateAssetRegistry(primary, witness), registry);
+  assert.deepEqual(
+    await readCorroboratedPrivateAssetTokenMetadata(assetContractId, primary, witness),
+    metadata,
+  );
+  witness.readAssetRegistry = async () => ({
+    ...registry,
+    assets: [{ ...registry.assets[0], status: 'exit-only' }],
+  });
+  await assert.rejects(
+    () => readCorroboratedPrivateAssetRegistry(primary, witness),
+    /RPC views disagree/i,
+  );
+});
+
 test('archive client reads manifest-bound state and canonical record storage keys', async () => {
   const requestedKeys = [];
   let includeRecord = true;
@@ -214,13 +258,23 @@ test('archive client reads manifest-bound state and canonical record storage key
     async getLatestLedger() {
       return { sequence: 500 };
     },
-    async queryContract(_contractId, method) {
+    async queryContract(_contractId, method, args) {
+      const registeredAsset = {
+        index: 0,
+        asset: assetContractId,
+        asset_field: computeAssetField({
+          kind: 1,
+          payload: new Uint8Array(StrKey.decodeContract(assetContractId)),
+        }),
+        status: { tag: 'Active', values: undefined },
+      };
       const results = {
         config: {
           protocol_version: 1,
           network_id: Buffer.from(networkId, 'hex'),
           realm_id: Buffer.from(realmId, 'hex'),
           guardian: account,
+          initial_asset_admin: account,
           poseidon2_parameter_hash: bytes(12),
           circuit_hash: bytes(13),
           verification_key_hash: bytes(15),
@@ -235,11 +289,14 @@ test('archive client reads manifest-bound state and canonical record storage key
           transcript_head: bytes(10),
         },
         tree_state: {
-          next_index: 2n,
+          next_index: 3n,
           frontier: Array.from({ length: 34 }, () => bytes(0)),
           current_root: bytes(5),
         },
         deposits_paused: pauseResult,
+        asset_admin: account,
+        asset_count: 1,
+        asset: args?.index === 0 ? registeredAsset : undefined,
       };
       return {
         result: results[method],
@@ -284,8 +341,20 @@ test('archive client reads manifest-bound state and canonical record storage key
   const snapshot = await client.readHead();
   assert.equal(snapshot.latestLedger, 500);
   assert.equal(snapshot.meta.actionCount, 1);
-  assert.equal(snapshot.tree.nextIndex, 2);
+  assert.equal(snapshot.tree.nextIndex, 3);
   assert.equal(await client.readDepositsPaused(), false);
+  assert.deepEqual(await client.readAssetRegistry(), {
+    adminAddress: account,
+    assets: [{
+      index: 0,
+      contractId: assetContractId,
+      assetField: computeAssetField({
+        kind: 1,
+        payload: new Uint8Array(StrKey.decodeContract(assetContractId)),
+      }),
+      status: 'active',
+    }],
+  });
   pauseResult = 'false';
   await assert.rejects(() => client.readDepositsPaused(), /valid read-only result/);
   pauseResult = true;

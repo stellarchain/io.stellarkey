@@ -28,7 +28,7 @@ export interface PreparedReviewedPrivateBalanceTransaction {
 export async function prepareReviewedPrivateBalanceTransaction(input: {
   rpc: PrivateActionSimulationRpc;
   operation: xdr.Operation;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assetContractId'>;
+  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assets'>;
   source: string;
   classicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;

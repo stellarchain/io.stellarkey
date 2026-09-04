@@ -106,7 +106,7 @@ function headFingerprint(head: ArchiveHeadState, name: string): string {
     throw new PrivateRpcViewsDisagreeError(`${name} contract head is invalid.`);
   }
   const actionCount = u32(meta.actionCount, `${name} action count`);
-  if (!Number.isSafeInteger(tree.nextIndex) || tree.nextIndex !== actionCount * 2) {
+  if (!Number.isSafeInteger(tree.nextIndex) || tree.nextIndex !== actionCount * 3) {
     throw new PrivateRpcViewsDisagreeError(`${name} contract head is inconsistent.`);
   }
   return JSON.stringify({
@@ -115,6 +115,7 @@ function headFingerprint(head: ArchiveHeadState, name: string): string {
       networkId: bytes32(config.networkId, `${name} network ID`),
       realmId: bytes32(config.realmId, `${name} realm ID`),
       guardian: text(config.guardian, `${name} guardian`),
+      initialAssetAdmin: text(config.initialAssetAdmin, `${name} initial asset administrator`),
       poseidon2ParameterHash: bytes32(
         config.poseidon2ParameterHash,
         `${name} Poseidon parameter hash`,

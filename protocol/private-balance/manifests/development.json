@@ -8,30 +8,57 @@
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
   "realmId": "0202020202020202020202020202020202020202020202020202020202020202",
   "poolContractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-  "assetContractId": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
   "guardianAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "assetAdminAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "assets": [
+    {
+      "index": 0,
+      "kind": "native",
+      "code": "XLM",
+      "issuer": null,
+      "name": "Stellar Lumens",
+      "decimals": 7,
+      "displayDecimals": 7,
+      "contractId": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+    },
+    {
+      "index": 1,
+      "kind": "stellar",
+      "code": "USDC",
+      "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+      "name": "USD Coin",
+      "decimals": 7,
+      "displayDecimals": 2,
+      "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+    }
+  ],
   "stealthAnnouncerAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
   "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
   "deploymentCheckpoint": {
     "ledger": 0,
     "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
+  "registryCheckpoint": {
+    "ledger": 0,
+    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "assetCount": 2
+  },
   "deploymentBindingHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "artifacts": {
-    "r1csSha256": "724f255668714f206aaa187521ae2ea723093034823446575bdb3bff7c57ec97",
-    "r1csConstraints": 14574,
-    "wasmSha256": "53b1d006572f0f809e9efd5622c2cd3639bb89b917d806c5ac46c45a845c6c8c",
-    "wasmByteLength": 152217,
-    "zkeySha256": "56a9b0adbff26b767a6fe27246f51067e8aee9a6f68367ebbc78d94e90f02d49",
-    "zkeyByteLength": 8971612,
+    "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
+    "r1csConstraints": 15114,
+    "wasmSha256": "d574799b6191e8564cc2f364e7ac0a927e2452bb6ceed8ffe37d5e9fdcff8d7e",
+    "wasmByteLength": 154930,
+    "zkeySha256": "fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273",
+    "zkeyByteLength": 9264916,
     "zkeyTransport": {
       "encoding": "points-compressed",
-      "sha256": "5204852d8dd2898efd98463c3580ba87f5449922ba3c3f36ad246d1d8d810d67",
-      "byteLength": 6120542,
-      "wireByteLength": 2427581
+      "sha256": "c684799ed86b8a40b22b1d818c3c866d3aa6d2c7f4fe7d5728bf8c5328d39520",
+      "byteLength": 6327606,
+      "wireByteLength": 2498167
     },
-    "vkJsonSha256": "b76899b86c8d73f2bcb9fb083e182a4a15b48eaa2e07ed7b085002c4de4cf0c0",
-    "vkBinSha256": "3aa6114707047cee80e1005d2d20fad69d053ff2de9023d01bf8a830bfa4e2ad"
+    "vkJsonSha256": "8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7",
+    "vkBinSha256": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
   },
   "constants": {
     "treeDepth": 17,
@@ -42,6 +69,7 @@
     "recipientEnvelopeBytes": 181,
     "outgoingEnvelopeBytes": 157,
     "outputPackageBytes": 370,
+    "outputsPerAction": 3,
     "addressPayloadBytes": 84,
     "addressAsciiBytes": 128,
     "addressContextTagBytes": 16,
@@ -53,9 +81,9 @@
     "aeadId": "0x0001"
   },
   "release": {
-    "contractWasmSha256": "073a2ad51ff05e697b03a45143eb399655650d1f07cdbd59149b45046d3ce182",
-    "contractSourceCommit": "fa593690647bab54e3819fffb782d75a320450c7",
-    "circuitSourceSha256": "dbd6ab35846290135c86f3648565dcbd2f4d2443b34d114dcaeb4f4b5a162acf",
+    "contractWasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
+    "contractSourceCommit": "dd5386cdad4447dcd9d679525adf4564561ec32e",
+    "circuitSourceSha256": "50ecb2c842c217a29d03a66c22b1dc9cc578c6011b1e3fac0c7b40e3fba5e682",
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",

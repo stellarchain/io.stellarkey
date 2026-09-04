@@ -72,9 +72,9 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     ? readdirSync(fixtureDir)
       .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     : [];
-  if (fixtureNames.length !== 2) {
+  if (fixtureNames.length !== 1) {
     throw new Error(
-      `Expected exactly two current per-asset testnet deployment evidence files, found ${fixtureNames.length}.`,
+      `Expected exactly one current unified-pool testnet deployment evidence file, found ${fixtureNames.length}.`,
     );
   }
   const evidenceSet = fixtureNames.map(name =>
@@ -124,14 +124,16 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     'deployment checkpoint',
   );
   assertEqual(evidence.poolContractId, deployed.poolContractId, 'pool contract ID');
-  assertEqual(evidence.assetContractId, deployed.assetContractId, 'asset contract ID');
-  assertEqual(evidence.pinnedAsset, deployed.assetContractId, 'contract pinned asset');
+  assertEqual(evidence.assetAdminAddress, deployed.assetAdminAddress, 'asset administrator');
+  assertJsonEqual(evidence.assets, deployed.assets, 'registered asset metadata');
+  assertJsonEqual(evidence.registryCheckpoint, deployed.registryCheckpoint, 'registry checkpoint');
   assertEqual(evidence.wasmSha256, baseManifest.release.contractWasmSha256, 'pool Wasm hash');
   assertEqual(evidence.deploymentBindingHash, deployed.deploymentBindingHash, 'deployment binding');
   assertEqual(evidence.config?.deployment_binding_hash, deployed.deploymentBindingHash, 'contract binding');
   assertEqual(evidence.config?.network_id, baseManifest.networkId, 'contract network ID');
   assertEqual(evidence.config?.realm_id, deployed.realmId, 'contract realm ID');
   assertEqual(evidence.config?.guardian, deployed.guardianAddress, 'contract guardian');
+  assertEqual(evidence.config?.initial_asset_admin, deployed.assetAdminAddress, 'contract asset admin');
   assertEqual(evidence.config?.circuit_hash, baseManifest.artifacts.r1csSha256, 'contract circuit hash');
   assertEqual(
     evidence.config?.verification_key_hash,
@@ -143,23 +145,23 @@ function loadTestnetDeploymentEvidence(baseManifest) {
     baseManifest.release.poseidonParametersSha256,
     'contract Poseidon parameter hash',
   );
-  if (!['native', 'stellar'].includes(evidence.asset?.kind) || !/^C[A-Z2-7]{55}$/.test(evidence.assetContractId)) {
-    throw new Error('Testnet deployment evidence must record one canonical Stellar SAC.');
+  if (!Array.isArray(evidence.assets) || evidence.assets.length < 1) {
+    throw new Error('Testnet deployment evidence must record the on-chain asset registry.');
   }
   if (evidence.depositsPaused !== false || evidence.treeState?.next_index !== 0) {
     throw new Error('Testnet deployment evidence must record a fresh, deposit-enabled pool.');
   }
   }
-  const native = evidenceSet.find(evidence => evidence.asset.kind === 'native');
-  const usdc = evidenceSet.find(evidence =>
-    evidence.asset.kind === 'stellar' &&
-    evidence.asset.code === 'USDC' &&
-    evidence.asset.issuer === 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
-  );
-  if (!native || !usdc || native.poolContractId === usdc.poolContractId) {
-    throw new Error('Testnet evidence must contain distinct XLM and USDC pool deployments.');
+  const [deployment] = evidenceSet;
+  if (
+    deployment.assets[0]?.kind !== 'native'
+    || deployment.assets[0]?.index !== 0
+    || deployment.assets[1]?.code !== 'USDC'
+    || deployment.assets[1]?.index !== 1
+  ) {
+    throw new Error('Testnet evidence must contain contiguous XLM and USDC registry entries.');
   }
-  return [native, usdc];
+  return deployment;
 }
 
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
@@ -229,13 +231,40 @@ const baseManifest = {
   networkId: sha256(Buffer.from(TESTNET_PASSPHRASE, 'utf8')),
   realmId: '02'.repeat(32),
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
-  assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
   guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assetAdminAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+  assets: [
+    {
+      index: 0,
+      kind: 'native',
+      code: 'XLM',
+      issuer: null,
+      name: 'Stellar Lumens',
+      decimals: 7,
+      displayDecimals: 7,
+      contractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
+    },
+    {
+      index: 1,
+      kind: 'stellar',
+      code: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      name: 'USD Coin',
+      decimals: 7,
+      displayDecimals: 2,
+      contractId: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+    },
+  ],
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
   witnessRpcUrl: 'https://rpc.ankr.com/stellar_testnet_soroban',
   deploymentCheckpoint: {
     ledger: 0,
     hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  },
+  registryCheckpoint: {
+    ledger: 0,
+    hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    assetCount: 2,
   },
   deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   artifacts: {
@@ -263,6 +292,7 @@ const baseManifest = {
     recipientEnvelopeBytes: 181,
     outgoingEnvelopeBytes: 157,
     outputPackageBytes: 370,
+    outputsPerAction: 3,
     addressPayloadBytes: 84,
     addressAsciiBytes: 128,
     addressContextTagBytes: 16,
@@ -317,53 +347,29 @@ writeFileSync(developmentManifestPath, developmentManifestJson);
 
 if (publishDeployment) {
 const deploymentEvidence = loadTestnetDeploymentEvidence(baseManifest);
-const generated = deploymentEvidence.map(evidence => {
-  const slug = evidence.asset.kind === 'native' ? 'xlm' : 'usdc';
-  const manifest = {
-    ...evidence.manifest,
-    release: baseManifest.release,
-  };
-  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
-  return {
-    evidence,
-    slug,
-    manifest,
-    manifestJson,
-    manifestHash: sha256(Buffer.from(manifestJson)),
-  };
-});
+const manifest = { ...deploymentEvidence.manifest, release: baseManifest.release };
+const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+const manifestHash = sha256(Buffer.from(manifestJson));
 const catalogue = {
   schemaVersion: 1,
-  deployments: generated.map(({ evidence, slug, manifestHash }) => ({
-    id: `testnet-private-${slug}`,
+  deployments: [{
+    id: 'testnet-private-pool',
     network: 'testnet',
-    asset: {
-      kind: evidence.asset.kind,
-      code: evidence.asset.code,
-      issuer: evidence.asset.issuer,
-      name: evidence.asset.name,
-      decimals: evidence.asset.decimals,
-      displayDecimals: evidence.asset.displayDecimals,
-      contractId: evidence.assetContractId,
-    },
-    manifestUrl: `/protocol/private-balance/v1/${slug}/manifest.json`,
+    manifestUrl: '/protocol/private-balance/v1/manifest.json',
     manifestSha256: manifestHash,
-  })),
+  }],
 };
 const catalogueJson = `${JSON.stringify(catalogue, null, 2)}\n`;
 const catalogueHash = sha256(Buffer.from(catalogueJson));
-for (const deployment of generated) {
-  const deploymentDirectory = join(publicDir, deployment.slug);
-  mkdirSync(deploymentDirectory, { recursive: true });
-  writeFileSync(join(deploymentDirectory, 'manifest.json'), deployment.manifestJson);
-}
-writeFileSync(join(publicDir, 'manifest.json'), generated[0].manifestJson);
+rmSync(join(publicDir, 'xlm'), { recursive: true, force: true });
+rmSync(join(publicDir, 'usdc'), { recursive: true, force: true });
+writeFileSync(join(publicDir, 'manifest.json'), manifestJson);
 writeFileSync(join(publicDir, 'catalogue.json'), catalogueJson);
 writeFileSync(
   expectedManifestModule,
   `/** Generated by protocol/private-balance/scripts/generate-manifest.mjs. */\n` +
     `export const EXPECTED_PRIVATE_BALANCE_MANIFEST_SHA256 =\n` +
-    `  '${generated[0].manifestHash}';\n` +
+    `  '${manifestHash}';\n` +
     `// This exact hash-pinned development deployment is explicitly enabled on Testnet.\n` +
     `export const ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE = true;\n`,
 );

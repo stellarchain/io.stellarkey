@@ -149,7 +149,9 @@ export function deriveHpkeAad(
   requireLength('Context hash', contextHash, 32);
   requireLength('Commitment', cm, 32);
   requireLength('Action nonce', actionNonce, 32);
-  if (outputIndex !== 0 && outputIndex !== 1) throw new Error('Invalid output index');
+  if (outputIndex !== 0 && outputIndex !== 1 && outputIndex !== 2) {
+    throw new Error('Invalid output index');
+  }
   const buf: number[] = [];
   encodeDomain(DOMAIN_HPKE_AAD, buf);
   for (const b of contextHash) buf.push(b);

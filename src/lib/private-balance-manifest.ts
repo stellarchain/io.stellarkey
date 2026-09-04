@@ -26,6 +26,7 @@ export interface PrivateBalanceConstants {
   recipientEnvelopeBytes: number;
   outgoingEnvelopeBytes: number;
   outputPackageBytes: number;
+  outputsPerAction: number;
   addressPayloadBytes: number;
   addressAsciiBytes: number;
   addressContextTagBytes: number;
@@ -59,6 +60,21 @@ export interface PrivateBalanceDeploymentCheckpoint {
   hash: string;
 }
 
+export interface PrivateBalanceRegistryCheckpoint extends PrivateBalanceDeploymentCheckpoint {
+  assetCount: number;
+}
+
+export interface PrivateBalanceManifestAsset {
+  index: number;
+  kind: 'native' | 'stellar';
+  code: string;
+  issuer: string | null;
+  name: string;
+  decimals: number;
+  displayDecimals: number;
+  contractId: string;
+}
+
 export interface PrivateBalanceManifest {
   schemaVersion: number;
   protocolVersion: number;
@@ -69,13 +85,16 @@ export interface PrivateBalanceManifest {
   networkId: string;
   realmId: string;
   poolContractId: string;
-  assetContractId: string;
   guardianAddress: string;
+  assetAdminAddress: string;
+  /** Curated labels for immutable on-chain indices; registry state remains authoritative. */
+  assets: PrivateBalanceManifestAsset[];
   /** Public classic-account sink used to index backend-free stealth announcements. */
   stealthAnnouncerAddress: string;
   /** Independently operated read-only RPC used to corroborate recovery checkpoints. */
   witnessRpcUrl: string;
   deploymentCheckpoint: PrivateBalanceDeploymentCheckpoint;
+  registryCheckpoint: PrivateBalanceRegistryCheckpoint;
   deploymentBindingHash: string;
   artifacts: PrivateBalanceArtifacts;
   constants: PrivateBalanceConstants;
@@ -95,6 +114,7 @@ export interface PrivateBalanceAvailabilityOptions {
 const HEX_32 = /^[0-9a-f]{64}$/;
 const CONTRACT_ADDRESS = /^C[A-Z2-7]{55}$/;
 const ACCOUNT_ADDRESS = /^G[A-Z2-7]{55}$/;
+const ASSET_CODE = /^[A-Z0-9]{1,12}$/;
 const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   treeDepth: 17,
   treeArity: 3,
@@ -104,6 +124,7 @@ const EXPECTED_CONSTANTS: PrivateBalanceConstants = {
   recipientEnvelopeBytes: 181,
   outgoingEnvelopeBytes: 157,
   outputPackageBytes: 370,
+  outputsPerAction: 3,
   addressPayloadBytes: 84,
   addressAsciiBytes: 128,
   addressContextTagBytes: 16,
@@ -258,6 +279,45 @@ function rpcUrl(value: unknown, name: string): string {
   return parsed.toString().replace(/\/$/, '');
 }
 
+function manifestAsset(value: unknown, expectedIndex: number): PrivateBalanceManifestAsset {
+  const path = `assets[${expectedIndex}]`;
+  const asset = record(value, path);
+  if (asset.index !== expectedIndex) throw new Error(`${path}.index must be contiguous and immutable`);
+  if (asset.kind !== 'native' && asset.kind !== 'stellar') throw new Error(`${path}.kind is invalid`);
+  const code = string(asset.code, `${path}.code`);
+  if (!ASSET_CODE.test(code)) throw new Error(`${path}.code is invalid`);
+  const name = string(asset.name, `${path}.name`);
+  if (name !== name.trim() || name.length > 64 || /[\u0000-\u001f\u007f]/u.test(name)) {
+    throw new Error(`${path}.name is invalid`);
+  }
+  const contractId = string(asset.contractId, `${path}.contractId`);
+  if (!CONTRACT_ADDRESS.test(contractId)) throw new Error(`${path}.contractId is invalid`);
+  const decimals = integer(asset.decimals, `${path}.decimals`, 18);
+  const displayDecimals = integer(asset.displayDecimals, `${path}.displayDecimals`, decimals);
+  let issuer: string | null;
+  if (asset.kind === 'native') {
+    if (code !== 'XLM' || asset.issuer !== null || decimals !== 7) {
+      throw new Error(`${path} native code, issuer, or decimals are invalid`);
+    }
+    issuer = null;
+  } else {
+    issuer = string(asset.issuer, `${path}.issuer`);
+    if (!ACCOUNT_ADDRESS.test(issuer) || decimals !== 7) {
+      throw new Error(`${path} issuer or decimals are invalid`);
+    }
+  }
+  return {
+    index: expectedIndex,
+    kind: asset.kind,
+    code,
+    issuer,
+    name,
+    decimals,
+    displayDecimals,
+    contractId,
+  };
+}
+
 export function validateManifest(raw: unknown): PrivateBalanceManifest {
   const obj = record(raw, 'Manifest');
 
@@ -278,8 +338,8 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     throw new Error('Private Payments are available on Stellar testnet only.');
   }
   const poolContractId = string(obj.poolContractId, 'poolContractId');
-  const assetContractId = string(obj.assetContractId, 'assetContractId');
   const guardianAddress = string(obj.guardianAddress, 'guardianAddress');
+  const assetAdminAddress = string(obj.assetAdminAddress, 'assetAdminAddress');
   const stealthAnnouncerAddress = string(
     obj.stealthAnnouncerAddress,
     'stealthAnnouncerAddress',
@@ -289,10 +349,19 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     obj.deploymentCheckpoint,
     'deploymentCheckpoint',
   );
+  const registryCheckpoint = record(obj.registryCheckpoint, 'registryCheckpoint');
+  if (!Array.isArray(obj.assets) || obj.assets.length > 256) {
+    throw new Error('assets must be a bounded array');
+  }
+  const assets = obj.assets.map(manifestAsset);
+  const assetContracts = new Set(assets.map(asset => asset.contractId));
+  if (assetContracts.size !== assets.length) throw new Error('assets contain a duplicate contractId');
   if (!CONTRACT_ADDRESS.test(poolContractId)) throw new Error('poolContractId is invalid');
-  if (!CONTRACT_ADDRESS.test(assetContractId)) throw new Error('assetContractId is invalid');
   if (!ACCOUNT_ADDRESS.test(guardianAddress) && !CONTRACT_ADDRESS.test(guardianAddress)) {
     throw new Error('guardianAddress is invalid');
+  }
+  if (!ACCOUNT_ADDRESS.test(assetAdminAddress) && !CONTRACT_ADDRESS.test(assetAdminAddress)) {
+    throw new Error('assetAdminAddress is invalid');
   }
   if (!ACCOUNT_ADDRESS.test(stealthAnnouncerAddress)) {
     throw new Error('stealthAnnouncerAddress is invalid');
@@ -354,13 +423,19 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
     networkId: hex32(obj.networkId, 'networkId'),
     realmId: hex32(obj.realmId, 'realmId'),
     poolContractId,
-    assetContractId,
     guardianAddress,
+    assetAdminAddress,
+    assets,
     stealthAnnouncerAddress,
     witnessRpcUrl,
     deploymentCheckpoint: {
       ledger: integer(deploymentCheckpoint.ledger, 'deploymentCheckpoint.ledger', 0xffff_ffff),
       hash: canonicalHex32(deploymentCheckpoint.hash, 'deploymentCheckpoint.hash'),
+    },
+    registryCheckpoint: {
+      ledger: integer(registryCheckpoint.ledger, 'registryCheckpoint.ledger', 0xffff_ffff),
+      hash: canonicalHex32(registryCheckpoint.hash, 'registryCheckpoint.hash'),
+      assetCount: integer(registryCheckpoint.assetCount, 'registryCheckpoint.assetCount', 256),
     },
     deploymentBindingHash: hex32(obj.deploymentBindingHash, 'deploymentBindingHash'),
     artifacts: {
@@ -381,6 +456,9 @@ export function validateManifest(raw: unknown): PrivateBalanceManifest {
       aeadId: string(hpke.aeadId, 'hpke.aeadId'),
     },
   };
+  if (parsed.registryCheckpoint.assetCount !== parsed.assets.length) {
+    throw new Error('registryCheckpoint.assetCount must match curated assets');
+  }
   if (
     parsed.status !== 'development' &&
     (parsed.deploymentCheckpoint.ledger === 0 || parsed.deploymentCheckpoint.hash === EMPTY_SHA256)

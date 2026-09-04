@@ -19,7 +19,7 @@ import { prepareReviewedPrivateBalanceTransaction } from '../src/features/privat
 
 const manifest = {
   poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
-  assetContractId: StrKey.encodeContract(Buffer.alloc(32, 2)),
+  assets: [{ index: 0, contractId: StrKey.encodeContract(Buffer.alloc(32, 2)) }],
 };
 const bytes = (length, value) => new Uint8Array(length).fill(value);
 const proof = { a: bytes(64, 1), b: bytes(128, 2), c: bytes(64, 3) };
@@ -28,8 +28,6 @@ const output = (value) => ({
   recipientEnvelope: bytes(181, value),
   outgoingEnvelope: bytes(157, value),
 });
-const accountRelayer = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
-const relayer = manifest.poolContractId;
 
 function invocation(operation) {
   return operation.body.invokeHostFunctionOp.hostFunction.invokeContract;
@@ -41,7 +39,7 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
     actionNonce: bytes(32, 4),
     anchorRoot: bytes(32, 5),
     nullifiers: [bytes(32, 6), bytes(32, 7)],
-    outputs: [output(8), output(9)],
+    outputs: [output(8), output(9), output(10)],
     publicValue: 10n,
   };
 
@@ -50,6 +48,7 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
       ...common,
       anchorRoot: bytes(32, 0),
       nullifiers: [bytes(32, 10), bytes(32, 11)],
+      assetIndex: 0,
       depositSource: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     },
     proof,
@@ -59,16 +58,18 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   assert.deepEqual(Object.keys(scValToNative(deposit.args[0])), [
     'action_nonce',
     'anchor_root',
+    'asset_index',
     'deposit_source',
     'nullifier_0',
     'nullifier_1',
     'output_0',
     'output_1',
+    'output_2',
     'public_value',
   ]);
 
   const transfer = invocation(builder.buildTransferOperation({
-    action: { ...common, relayerFee: 0n, relayer },
+    action: common,
     proof,
   }));
   assert.equal(transfer.functionName.toString(), 'transfer');
@@ -77,9 +78,8 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   const withdraw = invocation(builder.buildWithdrawOperation({
     action: {
       ...common,
+      assetIndex: 0,
       publicRecipient: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-      relayerFee: 0n,
-      relayer,
     },
     proof,
   }));
@@ -91,28 +91,18 @@ test('private transaction builder matches the fixed deposit/transfer/withdraw AB
   assert.equal(touchRoot.args.length, 0);
 });
 
-test('zero-fee private actions require the pool contract as the relayer sentinel', () => {
+test('private actions contain no public relayer identity or fee fields', () => {
   const builder = new PrivateBalanceTransactionBuilder(manifest);
   const common = {
     actionNonce: bytes(32, 4),
     anchorRoot: bytes(32, 5),
     nullifiers: [bytes(32, 6), bytes(32, 7)],
-    outputs: [output(8), output(9)],
+    outputs: [output(8), output(9), output(10)],
     publicValue: 0n,
-    relayerFee: 0n,
   };
-
-  assert.throws(
-    () => builder.buildTransferOperation({
-      action: { ...common, relayer: accountRelayer },
-      proof,
-    }),
-    /zero-fee relayer must be the pool contract/i,
-  );
-  assert.doesNotThrow(() => builder.buildTransferOperation({
-    action: { ...common, relayer: manifest.poolContractId },
-    proof,
-  }));
+  const action = scValToNative(invocation(builder.buildTransferOperation({ action: common, proof })).args[0]);
+  assert.equal('relayer' in action, false);
+  assert.equal('relayer_fee' in action, false);
 });
 
 test('private transaction builder rejects malformed fixed proof widths', () => {
@@ -123,10 +113,8 @@ test('private transaction builder rejects malformed fixed proof widths', () => {
         actionNonce: bytes(32, 1),
         anchorRoot: bytes(32, 2),
         nullifiers: [bytes(32, 3), bytes(32, 6)],
-        outputs: [output(4), output(5)],
+        outputs: [output(4), output(5), output(6)],
         publicValue: 0n,
-        relayerFee: 0n,
-        relayer,
       },
       proof: { ...proof, a: bytes(63, 1) },
     }),
@@ -141,10 +129,8 @@ test('private transaction reviewer approves only the exact prepared envelope', (
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
-      outputs: [output(5), output(6)],
+      outputs: [output(5), output(6), output(7)],
       publicValue: 0n,
-      relayerFee: 0n,
-      relayer,
     },
     proof,
   });
@@ -164,7 +150,7 @@ test('private transaction reviewer approves only the exact prepared envelope', (
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
-      assetContractId: manifest.assetContractId,
+      assets: manifest.assets,
     },
     source,
     sequence: '8',
@@ -210,10 +196,8 @@ test('private transaction preparation binds simulation, fees, source, and time b
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 2),
       nullifiers: [bytes(32, 3), bytes(32, 4)],
-      outputs: [output(5), output(6)],
+      outputs: [output(5), output(6), output(7)],
       publicValue: 0n,
-      relayerFee: 0n,
-      relayer,
     },
     proof,
   });
@@ -241,7 +225,7 @@ test('private transaction preparation binds simulation, fees, source, and time b
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
-      assetContractId: manifest.assetContractId,
+      assets: manifest.assets,
     },
     source,
     classicFeeStroops: 100n,
@@ -262,13 +246,14 @@ test('private deposit review accepts only its exact source-account SAC transfer 
       actionNonce: bytes(32, 1),
       anchorRoot: bytes(32, 0),
       nullifiers: [bytes(32, 7), bytes(32, 8)],
-      outputs: [output(5), output(6)],
+      outputs: [output(5), output(6), output(7)],
+      assetIndex: 0,
       publicValue: 10n,
       depositSource: source,
     },
     proof,
   });
-  const transfer = new Contract(manifest.assetContractId).call(
+  const transfer = new Contract(manifest.assets[0].contractId).call(
     'transfer',
     Address.fromString(source).toScVal(),
     Address.fromString(manifest.poolContractId).toScVal(),
@@ -299,7 +284,7 @@ test('private deposit review accepts only its exact source-account SAC transfer 
     manifest: {
       networkPassphrase: 'Test SDF Network ; September 2015',
       poolContractId: manifest.poolContractId,
-      assetContractId: manifest.assetContractId,
+      assets: manifest.assets,
     },
     source,
     sequence: '8',

@@ -12,6 +12,7 @@ import { spendableAssetBalance } from '@/lib/transaction-intent';
 import { humanizePrivateError, PRIVACY_ROW } from '../copy';
 import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from '../runtime/action-flow';
 import { parsePrivateAmount } from '../runtime/coin-selection';
+import { privateBalanceAssetMatchesPublicBalance } from '@/lib/private-balance-assets';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
@@ -53,6 +54,7 @@ export function AddPrivateFunds({
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const decimals = asset?.decimals ?? 7;
   const code = asset?.code ?? 'Asset';
+  const exitOnly = asset?.status === 'exit-only';
   const [stage, setStage] = useState<'form' | 'review'>('form');
   const [amount, setAmount] = useState(prefillAmount ?? '');
   const flow = usePrivateActionController(onClose, onSubmitted);
@@ -60,13 +62,13 @@ export function AddPrivateFunds({
   const publicBalance = useMemo(() => {
     if (!asset || !balances) return null;
     return (
-      balances.find(candidate =>
-        asset.kind === 'native'
-          ? candidate.isNative
-          : !candidate.isNative && candidate.code === asset.code && candidate.issuer === asset.issuer,
-      ) ?? null
+      balances.find(candidate => privateBalanceAssetMatchesPublicBalance(
+        asset,
+        candidate,
+        NETWORKS[networkLabel === 'Mainnet' ? 'mainnet' : 'testnet'].networkPassphrase,
+      )) ?? null
     );
-  }, [asset, balances]);
+  }, [asset, balances, networkLabel]);
 
   // Max mirrors the public send: the spendable balance, and for XLM also the
   // reserve plus this action's own maximum network fee.
@@ -109,7 +111,7 @@ export function AddPrivateFunds({
 
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
-    if (amountCheck.stroops === null) return;
+    if (amountCheck.stroops === null || exitOnly) return;
     triggerHaptic('selection');
     setStage('review');
     void flow.prepare({ kind: 'deposit', amount: amount.trim() });
@@ -186,7 +188,12 @@ export function AddPrivateFunds({
         ) : (
           <form className="space-y-4 p-4 sm:p-6" onSubmit={submitForm}>
             <Notice>{PRIVACY_ROW.deposit}.</Notice>
-            {asset?.kind === 'stellar' ? (
+            {exitOnly ? (
+              <Notice>
+                {code} is exit-only. You can transfer or withdraw existing private funds, but cannot add more.
+              </Notice>
+            ) : null}
+            {asset && asset.kind !== 'native' ? (
               <Notice>
                 Your public account needs an authorized {asset.code} trustline and sufficient{' '}
                 {asset.code} balance. Issuer authorization, freeze and clawback controls still apply.
@@ -233,7 +240,7 @@ export function AddPrivateFunds({
             <Button
               type="submit"
               className="!mt-6 w-full"
-              disabled={amountCheck.stroops === null}
+              disabled={amountCheck.stroops === null || exitOnly}
             >
               Review Add Funds
             </Button>

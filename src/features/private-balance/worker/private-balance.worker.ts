@@ -205,6 +205,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             contextField: keyContext.contextField,
             deploymentBindingHash: keyContext.deploymentBindingHash,
             addressPrefix: keyContext.addressPrefix,
+            assets: keyContext.assets,
             accountAddress: { kind: 0, payload: keyContext.accountPublicKey },
           },
           expectedPriorRecordHash: req.expectedPriorRecordHash,

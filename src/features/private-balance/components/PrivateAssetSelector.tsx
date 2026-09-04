@@ -5,9 +5,11 @@ import {
   usePrivateBalancePortfolio,
   usePrivateBalanceRuntime,
 } from '@/hooks/usePrivateBalanceRuntime';
-import { useWalletLedger } from '@/hooks/useWallet';
+import { useWalletIdentity, useWalletLedger } from '@/hooks/useWallet';
 import { fmtAmount } from '@/lib/format';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
+import { privateBalanceAssetMatchesPublicBalance } from '@/lib/private-balance-assets';
+import { NETWORKS } from '@/lib/stellar';
 
 export function PrivateAssetSelector({
   presentation = 'pill',
@@ -25,6 +27,7 @@ export function PrivateAssetSelector({
   } = usePrivateBalanceRuntime();
   const { entries } = usePrivateBalancePortfolio();
   const { balances } = useWalletLedger();
+  const { network } = useWalletIdentity();
   const selected = availableAssets.find(option => option.deploymentId === selectedDeploymentId)
     ?? availableAssets[0]
     ?? null;
@@ -35,13 +38,11 @@ export function PrivateAssetSelector({
     if (deploymentId === selected?.deploymentId && balance !== null) return balance;
 
     if (balanceScope === 'public') {
-      const publicBalance = balances?.find(candidate =>
-        option.asset.kind === 'native'
-          ? candidate.isNative
-          : !candidate.isNative
-            && candidate.code === option.asset.code
-            && candidate.issuer === option.asset.issuer,
-      );
+      const publicBalance = balances?.find(candidate => privateBalanceAssetMatchesPublicBalance(
+        option.asset,
+        candidate,
+        NETWORKS[network].networkPassphrase,
+      ));
       return publicBalance?.balance ?? null;
     }
 

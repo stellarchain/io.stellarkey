@@ -20,11 +20,22 @@ const manifest = {
     networkId: 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472',
     realmId: '0202020202020202020202020202020202020202020202020202020202020202',
     poolContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4',
-    assetContractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
     guardianAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    assetAdminAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    assets: [{
+      index: 0,
+      kind: 'native',
+      code: 'XLM',
+      issuer: null,
+      name: 'Stellar Lumens',
+      decimals: 7,
+      displayDecimals: 7,
+      contractId: 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF',
+    }],
     stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
     witnessRpcUrl: 'https://witness.example.test',
     deploymentCheckpoint: { ledger: 0, hash: '00'.repeat(32) },
+    registryCheckpoint: { ledger: 0, hash: '00'.repeat(32), assetCount: 1 },
     deploymentBindingHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     artifacts: {
       r1csSha256: 'a1'.repeat(32),
@@ -38,11 +49,14 @@ const manifest = {
     },
     constants: {
       treeDepth: 17,
+      treeArity: 3,
+      rootWindowLedgers: 1440,
       publicInputs: 11,
       notePlaintextBytes: 128,
       recipientEnvelopeBytes: 181,
       outgoingEnvelopeBytes: 157,
       outputPackageBytes: 370,
+      outputsPerAction: 3,
       addressPayloadBytes: 84,
       addressAsciiBytes: 128,
       addressContextTagBytes: 16,
@@ -130,6 +144,10 @@ test('worker client: transfers the exact standalone root with public derivation 
   assert.deepEqual(message.keyContext.realmId, hex(manifest.realmId));
   assert.deepEqual(message.keyContext.poolId, StrKey.decodeContract(manifest.poolContractId));
   assert.equal('assetId' in message.keyContext, false);
+  assert.deepEqual(message.keyContext.assets, [{
+    index: 0,
+    contractId: manifest.assets[0].contractId,
+  }]);
   assert.deepEqual(
     message.keyContext.accountPublicKey,
     StrKey.decodeEd25519PublicKey(account.publicKey()),

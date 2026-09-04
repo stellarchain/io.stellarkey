@@ -93,7 +93,8 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     rho,
     memoLength: 4,
     memo: Uint8Array.from([...Buffer.from('rent'), ...zero(28)]),
-    reserved: zero(15),
+    assetIndex: 0,
+    reserved: zero(11),
   };
   const commitment = computeCommitment(
     contextField,
@@ -137,6 +138,24 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     actionNonce,
     1,
   );
+  const secondDummyRho = bytes(15);
+  const secondDummyNote = { ...dummyNote, rho: secondDummyRho };
+  const secondDummyCommitment = computeCommitment(
+    contextField,
+    assetField,
+    receiveKeys.ownerCommitment,
+    0n,
+    secondDummyRho,
+  );
+  const secondDummyEncrypted = await createOutputPackage(
+    receiveKeys.hpkePublicKey,
+    secondDummyNote.diversifier,
+    encodeNotePlaintext(secondDummyNote),
+    contextHash,
+    secondDummyCommitment,
+    actionNonce,
+    2,
+  );
   const outputs = [
     {
       cm: commitment,
@@ -148,6 +167,11 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       recipientEnvelope: dummyEncrypted.recipientEnvelope,
       outgoingEnvelope: bytes(12, 157),
     },
+    {
+      cm: secondDummyCommitment,
+      recipientEnvelope: secondDummyEncrypted.recipientEnvelope,
+      outgoingEnvelope: bytes(16, 157),
+    },
   ];
   const tree = await createEmptyTree();
   const anchorRoot = zero(32);
@@ -155,14 +179,13 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
   const action = {
     protocolVersion: 1,
     kind: ActionKind.Deposit,
+    assetIndex: 0,
     asset,
     actionNonce,
     anchorRoot,
     nullifiers: [bytes(13), bytes(14)],
     outputs,
     publicValue: note.value,
-    relayerFee: 0n,
-    relayer: undefined,
     depositSource: { kind: 0, payload: accountPublicKey },
   };
   const priorRecordHash = computeGenesisRecordHash(contextHash, deploymentBindingHash);
@@ -171,6 +194,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     ledgerSequence: 123,
     startingLeafIndex: 0,
     actionKind: ActionKind.Deposit,
+    assetIndex: 0,
     asset,
     actionNonce,
     anchorRoot,
@@ -178,8 +202,6 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     nullifiers: action.nullifiers,
     outputs,
     publicValue: note.value,
-    relayerFee: 0n,
-    relayer: undefined,
     depositSource: action.depositSource,
   };
   const recordHash = computeRecordHash(record, 1, priorRecordHash);
@@ -196,6 +218,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       contextField,
       deploymentBindingHash,
       addressPrefix: 'tskpay_',
+      assets: [{ index: 0, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -207,6 +230,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     id: hex(commitment),
     commitment: hex(commitment),
     value: note.value.toString(),
+    assetIndex: 0,
     assetContractId,
     diversifier: '01020304',
     ownerCommitment: hex(receiveKeys.ownerCommitment),
@@ -297,21 +321,42 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       outgoingEnvelope: bytes(25, 157),
     },
   ];
+  const transferDummyRho = bytes(23);
+  const transferDummy = { ...dummyNote, diversifier: new Uint8Array(4), rho: transferDummyRho };
+  const transferDummyCommitment = computeCommitment(
+    contextField,
+    assetField,
+    transferDummy.ownerCommitment,
+    0n,
+    transferDummyRho,
+  );
+  transferOutputs.push({
+    cm: transferDummyCommitment,
+    recipientEnvelope: (await createOutputPackage(
+      keys.hpkePublicKey,
+      transferDummy.diversifier,
+      encodeNotePlaintext(transferDummy),
+      contextHash,
+      transferDummyCommitment,
+      transferNonce,
+      2,
+    )).recipientEnvelope,
+    outgoingEnvelope: bytes(29, 157),
+  });
   for (const [outputIndex, output] of transferOutputs.entries()) {
-    const outgoingNote = outputIndex === 0 ? recipientNote : changeNote;
-    const recipientPublicKey = outputIndex === 0
-      ? recipientKeys.hpkePublicKey
-      : keys.hpkePublicKey;
+    const outgoingNote = [recipientNote, changeNote, transferDummy][outputIndex];
+    const recipientPublicKey = outputIndex === 0 ? recipientKeys.hpkePublicKey : keys.hpkePublicKey;
     const outgoingPlaintext = encodeOutgoingPlaintext({
       protocolVersion: 1,
-      flags: 0,
+      flags: outgoingNote.value === 0n ? 1 : 0,
       value: outgoingNote.value,
       diversifier: outgoingNote.diversifier,
       ownerCommitment: outgoingNote.ownerCommitment,
       recipientHpkePublicKey: recipientPublicKey,
       memoLength: outgoingNote.memoLength,
       memo: outgoingNote.memo,
-      reserved: zero(15),
+      assetIndex: 0,
+      reserved: zero(11),
     });
     output.outgoingEnvelope = await sealOutgoingEnvelope(
       keys.outgoingViewingKey,
@@ -342,29 +387,23 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
   const transferAction = {
     protocolVersion: 1,
     kind: ActionKind.PrivateTransfer,
-    asset,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
     nullifiers: [transferNullifier, bytes(26)],
     outputs: transferOutputs,
     publicValue: 0n,
-    relayerFee: 0n,
-    relayer: { kind: 0, payload: accountPublicKey },
   };
   const transferRecord = {
     actionIndex: 1,
     ledgerSequence: 124,
-    startingLeafIndex: 2,
+    startingLeafIndex: 3,
     actionKind: ActionKind.PrivateTransfer,
-    asset,
     actionNonce: transferNonce,
     anchorRoot: treeRootAfter,
     treeRootAfter: transferRootAfter,
     nullifiers: transferAction.nullifiers,
     outputs: transferOutputs,
     publicValue: 0n,
-    relayerFee: 0n,
-    relayer: transferAction.relayer,
   };
   const transferRecordHash = computeRecordHash(transferRecord, 1, recordHash);
   const transferResult = await scanArchiveRecords({
@@ -379,6 +418,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       contextField,
       deploymentBindingHash,
       addressPrefix: 'tskpay_',
+      assets: [{ index: 0, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -426,6 +466,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       contextField,
       deploymentBindingHash,
       addressPrefix: 'tskpay_',
+      assets: [{ index: 0, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -459,6 +500,11 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       recipientEnvelope: dummyEncrypted.recipientEnvelope,
       outgoingEnvelope: bytes(28, 157),
     },
+    {
+      cm: secondDummyCommitment,
+      recipientEnvelope: secondDummyEncrypted.recipientEnvelope,
+      outgoingEnvelope: bytes(29, 157),
+    },
   ];
   const duplicateTree = await createEmptyTree();
   await appendCommitments(duplicateTree, outputs.map(output => output.cm));
@@ -470,7 +516,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     ...record,
     actionIndex: 1,
     ledgerSequence: 124,
-    startingLeafIndex: 2,
+    startingLeafIndex: 3,
     actionNonce: duplicateNonce,
     treeRootAfter: duplicateTreeRootAfter,
     outputs: duplicateOutputs,
@@ -487,6 +533,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
       contextField,
       deploymentBindingHash,
       addressPrefix: 'tskpay_',
+      assets: [{ index: 0, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: priorRecordHash,
@@ -499,7 +546,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[0].id),
     duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[1].id),
   );
-  assert.equal(duplicateResult.tree.nextIndex, 4, 'every on-chain output still advances the tree');
+  assert.equal(duplicateResult.tree.nextIndex, 6, 'every on-chain output still advances the tree');
 
   await assert.rejects(
     () => scanArchiveRecords({
@@ -514,6 +561,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         contextField,
         deploymentBindingHash,
         addressPrefix: 'tskpay_',
+        assets: [{ index: 0, contractId: assetContractId }],
       },
       expectedPriorRecordHash: priorRecordHash,
     }),
@@ -532,6 +580,7 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
         contextField,
         deploymentBindingHash,
         addressPrefix: 'tskpay_',
+        assets: [{ index: 0, contractId: assetContractId }],
       },
       expectedPriorRecordHash: priorRecordHash,
     }),

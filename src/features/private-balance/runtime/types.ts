@@ -13,6 +13,7 @@ export interface ShieldedNoteRecord {
   id: string; // Stable 32-byte wallet identity; duplicate leaves are leaf-bound
   commitment: string; // Hex (32 bytes)
   value: string; // Decimal string of stroops
+  assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   diversifier: string; // Lowercase hex (4 bytes)
   ownerCommitment: string; // Hex (32 bytes)
@@ -31,6 +32,7 @@ export interface ShieldedActivityRecord {
   id: string; // Hex of actionField
   actionIndex: number;
   actionKind: 'deposit' | 'transfer' | 'withdraw';
+  assetIndex: number; // Recovered privately for transfers; public at boundaries
   assetContractId: string; // Canonical SAC contract address
   amount: string; // Decimal stroops
   direction: 'inflow' | 'outflow' | 'internal';
@@ -78,6 +80,7 @@ export type PendingActionStatus =
 export interface PrivatePendingAction {
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
+  assetIndex: number; // Immutable index in the pool's on-chain registry
   assetContractId: string; // Canonical SAC contract address
   status: PendingActionStatus;
   reservedNoteIds: string[];

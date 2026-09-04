@@ -73,10 +73,13 @@ test('manifest: validates real manifest.json successfully', () => {
   assert.equal(manifest.constants.treeDepth, 17);
   assert.equal(manifest.constants.treeArity, 3);
   assert.equal(manifest.constants.publicInputs, 11);
+  assert.equal(manifest.constants.outputsPerAction, 3);
   assert.equal(manifest.constants.rootWindowLedgers, 1440);
   assert.equal(manifest.constants.addressPayloadBytes, PRIVATE_ADDRESS_PAYLOAD_BYTES);
   assert.equal(manifest.constants.addressAsciiBytes, PRIVATE_ADDRESS_TESTNET_ASCII_BYTES);
-  assert.match(manifest.assetContractId, /^C[A-Z2-7]{55}$/);
+  assert.match(manifest.assetAdminAddress, /^(?:G|C)[A-Z2-7]{55}$/);
+  assert.deepEqual(manifest.assets.map(asset => asset.index), [0, 1]);
+  assert.deepEqual(manifest.assets.map(asset => asset.code), ['XLM', 'USDC']);
   assert.match(manifest.stealthAnnouncerAddress, /^G[A-Z2-7]{55}$/);
   assert.equal(manifest.artifacts.zkeyTransport.encoding, 'points-compressed');
   assert.match(manifest.artifacts.zkeyTransport.sha256, /^[0-9a-f]{64}$/);
@@ -136,10 +139,17 @@ test('manifest: rejects malformed manifest', () => {
   assert.throws(() => validateManifest({ schemaVersion: 1, protocolVersion: 1, status: 'invalid' }), /Invalid manifest status/);
 });
 
-test('manifest: requires one pinned asset contract', () => {
+test('manifest: requires one administrator and contiguous asset registry metadata', () => {
   const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  assert.throws(() => validateManifest({ ...raw, assetContractId: undefined }), /assetContractId/i);
-  assert.throws(() => validateManifest({ ...raw, assetContractId: raw.guardianAddress }), /assetContractId/i);
+  assert.throws(() => validateManifest({ ...raw, assetAdminAddress: undefined }), /assetAdminAddress/i);
+  assert.throws(
+    () => validateManifest({ ...raw, assets: raw.assets.map((asset, index) => ({ ...asset, index: index + 1 })) }),
+    /contiguous and immutable/i,
+  );
+  assert.throws(
+    () => validateManifest({ ...raw, registryCheckpoint: { ...raw.registryCheckpoint, assetCount: 1 } }),
+    /assetCount must match/i,
+  );
 });
 
 test('manifest: requires a classic account as the stealth announcement sink', () => {
@@ -337,7 +347,7 @@ test('manifest: generated-file verification reproduces the shipped Testnet catal
   );
 });
 
-test('manifest: generator pins both verified replacement pools in the authenticated catalogue', () => {
+test('manifest: generator permits at most one verified unified pool in the authenticated catalogue', () => {
   const catalogueBytes = readFileSync(cataloguePath);
   const catalogueHash = createHash('sha256').update(catalogueBytes).digest('hex');
   const catalogue = assetsModule.validatePrivateBalanceCatalogue(JSON.parse(catalogueBytes));
@@ -347,11 +357,7 @@ test('manifest: generator pins both verified replacement pools in the authentica
   );
 
   assert.equal(catalogueHash, assetsModule.EXPECTED_PRIVATE_BALANCE_CATALOGUE_SHA256);
-  assert.equal(catalogue.deployments.length, 2);
-  assert.deepEqual(
-    catalogue.deployments.map(deployment => deployment.asset.code),
-    ['XLM', 'USDC'],
-  );
+  assert.ok(catalogue.deployments.length <= 1);
   assert.ok(catalogue.deployments.every(deployment => deployment.network === 'testnet'));
   assert.match(generator, /catalogue\.json/);
   assert.match(generator, /private-balance-expected-catalogue\.ts/);

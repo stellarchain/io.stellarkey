@@ -32,6 +32,7 @@ export interface ArchiveScanContext {
   contextField: Uint8Array;
   deploymentBindingHash: Uint8Array;
   addressPrefix: 'tskpay_' | 'skpay_';
+  assets: Array<{ index: number; contractId: string }>;
   accountAddress?: { kind: number; payload: Uint8Array };
 }
 
@@ -101,6 +102,7 @@ function actionFromRecord(record: ArchiveRecordModel, protocolVersion: number): 
   return {
     protocolVersion,
     kind: record.actionKind as ActionKind,
+    assetIndex: record.assetIndex,
     asset: record.asset,
     actionNonce: record.actionNonce,
     anchorRoot: record.anchorRoot,
@@ -109,8 +111,6 @@ function actionFromRecord(record: ArchiveRecordModel, protocolVersion: number): 
     publicValue: record.publicValue,
     depositSource: record.depositSource,
     publicRecipient: record.publicRecipient,
-    relayerFee: record.relayerFee,
-    relayer: record.relayer,
   };
 }
 
@@ -216,55 +216,29 @@ export async function scanArchiveRecords(
     notesByNullifier.set(nullifierHex, note);
   }
 
-  const recordsPerBatch = SCAN_ENVELOPE_BATCH_SIZE / 2;
-  for (let recordOffset = 0; recordOffset < input.records.length; recordOffset += recordsPerBatch) {
-    const recordBatch = input.records.slice(recordOffset, recordOffset + recordsPerBatch);
-    const preparedRecords = recordBatch.map(record => ({
-      record,
-      assetField: computeAssetField(record.asset),
-      assetContractId: StrKey.encodeContract(record.asset.payload),
-    }));
-    const envelopeCandidates = preparedRecords.flatMap(prepared => (
-      prepared.record.outputs.map((output, outputIndex) => ({
-        prepared,
-        output,
-        outputIndex,
-      }))
-    ));
-    const envelopeTrials = await mapInBoundedBatches(
-      envelopeCandidates,
-      SCAN_ENVELOPE_BATCH_SIZE,
-      async ({ prepared, output, outputIndex }) => ({
-        note: await openRecipientEnvelope(
-          input.viewingKey.hpkePrivateKey,
-          output.recipientEnvelope,
-          input.context.contextHash,
-          input.context.contextField,
-          prepared.assetField,
-          output.cm,
-          prepared.record.actionNonce,
-          outputIndex,
-          input.viewingKey.baseOwnerCommitment,
-        ),
-        outgoingBytes: await openOutgoingEnvelope(
-          input.viewingKey.outgoingViewingKey,
-          output.recipientEnvelope.slice(5, 37),
-          output.outgoingEnvelope,
-          deriveOutgoingAad(
-            input.context.deploymentBindingHash,
-            input.context.contextHash,
-            prepared.assetField,
-            output.cm,
-            prepared.record.actionNonce,
-            outputIndex,
-          ),
-        ),
-      }),
-    );
-    let envelopeTrialIndex = 0;
-    try {
-      for (const { record, assetField, assetContractId } of preparedRecords) {
-    if (record.actionIndex * 2 !== record.startingLeafIndex) {
+  const registry = input.context.assets.map(asset => {
+    if (!Number.isSafeInteger(asset.index) || asset.index < 0 || asset.index > 0xffff_ffff) {
+      throw new Error('Private asset registry index is invalid');
+    }
+    if (!StrKey.isValidContract(asset.contractId)) {
+      throw new Error('Private asset registry contract is invalid');
+    }
+    const payload = new Uint8Array(StrKey.decodeContract(asset.contractId));
+    return {
+      ...asset,
+      payload,
+      assetField: computeAssetField({ kind: 1, payload }),
+    };
+  });
+  if (
+    new Set(registry.map(asset => asset.index)).size !== registry.length
+    || new Set(registry.map(asset => asset.contractId)).size !== registry.length
+  ) {
+    throw new Error('Private asset registry contains duplicate entries');
+  }
+
+  for (const [recordOffset, record] of input.records.entries()) {
+    if (record.actionIndex * 3 !== record.startingLeafIndex) {
       throw new Error('Archive action sequence mismatch');
     }
     if (record.startingLeafIndex !== tree.nextIndex) {
@@ -282,12 +256,82 @@ export async function scanArchiveRecords(
       expectedPriorRecordHash,
     );
 
+    let candidates = registry;
+    if (record.actionKind !== ActionKind.PrivateTransfer) {
+      const boundaryAsset = registry.find(asset => asset.index === record.assetIndex);
+      if (
+        !boundaryAsset
+        || !record.asset
+        || record.asset.kind !== 1
+        || !equalBytes(boundaryAsset.payload, record.asset.payload)
+      ) {
+        throw new Error('Archive boundary asset does not match the authenticated registry');
+      }
+      candidates = [boundaryAsset];
+    } else if (record.asset || record.assetIndex !== undefined) {
+      throw new Error('Archive private transfer exposes an asset');
+    }
+
+    const envelopeTrials = await mapInBoundedBatches(
+      record.outputs,
+      SCAN_ENVELOPE_BATCH_SIZE,
+      async (output, outputIndex) => {
+        for (const candidate of candidates) {
+          const note = await openRecipientEnvelope(
+            input.viewingKey.hpkePrivateKey,
+            output.recipientEnvelope,
+            input.context.contextHash,
+            input.context.contextField,
+            candidate.assetField,
+            output.cm,
+            record.actionNonce,
+            outputIndex,
+            input.viewingKey.baseOwnerCommitment,
+          );
+          const outgoingBytes = await openOutgoingEnvelope(
+            input.viewingKey.outgoingViewingKey,
+            output.recipientEnvelope.slice(5, 37),
+            output.outgoingEnvelope,
+            deriveOutgoingAad(
+              input.context.deploymentBindingHash,
+              input.context.contextHash,
+              candidate.assetField,
+              output.cm,
+              record.actionNonce,
+              outputIndex,
+            ),
+          );
+          if (note || outgoingBytes) {
+            if (note && note.assetIndex !== candidate.index) {
+              outgoingBytes?.fill(0);
+              throw new Error('Recovered note asset index does not match its authenticated asset');
+            }
+            return { note, outgoingBytes, asset: candidate };
+          }
+        }
+        return { note: null, outgoingBytes: null, asset: null };
+      },
+    );
+
+    try {
     let ownedInputValue = 0n;
+    let activityAsset: (typeof registry)[number] | undefined = candidates.length === 1
+      ? candidates[0]
+      : undefined;
+    const useActivityAsset = (index: number, contractId: string) => {
+      const candidate = registry.find(asset => asset.index === index && asset.contractId === contractId);
+      if (!candidate) throw new Error('Recovered private asset is not in the authenticated registry');
+      if (activityAsset && activityAsset.index !== candidate.index) {
+        throw new Error('Private action mixed multiple assets');
+      }
+      activityAsset = candidate;
+    };
     for (const nullifier of record.nullifiers) {
       const nullifierHex = hex(nullifier);
       const spentNote = notesByNullifier.get(nullifierHex);
       if (!spentNote) continue;
       if (spentNote.status === 'spent') throw new Error('Owned note was spent more than once');
+      useActivityAsset(spentNote.assetIndex, spentNote.assetContractId);
       ownedInputValue += BigInt(spentNote.value);
       spentNote.status = 'spent';
       spentNote.spentInActionIndex = record.actionIndex;
@@ -299,9 +343,11 @@ export async function scanArchiveRecords(
     let receivedMemoHex: string | undefined;
     const recoveredRecipients: Array<{ fingerprint: string; memoHex?: string; value: bigint }> = [];
     for (const [outputIndex, output] of record.outputs.entries()) {
-      const { note, outgoingBytes } = envelopeTrials[envelopeTrialIndex++];
+      const { note, outgoingBytes, asset } = envelopeTrials[outputIndex];
       const ownedRealOutput = Boolean(note && note.flags === 0);
       if (note && note.flags === 0) {
+        if (!asset) throw new Error('Recovered note is missing its registry asset');
+        useActivityAsset(asset.index, asset.contractId);
         const commitment = hex(output.cm);
         const leafIndex = record.startingLeafIndex + outputIndex;
         const noteId = usedNoteIds.has(commitment)
@@ -315,7 +361,8 @@ export async function scanArchiveRecords(
           id: noteId,
           commitment,
           value: note.value.toString(),
-          assetContractId,
+          assetIndex: asset.index,
+          assetContractId: asset.contractId,
           diversifier: hex(note.diversifier),
           ownerCommitment: hex(note.ownerCommitment),
           leafIndex,
@@ -346,7 +393,11 @@ export async function scanArchiveRecords(
         try {
           if (!ownedRealOutput) {
             const outgoing = decodeOutgoingPlaintext(outgoingBytes);
+            if (!asset || outgoing.assetIndex !== asset.index) {
+              throw new Error('Recovered outgoing asset index does not match its authenticated asset');
+            }
             if (outgoing.flags === 0) {
+              useActivityAsset(asset.index, asset.contractId);
               const address = encodePrivateAddress({
                 deploymentTag: derivePrivateAddressDeploymentTag(
                   input.context.deploymentBindingHash,
@@ -383,10 +434,12 @@ export async function scanArchiveRecords(
       input.context,
     );
     if (classification) {
+      if (!activityAsset) throw new Error('Private activity asset could not be recovered');
       activities.push({
         id: hex(expectedActionField),
         actionIndex: record.actionIndex,
-        assetContractId,
+        assetIndex: activityAsset.index,
+        assetContractId: activityAsset.contractId,
         ...classification,
         timestamp: input.ledgerClosedAt?.[record.ledgerSequence] ?? 0,
         nullifiers: record.nullifiers.map(hex),
@@ -409,11 +462,10 @@ export async function scanArchiveRecords(
       });
     }
     expectedPriorRecordHash = Uint8Array.from(recordHash);
-      }
     } finally {
       for (const trial of envelopeTrials) trial.outgoingBytes?.fill(0);
     }
-    if (recordOffset + recordsPerBatch < input.records.length) await yieldToEventLoop();
+    if ((recordOffset + 1) % SCAN_ENVELOPE_BATCH_SIZE === 0) await yieldToEventLoop();
   }
 
   if (expectedFinalTreeRoot) {
