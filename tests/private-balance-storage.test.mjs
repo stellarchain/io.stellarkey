@@ -703,7 +703,8 @@ test('the private address and recent recipients persist under schema validation'
   await commitPrivateBalanceState(context, key, reset, twice.revision, driver);
   await assert.rejects(recordPrivateBalanceAddress(context, key, reset.revision, address(0), driver), /already issued/i);
   // A legacy record remembers at least its current address when first rotated.
-  const { issuedAddressDiversifiers: _issued, ...legacy } = reset;
+  const legacy = { ...reset };
+  delete legacy.issuedAddressDiversifiers;
   await commitPrivateBalanceState(context, key, { ...legacy, revision: reset.revision + 1 }, reset.revision, driver);
   const afterLegacy = await recordPrivateBalanceAddress(context, key, reset.revision + 1, address(3), driver);
   await assert.rejects(recordPrivateBalanceAddress(context, key, afterLegacy.revision, address(2), driver), /already issued/i);
