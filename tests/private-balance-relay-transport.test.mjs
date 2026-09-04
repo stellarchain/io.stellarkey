@@ -17,6 +17,7 @@ import {
   createResilientPrivateRelaySubscription,
   firstAcceptedPrivateRelayPublish,
   PRIVATE_RELAY_RECONNECT_BACKOFF_MS,
+  PRIVATE_RELAY_TOPIC,
   privateRelayConnectionOutcomes,
 } from '../src/features/private-balance/relay/nostr.ts';
 import { readFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ const NOW = 1_800_000_000;
 test('NIP-44 v2 payloads authenticate two ephemeral identities', async () => {
   const alice = await createPrivateRelayEphemeralIdentity();
   const bob = await createPrivateRelayEphemeralIdentity();
-  const plaintext = '{"version":1,"type":"request"}';
+  const plaintext = '{"version":2,"type":"request"}';
   const encrypted = await encryptPrivateRelayPayload(alice.secretKey, bob.publicKey, plaintext);
   assert.notEqual(encrypted, plaintext);
   assert.equal(await decryptPrivateRelayPayload(bob.secretKey, alice.publicKey, encrypted), plaintext);
@@ -38,7 +39,7 @@ test('NIP-44 v2 payloads authenticate two ephemeral identities', async () => {
   const event = await signPrivateRelayEvent(alice.secretKey, {
     kind: 24_333,
     created_at: NOW,
-    tags: [['t', 'stellarkey-private-relay-v1']],
+    tags: [['t', PRIVATE_RELAY_TOPIC]],
     content: encrypted,
   });
   assert.equal(await verifyPrivateRelayEvent(event), true);

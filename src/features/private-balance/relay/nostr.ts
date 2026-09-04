@@ -6,7 +6,7 @@ import type {
 } from './transport';
 
 export const PRIVATE_RELAY_EVENT_KIND = 24_333;
-export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v1';
+export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v2';
 export const PRIVATE_RELAY_RECONNECT_BACKOFF_MS: readonly number[] = Object.freeze([
   1_000,
   2_000,

@@ -7,6 +7,7 @@ import {
   usePrivateBalanceRuntimeData,
 } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
+import { signOptedInPrivateRelayQuote } from '@/lib/private-relay-quote-signing';
 import { formatPrivateBalanceAmount, formatPrivateBalanceXlm } from '../runtime/selectors';
 import {
   loadPrivateRelayPreferences,
@@ -132,6 +133,14 @@ export function PrivateRelayHelperManager() {
           request,
           peerAccount: publicAddress,
           feeAtomic: preferences.feeAtomic,
+          signAccountQuote: (request, quote) => signOptedInPrivateRelayQuote({
+            request,
+            quote,
+            expectedAccount: publicAddress,
+            expectedNetworkId: networkId,
+            expectedPoolContractId: poolContractId,
+            signal: controller.signal,
+          }),
         }, controller.signal).catch(forgetRequest);
       }, controller.signal);
       session.listenForPrivateMessages((message, quote) => {
@@ -397,7 +406,7 @@ export function PrivateRelayHelperManager() {
         <Notice>
           The wallet parsed this exact transaction, confirmed it only invokes this private pool,
           decrypted exactly one fee note addressed to you, capped its fees, and simulated its proof.
-          Helping never signs automatically.
+          Helping never signs transactions automatically.
         </Notice>
         {error ? <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p> : null}
         <div className="grid grid-cols-2 gap-3">

@@ -11,10 +11,12 @@ import {
   createPrivateRelayId,
   decodePrivateRelayMessage,
   encodePrivateRelayMessage,
+  PRIVATE_RELAY_MAX_PLAINTEXT_BYTES,
   PrivateRelayReplayGuard,
   type PrivateRelayMessage,
   type PrivateRelayPayout,
   type PrivateRelayQuote,
+  type PrivateRelayUnsignedQuote,
   type PrivateRelayRejected,
   type PrivateRelayRequest,
   type PrivateRelaySelection,
@@ -33,6 +35,7 @@ import {
   type PrivateRelaySubscription,
 } from './transport';
 import { rankPrivateRelayQuotes } from './availability';
+import { verifyPrivateRelayQuoteAuthorization } from './account-authorization';
 
 const DEFAULT_MESSAGE_TTL_SECONDS = 120;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 20_000;
@@ -99,9 +102,18 @@ export class PrivateRelayMessenger {
   ): Promise<void> {
     this.assertOpen();
     if (signal?.aborted) throw abortError();
+    if (message.type !== 'request' && !peerPublicKey) {
+      throw new Error('Private relay replies require an encrypted recipient');
+    }
     const encoded = encodePrivateRelayMessage(message);
+    // One bounded size for every encrypted class (including short rejects and
+    // quotes). JSON whitespace is inside authenticated encryption. This hides
+    // content length, not message count, timing, or Nostr routing metadata.
+    const padded = peerPublicKey
+      ? encoded + ' '.repeat(PRIVATE_RELAY_MAX_PLAINTEXT_BYTES - new TextEncoder().encode(encoded).byteLength)
+      : encoded;
     const content = peerPublicKey
-      ? await encryptPrivateRelayPayload(this.identity.secretKey, peerPublicKey, encoded)
+      ? await encryptPrivateRelayPayload(this.identity.secretKey, peerPublicKey, padded)
       : encoded;
     const tags = [
       ['t', PRIVATE_RELAY_TOPIC],
@@ -114,6 +126,9 @@ export class PrivateRelayMessenger {
       tags,
       content,
     });
+    this.assertOpen();
+    if (signal?.aborted) throw abortError();
+    if (message.expiresAt <= nowSeconds()) throw new Error('Private relay message expired before publication');
     await this.transport.publish(event, signal);
   }
 
@@ -275,7 +290,7 @@ export class PrivateRelaySenderSession {
       throw new Error('Private relay quote settle window is invalid');
     }
     const request: PrivateRelayRequest = {
-      version: 1,
+      version: 2,
       type: 'request',
       requestId: createPrivateRelayId(),
       networkId: input.networkId,
@@ -314,9 +329,12 @@ export class PrivateRelaySenderSession {
     hardDeadline = setTimeout(finishDiscovery, quoteWindowMs);
     const subscription = this.messenger.subscribe({
       encrypted: true,
-      onMessage: ({ message }) => {
+      onMessage: ({ event, message }) => {
         if (message.type !== 'quote' || message.requestId !== request.requestId) return;
-        if (message.expiresAt <= nowSeconds()) return;
+        if (
+          controller.signal.aborted || event.pubkey !== message.peerPubkey ||
+          !verifyPrivateRelayQuoteAuthorization(request, message)
+        ) return;
         if (excludedPeerAccounts.has(message.peerAccount)) {
           const previousSize = ineligiblePeerAccounts.size;
           ineligiblePeerAccounts.add(message.peerAccount);
@@ -377,26 +395,40 @@ export class PrivateRelaySenderSession {
     assetIndex: number;
     actionDiversifier: string;
   }, signal?: AbortSignal): Promise<PrivateRelayPayout> {
+    // Copy the authenticated context so callers cannot replace it while an
+    // asynchronous response subscription or encrypted publication is pending.
+    const request = { ...input.request };
+    const quote = { ...input.quote };
+    const assertAuthenticated = () => {
+      if (
+        request.replyPubkey !== this.publicKey ||
+        !verifyPrivateRelayQuoteAuthorization(request, quote)
+      ) throw new Error('Private relay account authentication context is invalid or expired');
+    };
+    assertAuthenticated();
     const selection: PrivateRelaySelection = {
-      version: 1,
+      version: 2,
       type: 'selection',
-      requestId: input.request.requestId,
-      quoteId: input.quote.quoteId,
+      requestId: request.requestId,
+      quoteId: quote.quoteId,
       assetIndex: input.assetIndex,
       actionDiversifier: input.actionDiversifier,
       nonce: createPrivateRelayId(),
-      expiresAt: Math.min(input.quote.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
+      expiresAt: Math.min(quote.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
     };
     const response = await this.messenger.waitFor({
-      peerPublicKey: input.quote.peerPubkey,
-      requestId: input.request.requestId,
-      quoteId: input.quote.quoteId,
+      peerPublicKey: quote.peerPubkey,
+      requestId: request.requestId,
+      quoteId: quote.quoteId,
       types: ['payout', 'rejected'],
-      publish: () => this.messenger.publish(selection, input.quote.peerPubkey, signal),
+      publish: () => {
+        assertAuthenticated();
+        return this.messenger.publish(selection, quote.peerPubkey, signal);
+      },
     }, signal);
     if (response.type === 'rejected') throw new Error(`Privacy relay rejected the selection: ${response.reason}`);
     if (response.type !== 'payout') throw new Error('Privacy relay returned the wrong selection response');
-    if (response.peerAccount !== input.quote.peerAccount || response.feeAtomic !== input.quote.feeAtomic) {
+    if (response.peerAccount !== quote.peerAccount || response.feeAtomic !== quote.feeAtomic) {
       throw new Error('Privacy relay changed its quoted account or fee');
     }
     return response;
@@ -409,7 +441,7 @@ export class PrivateRelaySenderSession {
     transactionHash: string;
   }, signal?: AbortSignal): Promise<PrivateRelaySignedJob> {
     const job: PrivateRelaySignJob = {
-      version: 1,
+      version: 2,
       type: 'sign-job',
       requestId: input.payout.requestId,
       quoteId: input.payout.quoteId,
@@ -437,7 +469,7 @@ export class PrivateRelaySenderSession {
     signed: PrivateRelaySignedJob;
   }, signal?: AbortSignal): Promise<PrivateRelaySubmitted> {
     const job: PrivateRelaySubmitJob = {
-      version: 1,
+      version: 2,
       type: 'submit-job',
       requestId: input.signed.requestId,
       quoteId: input.signed.quoteId,
@@ -549,20 +581,31 @@ export class PrivateRelayHelperSession {
     request: PrivateRelayRequest;
     peerAccount: string;
     feeAtomic: string;
+    signAccountQuote(request: PrivateRelayRequest, quote: PrivateRelayUnsignedQuote): Promise<string>;
   }, signal?: AbortSignal): Promise<PrivateRelayQuote> {
-    const quote: PrivateRelayQuote = {
-      version: 1,
+    const request = { ...input.request };
+    const unsignedQuote: PrivateRelayUnsignedQuote = {
+      version: 2,
       type: 'quote',
-      requestId: input.request.requestId,
+      requestId: request.requestId,
       quoteId: createPrivateRelayId(),
       peerPubkey: this.publicKey,
       peerAccount: input.peerAccount,
       feeAtomic: input.feeAtomic,
       nonce: createPrivateRelayId(),
-      expiresAt: Math.min(input.request.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
+      expiresAt: Math.min(request.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
     };
-    await this.messenger.publish(quote, input.request.replyPubkey, signal);
-    this.rememberQuote(quote, input.request.replyPubkey);
+    if (signal?.aborted) throw abortError();
+    const quote: PrivateRelayQuote = {
+      ...unsignedQuote,
+      accountSignature: await input.signAccountQuote({ ...request }, { ...unsignedQuote }),
+    };
+    if (signal?.aborted) throw abortError();
+    if (!verifyPrivateRelayQuoteAuthorization(request, quote)) {
+      throw new Error('Private relay quote account authentication failed');
+    }
+    await this.messenger.publish(quote, request.replyPubkey, signal);
+    this.rememberQuote(quote, request.replyPubkey);
     return quote;
   }
 
@@ -572,7 +615,7 @@ export class PrivateRelayHelperSession {
     privateFeeAddress: string;
   }, signal?: AbortSignal): Promise<PrivateRelayPayout> {
     const payout: PrivateRelayPayout = {
-      version: 1,
+      version: 2,
       type: 'payout',
       requestId: input.selection.requestId,
       quoteId: input.selection.quoteId,
@@ -594,7 +637,7 @@ export class PrivateRelayHelperSession {
     signedEnvelopeXdr: string;
   }, signal?: AbortSignal): Promise<PrivateRelaySignedJob> {
     const response: PrivateRelaySignedJob = {
-      version: 1,
+      version: 2,
       type: 'signed-job',
       requestId: input.job.requestId,
       quoteId: input.job.quoteId,
@@ -615,7 +658,7 @@ export class PrivateRelayHelperSession {
     rpcStatus: PrivateRelaySubmitted['rpcStatus'];
   }, signal?: AbortSignal): Promise<PrivateRelaySubmitted> {
     const response: PrivateRelaySubmitted = {
-      version: 1,
+      version: 2,
       type: 'submitted',
       requestId: input.job.requestId,
       quoteId: input.job.quoteId,
@@ -638,7 +681,7 @@ export class PrivateRelayHelperSession {
     expiresAt: number;
   }, signal?: AbortSignal): Promise<void> {
     await this.messenger.publish({
-      version: 1,
+      version: 2,
       type: 'rejected',
       requestId: input.requestId,
       quoteId: input.quoteId,

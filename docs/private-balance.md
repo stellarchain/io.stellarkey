@@ -442,6 +442,18 @@ expiry. The user explicitly selects one peer before any fee-address negotiation,
 proof construction, signing, or submission. Deposits are not relayable because
 their public source must authorize the asset transfer.
 
+Negotiation protocol v2 uses the `stellarkey-private-relay-v2` topic; v1 peers
+are not compatible. Every offered Stellar source account must sign a canonical,
+domain-separated statement binding the request, network, pool, both peers,
+quoted account, fee, nonces and expiry. The sender verifies this proof before
+displaying/ranking an offer and again before revealing selection metadata.
+This proves account-key possession, not effective ledger signing thresholds.
+Helper opt-in permits these encrypted offer signatures while unlocked; it never
+permits automatic transaction signatures. Every encrypted message is padded
+inside NIP-44 to the same 24 KiB plaintext size, including quotes and rejections.
+Padding costs bandwidth and does not hide the Nostr peer graph, timing, message
+count, IP addresses, or the clear discovery request.
+
 The **Check available peers** control is an explicit live quote request, not a
 background presence beacon. It reveals no asset, amount, destination, note, or
 proof input. The UI changes from finding peers to comparing fees when the first

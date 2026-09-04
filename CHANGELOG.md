@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Required encrypted, context-bound Stellar account-key proofs before accepting or selecting privacy-relay offers, moved negotiation to an incompatible v2 topic, and padded encrypted message classes to a common bounded size. Helper opt-in authorizes offer signatures; transactions still require manual approval.
 - Excluded the active Stellar account from privacy-relay availability and transaction offers, capped untrusted quote collection, and expired helper request/quote state so self-relay, flooding, and repeated probes cannot undermine the bounded peer workflow.
 - Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
 - Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.

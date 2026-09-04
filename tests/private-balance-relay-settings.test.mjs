@@ -15,6 +15,9 @@ test('advanced privacy keeps relay use and peer assistance as independent explic
   assert.match(settings, /helpRelay/);
   assert.match(settings, /Save relay settings/);
   assert.match(settings, /No StellarKey backend/);
+  assert.match(settings, /automatically signs encrypted account-possession offers/i);
+  assert.match(settings, /every exact transaction still requires your approval/i);
+  assert.doesNotMatch(settings, /Helping never signs\s+automatically/);
 });
 
 test('home exposes a focused earn-by-relaying entry with live helper status', () => {
@@ -100,7 +103,7 @@ test('helper mode presents a manual approval only after strict local review', ()
   assert.match(manager, /Approve &amp; sign/);
   assert.match(manager, /Reject/);
   assert.match(manager, /<Modal/);
-  assert.match(manager, /never signs automatically/i);
+  assert.match(manager, /never signs transactions automatically/i);
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
   assert.match(manager, /requestExpiryTimers/);
   assert.match(manager, /waitUntilConnected/);
