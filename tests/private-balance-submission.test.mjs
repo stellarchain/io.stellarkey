@@ -742,7 +742,8 @@ for (const rpcStatus of ['PENDING', 'ERROR']) {
 test('legacy signed recovery derives missing expiry from the exact stored envelope', async () => {
   const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture('legacy');
   const state = await loadPrivateBalanceState(context, storageKey, driver);
-  const { expiresAtSeconds: _expiry, ...legacy } = state.pendingActions[0];
+  const legacy = { ...state.pendingActions[0] };
+  delete legacy.expiresAtSeconds;
   await commitPrivateBalanceState(context, storageKey, {
     ...state, revision: state.revision + 1, pendingActions: [legacy],
   }, state.revision, driver);
