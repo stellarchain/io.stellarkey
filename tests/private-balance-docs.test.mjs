@@ -145,6 +145,9 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /no backward-compatible.*migration/i);
   assert.match(paper, /shows every valid quote.*peer.*fee.*expir/is);
   assert.match(paper, /Check available peers.*explicit.*live quote request/is);
+  assert.match(paper, /first.*valid.*offer.*immediately/is);
+  assert.match(paper, /700 ms.*quiet/is);
+  assert.match(paper, /first.*relay.*accept/is);
   assert.match(paper, /active Stellar account.*excluded.*self-relay/is);
   assert.match(paper, /available when checked.*not.*guarantee/is);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
