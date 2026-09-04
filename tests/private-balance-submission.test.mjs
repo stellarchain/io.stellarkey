@@ -708,6 +708,7 @@ test('prepare refuses while a previous payment is still confirming', async () =>
       classicFeeStroops: 100n,
       assetIndex: 0,
       assetContractId: ASSET_CONTRACT_ID,
+      registryAssets: [{ index: 0, contractId: ASSET_CONTRACT_ID }],
       assetCode: 'XLM',
       assetDecimals: 7,
       draft: { kind: 'transfer', amount: '1', recipientAddress: `tskpay_${'3'.repeat(121)}` },

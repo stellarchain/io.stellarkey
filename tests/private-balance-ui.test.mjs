@@ -120,6 +120,20 @@ test('a follower tab offers Use Here instead of dead buttons', () => {
   assert.match(card, /takeoverLeadership\(\)/);
 });
 
+test('only the live asset administrator sees append and exit-only controls', () => {
+  const settings = read('src/features/private-balance/components/PrivateProtocolSettings.tsx');
+  const admin = read('src/features/private-balance/components/PrivateAssetRegistryAdmin.tsx');
+
+  assert.match(settings, /<PrivateAssetRegistryAdmin \/>/);
+  assert.match(admin, /publicAddress === deployment\.assetAdminAddress/);
+  assert.match(admin, /Add asset contract/);
+  assert.match(admin, /Set exit only/);
+  assert.match(admin, /Allow deposits/);
+  assert.match(admin, /registry entries are never deleted/i);
+  assert.doesNotMatch(admin, /removeAsset|deleteAsset|remove_asset|delete_asset/);
+  assert.match(admin, /retryRuntime\(\)/);
+});
+
 test('the ambient status line follows the D1 rules', async () => {
   const { privateBalanceStatusLine } = await import(
     '../src/features/private-balance/components/PrivateBalanceStatusLine.ts'

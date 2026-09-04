@@ -4,10 +4,10 @@ import {
   rpc as SorobanRpc,
   type xdr,
 } from '@stellar/stellar-sdk';
-import type { PrivateBalanceManifest } from '../../../lib/private-balance-manifest';
 import {
   reviewPrivateBalanceTransaction,
   type PrivateBalanceTransactionReview,
+  type PrivateBalanceTransactionManifest,
 } from './transaction-review';
 
 const REVIEW_WINDOW_SECONDS = 5 * 60;
@@ -28,7 +28,7 @@ export interface PreparedReviewedPrivateBalanceTransaction {
 export async function prepareReviewedPrivateBalanceTransaction(input: {
   rpc: PrivateActionSimulationRpc;
   operation: xdr.Operation;
-  manifest: Pick<PrivateBalanceManifest, 'networkPassphrase' | 'poolContractId' | 'assets'>;
+  manifest: PrivateBalanceTransactionManifest;
   source: string;
   classicFeeStroops: bigint;
   maximumResourceFeeStroops: bigint;

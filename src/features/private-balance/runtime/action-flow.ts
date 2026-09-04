@@ -321,6 +321,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   depositSourceMinimumBalanceStroops?: bigint;
   assetContractId: string;
   assetIndex: number;
+  registryAssets: ReadonlyArray<{ index: number; contractId: string }>;
   assetCode: string;
   assetDecimals: number;
   draft: PrivateActionDraft;
@@ -334,7 +335,7 @@ export async function preparePrivateBalanceActionFlow(input: {
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
   }
-  const manifestAsset = input.manifest.assets[input.assetIndex];
+  const manifestAsset = input.registryAssets[input.assetIndex];
   if (
     !manifestAsset
     || manifestAsset.index !== input.assetIndex
@@ -595,7 +596,11 @@ export async function preparePrivateBalanceActionFlow(input: {
     const transaction = await prepareReviewedPrivateBalanceTransaction({
       rpc,
       operation,
-      manifest: input.manifest,
+      manifest: {
+        networkPassphrase: input.manifest.networkPassphrase,
+        poolContractId: input.manifest.poolContractId,
+        assets: input.registryAssets,
+      },
       source: input.accountPublicKey,
       classicFeeStroops: input.classicFeeStroops,
       maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS,

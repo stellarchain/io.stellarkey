@@ -78,6 +78,7 @@ export interface PrivateBalanceDeploymentSummary {
   network: 'testnet' | 'mainnet' | null;
   poolContractId: string | null;
   assetContractId: string | null;
+  assetAdminAddress: string | null;
   realmId: string | null;
   artifactVersion: string | null;
   manifestHash: string | null;
@@ -245,6 +246,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
     network: null,
     poolContractId: null,
     assetContractId: null,
+    assetAdminAddress: null,
     realmId: null,
     artifactVersion: null,
     manifestHash: null,
