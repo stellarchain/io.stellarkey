@@ -285,6 +285,7 @@ export function SendPrivate({
           chainProgress={flow.chainProgress}
           progress={flow.progress}
           relayProgress={flow.relayProgress}
+          relayQuotes={flow.relayQuotes}
           preparing={flow.preparing}
           working={flow.working}
           error={flow.error}
@@ -293,6 +294,7 @@ export function SendPrivate({
           confirmLabel="Confirm Send"
           onConfirm={confirmSend}
           onBack={backToForm}
+          onSelectRelayQuote={quoteId => void flow.selectRelayQuote(quoteId)}
         />
       ) : (
         <form className="space-y-4 p-4 sm:p-6" onSubmit={submitForm}>

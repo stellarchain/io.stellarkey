@@ -431,8 +431,11 @@ For each private transfer or withdrawal, the review UI requires an explicit
 choice between **Privacy relay** and **My account**. Relay mode first publishes a
 short-lived quote request through at least two user-configurable public Nostr
 relay origins. Sender and helper use ephemeral Nostr identities; messages after
-discovery are NIP-44 v2 encrypted to the selected peer. Deposits are not
-relayable because their public source must authorize the asset transfer.
+discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
+only in memory and shows every valid quote with the peer's public source account,
+same-asset fee, and expiry. The user explicitly selects one peer before any
+fee-address negotiation, proof construction, signing, or submission. Deposits
+are not relayable because their public source must authorize the asset transfer.
 
 The selected peer gives the sender a quote and a diversified private fee
 address. The sender builds a new proof with the peer's same-asset fee as one of

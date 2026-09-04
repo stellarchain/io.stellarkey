@@ -129,3 +129,24 @@ test('private send makes peer relay an explicit choice and never silently falls 
   assert.match(controller, /No privacy relay peer answered/);
   assert.doesNotMatch(controller, /catch[\s\S]{0,200}prepareAction\(draft/);
 });
+
+test('private relay shows every quote and waits for the person to select a peer', () => {
+  const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
+  const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
+  const picker = read('src/features/private-balance/components/PrivateRelayQuotePicker.tsx');
+  const send = read('src/features/private-balance/components/SendPrivate.tsx');
+  const withdraw = read('src/features/private-balance/components/WithdrawPrivate.tsx');
+
+  assert.match(controller, /relayQuotes/);
+  assert.match(controller, /selectRelayQuote/);
+  assert.match(controller, /relaySelectionRef/);
+  assert.doesNotMatch(controller, /quotes\[0\]/);
+  assert.match(review, /PrivateRelayQuotePicker/);
+  assert.match(review, /onSelectRelayQuote/);
+  assert.match(picker, /Available peers/);
+  assert.match(picker, /quote\.peerAccount/);
+  assert.match(picker, /quote\.feeAtomic/);
+  assert.match(picker, /Choose peer/);
+  assert.match(send, /relayQuotes=\{flow\.relayQuotes\}/);
+  assert.match(withdraw, /relayQuotes=\{flow\.relayQuotes\}/);
+});

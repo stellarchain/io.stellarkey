@@ -54,8 +54,10 @@ in this file changes the behavior or guarantees documented in
     Do not introduce a StellarKey backend, operated relay, indexer, custody, or
     server-side private state.
   - The sender broadcasts only a bounded quote request through at least two
-    configurable public Nostr relay origins. A selected peer then receives the
-    job through NIP-44 v2 encrypted messages under ephemeral Nostr identities.
+    configurable public Nostr relay origins. Every valid reply is shown with its
+    peer source account, same-asset fee, and expiry; the sender explicitly picks
+    one. Only that selected peer receives the job through NIP-44 v2 encrypted
+    messages under ephemeral Nostr identities.
     These public relay services are not StellarKey servers, but they do observe
     IP addresses, timing, and the public request. NIP-44 does not provide
     forward secrecy or post-quantum confidentiality.

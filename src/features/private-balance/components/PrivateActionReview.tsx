@@ -16,8 +16,10 @@ import type {
   PrivateActionProgressStage,
 } from '../runtime/action-flow';
 import type { PrivateChainedSendProgress } from '../runtime/chained-send';
+import type { PrivateRelayQuote } from '../relay/protocol';
 import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionError';
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
+import { PrivateRelayQuotePicker } from './PrivateRelayQuotePicker';
 import type {
   PrivateChainedReview,
   PrivateRelayProgress,
@@ -71,6 +73,7 @@ export function PrivateActionReview({
   chainProgress,
   progress,
   relayProgress,
+  relayQuotes = [],
   preparing,
   working,
   error,
@@ -79,6 +82,7 @@ export function PrivateActionReview({
   confirmLabel,
   onConfirm,
   onBack,
+  onSelectRelayQuote,
 }: {
   draft: PrivateReviewDraft;
   review: PreparedPrivateActionReview | null;
@@ -86,6 +90,7 @@ export function PrivateActionReview({
   chainProgress: PrivateChainedSendProgress | null;
   progress: PrivateActionProgressStage | null;
   relayProgress?: PrivateRelayProgress | null;
+  relayQuotes?: readonly PrivateRelayQuote[];
   preparing: boolean;
   working: boolean;
   error: string | null;
@@ -95,6 +100,7 @@ export function PrivateActionReview({
   confirmLabel: string;
   onConfirm(): void;
   onBack(): void;
+  onSelectRelayQuote?(quoteId: string): void;
 }) {
   const { asset, publicAddress } = usePrivateBalanceRuntimeData();
   const decimals = asset?.decimals ?? 7;
@@ -205,6 +211,8 @@ export function PrivateActionReview({
     ? `Ready to confirm. Maximum network fee ${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM.`
     : chained !== null
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
+      : relayQuotes.length > 0
+        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer is' : 'offers are'} available. Choose a peer to continue.`
       : preparing
         ? relayProgress === 'finding-peer'
           ? 'Finding a privacy relay…'
@@ -286,7 +294,9 @@ export function PrivateActionReview({
                     : progressLabel(progress ?? 'checking-chain')}
               </span>
             ) : (
-              <span className="font-normal text-neutral-500">—</span>
+              <span className="font-normal text-neutral-500">
+                {relayQuotes.length > 0 ? 'Choose a peer below' : '—'}
+              </span>
             )}
           </ReviewRow>
         )}
@@ -375,6 +385,16 @@ export function PrivateActionReview({
             Each step can take a little while. Keep this open — your draft is safe.
           </p>
         </div>
+      ) : null}
+
+      {relayQuotes.length > 0 && onSelectRelayQuote ? (
+        <PrivateRelayQuotePicker
+          quotes={relayQuotes}
+          code={code}
+          decimals={decimals}
+          disabled={preparing || working}
+          onSelect={onSelectRelayQuote}
+        />
       ) : null}
 
       {displayCause ? <PrivateActionError cause={displayCause} /> : null}

@@ -143,6 +143,7 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /interruption before.*sync.*rescan/is);
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
   assert.match(paper, /no backward-compatible.*migration/i);
+  assert.match(paper, /shows every valid quote.*peer.*fee.*expir/is);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
