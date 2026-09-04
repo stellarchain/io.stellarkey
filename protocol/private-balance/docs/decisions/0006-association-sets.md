@@ -11,8 +11,8 @@ path alone does not provide a compliance or privacy guarantee.
 
 The constraint cost was validated instead of estimated. Compiling the standalone depth-17 ternary
 path in `spikes/circom/association-path.circom` with Circom 2.2.3 and `--O2` produces 4,573
-constraints, 53 private inputs, and one public input. Adding only that path to the 14,574-constraint
-action projects 19,147 constraints, a 31.38% increase, before policy predicates or root-lifecycle
+constraints, 53 private inputs, and one public input. Adding only that path to the current
+15,114-constraint action projects 19,687 constraints, a 30.26% increase, before policy predicates or root-lifecycle
 logic.
 
 ## Decision
@@ -27,6 +27,6 @@ measurement evidence, not a production design.
 
 ## Consequences
 - The current protocol makes no association-set or regulatory-screening claim.
-- The proving key and contract avoid an unpriced 31.38% minimum circuit expansion.
+- The proving key and contract avoid an unpriced 30.26% minimum circuit expansion.
 - Adding this feature later is an explicit protocol replacement with new artifacts, not a manifest
   toggle.

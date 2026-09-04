@@ -115,7 +115,7 @@ test('retired private archive paging constants stay out of consensus bindings', 
   }
 });
 
-test('asset-pinned pools precompute their immutable public asset field', () => {
+test('the governed registry precomputes immutable asset fields', () => {
   const storage = readFileSync(
     join(process.cwd(), 'protocol/private-balance/contracts/pool/src/storage.rs'),
     'utf8',
@@ -124,10 +124,15 @@ test('asset-pinned pools precompute their immutable public asset field', () => {
     join(process.cwd(), 'protocol/private-balance/contracts/pool/src/action.rs'),
     'utf8',
   );
+  const contract = readFileSync(
+    join(process.cwd(), 'protocol/private-balance/contracts/pool/src/contract.rs'),
+    'utf8',
+  );
 
   assert.match(storage, /pub asset_field: BytesN<32>/u);
-  assert.match(action, /compute_public_signals_with_asset_field/u);
-  assert.match(action, /config\.asset_field\.to_array\(\)/u);
+  assert.match(storage, /get_registered_asset/u);
+  assert.match(action, /asset_index: None,\s*\n\s*asset: None,/u);
+  assert.match(contract, /compute_asset_field\(\(1, asset_payload\)\)/u);
 });
 
 test('private proving-key checks pin and authenticate the pot14 ceremony input', () => {

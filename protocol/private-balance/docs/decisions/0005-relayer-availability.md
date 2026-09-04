@@ -1,7 +1,8 @@
 # ADR 0005: Disclose Self-Submission Until a Relayer Exists
 
 ## Status
-Accepted
+Superseded on 2026-09-04 by
+[`0009-browser-peer-relay.md`](0009-browser-peer-relay.md).
 
 ## Context
 The pool already supports third-party submission. Transfer and withdrawal are authorized by the

@@ -24,11 +24,12 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.match(product, /passes.*pinned Powers-of-Tau transcript/is);
   assert.match(product, /does not make.*safe for real value/is);
   assert.match(product, /Mainnet.*reject/is);
-  assert.match(product, /no application backend/i);
+  assert.match(product, /no (?:application|StellarKey) backend/i);
   assert.match(product, /transaction source.*public|public.*transaction source/is);
-  assert.match(product, /self-submits.*public Stellar account|public Stellar account.*self-submits/is);
-  assert.match(product, /zero-fee.*pool contract.*relayer|relayer.*pool contract.*zero-fee/is);
-  assert.doesNotMatch(product, /own public Stellar account as relayer/i);
+  assert.match(product, /Direct mode.*user's public Stellar account|user's public Stellar account.*Direct mode/is);
+  assert.match(product, /Optional privacy-relay mode.*peer|peer.*Optional privacy-relay mode/is);
+  assert.match(product, /No public relayer address or fee/is);
+  assert.match(product, /never silently falls back/is);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);
   assert.match(product, /RPC.*IP|IP.*RPC/is);
   assert.match(recovery, /encrypted backup/i);
@@ -50,9 +51,14 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   const manifest = JSON.parse(readSource('public/protocol/private-balance/v1/manifest.json'));
   const evidence = JSON.parse(readSource('protocol/private-balance/results/review-validation.json'));
   const noteInputs = [...noteCircuit.matchAll(/signal input (\w+);/g)].map(([, input]) => input);
-  const circuit = evidence.circuit.ternaryDepth17;
   const constants = manifest.constants;
   const artifacts = manifest.artifacts;
+  const circuit = {
+    constraints: artifacts.r1csConstraints,
+    publicInputs: constants.publicInputs,
+    privateInputs: 128,
+    capacityLeaves: constants.treeArity ** constants.treeDepth,
+  };
   const r1csByteLength = statSync(
     new URL('../protocol/private-balance/circuits/build/action.r1cs', import.meta.url),
   ).size;
@@ -84,11 +90,12 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
       'is',
     ),
   );
-  assert.match(paper, /two input lanes.*two output lanes/is);
+  assert.match(paper, /two input lanes.*three output lanes/is);
   assert.match(paper, /randomiz(?:e|es|ed|ing).*lane ordering/is);
   assert.match(paper, /randomizes.*input lane ordering.*output lane ordering/is);
-  assert.match(paper, /four-byte self-output diversifier.*2\^32/is);
-  assert.match(paper, /collision.*default zero.*impossible/is);
+  assert.match(paper, /common clear action diversifier/is);
+  assert.match(paper, /prevents.*identifying output roles/is);
+  assert.match(paper, /reusing a receive\s+address.*link/is);
   assert.match(paper, /checksum.*overwhelmingly\s+likely.*not.*guarantee/is);
   assert.doesNotMatch(paper, /diversifiers prevent change from reusing/i);
   assert.match(paper, /zero-value dummy notes/i);
@@ -107,7 +114,9 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /seed-recovered activity.*fingerprint.*not.*full.*address/is);
   assert.match(paper, /ordinary sends.*full private address.*encrypted recent-recipient/is);
   assert.match(paper, /`tskpay_`.*128.*`skpay_`.*127/is);
-  assert.match(paper, /asset-pinned pool/i);
+  assert.match(paper, /append-only asset registry/i);
+  assert.match(paper, /`Active` and `ExitOnly`/i);
+  assert.match(paper, /Internal transfers publish neither the\s+asset contract nor registry index/is);
   assert.match(paper, /routine.*witness.*enabled by default/is);
   assert.match(paper, /routine.*witness.*disabled/is);
   assert.match(paper, /seed recovery.*full history.*always\s+require.*witness/is);
@@ -120,7 +129,7 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
   assert.match(paper, /no backward-compatible.*migration/i);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
-  assert.match(paper, /live Testnet.*validated/is);
+  assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
   assert.match(paper, /does not run or record.*powersoftau verify/is);
   assert.match(paper, /Testnet reset.*redeploy/is);
@@ -160,7 +169,6 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
   const spec = readSource('protocol/private-balance/docs/protocol-v1.md');
   const decisions = [
     ['0002-private-note-key-agreement.md', /RFC 9180.*retain|retain.*RFC 9180/is],
-    ['0003-multi-asset-pool.md', /asset-pinned.*retain|retain.*asset-pinned/is],
     ['0004-poseidon2-capacity-domain.md', /Soroban.*host|host.*Soroban/is],
   ];
 
@@ -172,9 +180,10 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
   }
 
   const operationalDecisions = [
-    ['0005-relayer-availability.md', /fee-bump.*does not solve|does not solve.*fee-bump/is, /Accepted/i],
     ['0006-association-sets.md', /4,573.*constraints/is, /Rejected/i],
     ['0007-stealth-subsystem.md', /complementary/is, /Accepted/i],
+    ['0008-governed-asset-private-pool.md', /append-only.*asset registry/is, /Accepted/i],
+    ['0009-browser-peer-relay.md', /never.*silently.*fall.*back/is, /Accepted for Testnet development/i],
   ];
   for (const [file, expectedDecision, status] of operationalDecisions) {
     const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);

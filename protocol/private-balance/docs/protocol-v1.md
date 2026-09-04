@@ -3,11 +3,12 @@
 ## 1. Status and deployment boundary
 
 Shielded Balance V1 is an opt-in note pool implemented by a Soroban contract, a Groth16 circuit,
-and a local browser wallet. Each immutable pool is pinned to exactly one Stellar asset contract,
-network, realm, circuit hash, verification-key hash, and Poseidon2 parameter hash. The replacement
-protocol described here has no backward-compatible state migration. Its prior Testnet deployments
-are retired; the authenticated catalogue publishes fresh development XLM and USDC pools, and fresh
-local state is required.
+and a local browser wallet. One deployment owns one shielded tree and an append-only,
+administrator-curated asset registry. The network, realm, initial asset administrator, guardian,
+circuit hash, verification-key hash, and Poseidon2 parameter hash are deployment-bound. The
+replacement protocol described here has no backward-compatible state migration. Its prior Testnet
+deployments are retired; the authenticated catalogue publishes one development pool with XLM at
+registry index 0 and USDC at index 1, and fresh local state is required.
 
 The committed proving material is development-only. It is suitable for reproducible Testnet work,
 not real value or Mainnet.
@@ -16,39 +17,43 @@ not real value or Mainnet.
 
 - Field: BN254 scalar field `Fr`, modulus
   `21888242871839275222246405745257275088548364400416034343698204186575808495617`.
-- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 14,574 constraints and fits
+- Proof: Groth16 with 11 public inputs. The current `--O2` circuit has 15,114 constraints and fits
   a `2^14` Powers-of-Tau transcript.
 - Hash: Poseidon2 over BN254 `Fr`, width 4, rate 3, capacity 1, `x^5` S-box, 8 full rounds, 56
   partial rounds, and the implementation's length IV `N * 2^64`.
 - Encryption: RFC 9180 base mode DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM.
 - Tree: incremental ternary Merkle tree of depth 17 with capacity `3^17 = 129,140,163` leaves.
-- Action shape: two input lanes and two output lanes for every action.
+- Action shape: two input lanes and three output lanes for every action.
 
 All byte encodings, field conversions, Poseidon2 parameters, envelope lengths, and deployment
 constants are pinned by the manifest and cross-language conformance vectors.
 
 Consensus and operational review decisions are recorded in
 [`0002-private-note-key-agreement.md`](decisions/0002-private-note-key-agreement.md),
-[`0003-multi-asset-pool.md`](decisions/0003-multi-asset-pool.md), and
+[`0008-governed-asset-private-pool.md`](decisions/0008-governed-asset-private-pool.md), and
 [`0004-poseidon2-capacity-domain.md`](decisions/0004-poseidon2-capacity-domain.md),
 with the relayer, association-set, and stealth-subsystem boundaries in
-[`0005-relayer-availability.md`](decisions/0005-relayer-availability.md),
+[`0009-browser-peer-relay.md`](decisions/0009-browser-peer-relay.md),
 [`0006-association-sets.md`](decisions/0006-association-sets.md), and
 [`0007-stealth-subsystem.md`](decisions/0007-stealth-subsystem.md).
 
 ## 3. Notes and commitments
 
 The 128-byte encrypted note plaintext contains its version and flags, value, diversifier, owner
-commitment, randomness `rho`, optional memo, and reserved bytes. `NoteCommitment` hashes the
-deployment context, pinned asset, owner commitment, value, and `rho` under its explicit domain. The
-diversified owner commitment binds the address diversifier. The memo is authenticated by the
-recipient and outgoing envelopes but is not an input to the commitment or Groth16 circuit. A
-commitment is always a non-zero field element and every action appends exactly two commitments.
+commitment, randomness `rho`, optional memo, immutable asset-registry index, and reserved bytes.
+`NoteCommitment` hashes the deployment context, full asset field, owner commitment, value, and
+`rho` under its explicit domain. The diversified owner commitment binds the address diversifier.
+The memo and asset index are authenticated by the envelopes, while the circuit binds the full asset
+field rather than the compact index. A commitment is always a non-zero field element and every
+action appends exactly three commitments.
 
 A zero-value output is a dummy note, not an absent slot. Its commitment, randomness, keys,
 diversifier, recipient envelope, and outgoing envelope are freshly constructed in the same format
 as a real output. The private `outputReal` selector is derived in-circuit as `value != 0`; it is not
-independent witness data. The wallet randomizes recipient/change and real/dummy lane ordering.
+independent witness data. The wallet randomizes recipient, change, peer-fee, and dummy lane ordering.
+All three recipient envelopes in an action carry the same clear four-byte action diversifier. This
+removes the prior clear-diversifier lane-role fingerprint, but it does not hide that diversifier or
+make repeated use of one receive address unlinkable across actions.
 
 ## 4. Merkle tree
 
@@ -86,22 +91,33 @@ key. Persisting neither would allow replay; persisting the second adds no replay
 Values are 63-bit unsigned integers. Each input and output value is range constrained. The circuit
 computes one total equality:
 
-`sum(inputs) + publicDeposit = sum(outputs) + publicWithdrawal + relayerFee`.
+`sum(inputs) + publicDeposit = sum(outputs) + publicWithdrawal`.
 
 Only one total needs an additional 63-bit decomposition after equality. The public action kind
 selects these external flows:
 
-- Deposit: public source and amount enter the asset-pinned pool; both private input lanes are dummy.
-- Transfer: value moves only between private notes; public deposit and withdrawal are zero.
-- Withdraw: public destination and amount leave the pool; one or two private inputs may be real.
+- Deposit: a public source, registry index, asset, and amount enter the pool; both private input
+  lanes are dummy.
+- Transfer: value moves only between same-asset private notes; public value and public asset fields
+  are zero. The full action asset field is private.
+- Withdraw: a public destination, registry index, asset, and amount leave the pool; one or two
+  private inputs may be real.
 
-The eleven public signals, in verifier order, are the deployment context field, pinned asset field,
-action kind, anchor root, public value, relayer fee, canonical action field, two nullifiers, and two
-output commitments. The action field is the canonical external hash of the network, realm, pool,
-asset, nonce, anchor root, complete output packages, public endpoints, and relayer data. Its explicit
-non-zero circuit constraint gives it a non-zero Groth16 input coefficient; mutating it invalidates a
-proof. The contract derives that field itself and independently validates canonical non-zero,
-distinct slots before accepting the proof.
+The eleven public signals, in verifier order, are the deployment context field, boundary asset
+field, action kind, anchor root, public value, canonical action field, two nullifiers, and three
+output commitments. The boundary asset field is zero for a transfer and equals the registered full
+asset field for a deposit or withdrawal. A separate private action asset field binds every real
+input and all three output commitments, and must equal the public field at transparent boundaries.
+The action field is the canonical external hash of the network, realm, pool, optional boundary
+asset/index, nonce, anchor root, complete output packages, and public endpoints. It contains no
+relayer or relayer-fee field. Its explicit non-zero circuit constraint gives it a non-zero Groth16
+input coefficient; mutating it invalidates a proof. The contract derives that field itself and
+independently validates canonical non-zero, distinct slots before accepting the proof.
+
+A relayed transfer or withdrawal pays its selected peer with one ordinary encrypted same-asset
+output note. The fee is therefore part of `sum(outputs)`, not a public value leg or token call. The
+fee recipient and fee amount are proof-bound inside that output. Direct submission uses a
+zero-value dummy in the otherwise available lane.
 
 ## 7. Encryption and recovery transcript
 
@@ -116,10 +132,28 @@ This matches the documented griefing boundary and requires wallet implementation
 self-check their own change outputs.
 
 Every accepted action writes a hash-chained archive record containing the public action data,
-commitments, nullifiers, fixed-size envelopes, and tree transition. Recovery authenticates the
-record chain, root, and action count before treating a balance as current.
+three commitments, nullifiers, fixed-size envelopes, and tree transition. Transfer records contain
+no asset contract, asset index, relayer, or fee recipient. Recovery trial-decrypts each envelope
+against registered asset candidates, authenticates the encrypted asset index, and verifies the
+full note commitment before accepting a note. Recovery authenticates the record chain, root, and
+action count before treating a balance as current.
 
-## 8. Archival and RPC authentication
+## 8. Asset registry and administration
+
+Registry indices are assigned contiguously and never reused. The current asset administrator may
+add a Stellar Asset Contract, set an existing entry to `Active` or `ExitOnly`, and propose a new
+administrator. The proposed administrator must explicitly accept, preventing transfer to an
+uncontrolled address. Adding an asset and either administration step require Soroban
+authorization. An `Active` asset accepts deposits, transfers, and withdrawals. `ExitOnly` blocks
+new deposits while retaining transfers and withdrawals so historical private notes are not trapped.
+There is intentionally no delete operation and no index mutation.
+
+The browser treats the on-chain registry as canonical and corroborates it with the same independent
+RPC policy as the contract head. Static manifest metadata supplies human-readable labels and known
+issuer information; it cannot override a contract address, index, field, or status read from the
+contract.
+
+## 9. Archival and RPC authentication
 
 Persistent archive entries can expire into Stellar state archival. Recovery discovers a contiguous
 missing prefix, simulates exact restore footprints, selects the largest safe batch within configured
@@ -142,7 +176,27 @@ enforce only origin and ledger-view separation; a custom primary under common co
 witness defeats the operator-diversity assumption. Multiple endpoints learn more of the client's
 access pattern; that privacy tradeoff is explicit.
 
-## 9. Replacement and ceremony rule
+## 10. Optional browser peer relay
+
+Private transfers and withdrawals can be prepared for either direct submission or an explicit
+privacy relay. Deposits remain direct because the public source must authorize the token transfer.
+The client never silently falls back from relay mode to direct mode.
+
+Discovery uses a bounded request published to at least two configured public Nostr relay origins.
+The sender and helper use ephemeral Nostr identities; messages after discovery are NIP-44 v2
+encrypted to the selected peer. No StellarKey backend, indexer, custodian, or operated relayer is
+involved. The public Nostr services still observe connection IP addresses, timing, and public
+requests, and the selected helper learns the action asset, quoted fee, proof, and exact transaction.
+NIP-44 does not provide forward secrecy or post-quantum confidentiality.
+
+Helping is a separate explicit opt-in. Before presenting approval, the helper validates the exact
+unsigned transaction, network, source, method, pool, time bounds and fee caps, verifies the three
+matched envelope diversifiers, decrypts exactly one real fee note for its quote key, and simulates
+the exact transaction against its configured RPC. The helper manually approves signing; the signed
+XDR is compared to the reviewed transaction before the helper submits it. The peer's Stellar
+account is the public transaction source and pays the Stellar network fee.
+
+## 11. Replacement and ceremony rule
 
 Any change to the circuit, tree, hash inputs, proof schema, verifier, or action encoding invalidates
 the proving key and deployment evidence. Regenerate all artifacts and vectors, complete independent

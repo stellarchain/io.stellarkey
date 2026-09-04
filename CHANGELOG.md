@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Linked public Private Payments deposits and withdrawals to their exact Stellar explorer transactions while rejecting synthetic restored-history identifiers.
 - Added domain-separated outgoing viewing keys and fixed authenticated recovery envelopes for reconstructing sent Private Payments from seed and chain data.
+- Added an append-only Private Payments asset registry with administrator-only admission, `Active`/`ExitOnly` status, two-step administrator handoff, independently corroborated client reads, and in-wallet controls.
+- Added optional browser-to-browser privacy relay for private transfers and withdrawals using configurable public Nostr infrastructure, ephemeral encrypted sessions, proof-bound private fee notes, strict helper review, and manual peer approval without a StellarKey backend.
 
 ### Changed
 
@@ -19,17 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Displayed the selected local-currency equivalent beside numeric XLM network fees throughout public and Private Payments flows, retaining useful precision below one cent.
 - Displayed the canonical Stellar mark for native XLM in wallet asset rows and details, matching issued-asset logo treatment.
 - Shortened Private Payments addresses to checksummed Base58 using the `tskpay_` Testnet and `skpay_` Mainnet prefixes, with compact deployment binding and network-specific validation.
-- Replaced sparse Private Payments actions with fixed two-nullifier, two-output packages that include recipient and sender-recovery ciphertexts for every lane.
-- Isolated each Private Payments pool and catalogue deployment to one immutable asset, removing caller-selected asset fields from contract actions.
+- Replaced sparse Private Payments actions with fixed two-nullifier, three-output packages that include recipient and sender-recovery ciphertexts for every lane.
+- Replaced separate asset-pinned pools with one governed Testnet pool whose internal transfers hide the asset while deposits and withdrawals retain their public asset boundary.
 - Persisted authenticated incremental Merkle nodes so spends load only selected witness paths instead of rebuilding the tree from complete pool history.
 - Batched contiguous archived Private Payments records into the largest freshly simulated restoration footprint within an 80% resource-fee safety margin, saving progress after every confirmed batch.
 - Replaced the binary depth-32 Private Payments tree with a ternary depth-17 tree across the circuit, contract, Rust protocol, browser, authenticated incremental cache, manifests, and vectors.
-- Reduced the Private Payments circuit from 23,437 to 14,574 constraints and 11 public inputs by removing redundant lane, range, relayer, and action-binding constraints, deriving output roles, using a ternary tree, and explicitly proof-binding the contract-derived canonical action hash; development proving now fits the pinned `pot14` transcript.
-- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published fresh asset-pinned XLM and USDC development pools with authenticated manifests and deployment evidence.
+- Reduced the Private Payments circuit from the 23,437-constraint baseline to 15,114 constraints and 11 public inputs while adding a private action asset and a third output; development proving still fits the pinned `pot14` transcript.
+- Retired the incompatible Testnet Private Payments pools, regenerated every artifact binding, and published one unified XLM/USDC development pool with authenticated deployment and registry evidence.
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 8-output parallel batches selected by paired nine-trial controls while retaining record-order state updates.
 - Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
-- Disclosed that the development Private Payments client self-submits transfers and withdrawals from the user's public Stellar account; fee-bump sponsorship alone does not hide that inner transaction source.
+- Made direct self-submission and privacy-relay submission explicit per-payment choices, with no silent fallback that could reveal the user's public Stellar account.
 - Re-pinned development proof generation to the PSE degree-14 Perpetual Powers of Tau transcript after its hash and complete contribution/beacon chain verified and the prior endpoint stopped serving its authenticated artifact.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 
@@ -89,14 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Replaced user-specific zero-fee Private Payments relayer fields with the common pool-contract sentinel and made the client transaction builder reject any other zero-fee relayer, removing that identity from permanent action archives while leaving self-submitted transaction sources public.
-- Retained audited RFC 9180 note encryption, asset-pinned pool isolation, and Soroban-native Poseidon2 hashing after rejecting unreviewed consensus alternatives in explicit decision records.
+- Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.
+- Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool and browser peer relay in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
 - Bound the reduced eleven-signal Groth16 statement to the exact canonical action field and added a proof-mutation regression for that public input.
 - Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.
 - Persisted one replay nullifier for deposits instead of two while keeping exact proof replay impossible; transfers and withdrawals continue to persist both.
 - Shared the canonical ternary Merkle hash and empty roots between the protocol crate and pool contract, with Poseidon2 length-IV separation documented as a consensus rule.
-- Disabled production-hosted Testnet Private Payments deployment use until fresh deployment evidence matches the replacement circuit, verifier, contract, and manifest hashes; Mainnet remains refused.
+- Published fresh Testnet deployment and registry evidence matching the replacement circuit, verifier, contract, and manifest hashes; Mainnet remains refused.
 
 - Replaced source-text merchant security assertions with executable boundaries covering charge voiding, retained-record access, owner reauthentication, and every Merchant-to-Wallet navigation decision.
 - Derived Private Payments manifest proving-key verification evidence from a successful pinned `snarkjs zkey verify` run instead of a literal claim.
@@ -113,8 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bound Multi-Sig Studio edits to canonical signer state, required explicit in-session provenance for signer additions, rejected stale or conflicting authority, and displayed full changed signer keys before signing.
 - Added schema-validated BN254/BLS12-381 proving benchmarks with verified desktop smoke evidence, explicit pending phone and Soroban measurements, and no premature curve selection.
 - Corroborated Private Payments recovery checkpoints, overlapping ledger hashes, and contract heads across independent RPC providers; disagreement now preserves the last authenticated state as status unknown, with routine witness checks and their access-pattern tradeoff exposed in settings.
-- Hid Private Payments input/output lane roles behind private circuit selectors, secret-derived dummy nullifiers, randomized zero-value dummy notes, randomized lane ordering, and fresh self-output diversifiers.
-- Bound each Private Payments deployment hash, manifest, proof asset field, archive record, and token transfer to the pool's constructor-pinned asset contract.
+- Hid Private Payments input/output lane roles behind private circuit selectors, secret-derived dummy nullifiers, randomized zero-value dummy notes, randomized lane ordering, and one common clear diversifier across all output lanes in an action.
+- Bound each Private Payments note and proof to an immutable on-chain asset-registry index and full asset field while omitting the asset from internal transfer records.
 - Bound the incremental Merkle cache to the deployment, archive cursor, transcript head, root, frontier, and commitment count, with verified recovery after corruption.
 - Removed private recipient and amount handoffs from browser storage, restored reusable-receipt discovery to the authenticated wallet birthday, terminated proof workers on cancellation, bound live contract circuit hashes to the manifest, and added Rust policy checks to tagged releases.
 - Prevented issuer-logo referrer leakage, fully redacted long witness values, and escaped paper-wallet QR attributes before constructing print HTML.

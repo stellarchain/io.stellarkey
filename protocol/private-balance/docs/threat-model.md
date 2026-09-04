@@ -2,8 +2,8 @@
 
 ## 1. Assets and security objectives
 
-- Conservation of value: private inputs plus a public deposit equal private outputs plus public
-  withdrawal and relayer fee, using exact bounded integers.
+- Conservation of value: private inputs plus a public deposit equal three private outputs plus a
+  public withdrawal, using exact bounded integers. An optional peer fee is one of those outputs.
 - Double-spend and replay prevention: accepted real nullifiers are persistent and unique; a deposit
   retains one durable dummy nullifier so the same proof cannot be replayed.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
@@ -19,17 +19,24 @@
 
 ## 2. Public information and correlation
 
-The pool, pinned asset, action time, proof, anchor root, nullifiers, commitments, encrypted packages,
-and transaction source are public. The development client self-submits transfers and withdrawals,
-so that source is the user's public Stellar account and directly links the shielded action to it.
-A fee-bump sponsor changes only the outer fee source; it does not hide the inner transaction source.
-Deposits and withdrawals also reveal amount and public
-endpoint. Pool size, timing, repeated public endpoints, address reuse outside the chain, voluntary
-disclosure, or a small anonymity set can correlate activity. Fixed two-input/two-output actions hide
-lane roles; they do not hide the public action kind or guarantee anonymity.
+The pool, action time, proof, anchor root, nullifiers, three commitments, encrypted packages, and
+transaction source are public. Deposits and withdrawals additionally reveal the registry asset,
+amount, and public endpoint. Internal transfers publish no asset contract or registry index; the
+asset remains private only if ciphertext and behavioral correlation do not reveal it. Fixed
+two-input/three-output actions and matched envelope diversifiers hide lane roles; they do not hide
+the public action kind or guarantee anonymity. Reusing one private receive address still links
+whole actions through its clear four-byte diversifier.
+
+Direct submission uses the user's Stellar account as the transaction source and links the action
+to it. A fee-bump sponsor changes only the outer fee source. Optional peer relay mode instead uses
+the helper's account as source; the sender must choose that mode explicitly, and the client never
+silently falls back to direct submission. A selected peer learns the action asset, quoted fee,
+proof, and transaction. It cannot redirect the proof-bound encrypted fee note.
 
 RPC providers and network observers see IP address, timing, selected deployment, ledger ranges,
-simulations, restoration attempts, and submissions. Cross-checking different-origin providers
+simulations, restoration attempts, and submissions. Public Nostr relay operators used for optional
+peer discovery also see connection IPs, timing, and the public request; NIP-44 encrypts selected-peer
+messages but provides neither forward secrecy nor post-quantum confidentiality. Cross-checking different-origin providers
 reduces the risk of accepting a fabricated ledger view when their operators are actually
 independent, but exposes access patterns to more endpoints. The shipped SDF-primary/Ankr-witness
 pair is operator-diverse; the runtime cannot prove the same for a custom primary.
@@ -69,11 +76,12 @@ migration exists for this replacement protocol.
 
 ## 5. Availability and recovery boundary
 
-The protocol has no StellarKey backend, operated relayer, or indexer. The contract accepts
-third-party submission and proof-bound relayer fees, but the current client does not use a relay.
-Availability depends on a usable
-Stellar RPC, retained or restorable ledger state, sufficient public XLM for fees, browser storage,
-and access to the proving artifacts. Different-origin RPC disagreement intentionally disables spending.
+The protocol has no StellarKey backend, operated relayer, or indexer. The browser can discover
+other explicitly opted-in browser wallets through user-configured public Nostr infrastructure.
+Relay availability is best-effort: a user may wait, retry, or explicitly choose direct submission.
+Availability otherwise depends on a usable Stellar RPC, retained or restorable ledger state,
+sufficient public XLM for direct submission or helper operation, browser storage, and access to the
+proving artifacts. Different-origin RPC disagreement intentionally disables spending.
 
 Archive records receive the configured maximum TTL when written but are not refreshed forever.
 After eviction, seed-only recovery requires paid restore-footprint transactions. The wallet batches
@@ -89,7 +97,8 @@ ledger confirmation.
 ## 6. Out of scope
 
 The protocol does not hide network metadata, protect against endpoint-wide traffic analysis,
-guarantee a minimum anonymity set, undo public deposits/withdrawals, recover a deliberately malformed
+guarantee a minimum anonymity set, undo public deposits/withdrawals, make a reused clear
+diversifier unlinkable, guarantee an available or honest relay peer, recover a deliberately malformed
 ciphertext, prove membership in a curated association set, recover a lost seed and lost encrypted
 backup together, or make Testnet development
 proving material safe for real funds.

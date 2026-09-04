@@ -39,7 +39,7 @@ the browser; the app connects directly to Stellar services.
 | Principle | What it means |
 | --- | --- |
 | **Self-custodial** | Software-account secrets are encrypted locally and opened only for the operation that needs them. Optional Trezor signing keeps approval on the hardware device. |
-| **Backend-free** | There are no StellarKey application servers, accounts, sessions, relays, indexers, analytics services, or server-side databases. |
+| **Backend-free** | There are no StellarKey application servers, accounts, sessions, operated relays, indexers, analytics services, or server-side databases. Optional private-payment peers use configurable public Nostr infrastructure. |
 | **Local-first** | Wallet and merchant records live in browser storage. Encrypted backups and exports—not a hidden cloud account—are the recovery path. |
 | **Verifiable** | Every production build exposes its source commit through the UI and `/release.json`; release artifacts include checksums, an SBOM, and provenance. |
 
@@ -51,7 +51,7 @@ the browser; the app connects directly to Stellar services.
 | **Transaction safety** | Exact seven-decimal arithmetic, typed memos, live reserve inputs, reviewed signing intent, multisig envelopes, durable submission recovery, and SEP-7 unsigned payment links |
 | **Local security** | Password-encrypted vaults, encrypted contacts and private notes, failure-atomic backups, watch-only accounts, inactivity auto-lock, optional WebAuthn PRF unlock, and complete local reset |
 | **Hardware** | Trezor address discovery and on-device Stellar signing through the official Trezor Connect popup |
-| **Private Payments research** | Production-hosted replacement artifacts for asset-pinned Testnet XLM and USDC pools; deployment is disabled pending fresh evidence and Mainnet remains blocked. |
+| **Private Payments research** | One live, hash-pinned Testnet pool with an administrator-curated XLM/USDC registry, hidden assets for internal transfers, and optional browser peer relay; Mainnet remains blocked. |
 | **Merchant Mode** | Encrypted transactional records, cash and external-card tenders, Horizon-confirmed crypto sales, staff permissions, shifts, refunds, invoices, counter codes, customers, loyalty, reports, and treasury handoffs |
 | **Installable app** | Static PWA shell, offline reopening, iPhone and iPad safe-area handling, and staged service-worker updates |
 
@@ -80,10 +80,12 @@ Read the complete [security policy](SECURITY.md), the public
 [security model](https://stellarkey.io/security), and the
 [privacy explanation](https://stellarkey.io/privacy).
 
-Private Payments has production-hosted development artifacts for Testnet, but no
-replacement pool is currently published; Mainnet is refused independently.
-Private transfers hide their amount, recipient, and memo; deposits, withdrawals,
-the fee-paying Stellar account, and timing remain public. Its privacy limits,
+Private Payments has one published development pool for XLM and USDC on Testnet;
+Mainnet is refused independently. Internal transfers hide their asset, amount,
+recipient, optional peer fee, and memo; deposits, withdrawals, the submitting
+Stellar account, and timing remain public. Direct mode uses the user's source;
+optional peer mode uses an explicitly selected helper discovered through public
+Nostr infrastructure, with no StellarKey relay backend. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
 [Private Balance whitepaper](docs/private-balance.md). The single-party
 development key passes circuit/Powers-of-Tau compatibility verification, but

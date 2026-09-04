@@ -2,8 +2,8 @@
 
 ## Current status
 
-The replacement protocol is deployed in two explicitly enabled development pools for XLM and USDC
-on Testnet. It uses single-party development proving material. No file in this directory is
+The replacement protocol is deployed in one explicitly enabled governed pool for XLM and USDC on
+Testnet. It uses single-party development proving material. No file in this directory is
 testnet-beta, audit, production, or mainnet approval. A public multi-contributor phase-2 ceremony and an
 independent transcript verification are mandatory before a testnet beta can hold external funds.
 Mainnet requires a separate go/no-go record and a newly approved ceremony; testnet artifacts are
@@ -15,12 +15,12 @@ The current development candidate is:
 | --- | --- |
 | Circuit | `circuits/circom/action.circom` |
 | Circom | `2.2.3` |
-| R1CS constraints | 14,574 (machine value: `14574`) |
+| R1CS constraints | 15,114 (machine value: `15114`) |
 | Public inputs | 11 |
-| R1CS SHA-256 | `724f255668714f206aaa187521ae2ea723093034823446575bdb3bff7c57ec97` |
-| Development zkey SHA-256 | `56a9b0adbff26b767a6fe27246f51067e8aee9a6f68367ebbc78d94e90f02d49` |
-| Development verifying-key JSON SHA-256 | `b76899b86c8d73f2bcb9fb083e182a4a15b48eaa2e07ed7b085002c4de4cf0c0` |
-| Embedded verifying-key binary SHA-256 | `3aa6114707047cee80e1005d2d20fad69d053ff2de9023d01bf8a830bfa4e2ad` |
+| R1CS SHA-256 | `e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3` |
+| Development zkey SHA-256 | `fd04e9225485bbdfcca999b5f46be3735c6435ca6a3c98a1346b5952e9672273` |
+| Development verifying-key JSON SHA-256 | `8a1fdbb8e21a688c5279edd43e4deafbed788604f518209c5cee27499ea996e7` |
+| Embedded verifying-key binary SHA-256 | `6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7` |
 
 These values identify the hash-pinned local candidate; they do not make its zkey suitable
 for a beta. Regenerate this table from the shipped manifest and artifacts whenever the circuit changes.
@@ -155,6 +155,6 @@ verifier and Gate A/B/C reviewers have approved the same final bytes.
 
 Replace the development zkey and verification key with the verified final artifacts, regenerate the
 embedded verifier, build twice from clean pinned environments, and compare every hash. Then deploy
-the exact manifest-pinned Stellar CLI-compatible Wasm, independently verify its native-XLM SAC,
-configuration, executable type, guardian, and transaction hashes, and rerun final Gate 0 plus the
+the exact manifest-pinned Stellar CLI-compatible Wasm, independently verify its append-only asset
+registry, configuration, executable type, guardian, administrator, and transaction hashes, and rerun final Gate 0 plus the
 complete Task 26 browser/recovery suite. Record all evidence in the immutable testnet manifest.

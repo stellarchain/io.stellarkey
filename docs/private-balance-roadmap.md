@@ -7,42 +7,43 @@ unchecked items are hypotheses that still require the stated validation. Nothing
 in this file changes the behavior or guarantees documented in
 [`private-balance.md`](private-balance.md).
 
-## Planned experiments
+## Implemented Testnet work
 
-- [ ] Remove the observed clear-diversifier output-role fingerprint without
-  breaking scanning or recovery.
-  - First test a matched-lane mitigation: use the same clear diversifier for
-    both outputs in each action while retaining the reviewed X25519 HPKE
-    envelope.
-  - Keep a fully hidden diversifier as a separate cryptographic workstream. Do
-    not delete the current four bytes: the scanner needs them before decryption.
-  - Require an independently reviewed diversified-key-agreement specification,
-    cross-language vectors, seed-only recovery proof, and physical-phone scan
-    benchmarks before replacing HPKE.
-  - Evidence and gates are recorded in
-    [`private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md`](private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md).
+- [x] Remove the observed clear-diversifier **lane-role** fingerprint without
+  replacing the reviewed X25519 HPKE construction.
+  - Every one of the three envelopes in an action now carries the same random
+    action diversifier. An observer therefore cannot identify recipient,
+    change, relay-fee, or dummy lanes from different clear diversifiers.
+  - This is deliberately not described as a hidden diversifier. The four bytes
+    remain clear because the current scanner needs them before X25519
+    decryption. Reusing a receive address still links whole actions that carry
+    its diversifier.
+  - Fully removing the bytes remains deferred until there is an independently
+    reviewed diversified-key-agreement construction, cross-language vectors,
+    seed-only recovery evidence, and physical-phone scan measurements.
 
-- [ ] Design and prototype one immutable asset-private XLM/USDC pool on
-  testnet.
-  - Hide the asset only for internal transfers; deposits and withdrawals retain
-    their unavoidable public SAC, amount, and endpoint boundary data.
-  - Bind the ordered two-asset allowlist into the deployment, put a compact
-    asset index in both recipient and outgoing encrypted plaintext, and bind
-    the full private asset field into every note commitment. Use the public
-    zero sentinel—not the hidden asset—in outgoing authenticated data so
-    seed-only sender recovery is not circular.
-  - Do not add arbitrary asset admission or a mutable token registry.
-  - Start with two outputs. Treat a third private-relayer-fee output as a
-    separate measured decision because it increases tree/archive growth and
-    changes peer failover semantics.
-  - Freeze the circuit only after cross-asset mutation tests, Soroban resource
-    simulations, tree-capacity analysis, and physical-phone proving/scanning
-    measurements pass. A changed R1CS requires a fresh phase-2 ceremony.
-  - Evidence and gates are recorded in
-    [`private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md`](private-balance-hidden-diversifier-unified-pool-research-2026-09-04.md).
+- [x] Replace the separate XLM and USDC pools with one governed,
+  asset-private Testnet pool.
+  - Internal transfers publish neither the asset contract nor registry index.
+    Deposits and withdrawals still publish the unavoidable asset, amount, and
+    public endpoint.
+  - Notes and outgoing records encrypt the immutable registry index, while the
+    circuit binds the corresponding private full asset field into inputs and
+    all three output commitments.
+  - The contract has an append-only asset registry. Its administrator can add
+    assets, set them to `Active` or `ExitOnly`, and hand control to a new
+    administrator through a two-step transfer. Entries are never deleted or
+    reindexed because historical notes must remain withdrawable.
+  - XLM is index 0 and Testnet USDC is index 1 in the published deployment.
+    Both are Active. Registry and deployment checkpoints are committed in the
+    fixture evidence and public manifest.
+  - Every action now appends three output packages. The additional lane permits
+    an encrypted same-asset peer fee without revealing the asset of an internal
+    transfer. This reduces depth-17 capacity to 43,046,721 actions, still far
+    above a realistic Testnet workload.
 
-- [ ] Prototype optional peer-relayed submission for private transfers and
-  withdrawals.
+- [x] Implement optional browser-to-browser relayed submission for private
+  transfers and withdrawals.
   - Keep direct self-submission available. Never switch from relayed to direct
     submission without explicit user approval because that reveals the user's
     Stellar account as the transaction source.
@@ -52,24 +53,35 @@ in this file changes the behavior or guarantees documented in
     signing, submission, and confirmation in the open-source browser client.
     Do not introduce a StellarKey backend, operated relay, indexer, custody, or
     server-side private state.
-  - Use multiple configurable, independent public gossip transports. Treat
-    every transport and peer as untrusted and disclose their network-metadata
-    visibility.
-  - Evaluate a protocol change in which the proof binds the relayer fee but not
-    a particular fee recipient. The submitting peer must authenticate its
-    payout address, allowing the same proof to fail over without reproving.
-  - Resolve the unified-pool fee conflict before selecting that design: a
-    public SAC payout reveals the asset of an otherwise asset-private transfer,
-    while an encrypted fee note normally binds a selected peer and makes
-    failover require reproving.
+  - The sender broadcasts only a bounded quote request through at least two
+    configurable public Nostr relay origins. A selected peer then receives the
+    job through NIP-44 v2 encrypted messages under ephemeral Nostr identities.
+    These public relay services are not StellarKey servers, but they do observe
+    IP addresses, timing, and the public request. NIP-44 does not provide
+    forward secrecy or post-quantum confidentiality.
+  - The peer fee is a normal encrypted note in the action's third lane. It uses
+    the same private asset as the payment, so an internal transfer does not add
+    a public token call. Selecting another peer requires a new proof because
+    the fee note is proof-bound to that peer's private address.
   - Keep "use a privacy relay" and "help relay payments" as separate settings.
-    Relaying for other users must be explicit opt-in with local fee and spending
-    limits.
-  - Validate before implementation: sender absence from the transaction and
-    permanent archive, proof/action non-malleability, replay and competing-peer
-    behavior, invalid-job resource exhaustion, XLM and issued-asset payout
-    eligibility, real Soroban fee economics, discovery/submission p50 and p95,
-    peer churn, browser shutdown, and iPhone WebKit behavior.
+    Helping is explicit opt-in and every job requires a manual modal approval.
+  - Before approval, the helper validates the exact unsigned transaction,
+    source, network, pool method, time bounds and fee caps; decrypts exactly one
+    matching fee note; and simulates the exact transaction. Signed XDR is
+    rechecked before the peer submits it.
+  - Automated protocol, replay, transport, review, settings, transaction, and
+    CSP tests pass. Real multi-peer discovery/submission p50/p95, peer churn,
+    and iPhone WebKit measurements remain release evidence, not implemented
+    guarantees.
+
+## Remaining validation
+
+- [ ] Run physical-phone proving, scanning, and Nostr relay tests on iPhone
+  WebKit and Android Chromium.
+- [ ] Record real two-peer quote, signing, submission, confirmation, churn, and
+  adversarial-job p50/p95 evidence before considering any non-development use.
+- [ ] Complete a public multi-party phase-2 ceremony, reproducible build proof,
+  and independent circuit/contract review before Mainnet.
 
 ## Evaluated and not planned
 

@@ -3,7 +3,7 @@
 **Updated:** 2026-09-02
 **Decision:** HISTORICAL MVP EVIDENCE ONLY; FINAL GATE 0 PENDING
 
-The measurements below predate the 11-public-input, 14,574-constraint replacement and its
+The measurements below predate the 11-public-input, 15,114-constraint governed-pool replacement and its
 one-record-per-entry archive. They are retained as historical feasibility evidence only and must not
 be attributed to the current artifact set. They are insufficient for beta, production, or Mainnet
 approval. The Private Balance manifest must remain development-only until the final candidate
@@ -58,7 +58,7 @@ smoke measurements on an Apple M3 Max, not browser or physical-phone evidence:
 | Peak process RSS | 1,483,735,040 bytes | 1,515,044,864 bytes |
 | Local verification p50 / p95 | 22.696 / 38.836 ms | 12.459 / 14.373 ms |
 
-These values are not performance projections for the current 14,574-constraint circuit. The
+These values are not performance projections for the current 15,114-constraint circuit. The
 measurements were produced with SIMD, explicit Wasm threads, proving-key streaming, and a
 native mobile prover disabled. Soroban instructions, ledger I/O, resource fee, and transaction
 bytes are explicit pending fields because no curve-specific comparison verifier transaction was

@@ -78,11 +78,13 @@ Promote the same bytes to production. On physical iPhone/iPad and a desktop brow
 
 Private Payments must remain `development`, Testnet-only, and explicitly disclosed while production-hosted builds permit the exact pinned development fixture. `snarkjs zkey verify` confirms circuit/Powers-of-Tau compatibility; it does not make the single-party setup ceremony-secure. Mainnet and any real-value promotion remain blocked until the same immutable archive contains a reviewed public ceremony, audit, deployment, recovery, semantic-review, CSP, and physical-device evidence. Never create evidence records from a production build or substitute development hashes.
 
-The development client also self-submits every shielded transfer and withdrawal from the user's
-public Stellar account. That source is visible on chain and can deanonymise the spend. Fee-bump
-sponsorship does not remove the inner source. Beta remains blocked until an operated relay has a
-reviewed request/retention policy, abuse limits, fee rules, submission-recovery protocol, and tested
-multi-operator availability; the client must never silently fall back to self-submission.
+Direct mode self-submits a shielded transfer or withdrawal from the user's public Stellar account,
+which is visible on chain and can deanonymise the spend. Fee-bump sponsorship does not remove the
+inner source. Optional privacy-relay mode uses an explicitly opted-in peer wallet, public Nostr
+discovery, ephemeral identities, and an encrypted proof-bound fee note; StellarKey operates no
+relay backend. The client must never silently fall back to direct submission. Non-development
+promotion remains blocked until real multi-peer availability, adversarial-job, privacy-metadata,
+fee-economics, shutdown, and physical-browser evidence exists.
 
 Do not add `Cross-Origin-Embedder-Policy` based on desktop estimates. Cross-origin isolation may
 enable multithreaded proving, but it can also break wallet and hardware integrations whose resources
