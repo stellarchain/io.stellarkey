@@ -62,7 +62,7 @@ export function PrivateRelayEntry() {
             onClose={() => setOpen(false)}
           />
           <div className="p-4 sm:p-6">
-            <PrivateRelaySettings helperOnly />
+            <PrivateRelaySettings helperOnly onSaved={() => setOpen(false)} />
           </div>
         </Modal>
       ) : null}

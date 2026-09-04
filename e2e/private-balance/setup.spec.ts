@@ -61,14 +61,17 @@ test("offers helper relay participation directly from Home", async ({ context, p
   });
   await helping.click();
   await expect(helping).toHaveAttribute("aria-checked", "true");
+  const fee = dialog.getByRole("textbox", { name: "Private fee" });
+  await fee.fill("0.001");
   await dialog.getByRole("button", { name: "Save relay settings", exact: true }).click();
-  await expect(dialog.getByText("Relay settings saved on this device.", { exact: true })).toBeVisible();
-  await expect(dialog).toHaveAttribute("data-e2e-overlay-identity", "relay-settings");
-
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toBeHidden();
+  await expect(page.getByText("Relay settings saved on this device.", { exact: true })).toHaveCount(0);
   await expect(region).toHaveAttribute("data-e2e-overlay-owner", "private-assets");
   await expect(entry).toContainText("On");
+
+  await entry.click();
+  await expect(page.getByRole("dialog", { name: "Earn by relaying", exact: true })
+    .getByRole("textbox", { name: "Private fee" })).toHaveValue("0.001");
 });
 
 test("keeps Send mounted when its nested setup auto-dismisses after completion", async ({

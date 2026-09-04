@@ -7,6 +7,12 @@ import {
   savePrivateRelayPreferences,
   type PrivateRelayPreferences,
 } from '../relay/preferences';
+import { parsePrivateAmount } from '../runtime/coin-selection';
+import { formatPrivateBalanceXlm } from '../runtime/selectors';
+
+function feeForInput(feeAtomic: string): string {
+  return formatPrivateBalanceXlm(BigInt(feeAtomic)).replace(/(?:\.0+|(\.\d*?)0+)$/u, '$1');
+}
 
 function RelayToggleRow({
   title,
@@ -32,9 +38,15 @@ function RelayToggleRow({
   );
 }
 
-export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: boolean } = {}) {
+export function PrivateRelaySettings({
+  helperOnly = false,
+  onSaved,
+}: {
+  helperOnly?: boolean;
+  onSaved?(): void;
+} = {}) {
   const [draft, setDraft] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
-  const [result, setResult] = useState<string | null>(null);
+  const [feeAmount, setFeeAmount] = useState(() => feeForInput(draft.feeAtomic));
   const [error, setError] = useState<string | null>(null);
 
   const update = <Key extends keyof PrivateRelayPreferences>(
@@ -42,7 +54,6 @@ export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: bool
     value: PrivateRelayPreferences[Key],
   ) => {
     setDraft(current => ({ ...current, [key]: value }));
-    setResult(null);
     setError(null);
   };
 
@@ -53,14 +64,19 @@ export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: bool
   };
 
   const save = () => {
-    setResult(null);
     setError(null);
     try {
-      const saved = savePrivateRelayPreferences(draft);
+      const saved = savePrivateRelayPreferences({
+        ...draft,
+        feeAtomic: parsePrivateAmount(feeAmount, 7).toString(),
+      });
       setDraft(saved);
-      setResult('Relay settings saved on this device.');
+      setFeeAmount(feeForInput(saved.feeAtomic));
+      onSaved?.();
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : 'Relay settings are invalid.');
+      setError(cause instanceof Error
+        ? cause.message.replace(/^Private amount/u, 'Private fee')
+        : 'Relay settings are invalid.');
     }
   };
 
@@ -111,13 +127,18 @@ export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: bool
               onChange={event => updateRelay(1, event.target.value)}
             />
           </Field>
-          <Field label="Private fee (atomic units)" hint="Paid in the transferred asset">
+          <Field
+            label="Private fee"
+            hint="0.001 means 0.001 XLM for XLM, or 0.001 USDC for USDC."
+          >
             <input
               className="input font-mono text-base sm:text-[13px]"
-              inputMode="numeric"
-              pattern="[1-9][0-9]*"
-              value={draft.feeAtomic}
-              onChange={event => update('feeAtomic', event.target.value)}
+              inputMode="decimal"
+              value={feeAmount}
+              onChange={event => {
+                setFeeAmount(event.target.value);
+                setError(null);
+              }}
             />
           </Field>
           <Notice>
@@ -126,7 +147,6 @@ export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: bool
             automatically: every exact transaction still requires your approval.
           </Notice>
           {error ? <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p> : null}
-          {result ? <p role="status" className="text-[12px] text-[#30D158]">{result}</p> : null}
           <Button type="button" className="w-full" onClick={save}>
             Save relay settings
           </Button>
