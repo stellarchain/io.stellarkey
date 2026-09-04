@@ -8,6 +8,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Aes128Gcm, CipherSuite, HkdfSha256 } from '@hpke/core';
 import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
+import { StrKey } from '@stellar/stellar-sdk';
 import {
   ActionKind,
   appendCommitments,
@@ -207,6 +208,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
   const poolId = bytes(3);
   const assetId = bytes(4);
   const asset = { kind: 1, payload: assetId };
+  const assetIndex = 0;
+  const assetContractId = StrKey.encodeContract(assetId);
   const assetField = computeAssetField(asset);
   const accountPublicKey = bytes(5);
   const deploymentBindingHash = bytes(6);
@@ -272,7 +275,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       rho,
       memoLength: 0,
       memo: new Uint8Array(32),
-      reserved: new Uint8Array(15),
+      assetIndex,
+      reserved: new Uint8Array(11),
     };
     const commitment = computeCommitment(contextField, assetField, ownerCommitment, value, rho);
     const recipientHpkePublicKey = owned
@@ -287,7 +291,8 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       recipientHpkePublicKey,
       memoLength: 0,
       memo: new Uint8Array(32),
-      reserved: new Uint8Array(15),
+      assetIndex,
+      reserved: new Uint8Array(11),
     });
     const senderKeys = owned ? walletKeys : externalKeys;
     const output = await deterministicOutputPackage({
@@ -310,55 +315,62 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     });
     outgoingPlaintext.fill(0);
 
-    const dummyRho = u64Field(options.actionCount + actionIndex + 1);
-    const dummyCommitment = computeCommitment(
-      contextField,
-      assetField,
-      externalKeys.ownerCommitment,
-      0n,
-      dummyRho,
-    );
-    const dummyNoteBytes = encodeNotePlaintext({
-      protocolVersion: 1,
-      flags: 1,
-      value: 0n,
-      diversifier,
-      ownerCommitment: externalKeys.ownerCommitment,
-      rho: dummyRho,
-      memoLength: 0,
-      memo: new Uint8Array(32),
-      reserved: new Uint8Array(15),
-    });
-    const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
-      protocolVersion: 1,
-      flags: 1,
-      value: 0n,
-      diversifier,
-      ownerCommitment: externalKeys.ownerCommitment,
-      recipientHpkePublicKey: externalKeys.hpkePublicKey,
-      memoLength: 0,
-      memo: new Uint8Array(32),
-      reserved: new Uint8Array(15),
-    });
-    const dummyOutput = await deterministicOutputPackage({
-      recipientPublicKey: externalHpkeKey,
-      recipientPublicKeyBytes: externalKeys.hpkePublicKey,
-      recipientPrivateKey: externalAddressKeys.hpkePrivateKey,
-      diversifier,
-      noteBytes: dummyNoteBytes,
-      contextHash,
-      commitment: dummyCommitment,
-      actionNonce,
-      actionIndex,
-      outputIndex: 1,
-      outgoingViewingKey: senderKeys.outgoingViewingKey,
-      outgoingPlaintext: dummyOutgoingPlaintext,
-      deploymentBindingHash,
-      assetField,
-    });
-    dummyNoteBytes.fill(0);
-    dummyOutgoingPlaintext.fill(0);
-    const outputs = [output, dummyOutput];
+    const dummyOutputs = [];
+    for (let outputIndex = 1; outputIndex < 3; outputIndex += 1) {
+      const dummyRho = u64Field(
+        options.actionCount + actionIndex * 2 + outputIndex,
+      );
+      const dummyCommitment = computeCommitment(
+        contextField,
+        assetField,
+        externalKeys.ownerCommitment,
+        0n,
+        dummyRho,
+      );
+      const dummyNoteBytes = encodeNotePlaintext({
+        protocolVersion: 1,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        rho: dummyRho,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      const dummyOutgoingPlaintext = encodeOutgoingPlaintext({
+        protocolVersion: 1,
+        flags: 1,
+        value: 0n,
+        diversifier,
+        ownerCommitment: externalKeys.ownerCommitment,
+        recipientHpkePublicKey: externalKeys.hpkePublicKey,
+        memoLength: 0,
+        memo: new Uint8Array(32),
+        assetIndex,
+        reserved: new Uint8Array(11),
+      });
+      dummyOutputs.push(await deterministicOutputPackage({
+        recipientPublicKey: externalHpkeKey,
+        recipientPublicKeyBytes: externalKeys.hpkePublicKey,
+        recipientPrivateKey: externalAddressKeys.hpkePrivateKey,
+        diversifier,
+        noteBytes: dummyNoteBytes,
+        contextHash,
+        commitment: dummyCommitment,
+        actionNonce,
+        actionIndex,
+        outputIndex,
+        outgoingViewingKey: senderKeys.outgoingViewingKey,
+        outgoingPlaintext: dummyOutgoingPlaintext,
+        deploymentBindingHash,
+        assetField,
+      }));
+      dummyNoteBytes.fill(0);
+      dummyOutgoingPlaintext.fill(0);
+    }
+    const outputs = [output, ...dummyOutputs];
     const nullifierSecret0 = u64Field(options.actionCount * 2 + actionIndex * 2 + 1);
     const nullifierSecret1 = u64Field(options.actionCount * 2 + actionIndex * 2 + 2);
     const nullifiers = [
@@ -375,21 +387,21 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
     const action = {
       protocolVersion: 1,
       kind: ActionKind.Deposit,
+      assetIndex,
       asset,
       actionNonce,
       anchorRoot: new Uint8Array(32),
       nullifiers,
       outputs,
       publicValue: value,
-      relayerFee: 0n,
-      relayer: undefined,
       depositSource,
     };
     const record = {
       actionIndex,
       ledgerSequence: actionIndex + 1,
-      startingLeafIndex: actionIndex * 2,
+      startingLeafIndex: actionIndex * 3,
       actionKind: ActionKind.Deposit,
+      assetIndex,
       asset,
       actionNonce,
       anchorRoot: action.anchorRoot,
@@ -397,8 +409,6 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       nullifiers: action.nullifiers,
       outputs,
       publicValue: value,
-      relayerFee: 0n,
-      relayer: undefined,
       depositSource,
     };
     records.push(record);
@@ -427,6 +437,7 @@ export async function runRecoveryGate(argv = process.argv.slice(2)) {
       contextField,
       deploymentBindingHash,
       addressPrefix: 'tskpay_',
+      assets: [{ index: assetIndex, contractId: assetContractId }],
       accountAddress: { kind: 0, payload: accountPublicKey },
     },
     expectedPriorRecordHash: computeGenesisRecordHash(contextHash, deploymentBindingHash),

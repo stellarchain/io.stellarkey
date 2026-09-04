@@ -1598,6 +1598,7 @@ export function PrivateBalanceProvider({
   }, [
     accountId,
     accountPublicKey,
+    asset.index,
     asset.status,
     asset.code,
     asset.contractId,

@@ -262,7 +262,7 @@ export class PrivateRelaySenderSession {
     signal?.addEventListener('abort', abort, { once: true });
     const subscription = this.messenger.subscribe({
       encrypted: true,
-      onMessage: ({ event, message }) => {
+      onMessage: ({ message }) => {
         if (message.type !== 'quote' || message.requestId !== request.requestId) return;
         quotes.set(message.quoteId, message);
       },
