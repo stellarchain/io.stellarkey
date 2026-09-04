@@ -78,14 +78,16 @@ in this file changes the behavior or guarantees documented in
     as the no-response deadline; do not add presence heartbeats or background
     polling.
   - Treat Nostr discovery requests as ephemeral: subscribe before publishing,
-    report **Listening** only after at least one public relay connects, show the
-    real connecting/reconnecting/unavailable state, and automatically reconnect
-    and resubscribe after a dropped WebSocket, beginning with a one-second retry
-    and bounded exponential backoff.
+    report **Connected** only after at least one public relay WebSocket connects,
+    show the real connecting/reconnecting/unavailable state, retry total startup
+    outages and rejected subscriptions, and automatically reconnect and
+    resubscribe after a dropped WebSocket, beginning with a one-second retry and
+    bounded exponential backoff. Do not equate a connected socket with proof
+    that a relay accepted every subscription.
   - Keep helpers using the active Stellar account ineligible. If one answers,
-    settle after the short quiet window and explain that testing requires a
-    different Testnet account instead of presenting a generic five-second
-    no-peer result.
+    explain immediately that testing requires a different Testnet account while
+    retaining the normal discovery deadline. An ineligible reply must never
+    suppress a slower eligible peer.
   - Before approval, the helper validates the exact unsigned transaction,
     source, network, pool method, time bounds and fee caps; decrypts exactly one
     matching fee note; and simulates the exact transaction. Signed XDR is
@@ -96,10 +98,11 @@ in this file changes the behavior or guarantees documented in
     378-431 ms and a stable selection in 1,079-1,132 ms across three optimized
     runs. Real multi-peer discovery/submission p50/p95, peer churn, and iPhone
     WebKit measurements remain release evidence, not implemented guarantees.
-  - A four-sample isolated diagnostic subsequently returned same-account replies
-    in 577-815 ms and different-account eligible offers in 639-672 ms. The
-    result supports retaining Nostr and fixing eligibility/readiness UX instead
-    of adding WebRTC signalling and ICE complexity; sanitized evidence is in
+  - A four-sample isolated diagnostic completed same-account exchanges in
+    577-815 ms and returned different-account eligible offers in 639-672 ms.
+    The result supports retaining Nostr and fixing eligibility/readiness UX
+    instead of adding WebRTC signalling and ICE complexity; current discovery
+    retains its hard deadline after an ineligible response. Sanitized evidence is in
     `protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json`.
 
 ## Remaining validation

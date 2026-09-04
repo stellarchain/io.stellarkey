@@ -13,6 +13,7 @@ import {
   validatePrivateRelayUrls,
 } from '../src/features/private-balance/relay/transport.ts';
 import {
+  createResilientPrivateRelaySubscription,
   firstAcceptedPrivateRelayPublish,
   PRIVATE_RELAY_RECONNECT_BACKOFF_MS,
   privateRelayConnectionOutcomes,
@@ -118,6 +119,50 @@ test('the production Nostr pool keeps subscriptions reconnectable after a droppe
 
 test('a dropped helper connection retries promptly with bounded backoff', () => {
   assert.deepEqual(PRIVATE_RELAY_RECONNECT_BACKOFF_MS, [1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000]);
+});
+
+test('a subscription rejected during startup retries and receives later events', async () => {
+  let attempts = 0;
+  let recoveredEvent = null;
+  const subscription = createResilientPrivateRelaySubscription({
+    urls: ['wss://relay.one/'],
+    filters: [{}],
+    retryBackoffMs: [5],
+    onEvent: event => { recoveredEvent = event; },
+    subscribe: (_url, _filter, handlers) => {
+      attempts += 1;
+      if (attempts === 1) {
+        queueMicrotask(() => handlers.onClose());
+      } else {
+        queueMicrotask(() => handlers.onEvent({ id: 'recovered' }));
+      }
+      return { close() {} };
+    },
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(attempts, 2);
+  assert.deepEqual(recoveredEvent, { id: 'recovered' });
+  subscription.close();
+});
+
+test('closing a rejected subscription cancels its pending retry', async () => {
+  let attempts = 0;
+  const subscription = createResilientPrivateRelaySubscription({
+    urls: ['wss://relay.one/'],
+    filters: [{}],
+    retryBackoffMs: [25],
+    onEvent() {},
+    subscribe: (_url, _filter, handlers) => {
+      attempts += 1;
+      queueMicrotask(() => handlers.onClose());
+      return { close() {} };
+    },
+  });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  subscription.close();
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.equal(attempts, 1);
 });
 
 test('Nostr connection status preserves root relay URL identity', () => {

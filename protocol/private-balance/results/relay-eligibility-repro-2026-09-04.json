@@ -48,10 +48,11 @@
       "ineligiblePeerAccounts": 0
     }
   ],
-  "decision": "Keep Nostr discovery, add truthful connection readiness and automatic WebSocket reconnection, and explain same-account ineligibility without weakening the privacy boundary. Do not add WebRTC as a second discovery transport.",
+  "decision": "Keep Nostr discovery, add truthful connection readiness and automatic WebSocket reconnection, and explain same-account ineligibility without weakening the privacy boundary or allowing it to terminate eligible discovery. Do not add WebRTC as a second discovery transport.",
   "limitations": [
     "This is a four-sample controlled desktop diagnostic, not production p50/p95 evidence.",
     "At least one configured public relay was connected at the start of each helper sample.",
-    "The experiment measured request-to-quote behavior, not proof generation or Stellar submission."
+    "The experiment measured request-to-quote behavior, not proof generation or Stellar submission.",
+    "Same-account elapsed values were recorded before ineligible replies were prevented from terminating the normal discovery window."
   ]
 }

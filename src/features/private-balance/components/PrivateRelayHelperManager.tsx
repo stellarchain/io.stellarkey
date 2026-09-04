@@ -24,6 +24,7 @@ import type { PrivateRelayJobReview } from '../relay/review';
 import {
   publishPrivateRelayHelperStatus,
   resetPrivateRelayHelperStatus,
+  retryPrivateRelayHelperReadiness,
 } from '../relay/helper-status';
 import { PrivateRelayHelperSession } from '../relay/session';
 
@@ -231,15 +232,34 @@ export function PrivateRelayHelperManager() {
         const status = await session.connectionStatus();
         if (!active) return;
         publishPrivateRelayHelperStatus({
-          phase: status.connected > 0 ? 'listening' : 'reconnecting',
+          phase: status.connected > 0 ? 'connected' : 'reconnecting',
           connectedRelays: status.connected,
           totalRelays: status.total,
         });
       };
-      return session.waitUntilConnected(controller.signal).then(status => {
+      return retryPrivateRelayHelperReadiness({
+        signal: controller.signal,
+        connect: signal => session.waitUntilConnected(signal),
+        onUnavailable: () => {
+          if (!active) return;
+          publishPrivateRelayHelperStatus({
+            phase: 'unavailable',
+            connectedRelays: 0,
+            totalRelays,
+          });
+        },
+        onRetry: () => {
+          if (!active) return;
+          publishPrivateRelayHelperStatus({
+            phase: 'connecting',
+            connectedRelays: 0,
+            totalRelays,
+          });
+        },
+      }).then(status => {
         if (!active) return;
         publishPrivateRelayHelperStatus({
-          phase: 'listening',
+          phase: 'connected',
           connectedRelays: status.connected,
           totalRelays: status.total,
         });

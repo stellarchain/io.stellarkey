@@ -17,6 +17,72 @@ export const PRIVATE_RELAY_RECONNECT_BACKOFF_MS: readonly number[] = Object.free
   60_000,
 ]);
 
+export function createResilientPrivateRelaySubscription(input: {
+  urls: readonly string[];
+  filters: readonly PrivateRelayFilter[];
+  retryBackoffMs?: readonly number[];
+  onEvent(event: Event): void;
+  subscribe(
+    url: string,
+    filter: PrivateRelayFilter,
+    handlers: { onEvent(event: Event): void; onClose(): void },
+  ): PrivateRelaySubscription;
+}): PrivateRelaySubscription {
+  const retryBackoffMs = input.retryBackoffMs ?? PRIVATE_RELAY_RECONNECT_BACKOFF_MS;
+  if (retryBackoffMs.length === 0 || retryBackoffMs.some(delay => (
+    !Number.isSafeInteger(delay) || delay < 1 || delay > 60_000
+  ))) {
+    throw new Error('Private relay subscription retry policy is invalid');
+  }
+  let closed = false;
+  const activeSubscriptions = new Set<PrivateRelaySubscription>();
+  const retryTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  const start = (url: string, filter: PrivateRelayFilter, attempt: number) => {
+    if (closed) return;
+    let subscription: PrivateRelaySubscription | null = null;
+    let ended = false;
+    const scheduleRetry = () => {
+      if (ended) return;
+      ended = true;
+      if (subscription) activeSubscriptions.delete(subscription);
+      if (closed) return;
+      const delay = retryBackoffMs[Math.min(attempt, retryBackoffMs.length - 1)]!;
+      const timer = setTimeout(() => {
+        retryTimers.delete(timer);
+        start(url, filter, attempt + 1);
+      }, delay);
+      retryTimers.add(timer);
+    };
+    try {
+      subscription = input.subscribe(url, filter, {
+        onEvent: event => {
+          if (!closed) input.onEvent(event);
+        },
+        onClose: scheduleRetry,
+      });
+      if (ended || closed) subscription.close();
+      else activeSubscriptions.add(subscription);
+    } catch {
+      scheduleRetry();
+    }
+  };
+
+  for (const url of input.urls) {
+    for (const filter of input.filters) start(url, filter, 0);
+  }
+  return {
+    close() {
+      if (closed) return;
+      closed = true;
+      for (const timer of retryTimers) clearTimeout(timer);
+      retryTimers.clear();
+      for (const subscription of activeSubscriptions) subscription.close();
+      activeSubscriptions.clear();
+    },
+  };
+}
+
 function nostrPoolUrl(raw: string): string {
   const url = new URL(raw);
   url.pathname = url.pathname.replace(/\/+/gu, '/');
@@ -79,21 +145,26 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     onEvent: (event: Event) => void,
   ): PrivateRelaySubscription {
     let closed = false;
-    const closers: Array<{ close(): void }> = [];
+    let subscription: PrivateRelaySubscription | null = null;
     void this.pool().then(pool => {
       if (closed) return;
-      for (const filter of filters) {
-        closers.push(pool.subscribeMany([...urls], filter, {
-          onevent: onEvent,
+      subscription = createResilientPrivateRelaySubscription({
+        urls,
+        filters,
+        onEvent,
+        subscribe: (url, filter, handlers) => pool.subscribeMany([url], filter, {
+          onevent: handlers.onEvent,
+          onclose: handlers.onClose,
           maxWait: 8_000,
-        }));
-      }
+        }),
+      });
+      if (closed) subscription.close();
     });
     return {
       close() {
         if (closed) return;
         closed = true;
-        for (const closer of closers) closer.close();
+        subscription?.close();
       },
     };
   }

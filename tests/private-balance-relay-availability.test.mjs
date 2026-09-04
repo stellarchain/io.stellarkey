@@ -268,9 +268,10 @@ test('quote discovery excludes self and emits a lower replacement fee once', asy
   assert.deepEqual(result.quotes.map(item => item.feeAtomic), ['10000']);
 });
 
-test('a same-account helper is reported quickly but never becomes an eligible quote', async () => {
+test('a same-account helper is reported immediately but never becomes an eligible quote', async () => {
   const controlled = controlledSenderSession();
   const excludedSnapshots = [];
+  let firstExcludedAt = null;
   const startedAt = performance.now();
   const pending = controlled.session.requestQuotes({
     networkId: NETWORK_ID,
@@ -279,7 +280,10 @@ test('a same-account helper is reported quickly but never becomes an eligible qu
     quoteWindowMs: 1_000,
     settleWindowMs: 70,
     excludePeerAccounts: ['GMYACCOUNT'],
-    onIneligiblePeerAccounts: count => excludedSnapshots.push(count),
+    onIneligiblePeerAccounts: count => {
+      firstExcludedAt ??= performance.now();
+      excludedSnapshots.push(count);
+    },
   });
 
   setTimeout(() => controlled.emit({
@@ -294,8 +298,37 @@ test('a same-account helper is reported quickly but never becomes an eligible qu
   assert.deepEqual(result.quotes, []);
   assert.equal(result.ineligiblePeerAccounts, 1);
   assert.deepEqual(excludedSnapshots, [1]);
-  assert.ok(elapsedMs >= 70, `settled before the quiet window: ${elapsedMs}ms`);
-  assert.ok(elapsedMs < 350, `waited for the hard no-response deadline: ${elapsedMs}ms`);
+  assert.ok(firstExcludedAt !== null && firstExcludedAt - startedAt < 150);
+  assert.ok(elapsedMs >= 900, `an ineligible reply shortened discovery: ${elapsedMs}ms`);
+});
+
+test('an ineligible quote cannot end discovery before a slower eligible peer arrives', async () => {
+  const controlled = controlledSenderSession();
+  const pending = controlled.session.requestQuotes({
+    networkId: NETWORK_ID,
+    poolContractId: POOL,
+    actionKind: 'transfer',
+    quoteWindowMs: 1_000,
+    settleWindowMs: 100,
+    excludePeerAccounts: ['GMYACCOUNT'],
+  });
+
+  setTimeout(() => controlled.emit({
+    quoteId: '67'.repeat(32),
+    peerPubkey: '77'.repeat(32),
+    peerAccount: 'GMYACCOUNT',
+    feeAtomic: '1',
+  }), 10);
+  setTimeout(() => controlled.emit({
+    quoteId: '68'.repeat(32),
+    peerPubkey: '78'.repeat(32),
+    peerAccount: 'GELIGIBLE',
+    feeAtomic: '10000',
+  }), 180);
+
+  const result = await pending;
+  assert.deepEqual(result.quotes.map(quote => quote.peerAccount), ['GELIGIBLE']);
+  assert.equal(result.ineligiblePeerAccounts, 1);
 });
 
 test('quote discovery retains the hard deadline when no peer answers', async () => {

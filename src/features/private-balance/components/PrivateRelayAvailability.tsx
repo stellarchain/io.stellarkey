@@ -124,14 +124,18 @@ export function PrivateRelayAvailability({
               {checking
                 ? hasOffers
                   ? 'Comparing fees…'
-                  : 'Finding peers…'
+                  : hasSameAccountHelper
+                    ? 'Looking for another peer…'
+                    : 'Finding peers…'
                 : 'Check available peers'}
             </span>
             <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
               {checking
                 ? hasOffers
                   ? 'First offer received. Checking briefly for a better fee'
-                  : 'Waiting for the first live offer'
+                  : hasSameAccountHelper
+                    ? 'Same-account helper found. Still checking for an eligible account'
+                    : 'Waiting for the first live offer'
                 : 'No payment details are included in this check'}
             </span>
           </span>
