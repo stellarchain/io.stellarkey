@@ -469,6 +469,15 @@ authenticated snapshot in memory but disables actions and reports
 status-unknown. One scoped browser tab holds the synchronization lease;
 followers receive only redacted state and may take over after lease expiry.
 
+The authenticated static catalogue supplies the deployment's checkpointed
+asset list without an RPC request during wallet unlock or the first switch to a
+Private tab. A live, two-provider registry read occurs only after the user
+selects **Refresh asset registry**, after an administrator changes the registry,
+or during an explicit runtime retry. This is how another device discovers a
+newly admitted asset or status change. A failed explicit refresh retains the
+last verified catalogue for the same wallet scope; it never adopts an
+uncorroborated or conflicting registry view.
+
 JavaScript cannot guarantee physical memory erasure. The design assumes the
 served application, browser, operating system, device, dependencies, artifacts,
 and reviewed transaction are not compromised. A malicious extension or origin
@@ -586,7 +595,7 @@ transaction hash or independently bind the on-chain executable to the recorded
 local Wasm hash. Contract deployment, both registry additions, and their
 readbacks succeeded against the public Testnet RPC.
 
-The official Testnet runner passed at source commit `866681d` against manifest
+The official Testnet runner passed at source commit `7a156da` against manifest
 `222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
 It passed nine desktop Chromium tests, including the complete two-wallet
 deposit, consolidation, private send, ambiguous-submission recovery,
