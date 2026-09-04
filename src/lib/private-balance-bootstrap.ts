@@ -34,6 +34,13 @@ interface PrivateBalanceConfiguredCandidate {
   encryptedStateExists: boolean;
 }
 
+export interface PrivateCatalogueRefreshFailureInput {
+  runtimeRequestVersion: number;
+  currentScopeKey: string | null;
+  requestedScopeKey: string | null;
+  readyCount: number;
+}
+
 export type PrivatePaymentAccessState = 'needs-consent' | 'preparing' | 'ready';
 
 export interface PrivatePaymentAccessInput {
@@ -226,4 +233,20 @@ export function updatePrivateBalancePoolStorageState<T extends PrivateBalancePoo
     return { ...deployment, encryptedStateExists };
   });
   return changed ? updated : deployments;
+}
+
+/**
+ * A failed user-requested registry refresh must never erase the last verified
+ * catalogue for the same wallet scope. Initial discovery and scope changes
+ * still fail closed because they have no authenticated state to retain.
+ */
+export function shouldRetainPrivateCatalogueAfterRefreshFailure({
+  runtimeRequestVersion,
+  currentScopeKey,
+  requestedScopeKey,
+  readyCount,
+}: PrivateCatalogueRefreshFailureInput): boolean {
+  return runtimeRequestVersion > 0
+    && currentScopeKey === requestedScopeKey
+    && readyCount > 0;
 }

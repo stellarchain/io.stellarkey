@@ -27,6 +27,7 @@ import {
   hasEncryptedPrivateBalanceState,
   privateBalanceAccountSupport,
   selectPrivateBalanceDeploymentId,
+  shouldRetainPrivateCatalogueAfterRefreshFailure,
   shouldMountPrivateBalanceRuntime,
   updatePrivateBalancePoolStorageState,
   type PrivateBalanceStorageScope,
@@ -367,7 +368,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
 
     void loadExpectedPrivateBalanceCatalogue()
       .then(({ catalogue }) => loadPrivateBalanceDeployments({ catalogue, network }))
-      .then(loadedDeployments => requested
+      .then(loadedDeployments => runtimeRequestVersion > 0
         ? loadLivePrivateBalanceRegistry(loadedDeployments, network)
         : loadedDeployments)
       .then(async loadedDeployments => {
@@ -495,17 +496,30 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        registerAvailableAssets([], null);
-        setBootstrap({
-          key: bootstrapKey,
-          ready: [],
-          fallbackDeployment: null,
-          reason: error instanceof Error
-            ? error.message
-            : 'Private Balance deployment verification failed.',
-          checking: false,
+        const reason = error instanceof Error
+          ? error.message
+          : 'Private Balance deployment verification failed.';
+        setBootstrap(current => {
+          if (shouldRetainPrivateCatalogueAfterRefreshFailure({
+            runtimeRequestVersion,
+            currentScopeKey: current.key,
+            requestedScopeKey: bootstrapKey,
+            readyCount: current.ready.length,
+          })) {
+            return current;
+          }
+          return {
+            key: bootstrapKey,
+            ready: [],
+            fallbackDeployment: null,
+            reason,
+            checking: false,
+          };
         });
-        setPrivatePortfolio({ key: bootstrapKey, entries: [] });
+        if (runtimeRequestVersion === 0) {
+          registerAvailableAssets([], null);
+          setPrivatePortfolio({ key: bootstrapKey, entries: [] });
+        }
       });
     return () => {
       active = false;
@@ -517,7 +531,6 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
     network,
     publishAvailableDeployments,
     registerAvailableAssets,
-    requested,
     runtimeRequestVersion,
   ]);
 
