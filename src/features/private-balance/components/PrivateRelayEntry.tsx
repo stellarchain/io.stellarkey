@@ -8,9 +8,12 @@ import {
   PRIVATE_RELAY_PREFERENCES_EVENT,
   type PrivateRelayPreferences,
 } from '../relay/preferences';
+import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
+import { PrivateRelayAvailability } from './PrivateRelayAvailability';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
 
 export function PrivateRelayEntry() {
+  const { deployment, publicAddress } = usePrivateBalanceRuntimeData();
   const [open, setOpen] = useState(false);
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(
     loadPrivateRelayPreferences,
@@ -61,7 +64,12 @@ export function PrivateRelayEntry() {
             subtitle="Help another wallet submit without exposing its account"
             onClose={() => setOpen(false)}
           />
-          <div className="p-4 sm:p-6">
+          <div className="space-y-5 p-4 sm:p-6">
+            <PrivateRelayAvailability
+              networkId={deployment.networkId}
+              poolContractId={deployment.poolContractId}
+              publicAddress={publicAddress}
+            />
             <PrivateRelaySettings helperOnly onSaved={() => setOpen(false)} />
           </div>
         </Modal>

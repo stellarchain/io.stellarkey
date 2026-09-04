@@ -9,6 +9,7 @@ interface AvailabilitySession {
     poolContractId: string;
     actionKind: 'transfer';
     quoteWindowMs?: number;
+    excludePeerAccounts?: readonly string[];
   }, signal?: AbortSignal): Promise<{
     request: PrivateRelayRequest;
     quotes: PrivateRelayQuote[];
@@ -28,10 +29,12 @@ export interface PrivateRelayAvailability {
 export function rankPrivateRelayQuotes(
   quotes: readonly PrivateRelayQuote[],
   currentTimeSeconds = Math.floor(Date.now() / 1_000),
+  excludePeerAccounts: readonly string[] = [],
 ): PrivateRelayQuote[] {
+  const excluded = new Set(excludePeerAccounts);
   const byAccount = new Map<string, PrivateRelayQuote>();
   for (const quote of quotes) {
-    if (quote.expiresAt <= currentTimeSeconds) continue;
+    if (quote.expiresAt <= currentTimeSeconds || excluded.has(quote.peerAccount)) continue;
     const existing = byAccount.get(quote.peerAccount);
     if (!existing || BigInt(quote.feeAtomic) < BigInt(existing.feeAtomic)) {
       byAccount.set(quote.peerAccount, quote);
@@ -52,6 +55,7 @@ export async function checkPrivateRelayAvailability(
     networkId: string;
     poolContractId: string;
     quoteWindowMs?: number;
+    excludePeerAccounts?: readonly string[];
   },
   signal?: AbortSignal,
   createSession?: AvailabilitySessionFactory,
@@ -67,10 +71,15 @@ export async function checkPrivateRelayAvailability(
       poolContractId: input.poolContractId,
       actionKind: 'transfer',
       quoteWindowMs: input.quoteWindowMs,
+      excludePeerAccounts: input.excludePeerAccounts,
     }, signal);
     const checkedAt = Date.now();
     return {
-      quotes: rankPrivateRelayQuotes(quotes, Math.floor(checkedAt / 1_000)),
+      quotes: rankPrivateRelayQuotes(
+        quotes,
+        Math.floor(checkedAt / 1_000),
+        input.excludePeerAccounts,
+      ),
       checkedAt,
     };
   } finally {

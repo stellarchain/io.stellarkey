@@ -65,6 +65,25 @@ test('availability ranks unique live peers by their lowest quoted fee', () => {
   ]);
 });
 
+test('availability excludes the active account so self-relay never looks private', () => {
+  const ranked = rankPrivateRelayQuotes([
+    quote({
+      quoteId: '47'.repeat(32),
+      peerPubkey: '57'.repeat(32),
+      peerAccount: 'GMYACCOUNT',
+      feeAtomic: '1',
+    }),
+    quote({
+      quoteId: '48'.repeat(32),
+      peerPubkey: '58'.repeat(32),
+      peerAccount: 'GUNRELATED',
+      feeAtomic: '20000',
+    }),
+  ], NOW_SECONDS, ['GMYACCOUNT']);
+
+  assert.deepEqual(ranked.map(item => item.peerAccount), ['GUNRELATED']);
+});
+
 test('availability check returns ranked peers and closes its ephemeral session', async () => {
   let closed = 0;
   let requestInput = null;

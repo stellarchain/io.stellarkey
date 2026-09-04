@@ -241,6 +241,7 @@ export class PrivateRelaySenderSession {
     poolContractId: string;
     actionKind: 'transfer' | 'withdraw';
     quoteWindowMs?: number;
+    excludePeerAccounts?: readonly string[];
   }, signal?: AbortSignal): Promise<{ request: PrivateRelayRequest; quotes: PrivateRelayQuote[] }> {
     const quoteWindowMs = input.quoteWindowMs ?? 6_000;
     if (!Number.isSafeInteger(quoteWindowMs) || quoteWindowMs < 1_000 || quoteWindowMs > MAX_QUOTE_WINDOW_MS) {
@@ -279,7 +280,14 @@ export class PrivateRelaySenderSession {
         if (signal?.aborted) abortWait();
         else signal?.addEventListener('abort', abortWait, { once: true });
       });
-      return { request, quotes: rankPrivateRelayQuotes([...quotes.values()], nowSeconds()) };
+      return {
+        request,
+        quotes: rankPrivateRelayQuotes(
+          [...quotes.values()],
+          nowSeconds(),
+          input.excludePeerAccounts,
+        ),
+      };
     } finally {
       controller.abort();
       subscription.close();
