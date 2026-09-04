@@ -318,7 +318,7 @@ export async function scanArchiveRecords(
     let activityAsset: (typeof registry)[number] | undefined = candidates.length === 1
       ? candidates[0]
       : undefined;
-    const useActivityAsset = (index: number, contractId: string) => {
+    const resolveActivityAsset = (index: number, contractId: string) => {
       const candidate = registry.find(asset => asset.index === index && asset.contractId === contractId);
       if (!candidate) throw new Error('Recovered private asset is not in the authenticated registry');
       if (activityAsset && activityAsset.index !== candidate.index) {
@@ -331,7 +331,7 @@ export async function scanArchiveRecords(
       const spentNote = notesByNullifier.get(nullifierHex);
       if (!spentNote) continue;
       if (spentNote.status === 'spent') throw new Error('Owned note was spent more than once');
-      useActivityAsset(spentNote.assetIndex, spentNote.assetContractId);
+      resolveActivityAsset(spentNote.assetIndex, spentNote.assetContractId);
       ownedInputValue += BigInt(spentNote.value);
       spentNote.status = 'spent';
       spentNote.spentInActionIndex = record.actionIndex;
@@ -347,7 +347,7 @@ export async function scanArchiveRecords(
       const ownedRealOutput = Boolean(note && note.flags === 0);
       if (note && note.flags === 0) {
         if (!asset) throw new Error('Recovered note is missing its registry asset');
-        useActivityAsset(asset.index, asset.contractId);
+        resolveActivityAsset(asset.index, asset.contractId);
         const commitment = hex(output.cm);
         const leafIndex = record.startingLeafIndex + outputIndex;
         const noteId = usedNoteIds.has(commitment)
@@ -397,7 +397,7 @@ export async function scanArchiveRecords(
               throw new Error('Recovered outgoing asset index does not match its authenticated asset');
             }
             if (outgoing.flags === 0) {
-              useActivityAsset(asset.index, asset.contractId);
+              resolveActivityAsset(asset.index, asset.contractId);
               const address = encodePrivateAddress({
                 deploymentTag: derivePrivateAddressDeploymentTag(
                   input.context.deploymentBindingHash,

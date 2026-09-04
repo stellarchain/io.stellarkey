@@ -36,7 +36,15 @@ interface PendingRelayApproval extends RelayNegotiation {
 }
 
 export function PrivateRelayHelperManager() {
-  const runtime = usePrivateBalanceRuntimeData();
+  const {
+    deployment: { networkId, poolContractId },
+    derivePrivateRelayPayout,
+    phase,
+    publicAddress,
+    reviewPrivateRelayJob,
+    signPrivateRelayJob,
+    submitPrivateRelayJob,
+  } = usePrivateBalanceRuntimeData();
   const { availableAssets } = usePrivateBalanceRuntime();
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
   const [pending, setPending] = useState<PendingRelayApproval | null>(null);
@@ -66,10 +74,10 @@ export function PrivateRelayHelperManager() {
   useEffect(() => {
     if (
       !preferences.helpRelay ||
-      runtime.phase !== 'current' ||
-      !runtime.publicAddress ||
-      !runtime.deployment.networkId ||
-      !runtime.deployment.poolContractId
+      phase !== 'current' ||
+      !publicAddress ||
+      !networkId ||
+      !poolContractId
     ) return;
     let active = true;
     const controller = new AbortController();
@@ -85,15 +93,15 @@ export function PrivateRelayHelperManager() {
       sessionRef.current = session;
       session.listenForRequests(request => {
         if (
-          request.networkId !== runtime.deployment.networkId ||
-          request.poolContractId !== runtime.deployment.poolContractId ||
+          request.networkId !== networkId ||
+          request.poolContractId !== poolContractId ||
           requestIds.has(request.requestId) ||
           requestIds.size >= MAX_OPEN_QUOTES
         ) return;
         requestIds.add(request.requestId);
         void session.offerQuote({
           request,
-          peerAccount: runtime.publicAddress!,
+          peerAccount: publicAddress,
           feeAtomic: preferences.feeAtomic,
         }, controller.signal).catch(() => {
           requestIds.delete(request.requestId);
@@ -102,7 +110,7 @@ export function PrivateRelayHelperManager() {
       session.listenForPrivateMessages((message, quote) => {
         if (message.type === 'selection') {
           if (negotiations.size >= MAX_OPEN_QUOTES || negotiations.has(message.quoteId)) return;
-          void runtime.derivePrivateRelayPayout({
+          void derivePrivateRelayPayout({
             assetIndex: message.assetIndex,
             actionDiversifier: message.actionDiversifier,
           }).then(privateFeeAddress => {
@@ -136,7 +144,7 @@ export function PrivateRelayHelperManager() {
             }, controller.signal).catch(() => undefined);
             return;
           }
-          void runtime.reviewPrivateRelayJob({
+          void reviewPrivateRelayJob({
             unsignedEnvelopeXdr: message.unsignedEnvelopeXdr,
             transactionHash: message.transactionHash,
             sourceAccount: quote.peerAccount,
@@ -174,7 +182,7 @@ export function PrivateRelayHelperManager() {
           }, controller.signal).catch(() => undefined);
           return;
         }
-        void runtime.submitPrivateRelayJob({
+        void submitPrivateRelayJob({
           signedEnvelopeXdr: submittedJob.signedEnvelopeXdr,
           transactionHash: submittedJob.transactionHash,
         }).then(response => session.sendSubmitted({
@@ -212,13 +220,13 @@ export function PrivateRelayHelperManager() {
     preferences.feeAtomic,
     preferences.helpRelay,
     preferences.relayUrls,
-    runtime.deployment.networkId,
-    runtime.deployment.poolContractId,
-    runtime.derivePrivateRelayPayout,
-    runtime.phase,
-    runtime.publicAddress,
-    runtime.reviewPrivateRelayJob,
-    runtime.submitPrivateRelayJob,
+    derivePrivateRelayPayout,
+    networkId,
+    phase,
+    poolContractId,
+    publicAddress,
+    reviewPrivateRelayJob,
+    submitPrivateRelayJob,
   ]);
 
   const selectedAsset = useMemo(() => pending
@@ -262,7 +270,7 @@ export function PrivateRelayHelperManager() {
     setWorking(true);
     setError(null);
     try {
-      const signedEnvelopeXdr = await runtime.signPrivateRelayJob(pending.review);
+      const signedEnvelopeXdr = await signPrivateRelayJob(pending.review);
       const signed = await sessionRef.current.sendSigned({
         job: pending.job,
         quote: pending.quote,

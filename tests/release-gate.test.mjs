@@ -258,6 +258,7 @@ test("browser verification is runner-owned instead of ad-hoc", () => {
     "create-release-artifact.mjs",
     "generate-service-worker.mjs",
     "generate-static-headers.mjs",
+    "measure-private-relay.mjs",
     "render-app-icons.mjs",
     "static-server.mjs",
   ]);
