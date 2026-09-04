@@ -138,6 +138,16 @@ export class PrivateRelayMessenger {
     }, signal);
   }
 
+  waitUntilConnected(signal?: AbortSignal) {
+    this.assertOpen();
+    return this.transport.waitUntilConnected(signal);
+  }
+
+  connectionStatus() {
+    this.assertOpen();
+    return this.transport.connectionStatus();
+  }
+
   private async receive(
     event: Event,
     input: {
@@ -473,6 +483,14 @@ export class PrivateRelayHelperSession {
 
   get publicKey(): string {
     return this.messenger.publicKey;
+  }
+
+  waitUntilConnected(signal?: AbortSignal) {
+    return this.messenger.waitUntilConnected(signal);
+  }
+
+  connectionStatus() {
+    return this.messenger.connectionStatus();
   }
 
   private forgetQuote(quoteId: string): void {

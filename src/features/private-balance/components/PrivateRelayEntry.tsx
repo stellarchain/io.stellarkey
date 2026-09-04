@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { IconChevronDown, IconGift } from '@/components/icons';
 import { Modal, ModalHeader } from '@/components/ui';
 import {
@@ -11,12 +11,22 @@ import {
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { PrivateRelayAvailability } from './PrivateRelayAvailability';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
+import {
+  getPrivateRelayHelperServerStatus,
+  getPrivateRelayHelperStatus,
+  subscribePrivateRelayHelperStatus,
+} from '../relay/helper-status';
 
 export function PrivateRelayEntry() {
   const { asset, deployment, publicAddress } = usePrivateBalanceRuntimeData();
   const [open, setOpen] = useState(false);
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(
     loadPrivateRelayPreferences,
+  );
+  const helperStatus = useSyncExternalStore(
+    subscribePrivateRelayHelperStatus,
+    getPrivateRelayHelperStatus,
+    getPrivateRelayHelperServerStatus,
   );
 
   useEffect(() => {
@@ -29,7 +39,29 @@ export function PrivateRelayEntry() {
     };
   }, []);
 
-  const status = preferences.helpRelay ? 'On' : 'Set up';
+  const status = !preferences.helpRelay
+    ? 'Set up'
+    : helperStatus.phase === 'listening'
+      ? 'Listening'
+      : helperStatus.phase === 'reconnecting'
+        ? 'Reconnecting'
+        : helperStatus.phase === 'unavailable'
+          ? 'Unavailable'
+          : helperStatus.phase === 'waiting'
+            ? 'Waiting'
+            : 'Connecting';
+  const helperDescription = !preferences.helpRelay
+    ? 'Help submit private payments for a private reward'
+    : helperStatus.phase === 'listening'
+      ? `Listening on ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
+      : helperStatus.phase === 'reconnecting'
+        ? 'Reconnecting to the public relay network'
+        : helperStatus.phase === 'unavailable'
+          ? 'Public relay connection unavailable'
+          : helperStatus.phase === 'waiting'
+            ? 'Waiting for Private Payments to finish syncing'
+            : 'Connecting to the public relay network';
+  const helperIsListening = preferences.helpRelay && helperStatus.phase === 'listening';
 
   return (
     <>
@@ -46,12 +78,12 @@ export function PrivateRelayEntry() {
         <span className="min-w-0 flex-1">
           <span className="block text-[13.5px] font-semibold text-white">Earn by relaying</span>
           <span className="mt-0.5 block truncate text-[11.5px] text-neutral-500">
-            Help submit private payments for a private reward
+            {helperDescription}
           </span>
         </span>
         <span className={`shrink-0 text-[12px] font-semibold ${
-          preferences.helpRelay ? 'text-[#30D158]' : 'text-[#0A84FF]'
-        }`}>
+          helperIsListening ? 'text-[#30D158]' : preferences.helpRelay ? 'text-neutral-400' : 'text-[#0A84FF]'
+        }`} aria-live="polite">
           {status}
         </span>
         <IconChevronDown size={14} className="-rotate-90 text-neutral-600" />

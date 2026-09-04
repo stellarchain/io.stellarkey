@@ -21,6 +21,10 @@ import type {
   PrivateRelaySubmitJob,
 } from '../relay/protocol';
 import type { PrivateRelayJobReview } from '../relay/review';
+import {
+  publishPrivateRelayHelperStatus,
+  resetPrivateRelayHelperStatus,
+} from '../relay/helper-status';
 import { PrivateRelayHelperSession } from '../relay/session';
 
 const MAX_OPEN_QUOTES = 16;
@@ -72,19 +76,32 @@ export function PrivateRelayHelperManager() {
   }, []);
 
   useEffect(() => {
-    if (
-      !preferences.helpRelay ||
-      phase !== 'current' ||
-      !publicAddress ||
-      !networkId ||
-      !poolContractId
-    ) return;
+    if (!preferences.helpRelay) {
+      resetPrivateRelayHelperStatus();
+      return;
+    }
+    const totalRelays = preferences.relayUrls.length;
+    if (phase !== 'current' || !publicAddress || !networkId || !poolContractId) {
+      publishPrivateRelayHelperStatus({
+        phase: 'waiting',
+        connectedRelays: 0,
+        totalRelays,
+      });
+      return;
+    }
     let active = true;
+    let statusTimer: ReturnType<typeof setInterval> | null = null;
+    let visibilityChange: (() => void) | null = null;
     const controller = new AbortController();
     const negotiations = negotiationsRef.current;
     const signed = signedRef.current;
     const requestIds = new Set<string>();
     const requestExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    publishPrivateRelayHelperStatus({
+      phase: 'connecting',
+      connectedRelays: 0,
+      totalRelays,
+    });
 
     void PrivateRelayHelperSession.create(preferences.relayUrls).then(session => {
       if (!active) {
@@ -210,11 +227,46 @@ export function PrivateRelayHelperManager() {
           }, controller.signal).catch(() => undefined);
         });
       }, controller.signal);
-    }).catch(() => undefined);
+      const refreshConnectionStatus = async () => {
+        const status = await session.connectionStatus();
+        if (!active) return;
+        publishPrivateRelayHelperStatus({
+          phase: status.connected > 0 ? 'listening' : 'reconnecting',
+          connectedRelays: status.connected,
+          totalRelays: status.total,
+        });
+      };
+      return session.waitUntilConnected(controller.signal).then(status => {
+        if (!active) return;
+        publishPrivateRelayHelperStatus({
+          phase: 'listening',
+          connectedRelays: status.connected,
+          totalRelays: status.total,
+        });
+        statusTimer = setInterval(() => {
+          void refreshConnectionStatus().catch(() => undefined);
+        }, 2_000);
+        visibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            void refreshConnectionStatus().catch(() => undefined);
+          }
+        };
+        document.addEventListener('visibilitychange', visibilityChange);
+      });
+    }).catch(() => {
+      if (!active || controller.signal.aborted) return;
+      publishPrivateRelayHelperStatus({
+        phase: 'unavailable',
+        connectedRelays: 0,
+        totalRelays,
+      });
+    });
 
     return () => {
       active = false;
       controller.abort();
+      if (statusTimer) clearInterval(statusTimer);
+      if (visibilityChange) document.removeEventListener('visibilitychange', visibilityChange);
       sessionRef.current?.close();
       sessionRef.current = null;
       negotiations.clear();
@@ -226,6 +278,7 @@ export function PrivateRelayHelperManager() {
       setPending(null);
       setWorking(false);
       setError(null);
+      resetPrivateRelayHelperStatus();
     };
   }, [
     preferences.feeAtomic,

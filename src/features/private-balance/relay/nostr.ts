@@ -31,7 +31,7 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private pool() {
     this.poolPromise ??= import('nostr-tools/pool').then(({ SimplePool }) => new SimplePool({
       enablePing: true,
-      enableReconnect: false,
+      enableReconnect: true,
     }));
     return this.poolPromise;
   }
@@ -69,6 +69,37 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
         for (const closer of closers) closer.close();
       },
     };
+  }
+
+  async waitUntilConnected(
+    urls: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, boolean>> {
+    if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
+    const pool = await this.pool();
+    const controllers = urls.map(() => new AbortController());
+    const abort = () => controllers.forEach(controller => controller.abort());
+    signal?.addEventListener('abort', abort, { once: true });
+    const attempts = urls.map((url, index) => pool.ensureRelay(url, {
+      connectionTimeout: 8_000,
+      abort: controllers[index]?.signal,
+    }).then(() => url));
+    void Promise.allSettled(attempts).finally(() => signal?.removeEventListener('abort', abort));
+    try {
+      await Promise.any(attempts);
+    } catch {
+      return new Map(urls.map(url => [url, false]));
+    }
+    return this.connectionStatus(urls);
+  }
+
+  async connectionStatus(urls: readonly string[]): Promise<Map<string, boolean>> {
+    const pool = await this.pool();
+    const connected = pool.listConnectionStatus();
+    return new Map(urls.map(url => {
+      const normalized = url.endsWith('/') ? url.slice(0, -1) : url;
+      return [url, connected.get(normalized) === true];
+    }));
   }
 
   close(urls: readonly string[]): void {
