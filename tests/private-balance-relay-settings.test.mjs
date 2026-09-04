@@ -52,6 +52,10 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(availability, /Lowest fee/);
   assert.match(availability, /quote\.peerAccount/);
   assert.match(availability, /quote\.feeAtomic/);
+  assert.match(availability, /formatPrivateBalanceAmount/);
+  assert.match(availability, /\{fee\} \{code\}/);
+  assert.match(entry, /code=\{asset\?\.code/);
+  assert.match(entry, /decimals=\{asset\?\.decimals/);
   assert.doesNotMatch(availability, /savePrivateRelayPreferences|localStorage/);
 });
 
