@@ -30,6 +30,7 @@ import type { PrivateArchiveRestorationProgress } from '@/features/private-balan
 import type { PrivateBalanceAsset } from '@/lib/private-balance-assets';
 import type { PrivatePortfolioEntry } from '@/features/private-balance/runtime/portfolio';
 import type { StealthOwnedPayment } from '@/features/private-balance/runtime/stealth-cache';
+import type { PrivateRelayJobReview } from '@/features/private-balance/relay/review';
 
 export type PrivateBalanceRuntimePhase =
   | 'disabled'
@@ -79,6 +80,7 @@ export interface PrivateBalanceDeploymentSummary {
   poolContractId: string | null;
   assetContractId: string | null;
   assetAdminAddress: string | null;
+  networkId: string | null;
   realmId: string | null;
   artifactVersion: string | null;
   manifestHash: string | null;
@@ -103,6 +105,21 @@ export interface PreparedStealthSweep {
     | 'amountStroops'
   >;
   review: PreparedPrivateActionReview;
+}
+
+export interface PrivateRelaySubmissionCallbacks {
+  requestSignature(input: {
+    envelopeXdr: string;
+    transactionHash: string;
+    networkPassphrase: string;
+  }): Promise<string>;
+  requestSubmission(input: {
+    signedEnvelopeXdr: string;
+    transactionHash: string;
+  }): Promise<{
+    status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
+    hash: string;
+  }>;
 }
 
 export interface PrivateBalanceRuntimeDataValue {
@@ -156,7 +173,30 @@ export interface PrivateBalanceRuntimeDataValue {
     signal?: AbortSignal,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
-  submitAction(review: PreparedPrivateActionReview): Promise<'broadcast' | 'ambiguous'>;
+  submitAction(
+    review: PreparedPrivateActionReview,
+    relay?: PrivateRelaySubmissionCallbacks,
+  ): Promise<'broadcast' | 'ambiguous'>;
+  derivePrivateRelayPayout(input: {
+    assetIndex: number;
+    actionDiversifier: string;
+  }): Promise<string>;
+  reviewPrivateRelayJob(input: {
+    unsignedEnvelopeXdr: string;
+    transactionHash: string;
+    sourceAccount: string;
+    assetIndex: number;
+    actionDiversifier: string;
+    feeAtomic: string;
+  }): Promise<PrivateRelayJobReview>;
+  signPrivateRelayJob(review: PrivateRelayJobReview): Promise<string>;
+  submitPrivateRelayJob(input: {
+    signedEnvelopeXdr: string;
+    transactionHash: string;
+  }): Promise<{
+    status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
+    hash: string;
+  }>;
   prepareChainedSend(draft: PrivateChainedSendDraft): Promise<PrivateChainedSendApproval>;
   submitChainedSend(
     approval: PrivateChainedSendApproval,
@@ -204,6 +244,25 @@ const unavailableSubmission = async (): Promise<'broadcast' | 'ambiguous'> => {
   throw new Error('Private Balance is unavailable.');
 };
 
+const unavailableRelayPayout = async (): Promise<string> => {
+  throw new Error('Private Balance is unavailable.');
+};
+
+const unavailableRelayReview = async (): Promise<PrivateRelayJobReview> => {
+  throw new Error('Private Balance is unavailable.');
+};
+
+const unavailableRelaySign = async (): Promise<string> => {
+  throw new Error('Private Balance is unavailable.');
+};
+
+const unavailableRelaySubmit = async (): Promise<{
+  status: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
+  hash: string;
+}> => {
+  throw new Error('Private Balance is unavailable.');
+};
+
 const unavailableChainedApproval = async (): Promise<PrivateChainedSendApproval> => {
   throw new Error('Private Balance is unavailable.');
 };
@@ -247,6 +306,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
     poolContractId: null,
     assetContractId: null,
     assetAdminAddress: null,
+    networkId: null,
     realmId: null,
     artifactVersion: null,
     manifestHash: null,
@@ -274,6 +334,10 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   prepareAction: unavailableReview,
   cancelAction: unavailable,
   submitAction: unavailableSubmission,
+  derivePrivateRelayPayout: unavailableRelayPayout,
+  reviewPrivateRelayJob: unavailableRelayReview,
+  signPrivateRelayJob: unavailableRelaySign,
+  submitPrivateRelayJob: unavailableRelaySubmit,
   prepareChainedSend: unavailableChainedApproval,
   submitChainedSend: unavailableChainedSubmission,
   onIncomingPrivatePayment: () => () => {},

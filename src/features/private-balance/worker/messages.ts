@@ -44,6 +44,18 @@ export type WorkerRequest =
       type: 'GENERATE_ADDRESS';
     })
   | (WorkerMessage & {
+      type: 'DERIVE_ADDRESS';
+      diversifier: Uint8Array;
+    })
+  | (WorkerMessage & {
+      type: 'VERIFY_RELAY_FEE';
+      actionNonce: Uint8Array;
+      outputs: Array<{ commitment: Uint8Array; recipientEnvelope: Uint8Array }>;
+      assetIndex: number;
+      feeAtomic: string;
+      actionDiversifier: Uint8Array;
+    })
+  | (WorkerMessage & {
       type: 'SCAN_PAGE';
       records: ArchiveRecordModel[];
       expectedPriorRecordHash: Uint8Array;
@@ -83,6 +95,14 @@ export type WorkerResponse =
       type: 'ADDRESS_OK';
       ownerCommitmentHex: string;
       address: string;
+    })
+  | (WorkerMessage & {
+      type: 'ADDRESS_DERIVED';
+      ownerCommitmentHex: string;
+      address: string;
+    })
+  | (WorkerMessage & {
+      type: 'RELAY_FEE_VERIFIED';
     })
   | (WorkerMessage & {
       type: 'SCAN_OK';

@@ -12,7 +12,7 @@ test('private send validates the private address and shows the fingerprint mark'
   // The identity mark derives from the FINGERPRINT, never the full address.
   assert.match(source, /<AccountMark publicKey=\{fingerprint\}/);
   assert.match(source, /32 bytes/i);
-  assert.match(source, /flow\.prepare\(\{[\s\S]*kind: 'transfer'/);
+  assert.match(source, /flow\.prepare\([\s\S]*kind: 'transfer'/);
   assert.match(source, /recipientFieldRef/);
   assert.match(source, /recipientFieldRef\.current\?\.focus\(\)/);
   assert.match(source, /pasteGuidance/);
@@ -98,7 +98,7 @@ test('an expired review re-prepares once and visibly diffs the changed rows', ()
   const review = read('src/features/private-balance/components/PrivateActionReview.tsx');
 
   assert.match(controller, /cause instanceof PrivateActionReviewExpiredError/);
-  assert.match(controller, /await prepare\(draftRef\.current\)/);
+  assert.match(controller, /await prepare\(draftRef\.current, submissionModeRef\.current\)/);
   // An identical re-prepared review swaps in seamlessly; a changed fee or
   // change pulses its row and briefly holds confirm.
   assert.match(review, /diff\.fee !== fee/);
@@ -114,4 +114,18 @@ test('the first-ever private send celebrates exactly once', () => {
   assert.match(source, /celebrate/);
   assert.match(source, /Sent Privately/);
   assert.match(source, /explorerTxUrl/);
+});
+
+test('private send makes peer relay an explicit choice and never silently falls back', () => {
+  const source = read('src/features/private-balance/components/SendPrivate.tsx');
+  const controller = read('src/features/private-balance/components/usePrivateActionController.ts');
+  const choice = read('src/features/private-balance/components/PrivateRelaySubmissionChoice.tsx');
+
+  assert.match(source, /PrivateRelaySubmissionChoice/);
+  assert.match(source, /flow\.prepare\([\s\S]*submissionMode/);
+  assert.match(choice, /Privacy relay/);
+  assert.match(choice, /My account/);
+  assert.match(choice, /No StellarKey relay\s*server/);
+  assert.match(controller, /No privacy relay peer answered/);
+  assert.doesNotMatch(controller, /catch[\s\S]{0,200}prepareAction\(draft/);
 });

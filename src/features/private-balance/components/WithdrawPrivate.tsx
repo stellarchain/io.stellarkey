@@ -9,6 +9,7 @@ import { NETWORKS } from '@/lib/stellar';
 import { humanizePrivateError, PRIVACY_ROW } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
+import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
@@ -18,7 +19,11 @@ import {
   trimAmountInput,
 } from './PrivateAmountField';
 import { PrivateSubmissionStatus } from './PrivateSubmissionStatus';
-import { usePrivateActionController } from './usePrivateActionController';
+import { PrivateRelaySubmissionChoice } from './PrivateRelaySubmissionChoice';
+import {
+  usePrivateActionController,
+  type PrivateSubmissionMode,
+} from './usePrivateActionController';
 
 /**
  * Moves private funds back to a public Stellar account — prefilled with the
@@ -40,6 +45,8 @@ export function WithdrawPrivate({
   const [stage, setStage] = useState<'form' | 'review'>('form');
   const [amount, setAmount] = useState('');
   const [publicRecipient, setPublicRecipient] = useState(publicAddress ?? '');
+  const [submissionMode, setSubmissionMode] = useState<PrivateSubmissionMode>(() =>
+    loadPrivateRelayPreferences().useRelay ? 'relay' : 'direct');
   const flow = usePrivateActionController(onClose, onSubmitted);
 
   const trimmedRecipient = publicRecipient.trim();
@@ -71,7 +78,10 @@ export function WithdrawPrivate({
     if (amountCheck.stroops === null || !recipientShapeOk) return;
     triggerHaptic('selection');
     setStage('review');
-    void flow.prepare({ kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient });
+    void flow.prepare(
+      { kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient },
+      submissionMode,
+    );
   };
 
   const backToForm = () => {
@@ -117,6 +127,7 @@ export function WithdrawPrivate({
           chained={flow.chained}
           chainProgress={flow.chainProgress}
           progress={flow.progress}
+          relayProgress={flow.relayProgress}
           preparing={flow.preparing}
           working={flow.working}
           error={flow.error}
@@ -157,6 +168,10 @@ export function WithdrawPrivate({
             />
           </div>
           <PrivateQuickAmounts onAmount={setAmount} max={privateBalanceMax} />
+          <PrivateRelaySubmissionChoice
+            value={submissionMode}
+            onChange={setSubmissionMode}
+          />
           <Field
             label="Public recipient"
             hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}

@@ -27,9 +27,9 @@ function assertPublicKey(publicKey: string): void {
 }
 
 export async function createPrivateRelayEphemeralIdentity(): Promise<PrivateRelayEphemeralIdentity> {
-  const module = await pure();
-  const secretKey = module.generateSecretKey();
-  return { secretKey, publicKey: module.getPublicKey(secretKey) };
+  const nostr = await pure();
+  const secretKey = nostr.generateSecretKey();
+  return { secretKey, publicKey: nostr.getPublicKey(secretKey) };
 }
 
 export async function encryptPrivateRelayPayload(
@@ -42,10 +42,10 @@ export async function encryptPrivateRelayPayload(
   if (new TextEncoder().encode(plaintext).byteLength > PRIVATE_RELAY_MAX_PLAINTEXT_BYTES) {
     throw new Error('Private relay plaintext is too large');
   }
-  const module = await nip44();
-  const key = module.v2.utils.getConversationKey(secretKey, peerPublicKey);
+  const nostr = await nip44();
+  const key = nostr.v2.utils.getConversationKey(secretKey, peerPublicKey);
   try {
-    const encrypted = module.v2.encrypt(plaintext, key);
+    const encrypted = nostr.v2.encrypt(plaintext, key);
     if (new TextEncoder().encode(encrypted).byteLength > PRIVATE_RELAY_MAX_ENCRYPTED_BYTES) {
       throw new Error('Private relay encrypted payload is too large');
     }
@@ -65,10 +65,10 @@ export async function decryptPrivateRelayPayload(
   if (typeof encrypted !== 'string' || new TextEncoder().encode(encrypted).byteLength > PRIVATE_RELAY_MAX_ENCRYPTED_BYTES) {
     throw new Error('Private relay encrypted payload is invalid');
   }
-  const module = await nip44();
-  const key = module.v2.utils.getConversationKey(secretKey, peerPublicKey);
+  const nostr = await nip44();
+  const key = nostr.v2.utils.getConversationKey(secretKey, peerPublicKey);
   try {
-    const plaintext = module.v2.decrypt(encrypted, key);
+    const plaintext = nostr.v2.decrypt(encrypted, key);
     if (new TextEncoder().encode(plaintext).byteLength > PRIVATE_RELAY_MAX_PLAINTEXT_BYTES) {
       throw new Error('Private relay plaintext is too large');
     }
@@ -89,4 +89,3 @@ export async function signPrivateRelayEvent(
 export async function verifyPrivateRelayEvent(event: Event): Promise<boolean> {
   return (await pure()).verifyEvent(event);
 }
-

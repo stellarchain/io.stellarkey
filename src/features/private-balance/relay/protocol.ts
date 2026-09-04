@@ -405,6 +405,7 @@ export class PrivateRelayReplayGuard {
   }
 }
 
-export function redactPrivateRelayError(_cause: unknown): string {
+export function redactPrivateRelayError(cause: unknown): string {
+  void cause;
   return 'The privacy relay stopped safely. Try another peer or choose direct submission.';
 }

@@ -41,10 +41,19 @@ export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
 const HEX_PROOF_BYTES = (64 + 128 + 64) * 2;
 
+export interface PrivateActionRelayBinding {
+  feeAtomic: string;
+  privateFeeAddress: string;
+  sourceAccount: string;
+  requestId: string;
+  quoteId: string;
+  peerPublicKey: string;
+}
+
 export type PrivateActionDraft =
   | { kind: 'deposit'; amount: string }
-  | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string }
-  | { kind: 'withdraw'; amount: string; publicRecipient: string }
+  | { kind: 'transfer'; amount: string; recipientAddress: string; memo?: string; relay?: PrivateActionRelayBinding }
+  | { kind: 'withdraw'; amount: string; publicRecipient: string; relay?: PrivateActionRelayBinding }
   | { kind: 'consolidate' };
 
 export type PrivateActionProgressStage =
@@ -69,6 +78,7 @@ export interface PreparedPrivateActionReview {
   /** Journaled private memo (hex of the trimmed draft memo), transfers only. */
   memoHex: string | null;
   publicRecipient: string | null;
+  relay: PrivateActionRelayBinding | null;
   anchorExpiresAtLedger: number;
   latestLedger: number;
   transaction: PrivateBalanceTransactionReview;
@@ -335,6 +345,21 @@ export async function preparePrivateBalanceActionFlow(input: {
   if (!StrKey.isValidContract(input.assetContractId)) {
     throw new Error('Private Balance asset contract is invalid.');
   }
+  const relay = input.draft.kind === 'transfer' || input.draft.kind === 'withdraw'
+    ? input.draft.relay
+    : undefined;
+  if (relay) {
+    if (
+      !StrKey.isValidEd25519PublicKey(relay.sourceAccount) ||
+      !/^[0-9a-f]{64}$/u.test(relay.requestId) ||
+      !/^[0-9a-f]{64}$/u.test(relay.quoteId) ||
+      !/^[0-9a-f]{64}$/u.test(relay.peerPublicKey) ||
+      !/^[1-9][0-9]{0,20}$/u.test(relay.feeAtomic)
+    ) {
+      throw new Error('Private relay binding is invalid.');
+    }
+    await validatePrivateTransferRecipient(relay.privateFeeAddress, input.manifest);
+  }
   const manifestAsset = input.registryAssets[input.assetIndex];
   if (
     !manifestAsset
@@ -445,9 +470,10 @@ export async function preparePrivateBalanceActionFlow(input: {
         };
       } else {
         amount = parsePrivateAmount(input.draft.amount, input.assetDecimals);
+        const relayFee = relay ? BigInt(relay.feeAtomic) : 0n;
         const selection = selectPrivateNotes(
           state.notes.filter(note => note.assetContractId === input.assetContractId),
-          amount,
+          amount + relayFee,
         );
         if (selection.kind === 'insufficient') {
           throw new Error('Private Balance is insufficient for this amount.');
@@ -477,6 +503,12 @@ export async function preparePrivateBalanceActionFlow(input: {
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
           memo,
+          ...(relay ? {
+            peerFee: {
+              amount: relay.feeAtomic,
+              recipientAddress: relay.privateFeeAddress,
+            },
+          } : {}),
         };
       } else if (input.draft.kind === 'withdraw') {
         publicRecipient = input.draft.publicRecipient;
@@ -489,6 +521,12 @@ export async function preparePrivateBalanceActionFlow(input: {
           selectedNoteIds,
           anchorRoot: head.tree.currentRoot,
           anchorExpiresAtLedger,
+          ...(relay ? {
+            peerFee: {
+              amount: relay.feeAtomic,
+              recipientAddress: relay.privateFeeAddress,
+            },
+          } : {}),
         };
       }
     }
@@ -601,7 +639,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         poolContractId: input.manifest.poolContractId,
         assets: input.registryAssets,
       },
-      source: input.accountPublicKey,
+      source: relay?.sourceAccount ?? input.accountPublicKey,
       classicFeeStroops: input.classicFeeStroops,
       maximumResourceFeeStroops: MAX_RESOURCE_FEE_STROOPS,
     });
@@ -672,6 +710,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         recipientFingerprint,
         memoHex: input.draft.kind === 'transfer' ? localMemoHex ?? null : null,
         publicRecipient,
+        relay: relay ?? null,
         anchorExpiresAtLedger,
         latestLedger: head.latestLedger,
         transaction: transaction.review,

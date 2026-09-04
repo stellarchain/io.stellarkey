@@ -62,9 +62,10 @@ test('bounded transport closes every relay subscription on abort', async () => {
       ['wss://relay.one/', true],
       ['wss://relay.two/', true],
     ]),
-    subscribe: (_urls, _filters, _onEvent) => ({
-      close: () => closed.push('closed'),
-    }),
+    subscribe: (...args) => {
+      void args;
+      return { close: () => closed.push('closed') };
+    },
     close: urls => closed.push(...urls),
   };
   const transport = new BoundedPrivateRelayTransport(
