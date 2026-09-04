@@ -6,6 +6,7 @@ import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import {
   TESTNET_USDC_ISSUER,
   TESTNET_USDC_SAC_ID,
+  DEFAULT_TESTNET_FIXTURE_ASSETS,
   TESTNET_NETWORK_ID,
   TESTNET_PASSPHRASE,
   buildConstructorArguments,
@@ -22,7 +23,7 @@ const source = readFileSync(
   'utf8',
 );
 
-test('the replacement protocol publishes exactly the current XLM and USDC Testnet pools', () => {
+test('the replacement protocol publishes one current Testnet pool with XLM and USDC', () => {
   const fixtureDirectory = new URL(
     '../protocol/private-balance/results/fixtures/',
     import.meta.url,
@@ -31,23 +32,19 @@ test('the replacement protocol publishes exactly the current XLM and USDC Testne
     ? readdirSync(fixtureDirectory)
       .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     : [];
-  assert.equal(fixtureNames.length, 2);
+  assert.equal(fixtureNames.length, 1);
 
   const catalogue = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/catalogue.json', import.meta.url),
     'utf8',
   ));
-  assert.equal(catalogue.deployments.length, 2);
-  assert.deepEqual(
-    catalogue.deployments.map(deployment => deployment.asset.code),
-    ['XLM', 'USDC'],
-  );
-  assert.equal(new Set(catalogue.deployments.map(deployment => deployment.manifestUrl)).size, 2);
+  assert.equal(catalogue.deployments.length, 1);
   const manifest = JSON.parse(readFileSync(
     new URL('../public/protocol/private-balance/v1/manifest.json', import.meta.url),
     'utf8',
   ));
   assert.equal(manifest.status, 'development');
+  assert.deepEqual(manifest.assets.map(asset => asset.code), ['XLM', 'USDC']);
   assert.equal(
     manifest.witnessRpcUrl,
     'https://rpc.ankr.com/stellar_testnet_soroban',
@@ -59,7 +56,7 @@ test('the replacement protocol publishes exactly the current XLM and USDC Testne
 
 test('testnet fixture defaults to a non-mutating plan and requires explicit live consent', () => {
   assert.deepEqual(parseFixtureArguments([]), {
-    asset: 'native',
+    assets: DEFAULT_TESTNET_FIXTURE_ASSETS,
     deploy: false,
     ephemeral: false,
     output: null,
@@ -76,7 +73,7 @@ test('testnet fixture defaults to a non-mutating plan and requires explicit live
       { PRIVATE_BALANCE_TESTNET_DEPLOY: '1' },
     ),
     {
-      asset: `USDC:${TESTNET_USDC_ISSUER}`,
+      assets: [`USDC:${TESTNET_USDC_ISSUER}`],
       deploy: true,
       ephemeral: true,
       output: null,
@@ -116,10 +113,11 @@ test('testnet fixture accepts only canonical Stellar asset identifiers', () => {
   assert.throws(() => fixtureAssetDescriptor('usdc:' + TESTNET_USDC_ISSUER), /canonical/i);
   assert.throws(() => fixtureAssetDescriptor('USDC'), /CODE:ISSUER/i);
   assert.throws(() => fixtureAssetDescriptor('USDC:' + 'G' + 'A'.repeat(55)), /issuer/i);
-  assert.throws(
-    () => parseFixtureArguments(['--asset', 'native', '--asset', `USDC:${TESTNET_USDC_ISSUER}`]),
-    /only once/i,
+  assert.deepEqual(
+    parseFixtureArguments(['--asset', 'native', '--asset', `USDC:${TESTNET_USDC_ISSUER}`]).assets,
+    DEFAULT_TESTNET_FIXTURE_ASSETS,
   );
+  assert.throws(() => parseFixtureArguments(['--asset', 'native', '--asset', 'native']), /distinct/i);
 });
 
 test('testnet fixture entropy is exact, independent, and rejects malformed providers', () => {
@@ -138,13 +136,12 @@ test('testnet fixture entropy is exact, independent, and rejects malformed provi
 test('deployment binding matches the canonical V1 fixture vector', () => {
   const guardian = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 5));
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 3));
-  const assetContractId = StrKey.encodeContract(Buffer.alloc(32, 4));
   const binding = {
     protocolVersion: 1,
     networkId: '01'.repeat(32),
     realmId: '02'.repeat(32),
     poolContractId,
-    assetContractId,
+    assetAdminAddress: guardian,
     guardianAddress: guardian,
     poseidon2ParameterHash: '06'.repeat(32),
     circuitHash: '07'.repeat(32),
@@ -154,19 +151,18 @@ test('deployment binding matches the canonical V1 fixture vector', () => {
   };
   assert.equal(
     computeDeploymentBindingHash(binding),
-    '35ee241fe07fab8a81950bb6fc062e17b1c5a063b345e5e3866e02deb4760ac1',
+    '1a9133f26d4a002631b097040561e2423c525a10c705678f3d0e9645879ab173',
   );
 });
 
 test('constructor arguments bind the public testnet and exact deployment hash', () => {
   const guardianAddress = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 9)).publicKey();
   const poolContractId = StrKey.encodeContract(Buffer.alloc(32, 10));
-  const assetContractId = StrKey.encodeContract(Buffer.alloc(32, 11));
   const argumentsList = buildConstructorArguments({
     realmId: '12'.repeat(32),
     poolContractId,
-    assetContractId,
     guardianAddress,
+    assetAdminAddress: guardianAddress,
   });
   assert.equal(TESTNET_NETWORK_ID, 'cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472');
   assert.equal(TESTNET_PASSPHRASE, 'Test SDF Network ; September 2015');
@@ -177,7 +173,8 @@ test('constructor arguments bind the public testnet and exact deployment hash', 
     TESTNET_NETWORK_ID,
   ]);
   assert.ok(argumentsList.includes('--deployment_binding_hash'));
-  assert.equal(argumentsList[argumentsList.indexOf('--asset') + 1], assetContractId);
+  assert.equal(argumentsList[argumentsList.indexOf('--asset_admin') + 1], guardianAddress);
+  assert.equal(argumentsList.includes('--asset'), false);
   const bindingIndex = argumentsList.indexOf('--deployment_binding_hash');
   assert.match(argumentsList[bindingIndex + 1], /^[0-9a-f]{64}$/);
   const development = JSON.parse(readFileSync(
@@ -215,8 +212,16 @@ test('live fixture evidence pins the post-deployment ledger identity', () => {
   assert.ok(checkpoint > deploy, 'the checkpoint must be captured after deployment and readback');
   assert.match(source, /method: 'getLatestLedger'/);
   assert.match(source, /signal: AbortSignal\.timeout\(8_000\)/);
-  assert.match(source, /deploymentBindingHash,\s*\n\s*deploymentCheckpoint,\s*\n\s*wasmSha256,/);
-  assert.match(source, /deploymentCheckpoint,\s*\n\s*\}\);\s*\n\s*const evidence/);
+  assert.match(
+    source,
+    /deploymentBindingHash,\s*\n\s*deploymentCheckpoint,\s*\n\s*registryCheckpoint,\s*\n\s*wasmSha256,/,
+  );
+  assert.match(
+    source,
+    /deploymentCheckpoint,\s*\n\s*registryCheckpoint,\s*\n\s*\}\);\s*\n\s*const evidence/,
+  );
+  assert.match(source, /schemaVersion: 2,/);
+  assert.match(source, /registeredAssets,/);
 });
 
 test('fixture evidence never serializes a signer secret or local CLI path', () => {

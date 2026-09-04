@@ -74,17 +74,10 @@ function fixtureEvidencePath(argv) {
   const candidates = readdirSync(FIXTURE_ROOT)
     .filter(name => /^testnet-fixture-C[A-Z2-7]{55}\.json$/.test(name))
     .sort();
-  if (candidates.length !== 2) {
-    throw new Error(`Expected exactly two committed per-asset testnet fixtures, found ${candidates.length}.`);
+  if (candidates.length !== 1) {
+    throw new Error(`Expected exactly one committed unified-pool testnet fixture, found ${candidates.length}.`);
   }
-  const nativeCandidates = candidates.filter(name => {
-    const evidence = JSON.parse(readFileSync(path.join(FIXTURE_ROOT, name), 'utf8'));
-    return evidence.asset?.kind === 'native';
-  });
-  if (nativeCandidates.length !== 1) {
-    throw new Error('Expected exactly one native-XLM testnet fixture for the live E2E suite.');
-  }
-  return path.join(FIXTURE_ROOT, nativeCandidates[0]);
+  return path.join(FIXTURE_ROOT, candidates[0]);
 }
 
 function run(command, args, environment = process.env) {

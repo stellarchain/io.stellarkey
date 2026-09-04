@@ -22,6 +22,10 @@ export const TESTNET_NETWORK_ID = createHash('sha256')
 export const TESTNET_USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 export const TESTNET_USDC_SAC_ID = new Asset('USDC', TESTNET_USDC_ISSUER)
   .contractId(TESTNET_PASSPHRASE);
+export const DEFAULT_TESTNET_FIXTURE_ASSETS = [
+  'native',
+  `USDC:${TESTNET_USDC_ISSUER}`,
+];
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const MANIFEST_PATH = path.join(PROJECT_ROOT, 'protocol/private-balance/manifests/development.json');
@@ -105,6 +109,7 @@ function guardianPayload(value) {
 
 export function computeDeploymentBindingHash(input) {
   const domain = Buffer.from(DOMAIN_DEPLOYMENT_BINDING, 'utf8');
+  const assetAdmin = guardianPayload(input.assetAdminAddress);
   const guardian = guardianPayload(input.guardianAddress);
   const bytes = Buffer.concat([
     u16(domain.byteLength),
@@ -113,8 +118,8 @@ export function computeDeploymentBindingHash(input) {
     hex32(input.networkId, 'Network ID'),
     hex32(input.realmId, 'Realm ID'),
     contractPayload(input.poolContractId, 'Pool contract ID'),
-    Buffer.from([1]),
-    contractPayload(input.assetContractId, 'Asset contract ID'),
+    Buffer.from([assetAdmin.kind]),
+    assetAdmin.payload,
     Buffer.from([guardian.kind]),
     guardian.payload,
     hex32(input.poseidon2ParameterHash, 'Poseidon2 parameter hash'),
@@ -133,14 +138,14 @@ export function computeDeploymentBindingHash(input) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function fixtureBinding({ realmId, poolContractId, assetContractId, guardianAddress }) {
+function fixtureBinding({ realmId, poolContractId, guardianAddress, assetAdminAddress }) {
   const artifacts = protocolArtifactHashes();
   return {
     protocolVersion: 1,
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
-    assetContractId,
+    assetAdminAddress,
     guardianAddress,
     ...artifacts,
     treeDepth: TREE_DEPTH,
@@ -156,7 +161,7 @@ export function buildConstructorArguments(input) {
     '--network_id', TESTNET_NETWORK_ID,
     '--realm_id', input.realmId,
     '--guardian', input.guardianAddress,
-    '--asset', input.assetContractId,
+    '--asset_admin', input.assetAdminAddress,
     '--poseidon2_parameter_hash', binding.poseidon2ParameterHash,
     '--circuit_hash', binding.circuitHash,
     '--verification_key_hash', binding.verificationKeyHash,
@@ -221,8 +226,13 @@ function sdkAssetContractId(asset) {
 }
 
 export function parseFixtureArguments(argv, environment = process.env) {
-  const parsed = { asset: 'native', deploy: false, ephemeral: false, output: null, source: null };
-  let assetSeen = false;
+  const parsed = {
+    assets: [],
+    deploy: false,
+    ephemeral: false,
+    output: null,
+    source: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--deploy') {
@@ -237,10 +247,9 @@ export function parseFixtureArguments(argv, environment = process.env) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${argument} requires a value.`);
       if (argument === '--asset') {
-        if (assetSeen) throw new Error('--asset may be provided only once.');
         fixtureAssetDescriptor(value);
-        parsed.asset = value;
-        assetSeen = true;
+        if (parsed.assets.includes(value)) throw new Error('--asset values must be distinct.');
+        parsed.assets.push(value);
       } else {
         parsed[argument === '--source' ? 'source' : 'output'] = value;
       }
@@ -258,6 +267,7 @@ export function parseFixtureArguments(argv, environment = process.env) {
   if (parsed.deploy && environment.PRIVATE_BALANCE_TESTNET_DEPLOY !== '1') {
     throw new Error('Set PRIVATE_BALANCE_TESTNET_DEPLOY=1 to confirm live testnet deployment.');
   }
+  if (parsed.assets.length === 0) parsed.assets = [...DEFAULT_TESTNET_FIXTURE_ASSETS];
   return parsed;
 }
 
@@ -330,11 +340,13 @@ function safeOutputPath(requested, poolContractId) {
 
 function createFixtureManifest({
   poolContractId,
-  assetContractId,
+  assets,
   guardianAddress,
+  assetAdminAddress,
   realmId,
   deploymentBindingHash,
   deploymentCheckpoint,
+  registryCheckpoint,
 }) {
   const development = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
   return {
@@ -345,10 +357,12 @@ function createFixtureManifest({
     networkId: TESTNET_NETWORK_ID,
     realmId,
     poolContractId,
-    assetContractId,
+    assets,
     guardianAddress,
+    assetAdminAddress,
     stealthAnnouncerAddress: guardianAddress,
     deploymentCheckpoint,
+    registryCheckpoint,
     deploymentBindingHash,
   };
 }
@@ -393,17 +407,19 @@ async function deployFixture(parsed) {
     }
     const sourceAccount = sourcePublicKey(signer, cliOptions);
     const { realmId, salt } = createFixtureEntropy();
-    const asset = fixtureAssetDescriptor(parsed.asset);
-    const assetContractId = stellar([
-      'contract', 'id', 'asset', '--asset', asset.cliAsset, '--network', 'testnet',
-    ], cliOptions);
-    if (!StrKey.isValidContract(assetContractId)) {
-      throw new Error('Stellar CLI returned an invalid asset SAC ID.');
-    }
-    const expectedAssetContractId = sdkAssetContractId(asset);
-    if (assetContractId !== expectedAssetContractId) {
-      throw new Error('Stellar CLI and JavaScript SDK derived different asset SAC IDs.');
-    }
+    const assets = parsed.assets.map((value, index) => {
+      const descriptor = fixtureAssetDescriptor(value);
+      const contractId = stellar([
+        'contract', 'id', 'asset', '--asset', descriptor.cliAsset, '--network', 'testnet',
+      ], cliOptions);
+      if (!StrKey.isValidContract(contractId)) {
+        throw new Error('Stellar CLI returned an invalid asset SAC ID.');
+      }
+      if (contractId !== sdkAssetContractId(descriptor)) {
+        throw new Error('Stellar CLI and JavaScript SDK derived different asset SAC IDs.');
+      }
+      return { index, ...descriptor, contractId };
+    });
     const predictedPoolContractId = stellar([
       'contract', 'id', 'wasm',
       '--source-account', sourceAccount,
@@ -416,8 +432,8 @@ async function deployFixture(parsed) {
     const constructorArguments = buildConstructorArguments({
       realmId,
       poolContractId: predictedPoolContractId,
-      assetContractId,
       guardianAddress: sourceAccount,
+      assetAdminAddress: sourceAccount,
     });
     const bindingIndex = constructorArguments.indexOf('--deployment_binding_hash');
     const deploymentBindingHash = constructorArguments[bindingIndex + 1];
@@ -435,9 +451,30 @@ async function deployFixture(parsed) {
     if (actualPoolContractId !== predictedPoolContractId) {
       throw new Error('Deployed pool ID does not match the precomputed deployment binding.');
     }
-    const [config, pinnedAsset, archiveMeta, treeState, depositsPaused] = [
+    const deploymentCheckpoint = await readTestnetDeploymentCheckpoint();
+    for (const asset of assets) {
+      const registeredIndex = parseJsonOutput(stellar([
+        'contract', 'invoke',
+        '--id', actualPoolContractId,
+        '--source-account', signer,
+        '--network', 'testnet',
+        '--',
+        'add_asset',
+        '--asset', asset.contractId,
+      ], cliOptions), `add_asset ${asset.code}`);
+      if (registeredIndex !== asset.index) {
+        throw new Error(`Pool registered ${asset.code} at an unexpected index.`);
+      }
+    }
+    const registryCheckpointLedger = await readTestnetDeploymentCheckpoint();
+    const registryCheckpoint = {
+      ...registryCheckpointLedger,
+      assetCount: assets.length,
+    };
+    const [config, assetAdminAddress, assetCount, archiveMeta, treeState, depositsPaused] = [
       ['config'],
-      ['asset'],
+      ['asset_admin'],
+      ['asset_count'],
       ['archive_meta'],
       ['tree_state'],
       ['deposits_paused'],
@@ -450,32 +487,48 @@ async function deployFixture(parsed) {
       '--',
       ...contractArguments,
     ], cliOptions), contractArguments[0]));
-    const deploymentCheckpoint = await readTestnetDeploymentCheckpoint();
+    if (assetAdminAddress !== sourceAccount || assetCount !== assets.length) {
+      throw new Error('Pool asset registry readback does not match its administrator or count.');
+    }
+    const registeredAssets = assets.map(asset => parseJsonOutput(stellar([
+      'contract', 'invoke',
+      '--id', actualPoolContractId,
+      '--source-account', sourceAccount,
+      '--network', 'testnet',
+      '--send', 'no',
+      '--',
+      'asset',
+      '--index', String(asset.index),
+    ], cliOptions), `asset ${asset.index}`));
 
     const manifest = createFixtureManifest({
       poolContractId: actualPoolContractId,
-      assetContractId,
+      assets,
       guardianAddress: sourceAccount,
+      assetAdminAddress,
       realmId,
       deploymentBindingHash,
       deploymentCheckpoint,
+      registryCheckpoint,
     });
     const evidence = sanitizeFixtureEvidence({
-      schemaVersion: 1,
+      schemaVersion: 2,
       fixtureOnly: true,
       createdAt: new Date().toISOString(),
       networkPassphrase: TESTNET_PASSPHRASE,
       sourceAccount,
-      asset,
+      assetAdminAddress,
+      assets,
+      registeredAssets,
       poolContractId: actualPoolContractId,
-      assetContractId,
       realmId,
       salt,
       deploymentBindingHash,
       deploymentCheckpoint,
+      registryCheckpoint,
       wasmSha256,
       config,
-      pinnedAsset,
+      assetCount,
       archiveMeta,
       treeState,
       depositsPaused,
@@ -492,15 +545,17 @@ async function deployFixture(parsed) {
 
 function dryRunPlan(parsed) {
   const { realmId, salt } = createFixtureEntropy();
-  const asset = fixtureAssetDescriptor(parsed.asset);
+  const assets = parsed.assets.map((value, index) => {
+    const asset = fixtureAssetDescriptor(value);
+    return { index, ...asset, contractId: sdkAssetContractId(asset) };
+  });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode: 'plan',
     liveMutation: false,
     networkPassphrase: TESTNET_PASSPHRASE,
     networkId: TESTNET_NETWORK_ID,
-    asset,
-    assetContractId: sdkAssetContractId(asset),
+    assets,
     realmId,
     salt,
     requiredConsent: 'PRIVATE_BALANCE_TESTNET_DEPLOY=1 plus --deploy and either --ephemeral or --source',
