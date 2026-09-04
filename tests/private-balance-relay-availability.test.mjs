@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -9,6 +10,11 @@ import {
 const NOW_SECONDS = 1_800_000_000;
 const NETWORK_ID = '11'.repeat(32);
 const POOL = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM';
+
+const sessionSource = readFileSync(
+  new URL('../src/features/private-balance/relay/session.ts', import.meta.url),
+  'utf8',
+);
 
 function quote({
   quoteId,
@@ -139,4 +145,9 @@ test('availability check closes its session when discovery fails', async () => {
     error => error instanceof DOMException && error.name === 'AbortError',
   );
   assert.equal(closed, 1);
+});
+
+test('quote discovery bounds untrusted replies before retaining them', () => {
+  assert.match(sessionSource, /MAX_RELAY_QUOTES/);
+  assert.match(sessionSource, /quotes\.size >= MAX_RELAY_QUOTES/);
 });

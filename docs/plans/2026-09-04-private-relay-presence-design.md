@@ -26,7 +26,7 @@ Rows are ranked by fee and the first is labelled **Lowest fee**. This status vie
 
 ## Lifecycle and abuse controls
 
-The probe always closes its ephemeral session in a `finally` block, including on cancellation and errors. Duplicate replies from the same public Stellar source account collapse to its lowest valid quote. Expired quotes are excluded. Helper-side quote and request caches are pruned after expiry so repeated checks cannot consume the bounded open-quote capacity indefinitely.
+The probe always closes its ephemeral session in a `finally` block, including on cancellation and errors. Duplicate replies from the same public Stellar source account collapse to its lowest valid quote, collection stops at 32 unique accounts, and expired quotes are excluded. Helper-side quote and request caches are pruned after expiry so repeated checks cannot consume the bounded open-quote capacity indefinitely.
 
 ## Verification
 
