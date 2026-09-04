@@ -7,6 +7,15 @@ import type {
 
 export const PRIVATE_RELAY_EVENT_KIND = 24_333;
 export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v1';
+export const PRIVATE_RELAY_RECONNECT_BACKOFF_MS: readonly number[] = Object.freeze([
+  1_000,
+  2_000,
+  5_000,
+  10_000,
+  20_000,
+  30_000,
+  60_000,
+]);
 
 function nostrPoolUrl(raw: string): string {
   const url = new URL(raw);
@@ -95,13 +104,17 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   ): Promise<Map<string, boolean>> {
     if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
     const pool = await this.pool();
+    if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
     const controllers = urls.map(() => new AbortController());
     const abort = () => controllers.forEach(controller => controller.abort());
     signal?.addEventListener('abort', abort, { once: true });
     const attempts = urls.map((url, index) => pool.ensureRelay(url, {
       connectionTimeout: 8_000,
       abort: controllers[index]?.signal,
-    }).then(() => url));
+    }).then(relay => {
+      relay.resubscribeBackoff = [...PRIVATE_RELAY_RECONNECT_BACKOFF_MS];
+      return url;
+    }));
     void Promise.allSettled(attempts).finally(() => signal?.removeEventListener('abort', abort));
     try {
       await Promise.any(attempts);
