@@ -450,9 +450,25 @@ selection disabled only until quote traffic has been quiet for 700 ms. Responses
 are kept only in memory, deduplicated by public source account, capped at 32
 unique replies, ordered by fee, and labelled with the time of the check. The
 active Stellar account is excluded so self-relay is never presented as privacy.
+If another browser answers from the same Stellar account, the check settles
+after the quiet window and explains that a different Testnet account is required
+in that browser. It does not weaken the exclusion or wait for the hard no-peer
+deadline. This distinction matters when testing two browser profiles on one
+computer: the second browser can be online while still being ineligible to hide
+the first browser's transaction source.
 Available when checked is not a guarantee that a peer will remain available;
 transaction submission obtains fresh short-lived offers and requires a new
 explicit choice.
+
+Relay requests use Nostr kind `24333`, in NIP-01's ephemeral event range. Relays
+are therefore not expected to retain a request for a helper that connects later.
+An opted-in helper creates its ephemeral subscription before publish can occur,
+reports **Listening** only after at least one configured relay is connected, and
+reports connecting, reconnecting, or unavailable separately. The Nostr pool is
+configured to reconnect its WebSocket and resubscribe after interruption,
+starting with a one-second retry and using bounded exponential backoff. These
+states and relay counts are memory-only; the saved opt-in alone is never
+presented as proof that the helper is online.
 
 A controlled two-client measurement through the configured public Nostr relays
 recorded a 5,196 ms one-peer result before adaptive collection. After the
@@ -461,6 +477,14 @@ settled the selectable fee snapshot in 1,079-1,132 ms. This small desktop sample
 validates the waiting-strategy change, not production p50/p95 or mobile latency;
 the raw observations are in
 `protocol/private-balance/results/relay-discovery-latency-2026-09-04.json`.
+
+A second controlled diagnostic isolated account eligibility with a fresh pool
+binding per sample. Two same-account runs received the helper response in
+577-815 ms but correctly produced zero eligible offers and one ineligible
+account. Two different-account runs produced one eligible offer in 639-672 ms.
+This shows that the observed long failure was not evidence that a faster peer
+transport was required. The sanitized observations are in
+`protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json`.
 
 The selected peer gives the sender a quote and a diversified private fee
 address. The sender builds a new proof with the peer's same-asset fee as one of
@@ -480,6 +504,13 @@ provide forward secrecy or post-quantum confidentiality. A helper can refuse or
 delay service. Relay mode never silently falls back to direct submission;
 changing peers requires a new proof because the encrypted fee note is bound to
 the selected peer.
+
+WebRTC was evaluated and not added as a supposedly faster rendezvous path.
+Browser WebRTC still needs signalling before two unknown wallets can connect,
+then performs ICE discovery through STUN and potentially TURN. That adds another
+handshake after peer discovery, and direct ICE candidates can expose peer IP and
+network metadata. Retaining one measured discovery transport is simpler and
+avoids expanding the network privacy surface without evidence of a speed gain.
 
 ## 14. Local state and execution boundary
 

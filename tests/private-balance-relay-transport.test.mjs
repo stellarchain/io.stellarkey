@@ -14,6 +14,7 @@ import {
 } from '../src/features/private-balance/relay/transport.ts';
 import {
   firstAcceptedPrivateRelayPublish,
+  PRIVATE_RELAY_RECONNECT_BACKOFF_MS,
   privateRelayConnectionOutcomes,
 } from '../src/features/private-balance/relay/nostr.ts';
 import { readFileSync } from 'node:fs';
@@ -113,6 +114,10 @@ test('the production Nostr pool keeps subscriptions reconnectable after a droppe
   );
   assert.match(source, /enableReconnect:\s*true/);
   assert.match(source, /enablePing:\s*true/);
+});
+
+test('a dropped helper connection retries promptly with bounded backoff', () => {
+  assert.deepEqual(PRIVATE_RELAY_RECONNECT_BACKOFF_MS, [1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000]);
 });
 
 test('Nostr connection status preserves root relay URL identity', () => {

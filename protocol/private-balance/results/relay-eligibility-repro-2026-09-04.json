@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-04",
+  "passed": true,
+  "purpose": "Separate browser relay transport latency from same-account privacy eligibility.",
+  "environment": {
+    "runtime": "Node.js 26.7.0",
+    "transport": "nostr-tools 2.25.1",
+    "relays": [
+      "wss://relay.damus.io",
+      "wss://nos.lol"
+    ],
+    "quoteWindowMs": 2500,
+    "settleWindowMs": 300,
+    "method": "One helper and one sender used a fresh random valid pool binding for each sample. No secret keys, account addresses, private addresses, payloads, XDR, or transaction hashes were retained."
+  },
+  "samples": [
+    {
+      "scenario": "same-account",
+      "elapsedMs": 577,
+      "helperConnectedRelaysAtStart": 1,
+      "matchingRequests": 1,
+      "eligibleQuotes": 0,
+      "ineligiblePeerAccounts": 1
+    },
+    {
+      "scenario": "same-account",
+      "elapsedMs": 815,
+      "helperConnectedRelaysAtStart": 1,
+      "matchingRequests": 1,
+      "eligibleQuotes": 0,
+      "ineligiblePeerAccounts": 1
+    },
+    {
+      "scenario": "different-account",
+      "elapsedMs": 639,
+      "helperConnectedRelaysAtStart": 1,
+      "matchingRequests": 1,
+      "eligibleQuotes": 1,
+      "ineligiblePeerAccounts": 0
+    },
+    {
+      "scenario": "different-account",
+      "elapsedMs": 672,
+      "helperConnectedRelaysAtStart": 1,
+      "matchingRequests": 1,
+      "eligibleQuotes": 1,
+      "ineligiblePeerAccounts": 0
+    }
+  ],
+  "decision": "Keep Nostr discovery, add truthful connection readiness and automatic WebSocket reconnection, and explain same-account ineligibility without weakening the privacy boundary. Do not add WebRTC as a second discovery transport.",
+  "limitations": [
+    "This is a four-sample controlled desktop diagnostic, not production p50/p95 evidence.",
+    "At least one configured public relay was connected at the start of each helper sample.",
+    "The experiment measured request-to-quote behavior, not proof generation or Stellar submission."
+  ]
+}

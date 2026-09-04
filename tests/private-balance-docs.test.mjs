@@ -56,6 +56,9 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   const witnessEvidence = JSON.parse(
     readSource('protocol/private-balance/results/rpc-witness-validation.json'),
   );
+  const relayEligibilityEvidence = JSON.parse(
+    readSource('protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json'),
+  );
   const noteInputs = [...noteCircuit.matchAll(/signal input (\w+);/g)].map(([, input]) => input);
   const constants = manifest.constants;
   const artifacts = manifest.artifacts;
@@ -149,7 +152,17 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /700 ms.*quiet/is);
   assert.match(paper, /first.*relay.*accept/is);
   assert.match(paper, /active Stellar account.*excluded.*self-relay/is);
+  assert.match(paper, /same Stellar account.*different Testnet account/is);
+  assert.match(paper, /ephemeral.*subscription.*before.*publish/is);
+  assert.match(paper, /reconnect.*WebSocket/is);
+  assert.match(paper, /WebRTC.*signalling.*ICE.*peer IP/is);
   assert.match(paper, /available when checked.*not.*guarantee/is);
+  assert.equal(relayEligibilityEvidence.passed, true);
+  assert.equal(relayEligibilityEvidence.samples.length, 4);
+  assert.ok(relayEligibilityEvidence.samples.every(sample => sample.elapsedMs < 1_000));
+  assert.ok(relayEligibilityEvidence.samples
+    .filter(sample => sample.scenario === 'same-account')
+    .every(sample => sample.eligibleQuotes === 0 && sample.ineligiblePeerAccounts === 1));
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
