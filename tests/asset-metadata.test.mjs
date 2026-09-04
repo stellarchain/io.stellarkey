@@ -18,6 +18,10 @@ test("public and private asset surfaces share one canonical asset avatar", () =>
   );
   const avatarUrl = new URL("../src/components/AssetAvatar.tsx", import.meta.url);
   const avatar = existsSync(avatarUrl) ? readFileSync(avatarUrl, "utf8") : "";
+  const privateShield = readFileSync(
+    new URL("../src/components/PrivateShieldNotch.tsx", import.meta.url),
+    "utf8",
+  );
   const dashboard = readFileSync(
     new URL("../src/components/Dashboard.tsx", import.meta.url),
     "utf8",
@@ -46,6 +50,8 @@ test("public and private asset surfaces share one canonical asset avatar", () =>
   assert.match(avatar, /background:\s*["']#000000["']/);
   assert.match(avatar, /privatePayment[\s\S]*?<PrivateShieldNotch/);
   assert.match(avatar, /<PrivateShieldNotch[\s\S]{0,200}?label="Private asset"/);
+  assert.match(privateShield, /className="group\/private-notch absolute bottom-0 right-0/);
+  assert.doesNotMatch(privateShield, /-bottom-1|-right-1/);
   assert.match(dashboard, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
   assert.match(details, /<AssetAvatar[\s\S]{0,400}?isNative=\{asset\.isNative\}/);
   assert.match(privateRow, /<AssetAvatar[\s\S]{0,500}?privatePayment/);
