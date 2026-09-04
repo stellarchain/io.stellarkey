@@ -31,6 +31,7 @@ import type {
   ShieldedActivityRecord,
   ShieldedNoteRecord,
 } from './types';
+import { privateOutgoingHistoryMode } from './outgoing-history';
 
 interface ArchiveReader {
   readHead(): Promise<ArchiveHeadState>;
@@ -187,13 +188,15 @@ export function attachLocalActivityMetadata(
   activities: ShieldedActivityRecord[],
   pendingActions: Array<Pick<
     PrivatePendingAction,
-    'actionField' | 'transactionHash' | 'recipientFingerprint' | 'memoHex'
+    'actionField' | 'transactionHash' | 'recipientFingerprint' | 'memoHex' | 'outgoingHistoryMode'
   >>,
 ): ShieldedActivityRecord[] {
   const journalByAction = new Map(pendingActions.map(action => [action.actionField, action]));
   return activities.map(activity => {
     const journal = journalByAction.get(activity.id);
-    if (!journal) return activity;
+    // Keep what the incoming scanner recovered, including older recoverable
+    // envelopes. Only this proof's local journal promotion is minimized.
+    if (!journal || privateOutgoingHistoryMode(journal.outgoingHistoryMode) === 'minimized') return activity;
     return {
       ...activity,
       ...(journal.transactionHash ? { transactionHash: journal.transactionHash } : {}),

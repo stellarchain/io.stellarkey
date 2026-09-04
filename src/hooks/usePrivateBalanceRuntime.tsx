@@ -22,6 +22,7 @@ import type {
 import type { PrivateRelayChainApproval } from '@/features/private-balance/runtime/relay-chain-policy';
 import type { SelectPrivateRelayChainPeer } from '@/features/private-balance/runtime/relay-chained-send';
 import type { AuthorizePrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
+import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runtime/outgoing-history';
 import type { IncomingPrivateTransferSummary } from '@/features/private-balance/runtime/sync-machine';
 import type {
   PrivatePendingAction,
@@ -147,6 +148,8 @@ export interface PrivateBalanceRuntimeDataValue {
   activities: ShieldedActivityRecord[];
   pendingActions: PrivatePendingAction[];
   recentPrivateRecipients: PrivateRecentRecipient[];
+  outgoingHistoryMode: PrivateOutgoingHistoryMode;
+  setOutgoingHistoryMode(mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }): Promise<void>;
   checkpoint: ShieldedCheckpoint | null;
   selectedRpc: string | null;
   witnessRpc: string | null;
@@ -300,6 +303,8 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   activities: [],
   pendingActions: [],
   recentPrivateRecipients: [],
+  outgoingHistoryMode: 'recoverable',
+  setOutgoingHistoryMode: unavailable,
   checkpoint: null,
   selectedRpc: null,
   witnessRpc: null,

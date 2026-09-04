@@ -1,5 +1,6 @@
 import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 import { hasExposedPrivateSpend } from './proof-exposure';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import { advancePrivateRelayChain, assertPrivateRelayChainApproval, isPrivateRelayChainJournal, privateRelayChainContextKey, resolvePrivateRelayChainInputs,
@@ -71,6 +72,10 @@ function isTimestamp(value: unknown): value is number {
 
 function isSafeIndex(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isOutgoingHistoryMode(value: unknown): boolean {
+  try { privateOutgoingHistoryMode(value); return true; } catch { return false; }
 }
 
 function hexBytes(value: string): Uint8Array {
@@ -261,6 +266,7 @@ function isPendingAction(value: unknown): value is PrivatePendingAction {
     /^C[A-Z2-7]{55}$/.test(action.assetContractId) &&
     ['prepared', 'reviewed', 'signed', 'broadcast', 'ambiguous'].includes(action.status ?? '') &&
     (action.proofExposure === undefined || action.proofExposure === 'local' || action.proofExposure === 'shared') &&
+    isOutgoingHistoryMode(action.outgoingHistoryMode) &&
     (action.directChainApprovalId === undefined || (typeof action.directChainApprovalId === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(action.directChainApprovalId) && action.submissionMode === 'direct')) &&
     (action.submissionMode === undefined || action.submissionMode === 'direct' ||
       (action.submissionMode === 'relay' && action.kind !== 'deposit')) &&
@@ -340,6 +346,7 @@ function isBuildReservation(value: unknown): value is PrivateBuildReservation {
     /^[A-Za-z0-9._:-]{1,128}$/.test(reservation.id) &&
     ['deposit', 'transfer', 'withdraw'].includes(reservation.kind ?? '') &&
     (reservation.proofExposure === undefined || reservation.proofExposure === 'local') &&
+    isOutgoingHistoryMode(reservation.outgoingHistoryMode) &&
     typeof reservation.assetContractId === 'string' &&
     /^C[A-Z2-7]{55}$/.test(reservation.assetContractId) &&
     Array.isArray(reservation.reservedNoteIds) &&
@@ -425,6 +432,7 @@ function isDurableState(
     !(state.account.lastVerifiedActionIndex === null || isSafeIndex(state.account.lastVerifiedActionIndex)) ||
     !isTimestamp(state.account.updatedAt) ||
     !(state.privateAddress === undefined || PRIVATE_ADDRESS_PATTERN.test(state.privateAddress)) ||
+    !isOutgoingHistoryMode(state.outgoingHistoryMode) ||
     !(state.issuedAddressDiversifiers === undefined || (
       Array.isArray(state.issuedAddressDiversifiers) &&
       state.issuedAddressDiversifiers.length <= MAX_ISSUED_PRIVATE_DIVERSIFIERS &&
@@ -525,6 +533,7 @@ export function createPrivateBalanceVerificationReset(
     revision: current.revision + 1,
     account: { ...empty.account, setupState: 'ready' },
     ...(current.privateAddress ? { privateAddress: current.privateAddress } : {}),
+    ...(current.outgoingHistoryMode ? { outgoingHistoryMode: current.outgoingHistoryMode } : {}),
     ...(current.issuedAddressDiversifiers
       ? { issuedAddressDiversifiers: [...current.issuedAddressDiversifiers] }
       : {}),
@@ -543,6 +552,7 @@ export function createPrivateBalanceVerificationRollback(
     ...authenticated,
     revision: latest.revision + 1,
     privateAddress: latest.privateAddress ?? authenticated.privateAddress,
+    outgoingHistoryMode: latest.outgoingHistoryMode,
     issuedAddressDiversifiers: [...new Set([
       ...authenticated.issuedAddressDiversifiers ?? [],
       ...latest.issuedAddressDiversifiers ?? [],
@@ -564,6 +574,7 @@ export async function reservePrivateBuildReservation(
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
   }
+  if (privateOutgoingHistoryMode(reservation.outgoingHistoryMode) !== privateOutgoingHistoryMode(current.outgoingHistoryMode)) throw new Error('Private outgoing-history policy changed before input reservation.');
   if (
     current.buildReservations.some(item => item.id === reservation.id) ||
     current.pendingActions.some(action => action.id === reservation.id)
@@ -608,6 +619,7 @@ export async function commitPrivateBuildReservation(
   if (
     pendingAction.id !== reservation.id ||
     pendingAction.kind !== reservation.kind ||
+    privateOutgoingHistoryMode(pendingAction.outgoingHistoryMode) !== privateOutgoingHistoryMode(reservation.outgoingHistoryMode) ||
     pendingAction.createdAt !== reservation.createdAt ||
     pendingAction.updatedAt < reservation.updatedAt ||
     pendingAction.reservedNoteIds.length !== reservation.reservedNoteIds.length ||
@@ -759,6 +771,20 @@ export async function recordPrivateBalanceAddress(
   return recordPrivateAddressIssuance(context, key, expectedRevision, privateAddress, true, candidate);
 }
 
+export async function recordPrivateOutgoingHistoryMode(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number,
+  mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  if (mode !== 'recoverable' && mode !== 'minimized') throw new Error('Private outgoing-history policy is invalid.');
+  if (mode === 'minimized' && options?.acknowledgeRecoveryLoss !== true) throw new Error('Acknowledge outgoing-history recovery loss before minimizing future payments.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision) throw new Error('Private Balance state changed in another wallet session.');
+  if (current.pendingActions.length || current.buildReservations.length || current.chainedApproval || current.relayChainedApproval) throw new Error('Finish every pending action and chain approval before changing outgoing history.');
+  const next = { ...current, revision: current.revision + 1, outgoingHistoryMode: mode };
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
 export async function recordPrivateBalanceInternalAddress(
   context: PrivateStorageContext, key: Uint8Array, expectedRevision: number, privateAddress: string, candidate?: PrivateRecordDriver, chainApprovalId?: string,
 ): Promise<PrivateBalanceDurableState> {
@@ -802,6 +828,7 @@ export async function recordPrivateRecentRecipient(
   expectedRevision: number,
   recipient: PrivateRecentRecipient,
   candidate?: PrivateRecordDriver,
+  pendingActionId?: string,
 ): Promise<PrivateBalanceDurableState> {
   if (!isRecentRecipient(recipient)) {
     throw new Error('Private Balance recent recipient is invalid.');
@@ -810,6 +837,11 @@ export async function recordPrivateRecentRecipient(
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
+  }
+  if (pendingActionId !== undefined) {
+    const pending = current.pendingActions.find(action => action.id === pendingActionId);
+    if (!pending) throw new Error('Private recent-recipient action is unavailable.');
+    if (privateOutgoingHistoryMode(pending.outgoingHistoryMode) === 'minimized') return current;
   }
   const others = (current.recentPrivateRecipients ?? []).filter(
     item => item.address !== recipient.address,
@@ -1056,6 +1088,7 @@ export async function transitionPrivatePendingAction(
   transition: PrivatePendingActionTransition,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
+  if ('outgoingHistoryMode' in transition) throw new Error('A prepared proof outgoing-history policy cannot be rewritten.');
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');

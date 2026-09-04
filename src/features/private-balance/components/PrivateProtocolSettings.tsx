@@ -15,6 +15,7 @@ import {
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
+import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
 
 function fingerprint(value: string | null): string {
   if (!value) return 'Not recorded';
@@ -95,6 +96,12 @@ export function PrivateProtocolSettings({
 }) {
   const { retryRuntime } = usePrivateBalanceRuntime();
   const {
+    phase,
+    isLeader,
+    publicAddress,
+    pendingActions,
+    outgoingHistoryMode,
+    setOutgoingHistoryMode,
     protocolVersion,
     deployment,
     asset,
@@ -160,6 +167,13 @@ export function PrivateProtocolSettings({
         <PrivateAssetRegistryAdmin />
 
         <PrivateRelaySettings />
+
+        <PrivateOutgoingHistorySettings
+          scope={JSON.stringify([publicAddress, deployment.networkId, deployment.poolContractId, deployment.manifestHash])}
+          mode={outgoingHistoryMode}
+          disabled={working !== null || phase !== 'current' || !isLeader || pendingActions.length > 0}
+          onChange={setOutgoingHistoryMode}
+        />
 
         <section aria-labelledby="private-maintenance-title">
           <h3 id="private-maintenance-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">

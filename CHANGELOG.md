@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an account- and deployment-scoped outgoing-recovery preference with separate consent to omit future sender-recoverable recipient and memo details. Recovery remains enabled by default, and earlier records and backups are unchanged.
 - Added relayed preparation of fragmented private balances with fresh helper selection for every step, fixed input plans, separately bounded private and network fees, and canonical owned-output checks before continuing.
 - Added an explicit, memory-only privacy-relay availability check that shows unique responding peers and their current fees, ordered with the lowest fee first.
 - Added explicit peer selection for private relay submission, showing every responding peer's public source account, private fee, and offer expiry before negotiation.
@@ -104,12 +105,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Included outgoing viewing keys in best-effort private-worker session cleanup and blocked production builds that contain a leftover synthetic privacy-test route.
 - Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing helper or RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
 - Bound relayed consolidation consent to one account, deployment, asset, fixed note trace and expiry; issued a fresh verified own address for each merge and stopped on cancellation, context changes or uncertain confirmation without switching to direct submission.
 - Moved relayed transaction preparation and simulation to the authenticated helper, rejected returned envelopes that change locally approved operations or fee/time bounds, and removed payment kind from public discovery. Helpers retain manual signing approval and relayed senders have no direct preparation fallback.
 - Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
 - Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
-- Persisted the approved direct/relay route in encrypted private-action journals, blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery, and required independently corroborated scanned-ledger time before expiry release. Legacy envelopes retain conservative recovery without guessing their route.
+- Persisted the approved direct/relay route in encrypted private-action journals and blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery. Envelope expiry cannot release an exposed spend proof; legacy records retain conservative recovery without guessing their route.
 - Required encrypted, context-bound Stellar account-key proofs before accepting or selecting privacy-relay offers, moved negotiation to an incompatible v2 topic, and padded encrypted message classes to a common bounded size. Helper opt-in authorizes offer signatures; transactions still require manual approval.
 - Excluded the active Stellar account from privacy-relay availability and transaction offers, capped untrusted quote collection, and expired helper request/quote state so self-relay, flooding, and repeated probes cannot undermine the bounded peer workflow.
 - Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.

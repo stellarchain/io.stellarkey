@@ -39,6 +39,7 @@ import type {
 import type { PrivateBalanceWorkerClient } from '../worker/client';
 import { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 import { validatePrivateRelayChainPreparation } from './relay-chain-preparation';
+import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 
 export { MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS } from './fee-policy';
 const MAX_RESOURCE_FEE_STROOPS = MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
@@ -77,6 +78,7 @@ export type PrivateActionProgressStage =
 export interface PreparedPrivateActionReview {
   id: string;
   actionField: string;
+  outgoingHistoryMode?: PrivateOutgoingHistoryMode;
   kind: PrivateActionDraft['kind'];
   assetContractId?: string;
   selectedNoteIds?: string[];
@@ -403,6 +405,9 @@ export async function preparePrivateBalanceActionFlow(input: {
     if (!state || state.account.syncStatus !== 'current') {
       throw new PrivateStaleChainStateError('Sync Private Balance before creating an action.');
     }
+    // Snapshot once before any asynchronous building or proving. All lanes of
+    // this proof and its later journal/review retain this same policy.
+    const outgoingHistoryMode = privateOutgoingHistoryMode(state.outgoingHistoryMode);
     if (state.pendingActions.some(action =>
       hasExposedPrivateSpend(action) || action.status === 'signed' || action.broadcastAttempts > 0)) {
       throw new PrivateActionInFlightError();
@@ -561,6 +566,7 @@ export async function preparePrivateBalanceActionFlow(input: {
     }
 
     if (!intent) throw new Error('Private Balance action intent is incomplete.');
+    intent = { ...intent, outgoingHistory: outgoingHistoryMode };
     const availableNotes = privateActionNoteSnapshot(
       state.notes,
       selectedNoteIds,
@@ -603,6 +609,7 @@ export async function preparePrivateBalanceActionFlow(input: {
         id: actionId,
         kind: reservationKind,
         proofExposure: 'local',
+        outgoingHistoryMode,
         assetContractId: input.assetContractId,
         reservedNoteIds: selectedNoteIds,
         createdAt,
@@ -670,6 +677,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       status: 'prepared',
       submissionMode: relay ? 'relay' : 'direct',
       proofExposure: 'shared',
+      outgoingHistoryMode,
       ...(input.directChainApprovalId ? { directChainApprovalId: input.directChainApprovalId } : {}),
       reservedNoteIds: prepared.reservedNoteIds,
       actionField: prepared.actionFieldHex,
@@ -745,6 +753,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       review: {
         id: actionId,
         actionField: prepared.actionFieldHex,
+        outgoingHistoryMode,
         kind: input.draft.kind,
         assetContractId: input.assetContractId,
         selectedNoteIds: [...selectedNoteIds],

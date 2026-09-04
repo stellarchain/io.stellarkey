@@ -261,10 +261,18 @@ test("browser verification is runner-owned instead of ad-hoc", () => {
     "measure-private-relay.mjs",
     "render-app-icons.mjs",
     "static-server.mjs",
+    "test-private-components.mjs",
   ]);
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.devDependencies.playwright, undefined);
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
+  const components = read('scripts/test-private-components.mjs');
+  const componentConfig = read('playwright.private-components.config.ts');
+  assert.match(components, /@playwright\/test\/cli\.js/);
+  assert.match(components, /COPYFILE_EXCL/);
+  assert.match(components, /PRIVATE_COMPONENT_FIXTURE_SHA256/);
+  assert.match(components, /finally/);
+  assert.match(componentConfig, /screenshot: 'off', trace: 'off', video: 'off'/);
 });
 
 test("obsolete promo and scaffold artifacts stay out of the release tree", () => {
