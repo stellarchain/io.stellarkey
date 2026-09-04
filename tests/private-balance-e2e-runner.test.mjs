@@ -52,9 +52,9 @@ test('testnet E2E runner restores release files and never records browser secret
   });
 });
 
-test('testnet E2E runner selects the native pool from the published two-pool evidence set', () => {
-  assert.match(source, /candidates\.length !== 2/);
-  assert.match(source, /evidence\.asset\?\.kind === 'native'/);
+test('testnet E2E runner selects the single unified-pool evidence file', () => {
+  assert.match(source, /candidates\.length !== 1/);
+  assert.doesNotMatch(source, /evidence\.asset\?\.kind === 'native'/);
 });
 
 test('minimal testnet E2E suite keeps every required Task 26 surface', () => {

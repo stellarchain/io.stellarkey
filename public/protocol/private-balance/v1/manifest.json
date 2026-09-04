@@ -1,28 +1,30 @@
 {
   "schemaVersion": 1,
   "protocolVersion": 1,
-  "artifactVersion": "1.0.2-dev",
+  "artifactVersion": "1.0.2-dev-fixture",
   "status": "development",
   "minimumStellarProtocol": 25,
   "networkPassphrase": "Test SDF Network ; September 2015",
   "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-  "realmId": "0202020202020202020202020202020202020202020202020202020202020202",
-  "poolContractId": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
-  "guardianAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-  "assetAdminAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "realmId": "ea66f34cadf368b0be532036aef9b6541fc7396ec749d3c65bed423f8b21bb85",
+  "poolContractId": "CBPCEN4YFOZEIXSM7FQ6DEYSGGADEDBSFD4STWAVCFQAZVLMXFBGCGAD",
+  "guardianAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+  "assetAdminAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
   "assets": [
     {
       "index": 0,
+      "cliAsset": "native",
       "kind": "native",
       "code": "XLM",
       "issuer": null,
       "name": "Stellar Lumens",
       "decimals": 7,
       "displayDecimals": 7,
-      "contractId": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
     },
     {
       "index": 1,
+      "cliAsset": "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
       "kind": "stellar",
       "code": "USDC",
       "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
@@ -32,18 +34,18 @@
       "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
     }
   ],
-  "stealthAnnouncerAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  "stealthAnnouncerAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
   "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
   "deploymentCheckpoint": {
-    "ledger": 0,
-    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "ledger": 4491712,
+    "hash": "03943e87f3eec48cb578bd3a44ffb76f5bc89d37c5bbbb1b618be55aacfbed0a"
   },
   "registryCheckpoint": {
-    "ledger": 0,
-    "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ledger": 4491714,
+    "hash": "ddb6735bc4711f48ab464bab2d19bfac82c601144e545686d51949f9b3a27277",
     "assetCount": 2
   },
-  "deploymentBindingHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "deploymentBindingHash": "3e5eea7235f64eee6d2c272045951c020eb764cf0dcc4408d7a48119ead389ac",
   "artifacts": {
     "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
     "r1csConstraints": 15114,
@@ -87,7 +89,7 @@
     "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
     "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
-    "toolchainLockSha256": "b0affe4183033e292ba97d43b58a3c7c2fcd0aedb55f134d18e9fec754364351",
+    "toolchainLockSha256": "f4e66eebab955789a7598207b82c7577364e5edad3be8e0712ca0d126fd3a50d",
     "powersOfTauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
     "zkeyVerified": true,
     "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",

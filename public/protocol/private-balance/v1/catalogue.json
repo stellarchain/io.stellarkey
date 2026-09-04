@@ -1,4 +1,11 @@
 {
   "schemaVersion": 1,
-  "deployments": []
+  "deployments": [
+    {
+      "id": "testnet-private-pool",
+      "network": "testnet",
+      "manifestUrl": "/protocol/private-balance/v1/manifest.json",
+      "manifestSha256": "dbd1b8a597dd12535a0d91eabbdefa1781a02855b8dc6416b9e020c04a695259"
+    }
+  ]
 }
