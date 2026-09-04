@@ -18,7 +18,10 @@ import type {
 import type { PrivateChainedSendProgress } from '../runtime/chained-send';
 import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionError';
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
-import type { PrivateChainedReview } from './usePrivateActionController';
+import type {
+  PrivateChainedReview,
+  PrivateRelayProgress,
+} from './usePrivateActionController';
 
 /** What the person actually typed — the review screen renders this at once. */
 export interface PrivateReviewDraft {
@@ -67,6 +70,7 @@ export function PrivateActionReview({
   chained,
   chainProgress,
   progress,
+  relayProgress,
   preparing,
   working,
   error,
@@ -81,6 +85,7 @@ export function PrivateActionReview({
   chained: PrivateChainedReview | null;
   chainProgress: PrivateChainedSendProgress | null;
   progress: PrivateActionProgressStage | null;
+  relayProgress?: PrivateRelayProgress | null;
   preparing: boolean;
   working: boolean;
   error: string | null;
@@ -201,7 +206,11 @@ export function PrivateActionReview({
     : chained !== null
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
       : preparing
-        ? progressLabel(progress ?? 'checking-chain')
+        ? relayProgress === 'finding-peer'
+          ? 'Finding a privacy relay…'
+          : relayProgress === 'agreeing-fee'
+            ? 'Agreeing the private relay fee…'
+            : progressLabel(progress ?? 'checking-chain')
         : '';
 
   return (
@@ -259,7 +268,10 @@ export function PrivateActionReview({
             </dd>
           </div>
         ) : (
-          <ReviewRow label="Network Fee (max)" pulse={pulsedRows.has('fee')}>
+          <ReviewRow
+            label={review?.relay ? 'Peer network fee (max)' : 'Network Fee (max)'}
+            pulse={pulsedRows.has('fee')}
+          >
             {maximumFeeStroops !== null ? (
               <span className="flex flex-col items-end">
                 <span>{fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM</span>
@@ -267,13 +279,22 @@ export function PrivateActionReview({
               </span>
             ) : preparing ? (
               <span className="skeleton inline-block rounded-md px-2.5 py-0.5 text-[12px] font-normal text-neutral-400">
-                {progressLabel(progress ?? 'checking-chain')}
+                {relayProgress === 'finding-peer'
+                  ? 'Finding a privacy relay…'
+                  : relayProgress === 'agreeing-fee'
+                    ? 'Agreeing relay fee…'
+                    : progressLabel(progress ?? 'checking-chain')}
               </span>
             ) : (
               <span className="font-normal text-neutral-500">—</span>
             )}
           </ReviewRow>
         )}
+        {review?.relay ? (
+          <ReviewRow label="Privacy relay fee">
+            {privateAmount(review.relay.feeAtomic)}
+          </ReviewRow>
+        ) : null}
         {review?.transaction.refreshesAnchor ? (
           <ReviewRow label="Private access">Refreshed with this payment</ReviewRow>
         ) : null}
@@ -315,7 +336,12 @@ export function PrivateActionReview({
               <span className="mono">{privateAmount(changeStroops)}</span>
             </div>
           ) : null}
-          {publicAddress ? (
+          {review?.relay ? (
+            <div className="flex items-center justify-between gap-4">
+              <span className="shrink-0 text-neutral-400">Submitted by</span>
+              <span>Privacy relay peer</span>
+            </div>
+          ) : publicAddress ? (
             <div className="flex items-center justify-between gap-4">
               <span className="shrink-0 text-neutral-400">Fee paid by</span>
               <HashValue value={publicAddress} className="justify-end text-[11.5px] text-neutral-300" />

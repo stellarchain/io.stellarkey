@@ -11,6 +11,7 @@ import { Button, Field, Modal, ModalHeader, Notice, Toggle } from '@/components/
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
+import { PrivateRelaySettings } from './PrivateRelaySettings';
 
 function fingerprint(value: string | null): string {
   if (!value) return 'Not recorded';
@@ -153,6 +154,8 @@ export function PrivateProtocolSettings({
       />
       <div className="space-y-5 p-4 sm:p-6">
         <PrivateAssetRegistryAdmin />
+
+        <PrivateRelaySettings />
 
         <section aria-labelledby="private-maintenance-title">
           <h3 id="private-maintenance-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">

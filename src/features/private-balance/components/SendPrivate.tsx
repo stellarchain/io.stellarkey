@@ -13,6 +13,7 @@ import { isValidPublicAddress } from '@/lib/vault';
 import { humanizePrivateError } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
+import { loadPrivateRelayPreferences } from '../relay/preferences';
 import type { PrivateRecentRecipient } from '../runtime/types';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
@@ -23,7 +24,11 @@ import {
   trimAmountInput,
 } from './PrivateAmountField';
 import { PrivateSubmissionStatus } from './PrivateSubmissionStatus';
-import { usePrivateActionController } from './usePrivateActionController';
+import { PrivateRelaySubmissionChoice } from './PrivateRelaySubmissionChoice';
+import {
+  usePrivateActionController,
+  type PrivateSubmissionMode,
+} from './usePrivateActionController';
 
 const FIRST_SEND_FLAG = 'stellarkey.private.first-send-celebrated.v1';
 
@@ -72,6 +77,8 @@ export function SendPrivate({
   const [recipientAddress, setRecipientAddress] = useState(prefill?.recipient ?? '');
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
+  const [submissionMode, setSubmissionMode] = useState<PrivateSubmissionMode>(() =>
+    loadPrivateRelayPreferences().useRelay ? 'relay' : 'direct');
   const [showScanner, setShowScanner] = useState(false);
   const [pasteGuidance, setPasteGuidance] = useState<string | null>(null);
   const [recipientValidation, setRecipientValidation] = useState<{
@@ -178,12 +185,15 @@ export function SendPrivate({
     setStage('review');
     // Straight to the review screen with the known draft; the proof prepares
     // underneath while the fee row shows its two calm labels.
-    void flow.prepare({
-      kind: 'transfer',
-      amount: amount.trim(),
-      recipientAddress: trimmedRecipient,
-      ...(memo.trim() ? { memo: memo.trim() } : {}),
-    });
+    void flow.prepare(
+      {
+        kind: 'transfer',
+        amount: amount.trim(),
+        recipientAddress: trimmedRecipient,
+        ...(memo.trim() ? { memo: memo.trim() } : {}),
+      },
+      submissionMode,
+    );
   };
 
   const backToForm = () => {
@@ -274,6 +284,7 @@ export function SendPrivate({
           chained={flow.chained}
           chainProgress={flow.chainProgress}
           progress={flow.progress}
+          relayProgress={flow.relayProgress}
           preparing={flow.preparing}
           working={flow.working}
           error={flow.error}
@@ -319,6 +330,10 @@ export function SendPrivate({
               error={amountCheck.error}
             />
           )}
+          <PrivateRelaySubmissionChoice
+            value={submissionMode}
+            onChange={setSubmissionMode}
+          />
           <div>
             <div className="flex items-center justify-between pb-1">
               <label htmlFor="private-recipient" className="field-label !pb-0">
