@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "fixtureOnly": true,
-  "createdAt": "2026-09-04T00:36:00.465Z",
+  "createdAt": "2026-09-04T00:47:12.521Z",
   "networkPassphrase": "Test SDF Network ; September 2015",
-  "sourceAccount": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
-  "assetAdminAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+  "sourceAccount": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+  "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
   "assets": [
     {
       "index": 0,
@@ -43,31 +43,31 @@
       "status": "Active"
     }
   ],
-  "poolContractId": "CBPCEN4YFOZEIXSM7FQ6DEYSGGADEDBSFD4STWAVCFQAZVLMXFBGCGAD",
-  "realmId": "ea66f34cadf368b0be532036aef9b6541fc7396ec749d3c65bed423f8b21bb85",
-  "salt": "31a62d11577a8b21189363ea7efa44f5c9ab357392a660c1af63fe38231c891e",
-  "deploymentBindingHash": "3e5eea7235f64eee6d2c272045951c020eb764cf0dcc4408d7a48119ead389ac",
+  "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
+  "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+  "salt": "f12ed008e8c1ccafb6211e9f77c7b8f9fca67e9fab3295761e5e2ea569411316",
+  "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
   "deploymentCheckpoint": {
-    "ledger": 4491712,
-    "hash": "03943e87f3eec48cb578bd3a44ffb76f5bc89d37c5bbbb1b618be55aacfbed0a"
+    "ledger": 4491845,
+    "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
   },
   "registryCheckpoint": {
-    "ledger": 4491714,
-    "hash": "ddb6735bc4711f48ab464bab2d19bfac82c601144e545686d51949f9b3a27277",
+    "ledger": 4491848,
+    "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
     "assetCount": 2
   },
   "wasmSha256": "9868d322fb170fe95cbcbcd48eb03e9c2cf48e0be7e2a72431a69f8a03801ecd",
   "config": {
     "circuit_hash": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
-    "context_field": "0e8a7aa163b09e24cadd7f2d438c63f7f890abfcb2231a7beceb7560107f606d",
-    "context_hash": "8e87e42e726dae14d94ee4d2d5dcd2cd3453d2d74fdbad06b5d27e6e71a3fd98",
-    "deployment_binding_hash": "3e5eea7235f64eee6d2c272045951c020eb764cf0dcc4408d7a48119ead389ac",
-    "guardian": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
-    "initial_asset_admin": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+    "context_field": "21d5ba4b131204011be7058854c01d0727cb01b4a75cc8c2ebffbc2e8c7f72f5",
+    "context_hash": "5198c3c15a91e01a154bf598a5ae5042ccb9a59c8581142f69262b300c3f634e",
+    "deployment_binding_hash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
+    "guardian": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "initial_asset_admin": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
     "network_id": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
     "poseidon2_parameter_hash": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
     "protocol_version": 1,
-    "realm_id": "ea66f34cadf368b0be532036aef9b6541fc7396ec749d3c65bed423f8b21bb85",
+    "realm_id": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
     "root_window_ledgers": 1440,
     "tree_depth": 17,
     "verification_key_hash": "6af84a98f2e9bddc7fbcfdf08160c10b2d627e2aab19fa612290b1feaf09e0f7"
@@ -75,7 +75,7 @@
   "assetCount": 2,
   "archiveMeta": {
     "action_count": 0,
-    "transcript_head": "d66e6c3104ed2c3a034c6aae2c19689ef99150fc22d951c4e542e27889974473"
+    "transcript_head": "d7a8a2964c4842bb4c08f2695fcf437f187a94cebd07b02d8d84c04263501851"
   },
   "treeState": {
     "current_root": "23b3e23c0bc898db86d462d5e7a3c7e7a3f1f4f9409dfc3744feb2fb4cae15a5",
@@ -126,10 +126,10 @@
     "minimumStellarProtocol": 25,
     "networkPassphrase": "Test SDF Network ; September 2015",
     "networkId": "cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472",
-    "realmId": "ea66f34cadf368b0be532036aef9b6541fc7396ec749d3c65bed423f8b21bb85",
-    "poolContractId": "CBPCEN4YFOZEIXSM7FQ6DEYSGGADEDBSFD4STWAVCFQAZVLMXFBGCGAD",
-    "guardianAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
-    "assetAdminAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+    "realmId": "db67e508600237c451d33ce9ffd2c1d952e406b458794cec05f37c431c3ffe5b",
+    "poolContractId": "CBQIGXD6DPBBHCNNLQDQR552ZAANJOIPPM7DGOO3TT33TTT2SJW4DRUI",
+    "guardianAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
+    "assetAdminAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
     "assets": [
       {
         "index": 0,
@@ -154,18 +154,18 @@
         "contractId": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
       }
     ],
-    "stealthAnnouncerAddress": "GD5D6OTCJJONABYWY4F3HH4PTYH53K3U53AALZ7DL4ZHQCICNOK4WZHK",
+    "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
     "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
     "deploymentCheckpoint": {
-      "ledger": 4491712,
-      "hash": "03943e87f3eec48cb578bd3a44ffb76f5bc89d37c5bbbb1b618be55aacfbed0a"
+      "ledger": 4491845,
+      "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"
     },
     "registryCheckpoint": {
-      "ledger": 4491714,
-      "hash": "ddb6735bc4711f48ab464bab2d19bfac82c601144e545686d51949f9b3a27277",
+      "ledger": 4491848,
+      "hash": "c6e3092c20577fcce3041d53e54a089ba6039db7400629ecca521bb5544c4087",
       "assetCount": 2
     },
-    "deploymentBindingHash": "3e5eea7235f64eee6d2c272045951c020eb764cf0dcc4408d7a48119ead389ac",
+    "deploymentBindingHash": "59d5c0fbdf41c649daf919ccf9a4d64d3d0034ee55d7b41a002f399fff1aaf2f",
     "artifacts": {
       "r1csSha256": "e8e9566deeaabd745b9c4306f9b222e5f8dc3b224c5e1fd4741da729785fc2d3",
       "r1csConstraints": 15114,
@@ -209,7 +209,7 @@
       "poseidonParametersSha256": "6ecf310eeece863dcb24370c6668cfe42808ac1cdb25c30f4b85461ab37789a8",
       "hpkePackageVersion": "@hpke/core@1.9.0+@hpke/dhkem-x25519@1.8.0",
       "hpkeDependencyIntegritySha256": "312a82fc6626f2bb66b1a24f351f8e13f95bde25fa4de350a8b10d2f4fe7a6b7",
-      "toolchainLockSha256": "b0affe4183033e292ba97d43b58a3c7c2fcd0aedb55f134d18e9fec754364351",
+      "toolchainLockSha256": "f4e66eebab955789a7598207b82c7577364e5edad3be8e0712ca0d126fd3a50d",
       "powersOfTauSha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db",
       "zkeyVerified": true,
       "ceremonyTranscriptRoot": "0000000000000000000000000000000000000000000000000000000000000000",
