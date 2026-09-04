@@ -19,7 +19,7 @@ export function PrivateShieldNotch({
   return (
     <>
       <span
-        className="group/private-notch absolute -bottom-1 -right-1 z-20 flex items-center justify-center rounded-full"
+        className="group/private-notch absolute bottom-0 right-0 z-20 flex items-center justify-center rounded-full"
         style={{ width: ground, height: ground, background: "var(--color-panel, #1c1c1e)" }}
       >
         <svg aria-hidden="true" width={shield} height={shield} viewBox="0 0 24 24">
