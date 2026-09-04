@@ -430,21 +430,37 @@ notes reserved until canonical evidence proves confirmation or safe absence.
 For each private transfer or withdrawal, the review UI requires an explicit
 choice between **Privacy relay** and **My account**. Relay mode first publishes a
 short-lived quote request through at least two user-configurable public Nostr
-relay origins. Sender and helper use ephemeral Nostr identities; messages after
+relay origins. The client starts every configured publish attempt but proceeds
+as soon as the first relay accepts the message instead of waiting for the
+slowest relay. Sender and helper use ephemeral Nostr identities; messages after
 discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
-only in memory and shows every valid quote with the peer's public source account,
-same-asset fee, and expiry. The user explicitly selects one peer before any
-fee-address negotiation, proof construction, signing, or submission. Deposits
-are not relayable because their public source must authorize the asset transfer.
+only in memory and displays the first valid offer immediately. Each new unique
+or lower-fee offer restarts a 700 ms quiet window so nearby offers can still be
+ranked by fee. The hard discovery window remains the no-response deadline. The
+stable picker shows every valid quote with the peer source account, fee, and
+expiry. The user explicitly selects one peer before any fee-address negotiation,
+proof construction, signing, or submission. Deposits are not relayable because
+their public source must authorize the asset transfer.
 
 The **Check available peers** control is an explicit live quote request, not a
 background presence beacon. It reveals no asset, amount, destination, note, or
-proof input. Responses are kept only in memory, deduplicated by public source
-account, capped at 32 unique replies, ordered by fee, and labelled with the time
-of the check. The active Stellar account
-is excluded so self-relay is never presented as privacy. Available when checked is not a
-guarantee that a peer will remain available; transaction
-submission obtains fresh short-lived offers and requires a new explicit choice.
+proof input. The UI changes from finding peers to comparing fees when the first
+authenticated response arrives, renders that response immediately, and keeps
+selection disabled only until quote traffic has been quiet for 700 ms. Responses
+are kept only in memory, deduplicated by public source account, capped at 32
+unique replies, ordered by fee, and labelled with the time of the check. The
+active Stellar account is excluded so self-relay is never presented as privacy.
+Available when checked is not a guarantee that a peer will remain available;
+transaction submission obtains fresh short-lived offers and requires a new
+explicit choice.
+
+A controlled two-client measurement through the configured public Nostr relays
+recorded a 5,196 ms one-peer result before adaptive collection. After the
+change, three cold sender sessions rendered their first offer in 378-431 ms and
+settled the selectable fee snapshot in 1,079-1,132 ms. This small desktop sample
+validates the waiting-strategy change, not production p50/p95 or mobile latency;
+the raw observations are in
+`protocol/private-balance/results/relay-discovery-latency-2026-09-04.json`.
 
 The selected peer gives the sender a quote and a diversified private fee
 address. The sender builds a new proof with the peer's same-asset fee as one of

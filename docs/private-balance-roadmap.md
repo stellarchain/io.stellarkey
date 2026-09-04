@@ -72,14 +72,21 @@ in this file changes the behavior or guarantees documented in
     exclude the active account, rank unique peers by fee, and label it as a
     point-in-time observation rather than durable connectivity. Obtain fresh
     proof-bound quotes again for the actual payment.
+  - Display each authenticated offer immediately, stop blocking after the first
+    configured Nostr relay accepts a publish, and enable peer selection after
+    700 ms without a new or lower-fee offer. Keep the original hard window only
+    as the no-response deadline; do not add presence heartbeats or background
+    polling.
   - Before approval, the helper validates the exact unsigned transaction,
     source, network, pool method, time bounds and fee caps; decrypts exactly one
     matching fee note; and simulates the exact transaction. Signed XDR is
     rechecked before the peer submits it.
   - Automated protocol, replay, transport, review, settings, transaction, and
-    CSP tests pass. Real multi-peer discovery/submission p50/p95, peer churn,
-    and iPhone WebKit measurements remain release evidence, not implemented
-    guarantees.
+    CSP tests pass. A controlled desktop pair over the configured public Nostr
+    relays improved the one-peer path from 5,196 ms to a first visible offer in
+    378-431 ms and a stable selection in 1,079-1,132 ms across three optimized
+    runs. Real multi-peer discovery/submission p50/p95, peer churn, and iPhone
+    WebKit measurements remain release evidence, not implemented guarantees.
 
 ## Remaining validation
 

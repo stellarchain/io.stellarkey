@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made private relay discovery display authenticated offers as they arrive, compare fees until quote traffic is quiet for 700 ms, and stop waiting for slower Nostr acknowledgements after the first configured relay accepts a message.
 - Displayed helper rewards in ordinary seven-decimal asset units instead of exposing protocol atomic units in relay settings.
 - Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery and relay controls while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
 - Flattened the Private Payments setup progress into the modal shell with a clearer live status, prominent percentage, and transform-animated progress rail.
