@@ -8,6 +8,24 @@ import type {
 export const PRIVATE_RELAY_EVENT_KIND = 24_333;
 export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v1';
 
+function nostrPoolUrl(raw: string): string {
+  const url = new URL(raw);
+  url.pathname = url.pathname.replace(/\/+/gu, '/');
+  if (url.pathname.length > 1 && url.pathname.endsWith('/')) {
+    url.pathname = url.pathname.slice(0, -1);
+  }
+  url.searchParams.sort();
+  url.hash = '';
+  return url.toString();
+}
+
+export function privateRelayConnectionOutcomes(
+  urls: readonly string[],
+  connected: ReadonlyMap<string, boolean>,
+): Map<string, boolean> {
+  return new Map(urls.map(url => [url, connected.get(nostrPoolUrl(url)) === true]));
+}
+
 export async function firstAcceptedPrivateRelayPublish(
   urls: readonly string[],
   attempts: readonly Promise<unknown>[],
@@ -95,11 +113,7 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
 
   async connectionStatus(urls: readonly string[]): Promise<Map<string, boolean>> {
     const pool = await this.pool();
-    const connected = pool.listConnectionStatus();
-    return new Map(urls.map(url => {
-      const normalized = url.endsWith('/') ? url.slice(0, -1) : url;
-      return [url, connected.get(normalized) === true];
-    }));
+    return privateRelayConnectionOutcomes(urls, pool.listConnectionStatus());
   }
 
   close(urls: readonly string[]): void {
