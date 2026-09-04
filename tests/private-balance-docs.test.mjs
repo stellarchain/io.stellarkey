@@ -151,7 +151,7 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.equal(browserEvidence.passed, true);
   assert.ok(paper.includes(browserEvidence.sourceCommit.slice(0, 7)));
   assert.ok(paper.includes(browserEvidence.fixtureManifestSha256));
-  assert.match(paper, /nine.*desktop Chromium.*four.*browser smoke/is);
+  assert.match(paper, /ten.*desktop Chromium.*four.*browser smoke/is);
   assert.match(paper, /iPhone.*iPad.*emulation.*not physical-device/is);
   assert.match(paper, /BLS12-381.*not selected/is);
   assert.match(paper, /recursive proofs.*not implemented/is);
