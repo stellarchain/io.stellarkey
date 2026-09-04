@@ -8,7 +8,10 @@ import {
   IconTrash,
 } from '@/components/icons';
 import { Button, Field, Modal, ModalHeader, Notice, Toggle } from '@/components/ui';
-import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
+import {
+  usePrivateBalanceRuntime,
+  usePrivateBalanceRuntimeData,
+} from '@/hooks/usePrivateBalanceRuntime';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
@@ -90,6 +93,7 @@ export function PrivateProtocolSettings({
   onClose(): void;
   onRemoved?(): void;
 }) {
+  const { retryRuntime } = usePrivateBalanceRuntime();
   const {
     protocolVersion,
     deployment,
@@ -165,8 +169,25 @@ export function PrivateProtocolSettings({
             <button
               type="button"
               disabled={working !== null}
-              onClick={() => void verify()}
+              onClick={retryRuntime}
               className="row-hover flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
+                <IconRefresh size={17} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-semibold text-white">Refresh asset registry</span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-neutral-500">
+                  Check the on-chain registry for newly admitted assets and status changes.
+                </span>
+              </span>
+              <span className="shrink-0 text-[12px] font-semibold text-[#0A84FF]">Refresh</span>
+            </button>
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => void verify()}
+              className="row-hover ios-sep flex min-h-16 w-full items-center gap-3.5 px-4 py-3 text-left disabled:opacity-45"
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0A84FF]/12 text-[#0A84FF]">
                 <IconRefresh size={17} className={working === 'verify' ? 'animate-spin' : ''} />

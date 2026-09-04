@@ -266,7 +266,7 @@ test('runtime controls are scoped immediately to the active account and network'
   );
   assert.match(
     boundary,
-    /\.catch\([\s\S]{0,360}?registerAvailableAssets\(\[\], null\)/,
+    /if \(runtimeRequestVersion === 0\) \{\s*registerAvailableAssets\(\[\], null\)/,
   );
 });
 
@@ -314,7 +314,7 @@ test('verified private assets publish before local-state probing can block the d
   assert.ok(storageProbe > initialPublish, 'local-state probing must not hide verified assets');
 });
 
-test('live private registry RPC reads wait for explicit private-payment intent', () => {
+test('live private registry RPC reads wait for an explicit registry refresh', () => {
   const boundary = readFileSync(
     new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
     'utf8',
@@ -322,12 +322,50 @@ test('live private registry RPC reads wait for explicit private-payment intent',
 
   assert.match(
     boundary,
-    /requested\s*\?\s*loadLivePrivateBalanceRegistry\(loadedDeployments, network\)\s*:\s*loadedDeployments/,
+    /runtimeRequestVersion\s*>\s*0\s*\?\s*loadLivePrivateBalanceRegistry\(loadedDeployments, network\)\s*:\s*loadedDeployments/,
   );
-  assert.match(
-    boundary,
-    /publishAvailableDeployments,\s*registerAvailableAssets,\s*requested,\s*runtimeRequestVersion/,
+  const effectStart = boundary.indexOf('void loadExpectedPrivateBalanceCatalogue()');
+  const dependenciesStart = boundary.indexOf('  }, [', effectStart);
+  const dependencies = boundary.slice(
+    dependenciesStart,
+    boundary.indexOf('  ]);', dependenciesStart) + 5,
   );
+  assert.doesNotMatch(dependencies, /\brequested\b/);
+  assert.match(dependencies, /\bruntimeRequestVersion\b/);
+});
+
+test('advanced privacy exposes an explicit on-chain asset registry refresh', () => {
+  const settings = readFileSync(
+    new URL('../src/features/private-balance/components/PrivateProtocolSettings.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(settings, /usePrivateBalanceRuntime\(\)/);
+  assert.match(settings, /onClick=\{retryRuntime\}/);
+  assert.match(settings, />Refresh asset registry</);
+});
+
+test('a failed explicit registry refresh retains the last verified catalogue', async () => {
+  const { shouldRetainPrivateCatalogueAfterRefreshFailure } = await bootstrapDomain();
+
+  assert.equal(shouldRetainPrivateCatalogueAfterRefreshFailure({
+    runtimeRequestVersion: 1,
+    currentScopeKey: 'testnet:account',
+    requestedScopeKey: 'testnet:account',
+    readyCount: 2,
+  }), true);
+  assert.equal(shouldRetainPrivateCatalogueAfterRefreshFailure({
+    runtimeRequestVersion: 0,
+    currentScopeKey: 'testnet:account',
+    requestedScopeKey: 'testnet:account',
+    readyCount: 2,
+  }), false);
+  assert.equal(shouldRetainPrivateCatalogueAfterRefreshFailure({
+    runtimeRequestVersion: 2,
+    currentScopeKey: 'testnet:old-account',
+    requestedScopeKey: 'testnet:new-account',
+    readyCount: 2,
+  }), false);
 });
 
 test('private portfolio contains every configured asset with its exact cached checkpoint', async () => {

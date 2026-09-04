@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Deferred live Private Payments registry RPC corroboration until explicit private-payment intent, preventing ordinary wallet unlocks from issuing privacy-specific requests or delaying unrelated navigation.
+- Deferred live Private Payments registry RPC corroboration until an explicit registry refresh, preserving continuous Send and Receive dialogs while ordinary wallet unlocks and first private intent use the authenticated deployment catalogue.
 - Kept verified Private Payments asset readiness stable across React bootstrap restarts and reused loaded contract specifications across corroborated reads, preventing lock/unlock from reverting ready balances while reducing setup RPC bursts.
 - Isolated local Next.js development output from production builds so verification cannot strand an open test session on stale UI chunks.
 - Kept Private Payments setup on the modal's neutral surface and automatically dismissed it after the completed progress state, removing the tinted panel and mandatory final acknowledgement.
