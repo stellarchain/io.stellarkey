@@ -155,7 +155,7 @@
       }
     ],
     "stealthAnnouncerAddress": "GCPOMEHY5GS5S3GADPNSIH2BNVWOZDLWB6IF5QW7PYHFTW7YZO4RJRPP",
-    "witnessRpcUrl": "https://soroban-rpc.testnet.stellar.gateway.fm",
+    "witnessRpcUrl": "https://rpc.ankr.com/stellar_testnet_soroban",
     "deploymentCheckpoint": {
       "ledger": 4491845,
       "hash": "2fd40507958359c7a3739e3eacbe7469e3ab0aa4b983e61fdf1beb392defe5f9"

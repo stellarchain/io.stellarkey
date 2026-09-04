@@ -47,7 +47,7 @@ test('the replacement protocol publishes one current Testnet pool with XLM and U
   assert.deepEqual(manifest.assets.map(asset => asset.code), ['XLM', 'USDC']);
   assert.equal(
     manifest.witnessRpcUrl,
-    'https://soroban-rpc.testnet.stellar.gateway.fm',
+    'https://rpc.ankr.com/stellar_testnet_soroban',
     'the browser witness must accept cross-origin Stellar SDK requests',
   );
   assert.ok(manifest.deploymentCheckpoint.ledger > 0);

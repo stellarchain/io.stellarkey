@@ -296,7 +296,7 @@ test('manifest: generator binds exact toolchains and defaults to an undeployed b
   assert.match(source, /protocol\/private-balance\/rust-toolchain\.toml/);
   assert.match(source, /protocol\/private-balance\/parameters\/generator\.lock/);
   assert.match(source, /protocol\/private-balance\/scripts\/build-private-balance-artifacts\.mjs/);
-  assert.match(source, /soroban-rpc\.testnet\.stellar\.gateway\.fm/);
+  assert.match(source, /rpc\.ankr\.com\/stellar_testnet_soroban/);
   assert.match(source, /deploymentCheckpoint/);
   assert.match(source, /const zkeyVerified = verifyProvingKey\(\)/);
   assert.doesNotMatch(source, /zkeyVerified:\s*true/);
