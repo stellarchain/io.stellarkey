@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Address, StrKey, nativeToScVal, scValToNative, xdr } from '@stellar/stellar-sdk';
+import { Address, StrKey, contract, nativeToScVal, scValToNative, xdr } from '@stellar/stellar-sdk';
 import { computeAssetField, computeContextField, computeContextHash } from '@stellarkey/private-balance';
 import {
   ArchiveRecordUnavailableError,
@@ -296,7 +296,7 @@ test('archive client reads manifest-bound state and canonical record storage key
         deposits_paused: pauseResult,
         asset_admin: account,
         asset_count: 1,
-        asset: args?.index === 0 ? registeredAsset : undefined,
+        asset: args?.index === 0 ? new contract.Ok(registeredAsset) : undefined,
       };
       return {
         result: results[method],
@@ -368,6 +368,12 @@ test('archive client reads manifest-bound state and canonical record storage key
   const records = await client.readRecords(0, 1);
   assert.equal(records[0].actionIndex, 0);
   assert.equal(records[0].publicValue, 5_000_000n);
+  assert.equal(records[0].outputs.length, 3);
+  assert.deepEqual(records[0].outputs.map(output => output.cm), [
+    recordNative.output_0.commitment,
+    recordNative.output_1.commitment,
+    recordNative.output_2.commitment,
+  ]);
   assert.deepEqual(records[0].depositSource, {
     kind: 0,
     payload: new Uint8Array(StrKey.decodeEd25519PublicKey(account)),
@@ -411,7 +417,7 @@ test('archive client reports the lowest missing requested record by ledger key',
               val: recordScVal({
                 ...recordNative,
                 action_index: 10 + offset,
-                starting_leaf_index: (10 + offset) * 2,
+                starting_leaf_index: (10 + offset) * 3,
               }),
             },
           },
