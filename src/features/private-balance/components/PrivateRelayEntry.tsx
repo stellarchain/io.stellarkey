@@ -13,7 +13,7 @@ import { PrivateRelayAvailability } from './PrivateRelayAvailability';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
 
 export function PrivateRelayEntry() {
-  const { deployment, publicAddress } = usePrivateBalanceRuntimeData();
+  const { asset, deployment, publicAddress } = usePrivateBalanceRuntimeData();
   const [open, setOpen] = useState(false);
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(
     loadPrivateRelayPreferences,
@@ -69,6 +69,8 @@ export function PrivateRelayEntry() {
               networkId={deployment.networkId}
               poolContractId={deployment.poolContractId}
               publicAddress={publicAddress}
+              code={asset?.code ?? 'Asset'}
+              decimals={asset?.decimals ?? 7}
             />
             <PrivateRelaySettings helperOnly onSaved={() => setOpen(false)} />
           </div>

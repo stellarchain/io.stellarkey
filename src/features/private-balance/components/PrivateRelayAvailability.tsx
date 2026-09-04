@@ -9,7 +9,7 @@ import {
   type PrivateRelayAvailability as AvailabilityResult,
 } from '../relay/availability';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
-import { formatPrivateBalanceXlm } from '../runtime/selectors';
+import { formatPrivateBalanceAmount } from '../runtime/selectors';
 
 const AVAILABILITY_WINDOW_MS = 5_000;
 
@@ -17,10 +17,14 @@ export function PrivateRelayAvailability({
   networkId,
   poolContractId,
   publicAddress,
+  code,
+  decimals,
 }: {
   networkId: string | null;
   poolContractId: string | null;
   publicAddress: string | null;
+  code: string;
+  decimals: number;
 }) {
   const [result, setResult] = useState<AvailabilityResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -130,7 +134,7 @@ export function PrivateRelayAvailability({
                 : `${count} ${count === 1 ? 'peer was' : 'peers were'} available when checked at ${checkedAt}. Availability can change before payment.`}
             </div>
             {result.quotes.map((quote, index) => {
-              const fee = fmtAmount(formatPrivateBalanceXlm(BigInt(quote.feeAtomic)));
+              const fee = fmtAmount(formatPrivateBalanceAmount(BigInt(quote.feeAtomic), decimals));
               const peer = `${quote.peerAccount.slice(0, 8)}…${quote.peerAccount.slice(-8)}`;
               return (
                 <div key={quote.quoteId} className="ios-sep flex min-h-14 items-center gap-3 px-4 py-2.5">
@@ -149,8 +153,8 @@ export function PrivateRelayAvailability({
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="block font-mono text-[12px] font-semibold text-white">{fee}</span>
-                    <span className="mt-0.5 block text-[10.5px] text-neutral-500">in payment asset</span>
+                    <span className="block font-mono text-[12px] font-semibold text-white">{fee} {code}</span>
+                    <span className="mt-0.5 block text-[10.5px] text-neutral-500">private fee</span>
                   </span>
                 </div>
               );
