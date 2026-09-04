@@ -17,6 +17,22 @@ test('advanced privacy keeps relay use and peer assistance as independent explic
   assert.match(settings, /No StellarKey backend/);
 });
 
+test('home exposes a focused earn-by-relaying entry with live helper status', () => {
+  const dashboard = read('src/components/Dashboard.tsx');
+  const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
+
+  assert.match(dashboard, /PrivateRelayEntry/);
+  const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  assert.match(entry, /Earn by relaying/);
+  assert.match(entry, /PRIVATE_RELAY_PREFERENCES_EVENT/);
+  assert.match(entry, /preferences\.helpRelay/);
+  assert.match(entry, /aria-haspopup="dialog"/);
+  assert.match(entry, /<Modal/);
+  assert.match(entry, /<PrivateRelaySettings helperOnly/);
+  assert.match(settings, /helperOnly/);
+  assert.match(settings, /StellarKey is open and unlocked/);
+});
+
 test('relay preferences persist only non-secret policy and validate two secure origins', () => {
   const preferences = read('src/features/private-balance/relay/preferences.ts');
 

@@ -32,7 +32,7 @@ function RelayToggleRow({
   );
 }
 
-export function PrivateRelaySettings() {
+export function PrivateRelaySettings({ helperOnly = false }: { helperOnly?: boolean } = {}) {
   const [draft, setDraft] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,17 +70,19 @@ export function PrivateRelaySettings() {
         Peer relay
       </h3>
       <div className="ios-group overflow-hidden">
-        <RelayToggleRow
-          title="Prefer privacy relay"
-          description="Preselect a peer wallet for new private sends and withdrawals."
-          checked={draft.useRelay}
-          label="Prefer privacy relay for new private payments"
-          onChange={value => update('useRelay', value)}
-        />
-        <div className="border-t border-white/[0.07]">
+        {!helperOnly ? (
+          <RelayToggleRow
+            title="Prefer privacy relay"
+            description="Preselect a peer wallet for new private sends and withdrawals."
+            checked={draft.useRelay}
+            label="Prefer privacy relay for new private payments"
+            onChange={value => update('useRelay', value)}
+          />
+        ) : null}
+        <div className={helperOnly ? '' : 'border-t border-white/[0.07]'}>
           <RelayToggleRow
             title="Help relay private payments"
-            description="Offer this wallet as a peer while Private Payments is open."
+            description="Offer this wallet as a peer while StellarKey is open and unlocked."
             checked={draft.helpRelay}
             label="Help relay private payments from other wallets"
             onChange={value => update('helpRelay', value)}

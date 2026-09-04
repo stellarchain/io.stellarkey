@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a visible Earn by relaying action beneath Home's private assets, with live participation status and focused helper controls that retain manual approval for every transaction.
 - Linked public Private Payments deposits and withdrawals to their exact Stellar explorer transactions while rejecting synthetic restored-history identifiers.
 - Added domain-separated outgoing viewing keys and fixed authenticated recovery envelopes for reconstructing sent Private Payments from seed and chain data.
 - Added an append-only Private Payments asset registry with administrator-only admission, `Active`/`ExitOnly` status, two-step administrator handoff, independently corroborated client reads, and in-wallet controls.

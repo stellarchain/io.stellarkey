@@ -40,6 +40,37 @@ test("sets up a fresh profile and renders its private receive address", async ({
   await expect(dialog).toBeHidden();
 });
 
+test("offers helper relay participation directly from Home", async ({ context, page }) => {
+  await installPrivateBalanceNetworkSupport(context);
+  await importLiveWallet(page, senderSecret);
+  const region = await setupPrivateBalance(page);
+  await region.evaluate(node => node.setAttribute("data-e2e-overlay-owner", "private-assets"));
+
+  const entry = region.getByRole("button", { name: /Earn by relaying/ });
+  await expect(entry).toBeVisible();
+  await expect(entry).toContainText("Set up");
+  await entry.click();
+
+  const dialog = page.getByRole("dialog", { name: "Earn by relaying", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "relay-settings"));
+  await expect(dialog.getByText("Prefer privacy relay", { exact: true })).toHaveCount(0);
+
+  const helping = dialog.getByRole("switch", {
+    name: "Help relay private payments from other wallets",
+  });
+  await helping.click();
+  await expect(helping).toHaveAttribute("aria-checked", "true");
+  await dialog.getByRole("button", { name: "Save relay settings", exact: true }).click();
+  await expect(dialog.getByText("Relay settings saved on this device.", { exact: true })).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-e2e-overlay-identity", "relay-settings");
+
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(region).toHaveAttribute("data-e2e-overlay-owner", "private-assets");
+  await expect(entry).toContainText("On");
+});
+
 test("keeps Send mounted when its nested setup auto-dismisses after completion", async ({
   context,
   page,
