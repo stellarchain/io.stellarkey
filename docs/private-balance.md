@@ -595,9 +595,10 @@ transaction hash or independently bind the on-chain executable to the recorded
 local Wasm hash. Contract deployment, both registry additions, and their
 readbacks succeeded against the public Testnet RPC.
 
-The official Testnet runner passed at source commit `7a156da` against manifest
+The official Testnet runner passed at source commit `f7c0e78` against manifest
 `222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
-It passed nine desktop Chromium tests, including the complete two-wallet
+It passed ten desktop Chromium tests, including the Home relay-participation
+opt-in and the complete two-wallet
 deposit, consolidation, private send, ambiguous-submission recovery,
 withdrawal, lock/unlock, encrypted-backup restore, local-data removal, and
 seed-only recovery lifecycle. It then passed four production browser smoke
