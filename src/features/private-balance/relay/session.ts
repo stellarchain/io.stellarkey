@@ -274,7 +274,6 @@ export class PrivateRelaySenderSession {
     const excludedPeerAccounts = new Set(input.excludePeerAccounts ?? []);
     const controller = new AbortController();
     const abort = () => controller.abort();
-    signal?.addEventListener('abort', abort, { once: true });
     let hardDeadline: ReturnType<typeof setTimeout> | null = null;
     let settleDeadline: ReturnType<typeof setTimeout> | null = null;
     let settleDiscovery: (() => void) | null = null;
@@ -294,6 +293,8 @@ export class PrivateRelaySenderSession {
       rejectDiscovery = null;
     };
     controller.signal.addEventListener('abort', abortDiscovery, { once: true });
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener('abort', abort, { once: true });
     hardDeadline = setTimeout(finishDiscovery, quoteWindowMs);
     const subscription = this.messenger.subscribe({
       encrypted: true,
