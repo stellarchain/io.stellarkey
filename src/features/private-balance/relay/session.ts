@@ -392,6 +392,7 @@ export class PrivateRelaySenderSession {
 export class PrivateRelayHelperSession {
   private readonly quotes = new Map<string, PrivateRelayQuote>();
   private readonly senderByQuote = new Map<string, string>();
+  private readonly quoteExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly messenger: PrivateRelayMessenger;
 
   private constructor(messenger: PrivateRelayMessenger) {
@@ -404,6 +405,25 @@ export class PrivateRelayHelperSession {
 
   get publicKey(): string {
     return this.messenger.publicKey;
+  }
+
+  private forgetQuote(quoteId: string): void {
+    this.quotes.delete(quoteId);
+    this.senderByQuote.delete(quoteId);
+    const timer = this.quoteExpiryTimers.get(quoteId);
+    if (timer) clearTimeout(timer);
+    this.quoteExpiryTimers.delete(quoteId);
+  }
+
+  private rememberQuote(quote: PrivateRelayQuote, senderPublicKey: string): void {
+    this.forgetQuote(quote.quoteId);
+    this.quotes.set(quote.quoteId, quote);
+    this.senderByQuote.set(quote.quoteId, senderPublicKey);
+    const remainingMs = Math.max(0, quote.expiresAt * 1_000 - Date.now());
+    this.quoteExpiryTimers.set(
+      quote.quoteId,
+      setTimeout(() => this.forgetQuote(quote.quoteId), remainingMs),
+    );
   }
 
   listenForRequests(
@@ -458,8 +478,7 @@ export class PrivateRelayHelperSession {
       expiresAt: Math.min(input.request.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
     };
     await this.messenger.publish(quote, input.request.replyPubkey, signal);
-    this.quotes.set(quote.quoteId, quote);
-    this.senderByQuote.set(quote.quoteId, input.request.replyPubkey);
+    this.rememberQuote(quote, input.request.replyPubkey);
     return quote;
   }
 
@@ -557,6 +576,8 @@ export class PrivateRelayHelperSession {
   }
 
   close(): void {
+    for (const timer of this.quoteExpiryTimers.values()) clearTimeout(timer);
+    this.quoteExpiryTimers.clear();
     this.quotes.clear();
     this.senderByQuote.clear();
     this.messenger.close();

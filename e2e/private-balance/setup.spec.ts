@@ -55,6 +55,9 @@ test("offers helper relay participation directly from Home", async ({ context, p
   await expect(dialog).toBeVisible();
   await dialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "relay-settings"));
   await expect(dialog.getByText("Prefer privacy relay", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /Check available peers/ })).toBeVisible();
+  await expect(dialog.getByText("Not checked", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Looking for peers…", { exact: true })).toHaveCount(0);
 
   const helping = dialog.getByRole("switch", {
     name: "Help relay private payments from other wallets",

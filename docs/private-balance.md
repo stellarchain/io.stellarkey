@@ -437,6 +437,14 @@ same-asset fee, and expiry. The user explicitly selects one peer before any
 fee-address negotiation, proof construction, signing, or submission. Deposits
 are not relayable because their public source must authorize the asset transfer.
 
+The **Check available peers** control is an explicit live quote request, not a
+background presence beacon. It reveals no asset, amount, destination, note, or
+proof input. Responses are kept only in memory, deduplicated by public source
+account, ordered by fee, and labelled with the time of the check. The active Stellar account
+is excluded so self-relay is never presented as privacy. Available when checked is not a
+guarantee that a peer will remain available; transaction
+submission obtains fresh short-lived offers and requires a new explicit choice.
+
 The selected peer gives the sender a quote and a diversified private fee
 address. The sender builds a new proof with the peer's same-asset fee as one of
 the three shuffled encrypted outputs and the peer's Stellar account as the

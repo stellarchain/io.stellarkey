@@ -75,6 +75,7 @@ test('relay preferences persist only non-secret policy and validate two secure o
 
 test('helper mode presents a manual approval only after strict local review', () => {
   const manager = read('src/features/private-balance/components/PrivateRelayHelperManager.tsx');
+  const session = read('src/features/private-balance/relay/session.ts');
   const boundary = read('src/components/PrivateBalanceRuntimeBoundary.tsx');
 
   assert.match(boundary, /PrivateRelayHelperManager/);
@@ -84,4 +85,9 @@ test('helper mode presents a manual approval only after strict local review', ()
   assert.match(manager, /<Modal/);
   assert.match(manager, /never signs automatically/i);
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
+  assert.match(manager, /requestExpiryTimers/);
+  assert.match(manager, /requestIds\.delete\(request\.requestId\)/);
+  assert.match(manager, /clearTimeout/);
+  assert.match(session, /quoteExpiryTimers/);
+  assert.match(session, /forgetQuote/);
 });
