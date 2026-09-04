@@ -8,6 +8,23 @@ import type {
 export const PRIVATE_RELAY_EVENT_KIND = 24_333;
 export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v1';
 
+export async function firstAcceptedPrivateRelayPublish(
+  urls: readonly string[],
+  attempts: readonly Promise<unknown>[],
+): Promise<Map<string, boolean>> {
+  if (attempts.length !== urls.length) {
+    throw new Error('Private relay publish attempt count is invalid');
+  }
+  try {
+    const acceptedUrl = await Promise.any(
+      attempts.map((attempt, index) => attempt.then(() => urls[index])),
+    );
+    return new Map([[acceptedUrl, true]]);
+  } catch {
+    return new Map(urls.map(url => [url, false]));
+  }
+}
+
 export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private poolPromise: Promise<import('nostr-tools/pool').SimplePool> | null = null;
 
@@ -26,8 +43,7 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   ): Promise<Map<string, boolean>> {
     const pool = await this.pool();
     const attempts = pool.publish([...urls], event, { maxWait: 8_000, abort: signal });
-    const settled = await Promise.allSettled(attempts);
-    return new Map(urls.map((url, index) => [url, settled[index]?.status === 'fulfilled']));
+    return firstAcceptedPrivateRelayPublish(urls, attempts);
   }
 
   subscribe(
