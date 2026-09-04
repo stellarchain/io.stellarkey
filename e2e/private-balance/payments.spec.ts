@@ -28,22 +28,33 @@ async function authorizePrivateTransaction(dialog: Locator): Promise<void> {
   await authorization.getByRole("button", { name: "Authorize" }).click();
 }
 
+async function waitForPreparedConfirmation(dialog: Locator, confirm: Locator): Promise<void> {
+  const sharing = dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true });
+  const failure = dialog.getByRole('alert');
+  await expect(confirm.or(sharing).or(failure).first()).toBeVisible({ timeout: 300_000 });
+  if (await sharing.isVisible().catch(() => false)) {
+    await expect(dialog.getByText(/Sharing authorizes the exact payment above/)).toBeVisible();
+    await expect(sharing).toBeEnabled();
+    await sharing.click();
+    await expect(confirm.or(failure).first()).toBeVisible({ timeout: 300_000 });
+  }
+  if (await failure.isVisible().catch(() => false)) {
+    throw new Error('Private action preparation failed in the isolated payment fixture.');
+  }
+}
+
 async function confirmPreparedAction(
   dialog: Locator,
   options: { confirm: string; success: string },
 ): Promise<void> {
-  // The review renders instantly; the proof prepares underneath while the fee
-  // row shows its skeleton, so the confirm button enables only when ready.
+  // Spend intent is approved before a proof leaves the browser. The later
+  // transaction confirmation waits for the returned reviewed envelope.
   const confirm = dialog.getByRole("button", {
     name: options.confirm,
     exact: true,
     disabled: false,
   });
-  const failure = dialog.getByRole("alert");
-  await expect(confirm.or(failure).first()).toBeVisible({ timeout: 300_000 });
-  if (await failure.isVisible().catch(() => false)) {
-    throw new Error(`Private action preparation failed: ${await failure.textContent()}`);
-  }
+  await waitForPreparedConfirmation(dialog, confirm);
   await confirm.click();
   await authorizePrivateTransaction(dialog);
   const success = dialog.getByText(options.success, { exact: true });
@@ -135,13 +146,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
       exact: true,
       disabled: false,
     });
-    const ambiguousFailure = ambiguousWithdrawal.getByRole("alert");
-    await expect(ambiguousConfirm.or(ambiguousFailure).first()).toBeVisible({ timeout: 300_000 });
-    if (await ambiguousFailure.isVisible().catch(() => false)) {
-      throw new Error(
-        `Private action preparation failed: ${await ambiguousFailure.textContent()}`,
-      );
-    }
+    await waitForPreparedConfirmation(ambiguousWithdrawal, ambiguousConfirm);
     await ambiguousConfirm.click();
     await authorizePrivateTransaction(ambiguousWithdrawal);
     await expect(

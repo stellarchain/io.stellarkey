@@ -84,6 +84,20 @@ const checkpoint = {
   updatedAt: 2,
 };
 
+test('internal relay address issuance never rotates the displayed receive address', async () => {
+  assert.equal(typeof storage.recordPrivateBalanceInternalAddress, 'function');
+  const driver = new MemoryDriver();
+  const address = d => encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(new Uint8Array(32).fill(5)),
+    diversifier: new Uint8Array([0, 0, 0, d]), ownerCommitment: new Uint8Array(32).fill(9), hpkePublicKey: new Uint8Array(32).fill(10) }, 'tskpay_');
+  const initial = { ...createEmptyPrivateBalanceState(manifestHash, 1), privateAddress: address(1) };
+  await commitPrivateBalanceState(context, key, initial, null, driver);
+  const next = await storage.recordPrivateBalanceInternalAddress(context, key, initial.revision, address(2), driver);
+  assert.equal(next.privateAddress, address(1));
+  assert.deepEqual(next.issuedAddressDiversifiers, ['00000001', '00000002']);
+  await assert.rejects(storage.recordPrivateBalanceInternalAddress(context, key, next.revision, address(2), driver), /already issued/);
+  await assert.rejects(storage.recordPrivateBalanceInternalAddress(context, key, initial.revision, address(3), driver), /changed/);
+});
+
 test('private state is encrypted, context-bound, and reserved with atomic CAS', async () => {
   const driver = new MemoryDriver();
   const initial = {
@@ -117,6 +131,7 @@ test('private state is encrypted, context-bound, and reserved with atomic CAS', 
 
   const pendingAction = {
     id: 'action-1',
+    proofExposure: 'local',
     kind: 'transfer',
     assetIndex: 0,
     assetContractId: ASSET_CONTRACT_ID,
@@ -306,6 +321,7 @@ test('private notes reserve before witness creation and promote atomically', asy
     driver,
   );
   const reservation = {
+    proofExposure: 'local',
     id: 'build-1',
     kind: 'transfer',
     assetContractId: ASSET_CONTRACT_ID,
@@ -326,6 +342,7 @@ test('private notes reserve before witness creation and promote atomically', asy
 
   const pendingAction = {
     id: reservation.id,
+    proofExposure: 'local',
     kind: reservation.kind,
     assetIndex: 0,
     assetContractId: reservation.assetContractId,
@@ -395,6 +412,7 @@ test('build reservations past the TTL release their notes in one commit', async 
   );
   const reservation = {
     id: 'stale-build',
+    proofExposure: 'local',
     kind: 'transfer',
     assetContractId: ASSET_CONTRACT_ID,
     reservedNoteIds: [note.id],
@@ -463,6 +481,7 @@ test('stale pre-broadcast pending actions release their notes, broadcasts never 
   // 'reviewed', zero broadcast attempts, notes still reserved.
   const orphan = {
     ...base,
+    proofExposure: 'local',
     id: 'orphan-1',
     status: 'reviewed',
     reservedNoteIds: [orphanNote.id],

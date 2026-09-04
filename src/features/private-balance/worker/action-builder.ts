@@ -82,6 +82,7 @@ export interface PreparedPrivateAction {
   reservedNoteIds: string[];
   inputValue: string;
   changeValue: string;
+  recipientOutputCommitment?: string;
   anchorExpiresAtLedger: number;
 }
 
@@ -635,6 +636,7 @@ export async function preparePrivateAction(
 
   while (outputSpecs.length < 3) outputSpecs.push(dummyOutput());
   if (outputSpecs.length !== 3) throw new Error('Private action exceeds its three output lanes');
+  const recipientSpec = input.intent.kind === 'transfer' ? outputSpecs[0] : null;
   const arrangedOutputSpecs = shuffledThree(outputSpecs as [
     typeof outputSpecs[number], typeof outputSpecs[number], typeof outputSpecs[number],
   ]);
@@ -748,6 +750,7 @@ export async function preparePrivateAction(
     reservedNoteIds: preparedInputs.selectedNoteIds,
     inputValue: selectedInputTotal.toString(),
     changeValue: changeValue.toString(),
+    ...(recipientSpec ? { recipientOutputCommitment: Array.from(outputs[arrangedOutputSpecs.indexOf(recipientSpec)].commitment, byte => byte.toString(16).padStart(2, '0')).join('') } : {}),
     anchorExpiresAtLedger: input.intent.kind === 'deposit' ? 0 : input.intent.anchorExpiresAtLedger,
   };
 }

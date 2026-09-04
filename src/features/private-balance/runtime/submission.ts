@@ -11,6 +11,7 @@ import {
   type PrivateRecordDriver,
   type PrivateStorageContext,
 } from './storage';
+import { hasExposedPrivateSpend } from './proof-exposure';
 import type { PrivateBalanceDurableState, PrivatePendingAction } from './types';
 import type { PrivateBalanceTransactionReview } from './transaction-review';
 
@@ -130,7 +131,7 @@ export type PrivateActionRecoveryDecision = 'confirmed' | 'release' | 'ambiguous
 export type PrivateCanonicalTransactionStatus = 'SUCCESS' | 'FAILED' | 'NOT_FOUND' | 'UNAVAILABLE';
 
 export function classifyPrivateActionRecovery(
-  action: Pick<PrivatePendingAction, 'actionField' | 'nullifiers' | 'expiresAtSeconds'>,
+  action: Pick<PrivatePendingAction, 'actionField' | 'nullifiers' | 'expiresAtSeconds'> & Partial<Pick<PrivatePendingAction, 'kind' | 'proofExposure'>>,
   transactionStatus: PrivateCanonicalTransactionStatus,
   verifiedActionFields: readonly string[],
   verifiedNullifiers: readonly string[],
@@ -142,6 +143,7 @@ export function classifyPrivateActionRecovery(
     nullifier !== ZERO_NULLIFIER && observedNullifiers.has(nullifier))) {
     return 'ambiguous';
   }
+  if (hasExposedPrivateSpend(action)) return 'ambiguous';
   if (transactionStatus === 'FAILED') return 'release';
   // Stellar cannot apply a transaction past its envelope maxTime, so once the
   // verified head closed beyond expiry plus margin, an absent action field and
@@ -271,13 +273,13 @@ export async function recoverPrivateBalanceAction(input: {
 }): Promise<PrivateRecoveryResult> {
   const initial = await loadPrivateBalanceState(input.context, input.storageKey, input.storageDriver);
   const action = initial?.pendingActions.find(candidate => candidate.id === input.actionId);
-  if (!initial || !action || !['signed', 'broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash) {
+  if (!initial || !action || (!hasExposedPrivateSpend(action) && (!['signed', 'broadcast', 'ambiguous'].includes(action.status) || !action.transactionHash))) {
     throw new Error('Private Balance action is not awaiting canonical recovery');
   }
 
   let rpcStatus: PrivateCanonicalTransactionStatus = 'UNAVAILABLE';
   let headCloseTimeSeconds: number | undefined;
-  if (action.submissionMode === 'direct') try {
+  if (action.submissionMode === 'direct' && action.transactionHash && !hasExposedPrivateSpend(action)) try {
     const response = await input.rpc.getTransaction(action.transactionHash);
     if (response.txHash && response.txHash.toLowerCase() !== action.transactionHash) {
       throw new Error('RPC returned a different private transaction hash');
@@ -310,7 +312,7 @@ export async function recoverPrivateBalanceAction(input: {
     const signed = validateSignedPrivateBalanceEnvelope({
       signedEnvelopeXdr: action.signedEnvelopeXdr,
       networkPassphrase: input.networkPassphrase,
-      expectedTransactionHash: action.transactionHash,
+      expectedTransactionHash: action.transactionHash!,
     });
     const maxTime = Number(signed.transaction.timeBounds?.maxTime);
     if (Number.isSafeInteger(maxTime) && maxTime > 0) expiresAtSeconds = maxTime;
@@ -347,7 +349,7 @@ export async function recoverPrivateBalanceAction(input: {
     );
     return { state, outcome: decision, rpcStatus };
   }
-  if (currentAction.status === 'signed') {
+  if (['prepared', 'reviewed', 'signed'].includes(currentAction.status)) {
     return { state: current, outcome: decision, rpcStatus };
   }
   const state = await recordPrivatePendingActionRpcStatus(

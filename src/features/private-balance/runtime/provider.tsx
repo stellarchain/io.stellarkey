@@ -12,6 +12,8 @@ import {
   type ReactNode,
 } from 'react';
 import { StrKey, rpc as SorobanRpc } from '@stellar/stellar-sdk';
+import { hasExposedPrivateSpend } from './proof-exposure';
+import type { AuthorizePrivateProofDisclosure } from './proof-disclosure';
 import {
   computeContextHash,
   deriveStealthRootKey,
@@ -74,7 +76,9 @@ import {
 import { formatPrivateBalanceAmount, selectTotalShieldedBalance } from './selectors';
 import { parsePrivateAmount, selectPrivateNotes } from './coin-selection';
 import {
-  advancePrivateChainedApprovalFee,
+  beginPrivateRelayChainApproval,
+  clearPrivateRelayChainApproval,
+  releaseExpiredPrivateRelayChainApproval,
   beginPrivateChainedApproval,
   clearPrivateChainedApproval,
   commitPrivateBalanceState,
@@ -84,6 +88,7 @@ import {
   createPrivateBalanceVerificationRollback,
   loadPrivateBalanceState,
   recordPrivateBalanceAddress,
+  recordPrivateBalanceInternalAddress,
   recordPrivateRecentRecipient,
   releaseExpiredPrivateBuildReservations,
   releasePrivatePendingAction,
@@ -101,6 +106,7 @@ import {
   type PreparedPrivateActionReview,
   type PrivateActionDraft,
   type PrivateActionProgressStage,
+  type PrivateRelayChainPreparation,
 } from './action-flow';
 import {
   planPrivateChainedSend,
@@ -110,6 +116,9 @@ import {
   type PrivateChainedSendProgress,
   type PrivateChainedSendResult,
 } from './chained-send';
+import { planPrivateRelayConsolidation } from './relay-consolidation-plan';
+import { confirmPrivateRelayMerge, privateRelayChainContextKey, type PrivateRelayChainApproval } from './relay-chain-policy';
+import { runPrivateRelayChainedSend, type SelectPrivateRelayChainPeer } from './relay-chained-send';
 import {
   broadcastPrivateBalanceAction,
   pollBroadcastPrivateBalanceTransaction,
@@ -170,6 +179,7 @@ interface PrivateBalanceContextValue {
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
     relayPreparation?: PrivateRelayPreparationCallbacks,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
   submitAction(
@@ -397,14 +407,18 @@ export function PrivateBalanceProvider({
   // stale as soon as the user opts in or removes local data in this session.
   const encryptedStateExistsRef = useRef(encryptedStateExists);
   const providerMountedRef = useRef(true);
+  const relayChainAbortRef = useRef<AbortController | null>(null);
   const stealthRunRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     providerMountedRef.current = true;
     return () => {
       providerMountedRef.current = false;
+      relayChainAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => () => { relayChainAbortRef.current?.abort(); }, [accountId, asset.contractId, network, manifest.deploymentBindingHash, walletPhase]);
 
   useEffect(() => {
     walletPhaseRef.current = walletPhase;
@@ -744,6 +758,8 @@ export function PrivateBalanceProvider({
               );
               progress.durable = durable;
             }
+            durable = await releaseExpiredPrivateRelayChainApproval(storageScope, storageKey, Math.floor(Date.now() / 1000), driver) ?? durable;
+            progress.durable = durable;
             if (durable.pendingActions.some(action => action.status === 'signed')) {
               // Only explicitly direct routes may resume over sender RPC.
               // Relayed/legacy envelopes wait for canonical inclusion/expiry.
@@ -868,16 +884,17 @@ export function PrivateBalanceProvider({
             try {
               const nowSeconds = Math.floor(Date.now() / 1000);
               for (const pending of durable.pendingActions) {
-                if (!['signed', 'broadcast', 'ambiguous'].includes(pending.status)) continue;
+                // Canonical sync already reconciles exposed spends. An
+                // envelope lookup or clock cannot revoke their reusable proof.
+                if (hasExposedPrivateSpend(pending) || !['signed', 'broadcast', 'ambiguous'].includes(pending.status)) continue;
                 if (
                   pending.expiresAtSeconds !== undefined &&
                   nowSeconds <= pending.expiresAtSeconds + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS
                 ) {
                   continue;
                 }
-                // The canonical sync just completed, so absence of the action
-                // field and its nullifiers is decisive once the chain has
-                // closed past the envelope expiry.
+                // Only non-spend envelopes can use envelope failure/expiry
+                // plus canonical absence for recovery.
                 const canonical = durable;
                 let headCloseTimeSeconds: number | undefined;
                 if (pending.submissionMode !== 'direct' && scannedHeadLedger !== undefined) {
@@ -1566,6 +1583,7 @@ export function PrivateBalanceProvider({
         const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
         const pending = current?.pendingActions.find(action => action.id === actionId);
         if (!current || !pending) return;
+        if (hasExposedPrivateSpend(pending)) { reflectDurableState(current); return; }
         if (!['prepared', 'reviewed'].includes(pending.status) || pending.broadcastAttempts > 0) {
           throw new Error('A signed or broadcast Private Balance action cannot be cancelled.');
         }
@@ -1588,6 +1606,9 @@ export function PrivateBalanceProvider({
     sourcePublicKey = accountPublicKey,
     depositSourceMinimumBalanceStroops?: bigint,
     relayPreparation?: PrivateRelayPreparationCallbacks,
+    relayChainStep?: PrivateRelayChainPreparation,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+    directChainApprovalId?: string,
   ): Promise<PreparedPrivateActionReview> => {
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
@@ -1629,6 +1650,12 @@ export function PrivateBalanceProvider({
               draft,
               signal,
               relayPreparation,
+              relayChainStep,
+              authorizeDisclosure,
+              directChainApprovalId,
+              assertContext: () => {
+                if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' || workerRef.current !== worker || worker.failed || workerIdentityRef.current?.address !== privateAddress) throw new DOMException('Private proof sharing cancelled after its wallet context changed.', 'AbortError');
+              },
               onProgress,
             }),
           );
@@ -1636,6 +1663,12 @@ export function PrivateBalanceProvider({
         reflectDurableState(result.state);
         return result.review;
       } catch (error) {
+        // Even an unsigned failed preparation may have disclosed a spend proof.
+        // Reflect the durable reservation without requiring a transaction lookup.
+        await withPrivacySessionRoot(accountId, context, async (_root, key) => {
+          const current = await loadPrivateBalanceState(storageScope, key, driver);
+          if (current) reflectDurableState(current);
+        }).catch(() => undefined);
         if (
           signal?.aborted ||
           (error instanceof DOMException && error.name === 'AbortError')
@@ -1684,11 +1717,12 @@ export function PrivateBalanceProvider({
     onProgress?: (stage: PrivateActionProgressStage) => void,
     signal?: AbortSignal,
     relayPreparation?: PrivateRelayPreparationCallbacks,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview> => {
     if (actionBusyRef.current) throw new Error('Another Private Balance action is already open.');
     actionBusyRef.current = true;
     try {
-      return await prepareActionInternal(draft, onProgress, signal, undefined, undefined, relayPreparation);
+      return await prepareActionInternal(draft, onProgress, signal, undefined, undefined, relayPreparation, undefined, authorizeDisclosure);
     } finally {
       actionBusyRef.current = false;
     }
@@ -2040,6 +2074,113 @@ export function PrivateBalanceProvider({
     submitActionInternal,
   ]);
 
+  const prepareRelayChainedSend = useCallback(async (
+    draft: PrivateChainedSendDraft, feeAtomic: string,
+  ): Promise<PrivateRelayChainApproval | null> => {
+    if (!leaderRef.current || walletPhaseRef.current !== 'unlocked') throw new Error('Unlock and sync Private Balance before reviewing a relay chain.');
+    await validatePrivateTransferRecipient(draft.recipientAddress, manifest);
+    if (!/^[1-9][0-9]{0,20}$/.test(feeAtomic)) throw new Error('Private relay fee is invalid.');
+    const amount = parsePrivateAmount(draft.amount, asset.decimals);
+    const notes = state.notes.filter(note => note.assetContractId === asset.contractId);
+    if (selectPrivateNotes(notes, amount + BigInt(feeAtomic)).kind === 'selected') return null;
+    const plan = planPrivateRelayConsolidation({ notes, assetContractId: asset.contractId, amountAtomic: amount, perStepMaxPrivateFeeAtomic: BigInt(feeAtomic) });
+    const perStep = BigInt(recommendedBaseFeeStroops) + MAX_PRIVATE_ACTION_RESOURCE_FEE_STROOPS;
+    return { id: ownerId(), submissionMode: 'relay', contextKey: privateRelayChainContextKey(storageScope, asset.contractId),
+      assetContractId: asset.contractId, assetIndex: asset.index, draft: { ...draft }, plan, steps: plan.steps,
+      perStepMaxFeeStroops: perStep.toString(), cumulativeMaxFeeStroops: (perStep * BigInt(plan.steps)).toString(),
+      expiresAtSeconds: Math.floor(Date.now() / 1000) + 15 * 60 };
+  }, [asset.contractId, asset.decimals, asset.index, manifest, recommendedBaseFeeStroops, state.notes, storageScope]);
+
+  const submitRelayChainedSend = useCallback(async (
+    approval: PrivateRelayChainApproval, selectPeer: SelectPrivateRelayChainPeer, signal: AbortSignal,
+    onProgress?: (progress: PrivateChainedSendProgress) => void,
+  ): Promise<PrivateChainedSendResult> => {
+    if (actionBusyRef.current) throw new Error('Another Private Balance action is already open.');
+    const worker = workerRef.current;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    relayChainAbortRef.current = controller;
+    const check = () => {
+      if (signal.aborted || controller.signal.aborted || !providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' || !worker || worker.failed || workerRef.current !== worker) throw new DOMException('Private relay chain cancelled after its wallet context changed.', 'AbortError');
+      if (approval.contextKey !== privateRelayChainContextKey(storageScope, asset.contractId) || approval.assetIndex !== asset.index ||
+        parsePrivateAmount(approval.draft.amount, asset.decimals).toString() !== approval.plan.amountAtomic || Date.now() >= approval.expiresAtSeconds * 1000) throw new Error('Private relay chain context or approval expired.');
+    };
+    const context = deploymentContext(manifest);
+    const driver = new IndexedDbEncryptedRecordDriver();
+    const readState = () => withPrivacySessionRoot(accountId, context, async (_root, key) => {
+      check(); const current = await loadPrivateBalanceState(storageScope, key, driver); check();
+      if (!current) throw new Error('Private Balance state is unavailable.');
+      return current;
+    });
+    actionBusyRef.current = true;
+    try {
+      check();
+      await mutexRef.current.runExclusive(() => withPrivacySessionRoot(accountId, context, async (_root, key) => {
+        const current = await loadPrivateBalanceState(storageScope, key, driver); check();
+        if (!current) throw new Error('Private Balance state is unavailable.');
+        await beginPrivateRelayChainApproval(storageScope, key, current.revision, approval, Math.floor(Date.now() / 1000), driver);
+      }));
+      return await runPrivateRelayChainedSend({ approval, signal: controller.signal, readState,
+        issueSelfAddress: () => mutexRef.current.runExclusive(() => withPrivacySessionRoot(accountId, context, async (_root, key) => {
+          check();
+          const current = await loadPrivateBalanceState(storageScope, key, driver);
+          if (!current) throw new Error('Private Balance state is unavailable.');
+          let diversifier: Uint8Array;
+          let encoded: string;
+          do {
+            diversifier = crypto.getRandomValues(new Uint8Array(4));
+            encoded = Array.from(diversifier, byte => byte.toString(16).padStart(2, '0')).join('');
+          } while (encoded === '00000000' || current.issuedAddressDiversifiers?.includes(encoded));
+          const identity = await worker!.deriveAddressForDiversifier(diversifier);
+          check();
+          await recordPrivateBalanceInternalAddress(storageScope, key, current.revision, identity.address, driver, approval.id);
+          return identity.address;
+        })),
+        selectPeer: async (request, activeSignal) => { check(); const peer = await selectPeer(request, activeSignal); try { check(); return peer; } catch (error) { peer.close(); throw error; } },
+        prepare: (draft, step, peer) => { check(); return prepareActionInternal(draft, undefined, controller.signal, undefined, undefined, peer.preparation, step); },
+        submit: (review, peer, isFinal) => {
+          check();
+          return submitActionInternal(review, { watchOutcome: isFinal,
+            beforeSign: async ({ storageKey }) => {
+              check(); const current = await loadPrivateBalanceState(storageScope, storageKey, driver); check();
+              const journal = current?.relayChainedApproval;
+              if (!journal || JSON.stringify(journal.approval) !== JSON.stringify(approval) || journal.authorized.at(-1)?.actionId !== review.id || journal.authorized.at(-1)?.actionField !== review.actionField) throw new Error('Private relay chain signing authorization changed.');
+            },
+            relay: {
+              requestSignature: async request => { check(); const signed = await peer.submission.requestSignature(request); check(); return signed; },
+              requestSubmission: request => { check(); return peer.submission.requestSubmission(request); },
+            },
+          });
+        },
+        cancel: cancelAction,
+        awaitConfirmation: async (_review, step) => {
+          const outcome = await pollPrivateBalanceCanonicalOutcome({
+            sleep: milliseconds => new Promise<void>((resolve, reject) => {
+              check();
+              const stopped = () => { clearTimeout(timer); reject(new DOMException('Private relay chain cancelled.', 'AbortError')); };
+              const timer = setTimeout(() => { controller.signal.removeEventListener('abort', stopped); resolve(); }, milliseconds);
+              controller.signal.addEventListener('abort', stopped, { once: true });
+            }),
+            reconcile: async () => { check(); await performSyncRef.current?.(false, { background: true }); check(); return !!confirmPrivateRelayMerge(approval, step, await readState()); },
+          });
+          return outcome === 'reconciled';
+        }, onProgress,
+      });
+    } finally {
+      signal.removeEventListener('abort', abort);
+      controller.abort();
+      if (relayChainAbortRef.current === controller) relayChainAbortRef.current = null;
+      try {
+        await mutexRef.current.runExclusive(() => withPrivacySessionRoot(accountId, context, async (_root, key) => {
+          const current = await loadPrivateBalanceState(storageScope, key, driver);
+          if (current?.relayChainedApproval?.approval.id === approval.id) await clearPrivateRelayChainApproval(storageScope, key, current.revision, approval.id, driver);
+        }));
+      } catch { /* Expired consent cannot resume; signed relay actions remain reconcile-only. */ }
+      actionBusyRef.current = false;
+    }
+  }, [accountId, asset.contractId, asset.decimals, asset.index, cancelAction, manifest, prepareActionInternal, storageScope, submitActionInternal]);
+
   const prepareChainedSend = useCallback(async (
     draft: PrivateChainedSendDraft,
   ): Promise<PrivateChainedSendApproval> => {
@@ -2119,7 +2260,16 @@ export function PrivateBalanceProvider({
           draft,
           ownFingerprint,
           assetDecimals: asset.decimals,
-          prepare: stepDraft => prepareActionInternal(stepDraft),
+          prepare: stepDraft => prepareActionInternal(stepDraft, undefined, undefined, undefined, undefined, undefined, undefined, async disclosure => {
+            // Initial chain consent authorizes only this exact local self-merge
+            // or the final draft. Reject a changed proof BEFORE it leaves us.
+            const final = stepDraft.kind === 'transfer';
+            const expectedMemo = Array.from(new TextEncoder().encode(draft.memo?.trim() ?? ''), byte => byte.toString(16).padStart(2, '0')).join('') || null;
+            if (disclosure.kind !== stepDraft.kind || disclosure.submissionMode !== 'direct' || disclosure.assetContractId !== asset.contractId || disclosure.privateFeeAtomic !== '0' ||
+              disclosure.recipientAddress !== (final ? draft.recipientAddress : privateAddress) ||
+              (final && (disclosure.amountStroops !== parsePrivateAmount(draft.amount, asset.decimals).toString() || disclosure.memoHex !== expectedMemo)) ||
+              BigInt(disclosure.maximumNetworkFeeStroops) > BigInt(approval.perStepMaxFeeStroops) || Date.now() >= approval.expiresAtSeconds * 1000) throw new Error('The private proof no longer matches the approved chain.');
+          }, approval.id),
           // Non-final steps await their canonical confirmation inside the
           // driver, so their fire-and-forget outcome watcher stays off; the
           // final send keeps the standard post-broadcast poll so it resolves
@@ -2134,7 +2284,7 @@ export function PrivateBalanceProvider({
             const allowHttp = endpoint.protocol === 'http:' &&
               ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
             const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
-            const stepGone = () => withPrivacySessionRoot(
+          const stepGone = () => withPrivacySessionRoot(
               accountId,
               context,
               async (_sessionRoot, storageKey) => {
@@ -2158,21 +2308,9 @@ export function PrivateBalanceProvider({
             }
             return stepGone();
           },
-          advanceApprovedFee: stepFeeStroops =>
-            mutexRef.current.runExclusive(() =>
-              withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
-                const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
-                if (!current) throw new Error('Private Balance state is unavailable.');
-                await advancePrivateChainedApprovalFee(
-                  storageScope,
-                  storageKey,
-                  current.revision,
-                  approval.id,
-                  stepFeeStroops,
-                  Date.now(),
-                  driver,
-                );
-              })),
+          // The full independent fee cap was already journaled atomically with
+          // proof exposure; the driver's later check must not debit it twice.
+          advanceApprovedFee: async () => undefined,
           onProgress,
         });
       } finally {
@@ -2201,6 +2339,7 @@ export function PrivateBalanceProvider({
   }, [
     accountId,
     asset.decimals,
+    asset.contractId,
     cancelAction,
     manifest,
     network,
@@ -2424,6 +2563,8 @@ export function PrivateBalanceProvider({
     signPrivateRelayJob,
     submitPrivateRelayJob,
     prepareChainedSend,
+    prepareRelayChainedSend,
+    submitRelayChainedSend,
     submitChainedSend,
     onIncomingPrivatePayment,
     takeoverLeadership,
@@ -2444,6 +2585,7 @@ export function PrivateBalanceProvider({
     optIn,
     prepareAction,
     prepareChainedSend,
+    prepareRelayChainedSend,
     prepareStealthSweep,
     preparePrivateRelayJob,
     refreshSync,
@@ -2465,6 +2607,7 @@ export function PrivateBalanceProvider({
     signPrivateRelayJob,
     submitAction,
     submitChainedSend,
+    submitRelayChainedSend,
     submitPrivateRelayJob,
     submitStealthSweep,
     takeoverLeadership,

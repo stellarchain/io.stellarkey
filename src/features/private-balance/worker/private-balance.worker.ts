@@ -358,6 +358,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           reservedNoteIds: prepared.reservedNoteIds,
           inputValue: prepared.inputValue,
           changeValue: prepared.changeValue,
+          recipientOutputCommitment: prepared.recipientOutputCommitment,
           anchorExpiresAtLedger: prepared.anchorExpiresAtLedger,
         };
         self.postMessage(resp);

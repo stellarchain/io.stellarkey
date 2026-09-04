@@ -122,6 +122,7 @@ export type WorkerResponse =
       reservedNoteIds: string[];
       inputValue: string;
       changeValue: string;
+      recipientOutputCommitment?: string;
       anchorExpiresAtLedger: number;
     })
   | (WorkerMessage & {

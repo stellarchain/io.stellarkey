@@ -10,6 +10,7 @@ import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import type { PrivatePendingAction, ShieldedActivityRecord } from '../runtime/types';
 import { PrivateActivityDetails, type PrivateActivitySelection } from './PrivateActivityDetails';
 import { isConfirmingPendingAction, isInternalPendingAction } from './PrivateBalanceStatusLine';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 
 export function activityLabel(activity: ShieldedActivityRecord): string {
   return activityKindLabel(activity.actionKind, activity.direction);
@@ -43,9 +44,7 @@ export function PrivateActivityList({
     () => [...activities].sort((left, right) => right.actionIndex - left.actionIndex),
     [activities],
   );
-  // Only actions actually confirming on the network appear as rows: a merely
-  // prepared/reviewed action (its review screen still open, or abandoned) is
-  // not an in-flight payment.
+  // Unsigned shared spend proofs can execute in a different envelope too.
   const confirmingPending = useMemo(
     () => pendingActions.filter(isConfirmingPendingAction),
     [pendingActions],
@@ -125,7 +124,7 @@ export function PrivateActivityList({
               <span className="block text-[13.5px] font-semibold text-white">
                 {internal ? 'Preparing balance…' : PENDING_LABELS[action.kind]}
               </span>
-              <span className="block text-[11.5px] text-neutral-500">Confirming…</span>
+              <span className="block text-[11.5px] text-neutral-500">{hasExposedPrivateSpend(action) && ['prepared', 'reviewed'].includes(action.status) ? 'Status unknown · inputs reserved' : 'Confirming…'}</span>
             </span>
             {!internal && action.amountStroops ? (
               <span className={`shrink-0 text-[13px] font-semibold ${privacyMode ? 'text-neutral-500' : 'text-neutral-300'}`}>

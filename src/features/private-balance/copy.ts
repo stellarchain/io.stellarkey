@@ -30,6 +30,13 @@ interface ErrorRule {
  */
 const ERROR_RULES: ErrorRule[] = [
   {
+    match: /status is unknown after proof sharing|previous private payment is unresolved/i,
+    humanize: () => ({
+      title: 'Payment status unknown',
+      body: 'A shared spend proof can still be submitted, even if no transaction was signed here. Cancelling or waiting for transaction expiry cannot revoke it. These inputs remain reserved until canonical reconciliation.',
+    }),
+  },
+  {
     match: /previous payment is still confirming/i,
     humanize: () => ({
       title: 'One moment',

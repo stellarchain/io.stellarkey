@@ -277,7 +277,7 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     now: () => 6,
   });
   assert.equal(missing.outcome, 'ambiguous');
-  assert.equal(missing.state.pendingActions[0].latestRpcStatus, 'NOT_FOUND');
+  assert.equal(missing.state.pendingActions[0].latestRpcStatus, 'UNAVAILABLE');
   assert.equal(missing.state.pendingActions[0].broadcastAttempts, 1);
   assert.equal(missing.state.notes[0].status, 'reserved');
 
@@ -290,9 +290,9 @@ test('private signing persists the exact envelope before an ambiguous broadcast'
     storageDriver: driver,
     now: () => 7,
   });
-  assert.equal(failed.outcome, 'release');
-  assert.equal(failed.state.pendingActions.length, 0);
-  assert.equal(failed.state.notes[0].status, 'unspent');
+  assert.equal(failed.outcome, 'ambiguous');
+  assert.equal(failed.state.pendingActions.length, 1);
+  assert.equal(failed.state.notes[0].status, 'reserved');
 });
 
 test('post-broadcast polling is a read-only trigger for canonical reconciliation', async () => {
@@ -591,7 +591,7 @@ async function persistedSignedFixture(submissionMode = 'direct') {
   return { context, storageKey, driver, fixture, pending };
 }
 
-test('persisted signed actions resume through broadcast and release after time-bound finality', async () => {
+test('persisted signed spends resume through broadcast but envelope expiry cannot revoke their proof', async () => {
   const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture();
   let sends = 0;
   const resumed = await resumeSignedPrivateBalanceActions({
@@ -658,9 +658,9 @@ test('persisted signed actions resume through broadcast and release after time-b
     storageDriver: driver,
     now: () => 8,
   });
-  assert.equal(recovered.outcome, 'release');
-  assert.equal(recovered.state.pendingActions.length, 0);
-  assert.equal(recovered.state.notes[0].status, 'unspent');
+  assert.equal(recovered.outcome, 'ambiguous');
+  assert.equal(recovered.state.pendingActions.length, 1);
+  assert.equal(recovered.state.notes[0].status, 'reserved');
 });
 
 test('relayed outcome polling waits for canonical reconciliation without transaction metadata', async () => {
@@ -714,8 +714,8 @@ for (const mode of ['relay', 'legacy']) {
       }),
     });
     assert.equal(lookups, 0);
-    assert.equal(expired.outcome, 'release');
-    assert.equal(expired.state.notes[0].status, 'unspent');
+    assert.equal(expired.outcome, 'ambiguous');
+    assert.equal(expired.state.notes[0].status, 'reserved');
   });
 }
 
@@ -739,7 +739,7 @@ for (const rpcStatus of ['PENDING', 'ERROR']) {
   });
 }
 
-test('legacy signed recovery derives missing expiry from the exact stored envelope', async () => {
+test('legacy signed spend recovery retains inputs even if stored envelope expiry is derivable', async () => {
   const { context, storageKey, driver, fixture, pending } = await persistedSignedFixture('legacy');
   const state = await loadPrivateBalanceState(context, storageKey, driver);
   const legacy = { ...state.pendingActions[0] };
@@ -753,7 +753,7 @@ test('legacy signed recovery derives missing expiry from the exact stored envelo
     scanCanonicalTranscript: async () => ({ actionFields: [], nullifiers: [],
       headCloseTimeSeconds: fixture.review.expiresAt + PRIVATE_ACTION_EXPIRY_MARGIN_SECONDS + 1 }),
   });
-  assert.equal(recovered.outcome, 'release');
+  assert.equal(recovered.outcome, 'ambiguous');
 });
 
 test('prepare refuses while a previous payment is still confirming', async () => {

@@ -129,6 +129,7 @@ export function WithdrawPrivate({
           progress={flow.progress}
           relayProgress={flow.relayProgress}
           relayQuotes={flow.relayQuotes}
+          disclosure={flow.disclosure}
           preparing={flow.preparing}
           working={flow.working}
           error={flow.error}

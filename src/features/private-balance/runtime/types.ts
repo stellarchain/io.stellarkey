@@ -1,3 +1,5 @@
+import type { PrivateRelayChainJournal } from './relay-chain-policy';
+
 export interface DeploymentContext {
   protocolVersion: number;
   networkId: string;
@@ -85,6 +87,9 @@ export interface PrivatePendingAction {
   status: PendingActionStatus;
   /** Missing on legacy records: reconcile only; never infer a direct route. */
   submissionMode?: 'direct' | 'relay';
+  /** Persisted before any proof-bearing network call. Missing legacy spends are shared. */
+  proofExposure?: 'local' | 'shared';
+  directChainApprovalId?: string;
   reservedNoteIds: string[];
   actionField: string;
   nullifiers: string[];
@@ -113,6 +118,17 @@ export interface PrivatePendingAction {
   journalId?: string;
   recipientFingerprint?: string;
   memoHex?: string;
+  relayChain?: {
+    approvalId: string;
+    step: number;
+    feeAtomic: string;
+    quoteId: string;
+    requestId: string;
+    sourceAccount: string;
+    recipientAddress: string;
+    recipientOutputCommitment: string;
+    expiresAtSeconds: number;
+  };
   createdAt: number;
   updatedAt: number;
 }
@@ -120,6 +136,8 @@ export interface PrivatePendingAction {
 export interface PrivateBuildReservation {
   id: string;
   kind: 'deposit' | 'transfer' | 'withdraw';
+  /** New reservations never leave the device; legacy reservations are uncertain. */
+  proofExposure?: 'local';
   assetContractId: string; // Canonical SAC contract address
   reservedNoteIds: string[];
   createdAt: number;
@@ -158,4 +176,5 @@ export interface PrivateBalanceDurableState {
   pendingActions: PrivatePendingAction[];
   recentPrivateRecipients?: PrivateRecentRecipient[];
   chainedApproval?: PrivateChainedApproval; // One-shot multi-step send consent
+  relayChainedApproval?: PrivateRelayChainJournal;
 }
