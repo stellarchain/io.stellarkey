@@ -48,6 +48,7 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(availability, /Finding peers…/);
   assert.match(availability, /Comparing fees…/);
   assert.match(availability, /First offer received/);
+  assert.match(availability, /catch \(cause: unknown\)[\s\S]{0,180}setResult\(null\)/);
   assert.match(availability, /excludePeerAccounts.*publicAddress/s);
   assert.match(availability, /AbortController/);
   assert.match(availability, /aria-live="polite"/);
