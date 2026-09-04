@@ -149,6 +149,8 @@ export interface PrivateBalanceDurableState {
   lastValidatedManifestHash: string;
   account: PrivateAccountState;
   privateAddress?: string; // Derived at opt-in so Receive works without a sync
+  /** Encrypted local issuance history; never sent to discovery or the worker. */
+  issuedAddressDiversifiers?: string[];
   notes: ShieldedNoteRecord[];
   activities: ShieldedActivityRecord[];
   checkpoint: ShieldedCheckpoint | null;

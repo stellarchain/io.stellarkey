@@ -24,6 +24,7 @@ const PRIVATE_ADDRESS_PATTERN = /^(?:tskpay_[1-9A-HJ-NP-Za-km-z]{121}|skpay_[1-9
 // newly derived codes use a 128-bit SHA-256 prefix.
 const RECIPIENT_FINGERPRINT_PATTERN = /^(?:[0-9A-F]{4} ){1,7}[0-9A-F]{4}$/;
 export const MAX_RECENT_PRIVATE_RECIPIENTS = 5;
+export const MAX_ISSUED_PRIVATE_DIVERSIFIERS = 65_536;
 export const PRIVATE_BUILD_RESERVATION_TTL_MS = 10 * 60_000;
 // Must exceed the 15-minute chained approval window so a live chain's
 // prepared or reviewed step is never swept out from under its driver.
@@ -76,16 +77,17 @@ function hexBytes(value: string): Uint8Array {
 async function assertPrivateAddress(
   address: string,
   context: PrivateStorageContext,
-): Promise<void> {
+): Promise<string> {
   if (!PRIVATE_ADDRESS_PATTERN.test(address)) {
     throw new Error('Private Balance address is invalid.');
   }
   try {
-    await decodePrivateAddress(
+    const decoded = await decodePrivateAddress(
       address,
       address.startsWith('tskpay_') ? 'tskpay_' : 'skpay_',
       hexBytes(context.deploymentBindingHash),
     );
+    return Array.from(decoded.diversifier, byte => byte.toString(16).padStart(2, '0')).join('');
   } catch (error) {
     throw new Error('Private Balance address is invalid.', { cause: error });
   }
@@ -410,6 +412,12 @@ function isDurableState(
     !(state.account.lastVerifiedActionIndex === null || isSafeIndex(state.account.lastVerifiedActionIndex)) ||
     !isTimestamp(state.account.updatedAt) ||
     !(state.privateAddress === undefined || PRIVATE_ADDRESS_PATTERN.test(state.privateAddress)) ||
+    !(state.issuedAddressDiversifiers === undefined || (
+      Array.isArray(state.issuedAddressDiversifiers) &&
+      state.issuedAddressDiversifiers.length <= MAX_ISSUED_PRIVATE_DIVERSIFIERS &&
+      state.issuedAddressDiversifiers.every(value => isHex(value, 4)) &&
+      new Set(state.issuedAddressDiversifiers).size === state.issuedAddressDiversifiers.length
+    )) ||
     !(state.recentPrivateRecipients === undefined || (
       Array.isArray(state.recentPrivateRecipients) &&
       state.recentPrivateRecipients.length <= MAX_RECENT_PRIVATE_RECIPIENTS &&
@@ -485,6 +493,46 @@ export function createEmptyPrivateBalanceState(
     checkpoint: null,
     buildReservations: [],
     pendingActions: [],
+  };
+}
+
+/** Rebuild chain-derived state without forgetting locally issued addresses. */
+export function createPrivateBalanceVerificationReset(
+  current: PrivateBalanceDurableState,
+  manifestHash: string,
+  now = Date.now(),
+): PrivateBalanceDurableState {
+  if (current.pendingActions.length > 0 || current.buildReservations.length > 0) {
+    throw new Error('Reconcile or cancel every pending Private Balance action before full verification.');
+  }
+  const empty = createEmptyPrivateBalanceState(manifestHash, now);
+  return {
+    ...empty,
+    revision: current.revision + 1,
+    account: { ...empty.account, setupState: 'ready' },
+    ...(current.privateAddress ? { privateAddress: current.privateAddress } : {}),
+    ...(current.issuedAddressDiversifiers
+      ? { issuedAddressDiversifiers: [...current.issuedAddressDiversifiers] }
+      : {}),
+  };
+}
+
+/** A failed chain check must not roll back newer local address issuance. */
+export function createPrivateBalanceVerificationRollback(
+  authenticated: PrivateBalanceDurableState,
+  latest: PrivateBalanceDurableState,
+): PrivateBalanceDurableState {
+  if (latest.pendingActions.length > 0 || latest.buildReservations.length > 0) {
+    throw new Error('Cannot roll back private verification over pending actions.');
+  }
+  return {
+    ...authenticated,
+    revision: latest.revision + 1,
+    privateAddress: latest.privateAddress ?? authenticated.privateAddress,
+    issuedAddressDiversifiers: [...new Set([
+      ...authenticated.issuedAddressDiversifiers ?? [],
+      ...latest.issuedAddressDiversifiers ?? [],
+    ])],
   };
 }
 
@@ -675,16 +723,26 @@ export async function recordPrivateBalanceAddress(
   privateAddress: string,
   candidate?: PrivateRecordDriver,
 ): Promise<PrivateBalanceDurableState> {
-  await assertPrivateAddress(privateAddress, context);
+  const diversifier = await assertPrivateAddress(privateAddress, context);
   const current = await loadPrivateBalanceState(context, key, candidate);
   if (!current || current.revision !== expectedRevision) {
     throw new Error('Private Balance state changed in another wallet session.');
   }
   if (current.privateAddress === privateAddress) return current;
+  const issued = new Set(current.issuedAddressDiversifiers ?? []);
+  if (current.privateAddress) issued.add(await assertPrivateAddress(current.privateAddress, context));
+  if (issued.has(diversifier)) {
+    throw new Error('This private address diversifier was already issued. Sync and try creating a new address again.');
+  }
+  if (issued.size >= MAX_ISSUED_PRIVATE_DIVERSIFIERS) {
+    throw new Error('Private address rotation reached its local safety limit. Existing addresses still receive payments.');
+  }
+  issued.add(diversifier);
   const next: PrivateBalanceDurableState = {
     ...current,
     revision: current.revision + 1,
     privateAddress,
+    issuedAddressDiversifiers: [...issued],
   };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;

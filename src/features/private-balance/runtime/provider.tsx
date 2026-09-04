@@ -80,6 +80,8 @@ import {
   commitPrivateBalanceState,
   clearShieldedState,
   createEmptyPrivateBalanceState,
+  createPrivateBalanceVerificationReset,
+  createPrivateBalanceVerificationRollback,
   loadPrivateBalanceState,
   recordPrivateBalanceAddress,
   recordPrivateRecentRecipient,
@@ -2190,15 +2192,7 @@ export function PrivateBalanceProvider({
           throw new Error('Reconcile or cancel every pending Private Balance action before full verification.');
         }
         lastAuthenticatedState = current;
-        const empty = createEmptyPrivateBalanceState(manifestHash);
-        const reset: PrivateBalanceDurableState = {
-          ...empty,
-          revision: current.revision + 1,
-          account: {
-            ...empty.account,
-            setupState: 'ready',
-          },
-        };
+        const reset = createPrivateBalanceVerificationReset(current, manifestHash);
         await commitPrivateBalanceState(
           storageScope,
           storageKey,
@@ -2214,16 +2208,13 @@ export function PrivateBalanceProvider({
       if (isRpcAuthenticationError(error) && lastAuthenticatedState) {
         // Full verification temporarily replaces the durable scan cursor. If
         // the two public network views cannot authenticate the restart, put
-        // the exact prior encrypted state back instead of presenting zero as
-        // a newly verified balance.
+        // prior chain-derived state back instead of presenting zero as newly
+        // verified. New local address issuance must survive this rollback.
         try {
           await withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
             const latest = await loadPrivateBalanceState(storageScope, storageKey, driver);
             if (!latest || !lastAuthenticatedState) return;
-            const restored: PrivateBalanceDurableState = {
-              ...lastAuthenticatedState,
-              revision: latest.revision + 1,
-            };
+            const restored = createPrivateBalanceVerificationRollback(lastAuthenticatedState, latest);
             await commitPrivateBalanceState(
               storageScope,
               storageKey,

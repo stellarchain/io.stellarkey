@@ -625,7 +625,7 @@ test('the private address and recent recipients persist under schema validation'
   );
   const address = index => encodePrivateAddress({
     deploymentTag: derivePrivateAddressDeploymentTag(fromHex(context.deploymentBindingHash)),
-    diversifier: Uint8Array.of(0, 0, 0, index),
+    diversifier: Uint8Array.of(index >>> 24, index >>> 16 & 255, index >>> 8 & 255, index & 255),
     ownerCommitment: fromHex('13ebf289ee03020bb0999342c395033c6326f328e6f998b8826ae8573fe7814c'),
     hpkePublicKey: fromHex('803cffb201ff35efdfe4341ca5ffd9dfdd334adafa26feb85b14e1e0f73ef634'),
   }, 'tskpay_');
@@ -687,4 +687,44 @@ test('the private address and recent recipients persist under schema validation'
     lastUsedAt: 99,
   });
   assert.deepEqual(await loadPrivateBalanceState(context, key, driver), repeated);
+  const rotated = await recordPrivateBalanceAddress(context, key, repeated.revision, address(1), driver);
+  const twice = await recordPrivateBalanceAddress(context, key, rotated.revision, address(2), driver);
+  await assert.rejects(
+    recordPrivateBalanceAddress(context, key, twice.revision, address(0), driver),
+    /already issued/i,
+  );
+  assert.deepEqual(twice.issuedAddressDiversifiers, ['00000000', '00000001', '00000002']);
+  assert.equal((await loadPrivateBalanceState(context, key, driver)).privateAddress, address(2));
+  assert.equal((await recordPrivateBalanceAddress(context, key, twice.revision, address(2), driver)).revision, twice.revision);
+  const reset = storage.createPrivateBalanceVerificationReset(twice, manifestHash, 100);
+  assert.equal(reset.privateAddress, address(2));
+  assert.deepEqual(reset.issuedAddressDiversifiers, twice.issuedAddressDiversifiers);
+  assert.deepEqual(reset.notes, []);
+  await commitPrivateBalanceState(context, key, reset, twice.revision, driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, reset.revision, address(0), driver), /already issued/i);
+  // A legacy record remembers at least its current address when first rotated.
+  const { issuedAddressDiversifiers: _issued, ...legacy } = reset;
+  await commitPrivateBalanceState(context, key, { ...legacy, revision: reset.revision + 1 }, reset.revision, driver);
+  const afterLegacy = await recordPrivateBalanceAddress(context, key, reset.revision + 1, address(3), driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, afterLegacy.revision, address(2), driver), /already issued/i);
+  const rollback = storage.createPrivateBalanceVerificationRollback(reset, afterLegacy);
+  assert.equal(rollback.privateAddress, address(3));
+  assert.deepEqual(rollback.issuedAddressDiversifiers, ['00000000', '00000001', '00000002', '00000003']);
+  assert.equal(rollback.revision, afterLegacy.revision + 1);
+  assert.throws(() => storage.createPrivateBalanceVerificationRollback(reset, {
+    ...afterLegacy, buildReservations: [{ id: 'in-flight' }],
+  }), /pending/i);
+  for (const issuedAddressDiversifiers of [['bad'], ['00000000', '00000000'],
+    Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS + 1 }, (_, index) => index.toString(16).padStart(8, '0'))]) {
+    await assert.rejects(commitPrivateBalanceState(context, key, {
+      ...afterLegacy, revision: afterLegacy.revision + 1, issuedAddressDiversifiers,
+    }, afterLegacy.revision, driver), /schema/i);
+  }
+  const atLimit = {
+    ...afterLegacy, revision: afterLegacy.revision + 1,
+    issuedAddressDiversifiers: Array.from({ length: storage.MAX_ISSUED_PRIVATE_DIVERSIFIERS }, (_, index) => index.toString(16).padStart(8, '0')),
+  };
+  await commitPrivateBalanceState(context, key, atLimit, afterLegacy.revision, driver);
+  await assert.rejects(recordPrivateBalanceAddress(context, key, atLimit.revision, address(65_536), driver), /safety limit/i);
+  assert.equal((await loadPrivateBalanceState(context, key, driver)).privateAddress, address(3));
 });
