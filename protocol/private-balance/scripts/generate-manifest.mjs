@@ -41,11 +41,15 @@ function contractSourceCommit() {
     return override;
   }
   const commit = execFileSync('git', ['log', '-1', '--format=%H', '--',
-    'protocol/private-balance/contracts/pool',
-    'protocol/private-balance/crates/protocol',
-    'protocol/private-balance/crates/verifier',
+    'protocol/private-balance/Cargo.toml',
     'protocol/private-balance/Cargo.lock',
     'protocol/private-balance/rust-toolchain.toml',
+    'protocol/private-balance/contracts/pool/Cargo.toml',
+    'protocol/private-balance/contracts/pool/src',
+    'protocol/private-balance/crates/protocol/Cargo.toml',
+    'protocol/private-balance/crates/protocol/src',
+    'protocol/private-balance/crates/verifier/Cargo.toml',
+    'protocol/private-balance/crates/verifier/src',
   ], { cwd: process.cwd(), encoding: 'utf8' }).trim();
   if (!/^[0-9a-f]{40}$/.test(commit)) {
     throw new Error('Unable to derive the Private Balance contract source commit.');
@@ -256,7 +260,7 @@ const baseManifest = {
     },
   ],
   stealthAnnouncerAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-  witnessRpcUrl: 'https://rpc.ankr.com/stellar_testnet_soroban',
+  witnessRpcUrl: 'https://soroban-rpc.testnet.stellar.gateway.fm',
   deploymentCheckpoint: {
     ledger: 0,
     hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',

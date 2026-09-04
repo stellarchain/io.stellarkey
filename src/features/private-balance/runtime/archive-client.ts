@@ -61,6 +61,86 @@ interface ArchiveRpc {
   }>;
 }
 
+interface PrivateContractInvocation {
+  result: unknown;
+  isReadCall: boolean;
+}
+
+interface PrivateContractClient {
+  [method: string]: unknown;
+}
+
+interface PrivateContractClientFactoryInput {
+  contractId: string;
+  rpcUrl: string;
+  networkPassphrase: string;
+  server: ArchiveRpc;
+}
+
+type PrivateContractClientFactory = (
+  input: PrivateContractClientFactoryInput,
+) => Promise<PrivateContractClient>;
+
+/**
+ * Loading an untyped SDK contract client fetches the contract instance and
+ * Wasm specification. Reusing that client avoids repeating those public RPC
+ * reads for every head, registry, and token-metadata method while preserving
+ * a fresh simulation for every actual call.
+ */
+export function createCachedPrivateContractQuery(input: {
+  rpcUrl: string;
+  server: ArchiveRpc;
+  createClient?: PrivateContractClientFactory;
+}): ArchiveRpc['queryContract'] {
+  const clients = new Map<string, Promise<PrivateContractClient>>();
+  const createClient = input.createClient ?? (async options => (
+    contract.Client.from({
+      contractId: options.contractId,
+      rpcUrl: options.rpcUrl,
+      networkPassphrase: options.networkPassphrase,
+      server: options.server as SorobanRpc.Server,
+    }) as Promise<PrivateContractClient>
+  ));
+
+  return async <T>(
+    contractId: string,
+    method: string,
+    args?: Record<string, unknown>,
+    networkPassphrase?: string,
+  ): Promise<{ result: T; isReadCall: boolean }> => {
+    if (!networkPassphrase) {
+      throw new Error('Private Balance contract query requires a network passphrase');
+    }
+    const cacheKey = `${networkPassphrase}\u0000${contractId}`;
+    let clientPromise = clients.get(cacheKey);
+    if (!clientPromise) {
+      clientPromise = createClient({
+        contractId,
+        rpcUrl: input.rpcUrl,
+        networkPassphrase,
+        server: input.server,
+      });
+      clients.set(cacheKey, clientPromise);
+    }
+    let client: PrivateContractClient;
+    try {
+      client = await clientPromise;
+    } catch (error) {
+      if (clients.get(cacheKey) === clientPromise) clients.delete(cacheKey);
+      throw error;
+    }
+    const invoke = client[method];
+    if (typeof invoke !== 'function') {
+      throw new Error(`Private Balance contract has no method '${method}'`);
+    }
+    const response = await invoke.call(client, args ?? {}) as PrivateContractInvocation;
+    if (!response || typeof response.isReadCall !== 'boolean') {
+      throw new Error(`Private Balance contract method '${method}' returned an invalid response`);
+    }
+    return response as { result: T; isReadCall: boolean };
+  };
+}
+
 interface PoolConfigState {
   protocolVersion: number;
   networkId: Uint8Array;
@@ -363,6 +443,7 @@ export function deriveKnownRootLedgerKey(
 export class PrivateBalanceArchiveClient {
   private readonly server: ArchiveRpc;
   private readonly manifest: ArchiveManifest;
+  private readonly queryContract: ArchiveRpc['queryContract'];
 
   constructor(
     rpcUrl: string,
@@ -377,6 +458,12 @@ export class PrivateBalanceArchiveClient {
     }
     this.manifest = manifest;
     this.server = server ?? new SorobanRpc.Server(endpoint.toString(), { allowHttp: localHttp });
+    this.queryContract = server && typeof server.queryContract === 'function'
+      ? server.queryContract.bind(server)
+      : createCachedPrivateContractQuery({
+          rpcUrl: endpoint.toString(),
+          server: this.server,
+        });
   }
 
   public async readNetworkPassphrase(): Promise<string> {
@@ -420,19 +507,19 @@ export class PrivateBalanceArchiveClient {
   public async readHead(): Promise<ArchiveHeadState> {
     const [latest, configCall, metaCall, treeCall] = await Promise.all([
       this.server.getLatestLedger(),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'config',
         undefined,
         this.manifest.networkPassphrase,
       ),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'archive_meta',
         undefined,
         this.manifest.networkPassphrase,
       ),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'tree_state',
         undefined,
@@ -450,7 +537,7 @@ export class PrivateBalanceArchiveClient {
   }
 
   public async readDepositsPaused(): Promise<boolean> {
-    const call = await this.server.queryContract<unknown>(
+    const call = await this.queryContract<unknown>(
       this.manifest.poolContractId,
       'deposits_paused',
       undefined,
@@ -464,13 +551,13 @@ export class PrivateBalanceArchiveClient {
 
   public async readAssetRegistry(): Promise<PrivateAssetRegistryState> {
     const [adminCall, countCall] = await Promise.all([
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'asset_admin',
         undefined,
         this.manifest.networkPassphrase,
       ),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'asset_count',
         undefined,
@@ -489,7 +576,7 @@ export class PrivateBalanceArchiveClient {
       throw new Error('Private asset registry exceeds the client safety limit');
     }
     const calls = await Promise.all(Array.from({ length: count }, (_, index) => (
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         this.manifest.poolContractId,
         'asset',
         { index },
@@ -514,19 +601,19 @@ export class PrivateBalanceArchiveClient {
       throw new Error('Private Balance asset contract is invalid');
     }
     const [nameCall, symbolCall, decimalsCall] = await Promise.all([
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         contractId,
         'name',
         undefined,
         this.manifest.networkPassphrase,
       ),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         contractId,
         'symbol',
         undefined,
         this.manifest.networkPassphrase,
       ),
-      this.server.queryContract<unknown>(
+      this.queryContract<unknown>(
         contractId,
         'decimals',
         undefined,
@@ -555,7 +642,7 @@ export class PrivateBalanceArchiveClient {
     if (!StrKey.isValidContract(assetContractId)) {
       throw new Error('Private Balance asset contract is invalid');
     }
-    const call = await this.server.queryContract<unknown>(
+    const call = await this.queryContract<unknown>(
       assetContractId,
       'balance',
       { id: accountPublicKey },

@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept verified Private Payments asset readiness stable across React bootstrap restarts and reused loaded contract specifications across corroborated reads, preventing lock/unlock from reverting ready balances while reducing setup RPC bursts.
 - Isolated local Next.js development output from production builds so verification cannot strand an open test session on stale UI chunks.
 - Kept Private Payments setup on the modal's neutral surface and automatically dismissed it after the completed progress state, removing the tinted panel and mandatory final acknowledgement.
 - Reduced first-time Private Payments setup latency by reading independent historical ledger timestamps with bounded RPC concurrency while preserving both authenticated head checks.
@@ -91,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Pinned Gateway as the independent Testnet witness after same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
 - Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.
 - Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool and browser peer relay in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.

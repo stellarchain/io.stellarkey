@@ -5,6 +5,7 @@ import { computeAssetField, computeContextField, computeContextHash } from '@ste
 import {
   ArchiveRecordUnavailableError,
   PrivateBalanceArchiveClient,
+  createCachedPrivateContractQuery,
   readCorroboratedPrivateAssetRegistry,
   readCorroboratedPrivateAssetTokenMetadata,
 } from '../src/features/private-balance/runtime/archive-client.ts';
@@ -22,6 +23,52 @@ const contextHash = computeContextHash(
 );
 const bytes = (value, length = 32) => new Uint8Array(length).fill(value);
 const account = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
+
+test('live contract reads reuse one loaded contract client per contract and network', async () => {
+  let clientsCreated = 0;
+  const calls = [];
+  const query = createCachedPrivateContractQuery({
+    rpcUrl: 'https://rpc.example',
+    server: {},
+    async createClient({ contractId, networkPassphrase }) {
+      clientsCreated += 1;
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return {
+        async config(args) {
+          calls.push({ contractId, networkPassphrase, method: 'config', args });
+          return { result: 'config', isReadCall: true };
+        },
+        async tree_state(args) {
+          calls.push({ contractId, networkPassphrase, method: 'tree_state', args });
+          return { result: 'tree', isReadCall: true };
+        },
+      };
+    },
+  });
+
+  const [config, tree] = await Promise.all([
+    query(poolContractId, 'config', undefined, manifest.networkPassphrase),
+    query(poolContractId, 'tree_state', undefined, manifest.networkPassphrase),
+  ]);
+
+  assert.equal(clientsCreated, 1);
+  assert.deepEqual(config, { result: 'config', isReadCall: true });
+  assert.deepEqual(tree, { result: 'tree', isReadCall: true });
+  assert.deepEqual(calls, [
+    {
+      contractId: poolContractId,
+      networkPassphrase: manifest.networkPassphrase,
+      method: 'config',
+      args: {},
+    },
+    {
+      contractId: poolContractId,
+      networkPassphrase: manifest.networkPassphrase,
+      method: 'tree_state',
+      args: {},
+    },
+  ]);
+});
 
 const manifest = {
   protocolVersion: 1,

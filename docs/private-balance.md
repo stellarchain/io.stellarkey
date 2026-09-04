@@ -376,8 +376,8 @@ recover old history at that time.
 
 The wallet uses a primary RPC selected by the user and a different-origin RPC
 pinned by the deployment manifest. The shipped default pairs SDF's
-`https://soroban-testnet.stellar.org` primary with Ankr's
-`https://rpc.ankr.com/stellar_testnet_soroban` witness. The runtime verifies
+`https://soroban-testnet.stellar.org` primary with Gateway's
+`https://soroban-rpc.testnet.stellar.gateway.fm` witness. The runtime verifies
 different URL origins, network and ledger agreement; it cannot prove operator
 independence if a user selects a custom primary under common control with the
 witness. A second-provider witness check is mandatory when
