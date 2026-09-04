@@ -21,6 +21,7 @@ import { PrivateRelaySenderSession } from '../relay/session';
 import type {
   PrivateRelayPayout,
   PrivateRelayQuote,
+  PrivateRelayRequest,
   PrivateRelaySignedJob,
 } from '../relay/protocol';
 
@@ -36,6 +37,14 @@ export type PrivateSubmissionOutcome = 'broadcast' | 'ambiguous';
 export interface PrivateChainedReview {
   approval: PrivateChainedSendApproval;
   draft: PrivateChainedSendDraft;
+}
+
+interface PrivateRelayDiscovery {
+  session: PrivateRelaySenderSession;
+  request: PrivateRelayRequest;
+  quotes: PrivateRelayQuote[];
+  draft: Extract<PrivateActionDraft, { kind: 'transfer' | 'withdraw' }>;
+  assetIndex: number;
 }
 
 /**
@@ -69,11 +78,14 @@ export function usePrivateActionController(
     payout: PrivateRelayPayout;
     signed: PrivateRelaySignedJob | null;
   } | null>(null);
+  const relayDiscoveryRef = useRef<PrivateRelayDiscovery | null>(null);
+  const relaySelectionRef = useRef<AbortController | null>(null);
   const [review, setReview] = useState<PreparedPrivateActionReview | null>(null);
   const [chained, setChained] = useState<PrivateChainedReview | null>(null);
   const [chainProgress, setChainProgress] = useState<PrivateChainedSendProgress | null>(null);
   const [progress, setProgress] = useState<PrivateActionProgressStage | null>(null);
   const [relayProgress, setRelayProgress] = useState<PrivateRelayProgress | null>(null);
+  const [relayQuotes, setRelayQuotes] = useState<PrivateRelayQuote[]>([]);
   /** True while the background preparation runs under the review screen. */
   const [preparing, setPreparing] = useState(false);
   /** True while a confirmed action is signing/broadcasting. */
@@ -93,6 +105,8 @@ export function usePrivateActionController(
   ) => {
     const controller = new AbortController();
     let pendingRelaySession: PrivateRelaySenderSession | null = null;
+    relayDiscoveryRef.current?.session.close();
+    relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
     relayRef.current = null;
     abortRef.current = controller;
@@ -104,9 +118,10 @@ export function usePrivateActionController(
     setSubmission(null);
     setSubmittedHash(null);
     setChained(null);
+    setRelayQuotes([]);
     setProgress('checking-chain');
     try {
-      let preparedDraft = draft;
+      const preparedDraft = draft;
       if (submissionMode === 'relay') {
         if (draft.kind !== 'transfer' && draft.kind !== 'withdraw') {
           throw new Error('Privacy relay is available for private sends and withdrawals only.');
@@ -123,44 +138,20 @@ export function usePrivateActionController(
           poolContractId: deployment.poolContractId,
           actionKind: draft.kind,
         }, controller.signal);
-        const quote = quotes[0];
-        if (!quote) {
+        if (quotes.length === 0) {
           session.close();
           throw new Error('No privacy relay peer answered. Try again or explicitly choose direct submission.');
         }
-        let diversifier: Uint8Array;
-        if (draft.kind === 'transfer') {
-          const prefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
-          diversifier = (await decodePrivateAddress(draft.recipientAddress, prefix)).diversifier;
-        } else {
-          do {
-            diversifier = globalThis.crypto.getRandomValues(new Uint8Array(4));
-          } while (diversifier.every(byte => byte === 0));
-        }
-        const diversifierHex = Array.from(
-          diversifier,
-          byte => byte.toString(16).padStart(2, '0'),
-        ).join('');
-        setRelayProgress('agreeing-fee');
-        const payout = await session.selectQuote({
+        relayDiscoveryRef.current = {
+          session,
           request,
-          quote,
+          quotes,
+          draft,
           assetIndex: asset.index,
-          actionDiversifier: diversifierHex,
-        }, controller.signal);
-        relayRef.current = { session, quote, payout, signed: null };
-        pendingRelaySession = null;
-        preparedDraft = {
-          ...draft,
-          relay: {
-            feeAtomic: payout.feeAtomic,
-            privateFeeAddress: payout.privateFeeAddress,
-            sourceAccount: payout.peerAccount,
-            requestId: payout.requestId,
-            quoteId: payout.quoteId,
-            peerPublicKey: quote.peerPubkey,
-          },
         };
+        pendingRelaySession = null;
+        setRelayQuotes(quotes);
+        return;
       }
       setRelayProgress(null);
       const prepared = await prepareAction(
@@ -214,16 +205,118 @@ export function usePrivateActionController(
       setProgress(null);
       setRelayProgress(null);
     }
-  }, [asset, cancelAction, deployment.networkId, deployment.poolContractId, networkLabel, prepareAction, prepareChainedSend]);
+  }, [asset, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend]);
+
+  const selectRelayQuote = useCallback(async (quoteId: string) => {
+    if (relaySelectionRef.current) return;
+    const discovery = relayDiscoveryRef.current;
+    const quote = discovery?.quotes.find(candidate => candidate.quoteId === quoteId);
+    if (!discovery || !quote) {
+      setError('That privacy relay offer is no longer available. Find peers again.');
+      setErrorCause(null);
+      return;
+    }
+    if (!asset || asset.index !== discovery.assetIndex) {
+      discovery.session.close();
+      relayDiscoveryRef.current = null;
+      setRelayQuotes([]);
+      setError('The selected private asset changed. Review the payment again.');
+      setErrorCause(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    relaySelectionRef.current = controller;
+    abortRef.current?.abort();
+    abortRef.current = controller;
+    setPreparing(true);
+    setRelayProgress('agreeing-fee');
+    setProgress('checking-chain');
+    setError(null);
+    setErrorCause(null);
+    try {
+      let diversifier: Uint8Array;
+      if (discovery.draft.kind === 'transfer') {
+        const prefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
+        diversifier = (await decodePrivateAddress(
+          discovery.draft.recipientAddress,
+          prefix,
+        )).diversifier;
+      } else {
+        do {
+          diversifier = globalThis.crypto.getRandomValues(new Uint8Array(4));
+        } while (diversifier.every(byte => byte === 0));
+      }
+      const actionDiversifier = Array.from(
+        diversifier,
+        byte => byte.toString(16).padStart(2, '0'),
+      ).join('');
+      const payout = await discovery.session.selectQuote({
+        request: discovery.request,
+        quote,
+        assetIndex: discovery.assetIndex,
+        actionDiversifier,
+      }, controller.signal);
+      if (controller.signal.aborted) {
+        discovery.session.close();
+        if (relayDiscoveryRef.current === discovery) relayDiscoveryRef.current = null;
+        setRelayQuotes([]);
+        return;
+      }
+
+      relayDiscoveryRef.current = null;
+      setRelayQuotes([]);
+      relayRef.current = { session: discovery.session, quote, payout, signed: null };
+      setRelayProgress(null);
+      const prepared = await prepareAction({
+        ...discovery.draft,
+        relay: {
+          feeAtomic: payout.feeAtomic,
+          privateFeeAddress: payout.privateFeeAddress,
+          sourceAccount: payout.peerAccount,
+          requestId: payout.requestId,
+          quoteId: payout.quoteId,
+          peerPublicKey: quote.peerPubkey,
+        },
+      }, stage => {
+        if (!controller.signal.aborted) setProgress(stage);
+      }, controller.signal);
+      if (controller.signal.aborted) {
+        void cancelAction(prepared.id).catch(() => undefined);
+        discovery.session.close();
+        if (relayRef.current?.session === discovery.session) relayRef.current = null;
+        return;
+      }
+      setReview(prepared);
+    } catch (cause: unknown) {
+      discovery.session.close();
+      if (relayDiscoveryRef.current === discovery) relayDiscoveryRef.current = null;
+      if (relayRef.current?.session === discovery.session) relayRef.current = null;
+      setRelayQuotes([]);
+      if (controller.signal.aborted) return;
+      triggerHaptic('error');
+      setError(cause instanceof Error ? cause.message : 'Private relay selection stopped safely.');
+      setErrorCause(cause instanceof Error ? cause : null);
+    } finally {
+      if (relaySelectionRef.current === controller) relaySelectionRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
+      setPreparing(false);
+      setProgress(null);
+      setRelayProgress(null);
+    }
+  }, [asset, cancelAction, networkLabel, prepareAction]);
 
   const cancelPrepared = useCallback(async () => {
     abortRef.current?.abort();
+    relayDiscoveryRef.current?.session.close();
+    relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
     relayRef.current = null;
     const current = review;
     setReview(null);
     setChained(null);
     setChainProgress(null);
+    setRelayQuotes([]);
     setError(null);
     setErrorCause(null);
     if (current && !submission) {
@@ -238,6 +331,8 @@ export function usePrivateActionController(
 
   const close = useCallback(() => {
     abortRef.current?.abort();
+    relayDiscoveryRef.current?.session.close();
+    relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
     relayRef.current = null;
     if (review && !submission) void cancelAction(review.id).catch(() => undefined);
@@ -346,6 +441,7 @@ export function usePrivateActionController(
     chainProgress,
     progress,
     relayProgress,
+    relayQuotes,
     preparing,
     working,
     error,
@@ -353,6 +449,7 @@ export function usePrivateActionController(
     submission,
     submittedHash,
     prepare,
+    selectRelayQuote,
     submit,
     cancelPrepared,
     close,
