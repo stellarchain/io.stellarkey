@@ -314,6 +314,22 @@ test('verified private assets publish before local-state probing can block the d
   assert.ok(storageProbe > initialPublish, 'local-state probing must not hide verified assets');
 });
 
+test('live private registry RPC reads wait for explicit private-payment intent', () => {
+  const boundary = readFileSync(
+    new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    boundary,
+    /requested\s*\?\s*loadLivePrivateBalanceRegistry\(loadedDeployments, network\)\s*:\s*loadedDeployments/,
+  );
+  assert.match(
+    boundary,
+    /publishAvailableDeployments,\s*registerAvailableAssets,\s*requested,\s*runtimeRequestVersion/,
+  );
+});
+
 test('private portfolio contains every configured asset with its exact cached checkpoint', async () => {
   const { buildPrivatePortfolioEntries } = await portfolioDomain();
   const checkpoint = (lastActionIndex, latestLedger) => ({ lastActionIndex, latestLedger });
