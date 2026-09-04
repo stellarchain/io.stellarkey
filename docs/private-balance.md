@@ -381,7 +381,10 @@ pinned by the deployment manifest. The shipped default pairs SDF's
 loaded contract specification to bound the public read burst, then verifies
 different URL origins, network and ledger agreement; it cannot prove operator
 independence if a user selects a custom primary under common control with the
-witness. A second-provider witness check is mandatory when
+witness. The browser-CORS and five-pass state-corroboration screening behind
+this choice is preserved in
+[`rpc-witness-validation.json`](../protocol/private-balance/results/rpc-witness-validation.json).
+A second-provider witness check is mandatory when
 there is no authenticated checkpoint, during seed recovery, and for an explicit
 full-history check. Routine witness checks are enabled by default but can be
 disabled in protocol settings. Seed recovery and a full history check always
@@ -581,11 +584,22 @@ configuration, registry contents, deposit-open state, and empty initial
 tree/archive head. It does not contain a deployment
 transaction hash or independently bind the on-chain executable to the recorded
 local Wasm hash. Contract deployment, both registry additions, and their
-readbacks succeeded against the public Testnet RPC. The complete browser payment
-suite is rerun as a separate release gate; no claim in this document treats a
-fixture readback as an end-to-end payment test. This is not an audit, ceremony,
-or real-value approval. A Stellar Testnet reset deletes this pool and requires a
-fresh redeploy, new evidence, and republished manifest hashes.
+readbacks succeeded against the public Testnet RPC.
+
+The official Testnet runner passed at source commit `866681d` against manifest
+`222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
+It passed nine desktop Chromium tests, including the complete two-wallet
+deposit, consolidation, private send, ambiguous-submission recovery,
+withdrawal, lock/unlock, encrypted-backup restore, local-data removal, and
+seed-only recovery lifecycle. It then passed four production browser smoke
+tests: desktop Firefox, desktop WebKit, iPhone WebKit emulation, and iPad WebKit
+emulation. The sanitized evidence is recorded in
+[`mvp-e2e.json`](../protocol/private-balance/results/mvp-e2e.json). iPhone and
+iPad emulation is not physical-device evidence, and real Android Chrome remains
+untested. No claim in this document treats fixture readback or browser emulation
+as an audit, ceremony, physical-device result, or real-value approval. A Stellar
+Testnet reset deletes this pool and requires a fresh redeploy, new evidence, and
+republished manifest hashes.
 
 The current proving key was created by a single-party setup. It passes
 `snarkjs zkey verify` against the repository's

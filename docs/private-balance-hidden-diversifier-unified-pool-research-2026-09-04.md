@@ -2,7 +2,8 @@
 
 **Date:** 2026-09-04
 
-**Status:** Research complete; production implementation not started
+**Status:** Research complete; the lane-role mitigation and governed
+asset-private pool are implemented in the Testnet development deployment
 
 **Scope:** Proposal 3 (remove cleartext diversifiers) and proposal 7 (unified
 multi-asset pool)
@@ -15,14 +16,16 @@ The measurements supporting this note are preserved in
 | Proposal | Decision | Reason |
 | --- | --- | --- |
 | Delete the four clear diversifier bytes | Reject | The scanner needs those bytes to derive the current diversified X25519 key before it can decrypt the note. Deleting them makes recovery circular. |
-| Match both lanes' clear diversifiers | Recommend as an interim mitigation | It removes the output-role fingerprint observed on testnet without changing the envelope, circuit, contract, ceremony, or seed recovery. It does not hide repeated use of a rotated address. |
+| Match every lane's clear diversifier | Implemented | All three output lanes use one action diversifier. This removes the observed output-role fingerprint without hiding repeat use of a receive address. |
 | Replace X25519 HPKE with diversified key agreement | Continue as a separately reviewed cryptographic change | It can hide the diversifier and preserve seed-only scanning, but it replaces the current standard HPKE construction and was materially slower in the screening benchmark. |
 | Shared tree while the asset remains public | Reject | It combines operational failure domains without providing meaningful cross-asset privacy. This remains the correct conclusion of ADR 0003. |
-| One immutable XLM/USDC pool with the transfer asset private | Recommend for a design and testnet prototype | This is materially different from the rejected design. Internal XLM and USDC actions can become indistinguishable while transparent boundaries remain honest about their unavoidable disclosure. |
+| One asset-private pool | Implemented with governed admission | The deployed Testnet replacement uses an append-only administrator-controlled registry with `Active` and `ExitOnly` states. Internal registered-asset transfers share one action set; transparent boundaries still reveal their asset. |
 
-The two protocol changes should not be coupled. Asset-private transfers are
-feasible with the current envelope. A new note-encryption construction should
-not block the unified-pool work.
+The two protocol changes were not coupled. Asset-private transfers use the
+reviewed current envelope, while full diversifier hiding remains deferred. The
+implemented registry deliberately supersedes this note's earlier immutable
+two-asset recommendation: entries can be admitted or moved to `ExitOnly`, but
+historical indices can never be deleted, replaced, or reindexed.
 
 ## 1. Cleartext diversifiers
 
@@ -96,14 +99,14 @@ X25519 public key. Anyone who sees two addresses could link them to the same
 wallet even if the chain could not. It trades an on-chain leak for an off-chain
 address-linkability regression.
 
-#### C. Give both lanes the same clear diversifier — recommended interim fix
+#### C. Give every lane the same clear diversifier — implemented mitigation
 
 For a transfer, derive the change or dummy output using the recipient's
 diversifier. For deposits and withdrawals, choose one action diversifier and use
-it for both lanes. Distinct wallets using the same diversifier still derive
+it for every output lane. Distinct wallets using the same diversifier still derive
 different owner and encryption keys because their account key material differs.
 
-This makes both output headers identical in shape and directly closes the lane
+This makes all output headers identical in shape and directly closes the lane
 classification observed above. It preserves standard X25519 HPKE, encrypted
 storage, and seed-only recovery. Reusing a rotated recipient address would still
 cluster whole actions carrying that diversifier, so this is a mitigation rather
@@ -181,7 +184,13 @@ notes that shielded-to-shielded activity does not transact that asset from the
 transparent ledger's perspective. Both demonstrate that the architecture is
 established rather than novel.
 
-### Recommended narrow architecture
+### Historical narrow architecture screened
+
+The following was the deliberately narrow candidate measured before
+implementation. It is retained to explain the experiment, not to describe the
+shipped contract. The later governed-registry requirement and ADR 0008 replaced
+its immutable two-asset allowlist while preserving its private-transfer asset
+sentinel and same-asset conservation model.
 
 Use one new immutable pool for exactly the supported testnet XLM and USDC SACs.
 Do not add a mutable guardian-curated token registry or arbitrary-asset entry
@@ -222,10 +231,12 @@ not enable a second private account.
 
 ### Circuit experiments
 
-The current compiled circuit has 14,574 constraints in a maximum 16,384-constraint
-Groth16 domain. Temporary research variants compiled as follows:
+At the time of this experiment, the two-output circuit had 14,574 constraints
+in a maximum 16,384-constraint Groth16 domain. Temporary research variants
+compiled as follows. The implemented three-output circuit now has 15,114
+constraints in that same domain.
 
-| Variant | Constraints | Remaining in current domain |
+| Historical experiment | Constraints | Remaining in domain |
 | --- | ---: | ---: |
 | Current depth 17, two outputs | 14,574 | 1,810 |
 | Hidden asset, depth 17, two outputs | 14,579 | 1,805 |
@@ -239,13 +250,11 @@ valid hidden-asset transfer and matching public-boundary deposit, while rejectin
 a nonzero public asset on an internal transfer, the wrong private asset, and a
 boundary/private asset mismatch.
 
-The third-output measurements reserve capacity for a possible private relayer
-fee note; they do not yet specify or validate that relay protocol. The current
-public `relayer_fee` path invokes the transferred asset's SAC and would reveal
-the asset of an otherwise private transfer. A private fee output would instead
-bind the fee into an opaque note, but it would normally bind a selected peer
-before proving and make failover require a new proof. That conflict must be
-resolved before combining peer relaying with asset-private transfers.
+The third-output measurements reserved capacity for a possible private relayer
+fee note. The subsequently implemented relay protocol resolved peer failover by
+committing a sender-chosen fee and allowing the submitting peer to receive that
+fee through an encrypted same-asset output, without publishing a relayer
+address in the action.
 
 The depth-17 three-output prototype remained in the same proving domain. On the
 same desktop environment, three measured runs after warm-up were:
@@ -258,7 +267,7 @@ same desktop environment, three measured runs after warm-up were:
 The median increase was about 1.4%. Peak memory was not measured reliably and
 the result is not a substitute for physical-phone browser testing.
 
-### Current testnet effect
+### Historical Testnet snapshot
 
 At ledger 4,490,577 the pools contained:
 
@@ -290,9 +299,13 @@ A third output also adds one 370-byte logical output package and a third tree
 leaf to every action—about 50% more output archive data before XDR overhead.
 That cost belongs to the relay/arity design, not to hidden assets themselves.
 
-### Gate for implementation
+### Historical implementation gate
 
-Proceed with a unified-pool design and testnet prototype only after:
+The research recommended proceeding only after the following checks. The
+Testnet implementation subsequently completed the specification, ADR,
+circuit/contract tests, vectors, manifest, and deployment steps; physical-phone
+measurements, a production ceremony, and independent review remain release
+gates rather than claims of this development deployment.
 
 - a new ADR explicitly supersedes ADR 0003 for the asset-private, immutable
   two-asset case;
@@ -313,19 +326,20 @@ Proceed with a unified-pool design and testnet prototype only after:
 - a fresh phase-2 ceremony and complete vectors/manifests are prepared after the
   R1CS is frozen.
 
-## Recommended order
+## Implemented outcome
 
-1. Implement the matched-lane-diversifier mitigation using the existing HPKE
-   format, after focused vectors and recovery tests.
-2. Write the asset-private two-asset ADR and implementation plan.
-3. Build the unified pool on testnet with two outputs first; treat a third relay
-   output as a separate decision because it changes archive growth and relay
-   failover.
-4. Benchmark the complete unified implementation on physical phones and with
-   real Soroban simulation data before accepting it.
-5. Pursue fully hidden diversifiers as a separate cryptographic workstream. Do
-   not ship the Ristretto feasibility code or a bespoke KEM without independent
-   review.
+1. The matched-diversifier mitigation is implemented across all three output
+   lanes with focused vectors and recovery tests.
+2. ADR 0008 supersedes ADR 0003 for a governed, append-only asset-private pool.
+3. The Testnet replacement uses three outputs because the optional peer relay
+   pays an encrypted same-asset fee note. Its measured archive/capacity cost is
+   accepted for the development deployment.
+4. Desktop and emulated-browser validation is recorded, but physical-phone
+   proving, scanning, memory, and real multi-peer relay measurements remain
+   release gates.
+5. Fully hidden diversifiers remain a separate cryptographic workstream. The
+   Ristretto feasibility code and any bespoke KEM remain unshipped pending
+   independent review.
 
 ## Primary references
 

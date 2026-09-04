@@ -50,6 +50,12 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   const noteCircuit = readSource('protocol/private-balance/circuits/circom/note.circom');
   const manifest = JSON.parse(readSource('public/protocol/private-balance/v1/manifest.json'));
   const evidence = JSON.parse(readSource('protocol/private-balance/results/review-validation.json'));
+  const browserEvidence = JSON.parse(
+    readSource('protocol/private-balance/results/mvp-e2e.json'),
+  );
+  const witnessEvidence = JSON.parse(
+    readSource('protocol/private-balance/results/rpc-witness-validation.json'),
+  );
   const noteInputs = [...noteCircuit.matchAll(/signal input (\w+);/g)].map(([, input]) => input);
   const constants = manifest.constants;
   const artifacts = manifest.artifacts;
@@ -122,6 +128,15 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /seed recovery.*full history.*always\s+require.*witness/is);
   assert.match(paper, /different-origin RPC.*overlapping ledger hash/is);
   assert.match(paper, /cannot prove operator\s+independence.*custom primary/is);
+  assert.equal(witnessEvidence.ankrCorroboration.witnessRpc, manifest.witnessRpcUrl);
+  assert.equal(witnessEvidence.ankrCorroboration.rateLimitFailures, 0);
+  assert.equal(witnessEvidence.ankrCorroboration.attempts.length, 5);
+  assert.ok(
+    witnessEvidence.ankrCorroboration.attempts.every(
+      attempt => attempt.assetCount === manifest.assets.length,
+    ),
+  );
+  assert.ok(paper.includes('rpc-witness-validation.json'));
   assert.match(paper, /deployment checkpoint.*aged out.*current overlapping ledger.*contract head/is);
   assert.match(paper, /largest safe.*contiguous.*batch/is);
   assert.match(paper, /confirmed.*durable on-chain.*sync.*rereads.*encrypted.*checkpoint/is);
@@ -133,6 +148,11 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
   assert.match(paper, /does not run or record.*powersoftau verify/is);
   assert.match(paper, /Testnet reset.*redeploy/is);
+  assert.equal(browserEvidence.passed, true);
+  assert.ok(paper.includes(browserEvidence.sourceCommit.slice(0, 7)));
+  assert.ok(paper.includes(browserEvidence.fixtureManifestSha256));
+  assert.match(paper, /nine.*desktop Chromium.*four.*browser smoke/is);
+  assert.match(paper, /iPhone.*iPad.*emulation.*not physical-device/is);
   assert.match(paper, /BLS12-381.*not selected/is);
   assert.match(paper, /recursive proofs.*not implemented/is);
   assert.match(paper, /protocol\/private-balance\/docs\/protocol-v1\.md/);
