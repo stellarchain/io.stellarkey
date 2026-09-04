@@ -450,12 +450,13 @@ selection disabled only until quote traffic has been quiet for 700 ms. Responses
 are kept only in memory, deduplicated by public source account, capped at 32
 unique replies, ordered by fee, and labelled with the time of the check. The
 active Stellar account is excluded so self-relay is never presented as privacy.
-If another browser answers from the same Stellar account, the check settles
-after the quiet window and explains that a different Testnet account is required
-in that browser. It does not weaken the exclusion or wait for the hard no-peer
-deadline. This distinction matters when testing two browser profiles on one
-computer: the second browser can be online while still being ineligible to hide
-the first browser's transaction source.
+If another browser answers from the same Stellar account, the check immediately
+explains that a different Testnet account is required in that browser while it
+continues looking for an eligible peer until the normal deadline. An ineligible
+or untrusted reply cannot shorten discovery and hide a slower valid offer. This
+distinction matters when testing two browser profiles on one computer: the
+second browser can be online while still being ineligible to hide the first
+browser's transaction source.
 Available when checked is not a guarantee that a peer will remain available;
 transaction submission obtains fresh short-lived offers and requires a new
 explicit choice.
@@ -463,12 +464,15 @@ explicit choice.
 Relay requests use Nostr kind `24333`, in NIP-01's ephemeral event range. Relays
 are therefore not expected to retain a request for a helper that connects later.
 An opted-in helper creates its ephemeral subscription before publish can occur,
-reports **Listening** only after at least one configured relay is connected, and
-reports connecting, reconnecting, or unavailable separately. The Nostr pool is
-configured to reconnect its WebSocket and resubscribe after interruption,
-starting with a one-second retry and using bounded exponential backoff. These
-states and relay counts are memory-only; the saved opt-in alone is never
-presented as proof that the helper is online.
+reports **Connected** only after at least one configured relay WebSocket is
+connected, and reports connecting, reconnecting, or unavailable separately.
+Connected does not claim that a relay has accepted every subscription. A
+rejected or initially failed subscription is retried independently. The Nostr
+pool reconnects its WebSocket and resubscribes after interruption, starting with
+a one-second retry and using bounded exponential backoff. A total startup outage
+is also retried while helping remains enabled. These states and relay counts are
+memory-only; the saved opt-in alone is never presented as proof that the helper
+is online.
 
 A controlled two-client measurement through the configured public Nostr relays
 recorded a 5,196 ms one-peer result before adaptive collection. After the
@@ -479,11 +483,13 @@ the raw observations are in
 `protocol/private-balance/results/relay-discovery-latency-2026-09-04.json`.
 
 A second controlled diagnostic isolated account eligibility with a fresh pool
-binding per sample. Two same-account runs received the helper response in
-577-815 ms but correctly produced zero eligible offers and one ineligible
-account. Two different-account runs produced one eligible offer in 639-672 ms.
-This shows that the observed long failure was not evidence that a faster peer
-transport was required. The sanitized observations are in
+binding per sample. Before the subsequent discovery-termination hardening, two
+same-account runs completed in 577-815 ms with zero eligible offers and one
+ineligible account; two different-account runs produced one eligible offer in
+639-672 ms. The diagnostic established that both browser paths exchanged relay
+messages in under a second. Current code reports an ineligible reply immediately
+but retains the full discovery window so it cannot suppress a slower valid
+offer. The sanitized observations are in
 `protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json`.
 
 The selected peer gives the sender a quote and a diversified private fee

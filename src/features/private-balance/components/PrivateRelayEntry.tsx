@@ -41,8 +41,8 @@ export function PrivateRelayEntry() {
 
   const status = !preferences.helpRelay
     ? 'Set up'
-    : helperStatus.phase === 'listening'
-      ? 'Listening'
+    : helperStatus.phase === 'connected'
+      ? 'Connected'
       : helperStatus.phase === 'reconnecting'
         ? 'Reconnecting'
         : helperStatus.phase === 'unavailable'
@@ -52,8 +52,8 @@ export function PrivateRelayEntry() {
             : 'Connecting';
   const helperDescription = !preferences.helpRelay
     ? 'Help submit private payments for a private reward'
-    : helperStatus.phase === 'listening'
-      ? `Listening on ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
+    : helperStatus.phase === 'connected'
+      ? `Connected to ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
       : helperStatus.phase === 'reconnecting'
         ? 'Reconnecting to the public relay network'
         : helperStatus.phase === 'unavailable'
@@ -61,7 +61,7 @@ export function PrivateRelayEntry() {
           : helperStatus.phase === 'waiting'
             ? 'Waiting for Private Payments to finish syncing'
             : 'Connecting to the public relay network';
-  const helperIsListening = preferences.helpRelay && helperStatus.phase === 'listening';
+  const helperIsConnected = preferences.helpRelay && helperStatus.phase === 'connected';
 
   return (
     <>
@@ -82,7 +82,7 @@ export function PrivateRelayEntry() {
           </span>
         </span>
         <span className={`shrink-0 text-[12px] font-semibold ${
-          helperIsListening ? 'text-[#30D158]' : preferences.helpRelay ? 'text-neutral-400' : 'text-[#0A84FF]'
+          helperIsConnected ? 'text-[#30D158]' : preferences.helpRelay ? 'text-neutral-400' : 'text-[#0A84FF]'
         }`} aria-live="polite">
           {status}
         </span>

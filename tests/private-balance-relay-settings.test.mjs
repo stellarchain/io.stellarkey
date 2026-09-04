@@ -28,7 +28,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(entry, /PRIVATE_RELAY_PREFERENCES_EVENT/);
   assert.match(entry, /preferences\.helpRelay/);
   assert.match(entry, /useSyncExternalStore/);
-  assert.match(entry, /Listening/);
+  assert.match(entry, /Connected/);
   assert.match(entry, /Reconnecting/);
   assert.match(entry, /aria-haspopup="dialog"/);
   assert.match(entry, /<Modal/);
@@ -104,6 +104,7 @@ test('helper mode presents a manual approval only after strict local review', ()
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
   assert.match(manager, /requestExpiryTimers/);
   assert.match(manager, /waitUntilConnected/);
+  assert.match(manager, /retryPrivateRelayHelperReadiness/);
   assert.match(manager, /publishPrivateRelayHelperStatus/);
   assert.match(manager, /requestIds\.delete\(request\.requestId\)/);
   assert.match(manager, /clearTimeout/);

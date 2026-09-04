@@ -326,8 +326,6 @@ export class PrivateRelaySenderSession {
             } catch {
               // UI observers cannot interfere with the authenticated relay session.
             }
-            if (settleDeadline) clearTimeout(settleDeadline);
-            settleDeadline = setTimeout(finishDiscovery, settleWindowMs);
           }
           return;
         }

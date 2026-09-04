@@ -70,7 +70,7 @@ test("offers helper relay participation directly from Home", async ({ context, p
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Relay settings saved on this device.", { exact: true })).toHaveCount(0);
   await expect(region).toHaveAttribute("data-e2e-overlay-owner", "private-assets");
-  await expect(entry).toContainText(/Connecting|Listening|Reconnecting|Unavailable/);
+  await expect(entry).toContainText(/Connecting|Connected|Reconnecting|Unavailable/);
 
   await entry.click();
   await expect(page.getByRole("dialog", { name: "Earn by relaying", exact: true })
