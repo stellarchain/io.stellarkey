@@ -456,7 +456,9 @@ continues looking for an eligible peer until the normal deadline. An ineligible
 or untrusted reply cannot shorten discovery and hide a slower valid offer. This
 distinction matters when testing two browser profiles on one computer: the
 second browser can be online while still being ineligible to hide the first
-browser's transaction source.
+browser's transaction source. The same live explanation appears inside an
+in-progress transfer or withdrawal review rather than leaving the generic
+finding-peer message visible until the deadline.
 Available when checked is not a guarantee that a peer will remain available;
 transaction submission obtains fresh short-lived offers and requires a new
 explicit choice.
@@ -470,9 +472,11 @@ Connected does not claim that a relay has accepted every subscription. A
 rejected or initially failed subscription is retried independently. The Nostr
 pool reconnects its WebSocket and resubscribes after interruption, starting with
 a one-second retry and using bounded exponential backoff. A total startup outage
-is also retried while helping remains enabled. These states and relay counts are
-memory-only; the saved opt-in alone is never presented as proof that the helper
-is online.
+is also retried while helping remains enabled. Connection attempts use a
+client-owned deadline and are cancelled with their socket and timer when the
+session closes, the wallet locks, or the runtime changes. These states and relay
+counts are memory-only; the saved opt-in alone is never presented as proof that
+the helper is online.
 
 A controlled two-client measurement through the configured public Nostr relays
 recorded a 5,196 ms one-peer result before adaptive collection. After the

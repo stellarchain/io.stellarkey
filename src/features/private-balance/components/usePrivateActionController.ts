@@ -26,7 +26,11 @@ import type {
 } from '../relay/protocol';
 
 export type PrivateSubmissionMode = 'relay' | 'direct';
-export type PrivateRelayProgress = 'finding-peer' | 'comparing-fees' | 'agreeing-fee';
+export type PrivateRelayProgress =
+  | 'finding-peer'
+  | 'same-account-peer'
+  | 'comparing-fees'
+  | 'agreeing-fee';
 
 export type PrivateSubmissionOutcome = 'broadcast' | 'ambiguous';
 
@@ -133,6 +137,7 @@ export function usePrivateActionController(
         const preferences = loadPrivateRelayPreferences();
         const session = await PrivateRelaySenderSession.create(preferences.relayUrls);
         pendingRelaySession = session;
+        let hasEligibleQuote = false;
         setRelayProgress('finding-peer');
         const { request, quotes, ineligiblePeerAccounts } = await session.requestQuotes({
           networkId: deployment.networkId,
@@ -141,8 +146,13 @@ export function usePrivateActionController(
           excludePeerAccounts: publicAddress ? [publicAddress] : [],
           onQuotes: quotes => {
             if (controller.signal.aborted) return;
+            hasEligibleQuote = quotes.length > 0;
             setRelayQuotes([...quotes]);
             setRelayProgress('comparing-fees');
+          },
+          onIneligiblePeerAccounts: count => {
+            if (controller.signal.aborted || count === 0 || hasEligibleQuote) return;
+            setRelayProgress('same-account-peer');
           },
         }, controller.signal);
         if (quotes.length === 0) {

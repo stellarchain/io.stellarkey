@@ -17,6 +17,64 @@ export const PRIVATE_RELAY_RECONNECT_BACKOFF_MS: readonly number[] = Object.free
   60_000,
 ]);
 
+interface PrivateRelayConnectPool {
+  ensureRelay(url: string): Promise<{ resubscribeBackoff: number[] }>;
+  close(urls: string[]): void;
+}
+
+export function connectPrivateRelayWithDeadline(
+  pool: PrivateRelayConnectPool,
+  url: string,
+  signal: AbortSignal,
+  timeoutMs = 8_000,
+): Promise<{ resubscribeBackoff: number[] }> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
+    return Promise.reject(new Error('Private relay connection deadline is invalid'));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const closeRelay = () => {
+      try {
+        pool.close([url]);
+      } catch {
+        // Cancellation must still settle even if a third-party close path fails.
+      }
+    };
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', abort);
+    };
+    const rejectOnce = (cause: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(cause);
+    };
+    const abort = () => {
+      closeRelay();
+      rejectOnce(new DOMException('Private relay cancelled.', 'AbortError'));
+    };
+    const timeout = setTimeout(() => {
+      closeRelay();
+      rejectOnce(new Error('Private relay connection timed out'));
+    }, timeoutMs);
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener('abort', abort, { once: true });
+    void pool.ensureRelay(url).then(relay => {
+      if (settled) {
+        closeRelay();
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(relay);
+    }, cause => rejectOnce(cause));
+  });
+}
+
 export function createResilientPrivateRelaySubscription(input: {
   urls: readonly string[];
   filters: readonly PrivateRelayFilter[];
@@ -26,7 +84,8 @@ export function createResilientPrivateRelaySubscription(input: {
     url: string,
     filter: PrivateRelayFilter,
     handlers: { onEvent(event: Event): void; onClose(): void },
-  ): PrivateRelaySubscription;
+    signal: AbortSignal,
+  ): PrivateRelaySubscription | Promise<PrivateRelaySubscription>;
 }): PrivateRelaySubscription {
   const retryBackoffMs = input.retryBackoffMs ?? PRIVATE_RELAY_RECONNECT_BACKOFF_MS;
   if (retryBackoffMs.length === 0 || retryBackoffMs.some(delay => (
@@ -36,12 +95,15 @@ export function createResilientPrivateRelaySubscription(input: {
   }
   let closed = false;
   const activeSubscriptions = new Set<PrivateRelaySubscription>();
+  const connectionControllers = new Set<AbortController>();
   const retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const start = (url: string, filter: PrivateRelayFilter, attempt: number) => {
     if (closed) return;
     let subscription: PrivateRelaySubscription | null = null;
     let ended = false;
+    const connectionController = new AbortController();
+    connectionControllers.add(connectionController);
     const scheduleRetry = () => {
       if (ended) return;
       ended = true;
@@ -54,18 +116,18 @@ export function createResilientPrivateRelaySubscription(input: {
       }, delay);
       retryTimers.add(timer);
     };
-    try {
-      subscription = input.subscribe(url, filter, {
+    void Promise.resolve().then(() => input.subscribe(url, filter, {
         onEvent: event => {
           if (!closed) input.onEvent(event);
         },
         onClose: scheduleRetry,
+      }, connectionController.signal)).then(nextSubscription => {
+        subscription = nextSubscription;
+        if (ended || closed) subscription.close();
+        else activeSubscriptions.add(subscription);
+      }).catch(scheduleRetry).finally(() => {
+        connectionControllers.delete(connectionController);
       });
-      if (ended || closed) subscription.close();
-      else activeSubscriptions.add(subscription);
-    } catch {
-      scheduleRetry();
-    }
   };
 
   for (const url of input.urls) {
@@ -75,6 +137,8 @@ export function createResilientPrivateRelaySubscription(input: {
     close() {
       if (closed) return;
       closed = true;
+      for (const controller of connectionControllers) controller.abort();
+      connectionControllers.clear();
       for (const timer of retryTimers) clearTimeout(timer);
       retryTimers.clear();
       for (const subscription of activeSubscriptions) subscription.close();
@@ -152,11 +216,15 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
         urls,
         filters,
         onEvent,
-        subscribe: (url, filter, handlers) => pool.subscribeMany([url], filter, {
-          onevent: handlers.onEvent,
-          onclose: handlers.onClose,
-          maxWait: 8_000,
-        }),
+        subscribe: async (url, filter, handlers, signal) => {
+          const relay = await connectPrivateRelayWithDeadline(pool, url, signal);
+          relay.resubscribeBackoff = [...PRIVATE_RELAY_RECONNECT_BACKOFF_MS];
+          return pool.subscribeMany([url], filter, {
+            onevent: handlers.onEvent,
+            onclose: handlers.onClose,
+            maxWait: 8_000,
+          });
+        },
       });
       if (closed) subscription.close();
     });
@@ -179,10 +247,11 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     const controllers = urls.map(() => new AbortController());
     const abort = () => controllers.forEach(controller => controller.abort());
     signal?.addEventListener('abort', abort, { once: true });
-    const attempts = urls.map((url, index) => pool.ensureRelay(url, {
-      connectionTimeout: 8_000,
-      abort: controllers[index]?.signal,
-    }).then(relay => {
+    const attempts = urls.map((url, index) => connectPrivateRelayWithDeadline(
+      pool,
+      url,
+      controllers[index]!.signal,
+    ).then(relay => {
       relay.resubscribeBackoff = [...PRIVATE_RELAY_RECONNECT_BACKOFF_MS];
       return url;
     }));
@@ -190,6 +259,7 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     try {
       await Promise.any(attempts);
     } catch {
+      if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
       return new Map(urls.map(url => [url, false]));
     }
     return this.connectionStatus(urls);

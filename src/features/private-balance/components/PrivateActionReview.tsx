@@ -213,6 +213,8 @@ export function PrivateActionReview({
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
       : preparing && relayProgress === 'comparing-fees'
         ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer found' : 'offers found'}. Comparing relay fees briefly.`
+      : preparing && relayProgress === 'same-account-peer'
+        ? 'A helper using this Stellar account answered. Still looking for a different Stellar account.'
       : relayQuotes.length > 0
         ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer is' : 'offers are'} available. Choose a peer to continue.`
       : preparing
@@ -291,6 +293,8 @@ export function PrivateActionReview({
               <span className="skeleton inline-block rounded-md px-2.5 py-0.5 text-[12px] font-normal text-neutral-400">
                 {relayProgress === 'finding-peer'
                   ? 'Finding a privacy relay…'
+                  : relayProgress === 'same-account-peer'
+                    ? 'Same account found; checking others…'
                   : relayProgress === 'comparing-fees'
                     ? 'Comparing relay fees…'
                   : relayProgress === 'agreeing-fee'

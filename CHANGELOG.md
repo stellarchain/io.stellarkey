@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Made opted-in private relay helpers report their actual connecting, connected, reconnecting, or unavailable state, retry startup and subscription failures, and automatically restore dropped WebSocket subscriptions starting with a one-second retry.
+- Made opted-in private relay helpers report their actual connecting, connected, reconnecting, or unavailable state, retry startup and subscription failures, automatically restore dropped WebSocket subscriptions starting with a one-second retry, and cancel in-flight connection resources when the session ends.
 - Made private relay discovery display authenticated offers as they arrive, compare fees until quote traffic is quiet for 700 ms, and stop waiting for slower Nostr acknowledgements after the first configured relay accepts a message.
 - Displayed helper rewards in ordinary seven-decimal asset units instead of exposing protocol atomic units in relay settings.
 - Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery and relay controls while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Identified same-account private relay helpers immediately while keeping them ineligible and preserving the full eligible-peer discovery window.
+- Identified same-account private relay helpers immediately in both peer checks and active payment reviews while keeping them ineligible and preserving the full eligible-peer discovery window.
 - Closed the focused Earn by relaying dialog immediately after valid settings are saved instead of requiring a second acknowledgement.
 - Kept private-asset shield badges inside their avatar bounds on narrow screens.
 - Deferred live Private Payments registry RPC corroboration until an explicit registry refresh, preserving continuous Send and Receive dialogs while ordinary wallet unlocks and first private intent use the authenticated deployment catalogue.
