@@ -226,7 +226,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     const asset = senderPage.getByRole("dialog", { name: "XLM", exact: true });
     await expect(asset).toBeHidden();
     await expect(
-      restoredRegion.getByRole("button", { name: /^Open private XLM\. Not set up\./ }),
+      restoredRegion.getByRole("button", { name: /^Open private XLM\. Not enabled\./ }),
     ).toBeVisible({ timeout: 30_000 });
     const recoveredRegion = await setupPrivateBalance(senderPage);
     await expectPrivateBalance(recoveredRegion, "0.25");

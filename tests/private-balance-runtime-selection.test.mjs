@@ -219,6 +219,34 @@ test('private runtime boundary loads the catalogue and scopes one mounted worker
   assert.match(runtimeHook, /selectAsset/);
 });
 
+test('the unified registry prop is stable across runtime publications', () => {
+  const boundary = readFileSync(
+    new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(boundary, /registryAssets: ReadonlyArray<\{ index: number; contractId: string \}>/);
+  assert.match(boundary, /registryAssetsByPool/);
+  assert.match(boundary, /registryAssets=\{deployment\.registryAssets\}/);
+  assert.doesNotMatch(
+    boundary,
+    /registryAssets=\{currentBootstrap\.ready\s*\.filter/,
+  );
+});
+
+test('a retired private bootstrap cannot publish stale asset readiness', () => {
+  const boundary = readFileSync(
+    new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    boundary,
+    /\.then\(async loadedDeployments => \{\s*if \(!active\) return;[\s\S]{0,420}?publishAvailableDeployments\(loadedDeployments\)/,
+    'effect cancellation must be checked before its first control-state publication',
+  );
+});
+
 test('runtime controls are scoped immediately to the active account and network', () => {
   const boundary = readFileSync(
     new URL('../src/components/PrivateBalanceRuntimeBoundary.tsx', import.meta.url),

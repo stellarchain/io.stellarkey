@@ -296,11 +296,14 @@ test('manifest: generator binds exact toolchains and defaults to an undeployed b
   assert.match(source, /protocol\/private-balance\/rust-toolchain\.toml/);
   assert.match(source, /protocol\/private-balance\/parameters\/generator\.lock/);
   assert.match(source, /protocol\/private-balance\/scripts\/build-private-balance-artifacts\.mjs/);
-  assert.match(source, /rpc\.ankr\.com\/stellar_testnet_soroban/);
+  assert.match(source, /soroban-rpc\.testnet\.stellar\.gateway\.fm/);
   assert.match(source, /deploymentCheckpoint/);
   assert.match(source, /const zkeyVerified = verifyProvingKey\(\)/);
   assert.doesNotMatch(source, /zkeyVerified:\s*true/);
   assert.match(source, /\['log', '-1', '--format=%H', '--'/);
+  assert.match(source, /protocol\/private-balance\/contracts\/pool\/src/);
+  assert.match(source, /protocol\/private-balance\/contracts\/pool\/Cargo\.toml/);
+  assert.doesNotMatch(source, /'protocol\/private-balance\/contracts\/pool',/);
   assert.doesNotMatch(source, /existing\.release\?\.contractSourceCommit/);
   assert.match(buildSource, /STELLAR_CLI_VERSION = '27\.0\.0'/);
   assert.match(buildSource, /'contract',\s*'build'/);

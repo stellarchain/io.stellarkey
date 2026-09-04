@@ -1,7 +1,14 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { StrKey } from '@stellar/stellar-sdk';
 import { useWalletIdentity, useWalletPhase } from '@/hooks/useWallet';
 import {
@@ -67,6 +74,7 @@ interface ReadyDeployment extends LoadedPrivateBalanceDeployment {
   storageScope: PrivateBalanceStorageScope;
   encryptedStateExists: boolean;
   deployment: PrivateBalanceDeploymentSummary;
+  registryAssets: ReadonlyArray<{ index: number; contractId: string }>;
 }
 
 interface BootstrapState {
@@ -361,12 +369,25 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
       .then(({ catalogue }) => loadPrivateBalanceDeployments({ catalogue, network }))
       .then(loadedDeployments => loadLivePrivateBalanceRegistry(loadedDeployments, network))
       .then(async loadedDeployments => {
+        if (!active) return;
         // The verified catalogue is sufficient to render asset rows. Local
         // storage determines setup state, but must never hide the catalogue if
         // IndexedDB is slow, blocked by another tab, or unavailable.
         publishAvailableDeployments(loadedDeployments);
         const driver = new IndexedDbEncryptedRecordDriver();
         const deploymentsByPool = new Map<string, PrivateBalanceDeploymentSummary>();
+        const registryAssetsByPool = new Map<
+          string,
+          Array<{ index: number; contractId: string }>
+        >();
+        for (const loaded of loadedDeployments) {
+          const registryAssets = registryAssetsByPool.get(loaded.poolDeploymentId) ?? [];
+          registryAssets.push({
+            index: loaded.asset.index,
+            contractId: loaded.asset.contractId,
+          });
+          registryAssetsByPool.set(loaded.poolDeploymentId, registryAssets);
+        }
         const scopesByPool = new Map<string, PrivateBalanceStorageScope>();
         const stateProbeByPool = new Map<string, Promise<boolean>>();
         const candidates = await Promise.all(loadedDeployments.map(async loaded => {
@@ -408,6 +429,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
             storageScope,
             encryptedStateExists,
             deployment,
+            registryAssets: registryAssetsByPool.get(loaded.poolDeploymentId) ?? [],
           };
           return { ready, deployment, reason: null };
         }));
@@ -648,12 +670,7 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
           encryptedStateExists={deployment.encryptedStateExists}
           deployment={deployment.deployment}
           asset={deployment.asset}
-          registryAssets={currentBootstrap.ready
-            .filter(candidate => candidate.poolDeploymentId === deployment.poolDeploymentId)
-            .map(candidate => ({
-              index: candidate.asset.index,
-              contractId: candidate.asset.contractId,
-            }))}
+          registryAssets={deployment.registryAssets}
           runtimeKey={runtimeKey}
           portfolioKey={bootstrapKey}
           deploymentId={deployment.id}
