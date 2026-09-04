@@ -127,6 +127,7 @@ test('private send makes peer relay an explicit choice and never silently falls 
   assert.match(choice, /My account/);
   assert.match(choice, /No StellarKey relay\s*server/);
   assert.match(controller, /No privacy relay peer answered/);
+  assert.match(controller, /same Stellar account/);
   assert.doesNotMatch(controller, /catch[\s\S]{0,200}prepareAction\(draft/);
 });
 

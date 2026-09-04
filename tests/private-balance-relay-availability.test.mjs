@@ -268,6 +268,36 @@ test('quote discovery excludes self and emits a lower replacement fee once', asy
   assert.deepEqual(result.quotes.map(item => item.feeAtomic), ['10000']);
 });
 
+test('a same-account helper is reported quickly but never becomes an eligible quote', async () => {
+  const controlled = controlledSenderSession();
+  const excludedSnapshots = [];
+  const startedAt = performance.now();
+  const pending = controlled.session.requestQuotes({
+    networkId: NETWORK_ID,
+    poolContractId: POOL,
+    actionKind: 'transfer',
+    quoteWindowMs: 1_000,
+    settleWindowMs: 70,
+    excludePeerAccounts: ['GMYACCOUNT'],
+    onIneligiblePeerAccounts: count => excludedSnapshots.push(count),
+  });
+
+  setTimeout(() => controlled.emit({
+    quoteId: '66'.repeat(32),
+    peerPubkey: '76'.repeat(32),
+    peerAccount: 'GMYACCOUNT',
+    feeAtomic: '1',
+  }), 10);
+
+  const result = await pending;
+  const elapsedMs = performance.now() - startedAt;
+  assert.deepEqual(result.quotes, []);
+  assert.equal(result.ineligiblePeerAccounts, 1);
+  assert.deepEqual(excludedSnapshots, [1]);
+  assert.ok(elapsedMs >= 70, `settled before the quiet window: ${elapsedMs}ms`);
+  assert.ok(elapsedMs < 350, `waited for the hard no-response deadline: ${elapsedMs}ms`);
+});
+
 test('quote discovery retains the hard deadline when no peer answers', async () => {
   const controlled = controlledSenderSession();
   const startedAt = performance.now();

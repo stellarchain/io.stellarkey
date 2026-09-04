@@ -12,9 +12,11 @@ interface AvailabilitySession {
     settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
     onQuotes?: (quotes: readonly PrivateRelayQuote[]) => void;
+    onIneligiblePeerAccounts?: (count: number) => void;
   }, signal?: AbortSignal): Promise<{
     request: PrivateRelayRequest;
     quotes: PrivateRelayQuote[];
+    ineligiblePeerAccounts: number;
   }>;
   close(): void;
 }
@@ -26,6 +28,7 @@ type AvailabilitySessionFactory = (
 export interface PrivateRelayAvailability {
   quotes: PrivateRelayQuote[];
   checkedAt: number;
+  ineligiblePeerAccounts: number;
 }
 
 export function rankPrivateRelayQuotes(
@@ -70,23 +73,38 @@ export async function checkPrivateRelayAvailability(
   });
   const session = await factory(input.relayUrls);
   try {
-    const { quotes } = await session.requestQuotes({
+    let latestQuotes: PrivateRelayQuote[] = [];
+    let ineligiblePeerAccounts = 0;
+    const emit = () => input.onQuotes?.({
+      quotes: [...latestQuotes],
+      checkedAt: Date.now(),
+      ineligiblePeerAccounts,
+    });
+    const result = await session.requestQuotes({
       networkId: input.networkId,
       poolContractId: input.poolContractId,
       actionKind: 'transfer',
       quoteWindowMs: input.quoteWindowMs,
       settleWindowMs: input.settleWindowMs,
       excludePeerAccounts: input.excludePeerAccounts,
-      onQuotes: quotes => input.onQuotes?.({ quotes: [...quotes], checkedAt: Date.now() }),
+      onQuotes: quotes => {
+        latestQuotes = [...quotes];
+        emit();
+      },
+      onIneligiblePeerAccounts: count => {
+        ineligiblePeerAccounts = count;
+        emit();
+      },
     }, signal);
     const checkedAt = Date.now();
     return {
       quotes: rankPrivateRelayQuotes(
-        quotes,
+        result.quotes,
         Math.floor(checkedAt / 1_000),
         input.excludePeerAccounts,
       ),
       checkedAt,
+      ineligiblePeerAccounts: result.ineligiblePeerAccounts,
     };
   } finally {
     session.close();

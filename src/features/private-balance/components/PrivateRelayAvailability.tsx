@@ -71,6 +71,7 @@ export function PrivateRelayAvailability({
 
   const count = result?.quotes.length ?? null;
   const hasOffers = count !== null && count > 0;
+  const hasSameAccountHelper = (result?.ineligiblePeerAccounts ?? 0) > 0;
   const status = checking
     ? hasOffers
       ? `${count} found`
@@ -79,7 +80,9 @@ export function PrivateRelayAvailability({
       ? 'Unavailable'
       : count === null
         ? 'Not checked'
-        : `${count} available`;
+        : hasSameAccountHelper && count === 0
+          ? 'Same account'
+          : `${count} available`;
   const checkedAt = result
     ? new Date(result.checkedAt).toLocaleTimeString([], {
         hour: '2-digit',
@@ -143,7 +146,9 @@ export function PrivateRelayAvailability({
           <>
             <div className="ios-sep px-4 py-2.5 text-[11px] leading-relaxed text-neutral-500">
               {count === 0
-                ? 'No peers answered. This does not prove every peer is offline.'
+                ? hasSameAccountHelper
+                  ? 'Another browser answered, but it uses the same Stellar account. Use a different Testnet account there to test private relaying.'
+                  : 'No peers answered. This does not prove every peer is offline.'
                 : checking
                   ? `${count} ${count === 1 ? 'peer has' : 'peers have'} answered. Comparing live fees now.`
                 : `${count} ${count === 1 ? 'peer was' : 'peers were'} available when checked at ${checkedAt}. Availability can change before payment.`}
