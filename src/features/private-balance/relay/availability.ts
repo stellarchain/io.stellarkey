@@ -9,7 +9,9 @@ interface AvailabilitySession {
     poolContractId: string;
     actionKind: 'transfer';
     quoteWindowMs?: number;
+    settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
+    onQuotes?: (quotes: readonly PrivateRelayQuote[]) => void;
   }, signal?: AbortSignal): Promise<{
     request: PrivateRelayRequest;
     quotes: PrivateRelayQuote[];
@@ -55,7 +57,9 @@ export async function checkPrivateRelayAvailability(
     networkId: string;
     poolContractId: string;
     quoteWindowMs?: number;
+    settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
+    onQuotes?: (result: PrivateRelayAvailability) => void;
   },
   signal?: AbortSignal,
   createSession?: AvailabilitySessionFactory,
@@ -71,7 +75,9 @@ export async function checkPrivateRelayAvailability(
       poolContractId: input.poolContractId,
       actionKind: 'transfer',
       quoteWindowMs: input.quoteWindowMs,
+      settleWindowMs: input.settleWindowMs,
       excludePeerAccounts: input.excludePeerAccounts,
+      onQuotes: quotes => input.onQuotes?.({ quotes: [...quotes], checkedAt: Date.now() }),
     }, signal);
     const checkedAt = Date.now();
     return {
