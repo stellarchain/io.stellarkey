@@ -652,6 +652,7 @@ export async function preparePrivateBalanceActionFlow(input: {
       assetIndex: input.assetIndex,
       assetContractId: input.assetContractId,
       status: 'prepared',
+      submissionMode: relay ? 'relay' : 'direct',
       reservedNoteIds: prepared.reservedNoteIds,
       actionField: prepared.actionFieldHex,
       nullifiers: prepared.action.nullifiers.map(hex),

@@ -5,11 +5,33 @@ import {
   PrivateRpcViewsDisagreeError,
   PrivateRpcWitnessUnavailableError,
   corroboratePrivateRpcCheckpoint,
+  corroboratePrivateLedgerCloseTime,
 } from '../src/features/private-balance/runtime/rpc-checkpoint.ts';
 
 const passphrase = 'Test SDF Network ; September 2015';
 const deploymentCheckpoint = { ledger: 100, hash: '10'.repeat(32) };
 const bytes = value => new Uint8Array(32).fill(value);
+
+test('expiry time requires two agreeing RPC identities and times at the scanned ledger', async () => {
+  const requests = [];
+  const source = (hash = '50'.repeat(32), time = 1_700) => ({
+    async readLedgerIdentity(sequence) { requests.push(sequence); return { sequence, hash }; },
+    async readLedgerCloseTimes(sequences) { requests.push(...sequences); return { 500: time }; },
+  });
+  assert.equal(await corroboratePrivateLedgerCloseTime({
+    primary: source(), witness: source(), sequence: 500,
+  }), 1_700);
+  assert.deepEqual(requests, [500, 500, 500, 500]);
+  await assert.rejects(corroboratePrivateLedgerCloseTime({
+    primary: source(), witness: source('51'.repeat(32)), sequence: 500,
+  }));
+  await assert.rejects(corroboratePrivateLedgerCloseTime({
+    primary: source(undefined, 99_999), witness: source(), sequence: 500,
+  }));
+  await assert.rejects(corroboratePrivateLedgerCloseTime({
+    primary: source(), witness: { ...source(), async readLedgerCloseTimes() { return {}; } }, sequence: 500,
+  }));
+});
 
 function head(actionCount, marker = actionCount) {
   return {
