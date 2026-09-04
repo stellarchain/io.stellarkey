@@ -117,6 +117,15 @@ reviewed X25519 scan path. It does not hide the diversifier: reusing a receive
 address can still link the whole actions that carry it. Spending authority stays
 common to the account while issued receive addresses can rotate.
 
+Rotation records up to 65,536 issued diversifiers in encrypted local state and
+refuses to reissue a recorded value. It retains the current legacy address when
+starting this history, and keeps it through full verification, failed-verification
+rollback and encrypted backup restore. A random collision fails safely and asks
+for a fresh attempt; reaching the local bound stops rotation without disabling
+existing addresses. This is local reuse prevention, not hidden-diversifier
+cryptography or a guarantee across independent devices, old lost history,
+seed-only recovery, or deliberate local-data removal.
+
 The current Base58 address format is intentionally shorter than the retired
 format. `tskpay_` addresses are exactly 128 ASCII characters on Testnet and
 `skpay_` addresses are exactly 127 on Mainnet. The decoded form contains a

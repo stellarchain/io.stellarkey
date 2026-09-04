@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
 - Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
 - Persisted the approved direct/relay route in encrypted private-action journals, blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery, and required independently corroborated scanned-ledger time before expiry release. Legacy envelopes retain conservative recovery without guessing their route.
 - Required encrypted, context-bound Stellar account-key proofs before accepting or selecting privacy-relay offers, moved negotiation to an incompatible v2 topic, and padded encrypted message classes to a common bounded size. Helper opt-in authorizes offer signatures; transactions still require manual approval.
