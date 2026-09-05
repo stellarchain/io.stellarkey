@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWalletLifecycleActions } from "@/hooks/useWallet";
+import { createLatestRequestLane } from "@/hooks/useWalletResources";
 import { isEncryptedBackup, looksLikeMnemonic, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
 import {
@@ -74,6 +75,14 @@ export function Onboarding() {
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
   const [verifyFailed, setVerifyFailed] = useState(false);
   const [standaloneLaunch] = useState(readStandaloneDisplay);
+  const restoreLane = useRef(createLatestRequestLane());
+  const restoreInput = useRef<HTMLInputElement>(null);
+  const [readingBackup, setReadingBackup] = useState(false);
+
+  useEffect(() => {
+    const lane = restoreLane.current;
+    return () => lane.cancel();
+  }, []);
 
   // Preload + init the connect bundle when the user lands on the hardware
   // step so the device interaction can start immediately after their click.
@@ -93,22 +102,41 @@ export function Onboarding() {
   const passwordStrength = estimatePasswordStrength(password);
 
   async function handleRestoreBackupFile(file: File) {
-    const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
-    if (isEncryptedBackup(json)) {
-      // Fully-encrypted backup — ask for the backup's password first
-      setPendingBackupJson(json);
-      setError(null);
-      setMode("restore");
-      setStep("password");
-      return;
+    const request = restoreLane.current.begin();
+    setReadingBackup(true);
+    setError(null);
+    setPendingBackupJson(null);
+    try {
+      const json = await readBoundedTextFile(file, MAX_BACKUP_FILE_BYTES, "Backup file");
+      if (!request.isCurrent()) return;
+      if (isEncryptedBackup(json)) {
+        // Only retain the encrypted file while its explicit restore workflow owns it.
+        setPendingBackupJson(json);
+        setMode("restore");
+        setStep("password");
+        return;
+      }
+      triggerHaptic("error");
+      setError("This file is not an encrypted Wallet backup — choose a current encrypted backup and retry.");
+    } catch {
+      if (!request.isCurrent()) return;
+      triggerHaptic("error");
+      setError(file.size > MAX_BACKUP_FILE_BYTES
+        ? "This backup file exceeds the 64 MiB limit. Choose a smaller encrypted backup."
+        : "Could not read this backup file. Choose the file again and retry.");
+    } finally {
+      if (request.isCurrent()) setReadingBackup(false);
     }
-    triggerHaptic("error");
-    setError(
-      "This file is not an encrypted Wallet backup — it may be an outdated legacy export.",
-    );
+  }
+
+  function cancelBackupRead() {
+    restoreLane.current.cancel();
+    setReadingBackup(false);
+    setPendingBackupJson(null);
   }
 
   function go(to: Step, m?: Mode) {
+    cancelBackupRead();
     triggerHaptic("selection");
     if (m) setMode(m);
     setError(null);
@@ -234,6 +262,7 @@ export function Onboarding() {
   }
 
   function backToChoose() {
+    cancelBackupRead();
     setStep("choose");
     setError(null);
     setPassword("");
@@ -275,11 +304,14 @@ export function Onboarding() {
       walletExists: false,
     });
     const restorePath = (
-      <label className="group flex w-full cursor-pointer items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 text-left transition-all hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
+      <>
+      <Button variant="secondary" loading={readingBackup} loadingLabel="Reading encrypted backup"
+        onClick={() => restoreInput.current?.click()}
+        className="group w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 transition-[background-color,border-color,transform] hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
           <IconRefresh size={16} />
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 text-left">
           <span className="block text-[14px] font-semibold text-white">
             Restore From Backup
           </span>
@@ -287,7 +319,9 @@ export function Onboarding() {
             Encrypted wallet-backup .json file
           </span>
         </span>
+      </Button>
         <input
+          ref={restoreInput}
           type="file"
           accept="application/json,.json,application/octet-stream"
           className="hidden"
@@ -297,7 +331,7 @@ export function Onboarding() {
             e.target.value = "";
           }}
         />
-      </label>
+      </>
     );
     return (
       <div className="relative z-10 min-h-screen w-full overflow-hidden">
