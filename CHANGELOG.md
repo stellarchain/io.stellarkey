@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
+- Restored user-controlled page zoom while preserving mobile input sizing, corrected the Send form's MAX control contrast, and allowed recipient and memo captions to wrap on narrow screens.
 - Made authenticated Nostr helper offers selectable during fee comparison for ordinary private payments and each consolidation step, with stable peer rows and cancellation-safe session handoff.
 - Made opted-in private relay helpers report their actual connecting, connected, reconnecting, or unavailable state, retry startup and subscription failures, automatically restore dropped WebSocket subscriptions starting with a one-second retry, and cancel in-flight connection resources when the session ends.
 - Made private relay discovery display authenticated offers as they arrive, compare fees until quote traffic is quiet for 700 ms, and stop waiting for slower Nostr acknowledgements after the first configured relay accepts a message.

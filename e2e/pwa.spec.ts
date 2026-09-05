@@ -28,7 +28,7 @@ test("document security policies use build-time hashes without weakening viewpor
   expect(first?.headers()["cross-origin-opener-policy"]).toBe("same-origin-allow-popups");
   await expect.poll(() => page.evaluate(() =>
     document.querySelector('meta[name="viewport"]')?.getAttribute("content") ?? "",
-  )).toContain("user-scalable=no");
+  )).not.toContain("user-scalable=no");
 });
 
 test("installed shell cold-launches offline without caching wallet or network data", async ({ context, page }) => {

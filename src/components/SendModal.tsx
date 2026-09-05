@@ -1198,7 +1198,7 @@ function SendInner({
                       setStealthReview(null);
                       setAmount(maxSendable);
                     }}
-                    className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF]"
+                    className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-accent-2"
                   >
                     MAX
                   </button>
@@ -1206,7 +1206,7 @@ function SendInner({
               </div>
               {/* Destination */}
               <div>
-                <div className="flex items-center justify-between pb-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pb-1">
                   <label htmlFor={destinationInputId} className="field-label !pb-0">Recipient Address or Federation</label>
                   <button
                     type="button"
@@ -1398,7 +1398,7 @@ function SendInner({
                   </p>
                 </div>
               ) : <div>
-                <div className="flex items-center justify-between pb-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pb-1">
                   <div className="flex items-center gap-2">
                     <label htmlFor={memoInputId} className="field-label !pb-0">Memo (Optional)</label>
                     {memoType === "text" && (

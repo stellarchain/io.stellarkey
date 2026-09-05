@@ -43,11 +43,11 @@ function isZoomProneControl(node, sourceFile) {
   return !type || ["text", "search", "password", "number", "email", "tel", "url"].includes(type);
 }
 
-test("Next viewport disables pinch and form-focus zoom", () => {
+test("Next viewport allows user zoom while form typography prevents unwanted focus zoom", () => {
   const layout = read("src/app/layout.tsx");
   assert.match(layout, /export const viewport: Viewport = \{/);
-  assert.match(layout, /maximumScale:\s*1,/);
-  assert.match(layout, /userScalable:\s*false,/);
+  assert.doesNotMatch(layout, /maximumScale:\s*1,/);
+  assert.doesNotMatch(layout, /userScalable:\s*false,/);
 });
 
 test("mobile scrolling has one document owner and hides scrollbar chrome", () => {
@@ -57,7 +57,7 @@ test("mobile scrolling has one document owner and hides scrollbar chrome", () =>
   const htmlRule = css.match(/html\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body ?? "";
 
   assert.doesNotMatch(htmlRule, /scrollbar-gutter|overflow-y/);
-  assert.match(css, /touch-action:\s*pan-x pan-y;/);
+  assert.match(css, /touch-action:\s*pan-x pan-y pinch-zoom;/);
   assert.match(
     css,
     /\*\s*\{[\s\S]*?scrollbar-width:\s*none;/,

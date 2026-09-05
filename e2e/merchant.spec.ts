@@ -174,8 +174,8 @@ async function assertMobileSurface(page: Page, label: string) {
     measurements.scrollWidth <= measurements.clientWidth,
     `${label} overflows horizontally: ${measurements.scrollWidth} > ${measurements.clientWidth}`,
   );
-  assert.match(measurements.viewport, /maximum-scale=1/);
-  assert.match(measurements.viewport, /user-scalable=no/);
+  assert.doesNotMatch(measurements.viewport, /maximum-scale=1/);
+  assert.doesNotMatch(measurements.viewport, /user-scalable=no/);
 }
 
 async function enterKeypadAmount(page: Page, keys: string[]) {
