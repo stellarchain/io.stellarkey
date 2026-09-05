@@ -15,6 +15,7 @@ import type { PrivateRelayQuote } from '@/features/private-balance/relay/protoco
 import { disclosePrivateProof, PrivateProofConsent, type PrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
 import { RelayFlowPanel } from '../../../e2e/fixtures/relay-flow-panel';
 import { UxPrimitivesFixture } from '../../../e2e/fixtures/ux-primitives';
+import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
 
 const draft = { kind: 'transfer' as const, amount: '1', recipientAddress: 'synthetic-recipient-only' };
 const approval: PrivateRelayChainApproval = {
@@ -87,6 +88,7 @@ function Fixture() {
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
         <UxPrimitivesFixture />
+        <QrFreshnessFixture />
         <Button onClick={() => { setOpen(true); setCancelled(false); }}>Open privacy controls</Button>
         <p data-testid="writes">{writes}</p>
         <Modal open={open} onClose={() => setOpen(false)} wide>
