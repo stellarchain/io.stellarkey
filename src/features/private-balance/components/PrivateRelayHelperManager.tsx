@@ -57,23 +57,30 @@ export function PrivateRelayHelperManager() {
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
   const [pending, setPending] = useState<PendingRelayApproval | null>(null);
   const [working, setWorking] = useState(false);
+  const [signatureShared, setSignatureShared] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<PrivateRelayHelperSession | null>(null);
   const pendingRef = useRef<PendingRelayApproval | null>(null);
+  const decisionRef = useRef<PendingRelayApproval | null>(null);
+  const approvalDetailsRef = useRef<HTMLDivElement | null>(null);
   const negotiationsRef = useRef(new Map<string, RelayNegotiation>());
   const signedRef = useRef(new Map<string, PrivateRelaySignedJob>());
+  const submissionAttemptsRef = useRef(new Set<string>());
   const preparationLeaseRef = useRef(new PrivateRelayPreparationLease());
   const quoteExpiriesRef = useRef(new PrivateRelayQuoteExpiries());
   const reviewingRef = useRef<{ quoteId: string } | null>(null);
   const forgetNegotiation = useCallback((quoteId: string) => {
     quoteExpiriesRef.current.forget(quoteId);
+    submissionAttemptsRef.current.delete(quoteId);
     if (reviewingRef.current?.quoteId === quoteId) reviewingRef.current = null;
+    if (decisionRef.current?.quote.quoteId === quoteId) decisionRef.current = null;
     releasePrivateRelayHelperQuote(quoteId, {
       negotiations: negotiationsRef.current, signed: signedRef.current,
       preparationLease: preparationLeaseRef.current, pending: pendingRef,
       onPendingReleased: released => {
         setPending(current => current === released ? null : current);
         setWorking(false);
+        setSignatureShared(false);
         setError(null);
       },
     });
@@ -118,6 +125,7 @@ export function PrivateRelayHelperManager() {
     const preparationLease = preparationLeaseRef.current;
     const quoteExpiries = quoteExpiriesRef.current;
     const selectingQuotes = new Set<string>();
+    const submissionAttempts = submissionAttemptsRef.current;
     const requestIds = new Set<string>();
     const requestExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
     publishPrivateRelayHelperStatus({
@@ -171,6 +179,7 @@ export function PrivateRelayHelperManager() {
         }, controller.signal).catch(forgetRequest);
       }, controller.signal);
       session.listenForPrivateMessages((message, quote) => {
+        if (!active || controller.signal.aborted) return;
         if (message.type === 'selection') {
           if (negotiations.size + selectingQuotes.size >= MAX_OPEN_QUOTES || negotiations.has(message.quoteId) || selectingQuotes.has(message.quoteId)) return;
           selectingQuotes.add(message.quoteId);
@@ -231,7 +240,7 @@ export function PrivateRelayHelperManager() {
             void session.rejectForQuote({ ...message, reason: 'invalid' }, controller.signal).catch(() => undefined);
             return;
           }
-          if (pendingRef.current || reviewingRef.current) {
+          if (pendingRef.current || reviewingRef.current || signed.size > 0) {
             void session.rejectForQuote({
               requestId: message.requestId,
               quoteId: message.quoteId,
@@ -255,6 +264,7 @@ export function PrivateRelayHelperManager() {
             const approval = { ...negotiation, job: message, review };
             pendingRef.current = approval;
             setPending(approval);
+            setSignatureShared(false);
             setError(null);
           }).catch(() => {
             if (negotiations.get(message.quoteId) === negotiation) forgetNegotiation(message.quoteId);
@@ -273,6 +283,8 @@ export function PrivateRelayHelperManager() {
         const accepted = signed.get(submittedJob.quoteId);
         if (
           !accepted ||
+          accepted.requestId !== submittedJob.requestId ||
+          accepted.expiresAt * 1_000 <= Date.now() ||
           accepted.transactionHash !== submittedJob.transactionHash ||
           accepted.signedEnvelopeXdr !== submittedJob.signedEnvelopeXdr
         ) {
@@ -284,6 +296,10 @@ export function PrivateRelayHelperManager() {
           }, controller.signal).catch(() => undefined);
           return;
         }
+        // Claim once until expiry/cleanup, including uncertain RPC or reply delivery.
+        // A fresh nonce is not renewed user intent to submit again.
+        if (submissionAttempts.has(submittedJob.quoteId)) return;
+        submissionAttempts.add(submittedJob.quoteId);
         void submitPrivateRelayJob({
           signedEnvelopeXdr: submittedJob.signedEnvelopeXdr,
           transactionHash: submittedJob.transactionHash,
@@ -294,6 +310,7 @@ export function PrivateRelayHelperManager() {
         }, controller.signal)).then(() => {
           forgetNegotiation(submittedJob.quoteId);
         }).catch(() => {
+          if (!active) return;
           void session.rejectForQuote({
             requestId: submittedJob.requestId,
             quoteId: submittedJob.quoteId,
@@ -365,9 +382,11 @@ export function PrivateRelayHelperManager() {
       sessionRef.current = null;
       negotiations.clear();
       signed.clear();
+      submissionAttempts.clear();
       preparationLease.clear();
       quoteExpiries.clear();
       reviewingRef.current = null;
+      decisionRef.current = null;
       selectingQuotes.clear();
       for (const timer of requestExpiryTimers.values()) clearTimeout(timer);
       requestExpiryTimers.clear();
@@ -375,6 +394,7 @@ export function PrivateRelayHelperManager() {
       pendingRef.current = null;
       setPending(null);
       setWorking(false);
+      setSignatureShared(false);
       setError(null);
       resetPrivateRelayHelperStatus();
     };
@@ -409,11 +429,17 @@ export function PrivateRelayHelperManager() {
     pendingRef.current = null;
     setPending(null);
     setWorking(false);
+    setSignatureShared(false);
     setError(null);
   };
 
   const reject = async () => {
-    if (!pending || !sessionRef.current) return;
+    if (!pending || pendingRef.current !== pending || !sessionRef.current || decisionRef.current) return;
+    // Dismissing an uncertain delivery cannot revoke a signature already shared.
+    // Keep exact authorization and its sequence lease until submission or expiry.
+    if (signedRef.current.has(pending.job.quoteId)) { clearPending(); return; }
+    decisionRef.current = pending;
+    approvalDetailsRef.current?.focus({ preventScroll: true });
     setWorking(true);
     try {
       await sessionRef.current.rejectForQuote({
@@ -430,26 +456,42 @@ export function PrivateRelayHelperManager() {
   };
 
   const approve = async () => {
-    if (!pending || !sessionRef.current) return;
+    if (!pending || pendingRef.current !== pending || !sessionRef.current || decisionRef.current || signedRef.current.has(pending.job.quoteId)) return;
     const approval = pending;
     const session = sessionRef.current;
+    decisionRef.current = approval;
+    let shared = false;
+    // Native disabled buttons can drop focus to the inert page. The reviewed
+    // details remain mounted and own focus throughout signing and delivery.
+    approvalDetailsRef.current?.focus({ preventScroll: true });
     setWorking(true);
     setError(null);
     try {
       const signedEnvelopeXdr = await signPrivateRelayJob(pending.review);
       if (pendingRef.current !== approval || sessionRef.current !== session || approval.quote.expiresAt * 1_000 <= Date.now()) return;
-      const signed = await session.sendSigned({
+      await session.sendSigned({
         job: pending.job,
         quote: pending.quote,
         signedEnvelopeXdr,
+        onBeforePublish: signed => {
+          if (pendingRef.current !== approval || sessionRef.current !== session || signed.expiresAt * 1_000 <= Date.now()) {
+            throw new Error('Private relay approval expired or changed.');
+          }
+          signedRef.current.set(approval.job.quoteId, signed);
+          shared = true;
+          setSignatureShared(true);
+        },
       });
       if (pendingRef.current !== approval || sessionRef.current !== session) return;
-      signedRef.current.set(pending.job.quoteId, signed);
       clearPending();
     } catch {
       if (pendingRef.current !== approval) return;
-      setError('This relay job was not signed. Reject it or try approval again before it expires.');
+      setError(shared
+        ? 'This transaction was signed, but delivery to the sender is unconfirmed. It may still be submitted. Do not approve a replacement. Dismissing this notice cannot revoke the signature.'
+        : 'No signed response was shared by this helper. Reject this request or try approval again before it expires.');
       setWorking(false);
+    } finally {
+      if (decisionRef.current === approval) decisionRef.current = null;
     }
   };
 
@@ -458,9 +500,10 @@ export function PrivateRelayHelperManager() {
       <ModalHeader
         title="Relay Private Payment?"
         subtitle="A peer is asking this account to submit one transaction"
-        onClose={working ? undefined : () => void reject()}
+        onClose={() => void reject()}
+        closeDisabled={working}
       />
-      <div className="space-y-4 p-4 sm:p-6">
+      <div ref={approvalDetailsRef} tabIndex={-1} role="group" aria-label="Relay approval details" className="space-y-4 p-4 sm:p-6">
         <dl className="panel-inset divide-y divide-white/[0.08] px-4 text-[13px]">
           <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
             <dt className="text-neutral-400">Private reward</dt>
@@ -487,9 +530,9 @@ export function PrivateRelayHelperManager() {
         {error ? <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p> : null}
         <div className="grid grid-cols-2 gap-3">
           <Button type="button" variant="ghost" disabled={working} onClick={() => void reject()}>
-            Reject
+            {signatureShared ? 'Dismiss' : 'Reject'}
           </Button>
-          <Button type="button" loading={working} disabled={working} onClick={() => void approve()}>
+          <Button type="button" loading={working} disabled={working || signatureShared} onClick={() => void approve()}>
             Approve &amp; sign
           </Button>
         </div>

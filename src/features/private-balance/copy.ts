@@ -30,10 +30,25 @@ interface ErrorRule {
  */
 const ERROR_RULES: ErrorRule[] = [
   {
-    match: /status is unknown after proof sharing|previous private payment is unresolved/i,
+    match: /previous private payment is unresolved/i,
+    humanize: () => ({
+      title: 'Blocked by an earlier payment',
+      body: 'This new action has not started. The earlier payment’s status is still unknown; its inputs remain reserved until verified chain reconciliation. Do not reset the wallet or repeat that payment.',
+    }),
+  },
+  {
+    match: /status is unknown after proof sharing/i,
     humanize: () => ({
       title: 'Payment status unknown',
       body: 'A shared spend proof can still be submitted, even if no transaction was signed here. Cancelling or waiting for transaction expiry cannot revoke it. These inputs remain reserved until canonical reconciliation.',
+    }),
+  },
+  {
+    match: /^Private relay requires a fresh recipient address\./,
+    humanize: () => ({
+      title: 'A new recipient address is needed',
+      body: 'Ask the recipient to open Receive → Private → Shielded → New address, then replace this send’s address. This address cannot be used with a relay. Nothing was sent.',
+      action: 'check-address',
     }),
   },
   {

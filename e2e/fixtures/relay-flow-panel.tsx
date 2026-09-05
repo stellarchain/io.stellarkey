@@ -17,6 +17,7 @@ const request: PrivateRelayRequest = { version: 2, type: 'request', requestId: '
 const offer: PrivateRelayQuote = { version: 2, type: 'quote', requestId: request.requestId, quoteId: '55'.repeat(32), peerPubkey: '66'.repeat(32), peerAccount: draft.publicRecipient, feeAtomic: '100', accountSignature: 'synthetic', nonce: '77'.repeat(32), expiresAt: request.expiresAt };
 const cheaperOffer = { ...offer, quoteId: '88'.repeat(32), peerAccount: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', feeAtomic: '50' };
 const syntheticAddress = encodePrivateAddress({ deploymentTag: new Uint8Array(16).fill(1), diversifier: Uint8Array.of(1, 2, 3, 4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2) }, 'tskpay_');
+const defaultAddress = encodePrivateAddress({ deploymentTag: new Uint8Array(16).fill(1), diversifier: new Uint8Array(4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2) }, 'tskpay_');
 const chainDraft = { kind: 'transfer' as const, amount: '1', recipientAddress: syntheticAddress };
 const chainApproval: PrivateRelayChainApproval = {
   id: 'synthetic-chain', submissionMode: 'relay', contextKey: 'synthetic', assetContractId: 'synthetic', assetIndex: 0,
@@ -31,6 +32,7 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
   const delayCreation = useRef(false);
   const finishCreation = useRef<(() => void) | null>(null);
   const [requests, setRequests] = useState(0);
+  const [creations, setCreations] = useState(0);
   const [chainMode, setChainMode] = useState(false);
   const finishPayout = useRef<(() => void) | null>(null);
   const [selections, setSelections] = useState(0);
@@ -43,6 +45,7 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
   useEffect(() => {
     const create = PrivateRelaySenderSession.create;
     PrivateRelaySenderSession.create = async () => {
+      setCreations(value => value + 1);
       let sessionClosed = false;
       setClosed(false); setCollectionStopped(false);
       if (delayCreation.current) await new Promise<void>(resolve => { finishCreation.current = resolve; });
@@ -71,6 +74,8 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
     return () => { PrivateRelaySenderSession.create = create; };
   }, []);
   return <>
+    <Button onClick={() => void flow.prepare({ ...chainDraft, recipientAddress: defaultAddress }, 'relay')}>Try default synthetic recipient</Button>
+    <Button onClick={() => void flow.prepare(chainDraft, 'relay')}>Use fresh synthetic recipient</Button>
     <Button onClick={() => void flow.prepare(draft, 'relay')}>Find synthetic helpers</Button>
     <Button variant="secondary" onClick={() => {
       socket.current?.close();
@@ -97,6 +102,7 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
     <Button variant="secondary" onClick={() => void flow.cancelPrepared()}>Cancel synthetic discovery</Button>
     <p data-testid="relay-selections">{selections}</p>
     <p data-testid="relay-requests">{requests}</p>
+    <p data-testid="relay-creations">{creations}</p>
     <p data-testid="relay-error">{flow.error ?? 'none'}</p>
     <p data-testid="relay-closed-at-selection">{String(closedAtSelection)}</p>
     <p data-testid="relay-collection-stopped">{String(collectionStopped)}</p>
