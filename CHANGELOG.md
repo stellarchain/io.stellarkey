@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
 - Made authenticated Nostr helper offers selectable during fee comparison for ordinary private payments and each consolidation step, with stable peer rows and cancellation-safe session handoff.
 - Made opted-in private relay helpers report their actual connecting, connected, reconnecting, or unavailable state, retry startup and subscription failures, automatically restore dropped WebSocket subscriptions starting with a one-second retry, and cancel in-flight connection resources when the session ends.
 - Made private relay discovery display authenticated offers as they arrive, compare fees until quote traffic is quiet for 700 ms, and stop waiting for slower Nostr acknowledgements after the first configured relay accepts a message.
@@ -53,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept Select choices bound to option identity during live reordering, preserved focus when options disappear or become disabled, and made Select and Dropdown keyboard navigation stay within their owning dialog.
+- Added consistent clipboard pending, success, and retryable error feedback, prevented overlapping copy writes, and kept sensitive clipboard clearing available after the copied announcement ends.
 - Kept cancelled Nostr discovery connection attempts from closing a selected helper's socket, cleared stale helper controls on account changes, and ignored duplicate consolidation-helper taps.
 - Identified same-account private relay helpers immediately in both peer checks and active payment reviews while keeping them ineligible and preserving the full eligible-peer discovery window.
 - Closed the focused Earn by relaying dialog immediately after valid settings are saved instead of requiring a second acknowledgement.
