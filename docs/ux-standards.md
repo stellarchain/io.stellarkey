@@ -9,6 +9,7 @@ These are implementation contracts, not visual aspirations. They apply to every 
 - Never put a tab-, step-, asset-, or request-dependent `key` on an overlay, portal, backdrop, shell, or ancestor unless the explicit product requirement is to destroy all descendant state.
 - Selection feedback is urgent. Update it in the same event turn; do not wait for data, chunks, proofs, prices, or network responses.
 - Clear sensitive state explicitly at the narrowest owning boundary. Do not rely on broad remounting as a security control.
+- Explicit subpage navigation initializes the destination's actual scroll owner and focus after commit; ordinary data updates do neither. Settings uses deterministic top-of-destination navigation (including Back), focusing its heading or stable named wrapper without another browser focus scroll. Lazy child readiness must not replay that initialization. Existing shared Modal ownership takes precedence.
 
 ## 2. Overlay contract
 
@@ -41,7 +42,7 @@ Modal requirements:
 - Every Tabs and SegmentedControl instance has an explicit accessible name. Native form labels use `htmlFor`; captions for composite controls use ordinary text elements rather than unbound labels.
 - Tabs use `tablist`, `tab`, and `tabpanel`, with `aria-selected`, `aria-controls`, and reciprocal `aria-labelledby`.
 - Horizontal tabs implement Left/Right, Home, and End. Tab moves from the active tab to panel content.
-- Automatic activation is allowed only when the selected indicator and useful panel appear without disruptive latency. Otherwise selection is still immediate, while the waiting portion receives a scoped fallback.
+- Automatic activation is allowed only when the panel appears without disruptive latency. Lazy or intent-gated Private panels use `activationMode="manual"`: Arrow/Home/End move focus without selecting or loading; Enter/Space/pointer explicitly activate, immediately update selection, and show a panel-local fallback if needed.
 - Pointer activation does not move focus unexpectedly. Leaving a sensitive tab unmounts and clears sensitive panel state according to its feature policy.
 
 ## 4. Loading contract
@@ -50,6 +51,7 @@ Choose feedback by actual scope:
 
 - synchronous/local: immediate selected, pressed, or changed state; no loader;
 - button mutation: preserve label width, disable duplicate submission, set `aria-busy`, show compact progress without erasing purpose;
+- focus-retaining retries and copy actions: keep the control mounted, use `aria-disabled` with a synchronous owner guard when native disabling would lose focus, and keep the pending announcement outside any busy region that would defer it;
 - card/field/panel: retain accurate content or reserve the eventual layout with a local skeleton/status;
 - route: retain shared layout/navigation and use route loading only for route work;
 - measurable multi-stage work: show honest stage text or determinate progress;
@@ -65,6 +67,8 @@ Rules:
 - Provide retry/cancel/safe navigation when supported.
 - Model critical async state explicitly: `idle | pending | success | empty | recoverable-error | terminal-error`, extended only by real domain states.
 - Abort requests or ignore stale results after a mode/tab/query change.
+- Bind async results to their actual owner (account/network/session/request), including success, failure and final cleanup. A stale `finally` must not clear a newer pending state. A failed visible pagination sentinel stops until explicit retry.
+- QR images and their download links are usable only when the completed image's payload equals the current request. A still-valid old image is nevertheless wrong for newly edited payment instructions; hide it immediately and retain the reserved QR area.
 - Status announcements use `aria-live`/`role=status` sparingly and do not repeat on every render.
 
 ## 5. Stellar transaction contract
@@ -98,6 +102,21 @@ Every shared interactive component documents and tests:
 
 Use semantic tokens for spacing, radius, typography, color roles, focus rings, layers, motion duration/easing, content widths, and breakpoints. One-off values require a demonstrated layout need.
 
+Current shared primitive API contract (preserve the established visual identity):
+
+| Primitive | Supported scope | Required behavior |
+| --- | --- | --- |
+| Button | primary / secondary / danger / ghost; regular and existing `.btn-sm` | label remains in layout while busy; native pending-disable, caller-owned synchronous guard; inline caller errors; mobile target floor |
+| Select | md / sm; optional minimum popup width and preserved option labels | button/listbox pattern, stable IDs, real option focus, disabled skipping, Home/End/typeahead, Escape restore, Tab continuation from trigger |
+| Dropdown | existing trigger render prop, left/right placement | first-item focus once per opening; reposition never resets deliberate focus; Tab/Shift+Tab close and continue from trigger |
+| Tabs | automatic default / explicit manual; labelled panel | focus, selection and async data are independent; private intent is activation, not focus |
+| Modal | regular / wide; controlled open and dismissal policy | stable portal/backdrop/chrome; top-overlay focus/inert/scroll ownership; bounded mobile content |
+| CopyButton / HashValue | labelled/icon copy and truncated/full value | generic polite pending/success/failure; visible pending; synchronous write guard; no completion-time focus movement; value/unmount invalidates feedback |
+
+Popover portals inside a Modal belong inside that modal's backdrop, not an inert sibling under `body`. Convert viewport coordinates to the portal's containing block. Disabling/removing a focused popup must leave focus on an enabled owned control without stealing a newer deliberate focus choice.
+
+Clipboard writes cannot be cancelled. Do not race duplicate OS writes, read back the clipboard, or automatically overwrite it later. For sensitive CopyButton use, keep an explicit Clear action after the brief copied announcement ends; explain clipboard-manager persistence. `aria-disabled` is permitted when native disabling would destroy focus, but only with an enforced synchronous action guard and visible pending treatment.
+
 ## 7. Motion contract
 
 - Motion explains open/close, hierarchy, selection, continuity, or completion; decoration alone is insufficient.
@@ -125,6 +144,7 @@ Use semantic tokens for spacing, radius, typography, color roles, focus rings, l
 - Focus indicators are visible, unobscured, and at least equivalent to a 2 CSS px perimeter with sufficient contrast where practical.
 - Color is never the only status signal.
 - Content reflows at 200% zoom and narrow mobile widths without two-dimensional scrolling, except essential data regions.
+- Do not prohibit user zoom in viewport metadata or global touch CSS. Preserve the mobile 16px input floor independently of pinch zoom. Document gesture-specific exceptions and test reflow separately from physical-device pinch behavior.
 - Disabled controls are semantically disabled and their reason is available in adjacent text or description when not obvious.
 - Manual VoiceOver (iOS/macOS) and NVDA/JAWS checks are recorded as human release checks; automation must not claim they occurred.
 
@@ -168,3 +188,5 @@ For every critical overlay with asynchronous panels, test:
 - accessibility scan plus behavioral assertions.
 
 Tests wait for meaningful DOM, accessibility, network, or state conditions. Fixed sleeps are prohibited.
+
+Wallet verification must disable screenshots, video and traces. Disable failure DOM snapshots where supported; if the runner cannot, use only isolated synthetic non-usable fixtures, never a real wallet session. Playwright 1.62.1 locator failures retain this limitation (see the dated audit). Raw accessibility node HTML and wallet text are not safe application diagnostics. Use structural counts and fixed labels. Regression observers check transient attribute history as well as final shell identity, scroll lock and inertness. Run normal motion explicitly in addition to reduced motion.

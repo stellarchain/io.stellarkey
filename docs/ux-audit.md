@@ -1,5 +1,248 @@
 # StellarKey UX engineering audit
 
+## Follow-up audit — 2026-09-05
+
+Scope: app-wide repository audit, synthetic workflow testing, and focused implementation. Baseline: `fe4e08a`; work branch: `feat/ux-continuity`. The dated 2026-08-31 report below is historical evidence, **not a statement of the current pass's verification status**. Implementation plan: [ux-implementation-2026-09-05.md](ux-implementation-2026-09-05.md).
+
+### Current baseline and root cause
+
+The reported Public/Private perceptual close/reopen was already repaired at this baseline. Send, Receive and Add retain the same Modal, heading, close control and Tabs outside lazy panel boundaries. The baseline continuity/overlay/catalog suite passed **15/15** on Chromium and iPhone WebKit. Historical source `17a8612` replaced complete visible descendants with a lazy Private subtree and a null fallback while the outer portal survived. This audit does not claim a new fix for a currently reproducible portal remount.
+
+New regressions concern the next architectural layer: asynchronous results outliving their request/account, keyboard focus being confused with private activation, popup focus ownership, and inconsistent clipboard/error feedback. No new P0 loss-of-funds or secret disclosure was established by this UX pass; this is not a cryptographic or custody certification.
+
+Environment: macOS local runner, Node 26.7.0, npm 11.19.0, Next 16.3.3, React/DOM 19.2.8, Stellar SDK 17.0.1, Tailwind 4.3.3, Playwright 1.62.1, axe 4.13.0, qrcode 1.5.4. App Router/static export, React contexts/manual fetching, custom UI and CSS motion; no additional data or animation library introduced. Relevant installed Next guides were read before edits. No Storybook-based verification is claimed.
+
+Before application changes: `npm test` **1,382 pass / 0 fail**; lint **0 errors / 3 existing marketing-image warnings**; production build **22 exported routes / 319 CSP hashes**; bundle budgets pass. Baseline gzip bytes: landing 193,907; initial 340,019; unlocked 167,017; merchant 145,488; hardware 210,130; private runtime 70,849. Worker/artifact budgets remain separate.
+
+### Baseline flow, component and loading inventory
+
+Repository inventory: 329 source files, 63 Modal occurrences, 37 dynamic imports, 4 Tabs and 32 SegmentedControl occurrences, 22 Spinner occurrences, 44 `transition-all` occurrences, one Suspense boundary and no route `loading.tsx`. Counts are source occurrences, not unique screens. Shared UI supplies buttons/icon buttons, inputs, Select, Tabs, Modal, Dropdown, Tooltip, status/error and copy controls. Toast remains a separate primitive. Existing CSS centralizes modal/menu motion and reduced motion; scattered consumer transitions remain follow-up work.
+
+| Real flow | States and loading scope | Baseline audit finding |
+| --- | --- | --- |
+| Create/import/unlock/recover | local form, password/signing consent, busy and inline failure; lock screen | restore-file read lacks bounded request ownership/error feedback; restore trigger is not keyboard operable |
+| Home, accounts and network | retained wallet shell, account refresh and per-resource errors | ordinary resource requests already have latest-request lanes; pagination does not share their safety |
+| Balances and asset details | empty/list/skeleton, local metadata requests, lazy details | whole details chunk can delay first shell; changing detail keys defeats exit continuity |
+| Send / Receive / Add | stable shell, immediate local selection, private intent gate, local fallback | baseline continuity good; automatic arrow activation loads Private merely by moving focus |
+| Receive request edits | reserved QR area and download action | previous request QR remains displayed until the new async encoder completes |
+| Review/sign/submit | explicit approval, submission and tracked outcome | preserve existing confirmed/pending/unknown distinction and durable duplicate-submission guard |
+| Activity/history | retained rows, filters, pagination sentinel, empty state | obsolete page can append after account/network changes; failed visible sentinel can retry continuously |
+| Swap/batch/trustlines | quote/review/action-local pending, recoverable input, tracked result | no canonical-finality logic regression established; some accepted-state visuals still look like success |
+| Settings/security/merchant | nested panels, session timeout, backup, local encrypted stores | shared Select/menu/copy defects affect multiple surfaces; bespoke overlays remain incremental work |
+
+| Interaction | Idle / hover / pressed / focus | Disabled | Pending | Success / empty | Recoverable / terminal error | Offline |
+| --- | --- | --- | --- | --- | --- | --- |
+| Shared Button | supported | native disabled | stable label, busy, native pending-disable; synchronous duplicate guards are caller/domain-owned | caller-owned | caller-owned inline error | caller-owned |
+| Modal/Tabs | supported; manual intent gap | option/dismiss policy | panel-local | panel-owned | panel-local | panel-owned |
+| Select/Dropdown | option focus and reposition gaps | options supported | not asynchronous | selected/empty options | caller-owned | n/a |
+| CopyButton/HashValue | supported | pending guard needed | missing consistent feedback | transient copied | rejected clipboard inconsistent | local permission failure |
+| Activity | rows/filter supported | pagination guard | sentinel-local | rows/empty | stale/global error and automatic retry gap | resource error |
+| Backup file restore | inaccessible trigger | no read guard | missing | decrypt step | unhandled read/oversize | local file only |
+| Transactions | supported | domain guard | preparing → approval → submitting → pending | canonically confirmed | rejected/failed/unknown | explicit uncertainty |
+
+Impossible combinations identified: a QR for the previous request beside the current request text; an old account page appended to a new account; an obsolete request clearing a newer loading state; clipboard permission failure with no usable feedback; focus navigation activating a private panel without activation intent. These are ownership defects, not animation-duration problems.
+
+### Baseline priorities and implementation decisions
+
+| Priority / effort | Root cause and frequency | User impact / remediation |
+| --- | --- | --- |
+| P1 / small | QR image unbound to current payload; every edit/rotation during encoding | prevent scanning/downloading stale payment instructions; bind image and download to exact current request, ignore obsolete completion |
+| P1 / medium | pagination callback lacks account/network/session ownership; context switch during page read | reject stale success/error/finally, prevent duplicate calls, retain rows and require explicit retry after failure |
+| P1 / small | restore file await has no local error/stale lane; rejected/oversize or abandoned read | semantic trigger, immediate local pending, fixed safe errors, cancel ownership when workflow changes |
+| P1 / small | viewport and body touch CSS prohibit zoom; every affected touch session | allow user zoom and verify narrow/200% equivalent reflow; preserve 16px input floor |
+| P1 / small | Settings changes subpage but inherits the previous document/main scroll offset; repeated navigation from a scrolled settings list | destination heading can be completely offscreen and a 256px-wide button has only 23.9px unobscured height beneath sticky chrome; explicit destination-owned scroll/focus initialization, no reset on data updates |
+| P1 / medium | Select lacks a coherent real-focus/active-descendant model; popup outside inert owner | focus real options within owning modal portal, scoped keyboard handling and deterministic Escape/Tab |
+| P2 / small | automatic tab activation for lazy/private panels | opt-in manual Arrow/Home/End focus; Enter/Space/pointer explicitly activates Private immediately |
+| P2 / small | menu position updates replay initial focus | initialize focus once per opening, preserve deliberate focus during scroll/viewport changes |
+| P2 / medium | duplicated copy booleans/timeouts, rejected writes and stale completion | shared narrow request-scoped feedback, generic announcements and persistent explicit sensitive clipboard Clear |
+| P2 / medium | lazy complete asset/details overlays and key resets | measure first-use cost; migrate shell ownership only with per-flow coverage |
+| P2 / medium | tooltip dismissal/hover and toast semantics inconsistent | follow up with shared hoverable/Escape tooltip and live inline/toast contract |
+| P2 / small | abandoned import secret field and accepted-state success visuals | narrow sensitive form cleanup and neutral pending visuals; do not change canonical submission logic |
+| P3 / medium | consumer motion duplication and unmeasured list scaling | remove touched `transition-all`, profile before adding virtualization or animation dependencies |
+
+### Research ledger (accessed 2026-09-05)
+
+| Primary source | Recommendation / requirement | Application decision |
+| --- | --- | --- |
+| [React identity](https://react.dev/learn/preserving-and-resetting-state) | type/key/position owns state | preserve shell identity; clear only narrowly owned sensitive panels |
+| [React Transitions](https://react.dev/reference/react/useTransition), [Suspense](https://react.dev/reference/react/Suspense), [deferred values](https://react.dev/reference/react/useDeferredValue) | urgent input and deferred rendering are different; fallbacks belong near waiting content | keep selected state urgent; no deferred secret preloading or whole-modal fallback |
+| [Next navigation](https://nextjs.org/docs/app/getting-started/linking-and-navigating) and installed lazy-loading/use-client/loading/viewport guides | route loading and prefetch concern navigation; client boundaries and viewport settings are explicit | keep local tabs local; no new route loader, framework upgrade or unstable API |
+| [APG modal](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) | contained focus, inert background, intentional restoration | popup portal stays inside modal owner; regression observes full overlay lifetime |
+| [APG tabs](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/) | automatic activation only when panels have no noticeable latency | manual keyboard activation for Private; pointer/Enter/Space still update selection immediately |
+| [APG listbox](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/), [combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) | choose one coherent focus model, selection and focus differ | retain button/listbox pattern with real option focus, stable relationships, disabled/typeahead behavior |
+| [APG alert](https://www.w3.org/WAI/ARIA/apg/patterns/alert/), [WCAG 2.2](https://www.w3.org/TR/WCAG22/) | keyboard, reflow, names, status, non-obscured focus | restore user zoom; safe local failure/status announcements; human AT checks remain separate |
+| [WCAG target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum) and installed axe target-size implementation | target size concerns the usable, unobscured pointer area, not only CSS dimensions | investigate actual sticky-header overlap; repair Settings scroll ownership instead of enlarging an already adequately sized button |
+| [web.dev vitals](https://web.dev/articles/vitals), [INP](https://web.dev/articles/optimize-inp), [animation performance](https://web.dev/articles/animations-guide) | field p75 thresholds, reduce long tasks, prefer transform/opacity | distinguish DOM-next-frame lab proxies from paint/INP/field data; no decorative animation addition |
+| [Tailwind transitions](https://tailwindcss.com/docs/transition-property) | explicit transition properties and reduced-motion variants | use existing semantic motion tokens; no new animation library |
+| [Clipboard writeText](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText) | asynchronous write can reject | show generic local pending/error; prevent duplicate writes; never read clipboard to verify |
+| [node-qrcode](https://github.com/soldair/node-qrcode#todataurltext-options-cberror-url) | QR data URL generation is asynchronous | bind completed image to its originating payload and test deferred/out-of-order completion |
+| [Playwright network interception](https://playwright.dev/docs/network), [service workers](https://playwright.dev/docs/service-workers) | service-worker handling can bypass page-level request interception | controlled-delay continuity tests block service workers and hold the exact public setup-code dependency; separate PWA tests retain their service-worker coverage |
+| [Stellar app design](https://developers.stellar.org/docs/build/apps/application-design-considerations), [RPC submission](https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods/sendTransaction) | protect key custody; PENDING is not ledger success | preserve signing/reconciliation model; no live payment, secret capture or optimistic confirmation |
+
+### Evidence and security boundaries
+
+The performance and new pagination fixtures run against loopback with mocked data and unknown external HTTP/WebSocket traffic blocked. Existing continuity and other legacy browser fixtures mock known endpoints; they are not a blanket external-network deny policy. Screenshots, video and traces are disabled in the UX runners. `PLAYWRIGHT_NO_COPY_PROMPT` disables teardown DOM capture, but inspection and an intentional failure proved that Playwright 1.62.1 locator matchers independently produce failure ARIA snapshots; it is **not** a complete snapshot opt-out. These tests must only run with isolated synthetic data, never a real wallet session. QR fixtures use cryptographically invalid synthetic receive strings and fixed non-payment images. No real secret, usable private address, live transaction broadcast, clipboard read or sensitive performance label is introduced. Browser-control integration was unavailable; the repository's isolated Playwright runner supplies automation. Existing matcher diagnostics are a test-tooling limitation, not permission to capture real wallet material.
+
+QR test reference: `e2e/qr-freshness.spec.ts` witnessed stale-image failure before implementation, then passed Chromium and iPhone WebKit. Zoom policy tests first failed, then passed after removing both viewport and body CSS restrictions. The chart's pre-existing local `touch-none` remains a gesture exception; universal pinch behavior is not claimed. Human VoiceOver/NVDA and physical-device pinch checks remain release work.
+
+The delayed-chunk Send test proves stable transport-wait and next-frame continuity, including selection changes before delivery and no late panel activation after returning to Public. It does not claim that every private-runtime asynchronous task has settled. Separate deferred QR, backup-read and pagination tests exercise stale-result ownership directly.
+
+Measurement method and final verification results are recorded with the completion evidence for this dated pass. The historical tables below must not be reused as current before/after comparisons.
+
+### Implemented outcomes and behavioral evidence
+
+The audit-first, test-first workflow favored shared primitives and narrow async owners over a visual redesign. Existing 120/180/220 ms motion tokens remain authoritative; no new animation system, state library, dependency upgrade, artificial delay or private prefetch was added.
+
+| Area | Before this pass | Verified outcome / test reference |
+| --- | --- | --- |
+| Public/Private continuity | current baseline already passed; keyboard focus automatically activated lazy Private; old observer missed transient remove/reinsert and unlock/relock | manual intent for Send/Receive/Add; same shell/backdrop, no entrance restart, continuous inertness/scroll lock, pointer/keyboard focus, explicit close/cleanup, repeated selection during held chunk delivery; `e2e/public-private-continuity.spec.ts`, `e2e/overlay-contract.spec.ts` |
+| Shared Select/Dropdown | incoherent option focus, stale positional selection and reposition-driven focus reset | real option focus, identity-based choices, disabled/reordered/removed/empty cases, logical Tab/Escape, popup inside modal owner; `e2e/ux-primitives.spec.ts` |
+| Shared clipboard controls | inconsistent rejected-write feedback and overlapping requests; sensitive Clear disappeared with transient announcement | synchronous write guard; fixed local pending/success/retryable error; no late focus movement or clipboard read; explicit Clear persists; same shared primitive tests |
+| Receive QR | observed stale image beside new instructions in the deferred encoder regression | image and download match the current payload or remain unavailable in reserved space; out-of-order completion ignored; private leave/close removes rendered QR; `e2e/qr-freshness.spec.ts` |
+| Backup restore | observed missing keyboard/pending/error behavior and stale workflow ownership | semantic file trigger, immediate local read state, bounded 64 MiB read, safe retry, stale success/error/finally ignored on navigation/unmount; `e2e/restore-feedback.spec.ts` |
+| Older activity | owner-revocation regression failed without the new guard; failed sentinel could retry itself | account/network/endpoint/session cancellation, duplicate guard, retained rows, explicit retry, stable keyboard focus including empty filters; `tests/activity-pagination.test.mjs` (22), `e2e/activity-pagination.spec.ts` (6 browser cases) |
+| Zoom/reflow | viewport/CSS blocked zoom; Send MAX contrast 4.36:1; narrow WebKit memo header overflow | user zoom permitted, existing accent contrast, wrapping captions; 640×450 equivalent reflow and 320×450 preserve shell/input/focus; `e2e/accessibility.spec.ts` and viewport contract tests |
+| Settings navigation | new test reproduced destination heading entirely outside viewport; sticky header left only 23.9 px of a button usable | explicit destination-owned main/document scroll and heading focus; heading visible below sticky chrome, WCAG target-size gate passes; data edits preserve scroll/focus; `tests/settings-navigation.test.mjs` (5), Settings accessibility checks on Chromium/iPhone/iPad |
+| Transaction finality | existing durable submission/reconciliation model already distinguishes accepted, pending, confirmed, failed and unknown | retained and reverified existing `tests/submission.test.mjs`, `tests/private-balance-submission.test.mjs` and mocked browser transaction flows; measurement stops at password approval and cancels before signing/broadcast |
+
+The QR, restore, shared-control, zoom, pagination ownership and Settings changes each had a specific failing regression before the corresponding fix. Continuity was deliberately strengthened without misrepresenting its already-green baseline as a new remount repair. Independent spec/quality reviews found no remaining blocker in the changed implementation.
+
+### Final automated verification
+
+| Command / scope | Final result |
+| --- | --- |
+| `npm test` | **1,409/1,409 pass**, 31.265 s on the final repeat; baseline 1,382; +22 pagination and +5 Settings owner tests |
+| `npx tsc --noEmit --incremental false` | pass |
+| `npm run lint` | pass, zero errors; three unchanged marketing `<img>` warnings (`LandingBody:181`, `LandingPanels:152,359`) |
+| `npm run build` | pass, 22 exported routes, 320 CSP hashes; production offline revision `36461a9393600c8d02e3` |
+| `npm run test:bundle` / `npm run check:bundle` | 5/5 bundle tests and every existing budget pass; no budget raised |
+| `node scripts/test-private-components.mjs` | **62/62 pass**, 53.2 s: 22 existing private-flow, 38 new shared-control, 2 new QR browser cases; isolated temporary fixture removed by runner |
+| `npx playwright test --config=playwright.ux.config.ts` | **117 pass / 53 skip / 0 fail**, 4.5 min, final production matrix |
+| `E2E_NEXT_DEV=1 E2E_PRIVATE_UI_REQUIRED=1 npx playwright test --config=playwright.ux.config.ts e2e/public-private-continuity.spec.ts e2e/overlay-contract.spec.ts e2e/private-manifest-security.spec.ts --project=desktop-chromium --project=iphone-webkit` | **15/15 pass**, 26.8 s; private UI mandatory, catalogue mutation fails closed |
+| production Send held-chunk case, `--repeat-each=3`, Chromium/iPhone | **6/6 pass**, 16.1 s, after deterministic request interception fix |
+| `git diff --check` | pass |
+
+Browser commands explicitly unset `PRIVATE_BALANCE_E2E_SENDER_SECRET` and `PRIVATE_BALANCE_E2E_RECIPIENT_SECRET`. The 53 production skips are the existing device-only conditions, private testnet-fixture gates and synthetic-component-runner gates; component cases run separately above. No live Private Balance/testnet/cryptographic release journey was run. No screenshot-based visual-regression suite exists in this repository; behavioral geometry/focus/identity tests substitute for this pass, not for perceptual or assistive-technology certification.
+
+Verification history matters: the first full production matrix was 116 pass / 1 fail / 53 skip and exposed the real Settings scroll/target-size defect. A later full matrix had the same counts from a nondeterministic chunk-delay test: desktop service-worker delivery bypassed interception. The test now blocks service workers only in continuity coverage and targets the fixed public setup-code dependency before navigation; PWA/offline coverage is unchanged. The final full matrix and repeated delay cases above passed. No existing failing test was removed to achieve green.
+
+Accessibility verification includes programmatic names/relationships, manual-activation semantics, keyboard focus loops/restoration, nested inertness, uninterrupted scroll lock, live feedback and retry, normal/reduced motion, narrow reflow and non-obscured destination headings. axe includes WCAG 2.2 AA and no longer exempts restrictive viewport metadata. The automated gate rejects critical/serious findings; existing WebKit contrast exclusion remains, with Chromium supplying contrast checks. These are sampled workflow checks, not a statement that every WCAG criterion or every surface is certified. Human VoiceOver/NVDA and physical-device checks have **not** been performed.
+
+### Changed files and durable contracts
+
+- Production primitives/flows: `src/components/ui.tsx`, `SendModal.tsx`, `ReceiveModal.tsx`, `AddAssetModalShell.tsx`, `Dashboard.tsx`, `Onboarding.tsx`, `SettingsPage.tsx`; `src/hooks/useWallet.tsx`; `src/features/private-balance/components/ReceivePrivate.tsx`; `src/app/layout.tsx`, `src/app/globals.css`.
+- New tests: `tests/activity-pagination.test.mjs`, `tests/settings-navigation.test.mjs`; `e2e/activity-pagination.spec.ts`, `restore-feedback.spec.ts`, `qr-freshness.spec.ts`, `ux-primitives.spec.ts`; `e2e/fixtures/qr-freshness.tsx`, `ux-primitives.tsx`.
+- Updated test/evidence infrastructure: `e2e/public-private-continuity.spec.ts`, `accessibility.spec.ts`, `merchant.spec.ts`, `pwa.spec.ts`, `fixtures.ts`, `fixtures/private-components.tsx`; `playwright.ux.config.ts`, `playwright.private-components.config.ts`; `tests/mobile-ui.test.mjs`, `release-gate.test.mjs`, `security-policy.test.mjs`; `scripts/measure-ux.ts`.
+- Documentation: this dated audit and numeric evidence, `docs/ux-implementation-2026-09-05.md`, `docs/ux-standards.md`, `docs/release-checklist.md`, `AGENTS.md`, and factual `[Unreleased]` entries in `CHANGELOG.md`. No published release entry or version changed.
+
+The enforceable contracts in [ux-standards.md](ux-standards.md) cover overlay ownership, local loading, canonical transaction states, existing component variants, copy lifecycle, semantic tokens, information terminology, motion, accessibility and measurement. The concise additions already in `AGENTS.md` are:
+
+1. Lazy/private Tabs use manual keyboard activation; focus alone is not private intent.
+2. Bind async image/page/file results, failures and cleanup to current request/account/network/session; failed sentinels require explicit retry.
+3. Keep popup portals inside the modal owner and preserve logical focus when options change.
+4. Permit zoom; distinguish reflow automation from physical-device and human AT checks.
+5. Destination navigation owns actual scroll/focus initialization; refreshes never replay it or focus behind a modal.
+6. Disable sensitive test captures; where failure snapshots cannot be disabled, use isolated synthetic fixtures and structural diagnostics only.
+
+### Paired production performance evidence
+
+Method: macOS 26.5.2 (25F84), Apple M3 Max arm64, Node 26.7.0, Chromium 151.0.7922.34; production static exports of immutable baseline `fe4e08a` and the final feature application source. Desktop is 1440×900/local network; mobile is Chromium iPhone 13 emulation with 4× CPU throttling and 150 ms RTT, 1.6 Mbps down / 0.75 Mbps up applied **before navigation**; reduced motion is desktop/local with `reduce`. This is not a physical mid-tier phone or Safari performance measurement. Browser tests separately cover iPhone/iPad WebKit.
+
+Each version has three fresh contexts per profile and cold/warm repeats in the same initialized wallet session; all samples, including the slowest, are retained. Measurements ran serially without competing browser/build work. Routing disables HTTP cache and service workers are blocked. “Cold” interaction means first use in an already initialized synthetic wallet, not cold compilation. Mocked data returns locally; endpoint RTT, remote account history, proving, ledger confirmation and an initialized private account are not measured. The public Private setup gate is measured without activating it. Activity is this app's local navigation, not a fabricated URL route.
+
+The existing `npm start` static server streams uncompressed files over local HTTP. Consequently throttled cold-start numbers are not representative of an optimized compressed deployment. The original readiness assertion is a coarse polling upper bound; an additional three-run startup-only calibration uses a fixed public control's in-page next-frame DOM readiness (no wallet fixture). Failed setup attempts and earlier development-server timing experiments are not mixed into these paired production samples.
+
+Interaction values are click-capture → next-rAF DOM/geometry predicates, **not presented-pixel latency or field INP**. They exclude input delay before the handler. Asset shell does not mean all metadata ready; review and preparation measure first feedback, not transaction completion. The 200-row stress profile intentionally returns an oversized first page and waits for all mounted rows, including offscreen rows; it is not a real pagination/network/scroll benchmark.
+
+| Metric, ms: median (slowest) | Desktop before → after | Mobile 4× before → after | Reduced motion before → after |
+| --- | --- | --- | --- |
+| Initial document ready | 52.0 (107.8) → 47.4 (79.0) | 3626.0 (3632.1) → 3598.1 (3601.2) | 50.5 (51.1) → 47.0 (47.9) |
+| Onboarding check (coarse upper bound) | 199.0 (246.9) → 187.1 (238.3) | 6533.7 (6546.0) → 7031.7 (7032.7) | 151.7 (156.5) → 150.7 (150.9) |
+| Activity controls — first use | 18.2 (18.4) → 17.2 (17.8) | 13.4 (14.8) → 12.3 (14.1) | 6.8 (7.3) → 7.1 (7.7) |
+| Activity controls — warm | 17.0 (17.1) → 15.9 (40.9) | 8.2 (8.7) → 6.8 (7.3) | 37.3 (40.4) → 34.9 (35.3) |
+| Asset details shell — first use | 15.5 (15.6) → 14.3 (15.1) | 36.0 (39.6) → 32.2 (33.3) | 7.8 (8.1) → 8.3 (8.4) |
+| Asset details shell — warm | 15.5 (15.8) → 13.8 (14.2) | 18.3 (23.7) → 20.7 (21.1) | 4.5 (6.7) → 4.0 (6.6) |
+| Send shell — first use | 18.4 (18.4) → 16.9 (16.9) | 52.8 (57.7) → 48.2 (50.3) | 11.6 (12.3) → 11.5 (11.6) |
+| Send shell — warm | 17.4 (45.1) → 16.1 (40.7) | 23.8 (25.2) → 22.4 (23.1) | 6.8 (10.9) → 7.3 (7.9) |
+| Private selected — first use | 54.0 (54.0) → 43.0 (44.8) | 12.2 (12.7) → 12.5 (13.5) | 40.0 (40.2) → 36.8 (37.0) |
+| Private selected — warm | 47.1 (52.6) → 41.8 (43.9) | 11.6 (23.1) → 11.8 (12.2) | 38.0 (38.9) → 7.3 (7.4) |
+| Private setup gate — first use | 167.2 (167.9) → 130.3 (134.9) | 896.3 (902.2) → 900.0 (901.3) | 83.4 (310.2) → 78.1 (78.6) |
+| Private setup gate — warm | 47.1 (52.6) → 41.8 (44.0) | 11.6 (23.1) → 11.8 (12.3) | 38.1 (38.9) → 7.3 (7.4) |
+| Form review — first use | 45.6 (46.1) → 41.2 (42.2) | 21.4 (21.4) → 20.4 (21.5) | 39.7 (40.3) → 37.1 (37.5) |
+| Form review — warm | 46.0 (46.2) → 41.3 (43.3) | 9.4 (22.3) → 8.3 (9.7) | 41.3 (77.7) → 37.4 (37.9) |
+| Preparation feedback — first use | 44.9 (47.1) → 42.2 (42.5) | 22.7 (22.9) → 17.5 (17.7) | 7.3 (7.4) → 7.3 (7.5) |
+| Preparation feedback — warm | 45.9 (46.3) → 41.9 (43.8) | 15.5 (22.4) → 15.9 (21.0) | 5.6 (38.1) → 4.1 (35.9) |
+
+Startup calibration helps explain the apparent 6.53 → 7.03 s coarse-check difference: the same unchanged baseline itself moves to a 7.00 s polling upper bound on repeat. In-page onboarding readiness is **6,490.1 (6,537.5) → 6,518.7 (6,574.8) ms**, +28.6 ms median. Startup JavaScript is **21 resources / 1,046,375 → 1,052,546 encoded body bytes**; the server sends them uncompressed. Last JS response ends at 6,360.9 → 6,382.9 ms median. The small readiness change is consistent with the extra 6,171 bytes costing approximately 31 ms at the configured throughput; this is an inference, not a causal proof. The calibration adds its own observer and three samples, not causal attribution. No half-second application regression or cold-start improvement is claimed.
+
+| Stress / diagnostic | Before median (slowest) | After median (slowest) |
+| --- | --- | --- |
+| Mobile 200 rows mounted — first use, ms | 69.3 (70.6) | 68.7 (71.2) |
+| Mobile 200 rows mounted — warm, ms | 66.3 (67.7) | 69.5 (70.5) |
+| Mobile 200-row session longest task, ms | 66 (67) | 67 (68) |
+| Mobile 200-row session maximum Event Timing duration, ms | 104 (104) | 104 (104) |
+| Desktop session maximum Event Timing duration, ms | 264 (264) | 240 (240) |
+| Mobile ordinary session maximum Event Timing duration, ms | 80 (88) | 72 (80) |
+| Reduced-motion session maximum Event Timing duration, ms | 176 (176) | 152 (160) |
+| Mobile ordinary session longest task, ms | 64 (70) | 0 (61) |
+| Non-input layout-shift sum — desktop / reduced motion | 0 / 0 | 0 / 0 |
+| Non-input layout-shift sum — mobile ordinary | 0.02 (0.02) | 0.02 (0.02) |
+
+All measured selection/shell/review/preparation DOM proxies remain below 100 ms in these samples. This **does not certify** every critical action's visible acknowledgement or field INP: desktop Event Timing still reaches 240 ms, startup remains transfer-bound in this server profile, and the 200-row stress path still includes 68 ms tasks. Aggregate Event Timing is not fully action-attributed. A value of zero means no observed entry at the configured threshold (16 ms Event Timing, 50 ms long tasks), not zero work. Unsupported observers return null. Layout-shift sums exclude recent-input shifts and use no CWV session-window calculation; they are neither canonical CLS nor proof of zero tab-induced movement. Behavioral shell identity/geometry checks provide separate continuity evidence. No field p75 LCP/INP/CLS, Lighthouse field data or universal motion smoothness is claimed.
+
+#### Bundle accounting
+
+| Budget / emitted code | Baseline gzip bytes | After gzip bytes | Change |
+| --- | ---: | ---: | ---: |
+| Landing | 193,907 | 195,180 | +1,273 |
+| Initial wallet | 340,020 | 341,909 | +1,889 (+0.56%) |
+| Unlocked wallet | 167,017 | 167,305 | +288 |
+| Merchant | 145,488 | 145,488 | 0 |
+| Hardware | 210,130 | 210,130 | 0 |
+| Private feature | 70,849 | 71,138 | +289 |
+| All emitted JavaScript, 119 chunks | 1,794,918 | 1,797,352 | +2,434 (+0.14%) |
+
+The paired baseline initial gzip count differs by one byte from the first baseline build's 340,019; raw application source is identical. Total emitted raw JS is 6,124,725 → 6,132,396 bytes (+7,671). Increases cover shared focus/copy/request guards, bounded restore/pagination feedback and Settings destination ownership, including its separate lazy chunk; no dependency changed. Worker (726,087 raw bytes, 9 chunks), proving artifacts (9,424,602 raw / 6,278,239 gzip) and two-version artifact peak (18,849,204 bytes) are unchanged. The unlocked raw budget has 1,604 bytes of remaining headroom; future work must not casually expand that path. All existing budgets pass without adjustment.
+
+#### Reproduction and numeric artifacts
+
+Build each application version independently; copy the same evidence harness and optional fixture-ready timeout into the immutable baseline without changing its application source. Start their static exports on separate loopback ports. In each corresponding worktree run:
+
+```sh
+UX_BASE_URL=http://127.0.0.1:3192 UX_RUNS=3 npm run measure:ux
+UX_BASE_URL=http://127.0.0.1:3192 UX_PROFILE=mobile-4x UX_LIST_SIZE=200 UX_RUNS=3 npm run measure:ux
+UX_BASE_URL=http://127.0.0.1:3192 UX_PROFILE=mobile-4x UX_STARTUP_ONLY=1 UX_RUNS=3 npm run measure:ux
+```
+
+Repeat with port 3193 for the feature export, serially. The extra startup observer is opt-in and does not run during wallet interactions. Artifacts contain only fixed metric labels, numeric samples and public environment descriptors:
+
+- [Baseline profiles](ux-evidence-2026-09-05-baseline.json) / [after profiles](ux-evidence-2026-09-05-after.json).
+- [Baseline 200-row stress](ux-evidence-2026-09-05-baseline-list.json) / [after stress](ux-evidence-2026-09-05-after-list.json).
+- [Baseline startup calibration](ux-evidence-2026-09-05-baseline-startup.json) / [after calibration](ux-evidence-2026-09-05-after-startup.json).
+
+No screenshots, recordings or raw browser traces were retained; the test references and numeric artifacts are the reproducible evidence. This pass delivers the verified high-value changes, not complete release, accessibility or performance certification.
+
+### Remaining issues and deliberate boundaries
+
+| Priority / effort | Follow-up / reason not changed here |
+| --- | --- |
+| P2 / medium | Cold application/private-code loading and interaction long tasks need attribution and optimization under realistic devices; do not trade private-data intent for preloading. Numeric limits are detailed in the performance evidence. |
+| P2 / medium | Entire lazy Asset/Transaction details shells, key resets and bespoke Merchant overlays need per-flow lifetime tests before migrating ownership; no blanket overlay rewrite. |
+| P2 / medium | Tooltip hover/Escape behavior, toast live/persistence semantics and raw clipboard callers outside the two shared controls need incremental consolidation. |
+| P2 / small | Narrow cleanup of abandoned Add Account import-secret fields and onboarding creation-password state remains follow-up; no new disclosure established in this pass. JS string cleanup is best-effort, not guaranteed memory zeroization. |
+| P2 / small | Accepted Send/Batch checkmarks/haptics can imply confirmation despite accurate status text/model; adopt neutral pending visuals with focused receipt tests, not a submission-engine rewrite. |
+| P2 / small | Human VoiceOver/NVDA, physical pinch, chart gesture exception and realistic-device motion verification remain release checks. |
+| P2 / small | Playwright matcher failure ARIA snapshots cannot be fully disabled with the inspected public opt-out; never point these runners at a real wallet session. |
+| P3 / medium | Remaining consumer `transition-all` and broader list scaling need profiling; no new animation dependency or virtualization was justified solely by style. |
+| P3 / small | Private Receive's actual component has deferred QR browser coverage; Public Receive uses the same payload-binding rule but still needs its own direct deferred encoder browser case. |
+| P3 / small | Settings Back deliberately starts at the destination top; per-subpage scroll restoration is a separate product refinement. |
+
+No new telemetry, field-CWV claim, mainnet transaction, key-custody change, dependency upgrade or visual rebrand was introduced. Dependency advisories were not re-audited by this UX task. `release:verify`/`audit:prod` and a clean-worktree release gate were not run; no release/tag/deployment is implied. Integration remains separate: changes are in `feat/ux-continuity`, with the main checkout and its unrelated documents preserved.
+
+---
+
+## Archived audit — 2026-08-31
+
 Status: remediation and full release verification complete
 Audit date: 2026-08-31  
 Baseline source: `17a8612` (the static export was produced before the evidence-only `17a8612` commit; application source is identical to `f70c5e7`)  

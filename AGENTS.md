@@ -28,3 +28,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Never represent RPC `PENDING`, Horizon acceptance, or a timeout as ledger confirmation. Preserve explicit preparing, signing, submitting, pending, confirmed, rejected, failed, and status-unknown states as applicable.
 - Critical overlay changes require behavioral tests for shell/backdrop identity, inertness/scroll lock, pointer and keyboard focus, rapid switching, stale results, cleanup, intentional close, reduced motion, and iPhone WebKit.
 - Run focused tests for touched interactions and the relevant accessibility checks. Before release, run the complete verification command from a clean worktree and record human VoiceOver/NVDA checks separately from automation.
+- Use manual keyboard activation for lazy or private Tabs: Arrow/Home/End move focus; Enter/Space/pointer activate. Focus alone is not private-data intent.
+- Bind asynchronous images, pages, and file reads to the current request/account/network/session; guard success, error, and final cleanup. A failed pagination sentinel requires explicit retry.
+- Keep Select/menu portals in their owning modal; preserve logical Tab continuation and focus when a focused popup becomes disabled or disappears.
+- Permit user zoom in viewport metadata and global touch CSS. Test 200% equivalent reflow separately from physical-device pinch and human assistive technology.
+- Explicit subpage navigation owns destination scroll/focus initialization in the actual scroll container; data refreshes do not. Keep destination headings below sticky chrome and never move focus behind an active overlay.
+- Disable wallet-test screenshots, traces, and video. If a runner cannot disable failure DOM snapshots, use isolated non-usable synthetic fixtures only, never a real wallet session. Report fixed labels and structural accessibility diagnostics, never serialized wallet text or node HTML.
