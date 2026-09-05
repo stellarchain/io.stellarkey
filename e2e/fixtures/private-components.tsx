@@ -18,6 +18,7 @@ import { UxPrimitivesFixture } from '../../../e2e/fixtures/ux-primitives';
 import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
 import { RelayHelperFixture } from '../../../e2e/fixtures/relay-helper-panel';
 import { RelayRecipientFixture } from '../../../e2e/fixtures/relay-recipient-panel';
+import { RelayEarnFixture } from '../../../e2e/fixtures/relay-earn-panel';
 
 const draft = { kind: 'transfer' as const, amount: '1', recipientAddress: 'synthetic-recipient-only' };
 const approval: PrivateRelayChainApproval = {
@@ -93,6 +94,7 @@ function Fixture() {
         <QrFreshnessFixture />
         <RelayHelperFixture />
         <RelayRecipientFixture />
+        <RelayEarnFixture />
         <Button onClick={() => { setOpen(true); setCancelled(false); }}>Open privacy controls</Button>
         <p data-testid="writes">{writes}</p>
         <Modal open={open} onClose={() => setOpen(false)} wide>

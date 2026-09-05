@@ -36,7 +36,12 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(entry, /aria-haspopup="dialog"/);
   assert.match(entry, /<Modal/);
   assert.match(entry, /<PrivateRelaySettings helperOnly/);
-  assert.match(entry, /onSaved=\{\(\) => setOpen\(false\)\}/);
+  // Saving/starting is local feedback now, not an implicit close. The Earn
+  // browser suite verifies shell/backdrop identity and focus across changes.
+  assert.doesNotMatch(entry, /onSaved=\{\(\) => setOpen\(false\)\}/);
+  assert.match(entry, /<Modal open=\{open\}/);
+  assert.match(settings, /Start relaying/);
+  assert.match(settings, /Stop relaying/);
   assert.match(settings, /helperOnly/);
   assert.match(settings, /onSaved/);
   assert.doesNotMatch(settings, /Relay settings saved on this device/);

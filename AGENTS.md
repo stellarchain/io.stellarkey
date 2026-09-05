@@ -23,6 +23,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Model overlay visibility, tab selection, request state, and animation presence independently. A tab or mode change must never close, key, remount, or replay the entrance animation of its containing overlay.
 - Selection feedback is urgent and local. Scope loading/error UI to the panel or action that is waiting; never blank a page or dialog for local work.
 - Use the shared `Modal`, `Tabs`, `Button`, motion tokens, and safe-error presenter before creating a new interaction primitive. New or touched shared components must not use `transition: all`.
+- Include native `summary` controls in modal keyboard containment. When clearing private content on close, preserve only non-sensitive exit geometry so the shell does not collapse before its closing animation.
+- Rebase untouched preference fields when another tab changes settings, preserve actual edits, and merge only edited fields at save time. Start/Stop participation must stay independent of unfinished fee/endpoint drafts and of real network readiness.
 - Give every `Tabs` and `SegmentedControl` an explicit `ariaLabel`; use `htmlFor` for native form labels and a text element—not an unbound `<label>`—for composite-control captions.
 - Private panels load only after explicit intent. Do not prefetch, log, measure, screenshot, or retain secret keys, recovery phrases, private receive addresses, proof inputs, XDR, notes, addresses, amounts, or transaction hashes.
 - Never represent RPC `PENDING`, Horizon acceptance, or a timeout as ledger confirmation. Preserve explicit preparing, signing, submitting, pending, confirmed, rejected, failed, and status-unknown states as applicable.
