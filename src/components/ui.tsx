@@ -516,7 +516,7 @@ function usePopover({
   minWidth = 200,
 }: {
   open: boolean;
-  onClose: () => void;
+  onClose: (reason?: "escape" | "outside") => void;
   anchorRef: React.RefObject<HTMLElement | null>;
   align?: "left" | "right";
   matchAnchorWidth?: boolean;
@@ -524,6 +524,7 @@ function usePopover({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   // Position against the anchor; flip above when space below runs out.
   useEffect(() => {
@@ -533,7 +534,9 @@ function usePopover({
       if (!anchor) return;
       const r = anchor.getBoundingClientRect();
       const visualViewport = window.visualViewport;
-      setPos(calculatePopoverPosition({
+      const container = anchor.closest<HTMLElement>("[data-modal-backdrop]") ?? document.body;
+      setPortalContainer(container);
+      const position = calculatePopoverPosition({
         anchor: r,
         viewport: {
           top: visualViewport?.offsetTop ?? 0,
@@ -545,7 +548,16 @@ function usePopover({
         align,
         matchAnchorWidth,
         minWidth,
-      }));
+      });
+      // Keep portalled controls inside their owning dialog's accessible and
+      // focus subtree. Its backdrop-filter establishes a fixed containing block.
+      const bounds = container === document.body ? null : container.getBoundingClientRect();
+      setPos(bounds ? {
+        ...position,
+        left: position.left - bounds.left,
+        top: position.top === undefined ? undefined : position.top - bounds.top,
+        bottom: position.bottom === undefined ? undefined : position.bottom - (window.innerHeight - bounds.bottom),
+      } : position);
     }
     const visualViewport = window.visualViewport;
     update();
@@ -568,12 +580,13 @@ function usePopover({
     function onMouseDown(e: MouseEvent) {
       const t = e.target as Node;
       if (panelRef.current?.contains(t) || anchorRef.current?.contains(t)) return;
-      onClose();
+      onClose("outside");
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onClose("escape");
       }
     }
     document.addEventListener("mousedown", onMouseDown);
@@ -584,7 +597,7 @@ function usePopover({
     };
   }, [open, onClose, anchorRef]);
 
-  return { panelRef, pos };
+  return { panelRef, pos, portalContainer };
 }
 
 function popoverStyle(pos: PopoverPosition): React.CSSProperties {
@@ -597,6 +610,30 @@ function popoverStyle(pos: PopoverPosition): React.CSSProperties {
     "--pop-origin": pos.openUp ? "bottom" : "top",
     "--pop-shift": pos.openUp ? "4px" : "-4px",
   } as React.CSSProperties;
+}
+
+/** Continue at the trigger's logical position, never at a portalled menu's DOM position. */
+function focusAfterPopoverTrigger(anchor: HTMLElement | null, reverse = false): boolean {
+  if (!anchor || anchor.closest("[inert]")) return false;
+  const owner = anchor.closest<HTMLElement>("[data-modal-shell]") ?? document;
+  const stops = Array.from(owner.querySelectorAll<HTMLElement>(
+    'button, input, select, textarea, a[href], [tabindex]',
+  )).filter(element => element === anchor || (element.tabIndex >= 0 && !element.matches(":disabled")
+    && !element.closest("[inert], [data-popover-panel]") && element.getClientRects().length > 0));
+  const index = stops.indexOf(anchor);
+  if (index < 0) return false;
+  const nextIndex = index + (reverse ? -1 : 1);
+  const next = stops[nextIndex]
+    ?? (owner !== document ? stops[(nextIndex + stops.length) % stops.length] : null);
+  if (next && next !== anchor) {
+    next.focus({ preventScroll: true });
+    return true;
+  }
+  if (owner !== document) {
+    (owner as HTMLElement).focus({ preventScroll: true });
+    return true;
+  }
+  return false;
 }
 
 export interface SelectOption {
@@ -634,13 +671,22 @@ export function Select({
   preserveOptionLabels?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeValue, setActiveValue] = useState<string | null>(null);
+  const activeIndex = options.findIndex(option => option.value === activeValue);
+  const listboxId = React.useId();
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const focusOnOpen = useRef(false);
+  const popupHadFocus = useRef(false);
   const typeahead = useRef({ text: "", at: 0 });
   const selectedIndex = options.findIndex((o) => o.value === value);
   const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined;
-  const close = useCallback(() => setOpen(false), []);
-  const { panelRef, pos } = usePopover({
+  const close = useCallback((reason?: "escape" | "outside") => {
+    popupHadFocus.current = false;
+    setActiveValue(null);
+    setOpen(false);
+    if (reason === "escape") anchorRef.current?.focus({ preventScroll: true });
+  }, []);
+  const { panelRef, pos, portalContainer } = usePopover({
     open,
     onClose: close,
     anchorRef,
@@ -648,74 +694,101 @@ export function Select({
     minWidth: panelMinWidth ?? 180,
   });
 
+  if (disabled && open) setOpen(false);
+
+  useLayoutEffect(() => {
+    if (!disabled || open || !popupHadFocus.current) return;
+    popupHadFocus.current = false;
+    // Removing a focused option transfers focus to body. Do not attempt to
+    // restore its disabled trigger, and never replace a user's newer focus.
+    if (document.activeElement === document.body) focusAfterPopoverTrigger(anchorRef.current);
+  }, [disabled, open]);
+
   function openMenu() {
     if (disabled) return;
     triggerHaptic("selection");
-    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    setActiveValue(selected && !selected.disabled
+      ? selected.value : options.find(option => !option.disabled)?.value ?? null);
+    typeahead.current = { text: "", at: 0 };
+    focusOnOpen.current = true;
     setOpen(true);
   }
 
   function closeMenu(refocus = false) {
+    popupHadFocus.current = false;
+    setActiveValue(null);
     setOpen(false);
     if (refocus) anchorRef.current?.focus({ preventScroll: true });
   }
 
   function choose(opt: SelectOption) {
-    if (opt.disabled) return;
+    if (disabled || opt.disabled) return;
     triggerHaptic("selection");
     onChange(opt.value);
     closeMenu(true);
   }
 
-  // Keyboard navigation + typeahead while the listbox is open.
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-        const dir = e.key === "ArrowDown" ? 1 : -1;
-        setActiveIndex((i) => {
-          let next = i;
-          for (let n = 0; n < options.length; n++) {
-            next = (next + dir + options.length) % options.length;
-            if (!options[next]?.disabled) break;
-          }
-          return next;
-        });
-      } else if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        e.stopPropagation();
-        const opt = options[activeIndex];
-        if (opt) choose(opt);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        closeMenu(true);
-      } else if (e.key === "Tab") {
-        setOpen(false);
-      } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const buf = typeahead.current;
-        const now = Date.now();
-        buf.text = (now - buf.at < 600 ? buf.text : "") + e.key.toLowerCase();
-        buf.at = now;
-        const idx = options.findIndex(
-          (o) => !o.disabled && o.label.toLowerCase().startsWith(buf.text),
-        );
-        if (idx >= 0) setActiveIndex(idx);
-      }
-    }
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  });
+  const positionReady = pos !== null;
+  useLayoutEffect(() => {
+    if (!open || !positionReady) return;
+    const currentOption = options[activeIndex];
+    const validOption = !!currentOption && !currentOption.disabled;
+    const ownedFocus = popupHadFocus.current && (document.activeElement === document.body
+      || panelRef.current?.contains(document.activeElement));
+    if (!focusOnOpen.current && !(ownedFocus && (!validOption || document.activeElement === document.body))) return;
+    focusOnOpen.current = false;
+    const option = panelRef.current?.querySelector<HTMLElement>(validOption
+      ? `[data-index="${activeIndex}"]:not([disabled])`
+      : '[role="option"]:not([disabled])');
+    const target = option ?? panelRef.current;
+    if (target !== document.activeElement) target?.focus({ preventScroll: true });
+    option?.scrollIntoView({ block: "nearest" });
+  }, [open, positionReady, activeIndex, options, panelRef]);
 
-  // Keep the active option in view while navigating.
-  useEffect(() => {
-    if (!open) return;
-    panelRef.current
-      ?.querySelector(`[data-index="${activeIndex}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [open, activeIndex, panelRef]);
+  function focusOption(index: number) {
+    if (index < 0 || !options[index] || options[index].disabled) return;
+    const option = panelRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    option?.focus({ preventScroll: true });
+    option?.scrollIntoView({ block: "nearest" });
+  }
+
+  function onListboxKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Tab") {
+      // WebKit does not reliably resume native Tab at a trigger focused during
+      // a portalled key event. Resolve the next owned tab stop explicitly.
+      if (focusAfterPopoverTrigger(anchorRef.current, event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu();
+        return;
+      }
+      closeMenu(true);
+      return;
+    }
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.key === "ArrowUp" || event.key === "End" ? -1 : 1;
+      let candidate = event.key === "Home" ? -1 : event.key === "End" ? options.length : activeIndex;
+      for (let count = 0; count < options.length; count += 1) {
+        candidate = (candidate + direction + options.length) % options.length;
+        if (!options[candidate].disabled) { focusOption(candidate); break; }
+      }
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      const option = options[activeIndex];
+      if (option) choose(option);
+    } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const buffer = typeahead.current;
+      const now = event.timeStamp;
+      buffer.text = (now - buffer.at < 600 ? buffer.text : "") + event.key.toLowerCase();
+      buffer.at = now;
+      focusOption(options.findIndex(option => !option.disabled && option.label.toLowerCase().startsWith(buffer.text)));
+    }
+  }
 
   const triggerProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     ref: React.RefObject<HTMLButtonElement | null>;
@@ -725,6 +798,7 @@ export function Select({
     disabled,
     "aria-haspopup": "listbox",
     "aria-expanded": open,
+    "aria-controls": open ? listboxId : undefined,
     "aria-label": ariaLabel,
     onClick: () => (open ? closeMenu() : openMenu()),
     onKeyDown: (e) => {
@@ -779,11 +853,25 @@ export function Select({
       )}
       {open &&
         pos &&
+        portalContainer &&
         createPortal(
           <div
             ref={panelRef}
+            id={listboxId}
             role="listbox"
+            data-popover-panel
             aria-label={ariaLabel}
+            tabIndex={-1}
+            onKeyDown={onListboxKeyDown}
+            onFocusCapture={(event) => {
+              popupHadFocus.current = true;
+              if (event.target === event.currentTarget) setActiveValue(null);
+            }}
+            onBlurCapture={(event) => {
+              // Removal/disable can emit a blur with no new target. Preserve
+              // ownership until the layout effect repairs that lost focus.
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) popupHadFocus.current = false;
+            }}
             className={POPOVER_PANEL_CLASS}
             style={popoverStyle(pos)}
           >
@@ -796,13 +884,16 @@ export function Select({
               const isSelected = opt.value === value;
               return (
                 <button
-                  key={opt.value || `option-${i}`}
+                  key={opt.value}
                   type="button"
                   role="option"
+                  id={`${listboxId}-option-${encodeURIComponent(opt.value)}`}
                   aria-selected={isSelected}
+                  aria-disabled={opt.disabled || undefined}
+                  tabIndex={-1}
                   data-index={i}
                   disabled={opt.disabled}
-                  onMouseEnter={() => setActiveIndex(i)}
+                  onFocus={() => setActiveValue(opt.value)}
                   onClick={() => choose(opt)}
                   className={`mb-0.5 flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-[13.5px] transition-colors duration-100 last:mb-0 ${
                     i === activeIndex
@@ -839,7 +930,7 @@ export function Select({
               );
             })}
           </div>,
-          document.body,
+          portalContainer,
         )}
     </>
   );
@@ -872,7 +963,7 @@ export function Dropdown({
     setOpen(false);
     setRestoreFocus(true);
   }, []);
-  const { panelRef, pos } = usePopover({
+  const { panelRef, pos, portalContainer } = usePopover({
     open,
     onClose: close,
     anchorRef,
@@ -889,17 +980,27 @@ export function Dropdown({
     }
   }, [open, restoreFocus]);
 
+  const positionReady = pos !== null;
   useEffect(() => {
-    if (!open || !pos) return;
+    if (!open || !positionReady) return;
     const frame = window.requestAnimationFrame(() => {
       panelRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus({
         preventScroll: true,
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open, pos, panelRef]);
+  }, [open, positionReady, panelRef]);
 
   function onMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Tab") {
+      setRestoreFocus(false);
+      setOpen(false);
+      if (focusAfterPopoverTrigger(anchorRef.current, event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else anchorRef.current?.focus({ preventScroll: true });
+      return;
+    }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const items = Array.from(
       panelRef.current?.querySelectorAll<HTMLElement>(
@@ -942,20 +1043,120 @@ export function Dropdown({
       {trigger(open, triggerProps)}
       {open &&
         pos &&
+        portalContainer &&
         createPortal(
           <div
             ref={panelRef}
             role="menu"
+            data-popover-panel
             onKeyDown={onMenuKeyDown}
             className={POPOVER_PANEL_CLASS}
             style={popoverStyle(pos)}
           >
             {children(close)}
           </div>,
-          document.body,
+          portalContainer,
         )}
     </div>
   );
+}
+
+type ClipboardFeedback = {
+  scope: object | null;
+  phase: "idle" | "pending" | "copied" | "cleared" | "error";
+  action: "copy" | "clear";
+  canClear: boolean;
+};
+
+const CLIPBOARD_FEEDBACK_MS = 2_000;
+
+// Shared by the explicit copy button and address/hash display. Never read the
+// clipboard or include a copied value in feedback. Scope tokens contain no data.
+function useClipboardFeedback(value: string, sensitive = false) {
+  const scope = React.useMemo(() => {
+    // Changes invalidate the token; the token itself retains neither input.
+    void value;
+    void sensitive;
+    return {};
+  }, [value, sensitive]);
+  const scopeRef = useRef<object | null>(null);
+  const operationRef = useRef<symbol | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const [feedback, setFeedback] = useState<ClipboardFeedback>({
+    scope: null, phase: "idle", action: "copy", canClear: false,
+  });
+
+  useLayoutEffect(() => {
+    scopeRef.current = scope;
+    return () => {
+      scopeRef.current = null;
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [scope]);
+
+  const current = feedback.scope === scope;
+  // Clipboard writes cannot be aborted. Keep the control disabled until an
+  // outstanding old-value write settles, so two physical writes cannot race.
+  const pending = feedback.phase === "pending";
+  const canClear = current && feedback.canClear;
+  const copied = current && feedback.phase === "copied";
+  const failed = current && feedback.phase === "error";
+  const status = pending
+    ? feedback.action === "clear" ? "Clearing clipboard…" : "Copying to clipboard…"
+    : !current ? ""
+    : feedback.phase === "copied" ? "Copied to clipboard."
+    : feedback.phase === "cleared" ? "Clipboard cleared. Clipboard managers may retain earlier copies."
+    : failed ? feedback.action === "clear"
+      ? "Could not clear the clipboard. Try again."
+      : "Could not copy. Try again or select and copy manually."
+    : "";
+
+  async function write(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (operationRef.current || scopeRef.current !== scope) return;
+    // WebKit pointer activation otherwise leaves focus on body. Focus only the
+    // directly activated control, never when a clipboard promise completes.
+    event.currentTarget.focus({ preventScroll: true });
+    const operation = Symbol();
+    operationRef.current = operation;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const action = sensitive && canClear ? "clear" : "copy";
+    setFeedback({ scope, phase: "pending", action, canClear });
+    try {
+      if (action === "clear") await navigator.clipboard.writeText("");
+      else await navigator.clipboard.writeText(value);
+      if (scopeRef.current !== scope) return;
+      triggerHaptic("selection");
+      setFeedback({ scope, phase: action === "clear" ? "cleared" : "copied", action,
+        canClear: sensitive && action === "copy" });
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        if (scopeRef.current === scope) {
+          setFeedback(previous => previous.scope === scope ? { ...previous, phase: "idle" } : previous);
+        }
+      }, CLIPBOARD_FEEDBACK_MS);
+    } catch {
+      if (scopeRef.current === scope) setFeedback({ scope, phase: "error", action, canClear });
+    } finally {
+      if (operationRef.current === operation) {
+        operationRef.current = null;
+        // A replaced value must not inherit success or errors from the previous
+        // copy. The old OS write may complete, but it cannot approve the new UI.
+        if (scopeRef.current && scopeRef.current !== scope) {
+          setFeedback({ scope: scopeRef.current, phase: "idle", action: "copy", canClear: false });
+        }
+      }
+    }
+  }
+
+  return { pending, copied, canClear, failed, status, write };
+}
+
+function ClipboardStatus({ status, failed }: { status: string; failed: boolean }) {
+  return <span role="status" aria-live="polite" aria-atomic="true"
+    className={failed ? "mt-1 block text-[11.5px] text-red-300" : "sr-only"}>{status}</span>;
 }
 
 export function CopyButton({
@@ -971,47 +1172,23 @@ export function CopyButton({
   iconSize?: number;
   sensitive?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy(e: React.MouseEvent) {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(value);
-      triggerHaptic("selection");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // ignore
-    }
-  }
-
-  async function handleClick(e: React.MouseEvent) {
-    if (!sensitive || !copied) {
-      await handleCopy(e);
-      return;
-    }
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText("");
-      setCopied(false);
-      triggerHaptic("selection");
-    } catch {
-      // Clipboard writes can require a fresh user gesture or be unavailable.
-    }
-  }
+  const { pending, copied, canClear, failed, status, write } = useClipboardFeedback(value, sensitive);
 
   return (
+    <>
     <button
       type="button"
-      onClick={(event) => void handleClick(event)}
-      className={className ?? "chip"}
-      aria-label={sensitive && copied ? "Clear copied secret from clipboard" : label ?? "Copy to clipboard"}
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      onClick={(event) => void write(event)}
+      className={`${className ?? "chip"} aria-disabled:cursor-wait aria-disabled:opacity-60`}
+      aria-label={canClear ? "Clear copied secret from clipboard" : label ?? "Copy to clipboard"}
       title={sensitive ? "Clipboard managers may retain copied recovery material." : undefined}
     >
-      {copied ? (
+      {copied || canClear ? (
         <>
           <IconCheck size={iconSize} className="text-[#30D158]" />
-          <span>{sensitive ? "Clear clipboard" : "Copied"}</span>
+          <span>{canClear ? "Clear clipboard" : "Copied"}</span>
         </>
       ) : (
         <>
@@ -1020,6 +1197,8 @@ export function CopyButton({
         </>
       )}
     </button>
+    <ClipboardStatus status={status} failed={failed} />
+    </>
   );
 }
 
@@ -1044,52 +1223,43 @@ export function HashValue({
   full?: boolean;
   className?: string;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { pending, copied, failed, status, write } = useClipboardFeedback(value);
   const truncate = !full && value.length > head + tail + 4;
   const chunkable = !/\s/.test(value);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      triggerHaptic("selection");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // ignore
-    }
-  }
 
   const chunks = (s: string, prefix: string) =>
     (s.match(/.{1,4}/g) ?? [s]).map((c, i) => <span key={`${prefix}${i}`}>{c}</span>);
 
   if (!chunkable) {
     return (
+      <>
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          void copy();
-        }}
+        aria-disabled={pending || undefined}
+        aria-busy={pending || undefined}
+        onClick={(event) => void write(event)}
         title={`${value}\nClick to copy`}
-        className={`mono inline-block max-w-full cursor-pointer text-left transition-colors ${
+        className={`mono inline-block max-w-full cursor-pointer text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
           copied ? "!text-[#30D158]" : ""
         } ${className}`}
       >
         {value}
       </button>
+      <ClipboardStatus status={status} failed={failed} />
+      </>
     );
   }
 
   return (
+    <>
     <button
       type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        void copy();
-      }}
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      onClick={(event) => void write(event)}
       data-mobile-truncate={truncate ? "true" : undefined}
       title={`${value}\nClick to copy`}
-      className={`mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors ${
+      className={`mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
         truncate ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
       } ${copied ? "!text-[#30D158]" : ""} ${className}`}
     >
@@ -1105,6 +1275,8 @@ export function HashValue({
         chunks(value, "f")
       )}
     </button>
+    <ClipboardStatus status={status} failed={failed} />
+    </>
   );
 }
 
@@ -1183,6 +1355,7 @@ export function Tabs<T extends string>({
   options,
   onChange,
   ariaLabel,
+  activationMode = "automatic",
   children,
   panelBusy = false,
   className = "",
@@ -1193,6 +1366,8 @@ export function Tabs<T extends string>({
   options: { label: string; value: T; disabled?: boolean }[];
   onChange: (value: T) => void;
   ariaLabel: string;
+  /** Async/private panels require explicit Enter/Space activation after arrow navigation. */
+  activationMode?: "automatic" | "manual";
   children: React.ReactNode;
   panelBusy?: boolean;
   className?: string;
@@ -1201,8 +1376,11 @@ export function Tabs<T extends string>({
 }) {
   const baseId = React.useId();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [focusedValue, setFocusedValue] = useState(value);
   const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
   const activeValue = options[activeIndex]?.value ?? value;
+  const focusedOption = options.find(option => option.value === focusedValue && !option.disabled);
+  const tabStopValue = activationMode === "manual" ? focusedOption?.value ?? activeValue : activeValue;
 
   const activate = (index: number) => {
     const option = options[index];
@@ -1223,7 +1401,8 @@ export function Tabs<T extends string>({
     let candidate = requested;
     for (let visited = 0; visited < options.length; visited += 1) {
       if (!options[candidate]?.disabled) {
-        activate(candidate);
+        if (activationMode === "manual") tabRefs.current[candidate]?.focus({ preventScroll: true });
+        else activate(candidate);
         return;
       }
       candidate = (candidate + direction + options.length) % options.length;
@@ -1253,10 +1432,11 @@ export function Tabs<T extends string>({
               role="tab"
               aria-selected={active}
               aria-controls={panelId}
-              tabIndex={active ? 0 : -1}
+              tabIndex={option.value === tabStopValue ? 0 : -1}
               disabled={option.disabled}
               data-tab-value={option.value}
               onKeyDown={(event) => move(event, index)}
+              onFocus={() => setFocusedValue(option.value)}
               onClick={() => activate(index)}
               className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 sm:min-h-0 ${
                 option.disabled

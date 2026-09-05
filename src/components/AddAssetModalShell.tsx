@@ -110,6 +110,7 @@ export function AddAssetModal({
           ]}
           onChange={changeMode}
           ariaLabel="Where to add funds"
+          activationMode="manual"
           panelBusy={surfaceBusy}
           tabListClassName="mx-4 mt-4 sm:mx-6"
           panelClassName="min-h-56"

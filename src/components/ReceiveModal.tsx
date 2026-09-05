@@ -378,6 +378,7 @@ function ReceiveInner({
       />
       {availableAssets.length > 0 ? (
         <Tabs
+          activationMode="manual"
           value={receiveMode}
           onChange={(next) => {
             setReceiveMode(next);

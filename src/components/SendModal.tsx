@@ -193,6 +193,7 @@ export function SendModal({
           value={sendMode}
           onChange={changeMode}
           ariaLabel="Send type"
+          activationMode="manual"
           options={[
             { value: "public", label: "Public", disabled: surfaceBusy },
             { value: "private", label: "Private", disabled: surfaceBusy },
