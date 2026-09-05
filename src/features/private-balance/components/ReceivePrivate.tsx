@@ -62,7 +62,10 @@ export function PrivateReceiveContent() {
     () => payload ? `${payload.slice(0, 14)}…${payload.slice(-12)}` : '',
     [payload],
   );
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<{ payload: string; url: string } | null>(null);
+  // Clear the rendered/downloadable QR synchronously when its input changes;
+  // effect cleanup alone only prevents a late result, not a stale old image.
+  const qrDataUrl = payload && qrImage?.payload === payload ? qrImage.url : null;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [rotationError, setRotationError] = useState<string | null>(null);
@@ -97,9 +100,9 @@ export function PrivateReceiveContent() {
       margin: 2,
       color: { dark: '#000000', light: '#ffffff' },
     }).then(value => {
-      if (active) setQrDataUrl(value);
+      if (active) setQrImage({ payload, url: value });
     }).catch(() => {
-      if (active) setQrDataUrl(null);
+      if (active) setQrImage(null);
     });
     return () => { active = false; };
   }, [payload]);

@@ -73,7 +73,7 @@ function ReceiveInner({
   const [receiveMode, setReceiveMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [selectedAssetKey, setSelectedAssetKey] = useState("native");
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<{ payload: string; url: string } | null>(null);
   const [showCustomRequest, setShowCustomRequest] = useState(false);
   const [requestAmount, setRequestAmount] = useState("");
   const [requestMemo, setRequestMemo] = useState("");
@@ -112,6 +112,9 @@ function ReceiveInner({
     return address;
   }, [address, showCustomRequest, requestAmount, requestMemo, selectedAssetKey, selectedAsset]);
 
+  // A retained image must never describe a newly edited request or account.
+  const qrDataUrl = payload && qrImage?.payload === payload ? qrImage.url : null;
+
   useEffect(() => {
     let alive = true;
     if (!payload) return;
@@ -125,9 +128,9 @@ function ReceiveInner({
             light: "#ffffff",
           },
         });
-        if (alive) setQrDataUrl(url);
+        if (alive) setQrImage({ payload, url });
       } catch {
-        if (alive) setQrDataUrl(null);
+        if (alive) setQrImage(null);
       }
     })();
     return () => {
