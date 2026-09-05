@@ -487,9 +487,16 @@ slowest relay. Sender and helper use ephemeral Nostr identities; messages after
 discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
 only in memory and displays the first valid offer immediately. Each new unique
 or lower-fee offer restarts a 700 ms quiet window so nearby offers can still be
-ranked by fee. The hard discovery window remains the no-response deadline. The
-stable picker shows every valid quote with the peer source account, fee, and
-expiry. The user explicitly selects one peer before any fee-address negotiation,
+compared by fee. The user may choose any authenticated, live offer immediately,
+without waiting for that window. Selection stops collection while preserving
+the selected session; late responses cannot change the chosen offer. The hard
+discovery window remains the no-response deadline. The picker keeps peer rows
+in their initial display order, highlights the lowest current fee independently
+of row position, and shows every valid quote with the peer source account, fee,
+and expiry. Unavailable offers keep a disabled slot until this picker closes,
+so expiry cannot move a different helper under the same pointer. This also
+applies to every explicit, fee-capped helper choice in a consolidation chain. The user
+explicitly selects one peer before any fee-address negotiation,
 proof construction, signing, or submission. Deposits are not relayable because
 their public source must authorize the asset transfer.
 
@@ -629,6 +636,18 @@ then performs ICE discovery through STUN and potentially TURN. That adds another
 handshake after peer discovery, and direct ICE candidates can expose peer IP and
 network metadata. Retaining one measured discovery transport is simpler and
 avoids expanding the network privacy surface without evidence of a speed gain.
+The optional early-choice path removes the remaining comparison wait only when
+the user chooses to skip it; no current end-to-end or mobile speedup is claimed.
+Cross-payment connection pooling and simulation-result reuse are not enabled:
+the former adds correlation risk, and the latter requires a separately reviewed
+freshness policy. Fresh per-payment identities, 24 KiB encrypted padding, both
+helper simulations, proof-sharing consent and canonical finality are unchanged.
+Within a payment, subscription connection attempts borrow the session's sockets:
+cancellation, timeout, or late completion of an obsolete discovery waiter cannot
+close a selected-peer connection. Ending the session still closes its sockets.
+Each physical WebSocket also has an eight-second connection-setup deadline;
+stalled or abandoned late-opening sockets close themselves without tearing down
+a replacement connection. That deadline is cleared for established sessions.
 
 ## 14. Local state and execution boundary
 

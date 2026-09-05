@@ -18,7 +18,7 @@ import type {
 import { PrivateActionReviewExpiredError } from '../runtime/submission';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { PrivateRelaySenderSession } from '../relay/session';
-import { PrivateRelayChainChoice } from '../relay/chain-choice';
+import { discoverPrivateRelayChainQuote, PrivateRelayChainChoice } from '../relay/chain-choice';
 import type { PrivateRelayChainApproval } from '../runtime/relay-chain-policy';
 import type { SelectPrivateRelayChainPeer } from '../runtime/relay-chained-send';
 import { completePrivateActionOperation } from './private-action-operation';
@@ -56,6 +56,7 @@ interface PrivateRelayDiscovery {
   quotes: PrivateRelayQuote[];
   draft: Extract<PrivateActionDraft, { kind: 'transfer' | 'withdraw' }>;
   assetIndex: number;
+  takeOwnership(): void;
 }
 
 /**
@@ -121,8 +122,19 @@ export function usePrivateActionController(
     abortRef.current = null;
     proofConsentRef.current.cancel();
     relayChainChoiceRef.current.cancel();
+    relaySelectionRef.current = null;
     relayDiscoveryRef.current?.session.close();
+    relayDiscoveryRef.current = null;
     relayRef.current?.session.close();
+    relayRef.current = null;
+    setRelayQuotes([]);
+    setRelayProgress(null);
+    setPreparing(false);
+    setWorking(false);
+    setChained(null);
+    setChainProgress(null);
+    setDisclosure(null);
+    setReview(null);
   }, [asset?.contractId, deployment.networkId, deployment.poolContractId, publicAddress]);
 
   const authorizeDisclosure = useCallback(async (request: Readonly<PrivateProofDisclosure>) => {
@@ -149,17 +161,18 @@ export function usePrivateActionController(
     signal.addEventListener('abort', closeOnAbort, { once: true });
     try {
       check();
-      const { request, quotes } = await session.requestQuotes({ networkId: deployment.networkId, poolContractId: deployment.poolContractId,
-        actionKind: 'transfer', excludePeerAccounts: publicAddress ? [publicAddress] : [],
-        onQuotes: quotes => { if (!signal.aborted) { setRelayQuotes(quotes.filter(quote => BigInt(quote.feeAtomic) <= BigInt(step.maximumPrivateFeeAtomic))); setRelayProgress('comparing-fees'); } },
+      const { request, quote } = await discoverPrivateRelayChainQuote({
+        session, choice: relayChainChoiceRef.current,
+        networkId: deployment.networkId, poolContractId: deployment.poolContractId,
+        maximumFeeAtomic: step.maximumPrivateFeeAtomic,
+        excludePeerAccounts: publicAddress ? [publicAddress] : [],
+        onQuotes: quotes => {
+          if (!signal.aborted) { setRelayQuotes([...quotes]); setRelayProgress('comparing-fees'); }
+        },
+        onSettled: () => {
+          if (!signal.aborted) { setPreparing(false); setRelayProgress(null); }
+        },
       }, signal);
-      check();
-      const eligible = quotes.filter(quote => BigInt(quote.feeAtomic) <= BigInt(step.maximumPrivateFeeAtomic));
-      const waiting = relayChainChoiceRef.current.wait(eligible, step.maximumPrivateFeeAtomic, signal);
-      setRelayQuotes(eligible);
-      setPreparing(false);
-      setRelayProgress(null);
-      const quote = await waiting;
       check();
       setRelayQuotes([]);
       setPreparing(true);
@@ -228,6 +241,7 @@ export function usePrivateActionController(
         const preferences = loadPrivateRelayPreferences();
         const session = await PrivateRelaySenderSession.create(preferences.relayUrls);
         pendingRelaySession = session;
+        if (controller.signal.aborted || abortRef.current !== controller) return;
         let hasEligibleQuote = false;
         setRelayProgress('finding-peer');
         const { request, quotes, ineligiblePeerAccounts } = await session.requestQuotes({
@@ -235,9 +249,17 @@ export function usePrivateActionController(
           poolContractId: deployment.poolContractId,
           actionKind: draft.kind,
           excludePeerAccounts: publicAddress ? [publicAddress] : [],
-          onQuotes: quotes => {
-            if (controller.signal.aborted) return;
+          onQuotes: (quotes, request) => {
+            if (controller.signal.aborted || abortRef.current !== controller) return;
             hasEligibleQuote = quotes.length > 0;
+            // Install the selectable context before making offers interactive.
+            // Selection transfers ownership synchronously, then cancels only
+            // this collection task. Its finally must not close the chosen peer.
+            relayDiscoveryRef.current = {
+              session, request: { ...request }, quotes: quotes.map(quote => ({ ...quote })),
+              draft, assetIndex: asset.index,
+              takeOwnership: () => { pendingRelaySession = null; },
+            };
             setRelayQuotes([...quotes]);
             setRelayProgress('comparing-fees');
           },
@@ -259,6 +281,7 @@ export function usePrivateActionController(
           quotes,
           draft,
           assetIndex: asset.index,
+          takeOwnership: () => {},
         };
         pendingRelaySession = null;
         setRelayQuotes(quotes);
@@ -313,6 +336,7 @@ export function usePrivateActionController(
       setError(cause instanceof Error ? cause.message : 'Private action stopped safely.');
       setErrorCause(cause instanceof Error ? cause : null);
     } finally {
+      if (pendingRelaySession && relayDiscoveryRef.current?.session === pendingRelaySession) relayDiscoveryRef.current = null;
       pendingRelaySession?.close();
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -326,16 +350,21 @@ export function usePrivateActionController(
   const selectRelayQuote = useCallback(async (quoteId: string) => {
     if (relayChainChoiceRef.current.pending) {
       if (!relayChainChoiceRef.current.choose(quoteId)) setError('That helper quote expired or exceeds the approved fee. Cancel and review the chain again.');
+      else { setPreparing(true); setRelayProgress('agreeing-fee'); }
       return;
     }
+    // A consumed chain choice must not fall through into ordinary discovery
+    // while its payout is being negotiated (including a same-tick double tap).
+    if (chained?.relayApproval) return;
     if (relaySelectionRef.current) return;
     const discovery = relayDiscoveryRef.current;
-    const quote = discovery?.quotes.find(candidate => candidate.quoteId === quoteId);
-    if (!discovery || !quote) {
+    const available = discovery?.quotes.find(candidate => candidate.quoteId === quoteId);
+    if (!discovery || !available || available.expiresAt * 1_000 <= Date.now()) {
       setError('That privacy relay offer is no longer available. Find peers again.');
       setErrorCause(null);
       return;
     }
+    const quote = { ...available };
     if (!asset || asset.index !== discovery.assetIndex) {
       discovery.session.close();
       relayDiscoveryRef.current = null;
@@ -347,6 +376,7 @@ export function usePrivateActionController(
 
     const controller = new AbortController();
     relaySelectionRef.current = controller;
+    discovery.takeOwnership();
     abortRef.current?.abort();
     abortRef.current = controller;
     setPreparing(true);
@@ -442,7 +472,7 @@ export function usePrivateActionController(
         setRelayProgress(null);
       }
     }
-  }, [asset, authorizeDisclosure, cancelAction, networkLabel, prepareAction, prepareRelayChainedSend]);
+  }, [asset, authorizeDisclosure, cancelAction, chained?.relayApproval, networkLabel, prepareAction, prepareRelayChainedSend]);
 
   const cancelPrepared = useCallback(async () => {
     abortRef.current?.abort();

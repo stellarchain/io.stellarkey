@@ -43,6 +43,137 @@ async function stableShell(page: Page) {
   })).toEqual({ shell: 'retained', backdrop: 'retained', locked: true, focused: true, inert: true, contained: true });
 }
 
+test('live Nostr selection skips comparison without closing the selected session', async ({ page, browserName }) => {
+  await markShell(page);
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  const first = page.getByRole('button', { name: /Choose peer 1/ });
+  await expect(first).toBeEnabled();
+  await first.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'first'; });
+  await first.focus();
+  await page.getByRole('button', { name: 'Deliver cheaper synthetic offer' }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
+  await expect(first).toBeFocused();
+  await expect(first).not.toContainText('Lowest fee');
+  await expect(page.getByRole('button', { name: /Choose peer 2/ })).toContainText('Lowest fee');
+  await page.getByRole('button', { name: 'Replace first synthetic quote' }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
+  await expect(first).toBeFocused();
+  const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
+    .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
+  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('relay-selections')).toHaveText('1');
+  await expect(page.getByTestId('relay-collection-stopped')).toHaveText('true');
+  await expect(page.getByTestId('relay-closed-at-selection')).toHaveText('false');
+  await expect(page.getByTestId('relay-session-closed')).toHaveText('false');
+  await expect(first).toBeDisabled();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByTestId('relay-selections')).toHaveText('1');
+  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
+  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(first).toBeHidden();
+  await stableShell(page);
+});
+
+test('expired Nostr rows keep their slot while remaining helpers stay selectable', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await page.getByRole('button', { name: 'Deliver cheaper synthetic offer' }).click();
+  const first = page.getByRole('button', { name: /Choose peer 1/ });
+  const second = page.getByRole('button', { name: /Choose peer 2/ });
+  await first.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'first'; });
+  await second.evaluate(element => { (element as HTMLElement).dataset.syntheticPeer = 'second'; });
+  await page.getByRole('button', { name: 'Expire first synthetic offer' }).click();
+  await expect(first).toHaveAttribute('data-synthetic-peer', 'first');
+  await expect(first).toBeDisabled();
+  await expect(second).toHaveAttribute('data-synthetic-peer', 'second');
+  await expect(second).toBeEnabled();
+  await second.click();
+  await expect(page.getByTestId('relay-selections')).toHaveText('1');
+});
+
+test('Nostr discovery replacement and account changes invalidate old choices', async ({ page }) => {
+  await markShell(page);
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
+  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
+  await expect(page.getByTestId('relay-requests')).toHaveText('2');
+  await page.getByRole('button', { name: 'Deliver stale synthetic offer' }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
+  await page.getByRole('button', { name: 'Switch synthetic relay account' }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
+  await expect(page.getByTestId('relay-selections')).toHaveText('0');
+  await stableShell(page);
+  await page.getByRole('tab', { name: 'Recovery', exact: true }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Open privacy controls' })).toBeFocused();
+});
+
+test('cancelling Nostr discovery before session creation closes the late session without publishing', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Delay synthetic session creation' }).click();
+  await page.getByRole('button', { name: 'Find synthetic helpers' }).click();
+  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
+  await page.getByRole('button', { name: 'Finish synthetic session creation' }).click();
+  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
+  await expect(page.getByTestId('relay-requests')).toHaveText('0');
+  await expect(page.getByRole('button', { name: /Choose peer/ })).toBeHidden();
+});
+
+test('the real chain controller accepts one live choice per step and ignores duplicate taps', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare synthetic relay chain' }).click();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await page.getByRole('button', { name: /Choose peer 1/ }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
+  await page.getByRole('button', { name: 'Start approved synthetic chain' }).click();
+  await expect(page.getByTestId('relay-requests')).toHaveText('2');
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
+  await page.getByRole('button', { name: 'Double choose first synthetic peer' }).click();
+  await expect(page.getByTestId('relay-selections')).toHaveText('1');
+  await expect(page.getByTestId('relay-error')).toHaveText('none');
+  await page.getByRole('button', { name: 'Finish synthetic payout' }).click();
+  await page.getByRole('button', { name: 'Advance synthetic chain step' }).click();
+  await expect(page.getByTestId('relay-requests')).toHaveText('3');
+  await page.getByRole('button', { name: 'Deliver stale synthetic offer' }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeHidden();
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
+  await page.getByRole('button', { name: /Choose peer 1/ }).click();
+  await expect(page.getByTestId('relay-selections')).toHaveText('2');
+  await page.getByRole('button', { name: 'Cancel synthetic discovery' }).click();
+  await expect(page.getByTestId('relay-session-closed')).toHaveText('true');
+});
+
+test('the bounded native socket exchanges only synthetic local messages and survives its setup deadline', async ({ page }) => {
+  let connection: Parameters<Parameters<typeof page.routeWebSocket>[1]>[0] | undefined;
+  await page.routeWebSocket('**/synthetic-nostr', socket => {
+    connection = socket;
+    socket.onMessage(message => { if (message === 'synthetic-ping') socket.send('synthetic-pong'); });
+  });
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Open synthetic native socket' }).click();
+  await expect(page.getByTestId('relay-native-socket')).toHaveText('exchanged');
+  // Prove the CONNECTING deadline does not become an established-session TTL.
+  await page.waitForTimeout(100);
+  connection!.send('synthetic-after-deadline');
+  await expect(page.getByTestId('relay-native-socket')).toHaveText('after deadline');
+  await page.getByRole('button', { name: 'Close synthetic native socket' }).click();
+  await expect(page.getByTestId('relay-native-socket')).toHaveText('closed');
+});
+
 test('recovery requires separate consent, survives stale account completion, and keeps the shell', async ({ page, browserName }) => {
   await markShell(page);
   const toggle = page.getByRole('switch', { name: 'Recover outgoing payment details' });

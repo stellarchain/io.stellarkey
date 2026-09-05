@@ -13,6 +13,7 @@ import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runt
 import type { PrivateRelayChainApproval } from '@/features/private-balance/runtime/relay-chain-policy';
 import type { PrivateRelayQuote } from '@/features/private-balance/relay/protocol';
 import { disclosePrivateProof, PrivateProofConsent, type PrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
+import { RelayFlowPanel } from '../../../e2e/fixtures/relay-flow-panel';
 
 const draft = { kind: 'transfer' as const, amount: '1', recipientAddress: 'synthetic-recipient-only' };
 const approval: PrivateRelayChainApproval = {
@@ -89,7 +90,7 @@ function Fixture() {
         <Modal open={open} onClose={() => setOpen(false)} wide>
           <ModalHeader title="Synthetic privacy controls" onClose={() => setOpen(false)} />
           <div className="space-y-4 p-4">
-            <Tabs ariaLabel="Privacy check panels" options={[{ value: 'recovery', label: 'Recovery' }, { value: 'chain', label: 'Chain' }, { value: 'proof', label: 'Proof' }]} value={tab} onChange={setTab}>
+            <Tabs ariaLabel="Privacy check panels" options={[{ value: 'recovery', label: 'Recovery' }, { value: 'chain', label: 'Chain' }, { value: 'proof', label: 'Proof' }, { value: 'relay', label: 'Relay' }]} value={tab} onChange={setTab}>
             {tab === 'recovery' ? <>
               <Button variant="secondary" onClick={() => setScope(value => value === 'account-a' ? 'account-b' : 'account-a')}>Switch synthetic account</Button>
               <Button variant="secondary" onClick={() => completion.current?.()}>Finish pending preference</Button>
@@ -111,7 +112,7 @@ function Fixture() {
                     rejection.current = null;
                   }
                 }} />
-            </> : tab === 'proof' ? <ProofPanel /> : cancelled ? <>
+            </> : tab === 'relay' ? <RelayFlowPanel /> : tab === 'proof' ? <ProofPanel /> : cancelled ? <>
               <p>Chain stopped locally</p>
               <Button onClick={() => { setCancelled(false); setStep(1); setWaiting(false); }}>Review another chain</Button>
             </> : <>

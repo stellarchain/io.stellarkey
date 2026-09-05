@@ -9,6 +9,7 @@ import {
 } from '../src/features/private-balance/relay/availability.ts';
 import { PrivateRelaySenderSession } from '../src/features/private-balance/relay/session.ts';
 import { signPrivateRelayQuoteAuthorization } from '../src/features/private-balance/relay/account-authorization.ts';
+import * as chainChoice from '../src/features/private-balance/relay/chain-choice.ts';
 
 const NOW_SECONDS = 1_800_000_000;
 const NETWORK_ID = '11'.repeat(32);
@@ -246,6 +247,125 @@ test('quote discovery streams offers immediately and settles after quote traffic
     [[account('GPEERA'), '10000'], [account('GPEERB'), '40000']],
   ]);
   assert.deepEqual(result.quotes.map(item => item.peerAccount), [account('GPEERA'), account('GPEERB')]);
+  assert.equal(controlled.closed(), 1);
+});
+
+test('live offers include an isolated authenticated request before the comparison window ends', async () => {
+  const controlled = controlledSenderSession();
+  const controller = new AbortController();
+  let context;
+  let offered;
+  const pending = controlled.session.requestQuotes({
+    networkId: NETWORK_ID, poolContractId: POOL, actionKind: 'withdraw',
+    onQuotes: (quotes, request) => { offered = quotes; context = request; },
+  }, controller.signal);
+  const cancelled = assert.rejects(pending, { name: 'AbortError' });
+  try {
+    controlled.emit({ quoteId: 'ab'.repeat(32), peerPubkey: 'cd'.repeat(32), peerAccount: account('GLIVESELECT'), feeAtomic: '100' });
+    assert.equal(context?.requestId, offered[0].requestId);
+    assert.equal(context?.replyPubkey, controlled.session.publicKey);
+    assert.equal(controlled.closed(), 0, 'choice is exposed while discovery is still open');
+  } finally {
+    controller.abort();
+    await cancelled;
+  }
+  assert.equal(controlled.closed(), 1);
+});
+
+test('live observers cannot mutate the retained quote or request', async () => {
+  const controlled = controlledSenderSession();
+  const pending = controlled.session.requestQuotes({
+    networkId: NETWORK_ID, poolContractId: POOL, actionKind: 'withdraw', settleWindowMs: 25,
+    onQuotes: (quotes, request) => {
+      quotes[0].feeAtomic = '999';
+      if (request) request.requestId = '00'.repeat(32);
+    },
+  });
+  controlled.emit({ quoteId: 'ad'.repeat(32), peerPubkey: 'ce'.repeat(32), peerAccount: account('GISOLATED'), feeAtomic: '100' });
+  const result = await pending;
+  assert.equal(result.quotes[0].feeAtomic, '100');
+  assert.equal(result.request.requestId, result.quotes[0].requestId);
+});
+
+test('a chain can choose a live authenticated offer before the quiet timer and keep its session', async () => {
+  assert.equal(typeof chainChoice.discoverPrivateRelayChainQuote, 'function');
+  const controlled = controlledSenderSession();
+  const choice = new chainChoice.PrivateRelayChainChoice();
+  const controller = new AbortController();
+  let shown = [];
+  const pending = chainChoice.discoverPrivateRelayChainQuote({
+    session: controlled.session, choice, networkId: NETWORK_ID, poolContractId: POOL,
+    maximumFeeAtomic: '100', onQuotes: quotes => { shown = quotes; },
+  }, controller.signal);
+  const outcome = pending.catch(error => error);
+  try {
+    controlled.emit({ quoteId: 'ae'.repeat(32), peerPubkey: 'cf'.repeat(32), peerAccount: account('GCHAINLIVE'), feeAtomic: '100' });
+    assert.equal(shown.length, 1);
+    assert.equal(controlled.closed(), 0);
+    assert.equal(choice.choose(shown[0].quoteId), true);
+    const selected = await outcome;
+    assert.equal(selected.quote.quoteId, shown[0].quoteId);
+    assert.equal(selected.request.requestId, selected.quote.requestId);
+    assert.equal(controller.signal.aborted, false, 'discovery cancellation must not cancel the chain');
+    assert.equal(controlled.closed(), 1);
+  } finally { controller.abort(); await outcome; }
+});
+
+test('chain discovery waits for explicit choice after settling and respects the fee cap', async () => {
+  assert.equal(typeof chainChoice.discoverPrivateRelayChainQuote, 'function');
+  const controlled = controlledSenderSession();
+  const choice = new chainChoice.PrivateRelayChainChoice();
+  const controller = new AbortController();
+  let settled = false;
+  const pending = chainChoice.discoverPrivateRelayChainQuote({
+    session: controlled.session, choice, networkId: NETWORK_ID, poolContractId: POOL,
+    maximumFeeAtomic: '100', settleWindowMs: 25,
+    onQuotes() {}, onSettled: () => { settled = true; },
+  }, controller.signal);
+  const outcome = pending.catch(error => error);
+  try {
+    controlled.emit({ quoteId: 'af'.repeat(32), peerPubkey: 'd0'.repeat(32), peerAccount: account('GCHAINCAPPED'), feeAtomic: '101' });
+    assert.equal(choice.choose('af'.repeat(32)), false);
+    controlled.emit({ quoteId: 'b0'.repeat(32), peerPubkey: 'd1'.repeat(32), peerAccount: account('GCHAINOK'), feeAtomic: '100' });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(settled, true);
+    assert.equal(choice.pending, true);
+    assert.equal(choice.choose('b0'.repeat(32)), true);
+    assert.equal((await outcome).quote.feeAtomic, '100');
+  } finally { controller.abort(); await outcome; }
+});
+
+test('cancelling streaming chain discovery clears choice and ignores late authenticated replies', async () => {
+  const controlled = controlledSenderSession();
+  const choice = new chainChoice.PrivateRelayChainChoice();
+  const controller = new AbortController();
+  let updates = 0;
+  const pending = chainChoice.discoverPrivateRelayChainQuote({
+    session: controlled.session, choice, networkId: NETWORK_ID, poolContractId: POOL,
+    maximumFeeAtomic: '100', onQuotes: () => { updates += 1; },
+  }, controller.signal);
+  const cancelled = assert.rejects(pending, { name: 'AbortError' });
+  controller.abort();
+  await cancelled;
+  controlled.emit({ quoteId: 'b1'.repeat(32), peerPubkey: 'd2'.repeat(32), peerAccount: account('GCHAINLATE'), feeAtomic: '100' });
+  assert.equal(updates, 0);
+  assert.equal(choice.pending, false);
+  assert.equal(choice.choose('b1'.repeat(32)), false);
+  assert.equal(controlled.closed(), 1);
+});
+
+test('chain discovery rejects when every authenticated offer exceeds the approved cap', async () => {
+  const controlled = controlledSenderSession();
+  const choice = new chainChoice.PrivateRelayChainChoice();
+  const controller = new AbortController();
+  const pending = chainChoice.discoverPrivateRelayChainQuote({
+    session: controlled.session, choice, networkId: NETWORK_ID, poolContractId: POOL,
+    maximumFeeAtomic: '100', settleWindowMs: 25, onQuotes() {},
+  }, controller.signal);
+  const failed = assert.rejects(pending, /fee cap/);
+  controlled.emit({ quoteId: 'b2'.repeat(32), peerPubkey: 'd3'.repeat(32), peerAccount: account('GCHAINEXPENSIVE'), feeAtomic: '101' });
+  await failed;
+  assert.equal(choice.pending, false);
   assert.equal(controlled.closed(), 1);
 });
 

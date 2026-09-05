@@ -18,9 +18,12 @@ import {
   firstAcceptedPrivateRelayPublish,
   PRIVATE_RELAY_RECONNECT_BACKOFF_MS,
   PRIVATE_RELAY_TOPIC,
+  NostrPrivateRelayAdapter,
   privateRelayConnectionOutcomes,
 } from '../src/features/private-balance/relay/nostr.ts';
 import { readFileSync } from 'node:fs';
+import * as nostrTransport from '../src/features/private-balance/relay/nostr.ts';
+import { SimplePool } from 'nostr-tools/pool';
 
 const NOW = 1_800_000_000;
 
@@ -190,6 +193,154 @@ test('aborting an in-flight relay connection closes it and rejects promptly', as
     error => error instanceof DOMException && error.name === 'AbortError',
   );
   assert.deepEqual(closed, ['wss://relay.one/']);
+});
+
+test('a cancelled non-owning connection wait cannot close a selected connection on late completion', async () => {
+  const closed = [];
+  let finishOld;
+  let attempt = 0;
+  const relay = { resubscribeBackoff: [] };
+  const pool = {
+    ensureRelay: () => ++attempt === 1 ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve(relay),
+    close: urls => closed.push(...urls),
+  };
+  const controller = new AbortController();
+  const old = connectPrivateRelayWithDeadline(pool, 'wss://relay.one/', controller.signal, 10_000, { closeOnFailure: false });
+  const cancelled = assert.rejects(old, { name: 'AbortError' });
+  controller.abort();
+  await cancelled;
+  await connectPrivateRelayWithDeadline(pool, 'wss://relay.one/', new AbortController().signal, 10_000, { closeOnFailure: false });
+  finishOld(relay);
+  await Promise.resolve();
+  assert.deepEqual(closed, [], 'the session, not an obsolete subscription waiter, owns the socket');
+  pool.close(['wss://relay.one/']);
+  assert.equal(closed.length, 1);
+});
+
+test('a non-owning subscription connection timeout leaves socket cleanup to the session', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let closed = 0;
+  let finish;
+  const pool = { ensureRelay: () => new Promise(resolve => { finish = resolve; }), close: () => { closed += 1; } };
+  const pending = connectPrivateRelayWithDeadline(pool, 'wss://relay.one/', new AbortController().signal, 20, { closeOnFailure: false });
+  const failed = assert.rejects(pending, /timed out/);
+  t.mock.timers.tick(20);
+  await failed;
+  finish({ resubscribeBackoff: [] });
+  await Promise.resolve();
+  assert.equal(closed, 0);
+});
+
+test('the Nostr adapter keeps a selected subscription alive after cancelled discovery connects late', async () => {
+  const closed = [];
+  let finishOld;
+  let attempts = 0;
+  let subscriptions = 0;
+  const relay = { resubscribeBackoff: [] };
+  const pool = {
+    ensureRelay: () => ++attempts === 1 ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve(relay),
+    subscribeMany: () => { subscriptions += 1; return { close() {} }; },
+    close: urls => closed.push(...urls),
+  };
+  const adapter = new NostrPrivateRelayAdapter();
+  // Replace only the external pool boundary; exercise real adapter lifecycle.
+  adapter.poolPromise = Promise.resolve(pool);
+  const discovery = adapter.subscribe(['wss://relay.one/'], [{}], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  discovery.close();
+  const selected = adapter.subscribe(['wss://relay.one/'], [{}], () => {});
+  await new Promise(resolve => setImmediate(resolve));
+  finishOld(relay);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(subscriptions, 1);
+  assert.deepEqual(closed, []);
+  selected.close();
+  adapter.close(['wss://relay.one/']);
+  await Promise.resolve();
+  assert.deepEqual(closed, ['wss://relay.one/']);
+});
+
+test('connection-owned socket deadlines let the real pool retry and close only its stalled sockets', async t => {
+  assert.equal(typeof nostrTransport.boundedPrivateRelayWebSocket, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const sockets = [];
+  class SyntheticWebSocket extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    readyState = 0;
+    constructor() { super(); sockets.push(this); }
+    close() {
+      this.readyState = 3;
+      this.dispatchEvent(new Event('close'));
+      this.onclose?.({ message: 'Synthetic connection deadline' });
+    }
+    send() {}
+  }
+  const pool = new SimplePool({
+    enablePing: false, enableReconnect: false,
+    websocketImplementation: nostrTransport.boundedPrivateRelayWebSocket(SyntheticWebSocket, 20),
+  });
+  try {
+    for (let index = 0; index < 3; index += 1) {
+      const pending = connectPrivateRelayWithDeadline(pool, 'wss://synthetic.invalid/', new AbortController().signal, 30, { closeOnFailure: false });
+      const failed = assert.rejects(pending);
+      t.mock.timers.tick(20);
+      await failed;
+    }
+    assert.equal(sockets.length, 3, 'each retry must get a fresh connection attempt');
+    assert.ok(sockets.every(socket => socket.readyState === 3), 'no orphaned CONNECTING sockets');
+  } finally { pool.close(['wss://synthetic.invalid/']); }
+});
+
+test('an established socket clears its setup deadline and remains owned by the session', t => {
+  assert.equal(typeof nostrTransport.boundedPrivateRelayWebSocket, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let closed = 0;
+  class SyntheticWebSocket extends EventTarget {
+    static CONNECTING = 0;
+    readyState = 0;
+    close() { closed += 1; }
+  }
+  const Socket = nostrTransport.boundedPrivateRelayWebSocket(SyntheticWebSocket, 20);
+  const socket = new Socket('wss://synthetic.invalid/');
+  socket.onopen = () => {};
+  socket.readyState = 1;
+  socket.dispatchEvent(new Event('open'));
+  t.mock.timers.tick(100);
+  assert.equal(closed, 0);
+  socket.close();
+  assert.equal(closed, 1);
+});
+
+test('a socket opening after the library detached it cannot survive as an orphan or close its replacement', async t => {
+  assert.equal(typeof nostrTransport.boundedPrivateRelayWebSocket, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const sockets = [];
+  class SyntheticWebSocket extends EventTarget {
+    static CONNECTING = 0;
+    readyState = 0;
+    constructor() { super(); sockets.push(this); }
+    open() { this.readyState = 1; this.dispatchEvent(new Event('open')); this.onopen?.(); }
+    close() { this.readyState = 3; this.dispatchEvent(new Event('close')); this.onclose?.({ message: 'Synthetic close' }); }
+    send() {}
+  }
+  const pool = new SimplePool({ enablePing: false, enableReconnect: false,
+    websocketImplementation: nostrTransport.boundedPrivateRelayWebSocket(SyntheticWebSocket, 20) });
+  try {
+    const abandoned = pool.ensureRelay('wss://synthetic.invalid/', { connectionTimeout: 10 });
+    const rejected = assert.rejects(abandoned);
+    t.mock.timers.tick(10);
+    await rejected;
+    assert.equal(sockets[0].onopen, null);
+    const replacement = pool.ensureRelay('wss://synthetic.invalid/');
+    sockets[1].open();
+    await replacement;
+    sockets[0].open();
+    t.mock.timers.tick(30);
+    assert.equal(sockets[0].readyState, 3, 'late unowned connection closes itself');
+    assert.equal(sockets[1].readyState, 1, 'current selected connection survives');
+  } finally { pool.close(['wss://synthetic.invalid/']); }
+  assert.equal(sockets[1].readyState, 3, 'session owns normal connection cleanup');
 });
 
 test('Nostr connection status preserves root relay URL identity', () => {

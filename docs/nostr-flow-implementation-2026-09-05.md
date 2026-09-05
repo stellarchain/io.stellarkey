@@ -17,6 +17,7 @@
 - Quote selection freezes a copy of the exact offer. Ignore late results after choice/cancel/replacement; preserve explicit selection for each chain step.
 - Keep dialog shells, focus management, locks and tabs unchanged. Test actual picker/review components with synthetic fixtures and network capture disabled.
 - Preserve unrelated untracked files in the main workspace. Work in `.worktrees/nostr-flow` on `feat/nostr-flow`.
+- Repository release policy excludes `docs/plans`; retain this implementation record alongside maintained documentation instead of the planning skill's default directory.
 
 ## Task 1: Streaming selection primitives
 
@@ -59,3 +60,24 @@ npm run check:bundle
 ```
 
 Expected: focused regression tests fail before implementation; all relevant checks pass afterward. Record limitations and pre-existing failures explicitly.
+
+## Implementation and verification record — 2026-09-05
+
+Implemented explicit live helper selection for ordinary payments and each consolidation step, immutable authenticated discovery snapshots, stable peer rows (including disabled expired slots), cancellation-safe session handoff, account-context cleanup, and duplicate chain-choice protection.
+
+Independent review found and verified fixes for socket ownership and reconnect cleanup: a cancelled discovery waiter cannot close a selected session's socket; a per-physical-socket setup deadline closes stalled attempts; late orphaned sockets close without affecting a replacement connection. The installed Nostr library's event verification, connection-wait default, ping and reconnect behavior remain enabled. No dependencies changed.
+
+Verification against the completed implementation:
+
+- Focused relay regression tests: 58 passed in independent review, with no remaining Critical or Important findings.
+- Full Node suite (`npm test`): 1,382 passed, zero failures.
+- Synthetic browser suite (`node scripts/test-private-components.mjs`): 22 passed across Chromium and iPhone WebKit. Coverage includes live selection, stable rows, keyboard access, stale results, cancellation, account-context changes, per-step chain selection, duplicate taps and native browser socket setup deadlines.
+- Fresh TypeScript (`npx tsc --noEmit --incremental false`): passed.
+- Lint (`npm run lint`): zero errors; three existing marketing-image warnings remain.
+- Production build (`npm run build`): passed; the temporary synthetic fixture route was removed and is absent from the production route list.
+- Bundle regression tests (`npm run test:bundle`): five passed. All named bundle budgets passed (`npm run check:bundle`); the private-balance feature is 70,849 gzip bytes across two chunks.
+- Staged whitespace/error check (`git diff --cached --check`): passed.
+
+Browser fixtures used synthetic data and exact-local-origin network interception, with screenshots, video and traces disabled. No live wallets, relay broadcasts, payment transactions, or sensitive data capture were used. Automated accessibility checks ran; human VoiceOver/NVDA and physical-device checks were not performed. This is not a formal cryptographic audit or a release certification; the complete release gate was not run for this non-release branch.
+
+The latency improvement is limited to skipping the remaining comparison wait after an explicit choice. No production latency measurements were collected. Cross-payment socket pooling, simulation reuse, P2P transport, and existing dependency audit findings remain outside this change. The branch is not merged, published or deployed as part of this implementation.

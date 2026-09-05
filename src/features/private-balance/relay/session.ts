@@ -275,7 +275,7 @@ export class PrivateRelaySenderSession {
     quoteWindowMs?: number;
     settleWindowMs?: number;
     excludePeerAccounts?: readonly string[];
-    onQuotes?: (quotes: readonly PrivateRelayQuote[]) => void;
+    onQuotes?: (quotes: readonly PrivateRelayQuote[], request: PrivateRelayRequest) => void;
     onIneligiblePeerAccounts?: (count: number) => void;
   }, signal?: AbortSignal): Promise<{
     request: PrivateRelayRequest;
@@ -361,7 +361,9 @@ export class PrivateRelaySenderSession {
           input.excludePeerAccounts,
         );
         try {
-          input.onQuotes?.(ranked);
+          // Live selection needs the authenticated context, but observers must
+          // not be able to change the retained request or fee snapshots.
+          input.onQuotes?.(ranked.map(quote => ({ ...quote })), { ...request });
         } catch {
           // UI observers cannot interfere with the authenticated relay session.
         }
