@@ -332,6 +332,7 @@ export function Dashboard() {
     dataLoading,
     dataError,
     loadingMore,
+    loadMoreError,
     xlmPriceUsd,
     priceData,
     unfunded,
@@ -952,7 +953,7 @@ export function Dashboard() {
   }, [loadMoreActivity]);
   const activitySentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (view !== "activity" || !activityCursor) return;
+    if (view !== "activity" || !activityCursor || loadingMore || loadMoreError) return;
     const el = activitySentinelRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(
@@ -964,7 +965,7 @@ export function Dashboard() {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [view, activityCursor, loadingMore]);
+  }, [view, activityCursor, loadingMore, loadMoreError]);
 
   const xlm = useMemo(() => balances?.find((b) => b.isNative) ?? null, [balances]);
   const activePortfolio = useMemo(() => {
@@ -3111,17 +3112,35 @@ export function Dashboard() {
                 </div>
               )}
 
-              {/* Infinite-scroll sentinel — forever scroll, no button */}
-              {activityCursor && (
-                <div ref={activitySentinelRef} className="flex justify-center py-5">
-                  {loadingMore && <Spinner size={18} />}
+              {/* Keep keyboard pagination and its focus owner mounted through
+                  pending/error/completion; automatic work pauses after errors. */}
+              {activityCursor || activity.length > 0 || loadMoreError ? (
+                <div ref={activitySentinelRef} data-activity-pagination className="space-y-3 py-5 text-center">
+                  <div data-activity-pagination-action aria-busy={loadingMore || undefined}>
+                    <Button
+                      variant="secondary"
+                      className="w-52 max-w-full aria-disabled:cursor-default aria-disabled:opacity-60"
+                      aria-disabled={loadingMore || !activityCursor || undefined}
+                      onClick={() => {
+                        if (!loadingMore && activityCursor) void loadMoreActivity({ retry: true });
+                      }}
+                    >
+                      {loadMoreError ? "Retry older activity" : "Load older activity"}
+                    </Button>
+                  </div>
+                  <div className="min-h-12">
+                    {loadingMore ? (
+                      <span role="status" aria-label="Loading older activity" className="inline-flex items-center gap-2 text-[12px] text-neutral-400">
+                        <Spinner size={18} /> Loading older activity
+                      </span>
+                    ) : loadMoreError ? (
+                      <p role="alert" className="text-[12px] text-red-300">{loadMoreError}</p>
+                    ) : !activityCursor ? (
+                      <p role="status" className="text-[11.5px] text-neutral-500">You&rsquo;re all caught up</p>
+                    ) : null}
+                  </div>
                 </div>
-              )}
-              {!activityCursor && filteredActivity.length > 0 && (
-                <p className="py-5 text-center text-[11.5px] text-neutral-500">
-                  You&rsquo;re all caught up
-                </p>
-              )}
+              ) : null}
             </section>
           ) : null}
         </div>

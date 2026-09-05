@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept Select choices bound to option identity during live reordering, preserved focus when options disappear or become disabled, and made Select and Dropdown keyboard navigation stay within their owning dialog.
 - Added consistent clipboard pending, success, and retryable error feedback, prevented overlapping copy writes, and kept sensitive clipboard clearing available after the copied announcement ends.
 - Removed stale receive QR images and download links immediately when public or private payment-request data changes, ignoring obsolete encoder results.
+- Kept older-activity requests scoped to the current wallet, account, network, and endpoint; preserved loaded history with explicit retry after failure and stable keyboard focus throughout retry feedback.
 - Kept cancelled Nostr discovery connection attempts from closing a selected helper's socket, cleared stale helper controls on account changes, and ignored duplicate consolidation-helper taps.
 - Identified same-account private relay helpers immediately in both peer checks and active payment reviews while keeping them ineligible and preserving the full eligible-peer discovery window.
 - Closed the focused Earn by relaying dialog immediately after valid settings are saved instead of requiring a second acknowledgement.
