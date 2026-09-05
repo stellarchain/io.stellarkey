@@ -237,7 +237,23 @@ No screenshots, recordings or raw browser traces were retained; the test referen
 | P3 / small | Private Receive's actual component has deferred QR browser coverage; Public Receive uses the same payload-binding rule but still needs its own direct deferred encoder browser case. |
 | P3 / small | Settings Back deliberately starts at the destination top; per-subpage scroll restoration is a separate product refinement. |
 
-No new telemetry, field-CWV claim, mainnet transaction, key-custody change, dependency upgrade or visual rebrand was introduced. Dependency advisories were not re-audited by this UX task. `release:verify`/`audit:prod` and a clean-worktree release gate were not run; no release/tag/deployment is implied. Integration remains separate: changes are in `feat/ux-continuity`, with the main checkout and its unrelated documents preserved.
+No new telemetry, field-CWV claim, mainnet transaction, key-custody change, dependency upgrade or visual rebrand was introduced. Dependency advisories were not re-audited by this UX task. `release:verify`/`audit:prod` and a clean-worktree release gate were not run; no release/tag/deployment is implied. At the initial audit handoff, changes were isolated in `feat/ux-continuity`; the subsequent user-requested local integration is recorded below.
+
+### Local integration follow-up — 2026-09-05
+
+The user requested merging all feature work and removing stale branches. This repository's primary branch is `main`, with no `master` branch; its name and remote configuration were preserved. Fetching `origin` found no incoming commits. Seven logical commits, each behavior change accompanied by its Unreleased entry, were fast-forwarded into `main` through `9cb6d6d`:
+
+- `1105816`: shared-control focus and explicit private intent.
+- `8f8a686`: current-request receive QR images.
+- `6db9bda`: wallet-owned activity pagination and retries.
+- `0b36bb9`: bounded, cancellation-safe backup feedback.
+- `ad4a67d`: user zoom and narrow payment-form reflow.
+- `c092fbe`: Settings destination scroll/focus.
+- `9cb6d6d`: standards, audit, test infrastructure and numeric evidence.
+
+Fresh integration checks: 1,409/1,409 Node tests before and after merging; 62/62 isolated component browser cases and 20/20 focused workflow cases before merging; typecheck, lint (the same three existing warnings), 22-route production build, five bundle tests and all bundle budgets after merging. The rebuilt main checkout's full production browser matrix passed **117 with 53 fixture/device-gated skips, zero failures**, in 4.5 minutes. Its offline revision is `770ac5311efc1d718051`, with 320 CSP hashes. Earlier numeric performance artifacts remain associated with their explicitly identified audited builds, not this rebuild.
+
+After verification, the fully merged feature branch and both temporary worktrees (`ux-continuity`, `ux-baseline`) were removed. The feature worktree was clean; the baseline's only two modified files were byte-identical to committed main, with no unique untracked files. Only generated dependencies/build/test outputs were removed alongside the duplicate checkouts; source and evidence remain in main and generated outputs are reproducible. Unrelated untracked user documents were preserved. The local preview on port 3193 now serves the main checkout; the existing port-3000 server was not stopped. No push, remote branch deletion, release or deployment occurred.
 
 ---
 
