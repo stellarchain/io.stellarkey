@@ -155,8 +155,8 @@ test('private relay shows every quote and waits for the person to select a peer'
   assert.match(review, /Comparing relay fees/);
   assert.match(review, /comparing=\{preparing && relayProgress === 'comparing-fees'\}/);
   assert.match(picker, /Available peers/);
-  assert.match(picker, /aria-busy=\{comparing\}/);
-  assert.match(picker, /Checking briefly for a better fee/);
+  assert.doesNotMatch(picker, /aria-busy=\{comparing\}/);
+  assert.match(picker, /Choose now, or wait briefly for more offers/);
   assert.match(picker, /quote\.peerAccount/);
   assert.match(picker, /quote\.feeAtomic/);
   assert.match(picker, /Choose peer/);

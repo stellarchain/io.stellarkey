@@ -27,6 +27,7 @@ export function connectPrivateRelayWithDeadline(
   url: string,
   signal: AbortSignal,
   timeoutMs = 8_000,
+  options: { closeOnFailure?: boolean } = {},
 ): Promise<{ resubscribeBackoff: number[] }> {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     return Promise.reject(new Error('Private relay connection deadline is invalid'));
@@ -34,6 +35,9 @@ export function connectPrivateRelayWithDeadline(
   return new Promise((resolve, reject) => {
     let settled = false;
     const closeRelay = () => {
+      // Subscription waiters borrow the session's socket. An old waiter must
+      // never tear down a newer selected-peer exchange on this same URL.
+      if (options.closeOnFailure === false) return;
       try {
         pool.close([url]);
       } catch {
@@ -182,13 +186,48 @@ export async function firstAcceptedPrivateRelayPublish(
   }
 }
 
+/** A physical setup deadline belongs to one socket, never to a subscription
+ * waiter or a URL that a newer payment exchange may already be using. */
+export function boundedPrivateRelayWebSocket(Socket: typeof WebSocket, timeoutMs = 8_000): typeof WebSocket {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
+    throw new Error('Private relay socket deadline is invalid');
+  }
+  return class extends Socket {
+    constructor(url: string | URL, protocols?: string | string[]) {
+      super(url, protocols);
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.removeEventListener('open', opened);
+        this.removeEventListener('error', cleanup);
+        this.removeEventListener('close', cleanup);
+      };
+      const opened = () => {
+        cleanup();
+        // nostr-tools 2.25.1 can time out earlier and detach its handlers
+        // without closing the socket. Never retain that late-opening orphan.
+        if (this.onopen === null) this.close();
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        if (this.readyState === Socket.CONNECTING) this.close();
+      }, timeoutMs);
+      this.addEventListener('open', opened);
+      this.addEventListener('error', cleanup);
+      this.addEventListener('close', cleanup);
+    }
+  };
+}
+
 export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
-  private poolPromise: Promise<import('nostr-tools/pool').SimplePool> | null = null;
+  private poolPromise: Promise<import('nostr-tools/pool').AbstractSimplePool> | null = null;
 
   private pool() {
-    this.poolPromise ??= import('nostr-tools/pool').then(({ SimplePool }) => new SimplePool({
+    this.poolPromise ??= Promise.all([import('nostr-tools/pool'), import('nostr-tools/pure')]).then(([{ AbstractSimplePool }, { verifyEvent }]) => new AbstractSimplePool({
+      verifyEvent,
+      maxWaitForConnection: 3_000,
       enablePing: true,
       enableReconnect: true,
+      websocketImplementation: boundedPrivateRelayWebSocket(WebSocket),
     }));
     return this.poolPromise;
   }
@@ -217,7 +256,7 @@ export class NostrPrivateRelayAdapter implements PrivateRelayTransportAdapter {
         filters,
         onEvent,
         subscribe: async (url, filter, handlers, signal) => {
-          const relay = await connectPrivateRelayWithDeadline(pool, url, signal);
+          const relay = await connectPrivateRelayWithDeadline(pool, url, signal, 8_000, { closeOnFailure: false });
           relay.resubscribeBackoff = [...PRIVATE_RELAY_RECONNECT_BACKOFF_MS];
           return pool.subscribeMany([url], filter, {
             onevent: handlers.onEvent,

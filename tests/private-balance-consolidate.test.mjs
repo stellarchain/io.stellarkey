@@ -65,7 +65,7 @@ test('relayed chained review separates private rewards from helper-paid XLM and 
   assert.match(review, /Helper-paid network fee cap/);
   assert.match(review, /Choose a helper for each step/);
   assert.match(review, /cannot retract a proof already shared with a helper/);
-  assert.match(review, /disabled=\{preparing \|\| \(working && !choosingChainPeer\)\}/);
+  assert.match(review, /disabled=\{\(preparing && relayProgress !== 'comparing-fees'\) \|\| \(working && !choosingChainPeer\)\}/);
   assert.match(review, /disabled=\{working && !chained\?\.relayApproval\}/);
   const send = read('src/features/private-balance/components/SendPrivate.tsx');
   assert.match(send, /const blocksNavigation = flow\.working && !flow\.chained\?\.relayApproval/);

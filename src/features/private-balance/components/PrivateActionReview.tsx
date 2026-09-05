@@ -226,7 +226,7 @@ export function PrivateActionReview({
     : chained !== null
       ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
       : preparing && relayProgress === 'comparing-fees'
-        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer found' : 'offers found'}. Comparing relay fees briefly.`
+        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer found' : 'offers found'}. Choose now, or wait briefly for more offers.`
       : preparing && relayProgress === 'same-account-peer'
         ? 'A helper using this Stellar account answered. Still looking for a different Stellar account.'
       : relayQuotes.length > 0
@@ -422,7 +422,7 @@ export function PrivateActionReview({
           quotes={relayQuotes}
           code={code}
           decimals={decimals}
-          disabled={preparing || (working && !choosingChainPeer)}
+          disabled={(preparing && relayProgress !== 'comparing-fees') || (working && !choosingChainPeer)}
           comparing={preparing && relayProgress === 'comparing-fees'}
           onSelect={onSelectRelayQuote}
         />
