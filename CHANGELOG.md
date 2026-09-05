@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Redesigned Earn by relaying as a live, fee-first control panel with explicit Start/Stop, clearer approval and cost disclosures, and secondary connection and peer-discovery tools. Settings save in place, preserve unfinished edits, and incorporate untouched preferences changed in another tab.
 - Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
 - Restored user-controlled page zoom while preserving mobile input sizing, corrected the Send form's MAX control contrast, and allowed recipient and memo captions to wrap on narrow screens.
 - Made authenticated Nostr helper offers selectable during fee comparison for ordinary private payments and each consolidation step, with stable peer rows and cancellation-safe session handoff.
@@ -55,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Included native disclosure controls in modal keyboard focus containment and kept Earn's closing geometry stable while immediately clearing its panel content.
 - Validate relay-compatible recipient addresses before peer discovery and explain how to request a fresh Shielded address, without changing the recipient or silently switching to direct submission.
 - Wait for manual relay approval until the existing quote/payout deadline, register exact signed authorization before delivery, and prevent duplicate signing or submission after uncertain responses.
 - Distinguish a new action blocked by an earlier unresolved private payment from a newly shared spend proof; keep existing input reservations intact.

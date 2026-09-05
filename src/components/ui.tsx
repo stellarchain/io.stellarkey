@@ -317,7 +317,7 @@ export function Modal({
     lockBodyScroll();
     window.requestAnimationFrame(() => {
       const first = panelRef.current?.querySelector<HTMLElement>(
-        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
       );
       (first ?? panelRef.current)?.focus({ preventScroll: true });
     });
@@ -384,7 +384,7 @@ export function Modal({
       if (e.key === "Tab" && panelRef.current) {
         const focusable = Array.from(
           panelRef.current.querySelectorAll<HTMLElement>(
-            'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+            'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
           ),
         ).filter((element) => element.offsetParent !== null);
         if (focusable.length === 0) {

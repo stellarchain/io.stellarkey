@@ -1,0 +1,28 @@
+'use client';
+
+import { useState } from 'react';
+import { Button, Modal, ModalHeader } from '@/components/ui';
+import { PrivateRelayEntry } from '@/features/private-balance/components/PrivateRelayEntry';
+import { PrivateRelaySettings } from '@/features/private-balance/components/PrivateRelaySettings';
+import { publishPrivateRelayHelperStatus } from '@/features/private-balance/relay/helper-status';
+import { loadPrivateRelayPreferences, savePrivateRelayPreferences } from '@/features/private-balance/relay/preferences';
+
+// Real controls and preference/status stores; deliberately no helper manager,
+// wallet key, offer signing, chain access, or background network session.
+export function RelayEarnFixture() {
+  const [advanced, setAdvanced] = useState(false);
+  return <section aria-label="Synthetic earn checks" className="my-6 max-w-lg">
+    <PrivateRelayEntry />
+    <Button variant="secondary" onClick={() => publishPrivateRelayHelperStatus({ phase: 'connected', connectedRelays: 1, totalRelays: 2 })}>Connect synthetic helper</Button>
+    <Button variant="secondary" onClick={() => publishPrivateRelayHelperStatus({ phase: 'reconnecting', connectedRelays: 0, totalRelays: 2 })}>Reconnect synthetic helper</Button>
+    <Button variant="secondary" onClick={() => publishPrivateRelayHelperStatus({ phase: 'unavailable', connectedRelays: 0, totalRelays: 2 })}>Disconnect synthetic helper</Button>
+    <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), useRelay: true })}>Enable independent sender preference</Button>
+    <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), helpRelay: false })}>Stop helper elsewhere</Button>
+    <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), relayUrls: ['wss://relay-one.example/', 'wss://relay-two.example/'], feeAtomic: '20000' })}>Change external relay settings</Button>
+    <Button variant="secondary" onClick={() => setAdvanced(true)}>Open advanced relay settings</Button>
+    <Modal open={advanced} onClose={() => setAdvanced(false)}>
+      <ModalHeader title="Synthetic advanced relay settings" onClose={() => setAdvanced(false)} />
+      {advanced ? <div className="p-4"><PrivateRelaySettings /></div> : null}
+    </Modal>
+  </section>;
+}

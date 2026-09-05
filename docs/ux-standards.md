@@ -189,4 +189,6 @@ For every critical overlay with asynchronous panels, test:
 
 Tests wait for meaningful DOM, accessibility, network, or state conditions. Fixed sleeps are prohibited.
 
+Optional participation controls (including Earn) show real connection readiness separately from persisted enablement. Start/Stop is explicit; Stop does not validate unfinished fee or endpoint edits. Rebase untouched fields after external preference changes and merge only real edits. Keep acknowledgements neutral and clear obsolete messages. Native disclosure summaries belong in modal keyboard containment. Closing clears private content immediately while retaining only its non-sensitive layout dimensions through exit.
+
 Wallet verification must disable screenshots, video and traces. Disable failure DOM snapshots where supported; if the runner cannot, use only isolated synthetic non-usable fixtures, never a real wallet session. Playwright 1.62.1 locator failures retain this limitation (see the dated audit). Raw accessibility node HTML and wallet text are not safe application diagnostics. Use structural counts and fixed labels. Regression observers check transient attribute history as well as final shell identity, scroll lock and inertness. Run normal motion explicitly in addition to reduced motion.
