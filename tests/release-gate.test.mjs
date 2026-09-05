@@ -330,7 +330,7 @@ test("manual browser, hardware, and backend-free boundaries have a release check
   assert.match(checklist, /real iPhone/i);
   assert.match(checklist, /Trezor/);
   assert.match(checklist, /foreground-only/i);
-  assert.match(checklist, /pinch zoom remains disabled/i);
+  assert.match(checklist, /pinch zoom.*200%/i);
   assert.match(checklist, /backup envelope version 2/i);
   assert.match(checklist, /legacy plaintext version 1[^\n]*not supported/i);
 });

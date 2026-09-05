@@ -18,7 +18,7 @@ This wallet ships as static files and talks directly to user-selected Stellar se
 
 ## Manual device boundaries
 
-- On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Pinch zoom remains disabled by product requirement; VoiceOver and system text remain usable.
+- On a real iPhone, test Safari onboarding, encrypted-backup restore, lock/unlock, form entry, safe areas, and Add to Home Screen cold launch. Verify pinch zoom and 200% reflow, VoiceOver, and system text without clipping controls or obscuring focus.
 - On a real iPad, repeat the installed-app, rotation, modal, keyboard, and account-menu lock flows.
 - Create a passkey on a real compatible Apple device, lock and unlock with Face ID or Touch ID, verify password fallback, and confirm removal rejects a wrong current password.
 - Connect a real supported Trezor, verify the address on-device, review a small testnet transaction on-device, and confirm cancellation and disconnect errors fail closed.

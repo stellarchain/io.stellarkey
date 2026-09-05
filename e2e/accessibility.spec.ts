@@ -26,9 +26,9 @@ async function expectAccessibleSurface(
   }));
   if (clientWidth < 768) await expectMobileContainment(page, label);
   expect(scrollWidth, `${label} must not overflow horizontally`).toBeLessThanOrEqual(clientWidth);
-  expect(viewport).toContain("maximum-scale=1");
-  expect(viewport).toContain("user-scalable=no");
-  const disabledRules = ["meta-viewport"];
+  expect(viewport).not.toContain("maximum-scale=1");
+  expect(viewport).not.toContain("user-scalable=no");
+  const disabledRules: string[] = [];
   if (browserName === "webkit") {
     // axe/WebKit resolves transparent blurred backgrounds as opaque light
     // layers. Chromium remains the authoritative automated contrast gate.
@@ -36,34 +36,42 @@ async function expectAccessibleSurface(
   }
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    // Product requirement: native-feeling installed iOS UI intentionally disables zoom.
     .disableRules(disabledRules)
     .analyze();
   const blocking = results.violations.filter(
     (violation) => violation.impact === "critical" || violation.impact === "serious",
   );
-  expect(blocking, `${label} has blocking accessibility violations`).toEqual([]);
+  expect(blocking.map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.map(node => ({
+    tag: node.html.match(/^<([a-z]+)/)?.[1],
+    classes: node.html.match(/class="([^"]*)"/)?.[1],
+    contrast: node.any.filter(check => check.id === 'color-contrast').map(check => ({
+      foreground: check.data?.fgColor, background: check.data?.bgColor, ratio: check.data?.contrastRatio,
+    })),
+    targetSize: node.any.filter(check => check.id === 'target-size').map(check => ({
+      width: check.data?.width, height: check.data?.height, minimum: check.data?.minSize, reason: check.data?.messageKey,
+      overlapping: check.relatedNodes?.map(related => ({ tag: related.html.match(/^<([a-z]+)/)?.[1], classes: related.html.match(/class="([^"]*)"/)?.[1] })),
+    })),
+  })) })), `${label} has blocking accessibility violations`).toEqual([]);
 }
 
 async function expectMobileContainment(page: Page, label: string): Promise<void> {
-  const failures = await page.evaluate(() => {
+  const measure = () => page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;
     const escaped: string[] = [];
     const describe = (element: Element) => {
       const html = element as HTMLElement;
       const rect = html.getBoundingClientRect();
-      const name =
-        html.getAttribute("aria-label") ??
-        html.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) ??
-        element.tagName.toLowerCase();
-      return `${element.tagName.toLowerCase()}${element.className ? `.${String(element.className).split(/\s+/).slice(0, 3).join(".")}` : ""} [${Math.round(rect.left)}…${Math.round(rect.right)}; ${html.clientWidth}/${html.scrollWidth}] “${name}”`;
+      // Structural diagnostics only: never serialize wallet text into failures.
+      const caption = ['Amount', 'Memo (Optional)', 'Recipient Address or Federation'].find(value => element.querySelector('label')?.textContent === value) ?? '';
+      return `${element.tagName.toLowerCase()}.${String(element.className).split(/\s+/).slice(0, 4).join('.')} ${caption} [${Math.round(rect.left)}…${Math.round(rect.right)}; ${html.clientWidth}/${html.scrollWidth}]`;
     };
 
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
       if (element.classList.contains("sr-only")) continue;
       if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) continue;
       const rect = element.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0 || rect.bottom < 0 || rect.top > innerHeight) continue;
+      if (rect.width === 0 || rect.height === 0) continue;
+      if ((rect.bottom < 0 || rect.top > innerHeight) && !element.closest('[data-modal-shell]')) continue;
       const style = getComputedStyle(element);
       if (style.pointerEvents === "none" && !element.textContent?.trim()) continue;
       const allowsHorizontalScroll =
@@ -113,7 +121,7 @@ async function expectMobileContainment(page: Page, label: string): Promise<void>
     return [...new Set(escaped)].slice(0, 12);
   });
 
-  expect(failures, `${label} must not clip or escape mobile content`).toEqual([]);
+  await expect.poll(measure, { message: `${label} must not clip or escape mobile content` }).toEqual([]);
 }
 
 async function clickPrimaryNavigation(page: Page, name: string): Promise<void> {
@@ -336,6 +344,29 @@ test("critical wallet screens remain operable and accessible", async ({ page, br
   await expectAccessibleSurface(page, "send review", browserName);
   await review.getByRole("button", { name: "Back", exact: true }).click();
   await send.getByRole("button", { name: "Close" }).click();
+});
+
+test("wallet overlays reflow at 200-percent-equivalent and narrow widths without losing form state", async ({ page, browserName }) => {
+  await importTestWallet(page);
+  // 1280x900 at 200% browser zoom has a 640x450 CSS layout viewport.
+  // This tests reflow, not a physical-device pinch gesture or screen reader.
+  await page.setViewportSize({ width: 640, height: 450 });
+  await page.getByRole("main").getByRole("button", { name: "Send", exact: true }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Send Payment", exact: true });
+  await dialog.getByLabel("Amount", { exact: true }).fill("1");
+  const shell = await dialog.locator("[data-modal-shell]").elementHandle();
+  for (const width of [640, 320]) {
+    await page.setViewportSize({ width, height: 450 });
+    await expectAccessibleSurface(page, "zoom-equivalent send", browserName);
+    await expect(dialog.getByLabel("Amount", { exact: true })).toHaveValue("1");
+    expect(await shell!.evaluate(node => node.isConnected)).toBe(true);
+    await dialog.getByRole("button", { name: "Close", exact: true }).focus();
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  }
+  const touchAction = await page.evaluate(() => getComputedStyle(document.body).touchAction);
+  expect(touchAction === "manipulation" || touchAction.split(" ").includes("pinch-zoom")).toBe(true);
+  await dialog.getByRole("button", { name: "Close", exact: true }).press("Escape");
+  await expect(dialog).toBeHidden();
 });
 
 test("critical wallet settings remain operable and accessible", async ({ page, browserName }) => {
