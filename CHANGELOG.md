@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed stale receive QR images and download links immediately when public or private payment-request data changes, ignoring obsolete encoder results.
 - Made backup-file restore keyboard operable with local read progress and safe retryable errors, and prevented abandoned file reads from redirecting a newer workflow.
 - Kept older-activity requests scoped to the current wallet, account, network, and endpoint; preserved loaded history with explicit retry after failure and stable keyboard focus throughout retry feedback.
+- Made explicit Settings navigation start at the destination heading in the actual scroll container, preventing controls from inheriting an old scroll offset beneath the sticky header.
 - Kept cancelled Nostr discovery connection attempts from closing a selected helper's socket, cleared stale helper controls on account changes, and ignored duplicate consolidation-helper taps.
 - Identified same-account private relay helpers immediately in both peer checks and active payment reviews while keeping them ineligible and preserving the full eligible-peer discovery window.
 - Closed the focused Earn by relaying dialog immediately after valid settings are saved instead of requiring a second acknowledgement.

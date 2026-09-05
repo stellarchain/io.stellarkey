@@ -35,7 +35,7 @@ async function expectAccessibleSurface(
     disabledRules.push("color-contrast");
   }
   const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .disableRules(disabledRules)
     .analyze();
   const blocking = results.violations.filter(
@@ -163,10 +163,35 @@ async function visitSettingsSubpage(
   browserName: string,
 ): Promise<void> {
   await page.getByRole("button", { name: rowName }).click();
-  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  const destination = page.getByRole("heading", { name: heading, exact: true });
+  await expect(destination).toBeVisible();
+  await expect(destination).toBeInViewport({ ratio: 1 });
+  await expect(destination).toBeFocused();
+  await expect.poll(() => destination.evaluate(element => {
+    const chromeBottom = Math.max(0, ...[...document.querySelectorAll<HTMLElement>('.app-scroll-sticky-top, .app-mobile-sticky-header')]
+      .filter(header => header.getBoundingClientRect().height > 0)
+      .map(header => header.getBoundingClientRect().bottom));
+    return element.getBoundingClientRect().top >= chromeBottom;
+  })).toBe(true);
   await expectAccessibleSurface(page, `${heading} settings`, browserName);
+  if (heading === 'Network') {
+    const draft = page.getByRole('textbox', { name: 'Stellar RPC endpoint' });
+    // A real edit begins with the field visible. Check the controlled update
+    // independently of Chromium's native keyboard-caret reveal scrolling.
+    await draft.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await draft.click();
+    await draft.fill('https://rpc.synthetic.invalid');
+    await expect(draft).toBeInViewport({ ratio: 1 });
+    const scrollPosition = () => page.evaluate(() => [window.scrollY, document.querySelector<HTMLElement>('[data-app-scroll-owner]')?.scrollTop ?? 0]);
+    const beforeEdit = await scrollPosition();
+    await draft.fill('https://rpc.synthetic.invalidx');
+    await expect(draft).toHaveValue('https://rpc.synthetic.invalidx');
+    await expect(draft).toBeFocused();
+    await expect.poll(scrollPosition).toEqual(beforeEdit);
+  }
   await page.getByRole("button", { name: "Back to Settings" }).click();
   await expect(page.getByRole("heading", { name: "Recovery", exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Wallet settings', exact: true })).toBeFocused();
 }
 
 async function prepareImportedWallet(

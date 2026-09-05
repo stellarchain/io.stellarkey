@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWallet, useWalletSecurity } from "@/hooks/useWallet";
 import { useMerchantSettings } from "@/hooks/useMerchantRuntime";
@@ -226,6 +226,28 @@ export function SettingsPage({
   } = useWalletSecurity();
 
   const [sub, setSub] = useState<Sub>(initialSub);
+  const settingsRoot = useRef<HTMLDivElement>(null);
+  const navigationTarget = useRef<Sub | null>(initialSub);
+
+  function navigateToSub(next: Sub) {
+    if (next === sub) return;
+    navigationTarget.current = next;
+    setSub(next);
+  }
+
+  useLayoutEffect(() => {
+    const target = navigationTarget.current;
+    navigationTarget.current = null;
+    if (target !== sub) return;
+    const root = settingsRoot.current;
+    // Entry and explicit sub-navigation own this reset. Data refreshes and
+    // asynchronous completion must not move focus or a locked background.
+    if (!root || document.querySelector("[data-modal-backdrop]")) return;
+    root.closest<HTMLElement>("[data-app-scroll-owner]")?.scrollTo({ top: 0, behavior: "instant" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+    const heading = root.querySelector<HTMLElement>("[data-settings-heading]");
+    (heading ?? root).focus({ preventScroll: true });
+  }, [sub]);
 
   const [soundEnabled, setSoundEnabled] = useState(() => loadSoundPref());
   const [backupHealth, setBackupHealth] = useState<BackupHealth | null>(null);
@@ -733,7 +755,8 @@ export function SettingsPage({
           : "root";
 
   return (
-    <div className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
+    <div ref={settingsRoot} role="region" aria-label={merchantOnly ? "Merchant settings" : "Wallet settings"} tabIndex={-1}
+      className="fade-up mx-auto w-full max-w-[1000px] min-w-0 px-0 pb-0 md:px-5 md:pb-[150px]">
       {/* Subpage Navigation — suppressed for sub-pages that draw their own. */}
       {sub !== "root" && !ownsItsHeader(sub) && !(merchantOnly && sub === "merchant") && (
         <>
@@ -741,7 +764,7 @@ export function SettingsPage({
             <IOSBackButton
               label="Back to Settings"
               onClick={() => {
-                setSub(backTarget ?? "root");
+                navigateToSub(backTarget ?? "root");
               }}
             />
             <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
@@ -750,7 +773,7 @@ export function SettingsPage({
             <span className="w-11" aria-hidden />
           </div>
 
-          <h1 className="display-h mb-5 text-[28px] font-bold text-white">
+          <h1 data-settings-heading tabIndex={-1} className="display-h mb-5 text-[28px] font-bold text-white">
             {sub === "accounts"
                 ? "Accounts"
                 : sub === "autolock"
@@ -906,7 +929,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("autolock");
+                      navigateToSub("autolock");
                     }}
                     sep
                   />
@@ -941,7 +964,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("hardware");
+                      navigateToSub("hardware");
                     }}
                     sep
                   />
@@ -953,7 +976,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("airsigner");
+                      navigateToSub("airsigner");
                     }}
                     sep
                   />
@@ -1004,7 +1027,7 @@ export function SettingsPage({
                       chevron
                       onClick={() => {
                         triggerHaptic("selection");
-                        setSub("accounts");
+                        navigateToSub("accounts");
                       }}
                       sep
                     />
@@ -1017,7 +1040,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("currency");
+                      navigateToSub("currency");
                     }}
                     sep
                   />
@@ -1073,7 +1096,7 @@ export function SettingsPage({
                         sep
                         onClick={() => {
                           triggerHaptic("selection");
-                          setSub("merchant");
+                          navigateToSub("merchant");
                         }}
                       />
                     </>
@@ -1094,7 +1117,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("network");
+                      navigateToSub("network");
                     }}
                   />
                 </div>
@@ -1113,7 +1136,7 @@ export function SettingsPage({
                     chevron
                     onClick={() => {
                       triggerHaptic("selection");
-                      setSub("about");
+                      navigateToSub("about");
                     }}
                   />
                   {installAvailable && (
@@ -1289,7 +1312,7 @@ export function SettingsPage({
                 onClick={() => {
                   triggerHaptic("selection");
                   changeAutoLockMs(opt.ms);
-                  setSub("root");
+                  navigateToSub("root");
                 }}
               >
                 <span className="text-[15.5px] font-medium text-white">{opt.label}</span>
@@ -1509,7 +1532,7 @@ export function SettingsPage({
                 chevron
                 onClick={() => {
                   triggerHaptic("selection");
-                  setSub("merge");
+                  navigateToSub("merge");
                 }}
                 sep
               />
@@ -1991,16 +2014,16 @@ export function SettingsPage({
       {sub === "merchant" && (
         <MerchantSettings
           onDisabled={() => setSub("root")}
-          onNavigate={setSub}
+          onNavigate={navigateToSub}
           onOpenSwap={onOpenSwap}
           onOpenSend={onOpenSend}
         />
       )}
 
       {/* Merchant sub-pages draw their own back button, so they render bare. */}
-      {sub === "staff" && <StaffTerminalsPage onBack={() => setSub("merchant")} />}
-      {sub === "tax" && <TaxRecordsPage onBack={() => setSub("merchant")} />}
-      {sub === "peripherals" && <PeripheralsPage onBack={() => setSub("merchant")} />}
+      {sub === "staff" && <StaffTerminalsPage onBack={() => navigateToSub("merchant")} />}
+      {sub === "tax" && <TaxRecordsPage onBack={() => navigateToSub("merchant")} />}
+      {sub === "peripherals" && <PeripheralsPage onBack={() => navigateToSub("merchant")} />}
 
       {/* ---------- NETWORK SWITCHER & HEALTH ---------- */}
       {sub === "network" && (
