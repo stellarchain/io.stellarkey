@@ -132,6 +132,7 @@ import {
 } from "@/lib/submission";
 
 type Phase = "loading" | "empty" | "recovery" | "locked" | "unlocked";
+type ActivityPageState = "idle" | "pending" | "recoverable-error";
 
 type WalletApi = typeof import("@/lib/api");
 type SwapApi = typeof import("@/lib/swap");
@@ -268,6 +269,7 @@ interface WalletContextValue {
   ) => SubmissionLifecycleStatus | null;
   dataLoading: boolean;
   loadingMore: boolean;
+  loadMoreError: string | null;
   xlmPriceUsd: number | null;
   priceData: PriceSeries | null;
   priceRange: PriceRange;
@@ -334,7 +336,7 @@ interface WalletContextValue {
   restoreAccountByIndex: (index: number) => Promise<AccountMeta>;
   switchNetwork: (network: NetworkKey) => void;
   refresh: () => Promise<void>;
-  loadMoreActivity: () => Promise<void>;
+  loadMoreActivity: (options?: { retry?: boolean }) => Promise<void>;
 
   send: (params: {
     destination: string;
@@ -451,7 +453,7 @@ type WalletLedgerContextValue = Pick<
 
 type WalletActivityContextValue = Pick<
   WalletContextValue,
-  "activity" | "activityCursor" | "loadingMore" | "loadMoreActivity"
+  "activity" | "activityCursor" | "loadingMore" | "loadMoreError" | "loadMoreActivity"
 >;
 
 type WalletSubmissionContextValue = Pick<
@@ -611,7 +613,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const trackingTaskGeneration = useRef(0);
   const [trackingRestartNonce, setTrackingRestartNonce] = useState(0);
   const [dataLoading, setDataLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [activityPageState, setActivityPageState] = useState<ActivityPageState>("idle");
+  const activityPageStateRef = useRef<ActivityPageState>("idle");
+  const loadingMore = activityPageState === "pending";
+  const loadMoreError = activityPageState === "recoverable-error"
+    ? "Could not load older activity. Your existing history is still available. Retry when ready."
+    : null;
   const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
   const [priceData, setPriceData] = useState<PriceSeries | null>(null);
   const [priceRange, setPriceRangeState] = useState<PriceRange>("7D");
@@ -634,7 +641,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [tabSenderId] = useState(createTabSenderId);
   const [accountRefreshLane] = useState(createLatestRequestLane);
   const [marketRefreshLane] = useState(createLatestRequestLane);
+  const [activityPaginationLane] = useState(createLatestRequestLane);
   const walletCoordinationRef = useRef<WalletCoordination | null>(null);
+
+  const commitActivityPageState = useCallback((next: ActivityPageState) => {
+    // Synchronous ownership prevents duplicate observer callbacks before React
+    // paints the matching pending state.
+    activityPageStateRef.current = next;
+    setActivityPageState(next);
+  }, []);
+  const cancelActivityPagination = useCallback(() => {
+    activityPaginationLane.cancel();
+    commitActivityPageState("idle");
+  }, [activityPaginationLane, commitActivityPageState]);
+
+  useEffect(() => () => activityPaginationLane.cancel(), [activityPaginationLane]);
 
   const activeAccount = useMemo(
     () => accounts.find((a) => a.id === activeId) ?? null,
@@ -722,6 +743,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const refreshEndpoints = () => {
+      cancelActivityPagination();
       endpointRevisionRef.current += 1;
       setEndpointRevision(endpointRevisionRef.current);
     };
@@ -736,7 +758,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener(STELLAR_ENDPOINTS_CHANGED_EVENT, refreshEndpoints);
       window.removeEventListener("storage", refreshStoredEndpoint);
     };
-  }, []);
+  }, [cancelActivityPagination]);
 
   useEffect(() => {
     if (phase !== "unlocked") return;
@@ -1292,6 +1314,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [phase, activePublicKey, endpointRevision, network]);
 
   const lockVaultAndReset = useCallback((notifyPeers = true) => {
+    cancelActivityPagination();
     cancelSigningAuthorization("Wallet locked before signing.");
     closePaperWalletPrints();
     lockVault();
@@ -1302,7 +1325,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("locked");
     setDataLoading(false);
     if (notifyPeers) walletCoordinationRef.current?.post("wallet-lock");
-  }, [cancelSigningAuthorization]);
+  }, [cancelActivityPagination, cancelSigningAuthorization]);
 
   useEffect(() => {
     const sensitiveSessionOpen =
@@ -1769,6 +1792,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       );
     }
     assertSessionCurrent();
+    cancelActivityPagination();
     setAccounts(vault.accounts.map(stripSecret));
     setArchivedAccounts((vault.archivedAccounts ?? []).map(stripSecret));
     setActiveId(vault.activeAccountId ?? vault.accounts[0]?.id ?? null);
@@ -1777,10 +1801,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setDataError(null);
     setClaimableBalances([]);
     setActivity([]);
+    setActivityCursor(null);
     setContacts(privateContacts);
     commitSigningPasswordRequired(vault.requirePasswordForSigning === true);
     setPhase("unlocked");
-  }, [commitSigningPasswordRequired, toast]);
+  }, [cancelActivityPagination, commitSigningPasswordRequired, toast]);
 
   const unlock = useCallback(async (password: string) => {
     await installUnlockedVault(await unlockVault(password));
@@ -1889,6 +1914,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [lockVaultAndReset, phase, resetWallet, tabSenderId]);
 
   const restoreWalletFromBackup = useCallback(async (json: string, password?: string): Promise<VaultRestoreResult> => {
+    cancelActivityPagination();
     invalidateTrackingTasks();
     let result: VaultRestoreResult;
     try {
@@ -1897,6 +1923,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setTrackingRestartNonce((current) => current + 1);
       throw error;
     }
+    cancelActivityPagination();
     const vault = loadVault();
     if (vault) {
       setAccounts(vault.accounts.map(stripSecret));
@@ -1924,6 +1951,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPhase("locked");
     return result;
   }, [
+    cancelActivityPagination,
     commitMergeReconciliations,
     commitSigningPasswordRequired,
     commitTransactionTracking,
@@ -1933,6 +1961,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
     if (!vault) return;
+    cancelActivityPagination();
     const target = vault.accounts.find((a) => a.id === id);
     refreshGeneration.current += 1;
     const cached = target
@@ -1953,10 +1982,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setDataError(null);
     setActiveId(id);
-  }, [endpointRevision, network]);
+  }, [cancelActivityPagination, endpointRevision, network]);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
     const account = await addStoredAccount(opts);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
@@ -1966,7 +1996,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return account;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const addHardwareAccount = useCallback(
     async (params: {
@@ -1977,6 +2007,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       index?: number;
     }) => {
       const account = await addHardwareAccountVault(params);
+      cancelActivityPagination();
       setAccounts((prev) => [...prev, stripSecret(account)]);
       setActiveId(account.id);
       setBalances(null);
@@ -1987,11 +2018,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       void refresh();
       return account;
     },
-    [refresh],
+    [cancelActivityPagination, refresh],
   );
 
   const addWatchOnly = useCallback(async (publicKey: string, label?: string) => {
     const account = await addWatchOnlyAccount(publicKey.trim(), label);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, stripSecret(account)]);
     setActiveId(account.id);
     setBalances(null);
@@ -2001,10 +2033,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return account;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const removeAccount = useCallback(async (id: string) => {
     const remaining = removeStoredAccount(id);
+    cancelActivityPagination();
     if (!remaining) {
       setAccounts([]);
       setArchivedAccounts([]);
@@ -2030,7 +2063,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         "Account archived, but its local Private Payments data could not be removed.",
       );
     }
-  }, []);
+  }, [cancelActivityPagination]);
 
   const reconcileMergeRecordRef = useRef<(record: MergeReconciliation) => Promise<void>>(
     async () => {},
@@ -2189,6 +2222,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const restoreArchivedAccount = useCallback(async (id: string) => {
     const restored = await restoreArchivedAccountVault(id);
+    cancelActivityPagination();
     setAccounts((prev) => [...prev, restored]);
     setArchivedAccounts(getArchivedAccounts());
     setActiveId(restored.id);
@@ -2199,10 +2233,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return restored;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const restoreAccountByIndex = useCallback(async (index: number) => {
     const restored = await restoreAccountByIndexVault(index);
+    cancelActivityPagination();
     setAccounts((prev) => {
       if (prev.some((a) => a.id === restored.id)) return prev;
       return [...prev, restored];
@@ -2215,9 +2250,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivity([]);
     setActivityCursor(null);
     return restored;
-  }, []);
+  }, [cancelActivityPagination]);
 
   const switchNetwork = useCallback((net: NetworkKey) => {
+    cancelActivityPagination();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
     saveNetworkPref(net);
@@ -2232,30 +2268,41 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setActivityCursor(null);
     setXlmPriceUsd(null);
     setPriceData(null);
-  }, []);
+  }, [cancelActivityPagination]);
 
-  const loadMoreActivity = useCallback(async () => {
-    if (!activeAccount || !activityCursor || loadingMore) return;
-    setLoadingMore(true);
+  const loadMoreActivity = useCallback(async (options?: { retry?: boolean }) => {
+    if (phase !== "unlocked" || !activeAccount || !activityCursor
+      || activityPageStateRef.current === "pending"
+      || (activityPageStateRef.current === "recoverable-error" && !options?.retry)) return;
+    const request = activityPaginationLane.begin();
+    commitActivityPageState("pending");
     try {
+      const assertSessionCurrent = createSessionRevocationGuard();
       const api = await loadWalletApi();
+      if (!request.isCurrent()) return;
+      assertSessionCurrent();
       const more = await api.fetchActivity(
         activeAccount.publicKey,
         network,
         30,
         activityCursor,
+        request.signal,
       );
+      if (!request.isCurrent()) return;
+      assertSessionCurrent();
       setActivity((prev) => {
         const seen = new Set(prev.map((i) => i.id));
         return [...prev, ...more.items.filter((i) => !seen.has(i.id))];
       });
       setActivityCursor(more.nextCursor);
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : "Unable to load more activity.");
+    } catch {
+      if (request.isCurrent()) commitActivityPageState("recoverable-error");
     } finally {
-      setLoadingMore(false);
+      if (request.isCurrent() && activityPageStateRef.current !== "recoverable-error") {
+        commitActivityPageState("idle");
+      }
     }
-  }, [activeAccount, activityCursor, loadingMore, network]);
+  }, [activeAccount, activityCursor, activityPaginationLane, commitActivityPageState, network, phase]);
 
   const addContact = useCallback(async (contact: Contact, previousAddress?: string) => {
     setContacts(await saveContact(contact, previousAddress));
@@ -2769,6 +2816,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
+      loadMoreError,
       xlmPriceUsd,
       priceData,
       priceRange,
@@ -2849,6 +2897,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
+      loadMoreError,
       xlmPriceUsd,
       priceData,
       priceRange,
@@ -3009,8 +3058,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     activity,
     activityCursor,
     loadingMore,
+    loadMoreError,
     loadMoreActivity,
-  }), [activity, activityCursor, loadingMore, loadMoreActivity]);
+  }), [activity, activityCursor, loadingMore, loadMoreError, loadMoreActivity]);
   const submissionValue = useMemo<WalletSubmissionContextValue>(() => ({
     pendingTxs,
     retryPendingTransaction,
