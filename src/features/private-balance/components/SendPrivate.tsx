@@ -14,6 +14,7 @@ import { humanizePrivateError } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
+import { privateRelayRecipientDiversifier } from '../relay/recipient';
 import type { PrivateRecentRecipient } from '../runtime/types';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
@@ -83,6 +84,8 @@ export function SendPrivate({
   const [pasteGuidance, setPasteGuidance] = useState<string | null>(null);
   const [recipientValidation, setRecipientValidation] = useState<{
     address: string;
+    submissionMode: PrivateSubmissionMode;
+    networkLabel: string;
     fingerprint: string | null;
     error: string | null;
   } | null>(null);
@@ -103,13 +106,18 @@ export function SendPrivate({
       };
     }
     void validateRecipient(address)
-      .then(result => {
-        if (current) setRecipientValidation({ address, fingerprint: result.fingerprint, error: null });
+      .then(async result => {
+        if (submissionMode === 'relay') {
+          await privateRelayRecipientDiversifier(address, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
+        }
+        if (current) setRecipientValidation({ address, submissionMode, networkLabel, fingerprint: result.fingerprint, error: null });
       })
       .catch((cause: unknown) => {
         if (current) {
           setRecipientValidation({
             address,
+            submissionMode,
+            networkLabel,
             fingerprint: null,
             error: humanizePrivateError(cause).body,
           });
@@ -118,9 +126,10 @@ export function SendPrivate({
     return () => {
       current = false;
     };
-  }, [recipientAddress, validateRecipient]);
+  }, [networkLabel, recipientAddress, submissionMode, validateRecipient]);
   const currentValidation =
-    recipientValidation?.address === trimmedRecipient ? recipientValidation : null;
+    recipientValidation?.address === trimmedRecipient && recipientValidation.submissionMode === submissionMode &&
+    recipientValidation.networkLabel === networkLabel ? recipientValidation : null;
   const fingerprint = currentValidation?.fingerprint ?? null;
   const recipientError =
     !isPublicStellarAddress && trimmedRecipient ? currentValidation?.error ?? null : null;

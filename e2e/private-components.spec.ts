@@ -43,6 +43,172 @@ async function stableShell(page: Page) {
   })).toEqual({ shell: 'retained', backdrop: 'retained', locked: true, focused: true, inert: true, contained: true });
 }
 
+async function syntheticDelivery(page: Page, name: string) {
+  // Network/signing completions can arrive while the background fixture controls are inert.
+  await page.getByRole('button', { name, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+}
+
+test('default relay recipient is blocked before session creation and can be corrected locally', async ({ page }) => {
+  await markShell(page);
+  await page.getByRole('tab', { name: 'Relay', exact: true }).click();
+  await page.getByRole('button', { name: 'Try default synthetic recipient' }).click();
+  await expect(page.getByRole('dialog')).toContainText('A new recipient address is needed');
+  await expect(page.getByTestId('relay-creations')).toHaveText('0');
+  await expect(page.getByTestId('relay-requests')).toHaveText('0');
+  await stableShell(page);
+  await page.getByRole('button', { name: 'Use fresh synthetic recipient' }).click();
+  await expect(page.getByTestId('relay-requests')).toHaveText('1');
+  await page.getByRole('button', { name: 'Deliver synthetic offer', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Choose peer 1/ })).toBeEnabled();
+});
+
+test('relay preflight preserves the direct form and distinguishes the earlier-payment blocker', async ({ page, browserName }) => {
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open synthetic private send' }).click();
+  await markShell(page);
+  const amount = page.getByLabel('Amount', { exact: true });
+  const memo = page.getByLabel('Private memo (optional)');
+  await amount.fill('1'); await memo.fill('Synthetic memo');
+  const review = page.getByRole('button', { name: 'Review Private Send', exact: true });
+  await expect(review).toBeEnabled();
+  await page.getByRole('button', { name: 'Privacy relay', exact: true }).click();
+  await expect(review).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('Ask the recipient to open Receive');
+  await expect(page.getByTestId('recipient-preparations')).toHaveText('0');
+  await stableShell(page);
+  await page.getByRole('button', { name: 'My account', exact: true }).click();
+  await expect(review).toBeEnabled();
+  await review.click();
+  await expect(page.getByRole('dialog')).toContainText('Blocked by an earlier payment');
+  await expect(page.getByRole('dialog')).toContainText('This new action has not started');
+  await expect(page.getByRole('button', { name: 'Confirm Send', exact: true })).toBeDisabled();
+  const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
+    .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
+  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(amount).toHaveValue('1'); await expect(memo).toHaveValue('Synthetic memo');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByLabel('Private recipient', { exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Open synthetic private send' })).toBeFocused();
+});
+
+test('a stale direct recipient validation cannot enable relay review', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open synthetic private send' }).click();
+  await page.getByLabel('Amount', { exact: true }).fill('1');
+  const review = page.getByRole('button', { name: 'Review Private Send', exact: true });
+  await expect(review).toBeEnabled();
+  await syntheticDelivery(page, 'Delay recipient validation');
+  await page.getByRole('button', { name: 'Privacy relay', exact: true }).click();
+  await expect(review).toBeDisabled();
+  await syntheticDelivery(page, 'Finish recipient validation');
+  await expect(review).toBeDisabled();
+  await syntheticDelivery(page, 'Resume recipient validation');
+  await expect(page.getByRole('dialog')).toContainText('Ask the recipient to open Receive');
+  await expect(review).toBeDisabled();
+  await page.getByRole('button', { name: 'My account', exact: true }).click();
+  await expect(review).toBeEnabled();
+  await syntheticDelivery(page, 'Finish recipient validation');
+  await expect(review).toBeEnabled();
+});
+
+async function openHelperApproval(page: Page) {
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open synthetic helper', exact: true }).click();
+  await expect(page.getByTestId('helper-phase')).toHaveText('ready');
+  await syntheticDelivery(page, 'Deliver helper request');
+  await syntheticDelivery(page, 'Deliver helper selection');
+  await expect(page.getByTestId('helper-phase')).toHaveText('payout');
+  await syntheticDelivery(page, 'Deliver helper preparation');
+  await expect(page.getByTestId('helper-phase')).toHaveText('prepared');
+  await syntheticDelivery(page, 'Deliver helper sign request');
+  await expect(page.getByRole('dialog', { name: 'Relay Private Payment?' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await markShell(page);
+}
+
+test('helper accepts exact submit before signature acknowledgement and prevents duplicate submission', async ({ page }) => {
+  await openHelperApproval(page);
+  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+  await syntheticDelivery(page, 'Finish synthetic signing');
+  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
+  await syntheticDelivery(page, 'Deliver changed helper submit');
+  await expect(page.getByTestId('helper-rejects')).toHaveText('1');
+  await expect(page.getByTestId('helper-submits')).toHaveText('0');
+  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
+  await stableShell(page);
+  await syntheticDelivery(page, 'Finish synthetic submission');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await syntheticDelivery(page, 'Acknowledge synthetic signature');
+  await expect(page.getByRole('dialog')).toBeHidden();
+});
+
+test('helper duplicate approval clicks sign only once', async ({ page }) => {
+  await openHelperApproval(page);
+  await page.getByRole('button', { name: 'Approve & sign', exact: true }).evaluate(element => {
+    (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click();
+  });
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+});
+
+test('helper does not automatically resubmit after an uncertain RPC outcome', async ({ page }) => {
+  await openHelperApproval(page);
+  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await syntheticDelivery(page, 'Finish synthetic signing');
+  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
+  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
+  await syntheticDelivery(page, 'Fail synthetic submission');
+  await expect(page.getByTestId('helper-rejects')).toHaveText('1');
+  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
+  await syntheticDelivery(page, 'Acknowledge synthetic signature');
+  await expect(page.getByRole('dialog')).toBeHidden();
+});
+
+test('lost signature acknowledgement preserves exact authorization and never invites another signature', async ({ page, browserName }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHelperApproval(page);
+  const approve = page.getByRole('button', { name: 'Approve & sign', exact: true });
+  await approve.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+  await syntheticDelivery(page, 'Finish synthetic signing');
+  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
+  await syntheticDelivery(page, 'Lose signature acknowledgement');
+  const alert = page.getByRole('dialog').getByRole('alert');
+  await expect(alert).toContainText('was signed');
+  await expect(alert).toContainText('may still be submitted');
+  await expect(alert).not.toContainText('not signed');
+  await expect(approve).toBeDisabled();
+  await stableShell(page);
+  // Scan the settled enabled state, not the prior disabled-opacity frame.
+  await expect(page.getByRole('button', { name: 'Dismiss', exact: true })).toHaveCSS('opacity', '1');
+  const axe = await new AxeBuilder({ page }).include('[role="dialog"]')
+    .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
+  expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
+  await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+});
+
+test('helper account replacement cannot be undone by a late signature acknowledgement', async ({ page }) => {
+  await openHelperApproval(page);
+  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await syntheticDelivery(page, 'Finish synthetic signing');
+  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
+  await syntheticDelivery(page, 'Replace synthetic helper account');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await syntheticDelivery(page, 'Acknowledge synthetic signature');
+  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await expect(page.getByTestId('helper-rejects')).toHaveText('2');
+  await expect(page.getByTestId('helper-submits')).toHaveText('0');
+});
+
 test('live Nostr selection skips comparison without closing the selected session', async ({ page, browserName }) => {
   await markShell(page);
   await page.getByRole('tab', { name: 'Relay', exact: true }).click();

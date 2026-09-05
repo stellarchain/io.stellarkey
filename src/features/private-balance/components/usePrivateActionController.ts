@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
-import { decodePrivateAddress } from '@stellarkey/private-balance';
 import { triggerHaptic } from '@/lib/haptics';
 import {
   PrivateConsolidationRequiredError,
@@ -17,6 +16,7 @@ import type {
 } from '../runtime/chained-send';
 import { PrivateActionReviewExpiredError } from '../runtime/submission';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
+import { privateRelayRecipientDiversifier } from '../relay/recipient';
 import { PrivateRelaySenderSession } from '../relay/session';
 import { discoverPrivateRelayChainQuote, PrivateRelayChainChoice } from '../relay/chain-choice';
 import type { PrivateRelayChainApproval } from '../runtime/relay-chain-policy';
@@ -153,6 +153,8 @@ export function usePrivateActionController(
     if (!asset || !deployment.networkId || !deployment.poolContractId) throw new Error('Private relay deployment information is unavailable.');
     const check = () => { if (signal.aborted) throw new DOMException('Private relay chain cancelled.', 'AbortError'); };
     check();
+    const actionDiversifier = await privateRelayRecipientDiversifier(step.recipientAddress, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
+    check();
     setPreparing(true);
     setRelayProgress('finding-peer');
     setRelayQuotes([]);
@@ -177,9 +179,8 @@ export function usePrivateActionController(
       setRelayQuotes([]);
       setPreparing(true);
       setRelayProgress('agreeing-fee');
-      const decoded = await decodePrivateAddress(step.recipientAddress, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
       const payout = await session.selectQuote({ request, quote, actionKind: 'transfer', assetIndex: asset.index,
-        actionDiversifier: Array.from(decoded.diversifier, byte => byte.toString(16).padStart(2, '0')).join('') }, signal);
+        actionDiversifier }, signal);
       check();
       let signed: PrivateRelaySignedJob | null = null;
       setRelayProgress(null);
@@ -237,6 +238,10 @@ export function usePrivateActionController(
         }
         if (!asset || !deployment.networkId || !deployment.poolContractId) {
           throw new Error('Private relay deployment information is unavailable.');
+        }
+        if (draft.kind === 'transfer') {
+          await privateRelayRecipientDiversifier(draft.recipientAddress, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
+          if (controller.signal.aborted || abortRef.current !== controller) return;
         }
         const preferences = loadPrivateRelayPreferences();
         const session = await PrivateRelaySenderSession.create(preferences.relayUrls);
@@ -345,7 +350,7 @@ export function usePrivateActionController(
         setRelayProgress(null);
       }
     }
-  }, [asset, authorizeDisclosure, cancelAction, deployment.networkId, deployment.poolContractId, prepareAction, prepareChainedSend, publicAddress]);
+  }, [asset, authorizeDisclosure, cancelAction, deployment.networkId, deployment.poolContractId, networkLabel, prepareAction, prepareChainedSend, publicAddress]);
 
   const selectRelayQuote = useCallback(async (quoteId: string) => {
     if (relayChainChoiceRef.current.pending) {
@@ -398,22 +403,18 @@ export function usePrivateActionController(
           return;
         }
       }
-      let diversifier: Uint8Array;
+      let actionDiversifier: string;
       if (discovery.draft.kind === 'transfer') {
-        const prefix = networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_';
-        diversifier = (await decodePrivateAddress(
-          discovery.draft.recipientAddress,
-          prefix,
-        )).diversifier;
+        actionDiversifier = await privateRelayRecipientDiversifier(discovery.draft.recipientAddress, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
       } else {
+        let diversifier: Uint8Array;
         do {
           diversifier = globalThis.crypto.getRandomValues(new Uint8Array(4));
         } while (diversifier.every(byte => byte === 0));
+        actionDiversifier = Array.from(diversifier, byte => byte.toString(16).padStart(2, '0')).join('');
+        diversifier.fill(0);
       }
-      const actionDiversifier = Array.from(
-        diversifier,
-        byte => byte.toString(16).padStart(2, '0'),
-      ).join('');
+      if (controller.signal.aborted) return;
       const payout = await discovery.session.selectQuote({
         request: discovery.request,
         quote,

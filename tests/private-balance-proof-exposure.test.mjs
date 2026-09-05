@@ -135,6 +135,26 @@ test('exposed preparation errors never invite resetting or retrying as an unspen
   assert.doesNotMatch(displayed.body, /nothing (was sent|left)|try again|ready in a moment/i);
 });
 
+test('an earlier unresolved payment has distinct blocking copy, without changing its reservation', async () => {
+  const shown = humanizePrivateError(new PrivateActionInFlightError());
+  assert.equal(shown.title, 'Blocked by an earlier payment');
+  assert.match(shown.body, /This new action has not started/u);
+  assert.match(shown.body, /earlier payment.*unknown/u);
+  assert.equal(shown.action, undefined);
+  assert.doesNotMatch(shown.body, /try again|nothing was sent|money is safe/iu);
+  const { driver, state } = await fixture();
+  await storage.commitPrivateBalanceState(context, key, { ...state, revision: state.revision + 1,
+    account: { ...state.account, syncStatus: 'current' } }, state.revision, driver);
+  await assert.rejects(preparePrivateBalanceActionFlow({ manifest: { assets: [{ index: 0, contractId: assetContractId }] },
+    accountPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', privateAddress: 'not-read',
+    storageContext: context, storageKey: key, storageDriver: driver, worker: {}, rpcUrl: 'invalid-never-requested',
+    classicFeeStroops: 100n, assetIndex: 0, assetContractId, registryAssets: [{ index: 0, contractId: assetContractId }],
+    assetCode: 'XLM', assetDecimals: 7, draft: { kind: 'deposit', amount: '1' } }), PrivateActionInFlightError);
+  const retained = await storage.loadPrivateBalanceState(context, key, driver);
+  assert.equal(retained.pendingActions.length, 1);
+  assert.equal(retained.notes[0].status, 'reserved');
+});
+
 test('unsigned exposed actions stop another proof before any chain lookup', async () => {
   const { driver, state } = await fixture();
   await storage.commitPrivateBalanceState(context, key, { ...state, revision: state.revision + 1, account: { ...state.account, syncStatus: 'current' } }, state.revision, driver);

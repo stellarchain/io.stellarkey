@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Validate relay-compatible recipient addresses before peer discovery and explain how to request a fresh Shielded address, without changing the recipient or silently switching to direct submission.
+- Wait for manual relay approval until the existing quote/payout deadline, register exact signed authorization before delivery, and prevent duplicate signing or submission after uncertain responses.
+- Distinguish a new action blocked by an earlier unresolved private payment from a newly shared spend proof; keep existing input reservations intact.
+- Keep helper approval focus inside its dialog while signing and make uncertain signature delivery explicit without offering another approval.
+
 - Kept Select choices bound to option identity during live reordering, preserved focus when options disappear or become disabled, and made Select and Dropdown keyboard navigation stay within their owning dialog.
 - Added consistent clipboard pending, success, and retryable error feedback, prevented overlapping copy writes, and kept sensitive clipboard clearing available after the copied announcement ends.
 - Removed stale receive QR images and download links immediately when public or private payment-request data changes, ignoring obsolete encoder results.
