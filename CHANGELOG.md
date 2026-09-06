@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restored the original compact Earn by relaying row beneath Home's assets, keeping the redesigned controls and interaction improvements inside its modal.
 - Included native disclosure controls in modal keyboard focus containment and kept Earn's closing geometry stable while immediately clearing its panel content.
 - Validate relay-compatible recipient addresses before peer discovery and explain how to request a fresh Shielded address, without changing the recipient or silently switching to direct submission.
 - Wait for manual relay approval until the existing quote/payout deadline, register exact signed authorization before delivery, and prevent duplicate signing or submission after uncertain responses.
