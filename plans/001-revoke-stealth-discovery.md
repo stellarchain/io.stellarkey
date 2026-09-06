@@ -18,7 +18,7 @@
 - Depends on: none
 - Category: security / bug
 - Planned at: `3e8dca7d021767138bc21c790f7ef59cc2fce309`, 2026-09-06
-- Execution: IMPLEMENTED — final integrated verification and review results recorded below and in the execution index
+- Execution: DONE — independently reviewed; all scoped implementation gates passed; separate release-audit blocker recorded in the execution index
 
 ## Why this matters
 
@@ -190,7 +190,7 @@ Latest bundle sizes: initial application 1,165,289 raw / 341,968 gzip bytes; Pri
 
 Artifact setup note: the first artifact-check attempt stopped because the nested circuit `snarkjs` dependency was absent. Installed the existing locked nested dependencies without changing the lockfile and reran successfully. Neither attempt produced tracked protocol/artifact changes; generation only updated local files deterministically and did not deploy on-chain.
 
-### Not complete / next batch
+### Historical checkpoint — superseded by continued execution below
 
 The operation helper is not yet connected to the live provider. Cache-write/IndexedDB commit fencing, abort-and-drain removal serialization, provider publication/teardown guards and browser lifecycle tests remain steps 4–6. The full stale-cache resurrection fix is therefore **not complete or active in the running app**. No proof journals or reservations were reset, no protocol format or key derivation changed, and no transaction was signed or submitted.
 
@@ -212,14 +212,14 @@ The main checkout and user servers remain unchanged. Reviewed independent buffer
 
 ## Done criteria
 
-Final feature review: independently approved with no remaining important findings. Browser gate: 54/54 discovery cases, zero skips, 27 desktop Chromium + 27 iPhone WebKit, 1.5 minutes. The three last worker/prefix/second-revocation cases were observed red before the source fix and green afterward (6/6, 21.2 s). Real IDB coverage includes delayed open/read, queued and uncommitted writes, rollback of two-store removal and concurrent raw-snapshot mutation/creation. Full integrated browser, overlay and production build checks follow 002 in the index.
+Final feature review: independently approved with no remaining important findings. Browser gate: 54/54 discovery cases, zero skips, 27 desktop Chromium + 27 iPhone WebKit, 1.5 minutes. The three last worker/prefix/second-revocation cases were observed red before the source fix and green afterward (6/6, 21.2 s). Real IDB coverage includes delayed open/read, queued and uncommitted writes, rollback of two-store removal and concurrent raw-snapshot mutation/creation. Final integration passed 1,465 unit tests, 58 protocol tests, 174 component browser tests, 16 overlay/security browser tests, typecheck, lint, deterministic artifacts and production build/budgets; detailed evidence and the separate release-audit blocker are in [the index](README.md).
 
 - [x] Regression recorded red before the fix and green after it.
-- [ ] No further page/match work starts after revocation and stale callbacks cannot publish.
-- [ ] Real IndexedDB tests prove old scans cannot recreate removed cache.
-- [ ] Focused/full unit, types/lint, required Chromium/WebKit, build/budget and artifact checks pass.
-- [ ] Pending-proof/sweep tests pass without relaxed assertions.
-- [ ] Scoped diff, Unreleased note, evidence and verified index status are present.
+- [x] No further page/match work starts after revocation and stale callbacks cannot publish.
+- [x] Real IndexedDB tests prove old scans cannot recreate removed cache.
+- [x] Focused/full unit, types/lint, required Chromium/WebKit, build/budget and artifact checks pass.
+- [x] Pending-proof/sweep tests pass without relaxed assertions.
+- [x] Scoped diff, Unreleased note, evidence and verified index status are present.
 
 ## STOP conditions
 
