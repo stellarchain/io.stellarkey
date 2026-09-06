@@ -113,3 +113,13 @@ Considered and rejected for this follow-on audit: treating the fixed Public/Priv
 ### 004 — Approved system hardening
 
 The user subsequently requested “fix everything”. [Implementation plan 004](004-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **IN PROGRESS**. Execute scoped test-first tasks with independent spec and quality review, preserving the completed privacy plans and main checkout. Record genuine external/security blockers rather than weakening gates or broadening signing authority.
+
+| Task | Status / evidence |
+| --- | --- |
+| 1 — Safe complete verification (F01/F02) | DONE — `42d5f528`, independent spec and quality approvals. 174 isolated Chromium/iPhone cases, 16 overlay/manifest cases, 58 nested protocol tests passed, zero skips. Root independently reran 33 focused gate/policy tests, two real synthetic browser safety probes and fixture cleanup; all passed. Typecheck passed; lint has only three existing marketing-image warnings. |
+| 2 — Genuine market freshness and chart expiry (F03/F12) | IN PROGRESS |
+| 3–9 | Pending; see the approved plan for exact scopes. |
+
+Task 1 disables traces, screenshots and video, uses structural-only failure reporting and makes the synthetic suites mandatory in shared CI/release verification. Playwright 1.62 still creates matcher ARIA snapshots without a supported suppression option: usable Testnet runner/import paths now refuse before build, funding or navigation. Ordinary cleanup is verified, but cannot guarantee cleanup after an uncatchable process kill; only non-usable synthetic fixtures are allowed. This is not live-wallet verification or final release certification.
+
+Implementation baseline: source at `745d983` passed all 1,465 unit tests (74.70 s). An earlier documentation-only attempt failed the repository's prohibition on `docs/plans/`; moving the plan to `plans/` and staging the rename resolved it without weakening the test. Final aggregate verification remains pending all implementation tasks.
