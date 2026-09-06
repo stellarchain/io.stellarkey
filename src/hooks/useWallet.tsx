@@ -96,6 +96,8 @@ import {
 import {
   applyTransactionPoll,
   clearDurablePendingTransactions,
+  acknowledgeDurableSubmissionJournal,
+  completeDurablePendingTransaction,
   clearDurableMergeReconciliations,
   createMergeReconciliation,
   isTrackingTaskCurrent,
@@ -112,6 +114,7 @@ import {
   persistMergeReconciliationQueue,
   reconcileMergeRecovery,
   removeDurablePendingTransaction,
+  releaseDurableSubmissionJournal,
   removeTrackedTransaction,
   resolutionForExpiredLookup,
   runPreparedBroadcast,
@@ -126,6 +129,7 @@ import {
   type PendingTransactionAction,
   type PreparedSubmissionIdentity,
   type SubmissionPreparedCallback,
+  type SubmissionRejectedCallback,
   type SubmissionLifecycleStatus,
   type SubmissionResult,
   type TransactionTrackingState,
@@ -263,6 +267,10 @@ interface WalletContextValue {
   mergeReconciliations: MergeReconciliation[];
   retryMergeReconciliation: (record: MergeReconciliation) => void;
   submissionStatus: (submission: SubmissionResult) => SubmissionLifecycleStatus;
+  /** Acknowledge only a terminal outcome in an authenticated, durably committed journal. */
+  acknowledgeSubmissionJournal: (identity: PreparedSubmissionIdentity) => void;
+  /** Erasing the domain journal releases retention, never unresolved canonical tracking. */
+  releaseSubmissionJournals: () => void;
   envelopeSubmissionStatus: (
     xdr: string,
     network: NetworkKey,
@@ -349,10 +357,10 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
-    /** Durable domain journal hooks; both run inside the pre-POST boundary. */
+    /** Durable intent precedes POST; rejection cleanup may defer canonical-handle removal. */
     submissionJournal?: {
       onPrepared: SubmissionPreparedCallback;
-      onRejected?: SubmissionPreparedCallback;
+      onRejected?: SubmissionRejectedCallback;
     };
     /** Revalidate an external authorization immediately before signing. */
     authorizeBeforeSigning?: () => void;
@@ -467,6 +475,8 @@ type WalletSubmissionContextValue = Pick<
   | "mergeReconciliations"
   | "retryMergeReconciliation"
   | "submissionStatus"
+  | "acknowledgeSubmissionJournal"
+  | "releaseSubmissionJournals"
   | "envelopeSubmissionStatus"
 >;
 
@@ -1448,7 +1458,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         mergeReconciliationTimers.current.delete(identity);
         commitMergeReconciliations(() => nextMerges);
       }
-      removeDurablePendingTransaction(
+      completeDurablePendingTransaction(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
         transaction,
@@ -1499,7 +1509,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const restored = loadDurablePendingTransactions(
         window.localStorage,
         PENDING_TX_STORAGE_KEY,
-      );
+      ).filter((transaction) => !transactionTrackingRef.current.resolutions[transactionIdentity(transaction)]);
       const previousIdentities = new Set(
         transactionTrackingRef.current.pending.map(transactionIdentity),
       );
@@ -1529,6 +1539,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     prepared: PreparedSubmissionIdentity,
     label: string,
     action?: PendingTransactionAction,
+    journalPending = false,
   ) => {
     const identity = transactionIdentity(prepared);
     const current = transactionTrackingRef.current;
@@ -1540,6 +1551,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
 
     const provisional = pendingTransactionFromPrepared(prepared, label, action);
+    if (journalPending) provisional.journalPending = true;
     const nextTracking = trackPendingTransaction(current, provisional);
     const previousMerges = action?.kind === "reconcile_account_merge"
       ? window.localStorage.getItem(MERGE_RECONCILIATION_STORAGE_KEY)
@@ -1680,23 +1692,39 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     submissionFromResult: (result: T) => SubmissionResult | null,
     journal?: {
       onPrepared: SubmissionPreparedCallback;
-      onRejected?: SubmissionPreparedCallback;
+      onRejected?: SubmissionRejectedCallback;
     },
     beforeSubmit?: () => void,
   ): Promise<T> => {
     const sessionRevocationGuard = createSessionRevocationGuard();
+    const trackingGeneration = trackingTaskGeneration.current;
     return runPreparedBroadcast({
       broadcast,
       prepare: async (identity) => {
-        prepareSubmissionTracking(identity, label, action);
+        prepareSubmissionTracking(identity, label, action, Boolean(journal));
         await journal?.onPrepared(identity);
         const assertSessionCurrent = sessionRevocationGuard;
         assertSessionCurrent();
         beforeSubmit?.();
       },
       discard: async (identity) => {
-        discardPreparedSubmission(identity, action);
-        await journal?.onRejected?.(identity);
+        let rejectionRecorded = false;
+        try {
+          rejectionRecorded = (await journal?.onRejected?.(identity)) !== false;
+        } catch {
+          // Preserve the original transaction error and its durable handle
+          // when the domain journal cannot finish recording the rejection.
+        }
+        if (trackingTaskGeneration.current !== trackingGeneration) return;
+        if (rejectionRecorded) {
+          discardPreparedSubmission(identity, action);
+          return;
+        }
+        const pending = transactionTrackingRef.current.pending.find((entry) =>
+          transactionIdentity(entry) === transactionIdentity(identity));
+        // Resume only an existing handle. A wallet reset must never be undone
+        // by late cleanup, and an unmounted runtime leaves recovery to startup.
+        if (pending) void pollPendingRef.current(pending);
       },
       finalize: (result) => {
         const submission = submissionFromResult(result);
@@ -1704,6 +1732,40 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       },
     });
   }, [discardPreparedSubmission, prepareSubmissionTracking, trackSubmission]);
+
+  const acknowledgeSubmissionJournal = useCallback((identity: PreparedSubmissionIdentity) => {
+    if (!acknowledgeDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, identity)) return;
+    const key = transactionIdentity(identity);
+    if (!transactionTrackingRef.current.pending.some((entry) => transactionIdentity(entry) === key)) return;
+    commitTransactionTracking((current) => ({
+      ...current,
+      pending: current.pending.filter((entry) => transactionIdentity(entry) !== key),
+    }));
+  }, [commitTransactionTracking]);
+
+  const releaseSubmissionJournals = useCallback(() => {
+    const released = new Set<string>();
+    for (const pending of loadDurablePendingTransactions(window.localStorage, PENDING_TX_STORAGE_KEY)) {
+      if (!pending.journalPending) continue;
+      const identity = transactionIdentity(pending);
+      if (transactionTrackingRef.current.resolutions[identity]) {
+        acknowledgeDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
+      } else {
+        releaseDurableSubmissionJournal(window.localStorage, PENDING_TX_STORAGE_KEY, pending);
+      }
+      released.add(identity);
+    }
+    if (!transactionTrackingRef.current.pending.some((entry) => entry.journalPending && released.has(transactionIdentity(entry)))) return;
+    commitTransactionTracking((current) => ({
+      ...current,
+      pending: current.pending.map((entry) => {
+        if (!entry.journalPending || !released.has(transactionIdentity(entry))) return entry;
+        const updated = { ...entry };
+        delete updated.journalPending;
+        return updated;
+      }),
+    }));
+  }, [commitTransactionTracking]);
 
   const retryPendingTransaction = useCallback((transaction: PendingTransaction) => {
     void pollPendingRef.current(transaction);
@@ -2339,7 +2401,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       feeStroops?: number;
       submissionJournal?: {
         onPrepared: SubmissionPreparedCallback;
-        onRejected?: SubmissionPreparedCallback;
+        onRejected?: SubmissionRejectedCallback;
       };
       authorizeBeforeSigning?: () => void;
     }) => {
@@ -2832,6 +2894,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       mergeReconciliations,
       retryMergeReconciliation,
       submissionStatus,
+      acknowledgeSubmissionJournal,
+      releaseSubmissionJournals,
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
@@ -2917,6 +2981,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       mergeReconciliations,
       retryMergeReconciliation,
       submissionStatus,
+      acknowledgeSubmissionJournal,
+      releaseSubmissionJournals,
       envelopeSubmissionStatus,
       dataLoading,
       loadingMore,
@@ -3094,6 +3160,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     mergeReconciliations,
     retryMergeReconciliation,
     submissionStatus,
+    acknowledgeSubmissionJournal,
+    releaseSubmissionJournals,
     envelopeSubmissionStatus,
   }), [
     envelopeSubmissionStatus,
@@ -3102,6 +3170,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     retryMergeReconciliation,
     retryPendingTransaction,
     submissionStatus,
+    acknowledgeSubmissionJournal,
+    releaseSubmissionJournals,
   ]);
   const marketValue = useMemo<WalletMarketContextValue>(() => ({
     xlmPriceUsd,

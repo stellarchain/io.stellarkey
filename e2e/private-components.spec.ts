@@ -48,6 +48,169 @@ async function syntheticDelivery(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
 }
 
+async function prepareMerchantLifetime(page: Page, pauseLoad = false) {
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Test merchant lifetime', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare merchant lifetime', exact: true }).click();
+  await expect(page.getByTestId('merchant-prepared')).toHaveText('true');
+  if (pauseLoad) await page.getByRole('button', { name: 'Pause merchant read', exact: true }).click();
+  await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+  await expect(page.getByTestId(pauseLoad ? 'merchant-stage' : 'merchant-ready')).toHaveText(pauseLoad ? 'read' : 'true');
+}
+
+for (const operation of ['load', 'reload']) {
+  for (const outcome of ['Deliver', 'Fail']) {
+    test(`merchant lifetime revokes delayed ${operation} ${outcome.toLowerCase()} before wallet phase cleanup`, async ({ page }) => {
+      await prepareMerchantLifetime(page, operation === 'load');
+      if (operation === 'reload') {
+        await page.getByRole('button', { name: 'Pause merchant read', exact: true }).click();
+        await page.getByRole('button', { name: 'Reload merchant externally', exact: true }).click();
+        await expect(page.getByTestId('merchant-stage')).toHaveText('read');
+      }
+      await page.getByRole('button', { name: 'Revoke merchant vault directly', exact: true }).click();
+      await page.getByRole('button', { name: `${outcome} merchant response`, exact: true }).click();
+      await expect(page.getByTestId('merchant-delivered')).toHaveText('1');
+      await expect(page.getByTestId('merchant-ready')).toHaveText('false');
+      await expect(page.getByTestId('merchant-error')).toHaveText('none');
+      await expect(page.getByTestId('merchant-issue')).toHaveText('none');
+      await expect(page.getByTestId('merchant-phase')).toHaveText('unlocked');
+    });
+  }
+}
+
+test('merchant lifetime preserves a committed write and rejects an old queued action after replacement', async ({ page }) => {
+  await prepareMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Pause merchant commit', exact: true }).click();
+  await page.getByRole('button', { name: 'Write large merchant text', exact: true }).click();
+  await expect(page.getByTestId('merchant-stage')).toHaveText('commit');
+  await page.getByRole('button', { name: 'Write standard merchant text', exact: true }).click();
+  await page.getByRole('button', { name: 'Revoke merchant vault directly', exact: true }).click();
+  await page.getByRole('button', { name: 'Replace merchant vault directly', exact: true }).click();
+  await expect(page.getByTestId('merchant-vault')).toHaveText('unlocked');
+  await page.getByRole('button', { name: 'Deliver merchant response', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('2');
+  await expect(page.getByTestId('merchant-error')).toHaveText('none');
+  await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+  await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+  await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+  await expect(page.getByTestId('merchant-size')).toHaveText('large');
+  await page.getByRole('button', { name: 'Write standard merchant text', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('3');
+  await expect(page.getByTestId('merchant-size')).toHaveText('standard');
+});
+
+test('merchant lifetime unmount ignores an old reload failure after a new provider succeeds', async ({ page }) => {
+  await prepareMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Pause merchant read', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload merchant externally', exact: true }).click();
+  await expect(page.getByTestId('merchant-stage')).toHaveText('read');
+  await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+  await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+  await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+  await page.getByRole('button', { name: 'Fail merchant response', exact: true }).click();
+  await expect(page.getByTestId('merchant-delivered')).toHaveText('1');
+  await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+  await expect(page.getByTestId('merchant-error')).toHaveText('none');
+});
+
+test('merchant lifetime resumes in the same provider after direct session replacement', async ({ page }) => {
+  await prepareMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Revoke merchant vault directly', exact: true }).click();
+  await expect(page.getByTestId('merchant-ready')).toHaveText('false');
+  await page.getByRole('button', { name: 'Replace merchant vault directly', exact: true }).click();
+  await expect(page.getByTestId('merchant-vault')).toHaveText('unlocked');
+  await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+  await page.getByRole('button', { name: 'Write large merchant text', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('1');
+  await expect(page.getByTestId('merchant-size')).toHaveText('large');
+  await page.getByRole('button', { name: 'Revoke merchant vault directly', exact: true }).click();
+  await expect(page.getByTestId('merchant-ready')).toHaveText('false');
+  await expect(page.getByTestId('merchant-size')).toHaveText('standard');
+});
+
+async function damageMerchantLifetime(page: Page) {
+  await prepareMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Damage synthetic merchant metadata', exact: true }).click();
+  await expect(page.getByTestId('merchant-stage')).toHaveText('damaged');
+  await page.getByRole('button', { name: 'Reload merchant externally', exact: true }).click();
+  await expect(page.getByTestId('merchant-issue')).toHaveText('issue');
+}
+
+async function approveMerchantReset(page: Page) {
+  await page.getByRole('button', { name: 'Reset merchant recovery', exact: true }).click();
+  await expect(page.getByTestId('merchant-authorization')).toHaveText('waiting');
+  await page.getByRole('button', { name: 'Approve synthetic merchant reset', exact: true }).click();
+}
+
+for (const outcome of ['success', 'failure']) {
+  test(`merchant lifetime reset ${outcome} restarts a queued writer acquisition`, async ({ page }) => {
+    await prepareMerchantLifetime(page);
+    await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+    await page.getByRole('button', { name: 'Hold competing merchant writer', exact: true }).click();
+    await expect(page.getByTestId('merchant-competing-writer')).toHaveText('held');
+    await page.getByRole('button', { name: 'Damage synthetic merchant metadata', exact: true }).click();
+    await expect(page.getByTestId('merchant-stage')).toHaveText('damaged');
+    await page.getByRole('button', { name: 'Toggle merchant provider', exact: true }).click();
+    await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+    await expect(page.getByTestId('merchant-issue')).toHaveText('issue');
+    if (outcome === 'failure') await page.getByRole('button', { name: 'Fail merchant erase', exact: true }).click();
+    await approveMerchantReset(page);
+    await expect(page.getByTestId('merchant-settled')).toHaveText('1');
+    await page.getByRole('button', { name: 'Release competing merchant writer', exact: true }).click();
+    await expect(page.getByTestId('merchant-competing-writer')).toHaveText('released');
+    await expect.poll(() => page.evaluate(async () =>
+      (await navigator.locks.query()).held?.filter(lock => lock.name === 'stellarkey.merchant.writer.v1').length,
+    )).toBe(1);
+    if (outcome === 'success') {
+      await page.getByRole('button', { name: 'Write large merchant text', exact: true }).click();
+      await expect(page.getByTestId('merchant-settled')).toHaveText('2');
+      await expect(page.getByTestId('merchant-size')).toHaveText('large');
+    }
+  });
+}
+
+test('merchant lifetime reset preserves an already-held writer lease', async ({ page }) => {
+  await damageMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Hold competing merchant writer', exact: true }).click();
+  await expect(page.getByTestId('merchant-competing-writer')).toHaveText('waiting');
+  await approveMerchantReset(page);
+  await expect(page.getByTestId('merchant-settled')).toHaveText('1');
+  await page.getByRole('button', { name: 'Write large merchant text', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('2');
+  await expect(page.getByTestId('merchant-size')).toHaveText('large');
+  await expect(page.getByTestId('merchant-competing-writer')).toHaveText('waiting');
+});
+
+test('merchant lifetime reset revokes an earlier external reload failure', async ({ page }) => {
+  await damageMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Pause merchant read', exact: true }).click();
+  await page.getByRole('button', { name: 'Reload merchant externally', exact: true }).click();
+  await expect(page.getByTestId('merchant-stage')).toHaveText('read');
+  await approveMerchantReset(page);
+  await expect(page.getByTestId('merchant-settled')).toHaveText('1');
+  await page.getByRole('button', { name: 'Fail merchant response', exact: true }).click();
+  await expect(page.getByTestId('merchant-delivered')).toHaveText('1');
+  await expect(page.getByTestId('merchant-error')).toHaveText('none');
+  await expect(page.getByTestId('merchant-issue')).toHaveText('none');
+});
+
+test('merchant lifetime replacement settlement wakes a new session without restoring an old reset', async ({ page }) => {
+  await damageMerchantLifetime(page);
+  await page.getByRole('button', { name: 'Pause merchant replacement', exact: true }).click();
+  await approveMerchantReset(page);
+  await expect(page.getByTestId('merchant-stage')).toHaveText('replace');
+  await page.getByRole('button', { name: 'Replace merchant vault directly', exact: true }).click();
+  await expect(page.getByTestId('merchant-vault')).toHaveText('unlocked');
+  await expect(page.getByTestId('merchant-ready')).toHaveText('false');
+  await page.getByRole('button', { name: 'Deliver merchant response', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('1');
+  await expect(page.getByTestId('merchant-ready')).toHaveText('true');
+  await page.getByRole('button', { name: 'Write large merchant text', exact: true }).click();
+  await expect(page.getByTestId('merchant-settled')).toHaveText('2');
+  await expect(page.getByTestId('merchant-size')).toHaveText('large');
+  await expect(page.getByTestId('merchant-error')).toHaveText('none');
+});
+
 for (const mode of ['database-open', 'record-read', 'queued-write', 'uncommitted-put']) {
   test(`discovery cancellation fences real IndexedDB ${mode}`, async ({ page }) => {
     await page.keyboard.press('Escape');

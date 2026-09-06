@@ -46,6 +46,7 @@ test("an unpriceable actual ticket action does not commit an order or clear the 
   const draft = { lines: [{ id: "synthetic-line" }], adjustments: [] };
   const create = handler("../src/hooks/useMerchant.tsx", "createChargeFromTicket", {
     Error, Date,
+    captureMerchantAccess: () => ({ assertCurrent() {} }),
     storeRef: { current: {} },
     ticket: draft,
     requirePaymentActor: () => ({}),
@@ -78,6 +79,7 @@ test("a fixed counter-code action exposes stale pricing immediately without publ
   let checked = false;
   const create = handler("../src/hooks/useMerchant.tsx", "createCounterCode", {
     Date, Error,
+    captureMerchantAccess: () => ({ assertCurrent() {} }),
     storeRef: { current: { settings: { receivingPublicKey: "synthetic-destination" } } },
     requireCounterCodeActor: () => ({}),
     rateFor: () => null,

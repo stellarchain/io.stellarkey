@@ -5,9 +5,11 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   useWalletContacts,
@@ -20,7 +22,14 @@ import {
   useWalletTransactions,
 } from "./useWallet";
 import { randomHex } from "@/lib/crypto";
-import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
+import {
+  createSessionRevocationGuard,
+  getMerchantEncryptionKey,
+  getSessionSnapshot,
+  subscribeSessionChanges,
+  subscribeSessionRevocation,
+  VaultLockedError,
+} from "@/lib/vault";
 import { assetPriceKey, fetchAssetPriceSamples, marketDataLabel, quoteCurrencyPerUnit, type MarketSamples } from "@/lib/prices";
 import { createLatestRequestLane } from "./useWalletResources";
 import {
@@ -53,6 +62,7 @@ import { prune as pruneMerchantStore } from "@/lib/merchant/storage";
 import {
   getMerchantRepository,
   MerchantRepositoryConflictError,
+  MerchantRepositoryRevokedError,
 } from "@/lib/merchant/repository";
 import {
   claimWatcherLease,
@@ -68,6 +78,8 @@ import {
 import type { StorageIssue } from "@/lib/storage-load";
 
 const MERCHANT_PRICE_REFRESH_MS = 60_000;
+const lockedSessionSnapshot = () => null;
+const idleReplacementSnapshot = () => false;
 import {
   inspectStorageHealth,
   requestPersistentStorage as requestBrowserPersistentStorage,
@@ -710,13 +722,14 @@ export function MerchantProvider({
   onRuntimeMounted?: () => void;
 }) {
   const { phase } = useWalletPhase();
+  const sessionSnapshot = useSyncExternalStore(subscribeSessionChanges, getSessionSnapshot, lockedSessionSnapshot);
   const { network, accounts, activeAccount } = useWalletIdentity();
   const { authorizeSensitiveAction } = useWalletSecurity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
   const { xlmPriceSample, fiatRateSamples, fiatRates, refreshMarketData } = useWalletMarket();
   const { contacts } = useWalletContacts();
   const { send } = useWalletTransactions();
-  const { submissionStatus } = useWalletSubmission();
+  const { submissionStatus, acknowledgeSubmissionJournal, releaseSubmissionJournals } = useWalletSubmission();
 
   const [store, setStore] = useState<MerchantStore>(() => emptyStore());
   const [ready, setReady] = useState(false);
@@ -745,25 +758,100 @@ export function MerchantProvider({
   const staffSessionIdRef = useRef<string | null>(null);
   const [writerId] = useState(createMerchantWriterId);
   const merchantWriterLockRef = useRef<"pending" | "held" | "fallback">("pending");
+  const [merchantWriterRevision, setMerchantWriterRevision] = useState(0);
   const enableAttemptedRef = useRef(false);
   const revisionChannelRef = useRef<MerchantRevisionChannel | null>(null);
   const polling = useRef(false);
+  const pollControllerRef = useRef<AbortController | null>(null);
   const pollRef = useRef<() => Promise<void>>(async () => {});
-  const repositoryRef = useRef(getMerchantRepository());
+  const [repository] = useState(getMerchantRepository);
+  const repositoryRef = useRef(repository);
+  const repositoryReplacing = useSyncExternalStore(
+    repository.subscribeReplacement,
+    repository.getReplacementSnapshot,
+    idleReplacementSnapshot,
+  );
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const merchantLifetimeRef = useRef(0);
+  const merchantMountedRef = useRef(false);
+  const merchantResettingRef = useRef(false);
+  const merchantKeysRef = useRef(new Set<Uint8Array>());
 
   useEffect(() => {
     onRuntimeMounted?.();
   }, [onRuntimeMounted]);
 
-  useEffect(() => () => {
-    repositoryRef.current.clearDecryptedSnapshot();
-  }, []);
-
   const updateStaffSessionId = useCallback((memberId: string | null) => {
     staffSessionIdRef.current = memberId;
     setStaffSessionId(memberId);
   }, []);
+
+  const invalidateMerchantOperations = useCallback(() => {
+    merchantLifetimeRef.current += 1;
+    repositoryRef.current.clearDecryptedSnapshot();
+    for (const key of merchantKeysRef.current) key.fill(0);
+    merchantKeysRef.current.clear();
+    pollControllerRef.current?.abort();
+    pollControllerRef.current = null;
+    polling.current = false;
+  }, []);
+
+  const clearMerchantSession = useCallback(() => {
+    invalidateMerchantOperations();
+    merchantResettingRef.current = false;
+    const fresh = emptyStore();
+    storeRef.current = fresh;
+    storageIssueRef.current = null;
+    staffSessionIdRef.current = null;
+    if (!merchantMountedRef.current) return;
+    setStore(fresh);
+    setStorageIssue(null);
+    setStorageError(null);
+    setStorageHealth(null);
+    setStaffSessionId(null);
+    setTicket({ lines: [], discountMinor: 0, tipMinor: 0, adjustments: [] });
+    setActiveChargeId(null);
+    setWatchedLedger(null);
+    setWatchError(null);
+    setReady(false);
+  }, [invalidateMerchantOperations]);
+
+  useLayoutEffect(() => {
+    merchantMountedRef.current = true;
+    clearMerchantSession();
+    let unsubscribe = () => {};
+    if (phase === "unlocked" && sessionSnapshot !== null) {
+      try { unsubscribe = subscribeSessionRevocation(clearMerchantSession); } catch {
+        // Vault revocation may precede React's committed phase update.
+      }
+    }
+    return () => {
+      unsubscribe();
+      merchantMountedRef.current = false;
+      clearMerchantSession();
+    };
+  }, [clearMerchantSession, phase, sessionSnapshot]);
+
+  const captureMerchantAccess = useCallback(() => {
+    if (!merchantMountedRef.current || merchantResettingRef.current || phase !== "unlocked" ||
+      sessionSnapshot === null || getSessionSnapshot() !== sessionSnapshot) {
+      throw new MerchantStorageError("vault_locked");
+    }
+    const lifetime = merchantLifetimeRef.current;
+    const assertSession = createSessionRevocationGuard();
+    const assertCurrent = () => {
+      try { assertSession(); } catch { throw new MerchantStorageError("vault_locked"); }
+      if (!merchantMountedRef.current || merchantLifetimeRef.current !== lifetime) {
+        throw new MerchantStorageError("vault_locked");
+      }
+    };
+    return {
+      assertCurrent,
+      isCurrent: () => {
+        try { assertCurrent(); return true; } catch { return false; }
+      },
+    };
+  }, [phase, sessionSnapshot]);
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -788,17 +876,26 @@ export function MerchantProvider({
 
   const readMerchantKey = useCallback(() => {
     try {
-      return getMerchantEncryptionKey();
+      const key = getMerchantEncryptionKey();
+      merchantKeysRef.current.add(key);
+      return key;
     } catch (error) {
       if (error instanceof VaultLockedError) throw new MerchantStorageError("vault_locked");
       throw error;
     }
   }, []);
 
+  const releaseMerchantKey = useCallback((key: Uint8Array) => {
+    key.fill(0);
+    merchantKeysRef.current.delete(key);
+  }, []);
+
   const reloadExternalStore = useCallback(
     async (allowAbsent: boolean) => {
+      let access: ReturnType<typeof captureMerchantAccess>;
       let key: Uint8Array;
       try {
+        access = captureMerchantAccess();
         key = readMerchantKey();
       } catch (error) {
         if (isMerchantStorageError(error) && error.code === "vault_locked") return;
@@ -808,6 +905,7 @@ export function MerchantProvider({
       try {
         result = await repositoryRef.current.load(key);
       } catch (error) {
+        if (!access.isCurrent() || error instanceof MerchantRepositoryRevokedError) return;
         setStorageError(
           error instanceof Error
             ? error.message
@@ -815,8 +913,9 @@ export function MerchantProvider({
         );
         return;
       } finally {
-        key.fill(0);
+        releaseMerchantKey(key);
       }
+      if (!access.isCurrent()) return;
       if (result.kind === "ready") {
         const newer = newerMerchantStore(storeRef.current, result.value);
         if (newer) installLoadedStore(newer);
@@ -829,7 +928,7 @@ export function MerchantProvider({
       storageIssueRef.current = result;
       setStorageIssue(result);
     },
-    [installLoadedStore, readMerchantKey],
+    [captureMerchantAccess, installLoadedStore, readMerchantKey, releaseMerchantKey],
   );
 
   // Deferred the way the wallet bootstraps its own vault: localStorage is not
@@ -837,24 +936,18 @@ export function MerchantProvider({
   // to match the server's.
   useEffect(() => {
     let alive = true;
+    if (repositoryReplacing) return;
+    let access: ReturnType<typeof captureMerchantAccess>;
+    try { access = captureMerchantAccess(); } catch { return; }
     void (async () => {
       await Promise.resolve();
-      if (!alive) return;
-      if (phase !== "unlocked") {
-        repositoryRef.current.clearDecryptedSnapshot();
-        const fresh = emptyStore();
-        storeRef.current = fresh;
-        setStore(fresh);
-        updateStaffSessionId(null);
-        setReady(false);
-        return;
-      }
+      if (!alive || !access.isCurrent()) return;
       let key: Uint8Array;
       try {
         key = readMerchantKey();
       } catch (error) {
         if (isMerchantStorageError(error) && error.code === "vault_locked") {
-          if (alive) setReady(false);
+          if (alive && access.isCurrent()) setReady(false);
           return;
         }
         throw error;
@@ -863,7 +956,7 @@ export function MerchantProvider({
       try {
         result = await repositoryRef.current.load(key);
       } catch (error) {
-        if (alive) {
+        if (alive && access.isCurrent() && !(error instanceof MerchantRepositoryRevokedError)) {
           setStorageError(
             error instanceof Error
               ? error.message
@@ -873,9 +966,9 @@ export function MerchantProvider({
         }
         return;
       } finally {
-        key.fill(0);
+        releaseMerchantKey(key);
       }
-      if (!alive) return;
+      if (!alive || !access.isCurrent()) return;
       const issue = result.kind === "corrupt" || result.kind === "future" ? result : null;
       const loaded = result.kind === "ready" ? result.value : emptyStore();
       if (issue) {
@@ -889,24 +982,30 @@ export function MerchantProvider({
     return () => {
       alive = false;
     };
-  }, [installLoadedStore, phase, readMerchantKey, updateStaffSessionId]);
+  }, [captureMerchantAccess, installLoadedStore, readMerchantKey, releaseMerchantKey, repositoryReplacing]);
 
   useEffect(() => {
     if (!ready) return;
     let alive = true;
+    let access: ReturnType<typeof captureMerchantAccess>;
+    try { access = captureMerchantAccess(); } catch { return; }
     void inspectStorageHealth().then((health) => {
-      if (alive) setStorageHealth(health);
+      if (alive && access.isCurrent()) setStorageHealth(health);
     });
     return () => {
       alive = false;
     };
-  }, [ready, store.revision]);
+  }, [captureMerchantAccess, ready, store.revision]);
 
   const requestPersistentStorage = useCallback(async (): Promise<boolean> => {
+    const access = captureMerchantAccess();
     const granted = await requestBrowserPersistentStorage();
-    setStorageHealth(await inspectStorageHealth());
+    access.assertCurrent();
+    const health = await inspectStorageHealth();
+    access.assertCurrent();
+    setStorageHealth(health);
     return granted;
-  }, []);
+  }, [captureMerchantAccess]);
 
   useEffect(() => {
     if (!ready || phase !== "unlocked") {
@@ -917,7 +1016,8 @@ export function MerchantProvider({
       merchantWriterLockRef.current = "fallback";
       return;
     }
-
+    let access: ReturnType<typeof captureMerchantAccess>;
+    try { access = captureMerchantAccess(); } catch { return; }
     const controller = new AbortController();
     let releaseLock: (() => void) | null = null;
     merchantWriterLockRef.current = "pending";
@@ -925,7 +1025,7 @@ export function MerchantProvider({
       "stellarkey.merchant.writer.v1",
       { mode: "exclusive", signal: controller.signal },
       async () => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !access.isCurrent()) return;
         merchantWriterLockRef.current = "held";
         setStorageError(null);
         await new Promise<void>((resolve) => {
@@ -933,7 +1033,7 @@ export function MerchantProvider({
         });
       },
     ).catch(() => {
-      if (!controller.signal.aborted) merchantWriterLockRef.current = "fallback";
+      if (!controller.signal.aborted && access.isCurrent()) merchantWriterLockRef.current = "fallback";
     });
 
     return () => {
@@ -941,7 +1041,7 @@ export function MerchantProvider({
       releaseLock?.();
       merchantWriterLockRef.current = "pending";
     };
-  }, [phase, ready]);
+  }, [captureMerchantAccess, merchantWriterRevision, phase, ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -956,8 +1056,11 @@ export function MerchantProvider({
 
   const commitStore = useCallback(
     (update: MerchantStore | ((current: MerchantStore) => MerchantStore)): Promise<void> => {
+      let access: ReturnType<typeof captureMerchantAccess>;
+      try { access = captureMerchantAccess(); } catch (error) { return Promise.reject(error); }
       const requestedRevision = storeRef.current.revision;
       const operation = commitQueueRef.current.then(async () => {
+        access.assertCurrent();
         if (
           merchantWriterLockRef.current === "pending" &&
           "locks" in navigator &&
@@ -981,8 +1084,10 @@ export function MerchantProvider({
           try {
             persistedResult = await repositoryRef.current.loadCommitBasis(key);
           } catch {
+            access.assertCurrent();
             throw new MerchantStorageError("write_failed");
           }
+          access.assertCurrent();
           if (persistedResult.kind === "corrupt" || persistedResult.kind === "future") {
             storageIssueRef.current = persistedResult;
             setStorageIssue(persistedResult);
@@ -1017,12 +1122,15 @@ export function MerchantProvider({
               persistedResult.kind === "ready" ? persistedResult.value.revision : null,
             );
           } catch (error) {
+            access.assertCurrent();
             if (error instanceof MerchantRepositoryConflictError) {
               await reloadExternalStore(false);
+              access.assertCurrent();
               throw new MerchantStorageError("conflict");
             }
             throw new MerchantStorageError("write_failed");
           }
+          access.assertCurrent();
           storeRef.current = committed;
           setStore(committed);
           // Publish the non-sensitive runtime hint in the same successful
@@ -1039,16 +1147,16 @@ export function MerchantProvider({
           revisionChannelRef.current?.postRevision(committed);
           setStorageError(null);
         } finally {
-          key.fill(0);
+          releaseMerchantKey(key);
         }
       }).catch((error: unknown) => {
-        if (isMerchantStorageError(error)) setStorageError(error.message);
+        if (access.isCurrent() && isMerchantStorageError(error)) setStorageError(error.message);
         throw error;
       });
       commitQueueRef.current = operation.catch(() => {});
       return operation;
     },
-    [installLoadedStore, phase, readMerchantKey, reloadExternalStore, writerId],
+    [captureMerchantAccess, installLoadedStore, phase, readMerchantKey, releaseMerchantKey, reloadExternalStore, writerId],
   );
 
   const persist = useCallback(
@@ -1076,51 +1184,78 @@ export function MerchantProvider({
   }, []);
   const exportRecoveryData = useCallback(() => storageIssueRef.current?.raw ?? null, []);
   const exportEncryptedArchive = useCallback(async () => {
+    const access = captureMerchantAccess();
     requireExportingStaff(storeRef.current);
     const key = readMerchantKey();
     try {
       const archive = await repositoryRef.current.exportEncryptedArchive(key);
+      access.assertCurrent();
       requireExportingStaff(storeRef.current);
       return archive;
     } finally {
-      key.fill(0);
+      releaseMerchantKey(key);
     }
-  }, [readMerchantKey, requireExportingStaff]);
+  }, [captureMerchantAccess, readMerchantKey, releaseMerchantKey, requireExportingStaff]);
   const resetRecoveryData = useCallback(async () => {
+    let access = captureMerchantAccess();
     await resetMerchantRecoveryStore({
       getStorageIssue: () => storageIssueRef.current,
       getStore: () => storeRef.current,
       getActorId: () => staffSessionIdRef.current,
-      authorizeWalletOwner: () =>
-        authorizeSensitiveAction("Erase Merchant Mode recovery data"),
+      authorizeWalletOwner: async () => {
+        await authorizeSensitiveAction("Erase Merchant Mode recovery data");
+        access.assertCurrent();
+      },
       clearRepository: async () => {
+        access.assertCurrent();
+        invalidateMerchantOperations();
+        access = captureMerchantAccess();
+        merchantResettingRef.current = true;
         try {
           await repositoryRef.current.clear();
         } catch {
+          access.assertCurrent();
           const message = "Merchant recovery data could not be erased. Export it and try again.";
           setStorageError(message);
           throw new Error(message);
+        } finally {
+          if (access.isCurrent()) {
+            merchantResettingRef.current = false;
+            if (merchantWriterLockRef.current === "pending") {
+              setMerchantWriterRevision((revision) => revision + 1);
+            }
+          }
         }
       },
     });
+    access.assertCurrent();
     const fresh = emptyStore();
     storageIssueRef.current = null;
     setStorageIssue(null);
     setStorageError(null);
     storeRef.current = fresh;
     setStore(fresh);
+    updateStaffSessionId(null);
+    setReady(true);
     revisionChannelRef.current?.postRevision(fresh);
     writeMerchantBootstrapState({
       enabled: false,
       configured: false,
       recoveryRequired: false,
     });
-  }, [authorizeSensitiveAction]);
+    try {
+      releaseSubmissionJournals();
+    } catch {
+      setStorageError("Merchant records were erased, but transaction recovery cleanup could not finish. Existing transactions remain tracked.");
+    }
+  }, [authorizeSensitiveAction, captureMerchantAccess, invalidateMerchantOperations, releaseSubmissionJournals, updateStaffSessionId]);
 
   // The wallet owns canonical-hash tracking. Merchant state mirrors a final
   // resolution so an ambiguous outbound refund is never presented as complete.
   useEffect(() => {
     if (!ready) return;
+    let access: ReturnType<typeof captureMerchantAccess>;
+    try { access = captureMerchantAccess(); } catch { return; }
     const current = storeRef.current;
     let next = current;
     for (const refund of current.refunds) {
@@ -1143,15 +1278,30 @@ export function MerchantProvider({
         next = reconcileRefundSubmission(next, refund.id, resolved);
       }
     }
-    if (next === current) return;
-    void persist(next);
-  }, [persist, ready, store.refunds, submissionStatus]);
+    const acknowledgeTerminal = () => {
+      access.assertCurrent();
+      for (const refund of storeRef.current.refunds) {
+        if (refund.transactionHash &&
+          (refund.submissionStatus === "confirmed" || refund.submissionStatus === "failed")) {
+          acknowledgeSubmissionJournal({ hash: refund.transactionHash, network: refund.network });
+        }
+      }
+    };
+    if (next === current) {
+      try { acknowledgeTerminal(); } catch { /* Keep durable recovery when cleanup is unavailable. */ }
+      return;
+    }
+    // Only a successful authenticated commit can acknowledge the durable
+    // recovery handle. `persist` intentionally swallows storage failures.
+    void commitStore(next).then(acknowledgeTerminal).catch(() => {});
+  }, [acknowledgeSubmissionJournal, captureMerchantAccess, commitStore, ready, store.refunds, submissionStatus]);
 
   const settings = store.settings;
   const enabled = settings.enabled;
   const configured = !needsMerchantSetup(settings, store.staff);
   const setEnabled = useCallback(
     async (on: boolean) => {
+      const access = captureMerchantAccess();
       const before = storeRef.current;
       if (before.settings.enabled === on) return;
       if (on && needsMerchantSetup(before.settings, before.staff)) return;
@@ -1159,6 +1309,7 @@ export function MerchantProvider({
       const actorId = staffSessionIdRef.current ?? "";
       if (!on) requireActiveOwner(before, actorId);
       await authorizeSensitiveAction(on ? "Enable Merchant Mode" : "Disable Merchant Mode");
+      access.assertCurrent();
 
       await commitStore((latest) => {
         if (latest.settings.enabled === on) return latest;
@@ -1169,8 +1320,9 @@ export function MerchantProvider({
         }
         return { ...latest, settings: { ...latest.settings, enabled: on } };
       });
+      access.assertCurrent();
     },
-    [authorizeSensitiveAction, commitStore],
+    [captureMerchantAccess, authorizeSensitiveAction, commitStore],
   );
 
   // This sidecar contains no merchant content. It lets a disabled wallet avoid
@@ -1224,6 +1376,7 @@ export function MerchantProvider({
 
   const completeSetup = useCallback(
     async (input: Omit<MerchantSetupInput, "pinDigest"> & { pin: string }) => {
+      const access = captureMerchantAccess();
       const { pin, ...details } = input;
       assertMerchantReceivingAccount(accounts, details.receivingPublicKey);
       const before = storeRef.current;
@@ -1232,8 +1385,10 @@ export function MerchantProvider({
       if (existingOwner) {
         requireActiveOwner(before, staffSessionIdRef.current ?? "");
         await authorizeSensitiveAction("Reconfigure Merchant Mode");
+        access.assertCurrent();
       }
       const pinDigest = await createMerchantPinCredential(pin);
+      access.assertCurrent();
       const now = Date.now();
       let nextActiveStaffId: string | null = null;
       await commitStore((latest) => {
@@ -1246,9 +1401,10 @@ export function MerchantProvider({
         nextActiveStaffId = next.activeStaffId;
         return next;
       });
+      access.assertCurrent();
       updateStaffSessionId(nextActiveStaffId);
     },
-    [accounts, authorizeSensitiveAction, commitStore, updateStaffSessionId],
+    [accounts, authorizeSensitiveAction, captureMerchantAccess, commitStore, updateStaffSessionId],
   );
 
   const activeStaff = useMemo(
@@ -1278,12 +1434,14 @@ export function MerchantProvider({
   }, [requireExportingStaff]);
 
   const authorizeWalletExit = useCallback(async (): Promise<void> => {
+    const access = captureMerchantAccess();
     await authorizeMerchantWalletExit({
       getStore: () => storeRef.current,
       getActorId: () => staffSessionIdRef.current,
       authorizeWalletOwner: () => authorizeSensitiveAction("Leave Merchant Mode"),
     });
-  }, [authorizeSensitiveAction]);
+    access.assertCurrent();
+  }, [captureMerchantAccess, authorizeSensitiveAction]);
 
   const taxPeriods = useMemo(
     () => deriveTaxPeriods(store, { network, now: reportingNow }),
@@ -1318,6 +1476,7 @@ export function MerchantProvider({
       basis: ReportBasis;
       format: ReportFormat;
     }): Promise<{ file: ReportFile; record: ExportRecord }> => {
+      const access = captureMerchantAccess();
       const current = storeRef.current;
       const actor = current.staff.find(
         (member) =>
@@ -1335,13 +1494,15 @@ export function MerchantProvider({
         now: Date.now(),
       });
       await commitStore(created.store);
+      access.assertCurrent();
       return { file: created.file, record: created.record };
     },
-    [commitStore, network, staffSessionId],
+    [captureMerchantAccess, commitStore, network, staffSessionId],
   );
 
   const updateSettlementRule = useCallback(
     async (patch: Partial<SettlementRule>): Promise<void> => {
+      const access = captureMerchantAccess();
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing treasury rules.");
       requireActiveOwner(storeRef.current, actorId);
@@ -1350,13 +1511,15 @@ export function MerchantProvider({
         patch.sweepDestination !== storeRef.current.settlementRule.sweepDestination;
       if (changesDestination) {
         await authorizeSensitiveAction("Change merchant treasury destination");
+        access.assertCurrent();
       }
       await commitStore((latest) => {
         requireActiveOwner(latest, actorId);
         return updatePersistedSettlementRule(latest, patch);
       });
+      access.assertCurrent();
     },
-    [authorizeSensitiveAction, commitStore],
+    [captureMerchantAccess, authorizeSensitiveAction, commitStore],
   );
 
   useEffect(() => {
@@ -1390,6 +1553,7 @@ export function MerchantProvider({
   );
 
   const openShift = useCallback(async (floatMinor: Minor): Promise<Shift> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -1407,10 +1571,12 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(opened.store);
+    access.assertCurrent();
     return opened.shift;
-  }, [commitStore, network, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, network, staffSessionId]);
 
   const closeShift = useCallback(async (countedMinor: Minor): Promise<ShiftReport> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -1431,10 +1597,12 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(closed.store);
+    access.assertCurrent();
     return closed.report;
-  }, [commitStore, staffSessionId, ticket.lines.length]);
+  }, [captureMerchantAccess, commitStore, staffSessionId, ticket.lines.length]);
 
   const switchStaff = useCallback(async (memberId: string, pin: string): Promise<void> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === memberId && entry.active);
     if (!member?.pinDigest) throw new Error("This staff member does not have a PIN yet.");
@@ -1446,6 +1614,7 @@ export function MerchantProvider({
       throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
     }
     const verified = await verifyMerchantPin(pin, expectedPinDigest);
+    access.assertCurrent();
     let recordedAttempt = nextPinAttempt(prior, verified, now);
     await commitStore((latest) => {
       const latestMember = latest.staff.find((entry) => entry.id === memberId && entry.active);
@@ -1458,6 +1627,7 @@ export function MerchantProvider({
         ? activateVerifiedOperator(throttled, memberId, expectedPinDigest)
         : throttled;
     });
+    access.assertCurrent();
     if (!recordedAttempt.authorized) {
       const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
@@ -1467,7 +1637,7 @@ export function MerchantProvider({
       );
     }
     updateStaffSessionId(member.id);
-  }, [commitStore, updateStaffSessionId]);
+  }, [captureMerchantAccess, commitStore, updateStaffSessionId]);
 
   const lockStaffSession = useCallback(async (): Promise<void> => {
     updateStaffSessionId(null);
@@ -1526,6 +1696,7 @@ export function MerchantProvider({
   }, [persist, ready, settings, staffSessionId, updateStaffSessionId]);
 
   const unlockCustomerDisplay = useCallback(async (pin: string): Promise<StaffMember> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const member = current.staff.find(
       (entry) =>
@@ -1543,6 +1714,7 @@ export function MerchantProvider({
       throw new Error(`Too many wrong PINs. Try again in ${seconds} seconds.`);
     }
     const verified = await verifyMerchantPin(pin, member.pinDigest);
+    access.assertCurrent();
     let recordedAttempt = nextPinAttempt(prior, verified, now);
     await commitStore((latest) => {
       const latestMember = latest.staff.find(
@@ -1554,6 +1726,7 @@ export function MerchantProvider({
       recordedAttempt = nextPinAttempt(pinAttemptFor(latest, member.id), verified, now);
       return storePinAttempt(latest, member.id, recordedAttempt.state);
     });
+    access.assertCurrent();
     if (!recordedAttempt.authorized) {
       const seconds = Math.max(1, Math.ceil((recordedAttempt.state.blockedUntil - now) / 1000));
       throw new Error(
@@ -1563,7 +1736,7 @@ export function MerchantProvider({
       );
     }
     return member;
-  }, [commitStore, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, staffSessionId]);
 
   const addStaff = useCallback(async ({
     name,
@@ -1574,9 +1747,11 @@ export function MerchantProvider({
     role: StaffRole;
     pin: string;
   }): Promise<void> => {
+    const access = captureMerchantAccess();
     const actorId = staffSessionId;
     if (!actorId) throw new Error("Choose an owner before adding staff.");
     const pinDigest = await createMerchantPinCredential(pin);
+    access.assertCurrent();
     const next = addStaffMember(storeRef.current, actorId, {
       id: uid("staff"),
       name,
@@ -1585,7 +1760,7 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(next);
-  }, [commitStore, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, staffSessionId]);
 
   const updateStaff = useCallback(async (
     memberId: string,
@@ -1597,9 +1772,11 @@ export function MerchantProvider({
   }, [commitStore, staffSessionId]);
 
   const resetStaffPin = useCallback(async (memberId: string, pin: string): Promise<void> => {
+    const access = captureMerchantAccess();
     const actorId = staffSessionId;
     if (!actorId) throw new Error("Choose an owner before resetting a PIN.");
     const pinDigest = await createMerchantPinCredential(pin);
+    access.assertCurrent();
     await commitStore((latest) => storePinAttempt(
       updateStaffMember(latest, actorId, memberId, {
         pinDigest,
@@ -1608,7 +1785,7 @@ export function MerchantProvider({
       memberId,
       nextPinAttempt(pinAttemptFor(latest, memberId), true, Date.now()).state,
     ));
-  }, [commitStore, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, staffSessionId]);
 
   /* ---------------- prices ---------------- */
 
@@ -1945,6 +2122,7 @@ export function MerchantProvider({
     dueAt?: number | null;
     note?: string | null;
   }): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const created = createPersistedInvoiceDraft(current, {
@@ -1955,8 +2133,9 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(created.store);
+    access.assertCurrent();
     return created.invoice;
-  }, [commitStore, network, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, network, requireInvoiceActor]);
 
   const updateInvoiceDraft = useCallback(async (input: {
     invoiceId: string;
@@ -1966,6 +2145,7 @@ export function MerchantProvider({
     dueAt?: number | null;
     note?: string | null;
   }): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const updated = updatePersistedInvoiceDraft(current, {
@@ -1975,10 +2155,12 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(updated.store);
+    access.assertCurrent();
     return updated.invoice;
-  }, [commitStore, network, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, network, requireInvoiceActor]);
 
   const issueInvoice = useCallback(async (invoiceId: string): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const destination = current.settings.receivingPublicKey;
@@ -2002,14 +2184,16 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(issued.store);
+    access.assertCurrent();
     return issued.invoice;
-  }, [commitStore, network, quoteInputs, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, network, quoteInputs, requireInvoiceActor]);
 
   const recordManualInvoicePayment = useCallback(async (input: {
     invoiceId: string;
     amountMinor: Minor;
     note?: string | null;
   }): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const settled = recordPersistedManualInvoicePayment(current, {
@@ -2019,8 +2203,9 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(settled.store);
+    access.assertCurrent();
     return settled.invoice;
-  }, [commitStore, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, requireInvoiceActor]);
 
   const confirmInvoicePayment = useCallback(async (paymentId: string): Promise<void> => {
     requireInvoiceActor(storeRef.current);
@@ -2035,6 +2220,7 @@ export function MerchantProvider({
   }, [commitStore, requireInvoiceActor]);
 
   const voidInvoice = useCallback(async (invoiceId: string, reason: string): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const voided = voidPersistedInvoice(current, {
@@ -2044,10 +2230,12 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(voided.store);
+    access.assertCurrent();
     return voided.invoice;
-  }, [commitStore, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, requireInvoiceActor]);
 
   const duplicateInvoice = useCallback(async (invoiceId: string): Promise<Invoice> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireInvoiceActor(current);
     const duplicate = duplicatePersistedInvoice(current, {
@@ -2057,8 +2245,9 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(duplicate.store);
+    access.assertCurrent();
     return duplicate.invoice;
-  }, [commitStore, requireInvoiceActor]);
+  }, [captureMerchantAccess, commitStore, requireInvoiceActor]);
 
   const requireCounterCodeActor = useCallback((current: MerchantStore): StaffMember => {
     const actor = current.staff.find(
@@ -2077,6 +2266,7 @@ export function MerchantProvider({
   const createCounterCode = useCallback(async (
     input: MerchantCounterCodeDraft,
   ): Promise<CounterCode> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const destination = current.settings.receivingPublicKey;
@@ -2112,8 +2302,9 @@ export function MerchantProvider({
           now,
         });
     await commitStore(final.store);
+    access.assertCurrent();
     return final.code;
-  }, [commitStore, network, rateFor, requireCounterCodeActor]);
+  }, [captureMerchantAccess, commitStore, network, rateFor, requireCounterCodeActor]);
 
   const updateCounterCode = useCallback(async (input: {
     codeId: string;
@@ -2123,6 +2314,7 @@ export function MerchantProvider({
     expiresAt: number | null;
     active: boolean;
   }): Promise<CounterCode> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const now = Date.now();
@@ -2136,13 +2328,15 @@ export function MerchantProvider({
           now,
         });
     await commitStore(final.store);
+    access.assertCurrent();
     return final.code;
-  }, [commitStore, requireCounterCodeActor]);
+  }, [captureMerchantAccess, commitStore, requireCounterCodeActor]);
 
   const setCounterCodeActive = useCallback(async (
     codeId: string,
     active: boolean,
   ): Promise<CounterCode> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requireCounterCodeActor(current);
     const changed = setPersistedCounterCodeActive(current, {
@@ -2152,8 +2346,9 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(changed.store);
+    access.assertCurrent();
     return changed.code;
-  }, [commitStore, requireCounterCodeActor]);
+  }, [captureMerchantAccess, commitStore, requireCounterCodeActor]);
 
   const confirmCounterPayment = useCallback(async (paymentId: string): Promise<void> => {
     const current = storeRef.current;
@@ -2219,6 +2414,7 @@ export function MerchantProvider({
     address: string,
     note: string,
   ): Promise<CustomerRecord> => {
+    const access = captureMerchantAccess();
     requireCustomerActor(storeRef.current, "takePayment");
     const eventId = uid("customer");
     const now = Date.now();
@@ -2234,14 +2430,16 @@ export function MerchantProvider({
       updated = next.customers.find((customer) => customer.address === address) ?? null;
       return next;
     });
+    access.assertCurrent();
     if (!updated) throw new Error("That customer record is no longer available.");
     return updated;
-  }, [commitStore, requireCustomerActor]);
+  }, [captureMerchantAccess, commitStore, requireCustomerActor]);
 
   const startLoyaltyCard = useCallback(async (
     address: string,
     target = 10,
   ): Promise<CustomerRecord> => {
+    const access = captureMerchantAccess();
     requireCustomerActor(storeRef.current, "takePayment");
     const eventId = uid("loyalty");
     const now = Date.now();
@@ -2257,11 +2455,13 @@ export function MerchantProvider({
       updated = next.customers.find((customer) => customer.address === address) ?? null;
       return next;
     });
+    access.assertCurrent();
     if (!updated) throw new Error("That customer record is no longer available.");
     return updated;
-  }, [commitStore, requireCustomerActor]);
+  }, [captureMerchantAccess, commitStore, requireCustomerActor]);
 
   const redeemLoyaltyReward = useCallback(async (address: string): Promise<CustomerRecord> => {
+    const access = captureMerchantAccess();
     requireCustomerActor(storeRef.current, "comp");
     const eventId = uid("loyalty");
     const now = Date.now();
@@ -2276,9 +2476,10 @@ export function MerchantProvider({
       updated = next.customers.find((customer) => customer.address === address) ?? null;
       return next;
     });
+    access.assertCurrent();
     if (!updated) throw new Error("That customer record is no longer available.");
     return updated;
-  }, [commitStore, requireCustomerActor]);
+  }, [captureMerchantAccess, commitStore, requireCustomerActor]);
 
   const forgetCustomer = useCallback(async (address: string): Promise<void> => {
     requireCustomerActor(storeRef.current, "owner");
@@ -2332,6 +2533,7 @@ export function MerchantProvider({
   }, [network, quoteInputs]);
 
   const settleCash = useCallback(async (receivedMinor: Minor): Promise<Order> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -2346,12 +2548,14 @@ export function MerchantProvider({
     );
     const securedStore = applyOperatorSalePolicy(committed.store);
     await commitStore(securedStore);
+    access.assertCurrent();
     if (securedStore.activeStaffId === null) updateStaffSessionId(null);
     clearTicket();
     return committed.order;
-  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
+  }, [captureMerchantAccess, buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
 
   const settleCard = useCallback(async (externalReference?: string): Promise<Order> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -2366,14 +2570,16 @@ export function MerchantProvider({
     );
     const securedStore = applyOperatorSalePolicy(committed.store);
     await commitStore(securedStore);
+    access.assertCurrent();
     if (securedStore.activeStaffId === null) updateStaffSessionId(null);
     clearTicket();
     return committed.order;
-  }, [buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
+  }, [captureMerchantAccess, buildTicketOrder, clearTicket, commitStore, requirePaymentActor, ticket, updateStaffSessionId]);
 
   const startSplitCharge = useCallback(async (
     input: MerchantSplitTenderInput,
   ): Promise<MerchantTenderOutcome> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -2404,6 +2610,7 @@ export function MerchantProvider({
       const committed = settleNewOrder(current, order, parts, ticket.adjustments, now);
       const securedStore = applyOperatorSalePolicy(committed.store);
       await commitStore(securedStore);
+      access.assertCurrent();
       if (securedStore.activeStaffId === null) updateStaffSessionId(null);
       clearTicket();
       return { order: committed.order, charge: null };
@@ -2416,10 +2623,12 @@ export function MerchantProvider({
       charges: [charge, ...awaiting.store.charges],
     };
     await commitStore(nextStore);
+    access.assertCurrent();
     setActiveChargeId(charge.id);
     clearTicket();
     return { order: awaiting.order, charge };
   }, [
+    captureMerchantAccess,
     buildTicketOrder,
     clearTicket,
     commitStore,
@@ -2435,6 +2644,7 @@ export function MerchantProvider({
     amountMinor: Minor,
     reasonCode: string,
   ): Promise<Order | null> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = current.staff.find(
       (member) =>
@@ -2459,6 +2669,7 @@ export function MerchantProvider({
       const order = buildTicketOrder(current, ticket, actor, now);
       const committed = voidNewOrder(current, order, adjustments);
       await commitStore(committed.store);
+      access.assertCurrent();
       clearTicket();
       return committed.order;
     }
@@ -2470,6 +2681,7 @@ export function MerchantProvider({
       const committed = settleNewOrder(current, order, [], adjustments, now);
       const securedStore = applyOperatorSalePolicy(committed.store);
       await commitStore(securedStore);
+      access.assertCurrent();
       if (securedStore.activeStaffId === null) updateStaffSessionId(null);
       clearTicket();
       return committed.order;
@@ -2478,6 +2690,7 @@ export function MerchantProvider({
     setTicket({ ...result.ticket, adjustments });
     return null;
   }, [
+    captureMerchantAccess,
     buildTicketOrder,
     clearTicket,
     commitStore,
@@ -2521,6 +2734,7 @@ export function MerchantProvider({
   const createChargeFromTicket = useCallback(async (
     tipMinorOverride?: Minor,
   ): Promise<Charge> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const actor = requirePaymentActor(current);
     if (ticket.lines.length === 0) throw new Error("Add something to the ticket first.");
@@ -2538,11 +2752,13 @@ export function MerchantProvider({
       charges: [charge, ...awaiting.store.charges],
     };
     await commitStore(nextStore);
+    access.assertCurrent();
     setActiveChargeId(charge.id);
     clearTicket();
     return charge;
   }, [
     buildTicketOrder,
+    captureMerchantAccess,
     clearTicket,
     commitStore,
     cryptoChargeFor,
@@ -2552,6 +2768,7 @@ export function MerchantProvider({
 
   const voidCharge = useCallback(
     async (id: string): Promise<void> => {
+      const access = captureMerchantAccess();
       const actorId = staffSessionIdRef.current;
       await commitStore((latest) => {
         return voidAwaitingMerchantCharge(latest, {
@@ -2560,9 +2777,10 @@ export function MerchantProvider({
           network,
         });
       });
+      access.assertCurrent();
       setActiveChargeId((current) => (current === id ? null : current));
     },
-    [commitStore, network],
+    [captureMerchantAccess, commitStore, network],
   );
 
   /** Expire anything past its window so the UI never shows a dead countdown. */
@@ -2600,6 +2818,7 @@ export function MerchantProvider({
 
   const applyPayments = useCallback(
     async (payments: ObservedPayment[]): Promise<string | null> => {
+      const access = captureMerchantAccess();
       if (payments.length === 0) return null;
       const current = storeRef.current;
       const invoiceResult = reconcileInvoicePayments(current, {
@@ -2628,6 +2847,7 @@ export function MerchantProvider({
           settlementStaffId,
         );
         await commitStore(securedStore);
+        access.assertCurrent();
         if (
           securedStore.activeStaffId === null &&
           current.activeStaffId !== null &&
@@ -2638,7 +2858,7 @@ export function MerchantProvider({
       }
       return customerResult.warning;
     },
-    [commitStore, contacts, network, quoteInputs, updateStaffSessionId],
+    [captureMerchantAccess, commitStore, contacts, network, quoteInputs, updateStaffSessionId],
   );
 
   /**
@@ -2722,6 +2942,12 @@ export function MerchantProvider({
       polling.current ||
       merchantWriterLockRef.current === "pending"
     ) return;
+    let access: ReturnType<typeof captureMerchantAccess>;
+    try { access = captureMerchantAccess(); } catch { return; }
+    const controller = new AbortController();
+    pollControllerRef.current = controller;
+    const isCurrent = () => access.isCurrent() &&
+      pollControllerRef.current === controller && !controller.signal.aborted;
     polling.current = true;
     let latestLedger: number | null = null;
     let firstFailure: unknown = null;
@@ -2745,7 +2971,9 @@ export function MerchantProvider({
             publicKey: destination,
             network,
             cursor: storeRef.current.cursors[cursorKey] ?? null,
+            signal: controller.signal,
           });
+          if (!isCurrent()) return;
           if (
             result.latestLedger &&
             (latestLedger === null || result.latestLedger > latestLedger)
@@ -2753,17 +2981,21 @@ export function MerchantProvider({
             latestLedger = result.latestLedger;
           }
           const enrichmentWarning = await applyPayments(result.payments);
+          if (!isCurrent()) return;
           if (result.cursor) {
             await persist((prev) => ({
               ...prev,
               cursors: { ...prev.cursors, [cursorKey]: result.cursor as string },
             }));
+            if (!isCurrent()) return;
           }
           if (enrichmentWarning) firstFailure ??= new Error(enrichmentWarning);
         } catch (error) {
+          if (!isCurrent()) return;
           firstFailure ??= error;
         }
       }
+      if (!isCurrent()) return;
       if (latestLedger !== null) setWatchedLedger(latestLedger);
       if (firstFailure === null || isMerchantStorageError(firstFailure)) {
         setWatchError(null);
@@ -2771,9 +3003,18 @@ export function MerchantProvider({
         setWatchError(describeWatchFailure(firstFailure));
       }
     } finally {
-      polling.current = false;
+      if (isCurrent()) {
+        pollControllerRef.current = null;
+        polling.current = false;
+      }
     }
-  }, [applyPayments, enabled, network, online, persist, watchDestinations, writerId]);
+  }, [applyPayments, captureMerchantAccess, enabled, network, online, persist, watchDestinations, writerId]);
+
+  useEffect(() => () => {
+    pollControllerRef.current?.abort();
+    pollControllerRef.current = null;
+    polling.current = false;
+  }, [network]);
 
   const hasLiveCharge = useMemo(
     () => liveCharges(store.charges, network).length > 0,
@@ -2833,6 +3074,7 @@ export function MerchantProvider({
 
   const attachPayment = useCallback(
     async (paymentId: string, chargeId: string): Promise<void> => {
+      const access = captureMerchantAccess();
       const current = storeRef.current;
       const actor = requirePaymentActor(current);
       const attached = attachReconciledPayment(current, {
@@ -2844,12 +3086,13 @@ export function MerchantProvider({
       const customerResult = reconcileCustomerSettlementsNonFatal(current, attached, { contacts });
       const securedStore = applyOperatorSalePolicy(customerResult.store);
       await commitStore(securedStore);
+      access.assertCurrent();
       if (customerResult.warning) setWatchError(customerResult.warning);
       if (securedStore.activeStaffId === null && staffSessionIdRef.current === actor.id) {
         updateStaffSessionId(null);
       }
     },
-    [commitStore, contacts, requirePaymentActor, updateStaffSessionId],
+    [captureMerchantAccess, commitStore, contacts, requirePaymentActor, updateStaffSessionId],
   );
 
   const dismissUnmatched = useCallback(
@@ -2866,6 +3109,7 @@ export function MerchantProvider({
   );
 
   const dismissPendingReconciliations = useCallback(async (): Promise<number> => {
+    const access = captureMerchantAccess();
     const actorId = staffSessionIdRef.current;
     if (!actorId) throw new Error("Unlock the owner before cleaning up pending payments.");
     requireActiveOwner(storeRef.current, actorId);
@@ -2879,8 +3123,9 @@ export function MerchantProvider({
       resolvedCount = result.resolvedIds.length;
       return result.store;
     });
+    access.assertCurrent();
     return resolvedCount;
-  }, [commitStore]);
+  }, [captureMerchantAccess, commitStore]);
 
   /* ---------------- refunds ---------------- */
 
@@ -2898,6 +3143,7 @@ export function MerchantProvider({
       note?: string;
       approvalRequestId?: string;
     }): Promise<Refund> => {
+      const access = captureMerchantAccess();
       const current = storeRef.current;
       const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
       if (!member || !canReleaseRefund(member, amountMinor)) {
@@ -2972,33 +3218,46 @@ export function MerchantProvider({
         issuer: sourcePayment.asset.issuer,
         memo: { type: "text", value: `RF${order.number}` },
         authorizeBeforeSigning: () => {
+          access.assertCurrent();
           requireRefundAuthorization(storeRef.current, authorizedStaffId, amountMinor);
         },
         submissionJournal: {
           onPrepared: async (prepared) => {
+            access.assertCurrent();
             const intent: Refund = {
               ...refundBase,
               transactionHash: prepared.hash,
               submissionStatus: "prepared",
             };
             await commitStore((latest) => recordRefundSubmission(latest, intent));
+            access.assertCurrent();
           },
-          onRejected: async () => {
+          onRejected: async (prepared) => {
+            // A revoked merchant lifetime must not reacquire a new one. Keep
+            // any durable intent for the active session's canonical tracking.
+            if (!access.isCurrent()) return false;
             if (!storeRef.current.refunds.some((refund) => refund.id === refundId)) return;
             await commitStore((latest) =>
               reconcileRefundSubmission(latest, refundId, "failed"));
+            access.assertCurrent();
+            acknowledgeSubmissionJournal(prepared);
           },
         },
       });
+      access.assertCurrent();
       await commitStore((latest) =>
         reconcileRefundSubmission(latest, refundId, result.status));
+      access.assertCurrent();
+      if (result.status === "confirmed") {
+        try { acknowledgeSubmissionJournal(result); } catch { /* The durable confirmed journal can retry cleanup later. */ }
+      }
       return {
         ...refundBase,
         transactionHash: result.hash,
         submissionStatus: result.status,
       };
     },
-    [activeAccount?.publicKey, commitStore, network, send, staffSessionId],
+    [acknowledgeSubmissionJournal, activeAccount?.publicKey, captureMerchantAccess, commitStore, network, send, staffSessionId],
   );
 
   const submitRefund = useCallback(async (params: {
@@ -3007,10 +3266,13 @@ export function MerchantProvider({
     reason: RefundReason;
     note?: string;
   }): Promise<MerchantRefundOutcome> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
     if (canReleaseRefund(member, params.amountMinor)) {
-      return { kind: "refunded", refund: await refundOrder(params) };
+      const refund = await refundOrder(params);
+      access.assertCurrent();
+      return { kind: "refunded", refund };
     }
     if (!member) throw new Error("Choose a staff member before requesting a refund.");
     const order = current.orders.find((entry) => entry.id === params.orderId);
@@ -3024,8 +3286,9 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(requested.store);
+    access.assertCurrent();
     return { kind: "requested", request: requested.request };
-  }, [commitStore, refundOrder, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, refundOrder, staffSessionId]);
 
   const refundReconciledPayment = useCallback(async ({
     paymentId,
@@ -3036,6 +3299,7 @@ export function MerchantProvider({
     note?: string;
     approvalRequestId?: string;
   }): Promise<Refund> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
     const reconciliation = current.paymentReconciliations.find(
@@ -3117,37 +3381,49 @@ export function MerchantProvider({
         value: order ? `DP${order.number}` : `IP${invoice?.number ?? "SURPLUS"}`,
       },
       authorizeBeforeSigning: () => {
+        access.assertCurrent();
         requireRefundAuthorization(storeRef.current, authorizedStaffId, amountMinor);
       },
       submissionJournal: {
         onPrepared: async (prepared) => {
+          access.assertCurrent();
           const intent: Refund = {
             ...refundBase,
             transactionHash: prepared.hash,
             submissionStatus: "prepared",
           };
           await commitStore((latest) => recordRefundSubmission(latest, intent));
+          access.assertCurrent();
         },
-        onRejected: async () => {
+        onRejected: async (prepared) => {
+          if (!access.isCurrent()) return false;
           if (!storeRef.current.refunds.some((refund) => refund.id === refundId)) return;
           await commitStore((latest) =>
             reconcileRefundSubmission(latest, refundId, "failed"));
+          access.assertCurrent();
+          acknowledgeSubmissionJournal(prepared);
         },
       },
     });
+    access.assertCurrent();
     await commitStore((latest) =>
       reconcileRefundSubmission(latest, refundId, result.status));
+    access.assertCurrent();
+    if (result.status === "confirmed") {
+      try { acknowledgeSubmissionJournal(result); } catch { /* The durable confirmed journal can retry cleanup later. */ }
+    }
     return {
       ...refundBase,
       transactionHash: result.hash,
       submissionStatus: result.status,
     };
-  }, [activeAccount?.publicKey, commitStore, network, send, staffSessionId]);
+  }, [acknowledgeSubmissionJournal, activeAccount?.publicKey, captureMerchantAccess, commitStore, network, send, staffSessionId]);
 
   const submitPaymentRefund = useCallback(async (
     paymentId: string,
     note?: string,
   ): Promise<MerchantRefundOutcome> => {
+    const access = captureMerchantAccess();
     const current = storeRef.current;
     const member = current.staff.find((entry) => entry.id === staffSessionId) ?? null;
     const reconciliation = current.paymentReconciliations.find(
@@ -3157,10 +3433,9 @@ export function MerchantProvider({
       throw new Error("That payment has no verified value to refund.");
     }
     if (canReleaseRefund(member, reconciliation.amountMinor)) {
-      return {
-        kind: "refunded",
-        refund: await refundReconciledPayment({ paymentId, note }),
-      };
+      const refund = await refundReconciledPayment({ paymentId, note });
+      access.assertCurrent();
+      return { kind: "refunded", refund };
     }
     if (!member) throw new Error("Choose a staff member before requesting a refund.");
     const requested = createPaymentRefundRequest(current, {
@@ -3171,10 +3446,12 @@ export function MerchantProvider({
       now: Date.now(),
     });
     await commitStore(requested.store);
+    access.assertCurrent();
     return { kind: "requested", request: requested.request };
-  }, [commitStore, refundReconciledPayment, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, refundReconciledPayment, staffSessionId]);
 
   const approveRefundRequest = useCallback(async (requestId: string): Promise<Refund> => {
+    const access = captureMerchantAccess();
     const before = storeRef.current;
     const request = before.refundRequests.find((entry) => entry.id === requestId);
     const reviewerId = staffSessionId;
@@ -3197,6 +3474,7 @@ export function MerchantProvider({
           note: request.note ?? undefined,
           approvalRequestId: request.id,
         });
+    access.assertCurrent();
     await commitStore(decideRefundRequest(storeRef.current, {
       requestId,
       reviewerId,
@@ -3204,8 +3482,9 @@ export function MerchantProvider({
       now: Date.now(),
       refundId: refund.id,
     }));
+    access.assertCurrent();
     return refund;
-  }, [commitStore, refundOrder, refundReconciledPayment, staffSessionId]);
+  }, [captureMerchantAccess, commitStore, refundOrder, refundReconciledPayment, staffSessionId]);
 
   const declineRefundRequest = useCallback(async (requestId: string): Promise<void> => {
     const current = storeRef.current;
@@ -3321,6 +3600,7 @@ export function MerchantProvider({
   );
   const updateSettings = useCallback(
     async (patch: MerchantSettingsPatch) => {
+      const access = captureMerchantAccess();
       const actorId = staffSessionIdRef.current;
       if (!actorId) throw new Error("Unlock the owner before changing merchant settings.");
       const before = storeRef.current;
@@ -3339,6 +3619,7 @@ export function MerchantProvider({
         if (!receivingPublicKey) throw new Error("Choose a merchant receiving account.");
         assertMerchantReceivingAccount(accounts, receivingPublicKey);
         await authorizeSensitiveAction("Change merchant receiving account");
+        access.assertCurrent();
       }
       await commitStore((latest) => {
         requireActiveOwner(latest, actorId);
@@ -3351,8 +3632,9 @@ export function MerchantProvider({
         }
         return { ...latest, settings: applyMerchantSettingsPatch(latest.settings, patch) };
       });
+      access.assertCurrent();
     },
-    [accounts, authorizeSensitiveAction, commitStore],
+    [captureMerchantAccess, accounts, authorizeSensitiveAction, commitStore],
   );
   const upsertItem = useCallback(
     async (item: CatalogueItem) => {
