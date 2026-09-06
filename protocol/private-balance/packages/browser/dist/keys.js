@@ -37,11 +37,20 @@ function hkdfExpand(prk, info, length) {
     const blocks = Math.ceil(length / 64);
     const output = new Uint8Array(blocks * 64);
     let previous = new Uint8Array(0);
-    for (let block = 1; block <= blocks; block += 1) {
-        previous = new Uint8Array(hmacSha512(prk, previous, info, Uint8Array.of(block)));
-        output.set(previous, (block - 1) * 64);
+    try {
+        for (let block = 1; block <= blocks; block += 1) {
+            const next = hmacSha512(prk, previous, info, Uint8Array.of(block));
+            previous.fill(0);
+            previous = next;
+            output.set(previous, (block - 1) * 64);
+        }
+        // The caller owns an independent, exact-length copy, never this scratch.
+        return output.slice(0, length);
     }
-    return output.slice(0, length);
+    finally {
+        previous.fill(0);
+        output.fill(0);
+    }
 }
 function hkdfSha256Expand(prk, info, length) {
     if (length > 255 * 32)
@@ -144,9 +153,17 @@ function deriveNonzeroField(prk, domain, context, startCounter = 0) {
         if (counter > 255)
             throw new Error(`Unable to derive nonzero ${domain} field`);
         const suffix = counter === 0 ? new Uint8Array(0) : Uint8Array.of(counter);
-        const field = bytesToField(hkdfExpand(prk, concatBytes(utf8(domain), context, suffix), 64));
+        const expanded = hkdfExpand(prk, concatBytes(utf8(domain), context, suffix), 64);
+        let field;
+        try {
+            field = bytesToField(expanded);
+        }
+        finally {
+            expanded.fill(0);
+        }
         if (!field.every((byte) => byte === 0))
             return { field, counter };
+        field.fill(0);
         counter += 1;
     }
 }
@@ -178,21 +195,29 @@ export async function deriveExpandedSpendingKey(privacySessionRoot, protocolVers
     const context = keyContext(protocolVersion, networkId, realmId, poolId, accountPublicKeyBytes);
     const prk = privacySessionRoot.slice();
     let hpkeIkm = null;
+    let nk = null;
+    let outgoingViewingKey = null;
+    let askResult = null;
+    let baseOwnerCommitment = null;
+    let incomingViewingKey = null;
+    let defaultAddress = null;
+    let transferred = false;
     try {
-        const nk = deriveNonzeroField(prk, DOMAIN_NK, context).field;
-        const outgoingViewingKey = hkdfExpand(prk, concatBytes(utf8(DOMAIN_OVK), context), 32);
-        let askResult = deriveNonzeroField(prk, DOMAIN_ASK, context);
-        let baseOwnerCommitment = p2(DOMAIN_OWNER, [contextField, askResult.field, nk]);
+        nk = deriveNonzeroField(prk, DOMAIN_NK, context).field;
+        outgoingViewingKey = hkdfExpand(prk, concatBytes(utf8(DOMAIN_OVK), context), 32);
+        askResult = deriveNonzeroField(prk, DOMAIN_ASK, context);
+        baseOwnerCommitment = p2(DOMAIN_OWNER, [contextField, askResult.field, nk]);
         while (baseOwnerCommitment.every((byte) => byte === 0)) {
+            askResult.field.fill(0);
             askResult = deriveNonzeroField(prk, DOMAIN_ASK, context, askResult.counter + 1);
             baseOwnerCommitment = p2(DOMAIN_OWNER, [contextField, askResult.field, nk]);
         }
         hpkeIkm = hkdfExpand(prk, concatBytes(utf8(DOMAIN_HPKE_IKM), context), 32);
         const kem = new DhkemX25519HkdfSha256();
         const keyPair = await kem.deriveKeyPair(hpkeIkm);
-        const incomingViewingKey = new Uint8Array(await kem.serializePrivateKey(keyPair.privateKey));
-        const defaultAddress = await deriveDiversifiedAddressKeys(baseOwnerCommitment, incomingViewingKey, new Uint8Array(4));
-        return {
+        incomingViewingKey = new Uint8Array(await kem.serializePrivateKey(keyPair.privateKey));
+        defaultAddress = await deriveDiversifiedAddressKeys(baseOwnerCommitment, incomingViewingKey, new Uint8Array(4));
+        const expanded = {
             ask: askResult.field,
             nk,
             baseOwnerCommitment,
@@ -201,10 +226,23 @@ export async function deriveExpandedSpendingKey(privacySessionRoot, protocolVers
             hpkePublicKey: defaultAddress.hpkePublicKey,
             outgoingViewingKey,
         };
+        transferred = true;
+        return expanded;
     }
     finally {
         hpkeIkm?.fill(0);
         prk.fill(0);
+        // The default child scalar is not the incoming key returned above.
+        defaultAddress?.hpkePrivateKey.fill(0);
+        if (!transferred) {
+            askResult?.field.fill(0);
+            nk?.fill(0);
+            outgoingViewingKey?.fill(0);
+            baseOwnerCommitment?.fill(0);
+            incomingViewingKey?.fill(0);
+            defaultAddress?.ownerCommitment.fill(0);
+            defaultAddress?.hpkePublicKey.fill(0);
+        }
     }
 }
 export async function deriveKeysFromSeed(rawStellarSeed, protocolVersion, networkId, realmId, poolId, accountPublicKeyBytes, contextField) {
