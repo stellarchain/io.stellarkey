@@ -92,7 +92,7 @@ export function privateBalanceLeaseKey(scope: PrivateBalanceRuntimeScope): strin
   return `${LEASE_PREFIX}:${scopeSuffix(scope)}`;
 }
 
-function readLease(storage: StorageLike, key: string): PrivateBalanceLease | null {
+function readLease(storage: Pick<StorageLike, 'getItem'>, key: string): PrivateBalanceLease | null {
   const raw = storage.getItem(key);
   if (!raw) return null;
   try {
@@ -130,6 +130,25 @@ export function claimPrivateBalanceLease(
     return confirmed?.ownerId === ownerId && confirmed.expiresAt === desired.expiresAt;
   } catch {
     return false;
+  }
+}
+
+/** Check fresh ownership without renewing or reclaiming a displaced lease. */
+export function assertPrivateBalanceLease(
+  storage: Pick<StorageLike, 'getItem'>,
+  key: string,
+  ownerId: string,
+  now: number,
+): void {
+  let lease: PrivateBalanceLease | null = null;
+  try { lease = readLease(storage, key); } catch {
+    // Storage denial is loss of authority, not permission to keep scanning.
+  }
+  if (
+    !Number.isFinite(now) || now < 0 ||
+    !lease || lease.ownerId !== ownerId || lease.expiresAt <= now
+  ) {
+    throw new Error('Private Balance runtime lease is no longer owned by this session.');
   }
 }
 

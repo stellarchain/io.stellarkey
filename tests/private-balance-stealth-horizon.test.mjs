@@ -158,6 +158,129 @@ test('Horizon reader skips malformed announcer spam but advances to its returned
   assert.equal(page.nextCursor, (499n << 32n | 8n).toString());
 });
 
+test('Horizon discovery forwards cancellation to the physical fetch', async t => {
+  const controller = new AbortController();
+  let start;
+  const started = new Promise(resolve => { start = resolve; });
+  let release;
+  let fetchSignal;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    if (fetchSignal) return Response.json({ _embedded: { records: [] } });
+    fetchSignal = init.signal;
+    start();
+    return new Promise(resolve => { release = () => resolve(Response.json(latestLedgers)); });
+  });
+  const reader = new HorizonStealthAnnouncementReader({ network: 'testnet', announcerPublicKey: announcer });
+  const run = reader.readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200, signal: controller.signal })
+    .then(() => null, error => error);
+  await started;
+  controller.abort();
+  const cancelledFetch = fetchSignal.aborted;
+  // Settle even the intentionally uncooperative fetch before making assertions.
+  release();
+  const error = await run;
+  assert.equal(cancelledFetch, true);
+  assert.equal(error?.name, 'AbortError');
+});
+
+test('Horizon discovery rejects pre-aborted pages before any request', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let requests = 0;
+  const reader = new HorizonStealthAnnouncementReader({
+    network: 'testnet', announcerPublicKey: announcer,
+    request: async url => { requests += 1; return new URL(url).pathname === '/ledgers' ? latestLedgers : { _embedded: { records: [] } }; },
+  });
+  const error = await reader.readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200, signal: controller.signal })
+    .then(() => null, failure => failure);
+  assert.equal(requests, 0);
+  assert.equal(error?.name, 'AbortError');
+});
+
+test('Horizon discovery does not retry an oversized page after cancellation', async () => {
+  const controller = new AbortController();
+  let payments = 0;
+  const reader = new HorizonStealthAnnouncementReader({
+    network: 'testnet', announcerPublicKey: announcer,
+    request: async url => {
+      if (new URL(url).pathname === '/ledgers') return latestLedgers;
+      payments += 1;
+      controller.abort();
+      throw new HorizonRequestError('Synthetic oversized page', { kind: 'response_too_large' });
+    },
+  });
+  const error = await reader.readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200, signal: controller.signal })
+    .then(() => null, failure => failure);
+  assert.equal(payments, 1);
+  assert.equal(error?.name, 'AbortError');
+});
+
+test('Horizon discovery guards late ledgers and forwards the signal to custom requests', async () => {
+  const controller = new AbortController();
+  let signal;
+  let requests = 0;
+  const reader = new HorizonStealthAnnouncementReader({
+    network: 'testnet', announcerPublicKey: announcer,
+    request: async (url, init) => {
+      requests += 1;
+      signal ??= init?.signal;
+      if (new URL(url).pathname === '/ledgers') {
+        controller.abort();
+        return latestLedgers;
+      }
+      return { _embedded: { records: [] } };
+    },
+  });
+  const error = await reader.readPage({ cursor: null, lowerBoundCreatedAt: 0, limit: 200, signal: controller.signal })
+    .then(() => null, failure => failure);
+  assert.equal(requests, 1, 'no retained-history or payment request follows revocation');
+  assert.equal(signal === controller.signal, true);
+  assert.equal(error?.name, 'AbortError');
+});
+
+test('Horizon cancellation drains the current batch without starting operations or another batch', async () => {
+  const controller = new AbortController();
+  let started;
+  const batchStarted = new Promise(resolve => { started = resolve; });
+  const releases = [];
+  let transactions = 0;
+  let operations = 0;
+  const reader = new HorizonStealthAnnouncementReader({
+    network: 'testnet', announcerPublicKey: announcer,
+    request: async url => {
+      const pathname = new URL(url).pathname;
+      if (pathname === '/ledgers') return latestLedgers;
+      if (pathname.includes('/payments')) return { _embedded: { records: Array.from({ length: 10 }, (_, index) => ({
+        type: 'payment', transaction_hash: (index + 1).toString(16).padStart(64, '0'), transaction_successful: true,
+        created_at: '2026-08-30T11:59:00Z', paging_token: ((499n << 32n) + BigInt(index + 1)).toString(),
+        from: sender, to: announcer, asset_type: 'native', amount: '0.0000001',
+      })) } };
+      if (pathname.endsWith('/operations')) { operations += 1; return { _embedded: { records: [] } }; }
+      transactions += 1;
+      if (transactions > 8) return { successful: true, memo_type: 'text', memo: '' };
+      return new Promise(resolve => {
+        releases.push(() => resolve({ successful: true, memo_type: 'hash', memo: Buffer.from(bytes(9)).toString('base64') }));
+        if (releases.length === 8) started();
+      });
+    },
+  });
+  let settled = false;
+  const run = reader.readPage({ cursor: '123', lowerBoundCreatedAt: 0, limit: 200, signal: controller.signal })
+    .then(() => { settled = true; return null; }, error => { settled = true; return error; });
+  await batchStarted;
+  controller.abort();
+  releases[0]();
+  // A turn boundary drains the resolved lookup's microtasks, without a timer.
+  await new Promise(resolve => setImmediate(resolve));
+  const settledBeforeDrain = settled;
+  for (const release of releases.slice(1)) release();
+  const error = await run;
+  assert.equal(settledBeforeDrain, false, 'reader must drain every started lookup');
+  assert.equal(transactions, 8);
+  assert.equal(operations, 0);
+  assert.equal(error?.name, 'AbortError');
+});
+
 test('Horizon recovery requests never reveal a birthday through ledger probes or a starting cursor', async () => {
   const requestedLedgers = [];
   let paymentsCursor = null;

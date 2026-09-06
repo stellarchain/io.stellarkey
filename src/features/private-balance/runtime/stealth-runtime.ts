@@ -14,12 +14,13 @@ import type {
   StealthDiscoveryCache,
 } from './stealth-cache';
 import type { PrivateStorageContext } from './storage';
+import { assertStealthDiscoveryActive, type StealthDiscoveryGuard } from './stealth-discovery-operation';
 
 export interface StealthRuntimeIdentity {
   metaAddress: string;
 }
 
-export interface SyncStealthRuntimeInput {
+export interface SyncStealthRuntimeInput extends StealthDiscoveryGuard {
   rootKey: Uint8Array;
   storageKey: Uint8Array;
   context: PrivateStorageContext;
@@ -68,6 +69,7 @@ export function deriveStealthRuntimeIdentity(
 export async function syncStealthRuntime(
   input: SyncStealthRuntimeInput,
 ): Promise<StealthRuntimeResult> {
+  assertStealthDiscoveryActive(input);
   assertRootKey(input.rootKey);
   if (!(input.storageKey instanceof Uint8Array) || input.storageKey.length !== 32) {
     throw new Error('Stealth runtime storage key must be 32 bytes');
@@ -82,7 +84,9 @@ export async function syncStealthRuntime(
   const keys = deriveStealthMetaKeys(input.rootKey, input.network, deploymentBindingHash);
   try {
     const metaAddress = encodeStealthMetaAddress(keys, input.network);
+    assertStealthDiscoveryActive(input);
     input.onIdentity?.(metaAddress);
+    assertStealthDiscoveryActive(input);
     const reader = input.createReader?.({
       network: input.network,
       announcerPublicKey: input.announcerPublicKey,
@@ -90,6 +94,7 @@ export async function syncStealthRuntime(
       network: input.network,
       announcerPublicKey: input.announcerPublicKey,
     });
+    assertStealthDiscoveryActive(input);
     const cache = await syncStealthAnnouncements({
       context: input.context,
       storageKey: input.storageKey,
@@ -100,7 +105,10 @@ export async function syncStealthRuntime(
       implementation: input.implementation,
       now: input.now,
       lowerBoundCreatedAt: input.walletCreatedAt,
+      signal: input.signal,
+      assertActive: input.assertActive,
     });
+    assertStealthDiscoveryActive(input);
     return { metaAddress, cache };
   } finally {
     deploymentBindingHash.fill(0);
