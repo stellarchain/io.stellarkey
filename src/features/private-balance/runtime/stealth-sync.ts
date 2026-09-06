@@ -1,6 +1,6 @@
 import {
-  deriveStealthRecipientKey,
-  type StealthMetaKeys,
+  deriveStealthRecipientPublicKey,
+  type StealthViewingKeys,
   type StealthNetwork,
   type X25519Implementation,
 } from '@stellarkey/private-balance';
@@ -50,7 +50,7 @@ export interface StealthAnnouncementReader {
 export interface SyncStealthAnnouncementsInput extends StealthDiscoveryGuard {
   context: PrivateStorageContext;
   storageKey: Uint8Array;
-  keys: StealthMetaKeys;
+  keys: StealthViewingKeys;
   network: StealthNetwork;
   reader: StealthAnnouncementReader;
   storageDriver?: StealthCacheDriver;
@@ -153,9 +153,9 @@ async function ownedPayment(
   input: SyncStealthAnnouncementsInput,
 ): Promise<StealthOwnedPayment | null> {
   assertStealthDiscoveryActive(input);
-  let recovered: Awaited<ReturnType<typeof deriveStealthRecipientKey>>;
+  let recovered: Uint8Array;
   try {
-    recovered = await deriveStealthRecipientKey(
+    recovered = await deriveStealthRecipientPublicKey(
       input.keys,
       announcement.ephemeralPublicKey,
       input.network,
@@ -168,7 +168,7 @@ async function ownedPayment(
     // low-order ephemeral keys must not poison the durable cursor.
     return null;
   }
-  if (!equalBytes(recovered.publicKey, announcement.destinationPublicKey)) return null;
+  if (!equalBytes(recovered, announcement.destinationPublicKey)) return null;
   return {
     transactionHash: announcement.transactionHash,
     pagingToken: announcement.pagingToken,

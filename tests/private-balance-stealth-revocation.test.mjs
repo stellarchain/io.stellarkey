@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
-import { deriveStealthMetaKeys, deriveStealthRootKey } from '@stellarkey/private-balance';
+import { deriveStealthViewingKeys } from '@stellarkey/private-balance';
 import * as vault from '../src/lib/vault.ts';
-import { syncStealthRuntime } from '../src/features/private-balance/runtime/stealth-runtime.ts';
+import { prepareStealthRuntimeMaterial, disposeStealthRuntimeMaterial, syncStealthRuntime } from '../src/features/private-balance/runtime/stealth-runtime.ts';
 import { syncStealthAnnouncements } from '../src/features/private-balance/runtime/stealth-sync.ts';
 import {
   clearStealthDiscoveryCache, commitStealthDiscoveryCache, createEmptyStealthDiscoveryCache,
@@ -129,7 +129,7 @@ test('discovery cache propagates authority to a delayed compare-and-set', async 
 
 function runtimeInput(driver, createReader) {
   return {
-    rootKey: bytes(11), storageKey: bytes(12), context, network: 'testnet',
+    keys: deriveStealthViewingKeys(bytes(11), 'testnet', bytes(4)), storageKey: bytes(12), context, network: 'testnet',
     walletCreatedAt: 0, announcerPublicKey: StrKey.encodeEd25519PublicKey(bytes(13)),
     storageDriver: driver, implementation: 'portable', now: () => 2, createReader,
   };
@@ -143,12 +143,11 @@ test('locked discovery rejects a late page without another read or encrypted wri
   const release = deferred();
   let reads = 0;
   let publications = 0;
-  let ownedRoot;
-  let ownedStorageKey;
-  const run = vault.withPrivacySessionRoot(account.id, vaultContext, async (root, storageKey) => {
-    ownedRoot = root;
-    ownedStorageKey = storageKey;
-    const stealthRoot = deriveStealthRootKey(root);
+  const material = await prepareStealthRuntimeMaterial({ accountId: account.id,
+    deploymentContext: vaultContext, network: 'testnet', assertActive });
+  const ownedScanKey = material.keys.scanPrivateKey;
+  const ownedStorageKey = material.storageKey;
+  const run = (async () => {
     try {
       return await syncStealthRuntime({
         ...runtimeInput(driver, () => ({
@@ -160,10 +159,10 @@ test('locked discovery rejects a late page without another read or encrypted wri
             return { ...emptyPage, announcements: [announcement()], hasMore: true };
           },
         })),
-        rootKey: stealthRoot, storageKey, assertActive,
+        ...material, assertActive,
       });
-    } finally { stealthRoot.fill(0); }
-  }).then(() => { publications += 1; return null; }, error => error);
+    } finally { disposeStealthRuntimeMaterial(material); }
+  })().then(() => { publications += 1; return null; }, error => error);
   await started.promise;
   vault.lockVault();
   release.resolve();
@@ -172,7 +171,7 @@ test('locked discovery rejects a late page without another read or encrypted wri
   assert.equal(driver.writes, 0, 'revoked scan must not commit its late page');
   assert.equal(publications, 0, 'revoked result must not become usable');
   assert.equal(error?.name, 'VaultLockedError');
-  assert.ok(ownedRoot.every(byte => byte === 0));
+  assert.ok(ownedScanKey.every(byte => byte === 0));
   assert.ok(ownedStorageKey.every(byte => byte === 0));
 });
 
@@ -266,7 +265,7 @@ for (const invalid of [false, true]) {
   test(`revocation during ${invalid ? 'invalid' : 'valid'} ownership derivation is not swallowed`, async () => {
     const controller = new AbortController();
     const driver = new MemoryDriver();
-    const keys = deriveStealthMetaKeys(bytes(11), 'testnet', bytes(4));
+    const keys = deriveStealthViewingKeys(bytes(11), 'testnet', bytes(4));
     const originalScanKey = keys.scanPrivateKey;
     let keyReads = 0;
     Object.defineProperty(keys, 'scanPrivateKey', { get() {
@@ -291,7 +290,9 @@ for (const invalid of [false, true]) {
       assert.equal(error?.name, 'AbortError');
     } finally {
       originalScanKey.fill(0);
-      keys.nonceKey.fill(0);
+      keys.scanPublicKey.fill(0);
+      keys.spendPublicKey.fill(0);
+      keys.deploymentBindingHash.fill(0);
     }
   });
 }

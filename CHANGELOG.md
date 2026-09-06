@@ -124,6 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Limit reusable-payment discovery to viewing keys: release spending roots before network reads, avoid deriving spending scalars/nonces when matching receipts, and clear owned viewing, storage-copy and temporary hash buffers after scoped work drains.
 - Revoke reusable-payment discovery and its cached UI at lock, session/account/network replacement, teardown and leadership loss. Cancel and drain old work before local-data removal, and atomically refuse removal if a checked payment journal changed.
 - Clear owned temporary key-expansion and private-output plaintext buffers on success and failure while preserving returned keys, witnesses and encrypted output bytes. This is best-effort application-memory cleanup, not guaranteed memory erasure.
 
