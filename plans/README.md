@@ -101,3 +101,15 @@ No approved implementation step remains. Separate follow-ups, not silently inclu
 - Keep synthetic private fixtures isolated from production routes. Never capture actual keys, private addresses, notes, proofs, amounts or transaction data in screenshots, traces or instrumentation.
 
 Reference guidance consulted on 2026-09-06: [IndexedDB transaction lifetime](https://w3c.github.io/IndexedDB/#transaction-lifetime) informed in-transaction checks and rollback draining; [DOM AbortSignal](https://dom.spec.whatwg.org/#interface-abortsignal) informed cancellation propagation; [React useLayoutEffect](https://react.dev/reference/react/useLayoutEffect) informed committed-scope cleanup before paint. Behavioral tests establish the application-specific guarantees; these references do not certify cryptographic anonymity or physical memory erasure.
+
+## Follow-on whole-system audit — 2026-09-06
+
+[Simple, correct, fast: system audit](system-audit-2026-09-06.md) reviews the completed implementation at `8397a3584f0aba37032f2146f130ba9484a494d8` alongside the public wallet, merchant flows, shared UI, transport/cache scaling, dependencies and release tooling. It contains twelve vetted findings, the existing dependency blocker, a qualified signing-context investigation, fresh read-only verification results, research references and rejected leads.
+
+Status: **audit complete; findings not implemented or converted into approved numbered plans**. Plans 001–003 above remain DONE. The recommended next selection is safe/complete verification, market freshness, merchant session ownership, modal operation ownership and recipient-scan failure containment. Keep numbering monotonic if follow-on plans are requested; start at 004.
+
+Considered and rejected for this follow-on audit: treating the fixed Public/Private shell as still broken; releasing shared-proof reservations on timeout; broad claims of optimistic confirmation, missing journals or issuer-blind matching; and large-file/framework rewrites without measured benefit. See the report for evidence and limitations rather than reopening these as unverified findings.
+
+### 004 — Approved system hardening
+
+The user subsequently requested “fix everything”. [Implementation plan 004](../docs/plans/2026-09-06-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **IN PROGRESS**. Execute scoped test-first tasks with independent spec and quality review, preserving the completed privacy plans and main checkout. Record genuine external/security blockers rather than weakening gates or broadening signing authority.
