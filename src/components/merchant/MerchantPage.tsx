@@ -148,6 +148,8 @@ export function MerchantPage({
     online,
     enabled,
     chargeBlockedReason,
+    marketPriceStatus,
+    retryMarketPrices,
     watchError,
     queuedChargeCount,
     expiredChargeCount,
@@ -166,6 +168,7 @@ export function MerchantPage({
   const [localShiftOpen, setLocalShiftOpen] = useState(false);
   const [connectionRestored, setConnectionRestored] = useState(false);
   const [recoveryResetBusy, setRecoveryResetBusy] = useState(false);
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
   const previousOnline = useRef(online);
   const previousActiveCharge = useRef(
     activeCharge ? { id: activeCharge.id, status: activeCharge.status } : null,
@@ -396,6 +399,9 @@ export function MerchantPage({
                     <span>
                       <span className="font-semibold text-white">Charges are paused. </span>
                       {chargeBlockedReason}
+                      {chargeBlockedReason.startsWith("No live price") && (
+                        <span className="mt-1 block text-xs">{marketPriceStatus}</span>
+                      )}
                     </span>
                   </span>
                   {needsStaff && (
@@ -409,6 +415,12 @@ export function MerchantPage({
                     >
                       Choose staff
                     </button>
+                  )}
+                  {chargeBlockedReason.startsWith("No live price") && (
+                    <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={async () => {
+                      setPricesRefreshing(true);
+                      try { await retryMarketPrices(); } finally { setPricesRefreshing(false); }
+                    }}>Retry prices</Button>
                   )}
                 </span>
               </Notice>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatTrezorAddress } from "@/lib/address-display";
 import { FIAT_SYMBOLS, memoByteLength } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -114,7 +114,7 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
     createCounterCode,
     updateCounterCode,
   } = useMerchantRecords();
-  const { quotableAssets } = useMerchantStatus();
+  const { quotableAssets, marketPriceStatus, retryMarketPrices } = useMerchantStatus();
   const { settings } = useMerchantConfiguration();
   const { staff } = useMerchantStaff();
   const { toast } = useToast();
@@ -137,6 +137,20 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
   const [previewRoutingId] = useState(() => code?.routingId ?? createMerchantRoutingId());
   const [today] = useState(() => dateInput(Date.now()));
   const [error, setError] = useState("");
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
+  const priceRetryPending = useRef(false);
+
+  async function retryPrices() {
+    if (priceRetryPending.current) return;
+    priceRetryPending.current = true;
+    setPricesRefreshing(true);
+    try {
+      await retryMarketPrices();
+    } finally {
+      priceRetryPending.current = false;
+      setPricesRefreshing(false);
+    }
+  }
 
   const currency = code?.currency ?? settings.currency;
   const symbol = FIAT_SYMBOLS[currency].trim();
@@ -503,6 +517,12 @@ function CodeEditor({ code, onClose }: { code: CounterCode | null; onClose: () =
         </section>
 
         <ErrorText message={error} />
+        {!isEdit && kind === "fixed" && (quotableAssets.length === 0 || error.startsWith("No live price")) && (
+          <div className="space-y-2">
+            <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
+            <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button disabled={!isEdit && Boolean(counterCodeBlockedReason)} onClick={handleSave}>

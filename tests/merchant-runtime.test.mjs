@@ -227,10 +227,16 @@ test("tracked wallet broadcasts retain revocable signing-boundary checks", () =>
 
 test("merchant pricing is refreshed and expires before it can quote Mainnet sales", () => {
   const hook = source("src/hooks/useMerchant.tsx");
-  assert.match(hook, /MERCHANT_PRICE_MAX_AGE_MS/);
-  assert.match(hook, /assetPricesObservedAt/);
-  assert.match(hook, /setInterval[\s\S]{0,500}fetchAssetPrices/);
-  assert.match(hook, /Date\.now\(\)\s*-\s*assetPricesObservedAt\s*>\s*MERCHANT_PRICE_MAX_AGE_MS/);
+  assert.match(hook, /fetchAssetPriceSamples/);
+  assert.match(hook, /setInterval\(refreshPrices, MERCHANT_PRICE_REFRESH_MS\)/);
+  assert.match(hook, /quoteCurrencyPerUnit\([\s\S]{0,200}xlmPriceSample, fiatRateSamples/);
+  assert.doesNotMatch(hook, /setAssetPricesObservedAt/);
+  const quoteInputs = hook.split("const quoteInputs = useCallback")[1]?.split("/* ---------------- invoices")[0] ?? "";
+  assert.match(quoteInputs, /rateFor\(asset\)/);
+  const merchantPage = source("src/components/merchant/MerchantPage.tsx");
+  assert.match(merchantPage, /retryMarketPrices/);
+  assert.match(merchantPage, /Retry prices/);
+  assert.match(hook, /Promise\.all\(\[refreshPrices\(\), refreshMarketData\(\)\]\)/);
 });
 
 test("retained record export entrypoints use the shared current-authority boundary", () => {

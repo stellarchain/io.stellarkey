@@ -737,10 +737,10 @@ export function PosTerminal({
     setTipPromptOpen(true);
   }
 
-  function raiseCharge(tipMinor: Minor) {
+  async function raiseCharge(tipMinor: Minor) {
     try {
       setTipPromptOpen(false);
-      createChargeFromTicket(tipMinor);
+      await createChargeFromTicket(tipMinor);
     } catch (error) {
       triggerHaptic("error");
       toast(error instanceof Error ? error.message : "The charge could not be raised.", "error");

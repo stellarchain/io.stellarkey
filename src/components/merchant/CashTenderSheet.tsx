@@ -1,17 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { triggerHaptic } from "@/lib/haptics";
 import {
   useMerchantStaff,
   useMerchantTill,
+  useMerchantStatus,
   type MerchantTenderOutcome,
 } from "@/hooks/useMerchant";
 import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { Field, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
+import { Button, ErrorText, Field, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
 import { IconAlert, IconCheck } from "../icons";
 import { IconBackspace, IconInfo, IconQr, IconTerminal } from "./icons";
 
@@ -152,6 +153,7 @@ function CashTenderSheetInner({
   const { toast } = useToast();
   const { activeStaff, terminal } = useMerchantStaff();
   const { settleCash, settleCard, startSplitCharge } = useMerchantTill();
+  const { marketPriceStatus, retryMarketPrices } = useMerchantStatus();
 
   const [choice, setChoice] = useState<TenderChoice>("cash");
   const [receivedMinor, setReceivedMinor] = useState<Minor>(0);
@@ -159,6 +161,21 @@ function CashTenderSheetInner({
   const [firstLeg, setFirstLeg] = useState<LegKind>("cash");
   const [secondLeg, setSecondLeg] = useState<LegKind>("crypto");
   const [firstRaw, setFirstRaw] = useState("");
+  const [splitError, setSplitError] = useState("");
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
+  const priceRetryPending = useRef(false);
+
+  async function retryPrices() {
+    if (priceRetryPending.current) return;
+    priceRetryPending.current = true;
+    setPricesRefreshing(true);
+    try {
+      await retryMarketPrices();
+    } finally {
+      priceRetryPending.current = false;
+      setPricesRefreshing(false);
+    }
+  }
 
   const quick = useMemo(() => quickTenders(totalMinor), [totalMinor]);
 
@@ -215,6 +232,7 @@ function CashTenderSheetInner({
 
   async function takeSplit() {
     if (firstMinor === null) return;
+    setSplitError("");
     try {
       const outcome = await startSplitCharge({
         firstKind: firstLeg,
@@ -230,6 +248,7 @@ function CashTenderSheetInner({
         "success",
       );
     } catch (error) {
+      setSplitError(error instanceof Error ? error.message : "This split could not be saved.");
       fail(error);
     }
   }
@@ -495,6 +514,13 @@ function CashTenderSheetInner({
               </Field>
             )}
 
+            <ErrorText message={splitError} />
+            {splitError.startsWith("No live price") && (
+              <div className="space-y-2">
+                <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
+                <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+              </div>
+            )}
             <button
               type="button"
               disabled={!splitReady}

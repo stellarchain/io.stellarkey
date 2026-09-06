@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import {
   useMerchantConfiguration,
   useMerchantRecords,
   useMerchantReporting,
+  useMerchantStatus,
 } from "@/hooks/useMerchant";
 import { triggerHaptic } from "@/lib/haptics";
 import { assetKey } from "@/lib/merchant/charge";
@@ -204,6 +205,7 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   } = useMerchantRecords();
   const { exportInvoiceRecord } = useMerchantReporting();
   const { settings } = useMerchantConfiguration();
+  const { marketPriceStatus, retryMarketPrices } = useMerchantStatus();
   const { toast } = useToast();
 
   const [confirmingPayment, setConfirmingPayment] = useState(false);
@@ -212,6 +214,20 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
   const [manualNote, setManualNote] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const [actionError, setActionError] = useState("");
+  const [pricesRefreshing, setPricesRefreshing] = useState(false);
+  const priceRetryPending = useRef(false);
+
+  async function retryPrices() {
+    if (priceRetryPending.current) return;
+    priceRetryPending.current = true;
+    setPricesRefreshing(true);
+    try {
+      await retryMarketPrices();
+    } finally {
+      priceRetryPending.current = false;
+      setPricesRefreshing(false);
+    }
+  }
   const [refundingSurplus, setRefundingSurplus] = useState(false);
   const [selectedAssetKey, setSelectedAssetKey] = useState(
     () => invoice.quotes[0] ? assetKey(invoice.quotes[0].asset) : "",
@@ -865,6 +881,12 @@ function InvoiceDocument({ invoice, onClose }: { invoice: Invoice; onClose: () =
 
             {status === "draft" && invoiceBlockedReason && (
               <Notice tone="warn">{invoiceBlockedReason}</Notice>
+            )}
+            {status === "draft" && (invoiceBlockedReason?.startsWith("No live price") || actionError.startsWith("No live price")) && (
+              <div className="space-y-2">
+                <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
+                <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+              </div>
             )}
 
             {confirmingPayment && (

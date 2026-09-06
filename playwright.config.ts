@@ -46,7 +46,7 @@ export default defineConfig({
     },
     {
       name: "iphone-webkit",
-      testMatch: /(?:accessibility|merchant-webkit|public-release|browser-smoke|public-private-continuity|overlay-contract|private-manifest-security)\.spec\.ts/,
+      testMatch: /(?:accessibility|merchant-webkit|market-freshness|public-release|browser-smoke|public-private-continuity|overlay-contract|private-manifest-security)\.spec\.ts/,
       use: { ...devices["iPhone 16"], serviceWorkers: "block" },
     },
     {

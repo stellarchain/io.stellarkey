@@ -65,7 +65,7 @@ import { triggerHaptic } from "@/lib/haptics";
 import { closePaperWalletPrints } from "@/lib/paperwallet";
 import { idleElapsedMs, type IdleClockSample } from "@/lib/idle-time";
 import type { FiatCurrency } from "@/lib/format";
-import { fetchFiatRates, type FiatRates } from "@/lib/prices";
+import { fetchFiatRateSamples, isMarketObservationFresh, marketValues, USD_REFERENCE, UNAVAILABLE_MARKET_SAMPLE, type FiatRates, type MarketSample, type MarketSamples } from "@/lib/prices";
 import type { AccountMeta, ActivityItem, AssetBalance, StoredAccount } from "@/lib/types";
 import type { HardwareSigner } from "@/lib/hardware";
 import type { PreparedStealthPayment } from "@/features/private-balance/runtime/stealth-payment";
@@ -271,6 +271,10 @@ interface WalletContextValue {
   loadingMore: boolean;
   loadMoreError: string | null;
   xlmPriceUsd: number | null;
+  xlmPriceSample: MarketSample;
+  fiatRateSamples: MarketSamples;
+  priceError: boolean;
+  refreshMarketData: () => Promise<void>;
   priceData: PriceSeries | null;
   priceRange: PriceRange;
   changePriceRange: (r: PriceRange) => Promise<void>;
@@ -468,7 +472,7 @@ type WalletSubmissionContextValue = Pick<
 
 type WalletMarketContextValue = Pick<
   WalletContextValue,
-  "xlmPriceUsd" | "priceData" | "priceRange" | "changePriceRange" | "priceLoading" | "fiatRates"
+  "xlmPriceUsd" | "xlmPriceSample" | "fiatRateSamples" | "priceError" | "refreshMarketData" | "priceData" | "priceRange" | "changePriceRange" | "priceLoading" | "fiatRates"
 >;
 
 type WalletPreferencesContextValue = Pick<
@@ -619,14 +623,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const loadMoreError = activityPageState === "recoverable-error"
     ? "Could not load older activity. Your existing history is still available. Retry when ready."
     : null;
-  const [xlmPriceUsd, setXlmPriceUsd] = useState<number | null>(null);
+  const [xlmPriceSample, setXlmPriceSample] = useState<MarketSample>(UNAVAILABLE_MARKET_SAMPLE);
+  const xlmPriceUsd = xlmPriceSample.value;
   const [priceData, setPriceData] = useState<PriceSeries | null>(null);
   const [priceRange, setPriceRangeState] = useState<PriceRange>("7D");
-  const [priceLoading, setPriceLoading] = useState(false);
+  const [priceRequestStatus, setPriceRequestStatus] = useState<"idle" | "pending" | "error">("idle");
+  const priceLoading = priceRequestStatus === "pending";
+  const priceError = priceRequestStatus === "error";
   const priceCache = useRef<Partial<Record<PriceRange, PriceSeries>>>({});
   const [privacyMode, setPrivacyMode] = useState(false);
   const [fiatCurrency, setFiatCurrencyState] = useState<FiatCurrency>("USD");
-  const [fiatRates, setFiatRates] = useState<FiatRates>({ USD: 1 });
+  const [fiatRateSamples, setFiatRateSamples] = useState<MarketSamples>({ USD: USD_REFERENCE });
+  const fiatRates = useMemo<FiatRates>(() => ({ ...marketValues(fiatRateSamples), USD: 1 }), [fiatRateSamples]);
   const [autoLockMs, setAutoLockMsState] = useState(15 * 60 * 1000);
   const [signingPasswordRequired, setSigningPasswordRequiredState] = useState(false);
   const signingPasswordRequiredRef = useRef(false);
@@ -1067,30 +1075,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (!activeAccount) return;
     const request = marketRefreshLane.begin();
     const cachedSeries = priceCache.current[priceRange];
-    setPriceLoading(true);
+    setPriceRequestStatus("pending");
+    let outcome: "idle" | "error" = "idle";
     try {
       const api = await loadWalletApi();
       const resources = await settleResourceMap({
         // The market chart remains useful on testnet, but portfolio valuation
         // explicitly ignores all testnet balances.
         xlmPrice: api.fetchXlmPrice(request.signal),
-        priceSeries: cachedSeries
+        priceSeries: cachedSeries && isMarketObservationFresh(cachedSeries.observedAt)
           ? Promise.resolve(cachedSeries)
           : api.fetchXlmSeries(priceRange, request.signal),
-        fiatRates: fetchFiatRates(request.signal),
+        fiatRates: fetchFiatRateSamples(request.signal),
       });
       if (!request.isCurrent()) return;
-      if (resources.xlmPrice.ok && resources.xlmPrice.value !== null) {
-        setXlmPriceUsd(resources.xlmPrice.value);
+      if (resources.xlmPrice.ok) {
+        setXlmPriceSample(resources.xlmPrice.value);
       }
-      if (resources.fiatRates.ok) setFiatRates(resources.fiatRates.value);
+      if (resources.fiatRates.ok) setFiatRateSamples(resources.fiatRates.value);
       if (resources.priceSeries.ok && resources.priceSeries.value !== null) {
         const series = resources.priceSeries.value;
         priceCache.current[series.range] = series;
         setPriceData(series);
+      } else {
+        outcome = "error";
       }
+    } catch {
+      outcome = "error";
     } finally {
-      if (request.isCurrent()) setPriceLoading(false);
+      if (request.isCurrent()) setPriceRequestStatus(outcome);
     }
   }, [activeAccount, marketRefreshLane, priceRange]);
 
@@ -2266,9 +2279,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setActivity([]);
     setActivityCursor(null);
-    setXlmPriceUsd(null);
+    marketRefreshLane.cancel();
+    setXlmPriceSample(UNAVAILABLE_MARKET_SAMPLE);
     setPriceData(null);
-  }, [cancelActivityPagination]);
+    setPriceRequestStatus("idle");
+  }, [cancelActivityPagination, marketRefreshLane]);
 
   const loadMoreActivity = useCallback(async (options?: { retry?: boolean }) => {
     if (phase !== "unlocked" || !activeAccount || !activityCursor
@@ -2732,15 +2747,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const changePriceRange = useCallback(
     async (r: PriceRange) => {
       const request = marketRefreshLane.begin();
-      const fallbackRange = priceData?.range ?? null;
       setPriceRangeState(r);
       const cached = priceCache.current[r];
       if (cached) {
         setPriceData(cached);
-        if (request.isCurrent()) setPriceLoading(false);
-        return;
+        if (isMarketObservationFresh(cached.observedAt)) {
+          if (request.isCurrent()) setPriceRequestStatus("idle");
+          return;
+        }
       }
-      setPriceLoading(true);
+      setPriceRequestStatus("pending");
+      let outcome: "idle" | "error" = "idle";
       try {
         const api = await loadWalletApi();
         const series = await api.fetchXlmSeries(r, request.signal);
@@ -2748,16 +2765,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (series?.range === r) {
           priceCache.current[r] = series;
           setPriceData(series);
+        } else {
+          outcome = "error";
         }
       } catch {
-        // Retain the correctly labelled previous series. The visible-wallet
-        // poll or another explicit selection will retry market data.
-        if (request.isCurrent() && fallbackRange) setPriceRangeState(fallbackRange);
+        // Keep the requested selection for retry and label retained points by
+        // their own range, whether the transport throws or returns no series.
+        outcome = "error";
       } finally {
-        if (request.isCurrent()) setPriceLoading(false);
+        if (request.isCurrent()) setPriceRequestStatus(outcome);
       }
     },
-    [marketRefreshLane, priceData?.range],
+    [marketRefreshLane],
   );
 
   const togglePrivacy = useCallback(() => {
@@ -2818,6 +2837,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadingMore,
       loadMoreError,
       xlmPriceUsd,
+      xlmPriceSample,
+      fiatRateSamples,
+      priceError,
+      refreshMarketData,
       priceData,
       priceRange,
       changePriceRange,
@@ -2899,6 +2922,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       loadingMore,
       loadMoreError,
       xlmPriceUsd,
+      xlmPriceSample,
+      fiatRateSamples,
+      priceError,
+      refreshMarketData,
       priceData,
       priceRange,
       changePriceRange,
@@ -3078,12 +3105,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   ]);
   const marketValue = useMemo<WalletMarketContextValue>(() => ({
     xlmPriceUsd,
+    xlmPriceSample,
+    fiatRateSamples,
+    priceError,
+    refreshMarketData,
     priceData,
     priceRange,
     changePriceRange,
     priceLoading,
     fiatRates,
-  }), [changePriceRange, fiatRates, priceData, priceLoading, priceRange, xlmPriceUsd]);
+  }), [changePriceRange, fiatRates, fiatRateSamples, priceData, priceError, priceLoading, priceRange, refreshMarketData, xlmPriceSample, xlmPriceUsd]);
   const preferencesValue = useMemo<WalletPreferencesContextValue>(() => ({
     privacyMode,
     togglePrivacy,

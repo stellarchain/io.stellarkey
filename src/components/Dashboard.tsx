@@ -49,10 +49,12 @@ import {
   PUBLIC_SEND_REQUEST_EVENT,
 } from "@/lib/private-address";
 import {
-  fetchAssetPrices,
+  fetchAssetPriceSamples,
+  marketValues,
+  marketDataLabel,
   getRepresentativeUnitPrice,
   getUnitPrice,
-  type AssetPrices,
+  type MarketSamples,
 } from "@/lib/prices";
 import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
 import { playTapSound } from "@/lib/sounds";
@@ -334,6 +336,8 @@ export function Dashboard() {
     loadingMore,
     loadMoreError,
     xlmPriceUsd,
+    xlmPriceSample,
+    fiatRateSamples,
     priceData,
     unfunded,
     minimumBalanceXlm,
@@ -569,7 +573,8 @@ export function Dashboard() {
   }, [merchantAuthorizeWalletExit, mode, toast]);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [portfolioView, setPortfolioView] = useState<"active" | "all">("active");
-  const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
+  const [assetPriceSamples, setAssetPriceSamples] = useState<MarketSamples>({});
+  const assetPrices = useMemo(() => marketValues(assetPriceSamples), [assetPriceSamples]);
   const [assetLogos, setAssetLogos] = useState<Record<string, string>>({});
   const [backupWizardOpen, setBackupWizardOpen] = useState(false);
   const [multisigOpen, setMultisigOpen] = useState(false);
@@ -717,8 +722,8 @@ export function Dashboard() {
       const pricedAssets = valuationBalances
         .filter((b) => !b.isNative && b.issuer !== null && parseFloat(b.balance) > 0)
         .map((b) => ({ code: b.code, issuer: b.issuer, network }));
-      const prices = await fetchAssetPrices(pricedAssets);
-      if (alive && Object.keys(prices).length > 0) setAssetPrices(prices);
+      const prices = await fetchAssetPriceSamples(pricedAssets);
+      if (alive) setAssetPriceSamples(prices);
 
       // Resolve custom-asset logos concurrently, then publish one React state
       // update so a page of trustlines does not render once per TOML response.
@@ -1404,7 +1409,7 @@ export function Dashboard() {
           ]
         : []),
       { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
-      { id: "converter", label: "Live Currency Converter / Calculator", run: () => setConverterOpen(true) },
+      { id: "converter", label: "Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
       { id: "add-account", label: "Add account", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
@@ -2580,6 +2585,11 @@ export function Dashboard() {
                   </div>
 
                   {/* Portfolio Allocation Distribution Bar & Legend */}
+                  {!privacyMode && heroUsd !== null && (
+                    <p className="mt-1 text-[10px] text-neutral-500">
+                      {marketDataLabel([xlmPriceSample, fiatRateSamples[fiatCurrency], ...Object.values(assetPriceSamples)])}
+                    </p>
+                  )}
                   {allocationShares.length > 0 && !privacyMode && (
                     <div className="mt-4 w-full max-w-[360px]">
                       <div className="h-2 w-full overflow-hidden rounded-full flex bg-white/10">
@@ -3947,12 +3957,14 @@ function PriceCard() {
     priceRange,
     changePriceRange,
     priceLoading,
+    priceError,
     accountBalances,
     accounts,
     activeAccount,
     network,
     fiatCurrency,
     fiatRates,
+    fiatRateSamples,
   } = useWallet();
   const ranges: PriceRangeT[] = ["1D", "7D", "1M", "1Y"];
   const [chartMode, setChartMode] = useState<"market" | "portfolio">("market");
@@ -4080,6 +4092,13 @@ function PriceCard() {
           )}
         </div>
       </div>
+      <p className="mt-1 text-[10px] text-neutral-500" data-market-freshness>
+        {marketDataLabel([
+          priceData ? { value: priceData.current, observedAt: priceData.observedAt, status: priceError ? "stale" : "fresh" } : null,
+          fiatRateSamples[fiatCurrency],
+        ])}
+        {priceError && " · Chart refresh unavailable"}
+      </p>
       <div className="mt-3" aria-busy={priceLoading}>
         {mode === "portfolio" && portfolioPoints.length > 1 ? (
           <PriceChart
@@ -4098,6 +4117,8 @@ function PriceCard() {
             marketPrecision
             onInspect={setChartInspection}
           />
+        ) : priceError ? (
+          <p className="flex h-[140px] items-center justify-center text-sm text-neutral-400">Chart unavailable</p>
         ) : (
           <div className="skeleton h-[140px] w-full rounded-2xl" />
         )}
@@ -4105,6 +4126,7 @@ function PriceCard() {
       {/* The footer owns the remaining space so both desktop summary cards end
           on one optical action line without fixed card heights. */}
       <div data-market-range-selector className="mt-auto pt-3">
+        {priceError && <Button variant="secondary" onClick={() => void changePriceRange(priceRange)}>Retry chart</Button>}
         <div
           aria-label="Chart range"
           className="grid grid-cols-4 gap-1 rounded-xl bg-white/[0.06] p-1"
