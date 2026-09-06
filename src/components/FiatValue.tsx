@@ -7,7 +7,7 @@ import {
   useWalletPreferences,
 } from "@/hooks/useWallet";
 import { fmtFiat } from "@/lib/format";
-import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
+import { assetPriceKey, fetchAssetPriceSamples, marketDataLabel, type MarketSamples } from "@/lib/prices";
 
 /**
  * Live local-currency equivalent of an asset amount, e.g. "≈ $4.91".
@@ -31,17 +31,17 @@ export function FiatValue({
   prefix?: string;
 }) {
   const { network } = useWalletIdentity();
-  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { xlmPriceSample, fiatRateSamples, fiatRates } = useWalletMarket();
   const { fiatCurrency, privacyMode } = useWalletPreferences();
   const normalized = code.trim().toUpperCase();
   const isNative = isNativeProp ?? (!issuer && (normalized === "XLM" || normalized === "NATIVE"));
-  const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
+  const [assetPrices, setAssetPrices] = useState<MarketSamples>({});
 
   useEffect(() => {
     if (isNative) return;
     let alive = true;
-    void fetchAssetPrices([{ code: normalized, issuer: issuer ?? null, network }]).then((p) => {
-      if (alive && Object.keys(p).length > 0) setAssetPrices(p);
+    void fetchAssetPriceSamples([{ code: normalized, issuer: issuer ?? null, network }]).then((p) => {
+      if (alive) setAssetPrices(p);
     });
     return () => {
       alive = false;
@@ -51,13 +51,17 @@ export function FiatValue({
   if (privacyMode || amount === null || amount === undefined) return null;
   const num = typeof amount === "number" ? amount : parseFloat(amount);
   if (!Number.isFinite(num) || num <= 0) return null;
-  const unit = getUnitPrice(normalized, issuer, network, isNative, xlmPriceUsd, assetPrices);
+  const sample = isNative ? xlmPriceSample : assetPrices[assetPriceKey(network, normalized, issuer)];
+  const unit = network === "mainnet" ? sample?.value ?? null : null;
   if (unit === null) return null;
+  const status = marketDataLabel([sample, fiatRateSamples[fiatCurrency]]);
 
   return (
-    <span className={className}>
+    <span className={className} title={status}>
       {prefix}
       {fmtFiat(num * unit, fiatCurrency, fiatRates)}
+      {status.startsWith("Stale") && " · stale"}
+      <span className="sr-only"> {status}</span>
     </span>
   );
 }

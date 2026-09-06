@@ -301,6 +301,56 @@ test("network fees include the selected local-currency equivalent", async ({ pag
   await send.getByRole("button", { name: "Review Transfer" }).click();
 
   const equivalents = send.locator("[data-xlm-fee-fiat]");
-  await expect(equivalents.first()).toHaveText("≈ £0.00000195");
+  await expect(equivalents.first()).toHaveText(/^≈ £0\.00000195 Rate updated · /);
+  await expect(equivalents.first()).toHaveAttribute("title", /^Rate updated · /);
   await expect(equivalents).toHaveCount(2);
+});
+
+test("expired chart ranges retain labelled data through failure, explicit retry, and late completion", async ({ page }) => {
+  const startedAt = 1_800_000_000_000;
+  await page.clock.setFixedTime(startedAt);
+  let sevenRequests = 0;
+  let failSeven = false;
+  let holdMonth = false;
+  let releaseMonth: (() => void) | undefined;
+  const monthPending = new Promise<void>((resolve) => { releaseMonth = resolve; });
+  await page.route("https://api.coingecko.com/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith("/market_chart")) return route.fallback();
+    const days = url.searchParams.get("days");
+    if (days === "7") sevenRequests++;
+    if (days === "30" && holdMonth) await monthPending;
+    await route.fulfill({
+      status: days === "7" && failSeven ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify({ prices: [[startedAt - 60_000, 0.24], [startedAt, 0.25]] }),
+    });
+  });
+  await importTestWallet(page);
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1D", exact: true }).click();
+  await expect(page.getByLabel("1D market price summary")).toBeVisible();
+  const fetched = sevenRequests;
+  await page.clock.setFixedTime(startedAt + 3600_000);
+  failSeven = true;
+  await page.getByRole("button", { name: "7D", exact: true }).click();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry chart" })).toBeVisible();
+  await expect(page.locator("[data-market-freshness]")).toContainText("Stale rate");
+  expect(sevenRequests).toBeGreaterThan(fetched);
+  failSeven = false;
+  await page.getByRole("button", { name: "Retry chart" }).click();
+  await expect(page.getByRole("button", { name: "Retry chart" })).toBeHidden();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+
+  holdMonth = true;
+  await page.getByRole("button", { name: "1M", exact: true }).click();
+  await expect(page.getByText("Updating", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("7D market price summary")).toBeVisible();
+  await page.getByRole("button", { name: "1Y", exact: true }).click();
+  await expect(page.getByLabel("1Y market price summary")).toBeVisible();
+  releaseMonth?.();
+  await expect(page.getByLabel("1M market price summary")).toBeHidden();
+  await expect(page.getByRole("button", { name: "1Y", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Updating", { exact: true })).toBeHidden();
 });

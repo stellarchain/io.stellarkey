@@ -33,6 +33,7 @@ import type {
   SubmissionResult,
 } from "./submission";
 import { withAbortDeadline } from "./wallet-refresh";
+import { fetchNativePrice, type MarketSample } from "./prices";
 
 const MAX_TRUST_LIMIT = "922337203685.4775807";
 const MARKET_REQUEST_TIMEOUT_MS = 8_000;
@@ -1430,28 +1431,8 @@ export async function fetchFeeStats(network: NetworkKey): Promise<FeeStats | nul
   return parseFeeStats(data);
 }
 
-interface CoinGeckoPriceResp {
-  stellar?: { usd?: number };
-}
-
-export async function fetchXlmPrice(signal?: AbortSignal): Promise<number | null> {
-  try {
-    return await withAbortDeadline(async (signal) => {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd",
-        { signal },
-      );
-      if (!res.ok) return null;
-      const json = (await res.json()) as CoinGeckoPriceResp;
-      return json.stellar?.usd ?? null;
-    }, {
-      timeoutMs: MARKET_REQUEST_TIMEOUT_MS,
-      label: "XLM market price",
-      signal,
-    });
-  } catch {
-    return null;
-  }
+export async function fetchXlmPrice(signal?: AbortSignal): Promise<MarketSample> {
+  return fetchNativePrice(signal);
 }
 
 export type PriceRange = "1D" | "7D" | "1M" | "1Y";
@@ -1460,6 +1441,7 @@ const RANGE_DAYS: Record<PriceRange, number> = { "1D": 1, "7D": 7, "1M": 30, "1Y
 
 export interface PriceSeries {
   range: PriceRange;
+  observedAt: number;
   points: Array<{ t: number; p: number }>;
   changePct: number;
   current: number;
@@ -1481,12 +1463,16 @@ export async function fetchXlmSeries(
       );
       if (!res.ok) return null;
       const json = (await res.json()) as CoinGeckoChartResp;
-      if (!json.prices || json.prices.length < 2) return null;
+      if (!Array.isArray(json.prices) || json.prices.length < 2 || signal.aborted) return null;
+      if (json.prices.some((point, index, points) => !Array.isArray(point) || point.length !== 2 ||
+        !point.every((value) => typeof value === "number" && Number.isFinite(value) && value > 0) ||
+        (index > 0 && point[0] <= points[index - 1][0]))) return null;
       const points = json.prices.map(([t, p]) => ({ t, p }));
       const first = points[0].p;
       const last = points[points.length - 1].p;
       return {
         range,
+        observedAt: Date.now(),
         points,
         current: last,
         changePct: ((last - first) / first) * 100,

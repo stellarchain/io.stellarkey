@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import { createLatestRequestLane } from "../src/hooks/useWalletResources.ts";
+import { UNAVAILABLE_MARKET_SAMPLE } from "../src/lib/prices.ts";
 
 const source = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
 const sourceFile = ts.createSourceFile("useWallet.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -65,6 +66,8 @@ function harness() {
     activityCursor: state.cursor,
     loadingMore: false,
     activityPaginationLane: createLatestRequestLane(),
+    marketRefreshLane: createLatestRequestLane(),
+    UNAVAILABLE_MARKET_SAMPLE,
     activityPageStateRef: { current: "idle" },
     network: "testnet",
     endpointRevision: 0,
@@ -94,7 +97,7 @@ function harness() {
     commitSigningPasswordRequired() {}, commitTransactionTracking() {}, commitMergeReconciliations() {},
     clearDurableMergeReconciliations() {}, clearDurablePendingTransactions() {}, clearSessionSecrets() {},
     MERGE_RECONCILIATION_STORAGE_KEY: "synthetic-merge", PENDING_TX_STORAGE_KEY: "synthetic-pending",
-    setAccountBalances() {}, setAccountPortfolioSnapshots() {}, setXlmPriceUsd() {}, setPriceData() {},
+    setAccountBalances() {}, setAccountPortfolioSnapshots() {}, setXlmPriceSample() {}, setPriceRequestStatus() {}, setPriceData() {},
     saveNetworkPref() {}, setNetworkState() {},
     cancelSigningAuthorization() {}, closePaperWalletPrints() {}, setContacts() {}, setPhase() {}, setDataLoading() {},
     loadContacts: async () => [], toast() {},

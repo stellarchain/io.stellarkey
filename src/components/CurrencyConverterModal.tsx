@@ -3,6 +3,7 @@
 import { useId, useMemo, useState } from "react";
 import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
+import { marketDataLabel } from "@/lib/prices";
 import { Button, Modal, ModalHeader, Select } from "./ui";
 import { IconSwap } from "./icons";
 
@@ -23,7 +24,7 @@ export function CurrencyConverterModal({
   onClose: () => void;
   onOpenSwap?: () => void;
 }) {
-  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { xlmPriceUsd, xlmPriceSample, fiatRates, fiatRateSamples } = useWalletMarket();
   const [fromCode, setFromCode] = useState("XLM");
   const [toCode, setToCode] = useState("USD");
   const [fromAmount, setFromAmount] = useState("100");
@@ -73,8 +74,8 @@ export function CurrencyConverterModal({
   return (
     <Modal open onClose={onClose} wide>
       <ModalHeader
-        title="Live Currency Converter"
-        subtitle="Current XLM price and live fiat exchange rates"
+        title="Currency Converter"
+        subtitle={marketDataLabel([fromCode, toCode].map((code) => code === "XLM" ? xlmPriceSample : fiatRateSamples[code]))}
         onClose={onClose}
       />
       <div className="space-y-4 p-4 sm:p-6">

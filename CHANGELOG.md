@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserved genuine observation times for retained asset, XLM, and fiat rates; rejected new Mainnet merchant quotes when required rates are stale or unavailable, with local price retries that preserve tickets and forms.
+- Revalidated expired chart ranges while retaining their correctly labelled series, with visible observation times and explicit retry after an unavailable refresh.
 - Run isolated private-component checks on Chromium and iPhone WebKit, all overlay and manifest checks on both browsers, and the nested browser-protocol tests through the shared CI and release gate. Verify fixture cleanup before and after the final static build.
 - Start relaying now requests the private runtime instead of leaving an inactive helper labelled Connecting. Saved participation shows Paused after a fresh unlock, with explicit Resume; fee and connection edits alone do not resume it. Unrelated preferences no longer restart a connected helper, and failed connection attempts show Reconnecting during retries.
 - Restored the original compact Earn by relaying row beneath Home's assets, keeping the redesigned controls and interaction improvements inside its modal.

@@ -97,8 +97,18 @@ test("range switches keep the visible series labelled correctly and share the la
   assert.match(changeRange, /const request = marketRefreshLane\.begin\(\)/);
   assert.match(changeRange, /fetchXlmSeries\(r, request\.signal\)/);
   assert.match(changeRange, /if \(!request\.isCurrent\(\)\) return/);
-  assert.match(changeRange, /setPriceRangeState\(fallbackRange\)/);
-  assert.match(changeRange, /if \(request\.isCurrent\(\)\) setPriceLoading\(false\)/);
+  assert.match(changeRange, /if \(request\.isCurrent\(\)\) setPriceRequestStatus\(outcome\)/);
+  assert.match(changeRange, /isMarketObservationFresh\(cached\.observedAt\)/);
+  assert.match(wallet, /cachedSeries && isMarketObservationFresh\(cachedSeries\.observedAt\)/);
+  assert.match(priceCard, /marketDataLabel/);
+});
+
+test("retained converter rates disclose their observation rather than claiming to be current", () => {
+  const converter = read("src/components/CurrencyConverterModal.tsx");
+  assert.match(converter, /marketDataLabel/);
+  assert.match(converter, /xlmPriceSample/);
+  assert.match(converter, /fiatRateSamples/);
+  assert.doesNotMatch(converter, /Live Currency Converter|Current XLM price and live/);
 });
 
 test("chart inspection replaces the single top-right market readout", () => {

@@ -21,7 +21,8 @@ import {
 } from "./useWallet";
 import { randomHex } from "@/lib/crypto";
 import { getMerchantEncryptionKey, VaultLockedError } from "@/lib/vault";
-import { fetchAssetPrices, getUnitPrice, type AssetPrices } from "@/lib/prices";
+import { assetPriceKey, fetchAssetPriceSamples, marketDataLabel, quoteCurrencyPerUnit, type MarketSamples } from "@/lib/prices";
+import { createLatestRequestLane } from "./useWalletResources";
 import {
   assetKey,
   chargeCompatibilityPayUri,
@@ -67,7 +68,6 @@ import {
 import type { StorageIssue } from "@/lib/storage-load";
 
 const MERCHANT_PRICE_REFRESH_MS = 60_000;
-const MERCHANT_PRICE_MAX_AGE_MS = 5 * 60_000;
 import {
   inspectStorageHealth,
   requestPersistentStorage as requestBrowserPersistentStorage,
@@ -475,6 +475,8 @@ interface MerchantContextValue {
   quotableAssets: AcceptedAsset[];
   /** Why a charge cannot be raised, or null when it can. */
   chargeBlockedReason: string | null;
+  marketPriceStatus: string;
+  retryMarketPrices: () => Promise<void>;
 
   activeCharge: Charge | null;
   openCharge: (id: string) => void;
@@ -538,6 +540,8 @@ type MerchantStatusValue = Pick<
   | "completeSetup"
   | "quotableAssets"
   | "chargeBlockedReason"
+  | "marketPriceStatus"
+  | "retryMarketPrices"
   | "watching"
   | "watchedLedger"
   | "watchError"
@@ -709,7 +713,7 @@ export function MerchantProvider({
   const { network, accounts, activeAccount } = useWalletIdentity();
   const { authorizeSensitiveAction } = useWalletSecurity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
-  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { xlmPriceSample, fiatRateSamples, fiatRates, refreshMarketData } = useWalletMarket();
   const { contacts } = useWalletContacts();
   const { send } = useWalletTransactions();
   const { submissionStatus } = useWalletSubmission();
@@ -727,9 +731,10 @@ export function MerchantProvider({
     adjustments: [],
   });
   const [activeChargeId, setActiveChargeId] = useState<string | null>(null);
-  const [assetPrices, setAssetPrices] = useState<AssetPrices>({});
-  const [assetPricesObservedAt, setAssetPricesObservedAt] = useState<number | null>(null);
+  const [assetPrices, setAssetPrices] = useState<MarketSamples>({});
   const [assetPricesScope, setAssetPricesScope] = useState("");
+  const [priceCheckedAt, setPriceCheckedAt] = useState(0);
+  const [priceRefreshLane] = useState(createLatestRequestLane);
   const [watchedLedger, setWatchedLedger] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
@@ -1613,45 +1618,42 @@ export function MerchantProvider({
     .sort()
     .join("|")}`, [network, settings.acceptedAssets]);
 
-  useEffect(() => {
+  const refreshPrices = useCallback(async () => {
     if (!enabled) return;
     const credit = settings.acceptedAssets.filter((a) => !isNative(a));
     if (credit.length === 0) return;
-    let alive = true;
-    const refreshPrices = async () => {
-      const prices = await fetchAssetPrices(
-        credit.map((a) => ({ network, code: a.code, issuer: a.issuer })),
-      );
-      if (!alive) return;
-      setAssetPrices(prices);
-      setAssetPricesObservedAt(Object.keys(prices).length > 0 ? Date.now() : null);
-      setAssetPricesScope(currentAssetPricesScope);
-    };
-    void refreshPrices();
-    const interval = setInterval(() => {
-      void fetchAssetPrices(
-        credit.map((a) => ({ network, code: a.code, issuer: a.issuer })),
-      ).then((prices) => {
-        if (!alive) return;
-        setAssetPrices(prices);
-        setAssetPricesObservedAt(Object.keys(prices).length > 0 ? Date.now() : null);
-        setAssetPricesScope(currentAssetPricesScope);
-      });
-    }, MERCHANT_PRICE_REFRESH_MS);
+    const request = priceRefreshLane.begin();
+    const prices = await fetchAssetPriceSamples(
+      credit.map((a) => ({ network, code: a.code, issuer: a.issuer })), request.signal,
+    );
+    if (!request.isCurrent()) return;
+    setAssetPrices(prices);
+    setAssetPricesScope(currentAssetPricesScope);
+  }, [currentAssetPricesScope, enabled, network, priceRefreshLane, settings.acceptedAssets]);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void refreshPrices(); });
+    const interval = setInterval(refreshPrices, MERCHANT_PRICE_REFRESH_MS);
     return () => {
-      alive = false;
+      active = false;
+      priceRefreshLane.cancel();
       clearInterval(interval);
     };
-  }, [currentAssetPricesScope, enabled, network, settings.acceptedAssets]);
+  }, [priceRefreshLane, refreshPrices]);
+
+  const retryMarketPrices = useCallback(async () => {
+    await Promise.all([refreshPrices(), refreshMarketData()]);
+  }, [refreshMarketData, refreshPrices]);
+
+  const marketPriceStatus = network === "testnet" ? "Testnet reference rates" : marketDataLabel([
+    fiatRateSamples[settings.currency],
+    ...settings.acceptedAssets.map((asset) => isNative(asset) ? xlmPriceSample : assetPrices[assetPriceKey(network, asset.code, asset.issuer)]),
+  ]);
 
   const fiatRate = settings.currency === "USD" ? 1 : fiatRates[settings.currency];
 
-  /**
-   * Off mainnet the wallet deliberately refuses to price anything, so a testnet
-   * charge could never be quoted. Merchant Mode falls back to a fixed rate there.
-   * Being on testnet is the whole explanation, so no screen announces it, and
-   * portfolio valuation stays untouched.
-   */
+  /** Testnet reference quotes are separate from observed Mainnet market prices. */
   const onTestnet = network !== "mainnet";
 
   /**
@@ -1664,49 +1666,34 @@ export function MerchantProvider({
   /** Shop currency per one whole unit of the asset, or null when unpriceable. */
   const rateFor = useCallback(
     (asset: AcceptedAsset): number | null => {
-      if (effectiveFiatRate === undefined) return null;
-      if (
-        !onTestnet &&
-        !isNative(asset) &&
-        (assetPricesScope !== currentAssetPricesScope ||
-          assetPricesObservedAt === null ||
-          Date.now() - assetPricesObservedAt > MERCHANT_PRICE_MAX_AGE_MS)
-      ) {
-        return null;
+      if (onTestnet) {
+        const reference = TESTNET_DEMO_USD[asset.code.toUpperCase()];
+        return reference && effectiveFiatRate ? reference * effectiveFiatRate : null;
       }
-      const live = getUnitPrice(
-        asset.code,
-        asset.issuer,
-        network,
-        isNative(asset),
-        xlmPriceUsd,
-        assetPrices,
+      if (!isNative(asset) && assetPricesScope !== currentAssetPricesScope) return null;
+      return quoteCurrencyPerUnit(
+        { ...asset, network }, settings.currency, assetPrices, xlmPriceSample, fiatRateSamples,
       );
-      const usd =
-        live !== null && live > 0
-          ? live
-          : onTestnet
-            ? (TESTNET_DEMO_USD[asset.code.toUpperCase()] ?? null)
-            : null;
-      if (usd === null || usd <= 0) return null;
-      return usd * effectiveFiatRate;
     },
     [
       assetPrices,
-      assetPricesObservedAt,
       assetPricesScope,
       currentAssetPricesScope,
       effectiveFiatRate,
       network,
       onTestnet,
-      xlmPriceUsd,
+      xlmPriceSample,
+      fiatRateSamples,
+      settings.currency,
     ],
   );
 
-  const quotableAssets = useMemo(
-    () => settings.acceptedAssets.filter((a) => rateFor(a) !== null),
-    [rateFor, settings.acceptedAssets],
-  );
+  const quotableAssets = useMemo(() => {
+    // The existing live clock updates availability; quote actions still check Date.now().
+    void reportingNow;
+    void priceCheckedAt;
+    return settings.acceptedAssets.filter((a) => rateFor(a) !== null);
+  }, [priceCheckedAt, rateFor, reportingNow, settings.acceptedAssets]);
 
   const settlementHandoffs = useMemo(() => {
     const holdings = (balances ?? []).map((balance) => {
@@ -1924,10 +1911,16 @@ export function MerchantProvider({
     now,
   }), [network]);
 
-  const quoteInputs = useCallback((): QuoteInput[] =>
-    quotableAssets
-      .map((asset) => ({ asset, currencyPerUnit: rateFor(asset) as number }))
-      .filter((quote) => quote.currencyPerUnit > 0), [quotableAssets, rateFor]);
+  const quoteInputs = useCallback((): QuoteInput[] => {
+    const inputs = settings.acceptedAssets.flatMap((asset) => {
+      const currencyPerUnit = rateFor(asset);
+      return currencyPerUnit === null ? [] : [{ asset, currencyPerUnit }];
+    });
+    // A quote can expire between the rendered controls and the final tip action.
+    // Show its retry immediately while retaining the untouched ticket or form.
+    if (inputs.length === 0) setPriceCheckedAt(Date.now());
+    return inputs;
+  }, [settings.acceptedAssets, rateFor]);
 
   /* ---------------- invoices ---------------- */
 
@@ -2094,6 +2087,7 @@ export function MerchantProvider({
       ? input.acceptedAssets.map((asset) => {
           const currencyPerUnit = rateFor(asset);
           if (currencyPerUnit === null) {
+            setPriceCheckedAt(Date.now());
             throw new Error(`No live price is available for ${asset.code}, so its fixed request cannot be published.`);
           }
           return { asset, currencyPerUnit };
@@ -3573,6 +3567,8 @@ export function MerchantProvider({
 
     quotableAssets,
     chargeBlockedReason,
+    marketPriceStatus,
+    retryMarketPrices,
 
     activeCharge,
     openCharge: setActiveChargeId,
@@ -3611,6 +3607,8 @@ export function MerchantProvider({
     canExportRecords,
     canSeeReports,
     chargeBlockedReason,
+    marketPriceStatus,
+    retryMarketPrices,
     clearTicket,
     closeCharge,
     closeShift,
@@ -3720,6 +3718,8 @@ export function MerchantProvider({
       completeSetup,
       quotableAssets,
       chargeBlockedReason,
+      marketPriceStatus,
+      retryMarketPrices,
       watching,
       watchedLedger,
       watchError,
@@ -3729,6 +3729,8 @@ export function MerchantProvider({
     }),
     [
       chargeBlockedReason,
+      marketPriceStatus,
+      retryMarketPrices,
       completeSetup,
       configured,
       enabled,

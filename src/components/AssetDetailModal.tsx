@@ -27,7 +27,7 @@ import {
   assetDetailSubmissionView,
   type SubmissionResult,
 } from "@/lib/submission";
-import { assetPriceKey } from "@/lib/prices";
+import { assetPriceKey, marketDataLabel, type MarketSamples } from "@/lib/prices";
 import { assetDetailBalanceSummary, deriveSacContractId } from "@/lib/transaction-intent";
 import { networkFeeXlm } from "@/lib/api";
 import { Button, CopyButton, ErrorText, HashValue, Modal, ModalHeader } from "./ui";
@@ -48,7 +48,7 @@ export function AssetDetailModal({
 }) {
   const { network } = useWalletIdentity();
   const { minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
-  const { xlmPriceUsd, fiatRates } = useWalletMarket();
+  const { xlmPriceSample, fiatRateSamples, fiatRates } = useWalletMarket();
   const { privacyMode, fiatCurrency } = useWalletPreferences();
   const { submissionStatus } = useWalletSubmission();
   const { trustAsset, refresh } = useWalletTransactions();
@@ -57,7 +57,7 @@ export function AssetDetailModal({
   const metadataIdentity = asset && !asset.isNative && asset.issuer
     ? assetMetadataCacheKey(asset.code, asset.issuer, horizonUrl)
     : null;
-  const [prices, setPrices] = useState<Record<string, number>>({});
+  const [prices, setPrices] = useState<MarketSamples>({});
   const [metadata, setMetadata] = useState<BoundAssetMetadata | null>(() =>
     metadataIdentity && asset?.issuer
       ? {
@@ -76,9 +76,9 @@ export function AssetDetailModal({
     if (!asset || network !== "mainnet") return;
     let alive = true;
     void (async () => {
-      const { fetchAssetPrices } = await import("@/lib/prices");
-      const p = await fetchAssetPrices([{ code: asset.code, issuer: asset.issuer, network }]);
-      if (alive && Object.keys(p).length > 0) setPrices(p);
+      const { fetchAssetPriceSamples } = await import("@/lib/prices");
+      const p = await fetchAssetPriceSamples([{ code: asset.code, issuer: asset.issuer, network }]);
+      if (alive) setPrices(p);
     })();
     return () => {
       alive = false;
@@ -114,12 +114,13 @@ export function AssetDetailModal({
     };
   }, [asset, horizonUrl, known?.iconUrl, metadataIdentity]);
 
-  const unitPrice =
+  const priceSample =
     asset && asset.isNative && network === "mainnet"
-      ? xlmPriceUsd
+      ? xlmPriceSample
       : asset
         ? prices[assetPriceKey(network, asset.code, asset.issuer)] ?? null
         : null;
+  const unitPrice = priceSample?.value ?? null;
   const totalUsd =
     asset && unitPrice !== null ? parseFloat(asset.balance) * unitPrice : null;
   const balanceSummary = asset
@@ -230,6 +231,7 @@ export function AssetDetailModal({
               <span className="text-neutral-600">·</span>
               <span className="mono text-[12px] font-medium text-neutral-300">
                 {fmtFiat(totalUsd ?? 0, fiatCurrency, fiatRates)} total
+                <span className="mt-1 block text-[10px] text-neutral-500">{marketDataLabel([priceSample, fiatRateSamples[fiatCurrency]])}</span>
               </span>
             </div>
           )}
