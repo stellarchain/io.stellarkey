@@ -106,7 +106,7 @@ Reference guidance consulted on 2026-09-06: [IndexedDB transaction lifetime](htt
 
 [Simple, correct, fast: system audit](system-audit-2026-09-06.md) reviews the completed implementation at `8397a3584f0aba37032f2146f130ba9484a494d8` alongside the public wallet, merchant flows, shared UI, transport/cache scaling, dependencies and release tooling. It contains twelve vetted findings, the existing dependency blocker, a qualified signing-context investigation, fresh read-only verification results, research references and rejected leads.
 
-Status: **audit complete; findings not implemented or converted into approved numbered plans**. Plans 001–003 above remain DONE. The recommended next selection is safe/complete verification, market freshness, merchant session ownership, modal operation ownership and recipient-scan failure containment. Keep numbering monotonic if follow-on plans are requested; start at 004.
+Historical status at audit handoff: **audit complete; findings not yet implemented or approved**. The user subsequently approved plan 004 below. Plans 001–003 above remain DONE; the audit remains a record of the source state it reviewed.
 
 Considered and rejected for this follow-on audit: treating the fixed Public/Private shell as still broken; releasing shared-proof reservations on timeout; broad claims of optimistic confirmation, missing journals or issuer-blind matching; and large-file/framework rewrites without measured benefit. See the report for evidence and limitations rather than reopening these as unverified findings.
 
@@ -117,9 +117,12 @@ The user subsequently requested “fix everything”. [Implementation plan 004](
 | Task | Status / evidence |
 | --- | --- |
 | 1 — Safe complete verification (F01/F02) | DONE — `42d5f528`, independent spec and quality approvals. 174 isolated Chromium/iPhone cases, 16 overlay/manifest cases, 58 nested protocol tests passed, zero skips. Root independently reran 33 focused gate/policy tests, two real synthetic browser safety probes and fixture cleanup; all passed. Typecheck passed; lint has only three existing marketing-image warnings. |
-| 2 — Genuine market freshness and chart expiry (F03/F12) | IN PROGRESS |
-| 3–9 | Pending; see the approved plan for exact scopes. |
+| 2 — Genuine market freshness and chart expiry (F03/F12) | DONE — `dea70d9a`, independent spec and quality approvals. 18 focused behavioral tests and five browser checks passed, including Mainnet expiry/refusal/retry/recovery on Chromium and iPhone WebKit. Typecheck and scoped lint passed. Root independently ran the complete Node suite: 1,492 passed, zero failures. |
+| 3 — Revocable merchant publication (F04) | IN PROGRESS — root reproduced delayed-load plaintext restoration after snapshot clear using a synthetic in-memory driver. |
+| 4–9 | Pending; see the approved plan for exact scopes. |
 
 Task 1 disables traces, screenshots and video, uses structural-only failure reporting and makes the synthetic suites mandatory in shared CI/release verification. Playwright 1.62 still creates matcher ARIA snapshots without a supported suppression option: usable Testnet runner/import paths now refuse before build, funding or navigation. Ordinary cleanup is verified, but cannot guarantee cleanup after an uncatchable process kill; only non-usable synthetic fixtures are allowed. This is not live-wallet verification or final release certification.
+
+Task 2 retains genuine asset/native/FX observation times and checks required inputs again at each new Mainnet quote action. Expired charts retain their labelled series during revalidation. Shared-cache concurrency, action-time expiry and retries inside invoice, fixed-code and split-payment dialogs were corrected during review; retries preserve drafts. Browser traffic used entirely synthetic fixtures with external requests intercepted and captures disabled. No live quote, payment or Mainnet transaction was made. Final aggregate verification and bundle measurement remain pending all tasks.
 
 Implementation baseline: source at `745d983` passed all 1,465 unit tests (74.70 s). An earlier documentation-only attempt failed the repository's prohibition on `docs/plans/`; moving the plan to `plans/` and staging the rename resolved it without weakening the test. Final aggregate verification remains pending all implementation tasks.
