@@ -47,7 +47,8 @@ test("CI pins third-party actions and verifies the complete static release", () 
   assert.match(ci, /actions\/setup-node@[0-9a-f]{40}/);
   assert.match(ci, /corepack install[\s\S]*corepack npm ci/);
   assert.match(ci, /playwright install --with-deps chromium webkit/);
-  assert.match(ci, /npm run check:bundle/);
+  assert.match(ci, /npm run verify:application/);
+  assert.match(JSON.parse(read("package.json")).scripts["verify:application"], /npm run check:bundle/);
   assert.match(ci, /test -f out\/index\.html/);
   assert.doesNotMatch(ci, /uses:\s+[^\n]+@v\d+/);
 });
@@ -195,13 +196,14 @@ test("clean CI runs generated bundle assertions only after the static build", ()
   assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/);
   assert.match(pkg.scripts["test:bundle"], /tests\/bundle-budget\.build\.mjs/);
   assert.match(
-    pkg.scripts["release:verify"],
+    pkg.scripts["verify:application"],
     /npm test.*npm run build.*npm run test:bundle.*npm run check:bundle.*playwright test/,
   );
   assert.match(
     ci,
-    /npm test[\s\S]*npm run build[\s\S]*npm run test:bundle[\s\S]*npm run check:bundle[\s\S]*npm exec -- playwright test/,
+    /npm run verify:application[\s\S]*test -f out\/index\.html/,
   );
+  assert.match(pkg.scripts["release:verify"], /^node scripts\/assert-clean-release\.mjs && npm run verify:application$/);
 });
 
 test("the toolchain and dependency lifecycle approvals are explicit", () => {
@@ -209,7 +211,7 @@ test("the toolchain and dependency lifecycle approvals are explicit", () => {
   const npmConfig = read(".npmrc");
   assert.match(pkg.packageManager, /^npm@\d+\.\d+\.\d+$/);
   assert.match(pkg.engines.node, /22\.22\.2/);
-  assert.match(pkg.scripts["release:verify"], /check:bundle.*playwright test/);
+  assert.match(pkg.scripts["verify:application"], /check:bundle.*playwright test/);
   assert.equal(pkg.allowScripts, undefined, "decorative allowScripts metadata must not imply enforcement");
   assert.match(npmConfig, /^ignore-scripts=true$/m);
 });
@@ -225,7 +227,7 @@ test("private proving artifacts are provenance-checked in local, CI, and release
   const ci = read(".github/workflows/ci.yml");
   const release = read(".github/workflows/release.yml");
 
-  assert.match(pkg.scripts["release:verify"], /private:check-generated/);
+  assert.match(pkg.scripts["verify:application"], /private:check-generated/);
   assert.match(circuits.scripts["verify:zkey"], /verify-proving-key\.mjs/);
   assert.match(circuits.scripts["gate:a"], /verify:zkey/);
   assert.match(setup, /ensurePowersOfTau/);

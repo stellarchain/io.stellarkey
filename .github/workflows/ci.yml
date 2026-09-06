@@ -80,13 +80,5 @@ jobs:
       - run: cargo +1.97.1 install stellar-cli --version 27.0.0 --locked
       - run: npm run private:check-generated
       - run: npx playwright install --with-deps chromium webkit
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run lint
-      - run: npm run audit:prod
-      - run: npm run build
+      - run: npm run verify:application
       - run: test -f out/index.html
-      - run: npm run test:bundle
-      - run: npm run check:bundle
-      - run: npm exec -- playwright test
-      - run: npm run test:e2e:private-ui

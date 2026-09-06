@@ -1,5 +1,5 @@
 import { expect, type BrowserContext, type Locator, type Page, type Route } from "@playwright/test";
-import { installQuietEventSource } from "../fixtures";
+import { installQuietEventSource } from "../fixtures.ts";
 
 export const privateBalanceE2eEnabled = Boolean(
   process.env.PRIVATE_BALANCE_E2E_SENDER_SECRET &&
@@ -40,6 +40,8 @@ export async function installPrivateBalanceNetworkSupport(
 }
 
 export async function importLiveWallet(page: Page, secret: string): Promise<void> {
+  const { assertLiveWalletTestingSafe } = await import("../../scripts/testing/wallet-test-policy.mjs");
+  assertLiveWalletTestingSafe();
   if (!secret) throw new Error("Private Balance E2E secret is unavailable.");
   await page.goto("/app", { waitUntil: "domcontentloaded" });
   await page.evaluate(() => localStorage.clear());
@@ -90,9 +92,7 @@ export async function setupPrivateBalance(page: Page): Promise<Locator> {
     return "running";
   }, { timeout: 180_000 }).not.toBe("running");
   if (await failure.isVisible().catch(() => false)) {
-    const details = failure.getByRole("button", { name: "Technical details" });
-    if (await details.isVisible().catch(() => false)) await details.click();
-    throw new Error(`Private Payments setup failed: ${await failure.textContent()}`);
+    throw new Error("Private Payments setup failed; an alert is visible.");
   }
   await expect(dialog).toBeHidden();
   await expect(region.getByRole("button", { name: /^Open private XLM\. Ready\./ })).toBeVisible({

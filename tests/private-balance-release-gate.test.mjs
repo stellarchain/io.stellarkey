@@ -4,6 +4,24 @@ import test from 'node:test';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
+test('CI and release require isolated phone/desktop components and nested browser protocol tests', () => {
+  const { scripts } = JSON.parse(read('../package.json'));
+  assert.equal(scripts['test:private-protocol'], 'npm --prefix protocol/private-balance/packages/browser test');
+  assert.equal(scripts['test:e2e:private-components'], 'node scripts/test-private-components.mjs');
+  assert.match(scripts['verify:application'], /npm run test:private-protocol/);
+  assert.match(scripts['verify:application'], /npm run test:e2e:reporter/);
+  assert.match(scripts['verify:application'], /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*npm run check:fixture-clean/);
+  assert.match(scripts['release:verify'], /npm run verify:application/);
+  assert.match(read('../.github/workflows/ci.yml'), /npm run verify:application/);
+  assert.match(read('../.github/workflows/release.yml'), /npm run release:verify/);
+  const isolated = read('../playwright.private-components.config.ts');
+  for (const suite of ['private-components', 'ux-primitives', 'qr-freshness', 'relay-earn', 'relay-startup']) {
+    assert.ok(isolated.includes(`${suite}.spec.ts`), `${suite} must execute in the isolated gate`);
+  }
+  assert.match(isolated, /desktop-chromium/);
+  assert.match(isolated, /iphone-webkit/);
+});
+
 test('hash-pinned development private payments remain behind a Testnet-only lazy boundary', async () => {
   const shell = read('../src/components/UnlockedWalletShell.tsx');
   const boundary = read('../src/components/PrivateBalanceRuntimeBoundary.tsx');

@@ -12,6 +12,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
+import { assertLiveWalletTestingSafe } from '../../../scripts/testing/wallet-test-policy.mjs';
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'protocol/private-balance/results/fixtures');
@@ -126,6 +127,7 @@ function assertCleanGitTree() {
 }
 
 export async function runTestnetE2e(argv = process.argv.slice(2)) {
+  assertLiveWalletTestingSafe();
   assertCleanGitTree();
   const fixturePath = fixtureEvidencePath(argv);
   const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
@@ -188,7 +190,6 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'e2e/private-balance',
       'e2e/private-manifest-security.spec.ts',
       '--project=desktop-chromium',
-      '--reporter=line',
     ],
     e2eEnvironment,
   );
@@ -202,7 +203,6 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       '--project=desktop-webkit-private',
       '--project=iphone-webkit',
       '--project=ipad-webkit',
-      '--reporter=line',
     ],
     e2eEnvironment,
   );
