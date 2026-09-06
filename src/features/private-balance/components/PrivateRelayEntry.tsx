@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { IconChevronDown, IconShield } from '@/components/icons';
+import { IconChevronDown, IconGift, IconShield } from '@/components/icons';
 import { Modal, ModalHeader } from '@/components/ui';
 import {
   loadPrivateRelayPreferences,
@@ -106,19 +106,23 @@ export function PrivateRelayEntry() {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
-        className="row-hover mt-3 flex min-h-20 w-full items-center gap-3 rounded-[20px] border border-white/10 bg-panel/70 px-4 py-3.5 text-left focus-visible:ring-2 focus-visible:ring-accent"
+        className="row-hover mt-2 flex min-h-14 w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
       >
-        <RelayMark />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#30D158]/12 text-[#30D158]">
+          <IconGift size={17} />
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold tracking-tight text-ink">Earn by relaying</span>
-          <span className="mt-1 block text-[12px] leading-relaxed text-muted">
-            {preferences.helpRelay ? helperDescription : 'Your fee. Your approval. Paid privately.'}
+          <span className="block text-[13.5px] font-semibold text-white">Earn by relaying</span>
+          <span className="mt-0.5 block truncate text-[11.5px] text-neutral-500">
+            {helperDescription}
           </span>
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-accent">
-          <span className={`hidden text-[12px] font-medium sm:inline ${statusTone}`}>{status}</span>
-          <IconChevronDown size={14} className="-rotate-90" />
+        <span className={`shrink-0 text-[12px] font-semibold ${
+          helperIsConnected ? 'text-[#30D158]' : preferences.helpRelay ? 'text-neutral-400' : 'text-[#0A84FF]'
+        }`} aria-live="polite">
+          {status}
         </span>
+        <IconChevronDown size={14} className="-rotate-90 text-neutral-600" />
       </button>
 
         <Modal open={open} onClose={close} wide>

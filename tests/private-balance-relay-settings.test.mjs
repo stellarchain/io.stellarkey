@@ -4,6 +4,23 @@ import test from 'node:test';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('home keeps its compact gift row while the redesign stays inside Earn', () => {
+  const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const trigger = entry.slice(entry.indexOf('<button'), entry.indexOf('</button>') + '</button>'.length);
+  assert.match(trigger, /<IconGift size=\{17\}/);
+  assert.match(trigger, /mt-2 flex min-h-14/);
+  assert.match(trigger, /rounded-2xl px-2\.5 py-2/);
+  assert.match(trigger, /text-\[13\.5px\]/);
+  assert.match(trigger, /\{helperDescription\}/);
+  assert.match(trigger, /aria-live="polite"/);
+  assert.doesNotMatch(trigger, /RelayMark|bg-panel|border-white|sm:inline/);
+  const modal = entry.slice(entry.indexOf('<Modal '));
+  assert.match(modal, /open=\{open\} onClose=\{close\} wide/);
+  assert.match(modal, /Your relay status/);
+  assert.match(modal, /<PrivateRelaySettings helperOnly/);
+  assert.match(modal, /Explore other peers/);
+});
+
 test('advanced privacy keeps relay use and peer assistance as independent explicit opt-ins', () => {
   const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
   const protocolSettings = read('src/features/private-balance/components/PrivateProtocolSettings.tsx');
