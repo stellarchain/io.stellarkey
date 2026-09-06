@@ -128,6 +128,159 @@ class MemoryRecordDriver {
   }
 }
 
+function deferDriverResult(driver, method) {
+  let entered;
+  let release;
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const original = driver[method];
+  driver[method] = async function (...args) {
+    driver[method] = original;
+    const result = await original.apply(this, args);
+    entered();
+    await gate;
+    return result;
+  };
+  return { waiting, release };
+}
+
+async function seededRepository() {
+  const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
+  const driver = new MemoryRecordDriver();
+  const repository = new MerchantRepository(driver);
+  const store = { ...emptyStore(), revision: 1, writerId: "synthetic", updatedAt: 10 };
+  await repository.commit(store, KEY, null);
+  return { driver, repository, store };
+}
+
+test("a revoked delayed load cannot return plaintext or resurrect the commit cache", async () => {
+  const { driver, repository } = await seededRepository();
+  repository.clearDecryptedSnapshot();
+  const deferred = deferDriverResult(driver, "readPrefix");
+  const pending = repository.load(KEY);
+  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+  await deferred.waiting;
+  repository.clearDecryptedSnapshot();
+  deferred.release();
+  await rejected;
+  assert.equal((await repository.loadCommitBasis(new Uint8Array(32).fill(18))).kind, "corrupt");
+});
+
+test("a delayed commit basis cannot borrow a replacement generation's snapshot", async () => {
+  const { driver, repository } = await seededRepository();
+  const deferred = deferDriverResult(driver, "read");
+  const pending = repository.loadCommitBasis(KEY);
+  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+  await deferred.waiting;
+  repository.clearDecryptedSnapshot();
+  assert.equal((await repository.load(KEY)).kind, "ready");
+  deferred.release();
+  await rejected;
+});
+
+test("revocation suppresses a committed write's plaintext but preserves durable recovery", async () => {
+  const { driver, repository, store } = await seededRepository();
+  const deferred = deferDriverResult(driver, "compareAndSetMany");
+  const pending = repository.commit({ ...store, revision: 2, updatedAt: 20 }, KEY, 1);
+  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+  await deferred.waiting;
+  repository.clearDecryptedSnapshot();
+  deferred.release();
+  await rejected;
+  assert.equal((await repository.loadCommitBasis(new Uint8Array(32).fill(18))).kind, "corrupt");
+  assert.equal((await repository.load(KEY)).value.revision, 2);
+});
+
+test("a commit revoked while loading its basis never starts a storage write", async () => {
+  const { driver, repository, store } = await seededRepository();
+  repository.clearDecryptedSnapshot();
+  const deferred = deferDriverResult(driver, "readPrefix");
+  const pending = repository.commit({ ...store, revision: 2, updatedAt: 20 }, KEY, 1);
+  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+  await deferred.waiting;
+  repository.clearDecryptedSnapshot();
+  deferred.release();
+  await rejected;
+  assert.equal((await repository.load(KEY)).value.revision, 1);
+});
+
+test("revocation during a legacy reseal keeps the durable seal without restoring plaintext", async () => {
+  const { decryptMerchantRecord, encryptMerchantRecord } = await import("../src/lib/merchant/record-crypto.ts");
+  const { driver, repository } = await seededRepository();
+  const envelope = JSON.parse(driver.records.get(repository.recordKey));
+  const metadata = decryptMerchantRecord(envelope, KEY, repository.recordKey);
+  metadata.schema = 1;
+  delete metadata.recordSetDigest;
+  driver.records.set(repository.recordKey, JSON.stringify(encryptMerchantRecord(metadata, KEY, repository.recordKey, envelope)));
+  repository.clearDecryptedSnapshot();
+  const deferred = deferDriverResult(driver, "compareAndSetMany");
+  const pending = repository.load(KEY);
+  const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+  await deferred.waiting;
+  repository.clearDecryptedSnapshot();
+  deferred.release();
+  await rejected;
+  assert.equal((await repository.loadCommitBasis(new Uint8Array(32).fill(18))).kind, "corrupt");
+  assert.equal(decryptMerchantRecord(JSON.parse(driver.records.get(repository.recordKey)), KEY, repository.recordKey).schema, 2);
+  assert.equal((await repository.load(KEY)).kind, "ready");
+});
+
+test("archive authentication does not retain a decrypted repository snapshot", async () => {
+  const { repository } = await seededRepository();
+  repository.clearDecryptedSnapshot();
+  assert.equal(typeof await repository.exportEncryptedArchive(KEY), "string");
+  assert.equal((await repository.loadCommitBasis(new Uint8Array(32).fill(18))).kind, "corrupt");
+});
+
+for (const replacement of ["clear", "import"]) {
+  test(`${replacement} invalidates reads before and throughout durable replacement`, async () => {
+    const { driver, repository } = await seededRepository();
+    const archive = await repository.exportEncryptedArchive(KEY);
+    const read = deferDriverResult(driver, "readPrefix");
+    const pending = repository.load(KEY);
+    const rejected = assert.rejects(pending, { name: "MerchantRepositoryRevokedError" });
+    await read.waiting;
+    const write = deferDriverResult(driver, "replacePrefixVerified");
+    const replaced = replacement === "clear" ? repository.clear() : repository.importEncryptedArchive(archive);
+    await write.waiting;
+    read.release();
+    await rejected;
+    await assert.rejects(repository.load(KEY), { name: "MerchantRepositoryRevokedError" });
+    write.release();
+    await replaced;
+    assert.equal((await repository.load(KEY)).kind, replacement === "clear" ? "absent" : "ready");
+  });
+}
+
+test("overlapping replacements remain closed until both durable operations settle", async () => {
+  const { driver, repository } = await seededRepository();
+  const archive = await repository.exportEncryptedArchive(KEY);
+  const states = [];
+  let freshLoad;
+  const stopThrowing = repository.subscribeReplacement(() => { throw new Error("Synthetic observer failure"); });
+  const unsubscribe = repository.subscribeReplacement(() => {
+    states.push(repository.getReplacementSnapshot());
+    if (!repository.getReplacementSnapshot()) freshLoad = repository.load(KEY);
+  });
+  const first = deferDriverResult(driver, "replacePrefixVerified");
+  const clearing = repository.clear();
+  await first.waiting;
+  const second = deferDriverResult(driver, "replacePrefixVerified");
+  const importing = repository.importEncryptedArchive(archive);
+  await second.waiting;
+  first.release();
+  await clearing;
+  await assert.rejects(repository.loadCommitBasis(KEY), { name: "MerchantRepositoryRevokedError" });
+  second.release();
+  await importing;
+  assert.deepEqual(states, [true, false]);
+  assert.equal((await freshLoad).kind, "ready");
+  unsubscribe();
+  stopThrowing();
+  await repository.clear();
+  assert.deepEqual(states, [true, false]);
+});
+
 test("the merchant repository ignores POC monolithic storage", async () => {
   const { MerchantRepository } = await import("../src/lib/merchant/repository.ts");
   const raw = JSON.stringify({ version: 2, plaintext: "POC merchant data" });

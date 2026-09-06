@@ -25,6 +25,11 @@ export type SubmissionPreparedCallback = (
   prepared: PreparedSubmissionIdentity,
 ) => void | Promise<void>;
 
+/** False defers domain cleanup and retains the existing canonical recovery handle. */
+export type SubmissionRejectedCallback = (
+  prepared: PreparedSubmissionIdentity,
+) => void | false | Promise<void | false>;
+
 export async function runPreparedBroadcast<T>(options: {
   broadcast: (onPrepared: SubmissionPreparedCallback) => Promise<T>;
   prepare: SubmissionPreparedCallback;
@@ -74,6 +79,8 @@ export interface PendingTransaction {
   status: PendingTransactionStatus;
   createdAt: number;
   expiresAt?: number;
+  /** Untrusted retention hint only; never evidence of a transaction outcome. */
+  journalPending?: true;
   action?: PendingTransactionAction;
 }
 
@@ -322,6 +329,7 @@ export function parsePendingTransactions(serialized: string | null): PendingTran
       label: entry.label,
       status: entry.status,
       createdAt: entry.createdAt,
+      ...(entry.journalPending === true ? { journalPending: true as const } : {}),
       ...(typeof entry.expiresAt === "number" &&
         Number.isSafeInteger(entry.expiresAt) &&
         entry.expiresAt >= 0
@@ -412,6 +420,54 @@ export function removeDurablePendingTransaction(
   record: Pick<PendingTransaction, "hash" | "network">,
 ): void {
   storage.removeItem(pendingTransactionStorageKey(key, record));
+}
+
+function existingDurablePendingTransaction(
+  storage: Pick<Storage, "getItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): PendingTransaction | null {
+  const [stored] = parsePendingTransactions(storage.getItem(pendingTransactionStorageKey(key, record)));
+  return stored?.network === record.network && stored.hash === record.hash.toLowerCase() ? stored : null;
+}
+
+/**
+ * Canonical resolution keeps journal-owned recovery until its authenticated
+ * consumer commits. An unmatched hint remains conservative: another tab may
+ * still be committing intent, so absence alone cannot release its ownership.
+ */
+export function completeDurablePendingTransaction(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): void {
+  if (existingDurablePendingTransaction(storage, key, record)?.journalPending) return;
+  removeDurablePendingTransaction(storage, key, record);
+}
+
+/** Called only after an authenticated domain journal has durably recorded a terminal outcome. */
+export function acknowledgeDurableSubmissionJournal(
+  storage: Pick<Storage, "getItem" | "removeItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): boolean {
+  if (!existingDurablePendingTransaction(storage, key, record)?.journalPending) return false;
+  removeDurablePendingTransaction(storage, key, record);
+  return true;
+}
+
+/** An erased journal releases ownership, not unresolved canonical tracking. Never creates a record. */
+export function releaseDurableSubmissionJournal(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  key: string,
+  record: Pick<PendingTransaction, "hash" | "network">,
+): boolean {
+  const stored = existingDurablePendingTransaction(storage, key, record);
+  if (!stored?.journalPending) return false;
+  delete stored.journalPending;
+  // Ordinary persistence merges metadata and would preserve the old hint.
+  storage.setItem(pendingTransactionStorageKey(key, stored), serializePendingTransactions([stored]));
+  return true;
 }
 
 /** Restore the current per-transaction durable recovery queue. */

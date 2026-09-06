@@ -63,6 +63,68 @@ function notFoundResponse() {
   return new Response(JSON.stringify({ title: "Resource Missing" }), { status: 404 });
 }
 
+test("journal retention is validated metadata, survives accepted upgrades, and never supplies a terminal result", () => {
+  const prepared = {
+    hash: "a".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+    resolution: "confirmed", confirmed: true,
+  };
+  const [parsed] = submission.parsePendingTransactions(JSON.stringify([prepared]));
+  assert.equal(parsed.journalPending, true);
+  assert.equal(parsed.resolution, undefined);
+  assert.equal(parsed.confirmed, undefined);
+  assert.equal(submission.submissionLifecycleStatus({ ...parsed, status: "status_unknown" }, {}), "status_unknown");
+  for (const journalPending of ["true", 1, { status: "confirmed" }]) {
+    const [invalid] = submission.parsePendingTransactions(JSON.stringify([{ ...prepared, journalPending }]));
+    assert.equal(invalid.journalPending, undefined);
+  }
+  const storage = memoryStorage();
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  const upgraded = submission.persistDurablePendingTransaction(storage, "synthetic", {
+    ...submission.pendingTransactionFromSubmission({ ...prepared, status: "accepted" }, "Synthetic"),
+  });
+  assert.equal(upgraded.journalPending, true);
+  assert.equal(upgraded.expiresAt, 2);
+  assert.equal(upgraded.status, "confirming");
+});
+
+test("durable journal acknowledgement removes only an existing journal-owned identity and is idempotent", () => {
+  assert.equal(typeof submission.acknowledgeDurableSubmissionJournal, "function");
+  const storage = memoryStorage();
+  const prepared = {
+    hash: "b".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+  };
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", { ...prepared, network: "mainnet" }), false);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", prepared), true);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", prepared), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 0);
+  const ordinary = { ...prepared, journalPending: undefined };
+  submission.persistDurablePendingTransaction(storage, "synthetic", ordinary);
+  assert.equal(submission.acknowledgeDurableSubmissionJournal(storage, "synthetic", ordinary), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 1);
+});
+
+test("releasing journal ownership preserves canonical recovery and never recreates a removed identity", () => {
+  assert.equal(typeof submission.releaseDurableSubmissionJournal, "function");
+  const storage = memoryStorage();
+  const prepared = {
+    hash: "c".repeat(64), network: "testnet", label: "Synthetic", status: "status_unknown",
+    createdAt: 1, expiresAt: 2, journalPending: true,
+  };
+  submission.persistDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.releaseDurableSubmissionJournal(storage, "synthetic", prepared), true);
+  const [released] = submission.loadDurablePendingTransactions(storage, "synthetic");
+  assert.equal(released.journalPending, undefined);
+  assert.equal(released.hash, prepared.hash);
+  assert.equal(released.expiresAt, 2);
+  assert.equal(released.status, "status_unknown");
+  submission.removeDurablePendingTransaction(storage, "synthetic", prepared);
+  assert.equal(submission.releaseDurableSubmissionJournal(storage, "synthetic", prepared), false);
+  assert.equal(submission.loadDurablePendingTransactions(storage, "synthetic").length, 0);
+});
+
 test("Horizon timeout covers waiting for response headers", async (t) => {
   assert.equal(getHorizonJson.length, 4, "expected testable timeout and retry policy seams");
   t.mock.method(globalThis, "fetch", async (_url, init) =>

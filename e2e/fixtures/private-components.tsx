@@ -20,6 +20,7 @@ import { RelayHelperFixture } from '../../../e2e/fixtures/relay-helper-panel';
 import { RelayRecipientFixture } from '../../../e2e/fixtures/relay-recipient-panel';
 import { RelayEarnFixture } from '../../../e2e/fixtures/relay-earn-panel';
 import { RelayStartupFixture } from '../../../e2e/fixtures/relay-startup-panel';
+import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime-panel';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { PrivateBalanceProvider } from '@/features/private-balance/runtime/provider';
@@ -473,6 +474,7 @@ function ProofPanel() {
 }
 
 function Fixture() {
+  const [merchantLifetime, setMerchantLifetime] = useState(false);
   const [discovery, setDiscovery] = useState(false);
   const [relayStartup, setRelayStartup] = useState(false);
   const [open, setOpen] = useState(false);
@@ -485,6 +487,7 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
+  if (merchantLifetime) return <MerchantLifetimeFixture />;
   if (relayStartup) return <RelayStartupFixture />;
   if (discovery) return <DiscoveryProviderChecks />;
   return (
@@ -493,6 +496,7 @@ function Fixture() {
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
+        <Button onClick={() => setMerchantLifetime(true)}>Test merchant lifetime</Button>
         <Button onClick={() => setRelayStartup(true)}>Test relay startup</Button>
         <Button onClick={() => setDiscovery(true)}>Test discovery lifecycle</Button>
         <DiscoveryStorageChecks />

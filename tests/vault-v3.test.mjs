@@ -36,6 +36,71 @@ function passkeyDependencies(storage) {
 
 const password = "correct horse battery staple";
 
+test("session observers distinguish revocation and activation across every unlock method", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const vault = await import("../src/lib/vault.ts");
+  vault.lockVault();
+  const seen = [];
+  const unsubscribeThrowing = vault.subscribeSessionChanges(() => { throw new Error("Synthetic observer failure"); });
+  const unsubscribe = vault.subscribeSessionChanges(() => { seen.push(vault.getSessionSnapshot()); });
+  try {
+    assert.equal(vault.getSessionSnapshot(), null);
+    await vault.initializeVault(password, { secret: Keypair.random().secret() });
+    const initial = vault.getSessionSnapshot();
+    assert.equal(typeof initial, "number");
+    const order = [];
+    const unsubscribeOrder = vault.subscribeSessionChanges(() => { order.push("changed"); });
+    vault.subscribeSessionRevocation(() => {
+      assert.equal(vault.getSessionSnapshot(), null);
+      order.push("revoked");
+    });
+    vault.lockVault();
+    assert.deepEqual(order, ["revoked", "changed"]);
+    unsubscribeOrder();
+    await vault.unlockVault(password);
+    assert.notEqual(vault.getSessionSnapshot(), initial);
+    const deps = passkeyDependencies(localStorage);
+    await vault.enablePasskeyUnlock(password, deps);
+    vault.lockVault();
+    await vault.unlockVaultWithPasskey(deps);
+    assert.equal(typeof vault.getSessionSnapshot(), "number");
+    assert.equal(seen.filter(value => value !== null).length, 3);
+    unsubscribe();
+    const count = seen.length;
+    vault.lockVault();
+    assert.equal(seen.length, count);
+  } finally {
+    unsubscribe();
+    unsubscribeThrowing();
+    vault.lockVault();
+  }
+});
+
+test("session observers cannot recurse on an unchanged lock or report a revoked activation as success", async () => {
+  const localStorage = new MemoryStorage();
+  globalThis.window = { localStorage };
+  const vault = await import("../src/lib/vault.ts");
+  vault.lockVault();
+  await vault.initializeVault(password, { secret: Keypair.random().secret() });
+  let calls = 0;
+  const unsubscribe = vault.subscribeSessionChanges(() => {
+    calls++;
+    if (calls < 3) vault.lockVault();
+  });
+  try {
+    vault.lockVault();
+    assert.equal(calls, 1, "locking an already locked observable session must not notify again");
+  } finally { unsubscribe(); }
+  const revokeActivation = vault.subscribeSessionChanges(() => {
+    if (vault.getSessionSnapshot() !== null) vault.lockVault();
+  });
+  try {
+    await assert.rejects(vault.unlockVault(password), { name: "VaultLockedError" });
+    assert.equal(vault.getSessionSnapshot(), null);
+  } finally { revokeActivation(); vault.lockVault(); }
+});
+
 test("new software vaults reject weak passwords at the storage boundary", async () => {
   const localStorage = new MemoryStorage();
   globalThis.window = { localStorage };
@@ -620,7 +685,8 @@ test("wallet runtime retains only key bytes, never passwords, mnemonics, or acco
   assert.match(vault, /sessionMasterKey\?\.fill\(0\)/);
   assert.match(walletHook, /withSigningKeypair/);
   assert.doesNotMatch(walletHook, /withSecretKey/);
-  assert.ok((merchantHook.match(/key\.fill\(0\)/g) ?? []).length >= 3);
+  assert.match(merchantHook, /const releaseMerchantKey = useCallback\(\(key: Uint8Array\) => \{\s*key\.fill\(0\);\s*merchantKeysRef\.current\.delete\(key\)/);
+  assert.ok((merchantHook.match(/finally \{\s*releaseMerchantKey\(key\)/g) ?? []).length >= 4);
 
   const key = new Uint8Array([1, 2, 3, 4]);
   zeroKey(key);

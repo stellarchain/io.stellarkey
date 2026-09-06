@@ -71,6 +71,8 @@ let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
 let sessionGeneration = 0;
 const sessionRevocationListeners = new Set<() => void>();
+const sessionChangeListeners = new Set<() => void>();
+let publishedSessionSnapshot: number | null = null;
 let fallbackLifecycleEpoch = 0;
 
 function readWalletLifecycleEpoch(): number {
@@ -139,6 +141,27 @@ export function subscribeSessionRevocation(onRevoke: () => void): () => void {
   return () => { sessionRevocationListeners.delete(onRevoke); };
 }
 
+/** Non-sensitive observable state; the signing guards still own authority. */
+export function getSessionSnapshot(): number | null {
+  return sessionMasterKey ? sessionGeneration : null;
+}
+
+export function subscribeSessionChanges(onChange: () => void): () => void {
+  sessionChangeListeners.add(onChange);
+  return () => { sessionChangeListeners.delete(onChange); };
+}
+
+function notifySessionChanges(): void {
+  const snapshot = getSessionSnapshot();
+  if (snapshot === publishedSessionSnapshot) return;
+  publishedSessionSnapshot = snapshot;
+  for (const notify of [...sessionChangeListeners]) {
+    try { notify(); } catch {
+      // Observers cannot interrupt key cleanup or another observer.
+    }
+  }
+}
+
 function revokeSessionAuthority(): number {
   const revokedGeneration = ++sessionGeneration;
   sessionMasterKey?.fill(0);
@@ -153,6 +176,7 @@ function revokeSessionAuthority(): number {
       // Never log observer errors: they may contain private operation context.
     }
   }
+  notifySessionChanges();
   return revokedGeneration;
 }
 
@@ -189,6 +213,8 @@ async function establishVaultSession(
   }
   sessionMasterKey = masterKey.slice();
   sessionMerchantKey = merchantKey;
+  notifySessionChanges();
+  assertSessionGeneration(establishmentGeneration);
 }
 
 export function getMerchantEncryptionKey(): Uint8Array {
