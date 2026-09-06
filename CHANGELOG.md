@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Described account creation and secret-key import accurately without guessing a derivation path from the number of active accounts.
 - Kept account creation and claim review exits consistent during active operations, prevented old modal completions from changing a reopened dialog, and allowed closing a confirmed claim while balances refresh.
 
 - Preserved genuine observation times for retained asset, XLM, and fiat rates; rejected new Mainnet merchant quotes when required rates are stale or unavailable, with local price retries that preserve tickets and forms.
