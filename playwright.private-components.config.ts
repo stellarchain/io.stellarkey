@@ -7,7 +7,7 @@ process.env.PLAYWRIGHT_NO_COPY_PROMPT = '1';
 
 export default defineConfig({
   ...base,
-  testMatch: ['private-components.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'relay-earn.spec.ts'],
+  testMatch: ['private-components.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'relay-earn.spec.ts', 'relay-startup.spec.ts'],
   globalTeardown: './e2e/fixtures/private-components-teardown.mjs',
   use: { ...base.use, screenshot: 'off', trace: 'off', video: 'off' },
   projects: [
