@@ -19,6 +19,7 @@ import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
 import { RelayHelperFixture } from '../../../e2e/fixtures/relay-helper-panel';
 import { RelayRecipientFixture } from '../../../e2e/fixtures/relay-recipient-panel';
 import { RelayEarnFixture } from '../../../e2e/fixtures/relay-earn-panel';
+import { RelayStartupFixture } from '../../../e2e/fixtures/relay-startup-panel';
 
 const draft = { kind: 'transfer' as const, amount: '1', recipientAddress: 'synthetic-recipient-only' };
 const approval: PrivateRelayChainApproval = {
@@ -74,6 +75,7 @@ function ProofPanel() {
 }
 
 function Fixture() {
+  const [relayStartup, setRelayStartup] = useState(false);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('recovery');
   const [scope, setScope] = useState('account-a');
@@ -84,12 +86,14 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
+  if (relayStartup) return <RelayStartupFixture />;
   return (
     <PrivateBalanceRuntimeDataProvider value={{ ...initialPrivateBalanceRuntimeData, asset: {
       index: 0, kind: 'native', code: 'XLM', issuer: null, name: 'Synthetic XLM', decimals: 7, displayDecimals: 7, contractId: 'synthetic', status: 'active',
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
+        <Button onClick={() => setRelayStartup(true)}>Test relay startup</Button>
         <UxPrimitivesFixture />
         <QrFreshnessFixture />
         <RelayHelperFixture />

@@ -12,6 +12,8 @@ import { formatPrivateBalanceAmount, formatPrivateBalanceXlm } from '../runtime/
 import {
   loadPrivateRelayPreferences,
   PRIVATE_RELAY_PREFERENCES_EVENT,
+  PRIVATE_RELAY_PREFERENCES_STORAGE_KEY,
+  retainPrivateRelayHelperPreferences,
   type PrivateRelayPreferences,
 } from '../relay/preferences';
 import type {
@@ -88,11 +90,10 @@ export function PrivateRelayHelperManager() {
 
   useEffect(() => {
     const update = (event: Event) => {
-      if (event instanceof CustomEvent && event.detail) {
-        setPreferences(event.detail as PrivateRelayPreferences);
-      } else {
-        setPreferences(loadPrivateRelayPreferences());
-      }
+      if (event instanceof StorageEvent && event.key !== null &&
+          event.key !== PRIVATE_RELAY_PREFERENCES_STORAGE_KEY) return;
+      const next = loadPrivateRelayPreferences();
+      setPreferences(current => retainPrivateRelayHelperPreferences(current, next));
     };
     window.addEventListener(PRIVATE_RELAY_PREFERENCES_EVENT, update);
     window.addEventListener('storage', update);
@@ -342,7 +343,7 @@ export function PrivateRelayHelperManager() {
         onRetry: () => {
           if (!active) return;
           publishPrivateRelayHelperStatus({
-            phase: 'connecting',
+            phase: 'reconnecting',
             connectedRelays: 0,
             totalRelays,
           });

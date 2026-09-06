@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Field, Notice, Toggle } from '@/components/ui';
 import { IconChevronDown, IconShield } from '@/components/icons';
+import { usePrivateBalanceRuntime } from '@/hooks/usePrivateBalanceRuntime';
 import {
   loadPrivateRelayPreferences,
   savePrivateRelayPreferences,
@@ -48,6 +49,7 @@ export function PrivateRelaySettings({
   helperOnly?: boolean;
   onSaved?(): void;
 } = {}) {
+  const { requested, requestRuntime } = usePrivateBalanceRuntime();
   const [draft, setDraft] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
   const [saved, setSaved] = useState(draft);
   const [feeAmount, setFeeAmount] = useState(() => feeForInput(draft.feeAtomic));
@@ -66,6 +68,9 @@ export function PrivateRelaySettings({
     // Keep participation current without discarding unfinished fee/URL edits.
     const refresh = () => {
       const next = loadPrivateRelayPreferences();
+      if (!next.helpRelay && document.activeElement?.id === `${id}-stop-paused`) {
+        document.getElementById(`${id}-participation`)?.focus();
+      }
       setSaved(next);
       setDraft(current => ({
         ...next,
@@ -82,7 +87,7 @@ export function PrivateRelaySettings({
       window.removeEventListener(PRIVATE_RELAY_PREFERENCES_EVENT, refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, []);
+  }, [id]);
 
   const update = (key: 'useRelay' | 'helpRelay', value: boolean) => {
     edited.current.add(key);
@@ -120,15 +125,30 @@ export function PrivateRelaySettings({
         useRelay: !helperOnly && edited.current.has('useRelay') ? draft.useRelay : latest.useRelay,
         helpRelay: helpRelay ?? (!helperOnly && edited.current.has('helpRelay') ? draft.helpRelay : latest.helpRelay),
       });
+      const startRequested = next.helpRelay && (helpRelay === true ||
+        (!helperOnly && edited.current.has('helpRelay')));
       edited.current.clear();
       setSaved(next);
       setDraft(next);
       setFeeAmount(feeForInput(next.feeAtomic));
       setFeedback({ state: helpRelay === true ? 'started' : 'saved' });
+      // A persisted preference does not mount the private runtime. Only this
+      // successful, explicit action supplies intent for the current scope.
+      if (startRequested) requestRuntime();
       onSaved?.();
     } catch {
       setFeedback({ state: 'error', field: 'storage', message: 'Could not save relay settings. Check that browser storage is available and try again.' });
     }
+  };
+
+  const resume = () => {
+    // Resume uses saved policy, independently of unfinished fee/URL edits.
+    // Re-read so a stop from another tab cannot be undone by a stale control.
+    const latest = loadPrivateRelayPreferences();
+    setSaved(latest);
+    if (!latest.helpRelay) return;
+    requestRuntime();
+    setFeedback({ state: 'started' });
   };
 
   const stop = () => {
@@ -189,10 +209,13 @@ export function PrivateRelaySettings({
     </p>
     {error ? <p id={`${id}-error`} role="alert" className="mt-3 rounded-xl border border-neg/30 bg-neg/10 p-3 text-[12px] leading-relaxed text-[#FF6961]">{error.message}</p> : null}
     <div role="status" aria-atomic="true" className="min-h-9 px-1 py-2 text-[11px] leading-relaxed text-muted">{message}</div>
-    <Button type="button" variant={saved.helpRelay ? 'secondary' : 'primary'} className="min-h-12 w-full"
-      onClick={() => { if (saved.helpRelay) stop(); else save(true); }}>
-      {saved.helpRelay ? 'Stop relaying' : 'Start relaying'}
+    <Button id={`${id}-participation`} type="button" variant={saved.helpRelay && requested ? 'secondary' : 'primary'} className="min-h-12 w-full"
+      onClick={() => { if (!saved.helpRelay) save(true); else if (!requested) resume(); else stop(); }}>
+      {!saved.helpRelay ? 'Start relaying' : requested ? 'Stop relaying' : 'Resume relaying'}
     </Button>
+    {saved.helpRelay && !requested ? <Button id={`${id}-stop-paused`} type="button" variant="secondary" className="mt-2 min-h-12 w-full" onClick={stop}>
+      Stop relaying
+    </Button> : null}
     <p className="px-1 pb-3 pt-2 text-center text-[11px] leading-relaxed text-muted">Stopping cannot revoke a signature already shared.</p>
 
     <details className="group/connections border-t border-white/[0.08]" open={connectionsOpen}

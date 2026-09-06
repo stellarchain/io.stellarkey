@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Start relaying now requests the private runtime instead of leaving an inactive helper labelled Connecting. Saved participation shows Paused after a fresh unlock, with explicit Resume; fee and connection edits alone do not resume it. Unrelated preferences no longer restart a connected helper, and failed connection attempts show Reconnecting during retries.
 - Restored the original compact Earn by relaying row beneath Home's assets, keeping the redesigned controls and interaction improvements inside its modal.
 - Included native disclosure controls in modal keyboard focus containment and kept Earn's closing geometry stable while immediately clearing its panel content.
 - Validate relay-compatible recipient addresses before peer discovery and explain how to request a fresh Shielded address, without changing the recipient or silently switching to direct submission.

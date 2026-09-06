@@ -70,7 +70,9 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
       await start.focus();
       await start.press('Enter');
       await expect.poll(() => preference(page, 'helpRelay')).toBe(true);
-      await expect(dialog.getByText('Connecting', { exact: true })).toBeVisible();
+      // This UI-only fixture has no manager/socket: an inactive status must
+      // not claim a network connection attempt. Startup has its own suite.
+      await expect(dialog.getByText('Preparing wallet', { exact: true })).toBeVisible();
       const stop = dialog.getByRole('button', { name: 'Stop relaying', exact: true });
       await expect(stop).toBeFocused();
       await stop.press('Enter');
@@ -155,10 +157,23 @@ test('advanced relay settings preserve independent opt-ins, validation and local
   await dialog.getByLabel('Private fee', { exact: true }).fill('invalid');
   await dialog.getByRole('button', { name: 'Save relay settings', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Enter a fee');
+  await expect(page.getByTestId('earn-runtime-requested')).toHaveText('false');
   await dialog.getByLabel('Private fee', { exact: true }).fill('0.006');
   await dialog.getByRole('button', { name: 'Save relay settings', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('Changes saved');
   await expect.poll(() => preference(page, 'useRelay')).toBe(true);
+  await expect.poll(() => preference(page, 'helpRelay')).toBe(true);
+  await expect(page.getByTestId('earn-runtime-requested')).toHaveText('true');
+});
+
+test('advanced sender-only changes do not resume saved helper participation', async ({ page }) => {
+  await page.getByRole('button', { name: 'Restore saved helper preference', exact: true }).click();
+  await page.getByRole('button', { name: 'Open advanced relay settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic advanced relay settings', exact: true });
+  await dialog.getByRole('switch', { name: /Prefer privacy relay/ }).click();
+  await dialog.getByRole('button', { name: 'Save relay settings', exact: true }).click();
+  await expect(dialog.getByRole('status')).toContainText('Changes saved');
+  await expect(page.getByTestId('earn-runtime-requested')).toHaveText('false');
   await expect.poll(() => preference(page, 'helpRelay')).toBe(true);
 });
 

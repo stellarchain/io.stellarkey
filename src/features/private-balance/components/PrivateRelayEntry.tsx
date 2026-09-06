@@ -8,7 +8,7 @@ import {
   PRIVATE_RELAY_PREFERENCES_EVENT,
   type PrivateRelayPreferences,
 } from '../relay/preferences';
-import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
+import { usePrivateBalanceRuntime, usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { PrivateRelayAvailability } from './PrivateRelayAvailability';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
 import {
@@ -33,7 +33,8 @@ function RelayMark({ large = false }: { large?: boolean }) {
 }
 
 export function PrivateRelayEntry() {
-  const { asset, deployment, publicAddress } = usePrivateBalanceRuntimeData();
+  const { asset, deployment, publicAddress, phase, error } = usePrivateBalanceRuntimeData();
+  const { requested } = usePrivateBalanceRuntime();
   const [open, setOpen] = useState(false);
   const [exploring, setExploring] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -57,40 +58,55 @@ export function PrivateRelayEntry() {
     };
   }, []);
 
+  const runtimeUnavailable = phase === 'safe-error' || phase === 'status-unknown' || error !== null;
+  // Never infer a socket attempt from a saved opt-in. The helper is lazy and
+  // may not even be mounted yet; private runtime intent is scoped to unlock.
+  const helperPhase = !requested ? 'paused'
+    : runtimeUnavailable ? 'unavailable'
+      : phase !== 'current' || helperStatus.phase === 'off' || helperStatus.phase === 'waiting'
+        ? 'preparing' : helperStatus.phase;
   const status = !preferences.helpRelay
     ? 'Set up'
-    : helperStatus.phase === 'connected'
-      ? 'Connected'
-      : helperStatus.phase === 'reconnecting'
-        ? 'Reconnecting'
-        : helperStatus.phase === 'unavailable'
-          ? 'Unavailable'
-          : helperStatus.phase === 'waiting'
-            ? 'Waiting'
-            : 'Connecting';
+    : helperPhase === 'paused'
+      ? 'Paused'
+      : helperPhase === 'preparing'
+        ? 'Preparing wallet'
+        : helperPhase === 'connected'
+          ? 'Connected'
+          : helperPhase === 'reconnecting'
+            ? 'Reconnecting'
+            : helperPhase === 'unavailable'
+              ? 'Unavailable'
+              : 'Connecting';
   const helperDescription = !preferences.helpRelay
     ? 'Help submit private payments for a private reward'
-    : helperStatus.phase === 'connected'
-      ? `Connected to ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
-      : helperStatus.phase === 'reconnecting'
-        ? 'Reconnecting to the public relay network'
-        : helperStatus.phase === 'unavailable'
-          ? 'Public relay connection unavailable'
-          : helperStatus.phase === 'waiting'
-            ? 'Waiting for Private Payments to finish syncing'
-            : 'Connecting to the public relay network';
-  const helperIsConnected = preferences.helpRelay && helperStatus.phase === 'connected';
+    : helperPhase === 'paused'
+      ? 'Resume relaying to connect this unlocked wallet'
+      : helperPhase === 'preparing'
+        ? 'Preparing Private Payments before connecting'
+        : helperPhase === 'connected'
+          ? `Connected to ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
+          : helperPhase === 'reconnecting'
+            ? 'Reconnecting to the public relay network'
+            : helperPhase === 'unavailable'
+              ? runtimeUnavailable
+                ? 'Private Payments needs attention. Open its details before relaying.'
+                : 'Public relay connection unavailable; retrying automatically'
+              : 'Connecting to the public relay network';
+  const helperIsConnected = preferences.helpRelay && helperPhase === 'connected';
   const headline = !preferences.helpRelay
     ? 'Relay on your terms.'
     : helperIsConnected
       ? 'You’re available.'
-      : helperStatus.phase === 'unavailable'
-        ? 'Connection interrupted.'
-        : helperStatus.phase === 'reconnecting'
-          ? 'Getting you back online.'
-          : helperStatus.phase === 'waiting'
-            ? 'Waiting for your wallet.'
-            : 'Getting connected.';
+      : helperPhase === 'paused'
+        ? 'Ready when you are.'
+        : helperPhase === 'unavailable'
+          ? runtimeUnavailable ? 'Your wallet needs attention.' : 'Connection interrupted.'
+          : helperPhase === 'reconnecting'
+            ? 'Getting you back online.'
+            : helperPhase === 'preparing'
+              ? 'Waiting for your wallet.'
+              : 'Getting connected.';
   const statusTone = helperIsConnected ? 'text-pos' : preferences.helpRelay ? 'text-warn' : 'text-muted';
   const close = () => {
     // Clear peer information immediately, retaining only geometry for exit.
