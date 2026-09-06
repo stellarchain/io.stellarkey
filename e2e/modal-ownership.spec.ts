@@ -1,0 +1,329 @@
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test, type Page } from '@playwright/test';
+
+declare global {
+  interface Window {
+    __modalObservation?: { removed: number; scrollUnlocks: number; inertInterruptions: number; closing: number; stop(): void };
+  }
+}
+
+test.skip(!process.env.PRIVATE_COMPONENT_FIXTURE_SHA256, 'Use the isolated synthetic component runner.');
+
+test.beforeEach(async ({ page, baseURL }) => {
+  const origin = new URL(baseURL!).origin;
+  await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+  await page.routeWebSocket('**/*', socket => {
+    if (new URL(socket.url()).origin === origin.replace(/^http/, 'ws')) socket.connectToServer();
+    else socket.close();
+  });
+  await page.addInitScript(() => { Object.defineProperty(window, 'EventSource', { value: undefined, configurable: true }); });
+  await page.goto('/private-component-fixture');
+  await page.getByRole('button', { name: 'Test modal ownership', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare modal checks', exact: true }).click();
+  await expect(page.getByTestId('modal-ready')).toHaveText('true');
+});
+
+test.afterEach(async ({ page }) => {
+  if (page.isClosed()) return;
+  await page.evaluate(() => window.__modalObservation?.stop());
+  const dispose = page.getByRole('button', { name: 'Dispose modal checks', exact: true });
+  if (await dispose.count()) {
+    await dispose.evaluate(element => (element as HTMLButtonElement).click());
+    await expect(page.getByRole('button', { name: 'Test modal ownership', exact: true })).toBeVisible();
+  }
+});
+
+async function deliver(page: Page, name: string) {
+  await page.getByRole('button', { name, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+}
+
+async function markShell(page: Page) {
+  await page.evaluate(async () => {
+    window.__modalObservation?.stop();
+    const shell = document.querySelector<HTMLElement>('[data-modal-shell]')!;
+    const backdrop = document.querySelector<HTMLElement>('[data-modal-backdrop]')!;
+    await Promise.all([...shell.getAnimations(), ...backdrop.getAnimations()].map(animation => animation.finished.catch(() => {})));
+    shell.dataset.syntheticIdentity = 'retained';
+    backdrop.dataset.syntheticIdentity = 'retained';
+    if (document.activeElement instanceof HTMLElement) document.activeElement.dataset.syntheticFocus = 'retained';
+    for (const element of [shell, backdrop]) {
+      element.dataset.syntheticAnimations = '0';
+      element.addEventListener('animationstart', event => {
+        if (event.target === element) element.dataset.syntheticAnimations = String(Number(element.dataset.syntheticAnimations) + 1);
+      });
+    }
+    const app = document.querySelector<HTMLElement>('[data-app-surface]');
+    const scrollOwner = document.querySelector<HTMLElement>('[data-app-scroll-owner]');
+    const state = { removed: 0, scrollUnlocks: 0, inertInterruptions: 0, closing: 0, stop: () => {} };
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        if (record.attributeName === 'style' && (record.target === document.body || record.target === scrollOwner)
+          && !/overflow:\s*hidden/.test(record.oldValue ?? '')) state.scrollUnlocks++;
+        if (record.target === app && record.attributeName === 'inert' && record.oldValue === null) state.inertInterruptions++;
+        if (record.target === backdrop && record.attributeName === 'data-overlay-state' && backdrop.dataset.overlayState !== 'open') state.closing++;
+      }
+      if (document.body.style.overflow !== 'hidden' || scrollOwner?.style.overflow !== 'hidden') state.scrollUnlocks++;
+      if (app && !app.inert) state.inertInterruptions++;
+      if (!shell.isConnected || !backdrop.isConnected) { state.removed++; state.stop(); }
+    });
+    state.stop = () => { observer.disconnect(); state.stop = () => {}; };
+    window.__modalObservation = state;
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['style', 'inert', 'data-overlay-state'] });
+  });
+}
+
+async function stableShell(page: Page, preserveFocus = false) {
+  await expect.poll(() => page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>('[data-modal-shell]');
+    const backdrop = document.querySelector<HTMLElement>('[data-modal-backdrop]');
+    const bounds = shell?.getBoundingClientRect();
+    return { shell: shell?.dataset.syntheticIdentity, backdrop: backdrop?.dataset.syntheticIdentity,
+      shellAnimations: shell?.dataset.syntheticAnimations, backdropAnimations: backdrop?.dataset.syntheticAnimations,
+      removed: window.__modalObservation?.removed, scrollUnlocks: window.__modalObservation?.scrollUnlocks,
+      inertInterruptions: window.__modalObservation?.inertInterruptions, closing: window.__modalObservation?.closing,
+      bodyLocked: document.body.style.overflow === 'hidden', ownerLocked: document.querySelector<HTMLElement>('[data-app-scroll-owner]')?.style.overflow === 'hidden',
+      focused: !!backdrop?.contains(document.activeElement), inert: !!document.querySelector('main')?.closest('[inert]'),
+      contained: !!bounds && bounds.left >= -1 && bounds.right <= innerWidth + 1 };
+  })).toEqual({ shell: 'retained', backdrop: 'retained', shellAnimations: '0', backdropAnimations: '0', removed: 0, scrollUnlocks: 0, inertInterruptions: 0, closing: 0, bodyLocked: true, ownerLocked: true, focused: true, inert: true, contained: true });
+  if (preserveFocus) await expect.poll(() => page.evaluate(() => document.activeElement instanceof HTMLElement
+    && document.activeElement.dataset.syntheticFocus === 'retained')).toBe(true);
+}
+
+async function outsidePointer(page: Page) {
+  // This point must hit the backdrop itself on both desktop and iPhone, not
+  // just dispatch a handler event through an element covered by the panel.
+  await expect.poll(() => page.evaluate(() => document.elementFromPoint(2, 2) === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+  await page.mouse.click(2, 2);
+}
+
+async function closed(page: Page, opener: string) {
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow !== 'hidden'
+    && document.querySelector<HTMLElement>('[data-app-scroll-owner]')?.style.overflow !== 'hidden'
+    && !document.querySelector('main')?.closest('[inert]'))).toBe(true);
+  await expect(page.getByRole('button', { name: opener, exact: true })).toBeFocused();
+}
+
+async function startImport(page: Page) {
+  await deliver(page, 'Hold next encryption');
+  await deliver(page, 'Fill synthetic import');
+  await page.getByRole('button', { name: 'Import Account', exact: true }).click();
+  await expect(page.getByTestId('modal-stage')).toHaveText('encryption');
+  await page.keyboard.press('Tab');
+}
+
+async function startClaim(page: Page, response: string) {
+  await deliver(page, `Use ${response} response`);
+  await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+  await page.getByRole('button', { name: 'Select all available', exact: true }).click();
+  await deliver(page, 'Hold submission');
+  await page.getByRole('button', { name: 'Claim selected (1)', exact: true }).click();
+  await expect(page.getByTestId('modal-stage')).toHaveText('submission');
+}
+
+test('synthetic modal fixture loads the actual claim review and account form', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+  await expect(page.getByLabel('Secret Key', { exact: true })).toBeVisible();
+});
+
+for (const motion of ['reduce', 'no-preference'] as const) {
+  test.describe(`modal ownership with ${motion} motion`, () => {
+    test.use({ reducedMotion: motion });
+
+    test('account import guards header, dismissal, mode changes and duplicate clicks', async ({ page }) => {
+      await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+      await markShell(page);
+      await startImport(page);
+      await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Watch', exact: true })).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await outsidePointer(page);
+      await page.getByRole('button', { name: 'Import Account', exact: true }).evaluate(element => { (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click(); });
+      await page.keyboard.press('Tab');
+      await stableShell(page);
+      await expect(page.getByTestId('modal-encryptions')).toHaveText('1');
+      await deliver(page, 'Deliver oldest response');
+      await closed(page, 'Open account modal');
+      await expect(page.getByTestId('modal-closes')).toHaveText('1');
+    });
+
+    for (const outcome of ['Deliver', 'Fail']) {
+      test(`old account ${outcome.toLowerCase()} cannot affect a reopened busy import`, async ({ page }) => {
+        await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+        await startImport(page);
+        await deliver(page, 'Force account closed');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+        await page.getByLabel('Account Label', { exact: true }).fill('Synthetic replacement');
+        await expect(page.getByLabel('Account Label', { exact: true })).toHaveValue('Synthetic replacement');
+        await startImport(page);
+        await expect(page.getByLabel('Account Label', { exact: true })).toHaveValue('Synthetic replacement');
+        await markShell(page);
+        await deliver(page, `${outcome} oldest response`);
+        await expect(page.getByTestId('modal-deliveries')).toHaveText('1');
+        await stableShell(page, true);
+        await expect(page.getByLabel('Account Label', { exact: true })).toHaveValue('Synthetic replacement');
+        await expect(page.getByRole('button', { name: 'Import Account', exact: true })).toHaveAttribute('aria-busy', 'true');
+        await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+        await expect(page.getByTestId('modal-closes')).toHaveText('0');
+        await deliver(page, 'Deliver oldest response');
+        if (outcome === 'Deliver') {
+          // Both imports captured the same vault revision. A committed first;
+          // B must report its own conflict and retry against the current vault.
+          await expect(page.getByRole('button', { name: 'Import Account', exact: true })).toBeEnabled();
+          await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(1);
+          await expect(page.getByLabel('Account Label', { exact: true })).toHaveValue('Synthetic replacement');
+          await expect(page.getByTestId('modal-closes')).toHaveText('0');
+          await deliver(page, 'Hold next encryption');
+          await page.getByRole('button', { name: 'Import Account', exact: true }).click();
+          await expect(page.getByTestId('modal-encryptions')).toHaveText('3');
+          await deliver(page, 'Deliver oldest response');
+        }
+        await closed(page, 'Open account modal');
+        await expect(page.getByTestId('modal-closes')).toHaveText('1');
+      });
+    }
+
+    for (const phase of ['preparation', 'submission']) {
+    test(`claim ${phase} guards header, alternate done and asset handoff`, async ({ page }) => {
+      await deliver(page, 'Use unknown response');
+      await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+      await markShell(page);
+      await page.getByRole('button', { name: 'Select all available', exact: true }).click();
+      await deliver(page, `Hold ${phase}`);
+      await page.getByRole('button', { name: 'Claim selected (1)', exact: true }).click();
+      await expect(page.getByTestId('modal-stage')).toHaveText(phase);
+      await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Add trusted asset', exact: true })).toBeDisabled();
+      await page.getByRole('button', { name: 'Claim selected (1)', exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+      await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeDisabled();
+      await expect(page.getByRole('dialog').getByRole('button').filter({ hasText: /^Restore$/ })).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await outsidePointer(page);
+      await page.keyboard.press('Tab');
+      await stableShell(page);
+      await deliver(page, 'Fail oldest response');
+      await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Done', exact: true }).click();
+      await closed(page, 'Open claim modal');
+      await expect(page.getByTestId('modal-handoffs')).toHaveText('0');
+      await expect(page.getByTestId('modal-posts')).toHaveText(phase === 'submission' ? '1' : '0');
+    });
+    }
+
+    test('confirmed claim permits closing while its balance refresh is pending', async ({ page }) => {
+      await startClaim(page, 'confirmed');
+      await deliver(page, 'Hold refresh');
+      await deliver(page, 'Deliver oldest response');
+      await expect(page.getByTestId('modal-stage')).toHaveText('refresh');
+      await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      await deliver(page, 'Deliver all responses');
+      await expect(page.getByTestId('modal-closes')).toHaveText('1');
+    });
+
+    test('tracked confirmation refresh does not restart when its parent replaces the close callback', async ({ page }) => {
+      await page.getByRole('button', { name: 'Toggle inline close callback', exact: true }).click();
+      await startClaim(page, 'accepted');
+      await deliver(page, 'Deliver oldest response');
+      await expect(page.getByTestId('modal-stage')).toHaveText('canonical');
+      await deliver(page, 'Hold refresh');
+      await deliver(page, 'Canonical confirmed');
+      await deliver(page, 'Deliver oldest response');
+      await expect.poll(async () => Number(await page.getByTestId('modal-refreshes').textContent()) >= 2).toBe(true);
+      await deliver(page, 'Rerender modal parent');
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      // One automatic provider refresh and one modal refresh; callback identity
+      // changes cannot launch more work or cancel this opening's completion.
+      expect(await page.getByTestId('modal-refreshes').textContent()).toBe('2');
+      await deliver(page, 'Deliver all responses');
+      await closed(page, 'Open claim modal');
+      await expect(page.getByTestId('modal-closes')).toHaveText('1');
+    });
+
+    for (const mounting of ['retained', 'conditional']) {
+      test(`confirmed claim refresh cannot close a reopened ${mounting} modal`, async ({ page }) => {
+        if (mounting === 'conditional') await page.getByRole('button', { name: 'Toggle conditional mount', exact: true }).click();
+        await startClaim(page, 'confirmed');
+        await deliver(page, 'Hold refresh');
+        await deliver(page, 'Deliver oldest response');
+        await expect(page.getByTestId('modal-stage')).toHaveText('refresh');
+        await deliver(page, 'Force claim closed');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+        await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
+        await markShell(page);
+        await deliver(page, 'Deliver all responses');
+        await expect(page.getByTestId('modal-deliveries')).not.toHaveText('1');
+        await stableShell(page, true);
+        await expect(page.getByRole('dialog', { name: 'Dismissed balances' })).toHaveCount(1);
+        await expect(page.getByTestId('modal-closes')).toHaveText('0');
+        await page.getByRole('button', { name: 'Done', exact: true }).click();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+      });
+
+      for (const response of ['accepted', 'unknown']) {
+        for (const result of ['confirmed', 'failed']) {
+          test(`${response} claim tracking ${result} preserves reopened ${mounting} modal`, async ({ page }) => {
+            if (mounting === 'conditional') await page.getByRole('button', { name: 'Toggle conditional mount', exact: true }).click();
+            await startClaim(page, response);
+            await deliver(page, 'Deliver oldest response');
+            await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled();
+            await expect(page.getByTestId('modal-pending')).toHaveText('1');
+            if (response === 'unknown') await deliver(page, 'Canonical hold');
+            await expect(page.getByTestId('modal-stage')).toHaveText('canonical');
+            await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+            await expect(page.getByRole('dialog')).toHaveCount(0);
+            await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+            if (response === 'unknown') await expect(page.getByRole('dialog').getByText('Claim status is unknown. Checking for ledger confirmation before another claim can be sent.', { exact: true })).toBeVisible();
+            await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
+            await markShell(page);
+            await deliver(page, `Canonical ${result}`);
+            await deliver(page, 'Deliver all responses');
+            await expect(page.getByTestId('modal-pending')).toHaveText('0');
+            await stableShell(page, true);
+            await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+            await expect(page.getByTestId('modal-closes')).toHaveText('1');
+            await page.getByRole('button', { name: 'Done', exact: true }).click();
+            await expect(page.getByRole('dialog')).toHaveCount(0);
+            await expect(page.getByTestId('modal-closes')).toHaveText('2');
+          });
+        }
+      }
+    }
+
+    test('account modes and claim views preserve the shell through rapid pointer and keyboard changes', async ({ page }) => {
+      await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+      await markShell(page);
+      for (let index = 0; index < 3; index++) {
+        await page.getByRole('button', { name: 'Watch', exact: true }).click();
+        await page.getByRole('button', { name: 'Import', exact: true }).focus();
+        await page.keyboard.press('Enter');
+      }
+      await stableShell(page);
+      const accountAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
+      expect(accountAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+      await page.keyboard.press('Escape');
+      await closed(page, 'Open account modal');
+      await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
+      await markShell(page);
+      for (let index = 0; index < 3; index++) {
+        await page.getByRole('button', { name: 'Show dismissed (1)', exact: true }).click();
+        await page.getByRole('button', { name: 'Review available (2)', exact: true }).focus();
+        await page.keyboard.press('Space');
+      }
+      await stableShell(page);
+      const claimAxe = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
+      expect(claimAxe.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+      await outsidePointer(page);
+      await closed(page, 'Open claim modal');
+    });
+  });
+}

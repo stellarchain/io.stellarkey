@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -27,15 +27,7 @@ function hasClaimTrustline(
   );
 }
 
-export function ClaimableBalancesModal({
-  open,
-  dismissedBalanceIds,
-  initialShowDismissed = false,
-  onClose,
-  onDismiss,
-  onRestore,
-  onAddAsset,
-}: {
+type ClaimableBalancesModalProps = {
   open: boolean;
   dismissedBalanceIds: string[];
   initialShowDismissed?: boolean;
@@ -43,20 +35,49 @@ export function ClaimableBalancesModal({
   onDismiss: (balanceId: string) => void;
   onRestore: (balanceId: string) => void;
   onAddAsset: () => void;
-}) {
+};
+
+export function ClaimableBalancesModal({ open, ...props }: ClaimableBalancesModalProps) {
+  if (!open) return null;
+  return <ClaimableBalancesInner {...props} />;
+}
+
+// An opening owns local selections and completion callbacks. Ledger tracking
+// remains in the wallet provider when this opening is closed or replaced.
+function ClaimableBalancesInner({
+  dismissedBalanceIds,
+  initialShowDismissed = false,
+  onClose,
+  onDismiss,
+  onRestore,
+  onAddAsset,
+}: Omit<ClaimableBalancesModalProps, "open">) {
   const { activeAccount } = useWalletIdentity();
   const { balances, claimableBalances, recommendedBaseFeeStroops } = useWalletLedger();
   const { pendingTxs, submissionStatus } = useWalletSubmission();
   const { claimAirdrops, refresh } = useWalletTransactions();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<SubmissionResult | null>(null);
   const [showDismissed, setShowDismissed] = useState(initialShowDismissed);
+  const ownerRef = useRef(false);
+  const busyRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  const selectionId = useId();
+
+  useLayoutEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  useLayoutEffect(() => {
+    ownerRef.current = true;
+    return () => { ownerRef.current = false; };
+  }, []);
   const trackedStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
-  const pendingAirdropClaim = pendingTxs.some(
+  const pendingClaimStatus = pendingTxs.find(
     (transaction) => transaction.label === "Airdrop claim",
-  );
+  )?.status;
+  const pendingAirdropClaim = pendingClaimStatus !== undefined;
 
   const dismissedIdSet = useMemo(
     () => new Set(dismissedBalanceIds),
@@ -92,7 +113,7 @@ export function ClaimableBalancesModal({
     let active = true;
     void (async () => {
       await Promise.resolve();
-      if (!active) return;
+      if (!active || !ownerRef.current) return;
       if (trackedStatus === "failed") {
         setPendingSubmission(null);
         setError("The selected claim transaction failed on-chain. Review the entries and retry.");
@@ -100,21 +121,27 @@ export function ClaimableBalancesModal({
         return;
       }
       if (trackedStatus !== "confirmed") return;
-      await refresh();
-      if (!active) return;
+      setConfirmed(true);
+      try {
+        await refresh();
+      } catch {
+        if (!active || !ownerRef.current) return;
+        setError("Claim confirmed, but balances could not be refreshed. Close this review and refresh your wallet.");
+        return;
+      }
+      if (!active || !ownerRef.current) return;
       setSelected(new Set());
       setPendingSubmission(null);
       triggerHaptic("success");
-      onClose();
+      onCloseRef.current();
     })();
     return () => {
       active = false;
     };
-  }, [onClose, pendingSubmission, refresh, trackedStatus]);
-
-  if (!open) return null;
+  }, [pendingSubmission, refresh, trackedStatus]);
 
   function toggleSelection(id: string, checked: boolean) {
+    if (busyRef.current || pendingAirdropClaim || confirmed) return;
     triggerHaptic("selection");
     setSelected((current) => {
       const next = new Set(current);
@@ -125,11 +152,13 @@ export function ClaimableBalancesModal({
   }
 
   function toggleAllAvailable() {
+    if (busyRef.current || pendingAirdropClaim || confirmed) return;
     triggerHaptic("selection");
     setSelected(allAvailableSelected ? new Set() : new Set(availableIds));
   }
 
   function handleDismiss(balanceId: string) {
+    if (busyRef.current || pendingAirdropClaim) return;
     try {
       onDismiss(balanceId);
       setSelected((current) => {
@@ -139,27 +168,20 @@ export function ClaimableBalancesModal({
       });
       setError(null);
       triggerHaptic("light");
-    } catch (dismissError) {
-      setError(
-        dismissError instanceof Error
-          ? dismissError.message
-          : "This balance could not be dismissed on this device.",
-      );
+    } catch {
+      setError("This balance could not be dismissed on this device. Try again.");
       triggerHaptic("error");
     }
   }
 
   function handleRestore(balanceId: string) {
+    if (busyRef.current || pendingAirdropClaim) return;
     try {
       onRestore(balanceId);
       setError(null);
       triggerHaptic("light");
-    } catch (restoreError) {
-      setError(
-        restoreError instanceof Error
-          ? restoreError.message
-          : "This balance could not be restored on this device.",
-      );
+    } catch {
+      setError("This balance could not be restored on this device. Try again.");
       triggerHaptic("error");
     }
   }
@@ -167,20 +189,36 @@ export function ClaimableBalancesModal({
   async function handleClaimSelected() {
     if (
       selectedIds.length === 0 ||
-      busy ||
+      !ownerRef.current ||
+      busyRef.current ||
+      confirmed ||
       pendingAirdropClaim ||
       pendingSubmission ||
       activeAccount?.watchOnly
     ) {
       return;
     }
+    // The transaction API owns preparation, signing and submission. It has no
+    // cancellation contract, so all exits remain guarded until it returns.
+    busyRef.current = true;
     setBusy(true);
     setError(null);
     triggerHaptic("selection");
     try {
       const result = await claimAirdrops(selectedIds);
+      if (!ownerRef.current) return;
       if (result.status === "confirmed") {
-        await refresh();
+        setConfirmed(true);
+        busyRef.current = false;
+        setBusy(false);
+        try {
+          await refresh();
+        } catch {
+          if (!ownerRef.current) return;
+          setError("Claim confirmed, but balances could not be refreshed. Close this review and refresh your wallet.");
+          return;
+        }
+        if (!ownerRef.current) return;
         setSelected(new Set());
         triggerHaptic("success");
         onClose();
@@ -188,16 +226,30 @@ export function ClaimableBalancesModal({
         setPendingSubmission(result);
         triggerHaptic(result.status === "status_unknown" ? "warning" : "medium");
       }
-    } catch (claimError) {
-      setError(claimError instanceof Error ? claimError.message : "Claim transaction failed.");
+    } catch {
+      if (!ownerRef.current) return;
+      setError("The claim could not be completed. Review the balances and try again.");
       triggerHaptic("error");
     } finally {
-      setBusy(false);
+      if (ownerRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }
 
+  function handleClose() {
+    if (!ownerRef.current || busyRef.current) return;
+    onClose();
+  }
+
+  function handleAddAsset() {
+    if (!ownerRef.current || busyRef.current) return;
+    onAddAsset();
+  }
+
   return (
-    <Modal open onClose={onClose} wide dismissable={!busy}>
+    <Modal open onClose={handleClose} wide dismissable={!busy}>
       <ModalHeader
         title={showDismissed ? "Dismissed balances" : "Pending balances"}
         subtitle={
@@ -205,7 +257,8 @@ export function ClaimableBalancesModal({
             ? "Hidden on this browser only"
             : "Select only the assets you recognize"
         }
-        onClose={onClose}
+        onClose={handleClose}
+        closeDisabled={busy}
       />
       <div className="space-y-4 p-4 sm:p-6">
         <div className="flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3 text-[12px] leading-relaxed text-neutral-300">
@@ -236,7 +289,7 @@ export function ClaimableBalancesModal({
               <button
                 type="button"
                 onClick={toggleAllAvailable}
-                disabled={availableIds.length === 0 || busy || pendingAirdropClaim}
+                disabled={availableIds.length === 0 || busy || pendingAirdropClaim || confirmed}
                 className="min-h-11 rounded-lg px-2 text-[12px] font-semibold text-[#0A84FF] disabled:text-neutral-600 sm:min-h-0"
               >
                 {allAvailableSelected ? "Clear selection" : "Select all available"}
@@ -290,6 +343,7 @@ export function ClaimableBalancesModal({
                 <button
                   type="button"
                   onClick={() => handleRestore(item.id)}
+                  disabled={busy || pendingAirdropClaim}
                   className="min-h-11 shrink-0 rounded-xl px-2.5 text-[12px] font-semibold text-[#0A84FF] hover:bg-[#0A84FF]/10"
                   aria-label={`Restore ${fmtAmount(item.amount)} ${item.assetCode}`}
                 >
@@ -316,14 +370,16 @@ export function ClaimableBalancesModal({
                   }`}
                 >
                   <label
+                    htmlFor={`${selectionId}-${index}`}
                     className={`flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left ${
                       ready ? "cursor-pointer hover:bg-white/[0.04]" : "cursor-not-allowed"
                     }`}
                   >
                     <input
+                      id={`${selectionId}-${index}`}
                       type="checkbox"
                       checked={checked}
-                      disabled={!ready || busy || pendingAirdropClaim}
+                      disabled={!ready || busy || pendingAirdropClaim || confirmed}
                       onChange={(event) => toggleSelection(item.id, event.target.checked)}
                       className="h-5 w-5 shrink-0 accent-[#0A84FF]"
                       aria-label={`Select ${fmtAmount(item.amount)} ${item.assetCode}`}
@@ -386,7 +442,8 @@ export function ClaimableBalancesModal({
             <Button
               variant="secondary"
               className="mt-3 w-full !min-h-10 !py-2 text-[12px]"
-              onClick={onAddAsset}
+              onClick={handleAddAsset}
+              disabled={busy}
             >
               <IconPlus size={14} /> Add trusted asset
             </Button>
@@ -397,17 +454,23 @@ export function ClaimableBalancesModal({
           <ErrorText message="This is a watch-only account. Switch to an account that can sign to claim." />
         )}
         {error && <ErrorText message={error} />}
-        {!showDismissed && (pendingSubmission || pendingAirdropClaim) && !error && (
+        {!showDismissed && (confirmed || pendingSubmission || pendingAirdropClaim) && !error && (
           <div
             role="status"
             className="rounded-2xl border border-[#0A84FF]/25 bg-[#0A84FF]/10 p-3 text-[12px] leading-relaxed text-[#64D2FF]"
           >
-            Claim submitted. Waiting for ledger confirmation before another claim can be sent.
+            {confirmed
+              ? "Claim confirmed. Refreshing balances."
+              : busy
+                ? "Waiting for claim submission status. Keep this review open."
+                : pendingSubmission?.status === "status_unknown" || pendingClaimStatus === "status_unknown"
+                  ? "Claim status is unknown. Checking for ledger confirmation before another claim can be sent."
+                  : "Claim submitted. Waiting for ledger confirmation before another claim can be sent."}
           </div>
         )}
 
         {showDismissed ? (
-          <Button variant="secondary" className="w-full" onClick={onClose}>
+          <Button variant="secondary" className="w-full" disabled={busy} onClick={handleClose}>
             Done
           </Button>
         ) : (
@@ -427,13 +490,14 @@ export function ClaimableBalancesModal({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="ghost" disabled={busy} onClick={onClose}>
+              <Button variant="ghost" disabled={busy} onClick={handleClose}>
                 Cancel
               </Button>
               <Button
                 loading={busy}
                 disabled={
                   selectedIds.length === 0 ||
+                  confirmed ||
                   pendingAirdropClaim ||
                   Boolean(pendingSubmission) ||
                   Boolean(activeAccount?.watchOnly)

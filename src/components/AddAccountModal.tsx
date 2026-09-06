@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { hasMnemonic, isValidPublicAddress, validateStellarSecret } from "@/lib/vault";
 import { triggerHaptic } from "@/lib/haptics";
@@ -48,6 +48,13 @@ function AddAccountInner({
   const [watchKey, setWatchKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ownerRef = useRef(false);
+  const busyRef = useRef(false);
+
+  useLayoutEffect(() => {
+    ownerRef.current = true;
+    return () => { ownerRef.current = false; };
+  }, []);
 
   const watchValid = isValidPublicAddress(watchKey.trim());
   const importValid = validateStellarSecret(secretInput);
@@ -59,24 +66,33 @@ function AddAccountInner({
   }, [mode]);
 
   async function handleConnectHardware() {
+    if (!ownerRef.current || busyRef.current) return;
+    busyRef.current = true;
     setError(null);
     setBusy(true);
     try {
       const info = await connectTrezorDevice(hardwareIndex);
+      if (!ownerRef.current) return;
       setConnectedInfo(info);
       if (!label) {
         setLabel(info.label);
       }
       triggerHaptic("success");
-    } catch (e) {
+    } catch {
+      if (!ownerRef.current) return;
       triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Failed to connect hardware device.");
+      setError("Could not connect to your hardware device. Check the device and try again.");
     } finally {
-      setBusy(false);
+      if (ownerRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
   }
 
   async function handleCreate() {
+    if (!ownerRef.current || busyRef.current || !canSubmit) return;
+    busyRef.current = true;
     setError(null);
     setBusy(true);
     try {
@@ -99,6 +115,7 @@ function AddAccountInner({
           label: label || undefined,
         });
       }
+      if (!ownerRef.current) return;
       triggerHaptic("success");
       onClose();
       // Reset for next open
@@ -108,12 +125,21 @@ function AddAccountInner({
       setConnectedInfo(null);
       setHardwareIndex(0);
       setMode(hasMnemonicVault ? "generate" : "import");
-    } catch (e) {
+    } catch {
+      if (!ownerRef.current) return;
       triggerHaptic("error");
-      setError(e instanceof Error ? e.message : "Could not add account.");
+      setError("Could not add this account. Check the details and try again.");
     } finally {
-      setBusy(false);
+      if (ownerRef.current) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
+  }
+
+  function handleClose() {
+    if (!ownerRef.current || busyRef.current) return;
+    onClose();
   }
 
   const canSubmit =
@@ -131,18 +157,22 @@ function AddAccountInner({
         : `Derives at m/44'/148'/${accounts.length}'`;
 
   return (
-    <Modal open onClose={onClose} dismissable={!busy}>
-      <ModalHeader title="Add Account" subtitle={subtitle} onClose={onClose} />
+    <Modal open onClose={handleClose} dismissable={!busy}>
+      <ModalHeader title="Add Account" subtitle={subtitle} onClose={handleClose} closeDisabled={busy} />
       <div className="p-4 sm:p-6">
         <SegmentedControl<Mode>
           ariaLabel="How to add this account"
           value={mode}
-          onChange={setMode}
+          onChange={(next) => {
+            if (busyRef.current) return;
+            setMode(next);
+            setError(null);
+          }}
           options={[
-            ...(hasMnemonicVault ? [{ value: "generate" as Mode, label: "Derive" }] : []),
-            { value: "import", label: "Import" },
-            { value: "hardware", label: "Hardware" },
-            { value: "watch", label: "Watch" },
+            ...(hasMnemonicVault ? [{ value: "generate" as Mode, label: "Derive", disabled: busy }] : []),
+            { value: "import", label: "Import", disabled: busy },
+            { value: "hardware", label: "Hardware", disabled: busy },
+            { value: "watch", label: "Watch", disabled: busy },
           ]}
         />
 
@@ -163,6 +193,7 @@ function AddAccountInner({
                 <button
                   key={preset.name}
                   type="button"
+                  disabled={busy}
                   onClick={() => {
                     triggerHaptic("selection");
                     setLabel(`${preset.emoji} ${preset.name}`);
@@ -185,6 +216,7 @@ function AddAccountInner({
                   : `Account ${accounts.length + 1}`
               }
               value={label}
+              disabled={busy}
               onChange={(e) => setLabel(e.target.value)}
               maxLength={24}
             />
@@ -204,6 +236,7 @@ function AddAccountInner({
                 className="input mono text-base sm:text-[13.5px]"
                 placeholder="S..."
                 value={secretInput}
+                disabled={busy}
                 onChange={(e) => setSecretInput(e.target.value)}
                 spellCheck={false}
                 autoComplete="off"
@@ -314,6 +347,7 @@ function AddAccountInner({
                   className="input mono text-base sm:text-[13.5px]"
                   placeholder="G..."
                   value={watchKey}
+                  disabled={busy}
                   onChange={(e) => setWatchKey(e.target.value)}
                   spellCheck={false}
                   autoComplete="off"
