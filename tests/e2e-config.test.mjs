@@ -20,14 +20,15 @@ test("Playwright owns the production browser-test server and release command", (
     "browser tests must never reuse a server that may expose a stale release",
   );
   assert.match(pkg.scripts["test:e2e"], /playwright test/);
-  assert.match(ci, /npm run build[\s\S]*npm exec -- playwright test/);
+  assert.match(ci, /npm run verify:application/);
+  assert.match(pkg.scripts['verify:application'], /npm run build.*playwright test/);
   assert.doesNotMatch(ci, /^\s*- run: playwright test$/m);
   assert.doesNotMatch(ci, /^\s*- run: npm run test:e2e\s*$/m);
   assert.doesNotMatch(ci, /test:e2e:merchant/);
   assert.match(
-    ci,
-    /npm exec -- playwright test[\s\S]*npm run test:e2e:private-ui/,
-    "the production suite must remain server-owned and the dev-only private surface must run separately",
+    pkg.scripts['verify:application'],
+    /npm run test:e2e:private-ui.*npm run test:e2e:private-components.*npm run check:fixture-clean.*npm run build.*playwright test/,
+    "the isolated private surfaces must complete and clean up before the final production build and server-owned suite",
   );
 });
 
@@ -64,7 +65,9 @@ test("the Private Payments catalogue-tamper browser gate cannot silently skip", 
   assert.match(security, /expect\(await manifestRequested\)\.toBe\(false\)/);
   assert.match(security, /Open private XLM/);
   assert.match(pkg.scripts["test:e2e:private-ui"], /private-manifest-security\.spec\.ts/);
-  assert.match(ci, /npm run test:e2e:private-ui/);
+  assert.match(ci, /npm run verify:application/);
+  assert.match(pkg.scripts['verify:application'], /npm run test:e2e:private-ui/);
+  assert.match(source('playwright.config.ts'), /iphone-webkit[\s\S]*testMatch:[^\n]*private-manifest-security/);
   assert.match(release, /npm run release:verify/);
 });
 

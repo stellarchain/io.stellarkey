@@ -73,7 +73,8 @@ jobs:
       - run: npm run private:check-generated
       - run: npx playwright install --with-deps chromium webkit
       - run: node scripts/assert-clean-release.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
-      - run: npm run release:verify
+      - name: Verify the shared application gate and clean release
+        run: npm run release:verify
         env:
           NEXT_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
       - run: node scripts/create-release-artifact.mjs --commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"

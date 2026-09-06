@@ -2,11 +2,13 @@ import { copyFile, mkdir, readFile, unlink, rmdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { assertNoPrivateComponentFixture } from './testing/wallet-test-policy.mjs';
 
 // Never overwrite a real route. Only an exclusively created, fixed fixture
 // directory is removed on exit; all fixture values are synthetic.
 const route = new URL('../src/app/private-component-fixture/', import.meta.url);
 const page = new URL('page.tsx', route);
+assertNoPrivateComponentFixture();
 await mkdir(route);
 let copied = false;
 let fingerprint;
@@ -38,4 +40,5 @@ try {
     }
   }
   await rmdir(route);
+  assertNoPrivateComponentFixture();
 }
