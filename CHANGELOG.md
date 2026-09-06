@@ -124,6 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Clear owned temporary key-expansion and private-output plaintext buffers on success and failure while preserving returned keys, witnesses and encrypted output bytes. This is best-effort application-memory cleanup, not guaranteed memory erasure.
+
 - Included outgoing viewing keys in best-effort private-worker session cleanup and blocked production builds that contain a leftover synthetic privacy-test route.
 - Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing helper or RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
 - Bound relayed consolidation consent to one account, deployment, asset, fixed note trace and expiry; issued a fresh verified own address for each merge and stopped on cancellation, context changes or uncertain confirmation without switching to direct submission.

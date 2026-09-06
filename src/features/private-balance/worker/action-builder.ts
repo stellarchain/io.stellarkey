@@ -287,79 +287,86 @@ async function createOutput(input: {
     }
   }
   const memo = memoBytes(input.memo);
-  for (;;) {
-    const rho = sampleNonzeroField();
-    const commitment = computeCommitment(
-      input.contextField,
-      input.assetField,
-      input.recipientOwnerCommitment,
-      input.value,
-      rho,
-    );
-    if (
-      isZero(commitment) ||
-      input.priorCommitments.some(prior => equalBytes(prior, commitment))
-    ) {
-      rho.fill(0);
-      continue;
+  try {
+    for (;;) {
+      const rho = sampleNonzeroField();
+      let noteBytes: Uint8Array | null = null;
+      let output: Awaited<ReturnType<typeof createOutputPackage>> | null = null;
+      let transferred = false;
+      try {
+        const commitment = computeCommitment(
+          input.contextField,
+          input.assetField,
+          input.recipientOwnerCommitment,
+          input.value,
+          rho,
+        );
+        if (
+          isZero(commitment) ||
+          input.priorCommitments.some(prior => equalBytes(prior, commitment))
+        ) continue;
+        noteBytes = encodeNotePlaintext({
+          protocolVersion: 1,
+          flags: input.real ? 0 : 1,
+          value: input.value,
+          diversifier: input.diversifier,
+          ownerCommitment: input.recipientOwnerCommitment,
+          rho,
+          memoLength: memo.length,
+          memo: memo.bytes,
+          assetIndex: input.assetIndex,
+          reserved: new Uint8Array(11),
+        });
+        output = await createOutputPackage(
+          input.recipientHpkePublicKey,
+          input.diversifier,
+          noteBytes,
+          input.contextHash,
+          commitment,
+          input.actionNonce,
+          input.outputIndex,
+        );
+        const outgoingAad = deriveOutgoingAad(
+          input.deploymentBindingHash,
+          input.contextHash,
+          input.assetField,
+          commitment,
+          input.actionNonce,
+          input.outputIndex,
+        );
+        const outgoingEnvelope = await createPrivateOutgoingEnvelope({
+          mode: input.outgoingHistory,
+          outgoingViewingKey: input.outgoingViewingKey,
+          ephemeralPublicKey: output.recipientEnvelope.slice(5, 37),
+          aad: outgoingAad,
+          plaintext: () => encodeOutgoingPlaintext({
+            protocolVersion: 1, flags: input.real ? 0 : 1, value: input.value,
+            diversifier: input.diversifier, ownerCommitment: input.recipientOwnerCommitment,
+            recipientHpkePublicKey: input.recipientHpkePublicKey, memoLength: memo.length,
+            memo: memo.bytes, assetIndex: input.assetIndex, reserved: new Uint8Array(11),
+          }),
+        });
+        const witness = {
+          real: input.real,
+          ownerCommitment: input.recipientOwnerCommitment.slice(),
+          diversifier: input.diversifier.slice(),
+          value: input.value,
+          rho,
+          commitment,
+          recipientEnvelope: output.recipientEnvelope,
+          outgoingEnvelope,
+        };
+        transferred = true;
+        return witness;
+      } finally {
+        noteBytes?.fill(0);
+        output?.outputPackage.fill(0);
+        // The returned witness now owns rho; it must survive this scope.
+        if (!transferred) rho.fill(0);
+      }
     }
-    const noteBytes = encodeNotePlaintext({
-      protocolVersion: 1,
-      flags: input.real ? 0 : 1,
-      value: input.value,
-      diversifier: input.diversifier,
-      ownerCommitment: input.recipientOwnerCommitment,
-      rho,
-      memoLength: memo.length,
-      memo: memo.bytes,
-      assetIndex: input.assetIndex,
-      reserved: new Uint8Array(11),
-    });
-    const output = await createOutputPackage(
-      input.recipientHpkePublicKey,
-      input.diversifier,
-      noteBytes,
-      input.contextHash,
-      commitment,
-      input.actionNonce,
-      input.outputIndex,
-    );
-    const outgoingAad = deriveOutgoingAad(
-      input.deploymentBindingHash,
-      input.contextHash,
-      input.assetField,
-      commitment,
-      input.actionNonce,
-      input.outputIndex,
-    );
-    let outgoingEnvelope: Uint8Array;
-    try {
-      outgoingEnvelope = await createPrivateOutgoingEnvelope({
-        mode: input.outgoingHistory,
-        outgoingViewingKey: input.outgoingViewingKey,
-        ephemeralPublicKey: output.recipientEnvelope.slice(5, 37),
-        aad: outgoingAad,
-        plaintext: () => encodeOutgoingPlaintext({
-          protocolVersion: 1, flags: input.real ? 0 : 1, value: input.value,
-          diversifier: input.diversifier, ownerCommitment: input.recipientOwnerCommitment,
-          recipientHpkePublicKey: input.recipientHpkePublicKey, memoLength: memo.length,
-          memo: memo.bytes, assetIndex: input.assetIndex, reserved: new Uint8Array(11),
-        }),
-      });
-    } finally {
-      noteBytes.fill(0);
-      output.outputPackage.fill(0);
-    }
-    return {
-      real: input.real,
-      ownerCommitment: input.recipientOwnerCommitment.slice(),
-      diversifier: input.diversifier.slice(),
-      value: input.value,
-      rho,
-      commitment,
-      recipientEnvelope: output.recipientEnvelope,
-      outgoingEnvelope,
-    };
+  } finally {
+    memo.bytes.fill(0);
   }
 }
 
