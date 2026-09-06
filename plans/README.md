@@ -112,4 +112,4 @@ Considered and rejected for this follow-on audit: treating the fixed Public/Priv
 
 ### 004 — Approved system hardening
 
-The user subsequently requested “fix everything”. [Implementation plan 004](../docs/plans/2026-09-06-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **IN PROGRESS**. Execute scoped test-first tasks with independent spec and quality review, preserving the completed privacy plans and main checkout. Record genuine external/security blockers rather than weakening gates or broadening signing authority.
+The user subsequently requested “fix everything”. [Implementation plan 004](004-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **IN PROGRESS**. Execute scoped test-first tasks with independent spec and quality review, preserving the completed privacy plans and main checkout. Record genuine external/security blockers rather than weakening gates or broadening signing authority.

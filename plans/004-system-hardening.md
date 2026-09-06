@@ -1,5 +1,7 @@
 # Simple, Correct, Fast — System Hardening Implementation Plan (004)
 
+Repository convention: plans live under `plans/`; `tests/release-gate.test.mjs` explicitly forbids the obsolete `docs/plans/` directory. This takes precedence over a skill's generic output-path example.
+
 > Execute task-by-task using test-driven development and independent spec/quality reviews. The user approved all audit findings with “fix everything”; no routine approval checkpoint is required between bounded tasks.
 
 **Goal:** Resolve F01–F12, reconcile K02, investigate and safely address K01 and the signing-context lead from the 2026-09-06 system audit.
