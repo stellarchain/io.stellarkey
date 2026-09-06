@@ -70,6 +70,7 @@ const WALLET_LIFECYCLE_LOCK = "stellarkey.wallet-lifecycle.v1";
 let sessionMasterKey: Uint8Array | null = null;
 let sessionMerchantKey: Uint8Array | null = null;
 let sessionGeneration = 0;
+const sessionRevocationListeners = new Set<() => void>();
 let fallbackLifecycleEpoch = 0;
 
 function readWalletLifecycleEpoch(): number {
@@ -131,6 +132,30 @@ export function createSessionRevocationGuard(): () => void {
   return () => assertSessionGeneration(expected);
 }
 
+/** Observe only this unlocked generation; unsubscribe when scoped work settles. */
+export function subscribeSessionRevocation(onRevoke: () => void): () => void {
+  assertSessionGeneration(sessionGeneration);
+  sessionRevocationListeners.add(onRevoke);
+  return () => { sessionRevocationListeners.delete(onRevoke); };
+}
+
+function revokeSessionAuthority(): number {
+  const revokedGeneration = ++sessionGeneration;
+  sessionMasterKey?.fill(0);
+  sessionMerchantKey?.fill(0);
+  sessionMasterKey = null;
+  sessionMerchantKey = null;
+  const listeners = [...sessionRevocationListeners];
+  sessionRevocationListeners.clear();
+  for (const notify of listeners) {
+    try { notify(); } catch {
+      // An observer cannot prevent revocation or another observer's cleanup.
+      // Never log observer errors: they may contain private operation context.
+    }
+  }
+  return revokedGeneration;
+}
+
 function requireSessionMasterKey(): Uint8Array {
   if (!sessionMasterKey) throw new VaultLockedError();
   return sessionMasterKey;
@@ -154,9 +179,14 @@ async function establishVaultSession(
       throw error;
     }
   }
-  zeroKey(sessionMasterKey);
-  zeroKey(sessionMerchantKey);
-  sessionGeneration += 1;
+  const establishmentGeneration = revokeSessionAuthority();
+  try {
+    // Synchronous revocation observers may themselves lock/reset the vault.
+    assertUnlockGeneration(establishmentGeneration);
+  } catch (error) {
+    zeroKey(merchantKey);
+    throw error;
+  }
   sessionMasterKey = masterKey.slice();
   sessionMerchantKey = merchantKey;
 }
@@ -386,20 +416,12 @@ export function wipeVault(): void {
 }
 
 export function lockVault(): void {
-  sessionGeneration += 1;
-  sessionMasterKey?.fill(0);
-  sessionMerchantKey?.fill(0);
-  sessionMasterKey = null;
-  sessionMerchantKey = null;
+  revokeSessionAuthority();
 }
 
 /** Wipe in-memory secrets after a full-vault restore (old ids no longer exist) */
 export function clearSessionSecrets(): void {
-  sessionGeneration += 1;
-  sessionMasterKey?.fill(0);
-  sessionMerchantKey?.fill(0);
-  sessionMasterKey = null;
-  sessionMerchantKey = null;
+  revokeSessionAuthority();
 }
 
 export function isUnlocked(): boolean {

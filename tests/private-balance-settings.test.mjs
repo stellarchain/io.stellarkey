@@ -39,5 +39,8 @@ test('advanced privacy keeps unique diagnostics concise and protects local remov
   assert.match(settings, /REMOVE PRIVATE BALANCE/);
   assert.match(settings, /does not withdraw.*does not delete.*on-chain/is);
   assert.match(provider, /clearPrivateBalancePublicCache/);
-  assert.match(provider, /clearShieldedState/);
+  // Removal authenticates a snapshot and atomically compares it before deleting
+  // both stores; sequential clear calls would reopen the journal-loss race.
+  assert.match(provider, /replacePrefixVerified\(privateBalanceSensitivePrefix\(storageScope\), new Map\(\),\s*\[stealthDiscoveryRecordKey\(storageScope\)\], guard, new Map\(\[\[stateKey, raw\]\]\)/);
+  assert.match(provider, /current\.pendingActions\.length > 0 \|\| current\.buildReservations\.length > 0/);
 });

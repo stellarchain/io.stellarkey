@@ -39,6 +39,48 @@ const context = {
 };
 const key = new Uint8Array(32).fill(5);
 
+test('cancelled sweep reconciliation cannot return a late cached snapshot', async () => {
+  const driver = new MemoryDriver();
+  await commitStealthDiscoveryCache(context, key, createEmptyStealthDiscoveryCache(1), null, driver);
+  const raw = [...driver.records.values()][0];
+  let release;
+  driver.read = () => new Promise(resolve => { release = () => resolve(raw); });
+  const controller = new AbortController();
+  let published = false;
+  const settled = reconcileStealthPaymentSweeps(context, key, new Set(), new Set(), driver, 2, { signal: controller.signal })
+    .then(() => { published = true; return null; }, error => error);
+  controller.abort();
+  release();
+  const error = await settled;
+  assert.equal(published, false);
+  assert.equal(error?.name, 'AbortError');
+});
+
+test('cancelled sweep reconciliation cannot commit after encryption', async t => {
+  const driver = new MemoryDriver();
+  await commitStealthDiscoveryCache(context, key, {
+    ...createEmptyStealthDiscoveryCache(1), payments: [{
+      transactionHash: '06'.repeat(32), pagingToken: '1', ephemeralPublicKey: '07'.repeat(32),
+      destinationPublicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', amountStroops: '1',
+      ledger: 1, createdAt: 1, status: 'sweeping', sweptTransactionHash: '08'.repeat(32), sweepActionField: '09'.repeat(32),
+    }], latestLedger: 1, cursor: '1',
+  }, null, driver);
+  const before = new Map(driver.records);
+  let entered, release;
+  const started = new Promise(resolve => { entered = resolve; });
+  const blocked = new Promise(resolve => { release = resolve; });
+  const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+  t.mock.method(crypto.subtle, 'encrypt', async (...args) => { entered(); await blocked; return encrypt(...args); });
+  const controller = new AbortController();
+  const settled = reconcileStealthPaymentSweeps(context, key, new Set(['09'.repeat(32)]), new Set(), driver, 2, { signal: controller.signal })
+    .then(() => null, error => error);
+  await started;
+  controller.abort(); release();
+  const error = await settled;
+  assert.equal(JSON.stringify([...driver.records]) === JSON.stringify([...before]), true, 'encrypted cache remains unchanged');
+  assert.equal(error?.name, 'AbortError');
+});
+
 test('stealth discovery cache is encrypted and round-trips verified owned payments', async () => {
   const driver = new MemoryDriver();
   const state = {

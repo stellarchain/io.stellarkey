@@ -15,6 +15,7 @@ import {
   type StealthOwnedPayment,
 } from './stealth-cache';
 import type { PrivateStorageContext } from './storage';
+import { assertStealthDiscoveryActive, type StealthDiscoveryGuard } from './stealth-discovery-operation';
 
 export const MAX_STEALTH_ANNOUNCEMENTS_PER_PAGE = 200;
 export const MAX_STEALTH_DISCOVERY_PAGES = 1_000;
@@ -36,15 +37,17 @@ export interface StealthAnnouncementPage {
   hasMore: boolean;
 }
 
-export interface StealthAnnouncementReader {
-  readPage(input: {
-    cursor: string | null;
-    lowerBoundCreatedAt: number;
-    limit: number;
-  }): Promise<StealthAnnouncementPage>;
+export interface StealthAnnouncementPageInput extends StealthDiscoveryGuard {
+  cursor: string | null;
+  lowerBoundCreatedAt: number;
+  limit: number;
 }
 
-export interface SyncStealthAnnouncementsInput {
+export interface StealthAnnouncementReader {
+  readPage(input: StealthAnnouncementPageInput): Promise<StealthAnnouncementPage>;
+}
+
+export interface SyncStealthAnnouncementsInput extends StealthDiscoveryGuard {
   context: PrivateStorageContext;
   storageKey: Uint8Array;
   keys: StealthMetaKeys;
@@ -149,6 +152,7 @@ async function ownedPayment(
   announcement: StealthAnnouncement,
   input: SyncStealthAnnouncementsInput,
 ): Promise<StealthOwnedPayment | null> {
+  assertStealthDiscoveryActive(input);
   let recovered: Awaited<ReturnType<typeof deriveStealthRecipientKey>>;
   try {
     recovered = await deriveStealthRecipientKey(
@@ -157,7 +161,9 @@ async function ownedPayment(
       input.network,
       input.implementation,
     );
+    assertStealthDiscoveryActive(input);
   } catch {
+    assertStealthDiscoveryActive(input);
     // The announcement account is public and can be spammed. Invalid or
     // low-order ephemeral keys must not poison the durable cursor.
     return null;
@@ -178,13 +184,16 @@ async function ownedPayment(
 export async function syncStealthAnnouncements(
   input: SyncStealthAnnouncementsInput,
 ): Promise<StealthDiscoveryCache> {
+  assertStealthDiscoveryActive(input);
   const now = input.now?.() ?? Date.now();
   if (!timestamp(now)) throw new Error('Stealth discovery clock is invalid');
   const persisted = await loadStealthDiscoveryCache(
     input.context,
     input.storageKey,
     input.storageDriver,
+    input,
   );
+  assertStealthDiscoveryActive(input);
   let expectedRevision = persisted?.revision ?? null;
   let state = persisted ?? createEmptyStealthDiscoveryCache(now, input.lowerBoundCreatedAt);
   // Legacy birthday bounds must neither shape requests nor reject older
@@ -195,16 +204,21 @@ export async function syncStealthAnnouncements(
   );
 
   for (let pageIndex = 0; pageIndex < MAX_STEALTH_DISCOVERY_PAGES; pageIndex += 1) {
+    assertStealthDiscoveryActive(input);
     const page = await input.reader.readPage({
       cursor: state.cursor,
       lowerBoundCreatedAt: state.lowerBoundCreatedAt,
       limit: MAX_STEALTH_ANNOUNCEMENTS_PER_PAGE,
+      signal: input.signal,
+      assertActive: input.assertActive,
     });
+    assertStealthDiscoveryActive(input);
     validatePage(page, state);
 
     const additions: StealthOwnedPayment[] = [];
     for (const announcement of page.announcements) {
       const payment = await ownedPayment(announcement, input);
+      assertStealthDiscoveryActive(input);
       if (!payment) continue;
       const identity = `${payment.transactionHash}:${payment.destinationPublicKey}`;
       if (existing.has(identity)) continue;
@@ -220,13 +234,16 @@ export async function syncStealthAnnouncements(
       payments: compactStealthDiscoveryPayments([...state.payments, ...additions]),
       updatedAt: now,
     };
+    assertStealthDiscoveryActive(input);
     await commitStealthDiscoveryCache(
       input.context,
       input.storageKey,
       nextState,
       expectedRevision,
       input.storageDriver,
+      input,
     );
+    assertStealthDiscoveryActive(input);
     state = nextState;
     expectedRevision = state.revision;
     input.onProgress?.({
@@ -234,6 +251,7 @@ export async function syncStealthAnnouncements(
       cursor: state.cursor,
       ownedPayments: state.payments.length,
     });
+    assertStealthDiscoveryActive(input);
     if (!page.hasMore) return state;
   }
   throw new Error('Stealth discovery exceeded its page safety limit');

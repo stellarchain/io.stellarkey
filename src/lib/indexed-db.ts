@@ -8,6 +8,17 @@ export interface RecordDriverExpectedPrefix {
   entries: ReadonlyMap<string, string>;
 }
 
+export interface RecordDriverGuard {
+  signal?: AbortSignal;
+  assertActive?(): void;
+}
+
+function assertRecordAuthority(guard: RecordDriverGuard): void {
+  guard.signal?.throwIfAborted();
+  guard.assertActive?.();
+  guard.signal?.throwIfAborted();
+}
+
 export interface EncryptedRecordDriver {
   read(key: string): Promise<string | null>;
   readPrefix(prefix: string): Promise<Map<string, string>>;
@@ -17,6 +28,7 @@ export interface EncryptedRecordDriver {
     key: string,
     expectedRevision: number | null,
     value: string,
+    guard?: RecordDriverGuard,
   ): Promise<RecordDriverCompareResult>;
   compareAndSetMany(
     key: string,
@@ -29,6 +41,8 @@ export interface EncryptedRecordDriver {
     prefix: string,
     entries: ReadonlyMap<string, string>,
     removeKeys?: readonly string[],
+    guard?: RecordDriverGuard,
+    expectedRecords?: ReadonlyMap<string, string | null>,
   ): Promise<void>;
   remove(key: string): Promise<void>;
   removePrefix(prefix: string): Promise<void>;
@@ -49,11 +63,14 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-function transactionResult(transaction: IDBTransaction): Promise<void> {
+function transactionResult(transaction: IDBTransaction, drainAbort = false): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB transaction aborted."));
-    transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+    transaction.onerror = () => {
+      // A guarded operation must drain the rollback, not just the request error.
+      if (!drainAbort) reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+    };
   });
 }
 
@@ -171,25 +188,48 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     key: string,
     expectedRevision: number | null,
     value: string,
+    guard: RecordDriverGuard = {},
   ): Promise<RecordDriverCompareResult> {
+    assertRecordAuthority(guard);
     const database = await this.database();
+    assertRecordAuthority(guard);
     const transaction = openTransaction(database, "readwrite");
-    const completed = transactionResult(transaction);
-    const records = transaction.objectStore(STORE_NAME);
-    const existing = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
-    const current = existing?.value ?? null;
-    if (revisionOf(current) !== expectedRevision) {
+    const completed = transactionResult(transaction, true);
+    // The abort event may precede a queued request rejection.
+    void completed.catch(() => undefined);
+    const abort = () => {
+      try { transaction.abort(); } catch {
+        // A transaction that has already committed cannot be undone.
+      }
+    };
+    guard.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      assertRecordAuthority(guard);
+      const records = transaction.objectStore(STORE_NAME);
+      const existing = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
+      assertRecordAuthority(guard);
+      const current = existing?.value ?? null;
+      if (revisionOf(current) !== expectedRevision) {
+        await completed;
+        assertRecordAuthority(guard);
+        return { ok: false, current };
+      }
+      await requestResult(records.put({ key, value }));
+      assertRecordAuthority(guard);
+      const stored = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
+      assertRecordAuthority(guard);
+      if (stored?.value !== value) throw new Error("IndexedDB did not retain the encrypted commit.");
       await completed;
-      return { ok: false, current };
+      assertRecordAuthority(guard);
+      return { ok: true, current: stored.value };
+    } catch (error) {
+      abort();
+      await completed.catch(() => undefined);
+      assertRecordAuthority(guard);
+      throw error;
+    } finally {
+      guard.signal?.removeEventListener("abort", abort);
     }
-    await requestResult(records.put({ key, value }));
-    const stored = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
-    if (stored?.value !== value) {
-      transaction.abort();
-      throw new Error("IndexedDB did not retain the merchant commit.");
-    }
-    await completed;
-    return { ok: true, current: stored.value };
   }
 
   async compareAndSetMany(
@@ -249,36 +289,73 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     prefix: string,
     entries: ReadonlyMap<string, string>,
     removeKeys: readonly string[] = [],
+    guard: RecordDriverGuard = {},
+    expectedRecords?: ReadonlyMap<string, string | null>,
   ): Promise<void> {
+    assertRecordAuthority(guard);
+    // Bind this removal to the caller's validated raw snapshot, including
+    // absence. Copy before awaiting so later caller mutations cannot rebind it.
+    const expected = expectedRecords === undefined ? undefined : new Map(expectedRecords);
     const database = await this.database();
+    assertRecordAuthority(guard);
     const transaction = openTransaction(database, "readwrite");
-    const completed = transactionResult(transaction);
-    const records = transaction.objectStore(STORE_NAME);
-    const existing = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
-    for (const record of existing) {
-      if (record.key.startsWith(prefix)) await requestResult(records.delete(record.key));
+    const completed = transactionResult(transaction, true);
+    void completed.catch(() => undefined);
+    const abort = () => {
+      try { transaction.abort(); } catch { /* Already completed transactions cannot roll back. */ }
+    };
+    guard.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      assertRecordAuthority(guard);
+      const records = transaction.objectStore(STORE_NAME);
+      const existing = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
+      assertRecordAuthority(guard);
+      if (expected) {
+        const current = new Map(existing.map(record => [record.key, record.value]));
+        if ([...expected].some(([key, value]) => (current.has(key) ? current.get(key) : null) !== value)) {
+          throw new Error("Encrypted records changed before removal. Refresh and try again.");
+        }
+      }
+      for (const record of existing) {
+        if (record.key.startsWith(prefix)) {
+          await requestResult(records.delete(record.key));
+          assertRecordAuthority(guard);
+        }
+      }
+      for (const key of removeKeys) {
+        await requestResult(records.delete(key));
+        assertRecordAuthority(guard);
+      }
+      for (const [key, value] of entries) {
+        await requestResult(records.put({ key, value }));
+        assertRecordAuthority(guard);
+      }
+      const retained = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
+      assertRecordAuthority(guard);
+      const actual = new Map(
+        retained
+          .filter((record) => record.key.startsWith(prefix))
+          .map((record) => [record.key, record.value]),
+      );
+      const expectedPrefix = new Map(
+        [...entries].filter(([key]) => key.startsWith(prefix)),
+      );
+      if (
+        actual.size !== expectedPrefix.size ||
+        [...expectedPrefix].some(([key, value]) => actual.get(key) !== value) ||
+        [...entries].some(([key, value]) =>
+          retained.find((record) => record.key === key)?.value !== value)
+      ) throw new Error("IndexedDB did not retain the complete encrypted record set.");
+      await completed;
+      assertRecordAuthority(guard);
+    } catch (error) {
+      abort();
+      await completed.catch(() => undefined);
+      assertRecordAuthority(guard);
+      throw error;
+    } finally {
+      guard.signal?.removeEventListener("abort", abort);
     }
-    for (const key of removeKeys) await requestResult(records.delete(key));
-    for (const [key, value] of entries) await requestResult(records.put({ key, value }));
-    const retained = await requestResult(records.getAll() as IDBRequest<StoredRecord[]>);
-    const actual = new Map(
-      retained
-        .filter((record) => record.key.startsWith(prefix))
-        .map((record) => [record.key, record.value]),
-    );
-    const expectedPrefix = new Map(
-      [...entries].filter(([key]) => key.startsWith(prefix)),
-    );
-    if (
-      actual.size !== expectedPrefix.size ||
-      [...expectedPrefix].some(([key, value]) => actual.get(key) !== value) ||
-      [...entries].some(([key, value]) =>
-        retained.find((record) => record.key === key)?.value !== value)
-    ) {
-      transaction.abort();
-      throw new Error("IndexedDB did not retain the complete encrypted record set.");
-    }
-    await completed;
   }
 
   async remove(key: string): Promise<void> {

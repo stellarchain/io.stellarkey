@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -32,7 +33,7 @@ import {
 } from '../../../hooks/usePrivateBalanceRuntime';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import { fetchCurrentBaseReserve } from '../../../lib/api';
-import { privateBalanceSensitivePrefix } from '../../../lib/private-balance-bootstrap';
+import { privateBalanceSensitivePrefix, privateBalanceStateRecordKey } from '../../../lib/private-balance-bootstrap';
 import {
   privateBalanceAvailability,
   type PrivateBalanceManifest,
@@ -43,7 +44,7 @@ import {
 import { prefetchCircuitArtifacts } from '../../../lib/private-balance-artifacts';
 import { getRpcUrl, testRpcEndpoint } from '../../../lib/stellar-endpoints';
 import type { NetworkKey } from '../../../lib/types';
-import { withPrivacySessionRoot } from '../../../lib/vault';
+import { createSessionRevocationGuard, subscribeSessionRevocation, withPrivacySessionRoot } from '../../../lib/vault';
 import {
   useWalletLedger,
   useWalletPhase,
@@ -63,6 +64,7 @@ import {
 } from './archive-restoration';
 import {
   claimPrivateBalanceLease,
+  assertPrivateBalanceLease,
   forceClaimPrivateBalanceLease,
   openPrivateBalanceFollowerChannel,
   privateBalanceLeaseKey,
@@ -84,7 +86,6 @@ import {
   beginPrivateChainedApproval,
   clearPrivateChainedApproval,
   commitPrivateBalanceState,
-  clearShieldedState,
   createEmptyPrivateBalanceState,
   createPrivateBalanceVerificationReset,
   createPrivateBalanceVerificationRollback,
@@ -154,8 +155,9 @@ import type { IncomingPrivateTransferSummary } from './sync-machine';
 import type { PrivateBalanceStorageScope } from '../../../lib/private-balance-bootstrap';
 import type { PrivateBalanceAsset } from '../../../lib/private-balance-assets';
 import { syncStealthRuntime } from './stealth-runtime';
+import { createStealthDiscoveryOperation, type StealthDiscoveryOperation } from './stealth-discovery-operation';
 import {
-  clearStealthDiscoveryCache,
+  stealthDiscoveryRecordKey,
   markStealthPaymentSweeping,
   reconcileStealthPaymentSweeps,
   type StealthOwnedPayment,
@@ -412,21 +414,80 @@ export function PrivateBalanceProvider({
   const encryptedStateExistsRef = useRef(encryptedStateExists);
   const providerMountedRef = useRef(true);
   const relayChainAbortRef = useRef<AbortController | null>(null);
-  const stealthRunRef = useRef<Promise<void> | null>(null);
+  const stealthRunRef = useRef<{ operation: StealthDiscoveryOperation; promise: Promise<void> } | null>(null);
+  const stealthRemovalRef = useRef<StealthDiscoveryOperation | null>(null);
+  const stealthReconciliationsRef = useRef(new Set<StealthDiscoveryOperation>());
+  const stealthContextRef = useRef<(() => void) | null>(null);
+  const stealthScope = useMemo(() => ({ accountId, accountPublicKey, accountCreatedAt,
+    assetContractId: asset.contractId, deploymentBindingHash: manifest.deploymentBindingHash,
+    networkId: manifest.networkId, realmId: manifest.realmId, poolId: manifest.poolContractId,
+    announcer: manifest.stealthAnnouncerAddress, network, walletPhase,
+    storageAccount: storageScope.accountId, storageNetwork: storageScope.networkId,
+    storageRealm: storageScope.realmId, storagePool: storageScope.poolId,
+    storageBinding: storageScope.deploymentBindingHash,
+  }), [accountId, accountPublicKey,
+    accountCreatedAt, asset.contractId, manifest.deploymentBindingHash, manifest.networkId,
+    manifest.realmId, manifest.poolContractId, manifest.stealthAnnouncerAddress, network,
+    storageScope.accountId, storageScope.networkId, storageScope.realmId, storageScope.poolId,
+    storageScope.deploymentBindingHash, walletPhase]);
+  const stealthScopeRef = useRef<typeof stealthScope | null>(null);
+  const stealthSnapshotSubscriptionRef = useRef<(() => void) | null>(null);
+  const invalidateStealth = useCallback(() => {
+    stealthRunRef.current?.operation.abort();
+    stealthRemovalRef.current?.abort();
+    for (const operation of stealthReconciliationsRef.current) operation.abort();
+    setStealthSnapshot(INITIAL_STEALTH_SNAPSHOT);
+  }, []);
+  const captureStealthAuthority = useCallback(() => {
+    const assertSession = createSessionRevocationGuard();
+    const assertContext = stealthContextRef.current;
+    const assertActive = () => {
+      assertSession();
+      if (stealthScopeRef.current !== stealthScope || !assertContext ||
+        stealthContextRef.current !== assertContext || stealthRemovalRef.current) {
+        throw new DOMException('Discovery context changed.', 'AbortError');
+      }
+      assertContext();
+    };
+    assertActive();
+    // React may batch lock/unlock back to the same committed phase. Re-arm
+    // completed snapshot ownership in the current vault generation too, not
+    // only when the layout effect observes a phase change.
+    stealthSnapshotSubscriptionRef.current?.();
+    stealthSnapshotSubscriptionRef.current = subscribeSessionRevocation(invalidateStealth);
+    return assertActive;
+  }, [invalidateStealth, stealthScope]);
 
   useEffect(() => {
     providerMountedRef.current = true;
+    const reconciliations = stealthReconciliationsRef.current;
     return () => {
       providerMountedRef.current = false;
       relayChainAbortRef.current?.abort();
+      stealthRunRef.current?.operation.abort();
+      stealthRemovalRef.current?.abort();
+      for (const operation of reconciliations) operation.abort();
     };
   }, []);
 
   useEffect(() => () => { relayChainAbortRef.current?.abort(); }, [accountId, asset.contractId, network, manifest.deploymentBindingHash, walletPhase]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     walletPhaseRef.current = walletPhase;
-  }, [walletPhase]);
+    invalidateStealth();
+    stealthScopeRef.current = stealthScope;
+    if (walletPhase === 'unlocked') {
+      try { stealthSnapshotSubscriptionRef.current = subscribeSessionRevocation(invalidateStealth); } catch {
+        // The vault can revoke before its React phase update commits.
+      }
+    }
+    return () => {
+      stealthScopeRef.current = null;
+      stealthSnapshotSubscriptionRef.current?.();
+      stealthSnapshotSubscriptionRef.current = null;
+      invalidateStealth();
+    };
+  }, [invalidateStealth, stealthScope, walletPhase]);
 
   useEffect(() => {
     rpcWitnessEnabledRef.current = rpcWitnessEnabled;
@@ -447,24 +508,50 @@ export function PrivateBalanceProvider({
 
   const refreshStealth = useCallback((): Promise<void> => {
     if (asset.kind !== 'native') return Promise.resolve();
+    if (stealthRemovalRef.current) return Promise.reject(new Error('Local Private Balance data is being removed.'));
     if (!leaderRef.current) {
       return Promise.reject(new Error('Private Payments is active in another StellarKey tab.'));
     }
     if (walletPhaseRef.current !== 'unlocked') {
       return Promise.reject(new Error('Unlock StellarKey to check reusable private payments.'));
     }
-    if (stealthRunRef.current) return stealthRunRef.current;
+    const assertContext = stealthContextRef.current;
+    if (!assertContext) return Promise.reject(new Error('Reusable payment discovery is not ready.'));
+    let assertAuthority: () => void;
+    try { assertAuthority = captureStealthAuthority(); } catch (error) { return Promise.reject(error); }
+    const previous = stealthRunRef.current;
+    if (previous) {
+      if (!previous.operation.signal.aborted) return previous.promise;
+      return previous.operation.completion.then(() => {
+        assertAuthority();
+        if (stealthContextRef.current !== assertContext) throw new DOMException('Discovery context changed.', 'AbortError');
+        return refreshStealth();
+      });
+    }
+    const operation = createStealthDiscoveryOperation(() => {
+      if (stealthContextRef.current !== assertContext || stealthRunRef.current?.operation !== operation || stealthRemovalRef.current) {
+        throw new DOMException('Discovery context changed.', 'AbortError');
+      }
+      assertContext();
+      assertAuthority();
+    });
     const context = deploymentContext(manifest);
     const driver = new IndexedDbEncryptedRecordDriver();
-    const run = (async () => {
-      if (providerMountedRef.current) {
-        setStealthSnapshot(current => ({ ...current, syncing: true, error: null }));
+    const onAbort = () => {
+      if (stealthRunRef.current?.operation === operation && providerMountedRef.current) {
+        setStealthSnapshot(INITIAL_STEALTH_SNAPSHOT);
       }
+    };
+    operation.signal.addEventListener('abort', onAbort, { once: true });
+    setStealthSnapshot(current => ({ ...current, syncing: true, error: null }));
+    const run = Promise.resolve().then(() => operation.run(async guard => {
       try {
         await withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
+          operation.assertActive();
           const stealthRoot = deriveStealthRootKey(sessionRoot);
           try {
             const result = await syncStealthRuntime({
+              ...guard,
               rootKey: stealthRoot,
               storageKey,
               context: storageScope,
@@ -473,11 +560,11 @@ export function PrivateBalanceProvider({
               announcerPublicKey: manifest.stealthAnnouncerAddress,
               storageDriver: driver,
               onIdentity: metaAddress => {
-                if (!providerMountedRef.current) return;
+                operation.assertActive();
                 setStealthSnapshot(current => ({ ...current, metaAddress }));
               },
             });
-            if (!providerMountedRef.current) return;
+            operation.assertActive();
             setStealthSnapshot({
               metaAddress: result.metaAddress,
               payments: result.cache.payments,
@@ -490,7 +577,9 @@ export function PrivateBalanceProvider({
           }
         });
       } catch (error: unknown) {
-        if (providerMountedRef.current) {
+        let current = false;
+        try { operation.assertActive(); current = true; } catch { /* Expected scope cancellation. */ }
+        if (current) {
           setStealthSnapshot(current => ({
             ...current,
             syncing: false,
@@ -501,13 +590,14 @@ export function PrivateBalanceProvider({
         }
         throw error;
       }
-    })();
+    }));
     const tracked = run.finally(() => {
-      stealthRunRef.current = null;
+      operation.signal.removeEventListener('abort', onAbort);
+      if (stealthRunRef.current?.operation === operation) stealthRunRef.current = null;
     });
-    stealthRunRef.current = tracked;
+    stealthRunRef.current = { operation, promise: tracked };
     return tracked;
-  }, [accountCreatedAt, accountId, asset.kind, manifest, network, storageScope]);
+  }, [accountCreatedAt, accountId, asset.kind, captureStealthAuthority, manifest, network, storageScope]);
 
   useEffect(() => {
     let active = true;
@@ -526,11 +616,21 @@ export function PrivateBalanceProvider({
       accountId,
     };
     const leaseKey = privateBalanceLeaseKey(runtimeScope);
+    const assertDiscoveryContext = () => {
+      if (!active || !providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' ||
+        stealthContextRef.current !== assertDiscoveryContext) throw new DOMException('Discovery context changed.', 'AbortError');
+      assertPrivateBalanceLease(window.localStorage, leaseKey, runtimeOwnerId, Date.now());
+    };
+    stealthContextRef.current = assertDiscoveryContext;
     const availability = privateBalanceAvailability(manifest, network, {
       allowDevelopmentFixture: ALLOW_PRIVATE_BALANCE_DEVELOPMENT_FIXTURE,
     });
 
     const clearDecryptedState = (error: string | null) => {
+      // A retired effect may finish an uncooperative worker request after a
+      // replacement effect owns these refs. Its teardown already cleared it.
+      if (!active || stealthContextRef.current !== assertDiscoveryContext) return;
+      invalidateStealth();
       setOutgoingHistoryModeState('recoverable');
       workerRef.current?.terminate();
       workerRef.current = null;
@@ -623,8 +723,9 @@ export function PrivateBalanceProvider({
     const performSyncExclusive = async (
       createIfMissing: boolean,
       background: boolean,
+      discovery: StealthDiscoveryOperation,
     ): Promise<void> => {
-      if (!active || !leaderRef.current) {
+      if (!active || !leaderRef.current || stealthRemovalRef.current) {
         // Leadership can move while this pass waits behind the mutex.
         throw new Error('Private Balance is active in another StellarKey tab.');
       }
@@ -796,7 +897,9 @@ export function PrivateBalanceProvider({
                 durable.privateAddress,
                 registryAssets,
               );
-              workerIdentityRef.current = identity;
+              if (active && stealthContextRef.current === assertDiscoveryContext) {
+                workerIdentityRef.current = identity;
+              }
             }
             if (!active || !leaderRef.current) {
               clearDecryptedState(null);
@@ -935,13 +1038,17 @@ export function PrivateBalanceProvider({
             progress.durable = durable;
             if (asset.kind === 'native') {
               try {
+                discovery.assertActive();
                 const stealth = await reconcileStealthPaymentSweeps(
                   storageScope,
                   storageKey,
                   new Set(durable.activities.map(activity => activity.id)),
                   new Set(durable.pendingActions.map(action => action.actionField)),
                   driver,
+                  Date.now(),
+                  discovery,
                 );
+                discovery.assertActive();
                 setStealthSnapshot(current => ({
                   ...current,
                   payments: stealth.payments,
@@ -949,7 +1056,9 @@ export function PrivateBalanceProvider({
                   error: null,
                 }));
               } catch (error) {
-                if (!/cache is unavailable/i.test(
+                let canPublish = false;
+                try { discovery.assertActive(); canPublish = true; } catch { /* Discovery was revoked; payment journals retain their own authority. */ }
+                if (canPublish && !/cache is unavailable/i.test(
                   error instanceof Error ? error.message : '',
                 )) {
                   setStealthSnapshot(current => ({
@@ -961,9 +1070,14 @@ export function PrivateBalanceProvider({
                 }
               }
             }
-            setEncryptedStorageBytes(encryptedRecordBytes(await driver.readPrefix(
+            const storageRecords = await driver.readPrefix(
               privateBalanceSensitivePrefix(storageScope),
-            )));
+            );
+            // Durable sync may drain after revocation, but an old borrowed-root
+            // continuation must neither publish nor start a scan under a new
+            // vault session, even if React committed no intervening lock phase.
+            try { discovery.assertActive(); } catch { return; }
+            setEncryptedStorageBytes(encryptedRecordBytes(storageRecords));
             if (!active || !leaderRef.current) {
               clearDecryptedState(null);
               throw new Error('Private Balance leadership changed during sync.');
@@ -1051,7 +1165,7 @@ export function PrivateBalanceProvider({
       createIfMissing: boolean,
       options: { background?: boolean } = {},
     ): Promise<void> => {
-      if (!active || !leaderRef.current) {
+      if (!active || !leaderRef.current || stealthRemovalRef.current) {
         return Promise.reject(
           new Error('Private Balance is active in another StellarKey tab.'),
         );
@@ -1060,7 +1174,16 @@ export function PrivateBalanceProvider({
       // Background triggers (visibility, idle cadence, post-broadcast polls)
       // collapse into the queued pass; explicit calls always queue a fresh one.
       if (background && queuedBackgroundSync) return queuedBackgroundSync;
-      const run = mutex.runExclusive(() => performSyncExclusive(createIfMissing, background));
+      // Capture before queueing or borrowing roots: an old pass cannot acquire
+      // a newly unlocked session's authority after an earlier await.
+      let discovery: StealthDiscoveryOperation;
+      try { discovery = createStealthDiscoveryOperation(captureStealthAuthority()); }
+      catch (error) { return Promise.reject(error); }
+      stealthReconciliationsRef.current.add(discovery);
+      const run = discovery.run(() => mutex.runExclusive(() => performSyncExclusive(
+        createIfMissing, background, discovery))).finally(() => {
+        stealthReconciliationsRef.current.delete(discovery);
+      });
       if (background) {
         const queued = run.finally(() => {
           if (queuedBackgroundSync === queued) queuedBackgroundSync = null;
@@ -1134,6 +1257,16 @@ export function PrivateBalanceProvider({
       if (encryptedStateExistsRef.current) void performSync(false).catch(() => undefined);
     };
 
+    const onLeaseChange = (event: StorageEvent) => {
+      if (!active || !leaderRef.current || (event.key !== null && event.key !== leaseKey)) return;
+      try { assertPrivateBalanceLease(window.localStorage, leaseKey, runtimeOwnerId, Date.now()); } catch {
+        leaderRef.current = false;
+        clearDecryptedState(null);
+        setSnapshot(current => ({ ...current, isLeader: false }));
+      }
+    };
+    window.addEventListener('storage', onLeaseChange);
+
     takeoverRef.current = () => {
       if (!active || leaderRef.current) return;
       try {
@@ -1161,6 +1294,9 @@ export function PrivateBalanceProvider({
 
     return () => {
       active = false;
+      if (stealthContextRef.current === assertDiscoveryContext) stealthContextRef.current = null;
+      invalidateStealth();
+      window.removeEventListener('storage', onLeaseChange);
       performSyncRef.current = null;
       syncReadySignal.resolve();
       takeoverRef.current = null;
@@ -1186,6 +1322,8 @@ export function PrivateBalanceProvider({
   }, [
     accountId,
     accountPublicKey,
+    invalidateStealth,
+    captureStealthAuthority,
     registryAssets,
     asset,
     deploymentId,
@@ -2024,6 +2162,7 @@ export function PrivateBalanceProvider({
     if (asset.kind !== 'native') {
       throw new Error('Reusable private receipts currently support XLM only.');
     }
+    const assertPublication = captureStealthAuthority();
     await authorizeTransactionSigning("Move reusable private receipt");
     const current = stealthSnapshot.payments.find(candidate =>
       candidate.transactionHash === sweep.payment.transactionHash &&
@@ -2058,6 +2197,9 @@ export function PrivateBalanceProvider({
             },
             new IndexedDbEncryptedRecordDriver(),
           );
+          // Journaling already-consented signing may finish after lock. Its
+          // decrypted discovery snapshot may not become visible again.
+          try { assertPublication(); } catch { return; }
           setStealthSnapshot(snapshot => ({
             ...snapshot,
             payments: cache.payments,
@@ -2098,6 +2240,7 @@ export function PrivateBalanceProvider({
   }, [
     asset.kind,
     authorizeTransactionSigning,
+    captureStealthAuthority,
     manifest.deploymentBindingHash,
     network,
     storageScope,
@@ -2462,66 +2605,110 @@ export function PrivateBalanceProvider({
     }
     if (actionBusyRef.current) throw new Error('Another Private Balance operation is already running.');
     if (!leaderRef.current) throw new Error('Remove local data in the active Private Balance tab.');
+    const assertContext = stealthContextRef.current;
+    if (!assertContext) throw new Error('Private Balance runtime is not ready.');
+    // Reject retained callbacks before opening encrypted storage.
+    captureStealthAuthority();
+    const removal = createStealthDiscoveryOperation(() => {
+      if (stealthScopeRef.current !== stealthScope || stealthRemovalRef.current !== removal || stealthContextRef.current !== assertContext) {
+        throw new DOMException('Local data removal cancelled after its context changed.', 'AbortError');
+      }
+      assertContext();
+    });
+    stealthRemovalRef.current = removal;
     actionBusyRef.current = true;
     const driver = new IndexedDbEncryptedRecordDriver();
     const context = deploymentContext(manifest);
     try {
-      await withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
-        const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
-        if (current && (current.pendingActions.length > 0 || current.buildReservations.length > 0)) {
-          throw new Error('Reconcile or cancel every pending Private Balance action before removing local data.');
-        }
-        await clearShieldedState(storageScope, driver);
-        await clearStealthDiscoveryCache(storageScope, driver);
+      await removal.run(async guard => {
+        // Drain before entering the shared lane: a scan must never wait on a
+        // mutex held by the operation waiting for that scan to finish.
+        const scan = stealthRunRef.current;
+        scan?.operation.abort();
+        for (const operation of stealthReconciliationsRef.current) operation.abort();
+        if (scan) await scan.promise.catch(() => undefined);
+        removal.assertActive();
+        await mutexRef.current.runExclusive(async () => {
+          removal.assertActive();
+          await withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
+            removal.assertActive();
+            const stateKey = privateBalanceStateRecordKey(storageScope);
+            const raw = await driver.read(stateKey);
+            removal.assertActive();
+            // Authenticate exactly the bytes the deletion transaction will
+            // compare, not a second read that could observe a different journal.
+            const current = await loadPrivateBalanceState(storageScope, storageKey, {
+              read: async key => {
+                if (key !== stateKey) throw new Error('Unexpected local removal record.');
+                return raw;
+              },
+              compareAndSet: driver.compareAndSet.bind(driver),
+              removePrefix: driver.removePrefix.bind(driver),
+            });
+            removal.assertActive();
+            if (current && (current.pendingActions.length > 0 || current.buildReservations.length > 0)) {
+              throw new Error('Reconcile or cancel every pending Private Balance action before removing local data.');
+            }
+            // One transaction removes both local stores, or rolls both back.
+            await driver.replacePrefixVerified(privateBalanceSensitivePrefix(storageScope), new Map(),
+              [stealthDiscoveryRecordKey(storageScope)], guard, new Map([[stateKey, raw]]));
+          });
+          removal.assertActive();
+          encryptedStateExistsRef.current = false;
+          workerRef.current?.terminate();
+          workerRef.current = null;
+          workerIdentityRef.current = null;
+          lastSyncCurrentRef.current = false;
+          dispatch({ type: 'RESET' });
+          setEncryptedStorageBytes(0);
+          setOutgoingHistoryModeState('recoverable');
+          setStealthSnapshot(INITIAL_STEALTH_SNAPSHOT);
+          setSnapshot(current => ({
+            ...current,
+            phase: 'disabled',
+            configured: false,
+            backgroundSyncing: false,
+            syncProgress: null,
+            verifiedBalanceStroops: '0',
+            lastVerifiedActionIndex: null,
+            error: null,
+            restoreRequiredActionIndex: null,
+          }));
+          onDurableStateChange?.(
+            runtimeKey,
+            portfolioKey,
+            deploymentId,
+            asset,
+            {
+              phase: 'disabled',
+              configured: false,
+              verifiedBalanceStroops: '0',
+              lastVerifiedActionIndex: null,
+              noteCount: 0,
+              activities: [],
+              pendingActions: [],
+              checkpoint: null,
+            },
+          );
+        });
       });
-      encryptedStateExistsRef.current = false;
-      workerRef.current?.terminate();
-      workerRef.current = null;
-      workerIdentityRef.current = null;
-      lastSyncCurrentRef.current = false;
-      dispatch({ type: 'RESET' });
-      setEncryptedStorageBytes(0);
-      setOutgoingHistoryModeState('recoverable');
-      setStealthSnapshot(INITIAL_STEALTH_SNAPSHOT);
-      setSnapshot(current => ({
-        ...current,
-        phase: 'disabled',
-        configured: false,
-        backgroundSyncing: false,
-        syncProgress: null,
-        verifiedBalanceStroops: '0',
-        lastVerifiedActionIndex: null,
-        error: null,
-        restoreRequiredActionIndex: null,
-      }));
-      onDurableStateChange?.(
-        runtimeKey,
-        portfolioKey,
-        deploymentId,
-        asset,
-        {
-          phase: 'disabled',
-          configured: false,
-          verifiedBalanceStroops: '0',
-          lastVerifiedActionIndex: null,
-          noteCount: 0,
-          activities: [],
-          pendingActions: [],
-          checkpoint: null,
-        },
-      );
     } finally {
-      actionBusyRef.current = false;
+      if (stealthRemovalRef.current === removal) {
+        stealthRemovalRef.current = null;
+        actionBusyRef.current = false;
+      }
     }
   }, [
     accountId,
     asset,
+    captureStealthAuthority,
     deploymentId,
     manifest,
     onDurableStateChange,
     portfolioKey,
     runtimeKey,
     storageScope,
+    stealthScope,
   ]);
 
   const selectedState = useMemo(() => ({

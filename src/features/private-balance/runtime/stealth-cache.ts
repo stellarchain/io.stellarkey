@@ -6,6 +6,7 @@ import {
 } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
 import type { PrivateBalanceStorageScope } from '../../../lib/private-balance-bootstrap';
+import { assertStealthDiscoveryActive, type StealthDiscoveryGuard } from './stealth-discovery-operation';
 
 const RECORD_KIND = 'stellarkey-stealth-discovery-cache';
 const RECORD_VERSION = 1;
@@ -49,6 +50,7 @@ export interface StealthCacheDriver {
     key: string,
     expectedRevision: number | null,
     value: string,
+    guard?: StealthDiscoveryGuard,
   ): Promise<{ ok: boolean; current: string | null }>;
   removePrefix(prefix: string): Promise<void>;
 }
@@ -240,12 +242,15 @@ export async function loadStealthDiscoveryCache(
   context: PrivateBalanceStorageScope,
   key: Uint8Array,
   candidate?: StealthCacheDriver,
+  guard: StealthDiscoveryGuard = {},
 ): Promise<StealthDiscoveryCache | null> {
+  assertStealthDiscoveryActive(guard);
   if (!(key instanceof Uint8Array) || key.length !== 32) {
     throw new Error('Stealth discovery encryption key must be 32 bytes');
   }
   const recordKey = stealthDiscoveryRecordKey(context);
   const raw = await driver(candidate).read(recordKey);
+  assertStealthDiscoveryActive(guard);
   if (raw === null) return null;
   const envelope = parseEnvelope(raw);
   try {
@@ -255,6 +260,7 @@ export async function loadStealthDiscoveryCache(
       aad(recordKey, envelope.revision),
     );
     try {
+      assertStealthDiscoveryActive(guard);
       const decoded: unknown = JSON.parse(decoder.decode(plaintext));
       if (!isCache(decoded) || decoded.revision !== envelope.revision) {
         throw new Error('invalid cache');
@@ -264,6 +270,7 @@ export async function loadStealthDiscoveryCache(
       plaintext.fill(0);
     }
   } catch {
+    assertStealthDiscoveryActive(guard);
     throw new Error('Stealth discovery cache could not be decrypted or authenticated.');
   }
 }
@@ -274,7 +281,9 @@ export async function commitStealthDiscoveryCache(
   state: StealthDiscoveryCache,
   expectedRevision: number | null,
   candidate?: StealthCacheDriver,
+  guard: StealthDiscoveryGuard = {},
 ): Promise<void> {
+  assertStealthDiscoveryActive(guard);
   if (!(key instanceof Uint8Array) || key.length !== 32) {
     throw new Error('Stealth discovery encryption key must be 32 bytes');
   }
@@ -288,6 +297,7 @@ export async function commitStealthDiscoveryCache(
     key,
     aad(recordKey, state.revision),
   );
+  assertStealthDiscoveryActive(guard);
   const envelope: StealthCacheEnvelope = {
     kind: RECORD_KIND,
     version: RECORD_VERSION,
@@ -298,7 +308,9 @@ export async function commitStealthDiscoveryCache(
     recordKey,
     expectedRevision,
     JSON.stringify(envelope),
+    guard,
   );
+  assertStealthDiscoveryActive(guard);
   if (!result.ok) throw new Error('Stealth discovery cache changed in another wallet session.');
 }
 
@@ -325,10 +337,13 @@ async function updateStealthDiscoveryCache(
   mutate: (payments: StealthOwnedPayment[]) => StealthOwnedPayment[] | null,
   candidate: StealthCacheDriver | undefined,
   now: number,
+  guard: StealthDiscoveryGuard = {},
 ): Promise<StealthDiscoveryCache> {
+  assertStealthDiscoveryActive(guard);
   if (!timestamp(now)) throw new Error('Stealth discovery timestamp is invalid');
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const current = await loadStealthDiscoveryCache(context, key, candidate);
+    const current = await loadStealthDiscoveryCache(context, key, candidate, guard);
+    assertStealthDiscoveryActive(guard);
     if (!current) throw new Error('Stealth discovery cache is unavailable. Check for payments again.');
     const mutated = mutate(current.payments);
     const payments = mutated === null ? null : compactStealthDiscoveryPayments(mutated);
@@ -346,9 +361,11 @@ async function updateStealthDiscoveryCache(
         next,
         current.revision,
         candidate,
+        guard,
       );
       return next;
     } catch (error) {
+      assertStealthDiscoveryActive(guard);
       if (
         attempt === 3 ||
         !(error instanceof Error) ||
@@ -406,6 +423,7 @@ export function reconcileStealthPaymentSweeps(
   pendingActionFields: ReadonlySet<string>,
   candidate?: StealthCacheDriver,
   now = Date.now(),
+  guard: StealthDiscoveryGuard = {},
 ): Promise<StealthDiscoveryCache> {
   return updateStealthDiscoveryCache(context, key, payments => {
     let changed = false;
@@ -423,5 +441,5 @@ export function reconcileStealthPaymentSweeps(
       return released;
     });
     return changed ? next : null;
-  }, candidate, now);
+  }, candidate, now, guard);
 }

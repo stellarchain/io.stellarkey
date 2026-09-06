@@ -6,15 +6,17 @@ import type { StealthNetwork } from '@stellarkey/private-balance';
 import type {
   StealthAnnouncement,
   StealthAnnouncementPage,
+  StealthAnnouncementPageInput,
   StealthAnnouncementReader,
 } from './stealth-sync';
+import { assertStealthDiscoveryActive, type StealthDiscoveryGuard } from './stealth-discovery-operation';
 
 const ANNOUNCEMENT_AMOUNT = '0.0000001';
 const OPERATION_LOOKUP_CONCURRENCY = 8;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const POSITIVE_DECIMAL = /^[1-9][0-9]*$/;
 
-type HorizonRequest = (url: string) => Promise<unknown>;
+type HorizonRequest = (url: string, init?: { signal?: AbortSignal }) => Promise<unknown>;
 
 interface RawTransaction {
   successful?: unknown;
@@ -216,14 +218,27 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     }
     this.#announcerPublicKey = options.announcerPublicKey;
     this.#baseUrl = getAccountHistoryHorizonUrl(options.network);
-    this.#request = options.request ?? (url => getHorizonJson<unknown>(url));
+    this.#request = options.request ?? ((url, init) => getHorizonJson<unknown>(url, init));
   }
 
-  async #latestLedger(): Promise<{ sequence: number; closedAt: number }> {
+  async #read(url: string, guard: StealthDiscoveryGuard): Promise<unknown> {
+    assertStealthDiscoveryActive(guard);
+    try {
+      const result = await this.#request(url, { signal: guard.signal });
+      assertStealthDiscoveryActive(guard);
+      return result;
+    } catch (error) {
+      // Prefer revocation to a late transport failure; never retry revoked work.
+      assertStealthDiscoveryActive(guard);
+      throw error;
+    }
+  }
+
+  async #latestLedger(guard: StealthDiscoveryGuard): Promise<{ sequence: number; closedAt: number }> {
     const url = new URL(`${this.#baseUrl}/ledgers`);
     url.searchParams.set('order', 'desc');
     url.searchParams.set('limit', '1');
-    const latest = records<RawLedger>(await this.#request(url.toString()))[0];
+    const latest = records<RawLedger>(await this.#read(url.toString(), guard))[0];
     const sequence = positiveInteger(latest?.sequence);
     const closedAt = timestamp(latest?.closed_at);
     if (sequence === null || closedAt === null) {
@@ -232,11 +247,11 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return { sequence, closedAt };
   }
 
-  async #earliestLedger(): Promise<{ sequence: number; closedAt: number }> {
+  async #earliestLedger(guard: StealthDiscoveryGuard): Promise<{ sequence: number; closedAt: number }> {
     const url = new URL(`${this.#baseUrl}/ledgers`);
     url.searchParams.set('order', 'asc');
     url.searchParams.set('limit', '1');
-    const earliest = records<RawLedger>(await this.#request(url.toString()))[0];
+    const earliest = records<RawLedger>(await this.#read(url.toString(), guard))[0];
     const sequence = positiveInteger(earliest?.sequence);
     const closedAt = timestamp(earliest?.closed_at);
     if (sequence === null || closedAt === null) {
@@ -245,8 +260,9 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return { sequence, closedAt };
   }
 
-  async #retainedHistoryCursor(latest: { sequence: number; closedAt: number }): Promise<string> {
-    const earliest = await this.#earliestLedger();
+  async #retainedHistoryCursor(latest: { sequence: number; closedAt: number }, guard: StealthDiscoveryGuard): Promise<string> {
+    const earliest = await this.#earliestLedger(guard);
+    assertStealthDiscoveryActive(guard);
     if (earliest.sequence > latest.sequence || earliest.closedAt > latest.closedAt) {
       throw new Error('Horizon returned an invalid retained ledger range for stealth discovery');
     }
@@ -255,15 +271,15 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     return highWaterCursor(Math.max(0, earliest.sequence - 1));
   }
 
-  async #operations(transactionHash: string): Promise<RawOperation[]> {
+  async #operations(transactionHash: string, guard: StealthDiscoveryGuard): Promise<RawOperation[]> {
     const url = new URL(`${this.#baseUrl}/transactions/${transactionHash}/operations`);
     url.searchParams.set('order', 'asc');
     url.searchParams.set('limit', '200');
-    return records<RawOperation>(await this.#request(url.toString()));
+    return records<RawOperation>(await this.#read(url.toString(), guard));
   }
 
-  async #transaction(transactionHash: string): Promise<RawTransaction> {
-    const value = await this.#request(`${this.#baseUrl}/transactions/${transactionHash}`);
+  async #transaction(transactionHash: string, guard: StealthDiscoveryGuard): Promise<RawTransaction> {
+    const value = await this.#read(`${this.#baseUrl}/transactions/${transactionHash}`, guard);
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('Horizon returned an invalid stealth announcement transaction');
     }
@@ -273,18 +289,21 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
   async #payments(
     startCursor: string,
     requestedLimit: number,
+    guard: StealthDiscoveryGuard,
   ): Promise<{ records: RawPayment[]; limit: number }> {
     let limit = requestedLimit;
     while (true) {
+      assertStealthDiscoveryActive(guard);
       const url = new URL(`${this.#baseUrl}/accounts/${this.#announcerPublicKey}/payments`);
       url.searchParams.set('order', 'asc');
       url.searchParams.set('limit', String(limit));
       url.searchParams.set('cursor', startCursor);
       try {
-        const page = records<RawPayment>(await this.#request(url.toString()));
+        const page = records<RawPayment>(await this.#read(url.toString(), guard));
         if (page.length > limit) throw new Error('Horizon returned too many stealth announcements');
         return { records: page, limit };
       } catch (error) {
+        assertStealthDiscoveryActive(guard);
         if (
           !(error instanceof HorizonRequestError) ||
           error.kind !== 'response_too_large' ||
@@ -297,17 +316,17 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
     }
   }
 
-  public async readPage(input: {
-    cursor: string | null;
-    lowerBoundCreatedAt: number;
-    limit: number;
-  }): Promise<StealthAnnouncementPage> {
+  public async readPage(input: StealthAnnouncementPageInput): Promise<StealthAnnouncementPage> {
+    assertStealthDiscoveryActive(input);
     const limit = Math.min(Math.max(Math.floor(input.limit), 1), 200);
-    const latest = await this.#latestLedger();
-    const startCursor = input.cursor ?? await this.#retainedHistoryCursor(latest);
+    const latest = await this.#latestLedger(input);
+    assertStealthDiscoveryActive(input);
+    const startCursor = input.cursor ?? await this.#retainedHistoryCursor(latest, input);
+    assertStealthDiscoveryActive(input);
     if (!POSITIVE_DECIMAL.test(startCursor)) throw new Error('Stealth discovery cursor is invalid');
 
-    const paymentPage = await this.#payments(startCursor, limit);
+    const paymentPage = await this.#payments(startCursor, limit, input);
+    assertStealthDiscoveryActive(input);
     const rawPayments = paymentPage.records;
     for (let index = 1; index < rawPayments.length; index += 1) {
       const prior = rawPayments[index - 1].paging_token;
@@ -329,25 +348,35 @@ export class HorizonStealthAnnouncementReader implements StealthAnnouncementRead
       Promise<{ transaction: RawTransaction; operations: RawOperation[] | null }>
     >();
     for (let offset = 0; offset < rawPayments.length; offset += OPERATION_LOOKUP_CONCURRENCY) {
+      assertStealthDiscoveryActive(input);
       const batch = rawPayments.slice(offset, offset + OPERATION_LOOKUP_CONCURRENCY);
-      const resolved = await Promise.all(batch.map(async record => {
+      // Drain every started lookup before returning, even when one rejects.
+      const resolved = await Promise.allSettled(batch.map(async record => {
+        assertStealthDiscoveryActive(input);
         if (!isAnnouncementPaymentCandidate(record, this.#announcerPublicKey)) return null;
         const transactionHash = record.transaction_hash as string;
         let details = transactionDetails.get(transactionHash);
         if (!details) {
-          details = this.#transaction(transactionHash).then(async transaction => ({
-            transaction,
-            operations: decodeHashMemo(transaction)
-              ? await this.#operations(transactionHash)
-              : null,
-          }));
+          details = this.#transaction(transactionHash, input).then(async transaction => {
+            assertStealthDiscoveryActive(input);
+            const operations = decodeHashMemo(transaction)
+              ? await this.#operations(transactionHash, input)
+              : null;
+            assertStealthDiscoveryActive(input);
+            return { transaction, operations };
+          });
           transactionDetails.set(transactionHash, details);
         }
         const { transaction, operations } = await details;
+        assertStealthDiscoveryActive(input);
         if (!operations) return null;
         return parseTransactionShape(record, transaction, operations, this.#announcerPublicKey);
       }));
-      announcements.push(...resolved.filter(item => item !== null));
+      assertStealthDiscoveryActive(input);
+      for (const result of resolved) {
+        if (result.status === 'rejected') throw result.reason;
+        if (result.value !== null) announcements.push(result.value);
+      }
     }
 
     const hasMore = rawPayments.length === paymentPage.limit;
