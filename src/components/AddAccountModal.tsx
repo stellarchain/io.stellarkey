@@ -154,7 +154,9 @@ function AddAccountInner({
       ? "Connect a device and verify its Stellar address"
       : mode === "watch"
         ? "Track any address — balances only, no keys"
-        : `Derives at m/44'/148'/${accounts.length}'`;
+        : mode === "import"
+          ? "Import an existing Stellar secret key"
+          : "Create another account from this wallet's recovery phrase";
 
   return (
     <Modal open onClose={handleClose} dismissable={!busy}>

@@ -1,5 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test as base, type Page } from '@playwright/test';
+
+const test = base.extend<{ mnemonicWallet: boolean }>({ mnemonicWallet: [false, { option: true }] });
 
 declare global {
   interface Window {
@@ -9,7 +11,7 @@ declare global {
 
 test.skip(!process.env.PRIVATE_COMPONENT_FIXTURE_SHA256, 'Use the isolated synthetic component runner.');
 
-test.beforeEach(async ({ page, baseURL }) => {
+test.beforeEach(async ({ page, baseURL, mnemonicWallet }) => {
   const origin = new URL(baseURL!).origin;
   await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
   await page.routeWebSocket('**/*', socket => {
@@ -19,6 +21,7 @@ test.beforeEach(async ({ page, baseURL }) => {
   await page.addInitScript(() => { Object.defineProperty(window, 'EventSource', { value: undefined, configurable: true }); });
   await page.goto('/private-component-fixture');
   await page.getByRole('button', { name: 'Test modal ownership', exact: true }).click();
+  if (mnemonicWallet) await page.getByRole('button', { name: 'Use recovery phrase setup', exact: true }).click();
   await page.getByRole('button', { name: 'Prepare modal checks', exact: true }).click();
   await expect(page.getByTestId('modal-ready')).toHaveText('true');
 });
@@ -132,6 +135,43 @@ test('synthetic modal fixture loads the actual claim review and account form', a
 for (const motion of ['reduce', 'no-preference'] as const) {
   test.describe(`modal ownership with ${motion} motion`, () => {
     test.use({ reducedMotion: motion });
+
+    for (const mnemonicWallet of [false, true]) {
+      test.describe(mnemonicWallet ? 'recovery phrase vault' : 'imported vault', () => {
+        test.use({ mnemonicWallet });
+        test('account wording describes the actual mode in the same accessible header', async ({ page }) => {
+          await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+          const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true });
+          await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+          await expect(dialog).toHaveAccessibleDescription(mnemonicWallet
+            ? "Create another account from this wallet's recovery phrase"
+            : 'Import an existing Stellar secret key');
+          await markShell(page);
+          for (const [mode, description] of [
+            ['Watch', 'Track any address — balances only, no keys'],
+            ['Hardware', 'Connect a device and verify its Stellar address'],
+            ['Import', 'Import an existing Stellar secret key'],
+            ...(mnemonicWallet ? [['Derive', "Create another account from this wallet's recovery phrase"]] : []),
+          ]) {
+            await page.getByRole('button', { name: mode, exact: true }).click();
+            await expect(dialog).toHaveAccessibleDescription(description);
+            await stableShell(page);
+          }
+          if (!mnemonicWallet) await expect(page.getByRole('button', { name: 'Derive', exact: true })).toHaveCount(0);
+          if (mnemonicWallet) {
+            // Import → Derive enables the action. Audit its settled enabled
+            // appearance, not the intermediate disabled-opacity transition.
+            const create = page.getByRole('button', { name: 'Create Account', exact: true });
+            await expect(create).toBeEnabled();
+            await expect(create).toHaveCSS('opacity', '1');
+          }
+          const accessibility = await new AxeBuilder({ page }).include('[data-modal-backdrop]').analyze();
+          expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, count: violation.nodes.length }))).toEqual([]);
+          await page.keyboard.press('Escape');
+          await closed(page, 'Open account modal');
+        });
+      });
+    }
 
     test('account import guards header, dismissal, mode changes and duplicate clicks', async ({ page }) => {
       await page.getByRole('button', { name: 'Open account modal', exact: true }).click();

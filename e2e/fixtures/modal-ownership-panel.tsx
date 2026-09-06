@@ -18,6 +18,7 @@ export function ModalOwnershipFixture({ onExit }: { onExit(): void }) {
   const latestWallet = useRef(wallet);
   useLayoutEffect(() => { latestWallet.current = wallet; }, [wallet]);
   const [ready, setReady] = useState(false);
+  const [mnemonicSetup, setMnemonicSetup] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [claimOpen, setClaimOpen] = useState(false);
   const [conditional, setConditional] = useState(false);
@@ -110,7 +111,8 @@ export function ModalOwnershipFixture({ onExit }: { onExit(): void }) {
   return <main data-app-surface data-app-scroll-owner className="h-screen overflow-auto p-6">
     <h1>Synthetic modal ownership checks</h1>
     <Button onClick={onExit}>Dispose modal checks</Button>
-    <Button onClick={() => { void wallet.createWallet('synthetic modal correct horse battery staple', { secret: Keypair.random().secret() }).then(() => {
+    <Button onClick={() => setMnemonicSetup(true)}>Use recovery phrase setup</Button>
+    <Button onClick={() => { void wallet.createWallet('synthetic modal correct horse battery staple', mnemonicSetup ? undefined : { secret: Keypair.random().secret() }).then(() => {
       wallet.completeSetup(); setReady(true);
     }); }}>Prepare modal checks</Button>
     <Button onClick={() => setAccountOpen(true)}>Open account modal</Button>
@@ -144,7 +146,7 @@ export function ModalOwnershipFixture({ onExit }: { onExit(): void }) {
     <p data-testid="modal-refreshes">{refreshes}</p>
     <p data-testid="modal-parent-renders">{parentRenders}</p>
     <p data-testid="modal-pending">{wallet.pendingTxs.filter(transaction => transaction.label === 'Airdrop claim').length}</p>
-    <AddAccountModal open={accountOpen} onClose={closeAccount} initialMode="import" />
+    <AddAccountModal open={accountOpen} onClose={closeAccount} />
     {(!conditional || claimOpen) && <ClaimableBalancesModal open={claimOpen} dismissedBalanceIds={dismissed} onClose={inlineClose ? () => closeClaim() : closeClaim}
       onDismiss={id => setDismissed(value => [...value, id])} onRestore={id => setDismissed(value => value.filter(item => item !== id))}
       onAddAsset={() => { setHandoffs(value => value + 1); setClaimOpen(false); }} />}
