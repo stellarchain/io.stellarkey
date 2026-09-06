@@ -18,7 +18,7 @@
 - Depends on: Plan 001, including real persistence-race coverage
 - Category: security / least privilege
 - Planned at: `3e8dca7d021767138bc21c790f7ef59cc2fce309`, 2026-09-06
-- Execution: IMPLEMENTED — independent reviews and final integrated verification recorded below and in the execution index
+- Execution: DONE — independently reviewed; all scoped implementation gates passed; separate release-audit blocker recorded in the execution index
 
 ## Why this matters
 
@@ -156,17 +156,17 @@ Protocol verification: 58/58 tests, zero skips, including native/portable/auto p
 
 A deliberate negative control removing only the preparation root overwrite failed at the first network page with the fixed-label root-lifetime assertion; restored code passed. Additional viewing sync tests skip malformed ephemeral spam, deduplicate repeated receipts under advancing paging tokens and refuse a repeated page without replacing the authenticated checkpoint. An observer initially attempted to replace a frozen Noble method; it was corrected to retain the original scalar at the existing typed-array copy boundary, without inspecting private values or adding a production hook.
 
-Parent runtime/sync selection: 13/13 passing; broader stealth/vault selection: 65/65 passing before the final dedup extension. Independent reviews ran focused protocol/runtime selections and approved the ownership boundary; final integrated counts are in `plans/README.md`. Generated changes are limited to `dist/stealth.js` and `dist/stealth.d.ts`. No address, envelope, schema, dependency, signing, proof or deployment migration.
+Parent runtime/sync selection: 13/13 passing. Independent final review passed 22 protocol/X25519 cases and 65 stealth/runtime/sync/revocation/vault cases, including the final dedup extension, and approved the ownership boundary. Final integrated counts and build/artifact/budget evidence are in [the index](README.md). This plan's generated changes are limited to `dist/stealth.js` and `dist/stealth.d.ts`. No address, envelope, schema, dependency, signing, proof or deployment migration.
 
 Limits: viewing material is still sensitive; this is least-privilege lifetime reduction, not anonymous transport, forward secrecy or protection from an actively compromised unlocked browser. Opaque library/CryptoKey memory and immutable strings/bigints are not guaranteed erasable.
 
-- [ ] New tests red before implementation and green after rebuilding.
-- [ ] Viewing objects contain no scalar/nonce/root/full-key reference.
-- [ ] Network reads begin after owned preparation-root disposal.
-- [ ] `rg -n 'deriveStealthRecipientKey|StealthMetaKeys|spendScalar|nonceKey' src/features/private-balance/runtime/stealth-sync.ts` has no implementation matches.
-- [ ] Existing address/signature vectors unchanged and passing.
-- [ ] Protocol/runtime/full unit, types/lint, required browser, artifact and build/budget gates pass.
-- [ ] Only scoped generated outputs change; Unreleased note, evidence and verified index status present.
+- [x] New tests red before implementation and green after rebuilding.
+- [x] Viewing objects contain no scalar/nonce/root/full-key reference.
+- [x] Network reads begin after owned preparation-root disposal.
+- [x] `rg -n 'deriveStealthRecipientKey|StealthMetaKeys|spendScalar|nonceKey' src/features/private-balance/runtime/stealth-sync.ts` has no implementation matches.
+- [x] Existing address/signature vectors unchanged and passing.
+- [x] Protocol/runtime/full unit, types/lint, required browser, artifact and build/budget gates pass.
+- [x] Only scoped generated outputs change; Unreleased note, evidence and verified index status present.
 
 ## STOP conditions
 

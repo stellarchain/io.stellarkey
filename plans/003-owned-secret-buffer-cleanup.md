@@ -28,7 +28,7 @@ Limits: JavaScript cannot guarantee physical erasure of immutable bigints/string
 - Depends on: none; recommended after 001/002 for serial review
 - Category: security / hygiene
 - Planned at: `3e8dca7d021767138bc21c790f7ef59cc2fce309`, 2026-09-06
-- Execution: IMPLEMENTED — independent spec/quality reviews passed; integrated release checks recorded in the final execution index
+- Execution: DONE — independently reviewed; all scoped implementation gates passed; separate release-audit blocker recorded in the execution index
 
 ## Why this matters
 
@@ -142,12 +142,12 @@ Use outgoing-history/worker-hygiene behavioral examples. Cover scratch lifetime,
 
 ## Done criteria
 
-- [ ] New cleanup regressions red before fix and green after; negative control fails as expected.
-- [ ] Tested owned scratch/plaintext disposed on success/error.
-- [ ] Returned keys/witnesses/envelopes and borrowed inputs remain valid.
-- [ ] Existing vectors and full root suite pass without changing expected crypto bytes.
-- [ ] Types/lint, artifact, build and bundle gates pass.
-- [ ] Scoped source/tests/generated diff, Unreleased note, coverage limits, results and index status recorded.
+- [x] New cleanup regressions red before fix and green after; negative control fails as expected.
+- [x] Tested owned scratch/plaintext disposed on success/error.
+- [x] Returned keys/witnesses/envelopes and borrowed inputs remain valid.
+- [x] Existing vectors and full root suite pass without changing expected crypto bytes.
+- [x] Types/lint, artifact, build and bundle gates pass.
+- [x] Scoped source/tests/generated diff, Unreleased note, coverage limits, results and index status recorded.
 
 ## STOP conditions
 
