@@ -154,7 +154,7 @@ import type {
 import type { IncomingPrivateTransferSummary } from './sync-machine';
 import type { PrivateBalanceStorageScope } from '../../../lib/private-balance-bootstrap';
 import type { PrivateBalanceAsset } from '../../../lib/private-balance-assets';
-import { syncStealthRuntime } from './stealth-runtime';
+import { prepareStealthRuntimeMaterial, disposeStealthRuntimeMaterial, syncStealthRuntime } from './stealth-runtime';
 import { createStealthDiscoveryOperation, type StealthDiscoveryOperation } from './stealth-discovery-operation';
 import {
   stealthDiscoveryRecordKey,
@@ -546,36 +546,34 @@ export function PrivateBalanceProvider({
     setStealthSnapshot(current => ({ ...current, syncing: true, error: null }));
     const run = Promise.resolve().then(() => operation.run(async guard => {
       try {
-        await withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
+        const material = await prepareStealthRuntimeMaterial({ ...guard, accountId,
+          deploymentContext: context, network });
+        try {
           operation.assertActive();
-          const stealthRoot = deriveStealthRootKey(sessionRoot);
-          try {
-            const result = await syncStealthRuntime({
-              ...guard,
-              rootKey: stealthRoot,
-              storageKey,
-              context: storageScope,
-              network,
-              walletCreatedAt: accountCreatedAt,
-              announcerPublicKey: manifest.stealthAnnouncerAddress,
-              storageDriver: driver,
-              onIdentity: metaAddress => {
-                operation.assertActive();
-                setStealthSnapshot(current => ({ ...current, metaAddress }));
-              },
-            });
-            operation.assertActive();
-            setStealthSnapshot({
-              metaAddress: result.metaAddress,
-              payments: result.cache.payments,
-              latestLedger: result.cache.latestLedger,
-              syncing: false,
-              error: null,
-            });
-          } finally {
-            stealthRoot.fill(0);
-          }
-        });
+          const result = await syncStealthRuntime({
+            ...guard,
+            ...material,
+            context: storageScope,
+            network,
+            walletCreatedAt: accountCreatedAt,
+            announcerPublicKey: manifest.stealthAnnouncerAddress,
+            storageDriver: driver,
+            onIdentity: metaAddress => {
+              operation.assertActive();
+              setStealthSnapshot(current => ({ ...current, metaAddress }));
+            },
+          });
+          operation.assertActive();
+          setStealthSnapshot({
+            metaAddress: result.metaAddress,
+            payments: result.cache.payments,
+            latestLedger: result.cache.latestLedger,
+            syncing: false,
+            error: null,
+          });
+        } finally {
+          disposeStealthRuntimeMaterial(material);
+        }
       } catch (error: unknown) {
         let current = false;
         try { operation.assertActive(); current = true; } catch { /* Expected scope cancellation. */ }

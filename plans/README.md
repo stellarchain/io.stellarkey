@@ -5,7 +5,7 @@ Execution of the three approved privacy plans, started from `3e8dca7d021767138bc
 | Plan | Scope | Status |
 | --- | --- | --- |
 | [001](001-revoke-stealth-discovery.md) | Revocable discovery, stale-publication protection and atomic local removal | Implemented and independently approved; 54/54 discovery browser regressions passed |
-| [002](002-viewing-only-stealth-discovery.md) | Viewing-only material during network discovery | In progress after reviewed 001 and real persistence-race gate |
+| [002](002-viewing-only-stealth-discovery.md) | Viewing-only material during network discovery | Implemented and independently approved; integrated browser/build verification in progress |
 | [003](003-owned-secret-buffer-cleanup.md) | Owned key/plaintext scratch-buffer cleanup | Implemented; spec and quality reviews passed; final integrated verification pending |
 
 No transaction, deployment, push, main-branch merge or user-server restart is part of this execution. Shared proof reservations and already-consented signing journals keep their existing authority. Cryptographic vectors, addresses, schema and dependencies must remain unchanged.
