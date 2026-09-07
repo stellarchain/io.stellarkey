@@ -81,6 +81,68 @@ test('wallet reporter emits locations and structural failures without reading pa
   assert.doesNotMatch(JSON.stringify(reporter), /attachments|stdout|stderr/);
 });
 
+test('wallet reporter emits failed step lines without reading or retaining payloads', async () => {
+  const { default: Reporter } = await import('../scripts/testing/safe-wallet-reporter.mjs');
+  const output = [];
+  const reporter = new Reporter({ write: text => output.push(text) });
+  const fields = Reflect.ownKeys(reporter);
+  const unreadable = (target, names) => {
+    for (const name of names) Object.defineProperty(target, name, {
+      get() { assert.fail('Reporter read a private payload field'); },
+    });
+    return Object.freeze(target);
+  };
+  const error = unreadable({}, ['message', 'stack', 'snippet', 'cause', 'value', 'location', 'toString']);
+  const result = unreadable({}, ['status', 'errors', 'attachments', 'stdout', 'stderr']);
+  for (const file of ['e2e/wallet.spec.ts', 'tests/fixtures/wallet-reporter/sentinel.spec.ts']) {
+    const location = { file: new URL(file, root).pathname, line: 84, column: 7 };
+    const check = unreadable({ location: { ...location, line: 42 } }, ['title', 'parent', 'annotations']);
+    const step = unreadable({ location, error }, ['title', 'category', 'duration', 'parent', 'steps', 'attachments', 'annotations', 'titlePath']);
+    assert.equal(reporter.onStepEnd?.(check, result, step), undefined);
+  }
+  assert.deepEqual(output, [
+    'Wallet browser failed step: e2e/wallet.spec.ts:84.\n',
+    'Wallet browser failed step: tests/fixtures/wallet-reporter/sentinel.spec.ts:84.\n',
+  ]);
+  assert.deepEqual(Reflect.ownKeys(reporter), fields, 'step and error objects must not be retained');
+  assert.deepEqual([reporter.completed, reporter.failures, reporter.skipped], [0, 0, 0], 'step diagnostics must not change test counts');
+});
+
+test('wallet reporter ignores successful steps and missing or invalid step locations', async () => {
+  const { default: Reporter } = await import('../scripts/testing/safe-wallet-reporter.mjs');
+  const output = [];
+  const reporter = new Reporter({ write: text => output.push(text) });
+  const file = new URL('e2e/wallet.spec.ts', root).pathname;
+  const check = { location: { file, line: 42 } };
+  reporter.onStepEnd?.(check, {}, {
+    get location() { assert.fail('Successful step location must not be inspected'); },
+  });
+  for (const location of [undefined, null, {}, { file }, { file: null, line: 84 }]) {
+    reporter.onStepEnd?.(check, {}, { error: {}, location });
+  }
+  for (const line of [undefined, null, 0, -1, 1.5, NaN, Infinity, '84', 84n]) {
+    reporter.onStepEnd?.(check, {}, { error: {}, location: { file, line } });
+  }
+  reporter.onStepEnd?.({}, {}, { error: {}, location: { file, line: 84 } });
+  reporter.onStepEnd?.(check, {}, { error: {}, location: { file: new URL('e2e/merchant.spec.ts', root).pathname, line: 84 } });
+  for (const invalidFile of [
+    'e2e/wallet.spec.ts',
+    new URL('src/app/page.tsx', root).pathname,
+    '/tmp/e2e/wallet.spec.ts',
+    `${root.pathname}e2e/../e2e/wallet.spec.ts`,
+    `${root.pathname}e2e/./wallet.spec.ts`,
+    `${root.pathname}e2e/wallet\n.spec.ts`,
+    `${root.pathname}e2e/wallet.spec.ts\n`,
+    `${root.pathname}e2e/wallet.spec.ts\r`,
+    `${root.pathname}e2e/wallet.spec.ts\u2028`,
+    { toString() { assert.fail('Reporter coerced an invalid source path'); } },
+  ]) {
+    const location = { file: invalidFile, line: 84 };
+    reporter.onStepEnd?.({ location }, {}, { error: {}, location });
+  }
+  assert.deepEqual(output, [], 'unvalidated source locations must not be emitted');
+});
+
 test('required isolated component checks cannot pass by skipping every test', async () => {
   const { default: Reporter } = await import('../scripts/testing/safe-wallet-reporter.mjs');
   const reporter = new Reporter({ write() {} });

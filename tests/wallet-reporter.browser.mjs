@@ -22,6 +22,16 @@ test('real locator/action failures preserve failure status without printing or r
     assert.equal(log.includes(sentinel), false, 'raw browser payload escaped through output');
     assert.match(log, /sentinel\.spec\.ts:\d+: failed; errors=1/);
     assert.match(log, /completed=4; failed-attempts=3; skipped=0/);
+    const source = readFileSync(path.join(root, 'tests/fixtures/wallet-reporter/sentinel.spec.ts'), 'utf8').split('\n');
+    for (const marker of [
+      "await expect(page.getByRole('button', { name: 'Missing fixed action' }))",
+      "await page.getByRole('button', { includeHidden: true }).click(",
+    ]) {
+      const lines = source.flatMap((line, index) => line.includes(marker) ? [index + 1] : []);
+      assert.equal(lines.length, 1, 'synthetic failure source line must be unambiguous');
+      assert.ok(log.includes(`Wallet browser failed step: tests/fixtures/wallet-reporter/sentinel.spec.ts:${lines[0]}.\n`),
+        'real locator and action failures must identify their exact source line');
+    }
     const inspect = directory => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);

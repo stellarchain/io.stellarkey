@@ -5,6 +5,13 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const statuses = new Set(['passed', 'failed', 'timedOut', 'skipped', 'interrupted']);
 const projects = new Set(['desktop-chromium', 'desktop-firefox-private', 'desktop-webkit-private', 'iphone-webkit', 'ipad-webkit', 'synthetic-safety-probe']);
 
+function safeSourceFile(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file) || path.normalize(file) !== file) return null;
+  const relative = path.relative(projectRoot, file);
+  return /^(?:e2e|tests\/fixtures)\/[a-zA-Z0-9_./-]+\.spec\.[cm]?[jt]s$/.test(relative)
+    && !relative.includes('..') && !/\s/.test(relative) ? relative : null;
+}
+
 // Never forward titles, errors, call logs, stdout/stderr or attachments. They
 // can contain keys, locator values, accessible names and complete ARIA trees.
 // Source locations, fixed status labels and counts retain actionable diagnostics.
@@ -30,13 +37,21 @@ export default class SafeWalletReporter {
     this.write('Runner error: browser verification could not complete.\n');
   }
 
+  onStepEnd(test, _result, step) {
+    if (!step.error) return;
+    const location = step.location;
+    if (!location || location.file !== test.location?.file || !Number.isSafeInteger(location.line) || location.line < 1) return;
+    const file = safeSourceFile(location.file);
+    if (file) this.write(`Wallet browser failed step: ${file}:${location.line}.\n`);
+  }
+
   onTestEnd(test, result) {
     this.completed += 1;
     if (result.status === 'skipped') this.skipped += 1;
     const failed = result.status !== 'passed' && result.status !== 'skipped';
     if (failed) this.failures += 1;
-    const file = path.relative(projectRoot, test.location.file);
-    const location = /^(?:e2e|tests\/fixtures)\/[a-zA-Z0-9_./-]+\.spec\.[cm]?[jt]s$/.test(file) && !file.includes('..')
+    const file = safeSourceFile(test.location.file);
+    const location = file
       ? `${file}:${Number.isSafeInteger(test.location.line) ? test.location.line : 0}`
       : 'browser check';
     const status = statuses.has(result.status) ? result.status : 'unknown';
