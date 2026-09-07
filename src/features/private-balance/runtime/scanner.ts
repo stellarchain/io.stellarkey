@@ -302,10 +302,9 @@ export async function scanArchiveRecords(
             ),
           );
           if (note || outgoingBytes) {
-            if (note && note.assetIndex !== candidate.index) {
-              outgoingBytes?.fill(0);
-              throw new Error('Recovered note asset index does not match its authenticated asset');
-            }
+            // Recipient opening verifies candidate.assetField in the commitment.
+            // Use that registry identity, not the plaintext's redundant asset index,
+            // which is not a commitment input and must not abort canonical scanning.
             return { note, outgoingBytes, asset: candidate };
           }
         }
