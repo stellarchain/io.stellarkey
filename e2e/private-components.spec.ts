@@ -952,19 +952,26 @@ test('the real chain controller accepts one live choice per step and ignores dup
 
 test('the bounded native socket exchanges only synthetic local messages and survives its setup deadline', async ({ page }) => {
   let connection: Parameters<Parameters<typeof page.routeWebSocket>[1]>[0] | undefined;
+  let closed = false;
   await page.routeWebSocket('**/synthetic-nostr', socket => {
     connection = socket;
-    socket.onMessage(message => { if (message === 'synthetic-ping') socket.send('synthetic-pong'); });
+    socket.onMessage(message => {
+      if (message === JSON.stringify(['REQ', 'synthetic-native', { kinds: [20004], limit: 1 }])) {
+        socket.send(JSON.stringify(['EOSE', 'synthetic-native']));
+      }
+    });
+    socket.onClose(() => { closed = true; });
   });
   await page.getByRole('tab', { name: 'Relay', exact: true }).click();
   await page.getByRole('button', { name: 'Open synthetic native socket' }).click();
   await expect(page.getByTestId('relay-native-socket')).toHaveText('exchanged');
   // Prove the CONNECTING deadline does not become an established-session TTL.
   await page.waitForTimeout(100);
-  connection!.send('synthetic-after-deadline');
+  connection!.send(JSON.stringify(['EOSE', 'synthetic-after-deadline']));
   await expect(page.getByTestId('relay-native-socket')).toHaveText('after deadline');
   await page.getByRole('button', { name: 'Close synthetic native socket' }).click();
   await expect(page.getByTestId('relay-native-socket')).toHaveText('closed');
+  await expect.poll(() => closed).toBe(true);
 });
 
 test('recovery requires separate consent, survives stale account completion, and keeps the shell', async ({ page, browserName }) => {

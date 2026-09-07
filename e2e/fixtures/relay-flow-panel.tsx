@@ -82,8 +82,11 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
       const Socket = boundedPrivateRelayWebSocket(WebSocket, 50);
       const connection = new Socket(`${location.origin.replace(/^http/, 'ws')}/synthetic-nostr`);
       socket.current = connection;
-      connection.onopen = () => { setSocketStatus('open'); connection.send('synthetic-ping'); };
-      connection.onmessage = event => setSocketStatus(event.data === 'synthetic-after-deadline' ? 'after deadline' : 'exchanged');
+      connection.onopen = () => { setSocketStatus('open'); connection.send(JSON.stringify(['REQ', 'synthetic-native', { kinds: [20004], limit: 1 }])); };
+      connection.onmessage = event => {
+        if (event.data === JSON.stringify(['EOSE', 'synthetic-native'])) setSocketStatus('exchanged');
+        if (event.data === JSON.stringify(['EOSE', 'synthetic-after-deadline'])) setSocketStatus('after deadline');
+      };
     }}>Open synthetic native socket</Button>
     <Button variant="secondary" onClick={() => { socket.current?.close(); setSocketStatus('closed'); }}>Close synthetic native socket</Button>
     <p data-testid="relay-native-socket">{socketStatus}</p>
