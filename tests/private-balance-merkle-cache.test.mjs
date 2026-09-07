@@ -26,11 +26,20 @@ class MemoryDriver {
     return new Map([...this.records].filter(([key]) => key.startsWith(prefix)));
   }
 
-  async compareAndSetMany(key, expectedRevision, entries) {
+  async compareAndSetMany(key, expectedRevision, entries, removeKeys = [], expectedPrefix, expectedRecords) {
     const current = this.records.get(key) ?? null;
     const revision = current === null ? null : JSON.parse(current).revision;
     if (revision !== expectedRevision) return { ok: false, current };
+    if (expectedPrefix) {
+      const actual = new Map([...this.records].filter(([key]) => key.startsWith(expectedPrefix.prefix)));
+      if (actual.size !== expectedPrefix.entries.size || [...expectedPrefix.entries].some(([key, value]) => actual.get(key) !== value)) {
+        return { ok: false, current };
+      }
+    }
+    if ([...expectedRecords ?? []].some(([key, raw]) => (this.records.get(key) ?? null) !== raw)) return { ok: false, current };
+    for (const key of removeKeys) if (!entries.has(key)) this.records.delete(key);
     for (const [entryKey, value] of entries) this.records.set(entryKey, value);
+    for (const [entryKey, value] of entries) assert.equal(this.records.get(entryKey), value);
     return { ok: true, current: entries.get(key) ?? null };
   }
 

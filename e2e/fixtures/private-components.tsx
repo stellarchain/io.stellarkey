@@ -24,6 +24,7 @@ import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime
 import { ModalOwnershipFixture } from '../../../e2e/fixtures/modal-ownership-panel';
 import { MerchantFeedbackFixture } from '../../../e2e/fixtures/merchant-feedback-panel';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
+import { clearPrivateBalanceCommitmentCache, loadPrivateBalanceCommitments, recordVerifiedPrivateBalanceCommitments } from '@/features/private-balance/runtime/public-cache';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { PrivateBalanceProvider } from '@/features/private-balance/runtime/provider';
 import { HorizonStealthAnnouncementReader } from '@/features/private-balance/runtime/stealth-horizon';
@@ -353,6 +354,11 @@ async function checkDiscoveryRemovalRollback(): Promise<void> {
 function DiscoveryStorageChecks() {
   const [result, setResult] = useState('idle');
   return <>
+    {['changed', 'expected-absent', 'matching', 'matching-absent', 'snapshot-copy', 'prefix-copy', 'readback-rollback', 'cache-integration'].map(mode => <Button key={mode}
+      onClick={() => {
+        setResult('running');
+        void checkPublicCacheAtomicRange(mode).then(() => setResult('passed'), () => setResult('failed'));
+      }}>Check public cache atomic range {mode}</Button>)}
     <Button onClick={() => { setResult('running'); void checkDiscoveryRemovalRollback()
       .then(() => setResult('passed'), () => setResult('failed')); }}>Check discovery removal rollback</Button>
     {['changed', 'expected-absent', 'matching', 'matching-absent'].map(mode => <Button key={mode}
@@ -367,6 +373,115 @@ function DiscoveryStorageChecks() {
       }}>Check discovery {mode}</Button>)}
     <p data-testid="discovery-storage-result">{result}</p>
   </>;
+}
+
+async function checkPublicCacheAtomicRange(mode: string): Promise<void> {
+  if (mode === 'cache-integration') return checkPublicCacheIntegration();
+  const driver = new IndexedDbEncryptedRecordDriver();
+  const writer = new IndexedDbEncryptedRecordDriver();
+  const prefix = 'synthetic-public-range:';
+  const checkpoint = `${prefix}checkpoint`;
+  const leaf = `${prefix}leaf`;
+  const retained = `${prefix}retained`;
+  const old = '{"revision":0,"status":"synthetic-old"}';
+  const next = '{"revision":1,"status":"synthetic-next"}';
+  const changed = '{"revision":0,"status":"synthetic-changed"}';
+  const absent = mode === 'expected-absent' || mode === 'matching-absent';
+  const mismatch = mode === 'changed' || mode === 'expected-absent' || mode === 'snapshot-copy' || mode === 'prefix-copy';
+  await driver.removePrefix(prefix);
+  await driver.putManyVerified(new Map([[checkpoint, old], [retained, 'synthetic-retained'], ...(!absent ? [[leaf, old]] : [])] as [string, string][]));
+  const expected = new Map<string, string | null>([[checkpoint, old], [leaf, absent ? null : old]]);
+  const expectedPrefix = { prefix, entries: await driver.readPrefix(prefix) };
+  if (mismatch) await writer.putVerified(leaf, changed);
+  const before = await driver.readPrefix(prefix);
+  const originalGet = IDBObjectStore.prototype.get;
+  const originalPut = IDBObjectStore.prototype.put;
+  const originalDelete = IDBObjectStore.prototype.delete;
+  let mutations = 0;
+  let wrote = false;
+  try {
+    IDBObjectStore.prototype.put = function (record, key) {
+      mutations += 1; wrote = true;
+      return originalPut.call(this, record, key);
+    };
+    IDBObjectStore.prototype.delete = function (query) {
+      mutations += 1;
+      return originalDelete.call(this, query);
+    };
+    if (mode === 'readback-rollback') IDBObjectStore.prototype.get = function (query) {
+      const request = originalGet.call(this, query);
+      if (wrote && query === leaf) request.addEventListener('success', () => {
+        Object.defineProperty(request, 'result', { value: { key: leaf, value: 'synthetic-corrupt-readback' } });
+      }, { once: true });
+      return request;
+    };
+    const compare = driver.compareAndSetMany.bind(driver) as (
+      key: string, revision: number | null, entries: ReadonlyMap<string, string>, remove: string[],
+      prefix: { prefix: string; entries: ReadonlyMap<string, string> } | undefined,
+      expected: ReadonlyMap<string, string | null> | undefined,
+    ) => Promise<{ ok: boolean }>;
+    const pending = compare(checkpoint, 0, new Map([[checkpoint, next], [leaf, next]]), [retained],
+      mode === 'prefix-copy' ? expectedPrefix : undefined, mode === 'prefix-copy' ? undefined : expected);
+    // Mutation immediately after invocation must not change the transaction's basis.
+    if (mode === 'snapshot-copy') expected.set(leaf, changed);
+    if (mode === 'prefix-copy') expectedPrefix.entries.set(leaf, changed);
+    const outcome = await pending.then(result => result.ok ? 'committed' : 'conflict', () => 'rejected');
+    IDBObjectStore.prototype.get = originalGet;
+    const after = await driver.readPrefix(prefix);
+    if (mismatch || mode === 'readback-rollback') {
+      if (outcome !== (mismatch ? 'conflict' : 'rejected') || (mismatch && mutations !== 0) ||
+        before.size !== after.size || [...before].some(([key, value]) => after.get(key) !== value)) {
+        throw new Error('Synthetic atomic range did not retain the original records');
+      }
+    } else if (outcome !== 'committed' || after.size !== 2 || after.get(checkpoint) !== next || after.get(leaf) !== next) {
+      throw new Error('Synthetic atomic range did not commit together');
+    }
+  } finally {
+    IDBObjectStore.prototype.get = originalGet;
+    IDBObjectStore.prototype.put = originalPut;
+    IDBObjectStore.prototype.delete = originalDelete;
+    await driver.removePrefix(prefix);
+  }
+}
+
+async function checkPublicCacheIntegration(): Promise<void> {
+  const first = new IndexedDbEncryptedRecordDriver();
+  const second = new IndexedDbEncryptedRecordDriver();
+  const context = { networkId: '01'.repeat(32), realmId: '02'.repeat(32), poolId: '03'.repeat(32) };
+  const scope = `${context.networkId}:${context.realmId}:${context.poolId}:`;
+  const legacyPrefix = `private:cache:v1:${scope}`;
+  const currentPrefix = `private:cache:v2:${scope}`;
+  const legacyKey = `${legacyPrefix}commitments:0000000000000000`;
+  const marker = (value: number) => new Uint8Array(32).fill(value);
+  const legacyRaw = JSON.stringify({ kind: 'public-commitment-chunk', version: 1, revision: 0, startIndex: 0, commitments: ['01'.repeat(32)] });
+  try {
+    await first.putManyVerified(new Map([[legacyKey, legacyRaw], [`${legacyPrefix}synthetic-discovery`, 'synthetic-encrypted']]));
+    if ((await loadPrivateBalanceCommitments(context, first)).length !== 1) throw new Error('Synthetic legacy load failed');
+    await recordVerifiedPrivateBalanceCommitments(context, 1, [marker(2)], first);
+    await recordVerifiedPrivateBalanceCommitments(context, 1, [marker(2), marker(3)], second);
+    await recordVerifiedPrivateBalanceCommitments(context, 3, [marker(4)], first);
+    const loaded = await loadPrivateBalanceCommitments(context, second);
+    if (loaded.length !== 4 || loaded.some((value, index) => value.some(byte => byte !== index + 1))) {
+      throw new Error('Synthetic incremental records differ');
+    }
+    const before = await first.readPrefix(currentPrefix);
+    const rejected = await recordVerifiedPrivateBalanceCommitments(context, 0, [marker(9)], second)
+      .then(() => false, () => true);
+    const after = await first.readPrefix(currentPrefix);
+    if (!rejected || before.size !== after.size || [...before].some(([key, raw]) => after.get(key) !== raw)) {
+      throw new Error('Synthetic overlap conflict changed storage');
+    }
+    await clearPrivateBalanceCommitmentCache(context, first);
+    if ((await loadPrivateBalanceCommitments(context, second)).length !== 0 ||
+      await first.read(legacyKey) !== legacyRaw || await first.read(`${legacyPrefix}synthetic-discovery`) !== 'synthetic-encrypted') {
+      throw new Error('Synthetic reset did not preserve its namespace boundary');
+    }
+    await recordVerifiedPrivateBalanceCommitments(context, 0, [marker(5)], second);
+    if ((await loadPrivateBalanceCommitments(context, first)).length !== 1) throw new Error('Synthetic reset reimported legacy records');
+  } finally {
+    await first.removePrefix(currentPrefix);
+    await first.removePrefix(legacyPrefix);
+  }
 }
 
 async function checkDiscoveryRemovalSnapshot(mode: string): Promise<void> {

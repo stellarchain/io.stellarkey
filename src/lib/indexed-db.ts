@@ -36,6 +36,7 @@ export interface EncryptedRecordDriver {
     entries: ReadonlyMap<string, string>,
     removeKeys?: readonly string[],
     expectedPrefix?: RecordDriverExpectedPrefix,
+    expectedRecords?: ReadonlyMap<string, string | null>,
   ): Promise<RecordDriverCompareResult>;
   replacePrefixVerified(
     prefix: string,
@@ -238,51 +239,73 @@ export class IndexedDbEncryptedRecordDriver implements EncryptedRecordDriver {
     entries: ReadonlyMap<string, string>,
     removeKeys: readonly string[] = [],
     expectedPrefix?: RecordDriverExpectedPrefix,
+    expectedRecords?: ReadonlyMap<string, string | null>,
   ): Promise<RecordDriverCompareResult> {
+    // Bind the transaction to the exact caller snapshot before opening the DB.
+    // Null expectations fence absence; revision alone cannot detect replacement.
+    const expected = new Map(expectedRecords);
+    const prefixSnapshot = expectedPrefix && {
+      prefix: expectedPrefix.prefix, entries: new Map(expectedPrefix.entries),
+    };
+    const writes = new Map(entries);
+    const removals = new Set(removeKeys);
     const database = await this.database();
     const transaction = openTransaction(database, "readwrite");
-    const completed = transactionResult(transaction);
-    const records = transaction.objectStore(STORE_NAME);
-    const existing = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
-    const current = existing?.value ?? null;
-    if (revisionOf(current) !== expectedRevision) {
-      await completed;
-      return { ok: false, current };
-    }
-    if (expectedPrefix) {
-      const range = IDBKeyRange.bound(
-        expectedPrefix.prefix,
-        `${expectedPrefix.prefix}\uffff`,
-      );
-      const storedPrefix = await requestResult(
-        records.getAll(range) as IDBRequest<StoredRecord[]>,
-      );
-      const actual = new Map(storedPrefix.map((record) => [record.key, record.value]));
-      if (
-        actual.size !== expectedPrefix.entries.size ||
-        [...expectedPrefix.entries].some(([entryKey, value]) => actual.get(entryKey) !== value)
-      ) {
+    const completed = transactionResult(transaction, true);
+    void completed.catch(() => undefined);
+    try {
+      const records = transaction.objectStore(STORE_NAME);
+      const existing = await requestResult(records.get(key) as IDBRequest<StoredRecord | undefined>);
+      const current = existing?.value ?? null;
+      if (revisionOf(current) !== expectedRevision) {
         await completed;
         return { ok: false, current };
       }
-    }
-    for (const removeKey of new Set(removeKeys)) {
-      if (!entries.has(removeKey)) await requestResult(records.delete(removeKey));
-    }
-    for (const [entryKey, value] of entries) {
-      await requestResult(records.put({ key: entryKey, value }));
-    }
-    for (const [entryKey, value] of entries) {
-      const stored = await requestResult(
-        records.get(entryKey) as IDBRequest<StoredRecord | undefined>,
-      );
-      if (stored?.value !== value) {
-        transaction.abort();
-        throw new Error(`IndexedDB did not retain encrypted record ${entryKey}.`);
+      if (prefixSnapshot) {
+        const range = IDBKeyRange.bound(
+          prefixSnapshot.prefix,
+          `${prefixSnapshot.prefix}\uffff`,
+        );
+        const storedPrefix = await requestResult(
+          records.getAll(range) as IDBRequest<StoredRecord[]>,
+        );
+        const actual = new Map(storedPrefix.map((record) => [record.key, record.value]));
+        if (
+          actual.size !== prefixSnapshot.entries.size ||
+          [...prefixSnapshot.entries].some(([entryKey, value]) => actual.get(entryKey) !== value)
+        ) {
+          await completed;
+          return { ok: false, current };
+        }
       }
+      for (const [entryKey, raw] of expected) {
+        const stored = await requestResult(records.get(entryKey) as IDBRequest<StoredRecord | undefined>);
+        if ((stored?.value ?? null) !== raw) {
+          await completed;
+          return { ok: false, current };
+        }
+      }
+      for (const removeKey of removals) {
+        if (!writes.has(removeKey)) await requestResult(records.delete(removeKey));
+      }
+      for (const [entryKey, value] of writes) {
+        await requestResult(records.put({ key: entryKey, value }));
+      }
+      for (const [entryKey, value] of writes) {
+        const stored = await requestResult(
+          records.get(entryKey) as IDBRequest<StoredRecord | undefined>,
+        );
+        if (stored?.value !== value) {
+          throw new Error("IndexedDB did not retain the complete record batch.");
+        }
+      }
+      await completed;
+      return { ok: true, current: writes.get(key) ?? null };
+    } catch (error) {
+      try { transaction.abort(); } catch { /* Already completed transactions cannot roll back. */ }
+      await completed.catch(() => undefined);
+      throw error;
     }
-    await completed;
-    return { ok: true, current: entries.get(key) ?? null };
   }
 
   async replacePrefixVerified(

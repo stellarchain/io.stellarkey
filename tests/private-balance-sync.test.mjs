@@ -41,12 +41,30 @@ class MemoryDriver {
     this.records.set(key, value);
     return { ok: true, current: value };
   }
-  async compareAndSetMany(key, expectedRevision, entries) {
+  async compareAndSetMany(key, expectedRevision, entries, removeKeys = [], expectedPrefix, expectedRecords) {
     const current = this.records.get(key) ?? null;
     const revision = current === null ? null : JSON.parse(current).revision;
     if (revision !== expectedRevision) return { ok: false, current };
+    if (expectedPrefix) {
+      const actual = new Map([...this.records].filter(([key]) => key.startsWith(expectedPrefix.prefix)));
+      if (actual.size !== expectedPrefix.entries.size || [...expectedPrefix.entries].some(([key, value]) => actual.get(key) !== value)) {
+        return { ok: false, current };
+      }
+    }
+    if ([...expectedRecords ?? []].some(([key, raw]) => (this.records.get(key) ?? null) !== raw)) return { ok: false, current };
+    for (const key of removeKeys) if (!entries.has(key)) this.records.delete(key);
     for (const [entryKey, value] of entries) this.records.set(entryKey, value);
+    for (const [entryKey, value] of entries) assert.equal(this.records.get(entryKey), value);
     return { ok: true, current: entries.get(key) ?? null };
+  }
+  async replacePrefixVerified(prefix, entries, removeKeys = [], guard = {}, expectedRecords) {
+    guard.signal?.throwIfAborted();
+    guard.assertActive?.();
+    if ([...expectedRecords ?? []].some(([key, raw]) => (this.records.get(key) ?? null) !== raw)) throw new Error('Records changed before removal');
+    for (const key of [...this.records.keys()]) if (key.startsWith(prefix)) this.records.delete(key);
+    for (const key of removeKeys) this.records.delete(key);
+    for (const [key, value] of entries) this.records.set(key, value);
+    for (const [key, value] of entries) assert.equal(this.records.get(key), value);
   }
   async removePrefix(prefix) {
     for (const key of this.records.keys()) if (key.startsWith(prefix)) this.records.delete(key);
@@ -131,6 +149,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     },
   };
   let headReads = 0;
+  let archiveReads = 0;
   const closeTimeRequests = [];
   const archive = {
     async readHead() {
@@ -138,6 +157,7 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
       return head;
     },
     async readRecords(startActionIndex, count) {
+      archiveReads += 1;
       assert.equal(startActionIndex, 0);
       assert.equal(count, 1);
       return [record];
@@ -312,10 +332,18 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     record.outputs.map(output => hex(output.cm)),
   );
 
-  const merkleCheckpointKey = [...driver.records.keys()].find(key => key.endsWith(':checkpoint'));
+  const merkleCheckpointKey = [...driver.records.keys()].find(key => key.startsWith('private:merkle:') && key.endsWith(':checkpoint'));
   const corrupted = JSON.parse(driver.records.get(merkleCheckpointKey));
   corrupted.root = 'ff'.repeat(32);
   driver.records.set(merkleCheckpointKey, JSON.stringify(corrupted));
+  const corruptPublic = holdCase === 'pending';
+  if (corruptPublic) {
+    const leafKey = [...driver.records.keys()].find(key => key.startsWith('private:cache:v2:') && key.includes(':commitments:'));
+    const leaf = JSON.parse(driver.records.get(leafKey));
+    leaf.commitments[0] = 'ff'.repeat(32);
+    driver.records.set(leafKey, JSON.stringify(leaf));
+  }
+  const readsBeforeRecovery = archiveReads;
   const recovered = await syncPrivateBalance({
     archive,
     worker,
@@ -329,6 +357,8 @@ for (const holdCase of ['pending', 'legacy-transfer-spent', 'legacy-withdraw-spe
     now: () => 3,
   });
   assert.equal(recovered.account.syncStatus, 'current');
+  assert.equal(archiveReads - readsBeforeRecovery, corruptPublic ? 1 : 0);
+  assert.deepEqual((await loadPrivateBalanceCommitments(storageContext, driver)).map(hex), record.outputs.map(output => hex(output.cm)));
   assert.equal(
     (await loadPrivateBalanceMerkleCheckpoint(storageContext, driver)).root,
     hex(record.treeRootAfter),

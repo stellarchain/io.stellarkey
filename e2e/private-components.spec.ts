@@ -219,6 +219,14 @@ for (const mode of ['database-open', 'record-read', 'queued-write', 'uncommitted
   });
 }
 
+for (const mode of ['changed', 'expected-absent', 'matching', 'matching-absent', 'snapshot-copy', 'prefix-copy', 'readback-rollback', 'cache-integration']) {
+  test(`public cache atomic range checks real IndexedDB ${mode}`, async ({ page }) => {
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: `Check public cache atomic range ${mode}`, exact: true }).click();
+    await expect(page.getByTestId('discovery-storage-result')).toHaveText('passed');
+  });
+}
+
 for (const mode of ['changed', 'expected-absent', 'matching', 'matching-absent']) {
   test(`discovery removal atomically checks real IndexedDB ${mode} snapshot`, async ({ page }) => {
     await page.keyboard.press('Escape');

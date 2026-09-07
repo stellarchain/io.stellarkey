@@ -63,7 +63,7 @@ class MemoryRecordDriver {
     }
   }
 
-  async compareAndSetMany(key, expectedRevision, entries, removeKeys = [], expectedPrefix) {
+  async compareAndSetMany(key, expectedRevision, entries, removeKeys = [], expectedPrefix, expectedRecords) {
     if (this.failWrites) throw new Error("quota exceeded");
     if (this.failNextBatchCompare) {
       this.failNextBatchCompare = false;
@@ -72,6 +72,7 @@ class MemoryRecordDriver {
     const current = this.records.get(key) ?? null;
     const currentRevision = current === null ? null : JSON.parse(current).revision;
     if (currentRevision !== expectedRevision) return { ok: false, current };
+    if ([...expectedRecords ?? []].some(([key, raw]) => (this.records.get(key) ?? null) !== raw)) return { ok: false, current };
     if (expectedPrefix) {
       const actual = new Map(
         [...this.records].filter(([entryKey]) => entryKey.startsWith(expectedPrefix.prefix)),
@@ -85,8 +86,9 @@ class MemoryRecordDriver {
     }
     const before = new Map(this.records);
     try {
-      for (const removeKey of removeKeys) this.records.delete(removeKey);
+      for (const removeKey of removeKeys) if (!entries.has(removeKey)) this.records.delete(removeKey);
       for (const [entryKey, value] of entries) this.records.set(entryKey, value);
+      for (const [entryKey, value] of entries) assert.equal(this.records.get(entryKey), value);
       this.lastBatch = {
         puts: entries.size,
         removes: removeKeys.length,
