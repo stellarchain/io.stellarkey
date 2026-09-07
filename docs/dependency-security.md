@@ -96,7 +96,7 @@ to the installed 9.7.3 license.
 
 ## Verification scope
 
-Task-specific checks passed: 32 hardware tests, all 1,713 root Node tests,
+Before the provenance follow-up below, task-specific checks passed: 32 hardware tests, all 1,713 root Node tests,
 TypeScript, ESLint (zero errors, three existing marketing-image warnings),
 production build, five bundle tests, every unchanged bundle
 budget, and fixture cleanup before/after build. Hardware incremental JavaScript
@@ -106,3 +106,19 @@ they do not open a live wallet, contact a device, fund an account or broadcast a
 transaction. Full application verification and human/physical release evidence
 remain separate requirements. These checks used a local working-tree build;
 they are not clean-tree release verification or a published release artifact.
+
+The first independent clean-tree `release:verify` passed its clean preflight but
+stopped at `private:check-generated`: the TOML lockfile update made five generated
+provenance files stale. The existing generator includes the root lockfile in
+`release.toolchainLockSha256`. Refreshing that digest in the development and
+public manifests changes the public manifest digest, its catalogue entry, and
+the two generated TypeScript pins.
+
+The existing local `private:check-generated` command regenerated these outputs
+and then passed with stable bytes. Its `--publish-deployment` step writes local
+files from existing deployment evidence; this follow-up did not deploy a
+contract, change a deployment identity or development flag, alter protocol or
+cryptographic source, modify proving artifacts or vectors, or create ceremony
+evidence. An independent field comparison confirmed only the lockfile digest
+and cascading pins changed. The complete clean-tree aggregate still needs to
+run against the refreshed provenance.
