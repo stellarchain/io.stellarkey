@@ -7,9 +7,10 @@ import {
 
 // Service Worker-owned requests bypass page.route; transport-delay tests must
 // own chunk delivery. Offline/PWA behavior is covered separately in pwa.spec.
-test.use({ reducedMotion: "no-preference", serviceWorkers: "block" });
+test.use({ contextOptions: { reducedMotion: "no-preference" }, serviceWorkers: "block" });
 
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, contextOptions, page }) => {
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(contextOptions.reducedMotion === "reduce");
   await installQuietEventSource(context);
   await installNetworkFixtures(context);
 });
@@ -315,7 +316,7 @@ test("critical public payment fields keep programmatic labels", async ({ page })
 });
 
 test.describe("reduced motion", () => {
-  test.use({ reducedMotion: "reduce" });
+  test.use({ contextOptions: { reducedMotion: "reduce" } });
 
   test("keyboard tab activation keeps the same Send dialog", async ({ page }) => {
     await importTestWallet(page);
