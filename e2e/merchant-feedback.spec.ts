@@ -545,6 +545,9 @@ test('customer contact validation and storage failures stay local with an explic
   const writes = Number(await page.getByTestId('feedback-contacts').textContent());
   const dialog = await openCustomer(page);
   const save = dialog.getByRole('button', { name: 'Update', exact: true });
+  // A saved contact name changes the dialog's accessible name, not its owner.
+  await dialog.evaluate(node => { (node as HTMLElement).dataset.contactDialogOwner = 'retained'; });
+  await save.evaluate(node => { (node as HTMLElement).dataset.contactSaveOwner = 'retained'; });
   await dialog.getByRole('textbox', { name: 'Contact name', exact: true }).fill('');
   await save.click();
   await expect(dialog.getByRole('alert')).toHaveText('Enter a name before saving this address to Contacts.');
@@ -563,8 +566,14 @@ test('customer contact validation and storage failures stay local with an explic
   await expect.poll(() => dialog.getByRole('textbox', { name: 'Contact name', exact: true }).evaluate(node => (node as HTMLInputElement).value === 'Synthetic contact')).toBe(true);
   await page.keyboard.press('Space');
   await expect(page.locator('.app-safe-toast')).toContainText('Contact saved.');
-  await expect(save).toBeFocused();
-  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  const updatedDialog = page.getByRole('dialog', { name: 'Synthetic contact', exact: true });
+  await expect(updatedDialog).toHaveCount(1);
+  await expect(updatedDialog).toBeVisible();
+  await expect(updatedDialog).toHaveAttribute('data-contact-dialog-owner', 'retained');
+  const updatedSave = updatedDialog.getByRole('button', { name: 'Update', exact: true });
+  await expect(updatedSave).toHaveAttribute('data-contact-save-owner', 'retained');
+  await expect(updatedSave).toBeFocused();
+  await expect(updatedDialog.getByRole('alert')).toHaveCount(0);
   await expect(page.getByTestId('feedback-contacts')).toHaveText(String(writes + 2));
 });
 
