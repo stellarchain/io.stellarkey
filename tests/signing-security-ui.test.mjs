@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { Keypair } from "@stellar/stellar-sdk";
+import { Account, Keypair, Networks, Operation, TransactionBuilder } from "@stellar/stellar-sdk";
 import * as vault from "../src/lib/vault.ts";
 import * as signing from "../src/lib/signing-authorization.ts";
 import * as walletApi from "../src/lib/api.ts";
 import * as multisig from "../src/lib/multisig.ts";
 import { runPreparedBroadcast } from "../src/lib/submission.ts";
+import * as privateSigning from '../src/lib/private-balance-signing.ts';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -73,6 +74,7 @@ async function signingHarness(t, gap) {
   const context = {
     ...vault, ...signing,
     activeAccount: account, network: 'testnet', signingContext: origin, signingContextRef: current,
+    NETWORKS: { testnet: { networkPassphrase: Networks.TESTNET } },
     recommendedBaseFeeStroops: 100,
     hardwareSignerFor: () => undefined,
     requestSigningAuthorization: async () => { if (gap === 'approval') await pause.run(); },
@@ -85,12 +87,19 @@ async function signingHarness(t, gap) {
     transactionTrackingRef: { current: { pending: [] } },
     loadWalletApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return walletApi; },
     loadMultisigApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return multisig; },
+    loadPrivateBalanceSigningApi: async () => { stats.apiLoads++; if (gap === 'api') await pause.run(); return privateSigning; },
   };
   context.captureSigningContext = () => walletCallback('captureSigningContext', context)();
   context.withAuthorizedSigningSecret = walletCallback('withAuthorizedSigningSecret', context);
   context.runTrackedBroadcast = walletCallback('runTrackedBroadcast', context);
   return {
     stats, pause, current, origin,
+    runPrivate: () => {
+      const transaction = new TransactionBuilder(new Account(account.publicKey, '1'), { fee: '100', networkPassphrase: Networks.TESTNET })
+        .addOperation(Operation.bumpSequence({ bumpTo: '2' })).setTimeout(300).build();
+      return walletCallback('signPrivateBalanceEnvelope', context)({ envelopeXdr: transaction.toXdr(),
+        expectedTransactionHash: Buffer.from(transaction.hash()).toString('hex'), networkPassphrase: Networks.TESTNET });
+    },
     run: (operation, extra = {}) => walletCallback(operation, context)({
       destination: Keypair.random().publicKey(), amount: '1', assetCode: 'XLM',
       authorizeBeforeSigning: () => { stats.externalChecks++; },
@@ -98,6 +107,29 @@ async function signingHarness(t, gap) {
     }),
     replaceSession: async () => { vault.lockVault(); await vault.unlockVault(password); },
   };
+}
+
+for (const gap of ['api', 'approval']) {
+  for (const change of ['account', 'network', 'account-aba', 'network-aba', 'session']) test(`private envelope rejects ${change} replacement during ${gap}`, async t => {
+    const harness = await signingHarness(t, gap);
+    const outcome = harness.runPrivate().then(() => 'continued', () => 'rejected');
+    await harness.pause.waiting;
+    if (change === 'session') await harness.replaceSession();
+    else {
+      harness.current.current = { ...harness.origin, ...(change.startsWith('account') ? { accountId: 'other-account' } : { network: 'mainnet' }) };
+      if (change.endsWith('aba')) harness.current.current = { ...harness.origin };
+    }
+    harness.pause.release();
+    assert.equal(await outcome, 'rejected');
+    assert.equal(harness.stats.signs, 0);
+    assert.equal(harness.stats.posts, 0);
+  });
+  test(`private envelope preserves unchanged signing authority during ${gap}`, async t => {
+    const harness = await signingHarness(t, gap);
+    const outcome = harness.runPrivate();
+    await harness.pause.waiting; harness.pause.release(); await outcome;
+    assert.equal(harness.stats.signs, 1);
+  });
 }
 
 for (const operation of ['send', 'prepareCosignPayment']) {

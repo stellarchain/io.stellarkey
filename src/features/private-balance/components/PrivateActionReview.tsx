@@ -28,6 +28,7 @@ import type {
 
 /** What the person actually typed — the review screen renders this at once. */
 export interface PrivateReviewDraft {
+  purpose?: 'recovery';
   kind: 'deposit' | 'transfer' | 'withdraw';
   /** Display-units amount exactly as entered. */
   amount: string;
@@ -122,6 +123,10 @@ export function PrivateActionReview({
   // Render-integrity: a prepared review may only enable confirm when it
   // byte-matches the draft the person is looking at.
   const mismatch = useMemo<PrivateReviewMismatchError | null>(() => {
+    if (draft.purpose === 'recovery' && ((disclosure && (!disclosure.recoveryOfActionId || disclosure.submissionMode !== 'direct' || disclosure.privateFeeAtomic !== '0')) ||
+      (review && (!review.recoveryOfActionId || review.relay || review.changeValueStroops !== '0' || review.inputValueStroops !== review.amountStroops)))) {
+      return new PrivateReviewMismatchError('recovery intent changed');
+    }
     if (disclosure) {
       const memoHex = Array.from(new TextEncoder().encode(draft.memo?.trim() ?? ''), byte => byte.toString(16).padStart(2, '0')).join('') || null;
       if (disclosure.kind !== draft.kind || disclosure.assetContractId !== asset?.contractId || disclosure.amountStroops !== amountStroops?.toString() ||
@@ -197,7 +202,7 @@ export function PrivateActionReview({
   // preparing and after the review lands.
   const privateChainFee = chained?.relayApproval ? BigInt(chained.relayApproval.plan.cumulativeMaxPrivateFeeAtomic) : 0n;
   const choosingChainPeer = !!chained?.relayApproval && chainProgress?.stage === 'choosing-peer';
-  const simulation = amountStroops === null || (working && chained?.relayApproval)
+  const simulation = draft.purpose === 'recovery' || amountStroops === null || (working && chained?.relayApproval)
     ? null
     : privateReviewBalanceSimulation({
         kind: draft.kind,

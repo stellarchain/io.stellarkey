@@ -180,7 +180,17 @@ export interface PrivateBalanceDurableState {
   checkpoint: ShieldedCheckpoint | null;
   buildReservations: PrivateBuildReservation[];
   pendingActions: PrivatePendingAction[];
+  /** Encrypted lineage; only a canonical scan may resolve a recovery attempt. */
+  spendRecovery?: PrivateSpendRecovery;
   recentPrivateRecipients?: PrivateRecentRecipient[];
   chainedApproval?: PrivateChainedApproval; // One-shot multi-step send consent
   relayChainedApproval?: PrivateRelayChainJournal;
+}
+
+export interface PrivateSpendRecovery {
+  originalActionField: string;
+  recoveryActionFields: string[];
+  reservedNoteIds: string[];
+  assetContractId: string;
+  outcome: 'pending' | 'recovered' | 'original-confirmed' | 'conflict-confirmed';
 }

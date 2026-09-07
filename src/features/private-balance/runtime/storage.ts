@@ -1,5 +1,6 @@
 import { decodePrivateAddress, TREE_FRONTIER_SIZE } from '@stellarkey/private-balance';
 import { hasExposedPrivateSpend } from './proof-exposure';
+import { assertPrivateRecoveryReplacement, isPrivateSpendRecovery, MAX_PRIVATE_RECOVERY_ATTEMPTS, selectPrivateRecoveryInputs } from './spend-recovery';
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { decryptBytesWithKey, encryptBytesWithKey, type RawKeyEncryptedPayload } from '../../../lib/crypto';
 import { IndexedDbEncryptedRecordDriver } from '../../../lib/indexed-db';
@@ -447,6 +448,7 @@ function isDurableState(
         state.recentPrivateRecipients.length
     )) ||
     !(state.chainedApproval === undefined || isChainedApproval(state.chainedApproval)) ||
+    !(state.spendRecovery === undefined || isPrivateSpendRecovery(state.spendRecovery)) ||
     !(state.relayChainedApproval === undefined || (isPrivateRelayChainJournal(state.relayChainedApproval) && state.relayChainedApproval.approval.contextKey === privateRelayChainContextKey(context, state.relayChainedApproval.approval.assetContractId))) ||
     !Array.isArray(state.notes) ||
     !state.notes.every(isNote) ||
@@ -655,6 +657,36 @@ export async function commitPrivateBuildReservation(
       fee > BigInt(approval.perStepMaxFeeStroops) || BigInt(approval.accumulatedFeeStroops) + fee > BigInt(approval.cumulativeMaxFeeStroops)) throw new Error('Private chain disclosure exceeds its approved fee or lifetime.');
     next.chainedApproval = { ...approval, accumulatedFeeStroops: (BigInt(approval.accumulatedFeeStroops) + fee).toString(), updatedAt: pendingAction.updatedAt };
   }
+  await commitPrivateBalanceState(context, key, next, current.revision, candidate);
+  return next;
+}
+
+/** Keep the original exposed hold until this CAS; never create an unspent gap. */
+export async function commitPrivateSpendRecovery(
+  context: PrivateStorageContext, key: Uint8Array, expectedRevision: number,
+  originalActionId: string, replacement: PrivatePendingAction, selfAddress: string, candidate?: PrivateRecordDriver,
+): Promise<PrivateBalanceDurableState> {
+  if (!isPendingAction(replacement)) throw new Error('Private recovery pending action is invalid.');
+  const current = await loadPrivateBalanceState(context, key, candidate);
+  if (!current || current.revision !== expectedRevision || current.account.syncStatus !== 'current') throw new Error('Private recovery state changed. Check for new activity and try again.');
+  const { pending, amount } = selectPrivateRecoveryInputs(current, originalActionId, replacement.assetContractId);
+  assertPrivateRecoveryReplacement(pending, replacement, amount);
+  if (privateOutgoingHistoryMode(replacement.outgoingHistoryMode) !== privateOutgoingHistoryMode(current.outgoingHistoryMode)) throw new Error('Private outgoing-history policy changed before recovery.');
+  const diversifier = await assertPrivateAddress(selfAddress, context);
+  const issued = new Set(current.issuedAddressDiversifiers ?? []);
+  if (current.privateAddress) issued.add(await assertPrivateAddress(current.privateAddress, context));
+  for (const note of current.notes) issued.add(note.diversifier);
+  if (issued.has(diversifier) || issued.size >= MAX_ISSUED_PRIVATE_DIVERSIFIERS) throw new Error('Private recovery requires a fresh self address.');
+  issued.add(diversifier);
+  const previous = current.spendRecovery?.outcome === 'pending' && current.spendRecovery.recoveryActionFields.includes(pending.actionField)
+    ? current.spendRecovery : undefined;
+  const next: PrivateBalanceDurableState = { ...current, revision: current.revision + 1,
+    pendingActions: [{ ...replacement }], issuedAddressDiversifiers: [...issued],
+    spendRecovery: { originalActionField: previous?.originalActionField ?? pending.actionField,
+      // Bound encrypted metadata, never the ability to recover. A pruned old
+      // winner is still detected as a canonical conflict through spent inputs.
+      recoveryActionFields: [...previous?.recoveryActionFields ?? [], replacement.actionField].slice(-MAX_PRIVATE_RECOVERY_ATTEMPTS),
+      reservedNoteIds: [...pending.reservedNoteIds], assetContractId: pending.assetContractId, outcome: 'pending' } };
   await commitPrivateBalanceState(context, key, next, current.revision, candidate);
   return next;
 }

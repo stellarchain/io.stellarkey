@@ -431,7 +431,7 @@ interface WalletContextValue {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }) => Promise<string>;
+  }, assertActionCurrent?: () => void) => Promise<string>;
   fundFromFriendbot: () => Promise<void>;
 }
 
@@ -2842,7 +2842,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     envelopeXdr: string;
     expectedTransactionHash: string;
     networkPassphrase: string;
-  }) => {
+  }, assertActionCurrent?: () => void) => {
+    const assertWalletCurrent = captureSigningContext();
+    const assertContextCurrent = () => { assertWalletCurrent(); assertActionCurrent?.(); };
+    assertContextCurrent();
     if (!activeAccount) throw new Error("No active account");
     if (activeAccount.watchOnly || activeAccount.hardware) {
       throw new Error("Private Balance requires an active software account.");
@@ -2851,13 +2854,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Private Balance signing network changed. Review the transaction again.");
     }
     await requestSigningAuthorization("Sign private balance transaction");
+    assertContextCurrent();
     const signing = await loadPrivateBalanceSigningApi();
-    return withSigningKeypair(activeAccount.id, softwareSigner => signing.signExactPrivateBalanceEnvelope({
-      ...request,
-      expectedSource: activeAccount.publicKey,
-      softwareSigner,
-    }));
-  }, [activeAccount, network, requestSigningAuthorization]);
+    assertContextCurrent();
+    return withSigningKeypair(activeAccount.id, softwareSigner => {
+      assertContextCurrent();
+      return signing.signExactPrivateBalanceEnvelope({ ...request, expectedSource: activeAccount.publicKey, softwareSigner });
+    });
+  }, [activeAccount, captureSigningContext, network, requestSigningAuthorization]);
 
   const changePriceRange = useCallback(
     async (r: PriceRange) => {

@@ -21,6 +21,170 @@ const held = { bob: '0', reserved: '100', alice: '0', charlie: '0', pending: '1'
 const initial = { bob: '100', reserved: '0', alice: '0', charlie: '0', pending: '0' };
 const paid = { bob: '87', reserved: '0', alice: '3', charlie: '10', pending: '0' };
 
+async function realProvider(page: Page) {
+  await page.getByRole('button', { name: 'Test real recovery provider', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare real recovery provider', exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-setup')).toHaveText('ready', { timeout: 30_000 });
+  await expect(page.getByTestId('recovery-provider-phase')).toHaveText('current');
+  await expect(page.getByTestId('recovery-provider-balance')).toHaveText('0');
+  await page.getByRole('button', { name: 'Recover held balance', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toBeVisible();
+  return dialog;
+}
+
+for (const winner of ['recovery', 'original'] as const) test(`held balance recovery: actual wallet provider confirms ${winner} winner`, async ({ page }) => {
+  const dialog = await realProvider(page);
+  await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Sign Recovery', exact: true }).click();
+  const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+  await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+  await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+  await expect(password).toHaveCount(0);
+  await expect(dialog.getByText('Recovery submitted; waiting for ledger confirmation.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: `Deliver real provider ${winner} record`, exact: true }).click();
+  await expect(page.getByTestId('recovery-provider-outcome')).toHaveText(winner === 'recovery' ? 'recovered' : 'original-confirmed');
+  await expect(page.getByTestId('recovery-provider-balance')).toHaveText(winner === 'recovery' ? '1000000000' : '870000000');
+  await expect(page.getByTestId('recovery-provider-pending')).toHaveText('0');
+});
+
+test('held balance recovery: actual provider session replacement cancels proof consent', async ({ page }) => {
+  const dialog = await realProvider(page);
+  await page.getByRole('button', { name: 'Replace synthetic recovery session', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(page.getByTestId('recovery-provider-authority')).toHaveText('session-replaced');
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Sign Recovery', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('recovery-provider-shared')).toHaveText('1');
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-balance')).toHaveText('0');
+});
+
+test('held balance recovery: actual provider rejects network roundtrip during password approval', async ({ page }) => {
+  const dialog = await realProvider(page);
+  await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Sign Recovery', exact: true }).click();
+  const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+  await expect(password).toBeVisible();
+  await page.getByRole('button', { name: 'Replace synthetic recovery network', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(page.getByTestId('recovery-provider-authority')).toHaveText('network-replaced');
+  await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+  await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+  await expect(password).toHaveCount(0);
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-submissions')).toHaveText('0');
+  await expect(page.getByTestId('recovery-provider-pending')).toHaveText('1');
+});
+
+test('held balance recovery: retired provider cannot sign after password approval', async ({ page }) => {
+  const dialog = await realProvider(page);
+  await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Sign Recovery', exact: true }).click();
+  const password = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
+  await expect(password).toBeVisible();
+  await page.getByRole('button', { name: 'Retire synthetic recovery provider', includeHidden: true, exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(page.getByTestId('recovery-provider-authority')).toHaveText('provider-retired');
+  await password.getByLabel('Wallet Password', { exact: true }).fill('synthetic recovery correct horse battery staple');
+  await password.getByRole('button', { name: 'Authorize', exact: true }).click();
+  await expect(password).toHaveCount(0);
+  await expect(page.getByTestId('recovery-provider-signs')).toHaveText('0');
+});
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`held balance recovery: ${reducedMotion} shell survives repeated cancel, review and close`, async ({ page }) => {
+  await page.emulateMedia({ reducedMotion });
+  await start(page, 'helper-reject'); await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  const opener = page.getByRole('button', { name: 'Open held balance recovery', exact: true });
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Recovery', exact: true });
+  const shell = await page.locator('[data-modal-shell]').elementHandle();
+  const backdrop = await page.locator('[data-modal-backdrop]').elementHandle();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toBeVisible();
+    await expect.poll(() => shell!.evaluate(node => node === document.querySelector('[data-modal-shell]'))).toBe(true);
+    await expect.poll(() => backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+    await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+    const back = dialog.getByRole('button', { name: 'Back', exact: true });
+    if (attempt % 2) await back.click(); else await back.press('Enter');
+    await expect(dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true })).toBeEnabled();
+    await expect.poll(() => dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
+  }
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toBeVisible();
+  const audit = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(audit.violations.map(({ id, impact, nodes }) => ({ id, impact, count: nodes.length }))).toEqual([]);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(false);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+  await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toHaveCount(0);
+});
+
+for (const winner of ['recovery', 'original'] as const) test(`held balance recovery: ${winner} outcome survives IndexedDB reload`, async ({ page }) => {
+  await start(page, 'helper-reject'); await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Recovery', exact: true });
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Sign Recovery', exact: true }).click();
+  await expect(dialog.getByText('Recovery submitted; waiting for ledger confirmation.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: winner === 'recovery' ? 'Deliver canonical synthetic recovery' : 'Deliver canonical synthetic payment', exact: true }).click();
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('confirmed');
+  await reloadAndInspect(page);
+  await balances(page, winner === 'recovery' ? initial : paid);
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  await expect(dialog.getByText(winner === 'recovery' ? 'Recovery confirmed. The held value is back in your private balance.'
+    : 'The original payment confirmed first. Check private activity for the payment and any change.', { exact: true })).toBeVisible();
+});
+
+test('held balance recovery: real modal requires explicit proof consent and ledger confirmation', async ({ page }) => {
+  await start(page, 'helper-reject');
+  await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Recovery', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByText('The original payment can still confirm first.', { exact: false })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Sign Recovery', exact: true }).click();
+  await expect(dialog.getByText('Recovery submitted; waiting for ledger confirmation.', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Recovery confirmed. The held value is back in your private balance.', { exact: true })).toHaveCount(0);
+});
+
+test('held balance recovery: a past recovery cannot label a new held payment recovered', async ({ page }) => {
+  await start(page, 'helper-reject'); await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await page.getByRole('button', { name: 'Seed unrelated prior recovery', exact: true }).click();
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('prior-recovery-seeded');
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('Recovery confirmed. The held value is back in your private balance.', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toBeVisible();
+});
+
+test('held balance recovery: keyboard approval retains focus inside the original shell', async ({ page }) => {
+  await start(page, 'helper-reject'); await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  const approve = dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true });
+  await approve.focus(); await approve.press('Enter');
+  await expect(dialog.getByRole('button', { name: 'Sign Recovery', exact: true })).toBeEnabled();
+  await expect.poll(() => page.evaluate(() => !!document.querySelector('[data-modal-shell]')?.contains(document.activeElement))).toBe(true);
+});
+
 async function start(page: Page, mode = 'approve') {
   await page.getByLabel('Synthetic preparation response').selectOption(mode);
   await page.getByRole('button', { name: 'Create synthetic deposits', exact: true }).click();

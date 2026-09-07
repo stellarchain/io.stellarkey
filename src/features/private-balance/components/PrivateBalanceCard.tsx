@@ -35,6 +35,8 @@ import { PrivatePaymentsDetails } from './PrivatePaymentsDetails';
 import { ReceivePrivate } from './ReceivePrivate';
 import { SendPrivate } from './SendPrivate';
 import { WithdrawPrivate } from './WithdrawPrivate';
+import { PrivateRecovery } from './PrivateRecovery';
+import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 
 function ActionButton({
   icon,
@@ -57,7 +59,7 @@ function ActionButton({
       aria-label={`${label} · private balance`}
       className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
-      <span className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-all duration-200 group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.86] ${
+      <span className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-[background-color,transform,opacity] duration-200 group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.86] ${
         primary
           ? 'bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_10px_26px_-8px_rgba(10,132,255,0.55)]'
           : 'border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
@@ -98,7 +100,7 @@ export function PrivateBalanceCard({
   } = usePrivateBalanceRuntimeData();
   const [setupOpen, setSetupOpen] = useState(false);
   const [action, setAction] = useState<
-    'add' | 'send' | 'receive' | 'withdraw' | 'details' | null
+    'add' | 'send' | 'receive' | 'withdraw' | 'details' | 'recovery' | null
   >(null);
   const [prefillRecipient, setPrefillRecipient] = useState<string | undefined>(undefined);
   const [prefillAmount, setPrefillAmount] = useState<string | undefined>(undefined);
@@ -281,6 +283,7 @@ export function PrivateBalanceCard({
       )}
 
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        {configured && pendingActions.some(hasExposedPrivateSpend) ? <Button type="button" variant="secondary" onClick={() => openAction('recovery')}>Recover held balance</Button> : null}
         <button type="button" onClick={() => openAction('details')} className="chip min-h-11 sm:min-h-0">
           Details
         </button>
@@ -300,6 +303,7 @@ export function PrivateBalanceCard({
       {configured && action === 'receive' ? <ReceivePrivate onClose={closeAction} /> : null}
       {configured && action === 'withdraw' ? <WithdrawPrivate onClose={closeAction} onSubmitted={markSubmitted} /> : null}
       {action === 'details' ? <PrivatePaymentsDetails onClose={closeAction} /> : null}
+      {configured && action === 'recovery' ? <PrivateRecovery onClose={closeAction} /> : null}
     </section>
   );
 }

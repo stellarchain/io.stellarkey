@@ -26,6 +26,7 @@ import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runt
 import type { IncomingPrivateTransferSummary } from '@/features/private-balance/runtime/sync-machine';
 import type {
   PrivatePendingAction,
+  PrivateSpendRecovery,
   PrivateRecentRecipient,
   ShieldedActivityRecord,
   ShieldedCheckpoint,
@@ -147,6 +148,7 @@ export interface PrivateBalanceRuntimeDataValue {
   noteCount: number;
   activities: ShieldedActivityRecord[];
   pendingActions: PrivatePendingAction[];
+  spendRecovery: PrivateSpendRecovery | null;
   recentPrivateRecipients: PrivateRecentRecipient[];
   outgoingHistoryMode: PrivateOutgoingHistoryMode;
   setOutgoingHistoryMode(mode: PrivateOutgoingHistoryMode, options?: { acknowledgeRecoveryLoss?: boolean }): Promise<void>;
@@ -184,6 +186,12 @@ export interface PrivateBalanceRuntimeDataValue {
     authorizeDisclosure?: AuthorizePrivateProofDisclosure,
   ): Promise<PreparedPrivateActionReview>;
   cancelAction(actionId: string): Promise<void>;
+  prepareSpendRecovery(
+    actionId: string,
+    onProgress?: (stage: PrivateActionProgressStage) => void,
+    signal?: AbortSignal,
+    authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+  ): Promise<PreparedPrivateActionReview>;
   submitAction(
     review: PreparedPrivateActionReview,
     relay?: PrivateRelaySubmissionCallbacks,
@@ -302,6 +310,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   noteCount: 0,
   activities: [],
   pendingActions: [],
+  spendRecovery: null,
   recentPrivateRecipients: [],
   outgoingHistoryMode: 'recoverable',
   setOutgoingHistoryMode: unavailable,
@@ -348,6 +357,7 @@ export const initialPrivateBalanceRuntimeData: PrivateBalanceRuntimeDataValue = 
   },
   validateRecipient: unavailableRecipient,
   prepareAction: unavailableReview,
+  prepareSpendRecovery: unavailableReview,
   cancelAction: unavailable,
   submitAction: unavailableSubmission,
   derivePrivateRelayPayout: unavailableRelayPayout,

@@ -25,7 +25,8 @@ test('the activity check speaks plainly, is named honestly, and reports concrete
   assert.match(recovery, /Restored \$\{restorationProgress\.restoredCount\} of \$\{restorationProgress\.totalCount\} records/);
   assert.match(recovery, /AbortController/);
   assert.match(recovery, /operationRef\.current\?\.abort\(\)/);
-  assert.match(recovery, /<Modal open onClose=\{onClose\} dismissable=\{!working\}>/);
+  assert.match(recovery, /<Modal open onClose=\{onClose\} dismissable=\{!working && !recoveryActivity\.signing\}>/);
+  assert.match(recovery, /disabled=\{recoveryActivity\.busy\}/);
   assert.equal([...recovery.matchAll(/<Modal\b/g)].length, 1);
   assert.equal([...recovery.matchAll(/<ModalHeader\b/g)].length, 1);
   assert.doesNotMatch(recovery, /Suspense|dynamic\(|key=\{/);
