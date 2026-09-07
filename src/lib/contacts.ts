@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  createSessionRevocationGuard,
   isValidPublicAddress,
   loadPrivateContactRecords,
   savePrivateContactRecords,
@@ -47,10 +48,15 @@ function sortContacts(contacts: Contact[]): Contact[] {
 
 let contactMutationQueue: Promise<void> = Promise.resolve();
 
-function mutateContacts(update: (contacts: Contact[]) => Contact[]): Promise<Contact[]> {
+async function mutateContacts(update: (contacts: Contact[]) => Contact[]): Promise<Contact[]> {
+  const assertCurrent = createSessionRevocationGuard();
   const mutation = contactMutationQueue.then(async () => {
-    const next = update(await loadContacts());
+    assertCurrent();
+    const current = await loadContacts();
+    assertCurrent();
+    const next = update(current);
     await savePrivateContactRecords(next);
+    assertCurrent();
     return next;
   });
   contactMutationQueue = mutation.then(() => undefined, () => undefined);
