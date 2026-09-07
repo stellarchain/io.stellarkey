@@ -24,6 +24,7 @@ import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime
 import { ModalOwnershipFixture } from '../../../e2e/fixtures/modal-ownership-panel';
 import { MerchantFeedbackFixture } from '../../../e2e/fixtures/merchant-feedback-panel';
 import { SigningContextFixture } from '../../../e2e/fixtures/signing-context-panel';
+import { RelayRecoveryFixture } from '../../../e2e/fixtures/relay-recovery-panel';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import { clearPrivateBalanceCommitmentCache, loadPrivateBalanceCommitments, recordVerifiedPrivateBalanceCommitments } from '@/features/private-balance/runtime/public-cache';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
@@ -592,6 +593,7 @@ function ProofPanel() {
 }
 
 function Fixture() {
+  const [relayRecovery, setRelayRecovery] = useState(false);
   const [signingContext, setSigningContext] = useState(false);
   const [merchantFeedback, setMerchantFeedback] = useState(false);
   const [modalOwnership, setModalOwnership] = useState(false);
@@ -608,6 +610,7 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
+  if (relayRecovery) return <RelayRecoveryFixture />;
   if (signingContext) return <SigningContextFixture />;
   if (merchantFeedback) return <MerchantFeedbackFixture />;
   if (modalOwnership) return <ModalOwnershipFixture onExit={() => setModalOwnership(false)} />;
@@ -620,6 +623,7 @@ function Fixture() {
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
+        <Button onClick={() => setRelayRecovery(true)}>Test relay recovery</Button>
         <Button onClick={() => setSigningContext(true)}>Test signing context</Button>
         <Button onClick={() => setMerchantFeedback(true)}>Test merchant feedback</Button>
         <Button onClick={() => setMerchantLifetime(true)}>Test merchant lifetime</Button>
