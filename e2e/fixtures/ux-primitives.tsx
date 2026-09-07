@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle } from '@/components/ui';
+import { Button, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
 
 // Only opaque synthetic strings. Clipboard behaviour is controlled at the
 // browser API boundary by tests; these are the real production primitives.
@@ -18,6 +18,11 @@ export function UxPrimitivesFixture() {
   const [gammaState, setGammaState] = useState<'present' | 'removed' | 'disabled'>('present');
   const [fieldError, setFieldError] = useState(true);
   const [switchOn, setSwitchOn] = useState(false);
+  const [nestedOpen, setNestedOpen] = useState(false);
+  const [tooltipMounted, setTooltipMounted] = useState(true);
+  const [tooltipEnabled, setTooltipEnabled] = useState(true);
+  const [edgeHelp, setEdgeHelp] = useState(false);
+  const [edgeActions, setEdgeActions] = useState(0);
   const options = [
     { value: 'alpha', label: 'Alpha' }, { value: 'beta', label: 'Beta', disabled: true },
     ...(gammaState === 'removed' ? [] : [{ value: 'gamma', label: 'Gamma', disabled: gammaState === 'disabled' }]),
@@ -25,7 +30,14 @@ export function UxPrimitivesFixture() {
   ];
   const manualTabProps = { activationMode: 'manual' as const };
   return <>
-    <Button onClick={() => setOpen(true)}>Open UX primitive checks</Button>
+    <Tooltip label="Synthetic outside guidance"><Button onClick={() => setOpen(true)}>Open UX primitive checks</Button></Tooltip>
+    {edgeHelp && <div className="fixed left-1/2 top-2 z-40 -translate-x-1/2">
+      <Tooltip label="Synthetic edge guidance">
+        <button type="button" aria-label="Show synthetic edge help" className="h-11 w-11 rounded-xl bg-white/10 text-white"
+          onClick={() => setEdgeActions(value => value + 1)}>?</button>
+      </Tooltip>
+      <p data-testid="synthetic-edge-actions" className="sr-only">{edgeActions}</p>
+    </div>}
     <Modal open={open} onClose={() => setOpen(false)}>
       <ModalHeader title="Synthetic UX primitives" onClose={() => setOpen(false)} />
       <div className="space-y-5 p-4">
@@ -67,6 +79,28 @@ export function UxPrimitivesFixture() {
         </div>)}
         <Button variant="secondary" onClick={() => setFieldError(value => !value)}>Toggle synthetic field error</Button>
         <div data-testid="named-switch"><Toggle label="Synthetic privacy setting" checked={switchOn} onChange={value => setSwitchOn(Boolean(value))} /></div>
+        {tooltipMounted && <div data-testid="tooltip-checks" className="space-y-10">
+          <p id="synthetic-tooltip-description">Existing synthetic help description</p>
+          {(['top', 'right', 'flipped'] as const).map(placement => <div key={placement}
+            className={`flex ${placement === 'top' ? 'justify-center' : placement === 'right' ? 'justify-start' : 'justify-end'}`}>
+            <div className="w-11">
+              <Tooltip label={tooltipEnabled ? `Synthetic ${placement} guidance` : null} side={placement === 'top' ? 'top' : 'right'}>
+                <button type="button" aria-label={`Show synthetic ${placement} help`} aria-describedby="synthetic-tooltip-description"
+                  className="h-11 w-11 rounded-xl bg-white/10 text-white">?</button>
+              </Tooltip>
+            </div>
+          </div>)}
+        </div>}
+        <Button onClick={() => setNestedOpen(true)}>Open nested tooltip check</Button>
+        <Button onClick={() => setTooltipEnabled(value => !value)}>Toggle synthetic tooltip labels</Button>
+        <Button onClick={() => setTooltipMounted(value => !value)}>Toggle synthetic tooltip controls</Button>
+        <Button onClick={() => { setEdgeHelp(true); setOpen(false); }}>Show viewport-edge tooltip</Button>
+      </div>
+    </Modal>
+    <Modal open={nestedOpen} onClose={() => setNestedOpen(false)}>
+      <ModalHeader title="Synthetic nested tooltip check" onClose={() => setNestedOpen(false)} />
+      <div className="p-10 text-center">
+        <Tooltip label="Synthetic nested guidance"><button type="button" className="chip">Show synthetic nested help</button></Tooltip>
       </div>
     </Modal>
   </>;

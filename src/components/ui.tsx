@@ -28,93 +28,158 @@ export function Tooltip({
   const tooltipId = React.useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const open = !!label && (hovered || focused) && !dismissed;
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const [position, setPosition] = useState<{
+    left: number;
+    top: number;
+    bridgeEdge: "top" | "bottom" | "left" | "right";
+  } | null>(null);
   const describedBy = [children.props["aria-describedby"], label ? tooltipId : null]
     .filter(Boolean)
     .join(" ") || undefined;
   const trigger = React.cloneElement(children, { "aria-describedby": describedBy });
 
+  if (!label && (hovered || focused || dismissed)) {
+    setHovered(false);
+    setFocused(false);
+    setDismissed(false);
+  }
+
+  function startHover() {
+    setHovered(true);
+    setDismissed(false);
+  }
+
+  function leaveHover(event: React.PointerEvent<HTMLSpanElement>) {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || (!anchorRef.current?.contains(next) && !tooltipRef.current?.contains(next))) {
+      setHovered(false);
+    }
+  }
+
   const updatePosition = useCallback(() => {
     const anchor = anchorRef.current;
+    if (!anchor) return;
+    const container = anchor.closest<HTMLElement>("[data-modal-backdrop]") ?? document.body;
+    setPortalContainer(container);
     const tooltip = tooltipRef.current;
-    if (!anchor || !tooltip) return;
+    if (!tooltip) return;
 
     const margin = 8;
     const gap = 8;
     const anchorRect = anchor.getBoundingClientRect();
     const tooltipRect = tooltip.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportRight = viewportLeft + (viewport?.width ?? window.innerWidth);
+    const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight);
     let left: number;
     let top: number;
+    let bridgeEdge: "top" | "bottom" | "left" | "right" = "bottom";
 
     if (side === "right") {
       left = anchorRect.right + gap;
-      if (left + tooltipRect.width > window.innerWidth - margin) {
+      bridgeEdge = "left";
+      if (left + tooltipRect.width > viewportRight - margin) {
         left = anchorRect.left - tooltipRect.width - gap;
+        bridgeEdge = "right";
       }
       top = anchorRect.top + (anchorRect.height - tooltipRect.height) / 2;
     } else {
       left = anchorRect.left + (anchorRect.width - tooltipRect.width) / 2;
       top = anchorRect.top - tooltipRect.height - gap;
+      if (top < viewportTop + margin) {
+        top = anchorRect.bottom + gap;
+        bridgeEdge = "top";
+      }
     }
 
+    // A modal backdrop establishes a fixed containing block for its portal.
+    const bounds = container === document.body ? null : container.getBoundingClientRect();
     setPosition({
       left: Math.min(
-        Math.max(margin, left),
-        Math.max(margin, window.innerWidth - tooltipRect.width - margin),
-      ),
+        Math.max(viewportLeft + margin, left),
+        Math.max(viewportLeft + margin, viewportRight - tooltipRect.width - margin),
+      ) - (bounds?.left ?? 0),
       top: Math.min(
-        Math.max(margin, top),
-        Math.max(margin, window.innerHeight - tooltipRect.height - margin),
-      ),
+        Math.max(viewportTop + margin, top),
+        Math.max(viewportTop + margin, viewportBottom - tooltipRect.height - margin),
+      ) - (bounds?.top ?? 0),
+      bridgeEdge,
     });
   }, [side]);
 
   useLayoutEffect(() => {
     if (!open || !label) return;
+    const viewport = window.visualViewport;
     updatePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
-    window.visualViewport?.addEventListener("resize", updatePosition);
-    window.visualViewport?.addEventListener("scroll", updatePosition);
+    viewport?.addEventListener("resize", updatePosition);
+    viewport?.addEventListener("scroll", updatePosition);
     return () => {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
-      window.visualViewport?.removeEventListener("resize", updatePosition);
-      window.visualViewport?.removeEventListener("scroll", updatePosition);
+      viewport?.removeEventListener("resize", updatePosition);
+      viewport?.removeEventListener("scroll", updatePosition);
     };
-  }, [label, open, updatePosition]);
+  }, [label, open, portalContainer, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const owner = anchorRef.current?.closest<HTMLElement>("[data-modal-backdrop]") ?? null;
+      if (owner ? !isTopModal(owner) : modalStack.length > 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setDismissed(true);
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [open]);
 
   if (!label) return trigger;
 
-  const tooltip = open && typeof document !== "undefined"
+  const tooltip = open && portalContainer
     ? createPortal(
         <span
           ref={tooltipRef}
           id={tooltipId}
           role="tooltip"
+          onPointerEnter={startHover}
+          onPointerLeave={leaveHover}
           style={{
             position: "fixed",
             left: position?.left ?? 0,
             top: position?.top ?? 0,
             visibility: position ? "visible" : "hidden",
           }}
-          className="pointer-events-none z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[#27272b]/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
+          className="z-[90] w-max max-w-52 rounded-lg border border-white/[0.12] bg-[#27272b]/95 px-2.5 py-1.5 text-center text-[11px] font-semibold leading-tight text-white shadow-xl backdrop-blur-xl"
         >
+          {/* Cover the visual gap without a timer or a focusable target. */}
+          <span aria-hidden="true" className="absolute" style={position?.bridgeEdge === "bottom" || position?.bridgeEdge === "top"
+            ? { left: 0, right: 0, [position.bridgeEdge === "bottom" ? "top" : "bottom"]: "100%", height: 9 }
+            : { top: 0, bottom: 0, [position?.bridgeEdge === "left" ? "right" : "left"]: "100%", width: 9 }} />
           {label}
         </span>,
-        document.body,
+        portalContainer,
       )
     : null;
 
   return (
     <span
       ref={anchorRef}
-      onPointerEnter={() => setOpen(true)}
-      onPointerLeave={() => setOpen(false)}
-      onFocusCapture={() => setOpen(true)}
+      onPointerEnter={startHover}
+      onPointerLeave={leaveHover}
+      onFocusCapture={() => { setFocused(true); setDismissed(false); }}
       onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
       className={side === "right"
         ? "relative flex w-full justify-center"
