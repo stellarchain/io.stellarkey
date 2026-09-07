@@ -119,7 +119,7 @@ export function MerchantFeedbackFixture() {
   const [contacts, setContacts] = useState(0);
   const [deliveries, setDeliveries] = useState(0);
   const [resets, setResets] = useState(0);
-  const gates = useRef({ before: false, after: false, encrypt: false, erase: false, contactFailure: false, revokeAfterContact: false, pending: [] as Gate[] });
+  const gates = useRef({ before: false, after: false, encrypt: false, erase: false, contactFailure: false, revokeAfterContact: false, rejectionContinuation: false, pending: [] as Gate[] });
 
   useEffect(() => {
     const control = gates.current;
@@ -131,6 +131,16 @@ export function MerchantFeedbackFixture() {
     const pause = async (label: string) => {
       setStage(label);
       try { await new Promise<void>((resolve, reject) => control.pending.push({ resolve, reject: () => reject(new Error('Synthetic private failure payload')) })); }
+      catch (error) {
+        if (control.rejectionContinuation) {
+          // Dispatching rejection is not operation settlement. Keep that
+          // continuation controlled so an early UI retry stays testable.
+          control.rejectionContinuation = false;
+          setStage('rejection-continuation');
+          await new Promise<void>(resolve => control.pending.push({ resolve, reject: resolve }));
+        }
+        throw error;
+      }
       finally { setDeliveries(value => value + 1); }
     };
     driver.compareAndSetMany = async function (...args) {
@@ -172,6 +182,7 @@ export function MerchantFeedbackFixture() {
       driver.replacePrefixVerified = replace;
       SubtleCrypto.prototype.encrypt = encrypt;
       Storage.prototype.setItem = setItem;
+      control.rejectionContinuation = false;
       for (const pending of control.pending) pending.resolve();
       control.pending = [];
     };
@@ -208,6 +219,7 @@ export function MerchantFeedbackFixture() {
       setPrepared(true);
     })().catch(() => setStage('prepare-failed')); }}>Prepare feedback merchant</Button>
     <Button onClick={() => { gates.current.before = true; setStage('armed'); }}>Hold before merchant write</Button>
+    <Button onClick={() => { gates.current.rejectionContinuation = true; }}>Hold rejected feedback continuation</Button>
     <Button onClick={() => { gates.current.after = true; setStage('armed'); }}>Hold after merchant write</Button>
     <Button onClick={() => { gates.current.encrypt = true; setStage('armed'); }}>Hold contact encryption</Button>
     <Button onClick={() => { gates.current.contactFailure = true; }}>Fail next contact write</Button>
