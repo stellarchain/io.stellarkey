@@ -386,22 +386,33 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     });
 
     test('Tooltip follows its modal containing block and viewport events without stealing focus', async ({ page }) => {
+      const backdrop = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
       const trigger = page.getByRole('button', { name: 'Show synthetic right help', exact: true });
       const tooltip = page.getByRole('tooltip', { name: 'Synthetic right guidance', exact: true });
       await trigger.focus();
       await expect(tooltip).toBeVisible();
-      await page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true }).evaluate(node => {
+      await backdrop.evaluate(node => {
         const style = (node as HTMLElement).style;
         style.left = '12px'; style.right = '12px'; style.top = '24px';
+      });
+      // Reduced motion still permits brief CSS transitions. Fire viewport
+      // events only after the fixture's containing block has actually moved.
+      await expect.poll(() => backdrop.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        return bounds.x === 12 && bounds.y === 24 && Math.abs(bounds.width + 24 - innerWidth) < 1;
+      })).toBe(true);
+      await page.evaluate(() => {
         window.dispatchEvent(new Event('resize'));
         window.dispatchEvent(new Event('scroll'));
         window.visualViewport?.dispatchEvent(new Event('resize'));
         window.visualViewport?.dispatchEvent(new Event('scroll'));
       });
       await expect.poll(async () => {
+        const container = (await backdrop.boundingBox())!;
         const anchor = (await trigger.boundingBox())!;
         const content = (await tooltip.boundingBox())!;
-        return Math.abs(content.x - anchor.x - anchor.width - 8) < 1
+        return container.x === 12 && container.y === 24
+          && Math.abs(content.x - anchor.x - anchor.width - 8) < 1
           && Math.abs(content.y + content.height / 2 - anchor.y - anchor.height / 2) < 1;
       }).toBe(true);
       await expect(trigger).toBeFocused();
