@@ -41,7 +41,7 @@
     "@stellarkey/private-balance": "file:protocol/private-balance/packages/browser",
     "@trezor/connect-web": "^9.7.3",
     "ffjavascript": "0.3.1",
-    "next": "16.3.3",
+    "next": "16.3.4",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
