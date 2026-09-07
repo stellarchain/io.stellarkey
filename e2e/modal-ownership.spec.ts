@@ -45,16 +45,33 @@ async function markShell(page: Page) {
     window.__modalObservation?.stop();
     const shell = document.querySelector<HTMLElement>('[data-modal-shell]')!;
     const backdrop = document.querySelector<HTMLElement>('[data-modal-backdrop]')!;
-    await Promise.all([...shell.getAnimations(), ...backdrop.getAnimations()].map(animation => animation.finished.catch(() => {})));
+    const entrance = [...shell.getAnimations(), ...backdrop.getAnimations()];
+    await Promise.all(entrance.map(animation => animation.finished.catch(() => {})));
+    const completedEntrance = new Map(entrance.filter(animation => animation.playState === 'finished' && !animation.pending)
+      .map(animation => [animation, { startTime: animation.startTime, currentTime: animation.currentTime, playbackRate: animation.playbackRate }]));
+    const isUnchangedCompletedEntrance = (animation: Animation) => {
+      const baseline = completedEntrance.get(animation);
+      return !!baseline && animation.playState === 'finished' && !animation.pending
+        && animation.startTime === baseline.startTime && animation.currentTime === baseline.currentTime
+        && animation.playbackRate === baseline.playbackRate;
+    };
     shell.dataset.syntheticIdentity = 'retained';
     backdrop.dataset.syntheticIdentity = 'retained';
     if (document.activeElement instanceof HTMLElement) document.activeElement.dataset.syntheticFocus = 'retained';
-    for (const element of [shell, backdrop]) {
+    const stopAnimationObservers = [shell, backdrop].map(element => {
       element.dataset.syntheticAnimations = '0';
-      element.addEventListener('animationstart', event => {
-        if (event.target === element) element.dataset.syntheticAnimations = String(Number(element.dataset.syntheticAnimations) + 1);
-      });
-    }
+      const onStart = (event: AnimationEvent) => {
+        if (event.target !== element) return;
+        // Chromium can deliver the original animationstart after finished has
+        // resolved. Ignore only that unchanged completed playback, not a new
+        // animation or a restart of the same Animation object.
+        const current = element.getAnimations();
+        if (current.length > 0 && current.every(isUnchangedCompletedEntrance)) return;
+        element.dataset.syntheticAnimations = String(Number(element.dataset.syntheticAnimations) + 1);
+      };
+      element.addEventListener('animationstart', onStart);
+      return () => element.removeEventListener('animationstart', onStart);
+    });
     const app = document.querySelector<HTMLElement>('[data-app-surface]');
     const scrollOwner = document.querySelector<HTMLElement>('[data-app-scroll-owner]');
     const state = { removed: 0, scrollUnlocks: 0, inertInterruptions: 0, closing: 0, stop: () => {} };
@@ -69,7 +86,7 @@ async function markShell(page: Page) {
       if (app && !app.inert) state.inertInterruptions++;
       if (!shell.isConnected || !backdrop.isConnected) { state.removed++; state.stop(); }
     });
-    state.stop = () => { observer.disconnect(); state.stop = () => {}; };
+    state.stop = () => { observer.disconnect(); stopAnimationObservers.forEach(stop => stop()); state.stop = () => {}; };
     window.__modalObservation = state;
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['style', 'inert', 'data-overlay-state'] });
   });
@@ -124,6 +141,23 @@ async function startClaim(page: Page, response: string) {
   await expect(page.getByTestId('modal-stage')).toHaveText('submission');
 }
 
+async function openEntranceObserverControl(page: Page) {
+  await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  const counts = await page.evaluate(() => [
+    ['[data-modal-shell]', 'dialogIn var(--motion-duration-emphasized) var(--motion-ease-enter) both'],
+    ['[data-modal-backdrop]', 'overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both'],
+  ].map(([selector, entrance]) => {
+    const element = document.querySelector<HTMLElement>(selector)!;
+    // Deliberate observer fault injection: enable the real entrance keyframes
+    // even under reduced motion. Ordinary reduced-motion cases remain untouched.
+    element.style.setProperty('animation', entrance, 'important');
+    return element.getAnimations().filter(animation => animation instanceof CSSAnimation).length;
+  }));
+  expect(counts).toEqual([1, 1]);
+  await markShell(page);
+}
+
 test('synthetic modal fixture loads the actual claim review and account form', async ({ page }) => {
   await page.getByRole('button', { name: 'Open claim modal', exact: true }).click();
   await expect(page.getByRole('checkbox')).toHaveCount(2);
@@ -134,7 +168,65 @@ test('synthetic modal fixture loads the actual claim review and account form', a
 
 for (const motion of ['reduce', 'no-preference'] as const) {
   test.describe(`modal ownership with ${motion} motion`, () => {
-    test.use({ reducedMotion: motion });
+    test.use({ contextOptions: { reducedMotion: motion } });
+
+    test.beforeEach(async ({ page }) => {
+      expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(motion === 'reduce');
+    });
+
+    test('entrance observer ignores late events from the completed baseline', async ({ page }) => {
+      await openEntranceObserverControl(page);
+      const completed = await page.evaluate(() => {
+        const elements = [document.querySelector<HTMLElement>('[data-modal-shell]')!, document.querySelector<HTMLElement>('[data-modal-backdrop]')!];
+        const completed = elements.every(element => {
+          const entrances = element.getAnimations().filter(animation => animation instanceof CSSAnimation);
+          return entrances.length === 1 && entrances.every(animation => animation.playState === 'finished' && !animation.pending);
+        });
+        for (const element of elements) {
+          const animation = element.getAnimations().find(animation => animation instanceof CSSAnimation)!;
+          // Reproduce the observed delivery boundary without replaying motion.
+          element.dispatchEvent(new AnimationEvent('animationstart', { animationName: animation.animationName, elapsedTime: 0, bubbles: true }));
+        }
+        return completed;
+      });
+      expect(completed).toBe(true);
+      await stableShell(page, true);
+    });
+
+    for (const replay of ['replacement', 'original object'] as const) {
+      test(`entrance observer detects real ${replay} replay on shell and backdrop`, async ({ page }) => {
+        await openEntranceObserverControl(page);
+        await stableShell(page, true);
+        for (const selector of ['[data-modal-shell]', '[data-modal-backdrop]']) {
+          const element = page.locator(selector);
+          const result = await element.evaluate(async (node, replay) => {
+            const element = node as HTMLElement;
+            const original = element.getAnimations().find(animation => animation instanceof CSSAnimation)!;
+            const originalStart = original.startTime;
+            element.addEventListener('animationstart', event => {
+              if (event.target === element) element.dataset.syntheticReplayTrusted = String(event.isTrusted);
+            }, { once: true });
+            let animation = original;
+            if (replay === 'replacement') {
+              const entrance = element.style.getPropertyValue('animation');
+              element.style.setProperty('animation', 'none', 'important');
+              element.getAnimations(); // Commit removal before restoring the real entrance.
+              element.style.setProperty('animation', entrance, 'important');
+              animation = element.getAnimations().find(animation => animation instanceof CSSAnimation)!;
+            } else {
+              original.currentTime = 0;
+              original.play();
+            }
+            await animation.finished;
+            return { sameObject: animation === original, completed: animation.playState === 'finished',
+              playbackChanged: animation !== original || animation.startTime !== originalStart };
+          }, replay);
+          expect(result).toEqual({ sameObject: replay === 'original object', completed: true, playbackChanged: true });
+          await expect(element).toHaveAttribute('data-synthetic-replay-trusted', 'true');
+          await expect(element).toHaveAttribute('data-synthetic-animations', '1');
+        }
+      });
+    }
 
     for (const mnemonicWallet of [false, true]) {
       test.describe(mnemonicWallet ? 'recovery phrase vault' : 'imported vault', () => {
