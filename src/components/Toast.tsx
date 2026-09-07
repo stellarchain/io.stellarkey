@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,14 +35,24 @@ export function useToast(): ToastContextValue {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
+  const timers = useRef(new Map<number, number>());
+
+  useEffect(() => {
+    const ownedTimers = timers.current;
+    return () => {
+      for (const timer of ownedTimers.values()) window.clearTimeout(timer);
+      ownedTimers.clear();
+    };
+  }, []);
 
   const toast = useCallback((message: string, kind: ToastKind = "info") => {
     const id = nextId.current++;
     triggerHaptic(kind === "success" ? "success" : kind === "error" ? "error" : "light");
     setToasts((prev) => [...prev.slice(-2), { id, message, kind }]);
-    window.setTimeout(() => {
+    timers.current.set(id, window.setTimeout(() => {
+      timers.current.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4200);
+    }, 4200));
   }, []);
 
   const value = useMemo(() => ({ toast }), [toast]);
@@ -50,13 +61,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {/* iOS Dynamic Island & macOS Notification Center floating toast */}
-      <div className="app-safe-toast pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-6 md:right-6 md:left-auto md:translate-x-0 md:items-end">
+      <div aria-live="polite" aria-atomic="false" aria-relevant="additions" className="app-safe-toast pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-6 md:right-6 md:left-auto md:translate-x-0 md:items-end">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="fade-up pointer-events-auto flex min-w-0 max-w-full items-center gap-2.5 rounded-full border border-white/15 bg-neutral-900/95 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-all"
+            className="fade-up pointer-events-auto flex min-w-0 max-w-full items-center gap-2.5 rounded-2xl border border-white/15 bg-neutral-900/95 py-2.5 pl-3.5 pr-5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
           >
             <span
+              aria-hidden="true"
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
               style={{
                 background:
@@ -82,7 +94,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 </svg>
               )}
             </span>
-            <p className="min-w-0 truncate text-[13px] font-semibold text-white tracking-tight">{t.message}</p>
+            <p className="min-w-0 break-words text-[13px] font-semibold text-white tracking-tight">{t.message}</p>
           </div>
         ))}
       </div>

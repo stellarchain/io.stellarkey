@@ -316,6 +316,7 @@ export type MerchantRefundOutcome =
   | { kind: "requested"; request: RefundRequest };
 
 interface MerchantContextValue {
+  captureActionGuard: () => { isCurrent(): boolean };
   ready: boolean;
   storageIssue: StorageIssue | null;
   storageError: string | null;
@@ -625,6 +626,7 @@ type MerchantTillValue = Pick<
 
 type MerchantRecordsValue = Pick<
   MerchantContextValue,
+  | "captureActionGuard"
   | "orders"
   | "charges"
   | "refunds"
@@ -3737,6 +3739,7 @@ export function MerchantProvider({
   );
 
   const value = useMemo<MerchantContextValue>(() => ({
+    captureActionGuard: captureMerchantAccess,
     ready,
     storageIssue,
     storageError,
@@ -3877,6 +3880,7 @@ export function MerchantProvider({
     today,
     orderFor,
   }), [
+    captureMerchantAccess,
     activeCharge,
     activeShift,
     activeStaff,
@@ -4157,6 +4161,7 @@ export function MerchantProvider({
 
   const recordsValue = useMemo<MerchantRecordsValue>(
     () => ({
+      captureActionGuard: captureMerchantAccess,
       orders: store.orders,
       charges: store.charges,
       refunds: store.refunds,
@@ -4204,6 +4209,7 @@ export function MerchantProvider({
     }),
     [
       activeCharge,
+      captureMerchantAccess,
       attachPayment,
       closeCharge,
       counterCodeBlockedReason,

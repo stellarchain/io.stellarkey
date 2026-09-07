@@ -1592,12 +1592,16 @@ export function Button({
   loading = false,
   loadingLabel = "Working",
   disabled = false,
+  focusableWhenDisabled = false,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+}: React.ComponentProps<"button"> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
   loading?: boolean;
   loadingLabel?: string;
+  /** Retain action focus across pending and saved states; activation stays blocked. */
+  focusableWhenDisabled?: boolean;
 }) {
+  const unavailable = disabled || loading;
   const vClass =
     variant === "primary"
       ? "btn-primary"
@@ -1611,7 +1615,17 @@ export function Button({
     <>
       <button
         {...props}
-        disabled={disabled || loading}
+        disabled={!focusableWhenDisabled && unavailable}
+        aria-disabled={focusableWhenDisabled && unavailable ? true : props["aria-disabled"]}
+        onClick={(event) => {
+          if (unavailable) {
+            // Also cancel a submit button's native/implicit form submission.
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          props.onClick?.(event);
+        }}
         aria-busy={loading || undefined}
         data-loading={loading || undefined}
         className={`btn relative ${vClass} ${className}`}
@@ -1718,12 +1732,14 @@ export function Toggle({
   on,
   onChange,
   disabled = false,
+  focusableWhenDisabled = false,
   label,
 }: {
   checked?: boolean;
   on?: boolean;
   onChange: (c?: boolean) => void;
   disabled?: boolean;
+  focusableWhenDisabled?: boolean;
   label: string;
 }) {
   const isChecked = checked ?? on ?? false;
@@ -1732,8 +1748,14 @@ export function Toggle({
       type="button"
       role="switch"
       aria-checked={isChecked}
-      disabled={disabled}
-      onClick={() => {
+      disabled={disabled && !focusableWhenDisabled}
+      aria-disabled={focusableWhenDisabled && disabled || undefined}
+      onClick={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         triggerHaptic("selection");
         onChange(!isChecked);
       }}

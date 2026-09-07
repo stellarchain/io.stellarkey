@@ -9,7 +9,7 @@ import base from './playwright.config';
 export default defineConfig({
   ...base,
   metadata: { ...base.metadata, requiredSyntheticComponents: true },
-  testMatch: ['private-components.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'relay-earn.spec.ts', 'relay-startup.spec.ts', 'modal-ownership.spec.ts'],
+  testMatch: ['private-components.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'relay-earn.spec.ts', 'relay-startup.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts'],
   globalTeardown: './e2e/fixtures/private-components-teardown.mjs',
   use: { ...base.use, screenshot: 'off', trace: 'off', video: 'off' },
   projects: [

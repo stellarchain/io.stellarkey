@@ -126,6 +126,49 @@ test('named Toggle has a visible keyboard focus indicator and native switch acti
   })).toBe(true);
 });
 
+test('focusable disabled Button blocks repeated and implicit form submission while native defaults stay disabled', async ({ page, browserName }) => {
+  // Compare normal and aria-disabled controls under the same native WebKit
+  // Option-Tab preference; keyboard focus is not simulated in the page.
+  const nextKey = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
+  const action = page.getByRole('button', { name: 'Synthetic focusable action', exact: true });
+  const counts = page.getByTestId('synthetic-action-counts');
+  await action.focus();
+  await page.keyboard.press(nextKey);
+  await expect(page.getByRole('button', { name: 'Fail synthetic action', exact: true })).toBeFocused();
+  await action.focus();
+  await page.keyboard.press('Enter');
+  await expect(action).toBeDisabled();
+  await expect(action).toBeFocused();
+  expect(await action.evaluate(node => (node as HTMLButtonElement).disabled)).toBe(false);
+  await expect(counts).toHaveText('1:1:0');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Enter');
+  await action.click({ force: true });
+  await action.evaluate(node => { (node as HTMLButtonElement).click(); (node as HTMLButtonElement).click(); });
+  await page.getByLabel('Synthetic action input', { exact: true }).press('Enter');
+  await expect(counts).toHaveText('1:1:0');
+  await action.focus();
+  await page.getByRole('button', { name: 'Fail synthetic action', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(action).toBeEnabled();
+  await expect(action).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(counts).toHaveText('2:2:0');
+  await page.getByRole('button', { name: 'Save synthetic action', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+  await expect(action).toBeDisabled();
+  await expect(action).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Space');
+  await expect(counts).toHaveText('2:2:0');
+  await page.keyboard.press(nextKey);
+  await expect(page.getByRole('button', { name: 'Fail synthetic action', exact: true })).toBeFocused();
+  for (const name of ['Synthetic native disabled action', 'Synthetic native pending action', 'Synthetic native disabled switch']) {
+    const native = page.getByRole(name.endsWith('switch') ? 'switch' : 'button', { name, exact: true });
+    expect(await native.evaluate(node => (node as HTMLButtonElement).disabled)).toBe(true);
+    await native.evaluate(node => (node as HTMLButtonElement).click());
+  }
+  await expect(counts).toHaveText('2:2:0');
+});
+
 for (const motion of ['no-preference', 'reduce'] as const) {
   test.describe(`Modal opener ${motion} motion`, () => {
     test.use({ contextOptions: { reducedMotion: motion } });
