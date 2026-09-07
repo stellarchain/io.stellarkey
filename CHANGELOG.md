@@ -141,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Pinned TOML 4.2.0 for Trezor's nested Stellar SDK 14.2.0 resolvers to fix installed parser prototype pollution and unbounded recursion, with real adapter compatibility tests. Upstream browser prebundles and the remote Trezor popup are outside this override; the remaining elliptic advisory is documented.
 - Bind public payment review, signing, and pre-broadcast authorization to the originating account, network, and unlock session, including delayed approval, preparation, and hardware responses; preserve canonical tracking after broadcast.
 - Bound private-relay Nostr frame processing and verified-event duplicate retention, reject malformed ingress without raw payload logging, and reconnect with the original filters without letting invalid event IDs or timestamps suppress valid delivery.
 - Bound queued contact edits, encrypted storage writes, and contact-list updates to their originating unlock session, while preserving writes already committed before a lock.
