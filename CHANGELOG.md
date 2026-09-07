@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Restored modal opener focus after tapping an SVG icon inside a button, including browsers that do not focus buttons on pointer activation.
 - Kept tooltip help available while moving between its trigger and content, allowed Escape to dismiss help without closing its dialog, and prevented viewport-edge help from blocking its own trigger.
 - Connected Select triggers to their field labels, hints, and validation errors, and gave settings switches specific accessible names and a visible keyboard focus indicator.
 - Described account creation and secret-key import accurately without guessing a derivation path from the number of active accounts.

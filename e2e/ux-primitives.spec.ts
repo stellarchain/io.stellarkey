@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 declare global {
   interface Window {
     __syntheticTooltipListeners?: { count(): number; restore(): void };
+    __syntheticSvgPointer?: { svg: boolean; bodyFocused: boolean };
   }
 }
 
@@ -126,6 +127,52 @@ test('named Toggle has a visible keyboard focus indicator and native switch acti
 });
 
 for (const motion of ['no-preference', 'reduce'] as const) {
+  test.describe(`Modal opener ${motion} motion`, () => {
+    test.use({ contextOptions: { reducedMotion: motion } });
+    test.beforeEach(async ({ page }) => {
+      expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(motion === 'reduce');
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Open UX primitive checks', exact: true })).toBeFocused();
+    });
+
+    test('Modal restores its opener after a real SVG pointer activation from body focus', async ({ page }) => {
+      const opener = page.getByRole('button', { name: 'Open SVG modal checks', exact: true });
+      await page.evaluate(() => {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        document.addEventListener('pointerdown', event => {
+          window.__syntheticSvgPointer = { svg: event.target instanceof SVGElement, bodyFocused: document.activeElement === document.body };
+        }, { capture: true, once: true });
+      });
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      const icon = opener.locator('svg');
+      expect(await icon.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        const target = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        return target instanceof SVGElement && node.contains(target);
+      })).toBe(true);
+      await icon.click();
+      expect(await page.evaluate(() => window.__syntheticSvgPointer)).toEqual({ svg: true, bodyFocused: true });
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal preserves keyboard opener focus without pointer activation', async ({ page }) => {
+      const opener = page.getByRole('button', { name: 'Open SVG modal checks', exact: true });
+      await opener.focus();
+      await page.keyboard.press('Enter');
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+    });
+  });
+
   test.describe(`Tooltip ${motion} motion`, () => {
     test.use({ contextOptions: { reducedMotion: motion } });
     test.beforeEach(async ({ page }) => {
