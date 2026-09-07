@@ -72,6 +72,53 @@ test('automatic local tabs keep their existing arrow activation', async ({ page 
   await expect(tabs.getByRole('tab', { name: 'Second' })).toHaveAttribute('aria-selected', 'true');
 });
 
+for (const size of ['md', 'sm']) {
+  test(`Field reaches the actual ${size} Select trigger and retains its descriptions when errors clear`, async ({ page }) => {
+    const field = page.getByTestId(`select-field-${size}`);
+    const trigger = field.getByRole('button', { name: `Synthetic ${size} field`, exact: true });
+    expect(await trigger.evaluate(node => {
+      const label = node.parentElement?.querySelector('label');
+      return Boolean(node.id && label?.htmlFor === node.id && label.control === node);
+    })).toBe(true);
+    if (size === 'sm') await expect(trigger).toHaveAttribute('id', 'synthetic-existing-select');
+    await expect(trigger).toHaveAttribute('aria-invalid', 'true');
+    await expect(trigger).toHaveAccessibleDescription('Existing synthetic description Synthetic selection hint Synthetic selection error');
+    const describedIds = (await trigger.getAttribute('aria-describedby'))!.split(' ');
+    expect(describedIds.length).toBe(3);
+    expect(new Set(describedIds).size).toBe(3);
+    await field.locator('label').click();
+    await expect(page.getByRole('listbox', { name: `Synthetic ${size} field`, exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
+    await page.getByRole('button', { name: 'Toggle synthetic field error', exact: true }).click();
+    await expect(trigger).toHaveAttribute('aria-invalid', 'false');
+    await expect(trigger).toHaveAttribute('aria-describedby', describedIds.slice(0, 2).join(' '));
+    await expect(trigger).toHaveAccessibleDescription('Existing synthetic description Synthetic selection hint');
+    await expect(field.getByRole('alert')).toHaveCount(0);
+  });
+}
+
+test('named Toggle has a visible keyboard focus indicator and native switch activation', async ({ page }) => {
+  const toggle = page.getByRole('switch', { name: 'Synthetic privacy setting', exact: true });
+  await toggle.focus();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(toggle).toBeFocused();
+  expect(await toggle.evaluate(node => node.matches(':focus-visible'))).toBe(true);
+  expect(await toggle.evaluate(node => {
+    const style = getComputedStyle(node);
+    return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) >= 2
+      && !['transparent', 'rgba(0, 0, 0, 0)'].includes(style.outlineColor);
+  })).toBe(true);
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  expect(await toggle.locator('span').last().evaluate(node => {
+    const properties = getComputedStyle(node).transitionProperty.split(',').map(value => value.trim());
+    return properties.includes('transform') && properties.every(value => ['transform', 'translate', 'scale', 'rotate'].includes(value));
+  })).toBe(true);
+});
+
 test('Select exposes real option focus, skips disabled options, and closes only itself', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
   await trigger.press('ArrowDown');

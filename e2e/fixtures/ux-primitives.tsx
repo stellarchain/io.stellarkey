@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, CopyButton, Dropdown, HashValue, Modal, ModalHeader, Select, Tabs } from '@/components/ui';
+import { Button, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle } from '@/components/ui';
 
 // Only opaque synthetic strings. Clipboard behaviour is controlled at the
 // browser API boundary by tests; these are the real production primitives.
@@ -16,6 +16,8 @@ export function UxPrimitivesFixture() {
   const [disabled, setDisabled] = useState(false);
   const [reordered, setReordered] = useState(false);
   const [gammaState, setGammaState] = useState<'present' | 'removed' | 'disabled'>('present');
+  const [fieldError, setFieldError] = useState(true);
+  const [switchOn, setSwitchOn] = useState(false);
   const options = [
     { value: 'alpha', label: 'Alpha' }, { value: 'beta', label: 'Beta', disabled: true },
     ...(gammaState === 'removed' ? [] : [{ value: 'gamma', label: 'Gamma', disabled: gammaState === 'disabled' }]),
@@ -55,6 +57,16 @@ export function UxPrimitivesFixture() {
         <Button variant="secondary" onClick={() => setReordered(value => !value)}>Reorder synthetic options</Button>
         <Button variant="secondary" onClick={() => setGammaState('removed')}>Remove synthetic Gamma</Button>
         <Button variant="secondary" onClick={() => setGammaState('disabled')}>Disable synthetic Gamma</Button>
+        {(['md', 'sm'] as const).map(size => <div key={size} data-testid={`select-field-${size}`}>
+          <p id={`synthetic-description-${size}`}>Existing synthetic description</p>
+          <Field label={`Synthetic ${size} field`} hint="Synthetic selection hint" error={fieldError ? 'Synthetic selection error' : undefined}>
+            <Select {...(size === 'sm' ? { id: 'synthetic-existing-select' } : {})}
+              aria-describedby={`synthetic-description-${size}`} aria-invalid={false}
+              ariaLabel={`Synthetic ${size} field`} size={size} value={asset} onChange={setAsset} options={options} />
+          </Field>
+        </div>)}
+        <Button variant="secondary" onClick={() => setFieldError(value => !value)}>Toggle synthetic field error</Button>
+        <div data-testid="named-switch"><Toggle label="Synthetic privacy setting" checked={switchOn} onChange={value => setSwitchOn(Boolean(value))} /></div>
       </div>
     </Modal>
   </>;
