@@ -131,6 +131,21 @@ export function Tooltip({
   }, [label, open, portalContainer, updatePosition]);
 
   useEffect(() => {
+    const anchor = anchorRef.current;
+    if (!open || !anchor) return;
+    // Body-portalled content can retain hover after its source becomes inert.
+    const dismissWhenInert = () => {
+      if (anchor.closest('[inert]')) setDismissed(true);
+    };
+    const observer = new MutationObserver(dismissWhenInert);
+    for (let source: HTMLElement | null = anchor; source; source = source.parentElement) {
+      observer.observe(source, { attributes: true, attributeFilter: ['inert'] });
+    }
+    dismissWhenInert();
+    return () => observer.disconnect();
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
