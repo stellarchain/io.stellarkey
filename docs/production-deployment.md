@@ -25,6 +25,14 @@ The checked-in Dependabot configuration and SHA-pinned workflows express intent;
 
 The source retains optional Trezor support, but `@trezor/connect-web` is separately licensed. Before distributing a production bundle containing it, obtain and archive written permission or authorization for the intended public distribution, or replace it with a permissibly licensed integration. Confirm the registered Trezor production origin is exactly `https://stellarkey.io`, the popup flow works from that origin, and the current dependency license notice is shipped. This is a release blocker, not a documentation-only check.
 
+The installed high/critical dependency gate passes as of 2026-09-07 after a scoped
+TOML parser override. Ten low-severity vulnerable packages remain under one
+`elliptic` advisory. The override does not update the SDK's prebundled browser
+parser or Trezor's remote popup core; review the [dependency evidence and runtime
+limits](dependency-security.md) before release. The installed stable 9.7.3 license,
+registered-origin approval, and physical-device checks still apply independently
+of the audit result.
+
 ## 3. DNS, mail, and TLS
 
 - Use registrar lock, registry lock where available, hardware-backed MFA, separated registrar/DNS roles, recovery contacts, and monitored expiry and nameserver changes.
