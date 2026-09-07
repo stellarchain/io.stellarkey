@@ -112,7 +112,7 @@ test("swap amount cards give mobile numbers and asset selectors separate layout 
 test("long transaction toasts stay inside the narrowest mobile viewport", () => {
   const toast = read("src/components/Toast.tsx");
 
-  assert.match(toast, /fade-up pointer-events-auto flex min-w-0 max-w-full/);
+  assert.match(toast, /toast-leave" : "toast-enter"\} pointer-events-auto flex min-w-0 max-w-full/);
   assert.match(toast, /min-w-0 break-words text-\[13px\]/);
   assert.doesNotMatch(toast, /truncate|text-ellipsis|whitespace-nowrap/);
 });
@@ -257,7 +257,7 @@ test("network switch modal uses the shared mobile padding", () => {
   const dashboard = read("src/components/Dashboard.tsx");
   assert.match(
     dashboard,
-    /title="Switch Network"[\s\S]*?<div className="space-y-4 p-4 sm:p-6">/,
+    /title="Switch Network"[\s\S]*?<ModalBody>/,
   );
 });
 

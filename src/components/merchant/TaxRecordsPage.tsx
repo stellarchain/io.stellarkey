@@ -7,12 +7,20 @@ import {
   useMerchantStatus,
   useMerchantTill,
 } from "@/hooks/useMerchant";
-import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { ExportRecord } from "@/lib/merchant/types";
 import { IconCheck, IconDownload, IconLock } from "../icons";
 import { useToast } from "../Toast";
-import { Button, IOSBackButton, Modal, ModalHeader, Notice, Select } from "../ui";
+import {
+  Button,
+  IOSBackButton,
+  Modal,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  Select,
+  useRetainedForExit,
+} from "../ui";
 import { MerchantDisclosure } from "./Disclosure";
 import { IconBars, IconClock, IconInfo, IconPercent, IconReceipt } from "./icons";
 import {
@@ -123,6 +131,10 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const [to, setTo] = useState(() => isoDay(currentMonth.to - 1));
   const [preview, setPreview] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<TaxRecordsSheet | null>(null);
+  // The sheet keeps its content and width through the exit animation.
+  const shownSheet = useRetainedForExit(activeSheet);
+  const [exporting, setExporting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const basis: Basis = "transaction";
 
   const period = useMemo(
@@ -157,7 +169,6 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   const retainedFor = retentionLabel(settings.recordRetentionMonths);
 
   function openSheet(sheet: TaxRecordsSheet) {
-    triggerHaptic("selection");
     setActiveSheet(sheet);
   }
 
@@ -182,8 +193,9 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
   }
 
   async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
     try {
-      triggerHaptic("medium");
       const { file } = await createReportExport(reportInput());
       const blob = new Blob([file.contents], { type: file.mimeType });
       const url = URL.createObjectURL(blob);
@@ -196,28 +208,37 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       toast(`${file.rowCount.toLocaleString("en-US")} rows exported`, "success");
     } catch (error) {
-      toast(error instanceof Error ? error.message : "The export could not be created.");
+      toast(error instanceof Error ? error.message : "The export could not be created.", "error");
+    } finally {
+      setExporting(false);
     }
   }
 
   async function handleEncryptedArchive() {
-    const archive = await exportEncryptedArchive();
-    if (!archive) {
-      toast("No encrypted merchant archive is available yet.", "error");
-      return;
+    if (archiving) return;
+    setArchiving(true);
+    try {
+      const archive = await exportEncryptedArchive();
+      if (!archive) {
+        toast("No encrypted merchant archive is available yet.", "error");
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([archive], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `merchant-archive-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast("Encrypted merchant archive downloaded", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "The archive could not be exported.", "error");
+    } finally {
+      setArchiving(false);
     }
-    const url = URL.createObjectURL(new Blob([archive], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `merchant-archive-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    toast("Encrypted merchant archive downloaded", "success");
   }
 
   function handlePreview() {
     try {
-      triggerHaptic("selection");
       const file = previewReportExport(reportInput());
       setPreview(file.contents.replace(/^\uFEFF/, "").slice(0, 5000));
       toast(`${file.rowCount.toLocaleString("en-US")} rows ready to preview`, "success");
@@ -418,9 +439,11 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
         <Modal
           open={activeSheet !== null}
           onClose={() => setActiveSheet(null)}
-          wide={activeSheet === "export" || activeSheet === "history"}
+          wide={shownSheet === "export" || shownSheet === "history"}
+          busy={exporting || archiving}
+          busyReason="Wait for the file to finish downloading before closing."
         >
-          {activeSheet === "period" && (
+          {shownSheet === "period" && (
             <>
               <ModalHeader
                 title="Reporting period"
@@ -463,7 +486,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "rates" && (
+          {shownSheet === "rates" && (
             <>
               <ModalHeader
                 title="Tax rates"
@@ -508,7 +531,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "export" && (
+          {shownSheet === "export" && (
             <>
               <ModalHeader
                 title="Export report"
@@ -551,7 +574,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setFrom(event.target.value);
                             setPreview(null);
                           }}
-                          className="input input-mono text-base sm:text-[13.5px]"
+                          enterKeyHint="next"
+                          className="input input-mono text-base sm:text-[14px]"
                         />
                       </div>
                       <div>
@@ -566,7 +590,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setTo(event.target.value);
                             setPreview(null);
                           }}
-                          className="input input-mono text-base sm:text-[13.5px]"
+                          enterKeyHint="done"
+                          className="input input-mono text-base sm:text-[14px]"
                         />
                       </div>
                     </div>
@@ -599,15 +624,19 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   </div>
                 </SettingsSection>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Button onClick={handleExport} disabled={!canExportRecords} className="w-full">
-                    <IconDownload size={15} />
-                    Export file
-                  </Button>
-                  <Button variant="secondary" onClick={handlePreview} className="w-full">
-                    Preview rows
-                  </Button>
-                </div>
+                <ModalFooter
+                  secondary={
+                    <Button variant="ghost" onClick={handlePreview}>
+                      Preview rows
+                    </Button>
+                  }
+                  primary={
+                    <Button onClick={handleExport} disabled={!canExportRecords} loading={exporting}>
+                      <IconDownload size={15} />
+                      Export file
+                    </Button>
+                  }
+                />
 
                 {preview && (
                   <div>
@@ -621,7 +650,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "archive" && (
+          {shownSheet === "archive" && (
             <>
               <ModalHeader
                 title="Encrypted archive"
@@ -659,20 +688,25 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                     backup as the recovery copy; it already includes these merchant records.
                   </SettingsCaption>
                 </SettingsSection>
-                <Button
-                  className="w-full min-w-0 !px-3"
-                  onClick={() => void handleEncryptedArchive()}
-                >
-                  <IconDownload size={15} />
-                  <span className="min-w-0 whitespace-normal text-center leading-tight">
-                    Download encrypted archive
-                  </span>
-                </Button>
+                <ModalFooter
+                  primary={
+                    <Button
+                      className="w-full min-w-0 !px-3"
+                      loading={archiving}
+                      onClick={() => void handleEncryptedArchive()}
+                    >
+                      <IconDownload size={15} />
+                      <span className="min-w-0 whitespace-normal text-center leading-tight">
+                        Download encrypted archive
+                      </span>
+                    </Button>
+                  }
+                />
               </SheetBody>
             </>
           )}
 
-          {activeSheet === "retention" && (
+          {shownSheet === "retention" && (
             <>
               <ModalHeader
                 title="Retention"
@@ -718,7 +752,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "history" && (
+          {shownSheet === "history" && (
             <>
               <ModalHeader
                 title="Export history"
@@ -752,7 +786,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
             </>
           )}
 
-          {activeSheet === "compliance" && (
+          {shownSheet === "compliance" && (
             <>
               <ModalHeader
                 title="About tax records"

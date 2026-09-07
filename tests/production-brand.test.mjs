@@ -117,7 +117,7 @@ test("the public README leads with the official identity and essential project p
 });
 
 test("branded exports do not change encrypted compatibility contracts", () => {
-  assert.match(read("src/components/BackupWizardModal.tsx"), /stellarkey-backup-/);
+  assert.match(read("src/components/BackupWizardModalBody.tsx"), /stellarkey-backup-/);
   assert.match(read("src/components/PaperWalletModal.tsx"), /stellarkey-/);
   assert.match(read("src/components/StorageRecoveryScreen.tsx"), /stellarkey-recovery-/);
   assert.match(read("src/components/AddressBookPage.tsx"), /stellarkey-contacts-/);

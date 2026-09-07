@@ -72,7 +72,7 @@ export function PrivateActionError({ cause }: { cause: unknown }) {
         />
       ) : null}
       <details className="mt-2">
-        <summary className="cursor-pointer select-none text-[11.5px] text-neutral-500">
+        <summary className="flex min-h-11 cursor-pointer select-none items-center text-[12px] text-neutral-500">
           Technical details
         </summary>
         <p className="mt-1.5 break-all font-mono text-[10.5px] leading-relaxed text-neutral-500">

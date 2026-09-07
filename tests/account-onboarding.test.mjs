@@ -28,7 +28,7 @@ test("the dashboard uses Add Account as its only account-onboarding entry", () =
 });
 
 test("Add Account retains secure hardware controls without a promotional device suite", () => {
-  const addAccount = read("src/components/AddAccountModal.tsx");
+  const addAccount = read("src/components/AddAccountModalBody.tsx");
 
   assert.match(addAccount, /warmTrezorConnect/);
   assert.match(

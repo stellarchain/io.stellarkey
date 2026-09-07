@@ -34,6 +34,11 @@ test('advanced privacy mounts the account and deployment scoped preference insid
   assert.match(source, /mode=\{outgoingHistoryMode\}/);
   assert.match(source, /onChange=\{setOutgoingHistoryMode\}/);
   assert.match(source, /disabled=\{working !== null \|\| phase !== 'current' \|\| !isLeader \|\| pendingActions\.length > 0\}/);
-  assert.equal((source.match(/<Modal /g) ?? []).length, 1);
-  assert.doesNotMatch(source, /<Modal[^>]*key=/);
+  // Advanced privacy is a step of the Private Payments dialog: it opens no
+  // shell of its own and is never remounted by key inside that shell.
+  const host = read('src/features/private-balance/components/PrivatePaymentsDetails.tsx');
+  assert.doesNotMatch(source, /<Modal\b/);
+  assert.match(host, /<PrivateProtocolSettingsContent/);
+  assert.equal((host.match(/<Modal /g) ?? []).length, 1);
+  assert.doesNotMatch(host, /<Modal[^>]*key=|<PrivateProtocolSettingsContent[^>]*key=/);
 });

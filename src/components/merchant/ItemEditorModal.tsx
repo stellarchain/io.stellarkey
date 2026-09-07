@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useMerchantConfiguration, useMerchantTill } from "@/hooks/useMerchant";
 import { FIAT_SYMBOLS } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -8,7 +8,20 @@ import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import type { CatalogueItem } from "@/lib/merchant/types";
 import { IconCheck } from "../icons";
 import { useToast } from "../Toast";
-import { Button, ErrorText, Field, Modal, ModalHeader, Select, Toggle } from "../ui";
+import {
+  Button,
+  ConfirmModal,
+  ErrorText,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Select,
+  Toggle,
+  useModalContext,
+  useRetainedForExit,
+} from "../ui";
 
 /** The tile tints a shop may choose from — iOS system colours only. */
 const TILE_COLOURS: { hex: string; name: string }[] = [
@@ -50,21 +63,64 @@ function initialsOf(name: string): string {
 }
 
 export function ItemEditorModal({
+  open,
   item,
   onClose,
 }: {
+  open: boolean;
   /** null opens the editor in create mode. */
   item: CatalogueItem | null;
   onClose: () => void;
 }) {
-  // Keyed so moving straight from one row to another starts on clean state.
-  return <ItemEditor key={item?.id ?? "new-item"} item={item} onClose={onClose} />;
+  // Keyed so moving straight from one row to another starts on clean state; the
+  // edited item stays rendered through the exit so the key never flips mid-animation.
+  const retained = useRetainedForExit(item);
+  const shownItem = open ? item : retained;
+  const [pending, setPending] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      busy={pending}
+      busyReason="Wait for the item to be saved before closing."
+      dirty={dirty}
+      initialFocus={nameRef}
+    >
+      <ItemEditor
+        key={shownItem?.id ?? "new-item"}
+        item={shownItem}
+        onClose={onClose}
+        nameRef={nameRef}
+        pending={pending}
+        onPendingChange={setPending}
+        onDirtyChange={setDirty}
+      />
+    </Modal>
+  );
 }
 
-function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: () => void }) {
+function ItemEditor({
+  item,
+  onClose,
+  nameRef,
+  pending,
+  onPendingChange,
+  onDirtyChange,
+}: {
+  item: CatalogueItem | null;
+  onClose: () => void;
+  nameRef: React.RefObject<HTMLInputElement | null>;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { catalogue, modifierGroups, upsertItem, removeItem } = useMerchantTill();
   const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
+  const modal = useModalContext();
   const isEdit = item !== null;
   const priceId = useId();
 
@@ -105,8 +161,28 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
   const symbol = FIAT_SYMBOLS[settings.currency].trim();
   const draftId = isEdit ? item.id : effectiveSku.trim().toLowerCase();
 
+  /* Unsaved edits: anything that differs from the item, or from a blank form. */
+  const draftKey = JSON.stringify({
+    name,
+    sku: effectiveSku,
+    category,
+    priceText,
+    taxRateId,
+    colour,
+    groupIds,
+    trackStock,
+    stockText,
+    lowStockText,
+    active,
+  });
+  const [initialKey] = useState(draftKey);
+  const isDirty = draftKey !== initialKey;
+  useEffect(() => {
+    onDirtyChange(isDirty);
+    return () => onDirtyChange(false);
+  }, [isDirty, onDirtyChange]);
+
   function toggleGroup(id: string) {
-    triggerHaptic("selection");
     setGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
   }
 
@@ -116,6 +192,7 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
   }
 
   async function handleSave() {
+    if (pending) return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       fail("Give the item a name. It is what staff tap on the till.");
@@ -178,34 +255,44 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
       sortIndex: item?.sortIndex ?? nextSortIndex,
     };
 
+    onPendingChange(true);
     try {
       await upsertItem(next);
     } catch (caught) {
       fail(caught instanceof Error ? caught.message : "The item could not be saved.");
       return;
+    } finally {
+      onPendingChange(false);
     }
     triggerHaptic("success");
-    toast(isEdit ? `${next.name} updated` : `${next.name} added to the catalogue`, "success");
+    toast(isEdit ? `${next.name} updated` : `${next.name} added to the catalogue`, "success", {
+      silent: true,
+    });
     onClose();
   }
 
   async function handleDelete() {
-    if (!item) return;
+    if (!item || pending) return;
+    onPendingChange(true);
     try {
       await removeItem(item.id);
     } catch (caught) {
+      setConfirmingDelete(false);
       fail(caught instanceof Error ? caught.message : "The item could not be removed.");
       return;
+    } finally {
+      onPendingChange(false);
     }
     triggerHaptic("success");
-    toast(`${item.name} removed from the catalogue`, "info");
+    toast(`${item.name} removed from the catalogue`, "info", { silent: true });
+    setConfirmingDelete(false);
     onClose();
   }
 
   return (
-    <Modal open onClose={onClose} wide>
+    <>
       <ModalHeader
-        title={isEdit ? "Edit Item" : "New Item"}
+        title={isEdit ? "Edit item" : "New item"}
         subtitle={
           isEdit
             ? `Item id ${item.id} · position ${item.sortIndex + 1}`
@@ -214,24 +301,26 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
         onClose={onClose}
       />
 
-      <div className="space-y-5 p-4 sm:p-6">
+      <ModalBody gap={5}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Field label="Name">
               <input
-                className="input"
+                ref={nameRef}
+                className="input text-base sm:text-[14px]"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Flat White"
                 maxLength={48}
-                autoFocus
+                enterKeyHint="next"
+                autoCapitalize="words"
               />
             </Field>
           </div>
 
           <Field label="SKU" hint={draftId ? `id ${draftId}` : "id comes from the SKU"}>
             <input
-              className="input mono"
+              className="input mono text-base sm:text-[14px]"
               value={effectiveSku}
               onChange={(e) => {
                 setSkuTouched(true);
@@ -241,6 +330,8 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
               maxLength={12}
               spellCheck={false}
               autoComplete="off"
+              autoCapitalize="characters"
+              enterKeyHint="next"
             />
           </Field>
 
@@ -267,12 +358,14 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
             </Field>
             {freeCategory && (
               <input
-                className="input"
+                className="input text-base sm:text-[14px]"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 placeholder="Coffee"
                 maxLength={24}
                 aria-label="New category name"
+                enterKeyHint="next"
+                autoCapitalize="words"
               />
             )}
           </div>
@@ -297,6 +390,7 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
                 onChange={(e) => setPriceText(e.target.value)}
                 placeholder="0.00"
                 inputMode="decimal"
+                enterKeyHint="next"
                 spellCheck={false}
                 autoComplete="off"
               />
@@ -346,20 +440,22 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
                     type="button"
                     aria-label={swatch.name}
                     aria-pressed={on}
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setColour(swatch.hex);
-                    }}
-                    className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-90"
-                    style={{
-                      background: swatch.hex,
-                      boxShadow: on
-                        ? `0 0 0 2px #000000, 0 0 0 4px ${swatch.hex}`
-                        : "inset 0 0 0 0.5px rgba(255,255,255,0.25)",
-                    }}
+                    onClick={() => setColour(swatch.hex)}
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-full transition-transform active:scale-90"
                   >
-                    <span className={on ? "text-white" : "text-transparent"}>
-                      <IconCheck size={13} />
+                    <span
+                      aria-hidden="true"
+                      className="flex h-8 w-8 items-center justify-center rounded-full"
+                      style={{
+                        background: swatch.hex,
+                        boxShadow: on
+                          ? `0 0 0 2px #000000, 0 0 0 4px ${swatch.hex}`
+                          : "inset 0 0 0 0.5px rgba(255,255,255,0.25)",
+                      }}
+                    >
+                      <span className={on ? "text-white" : "text-transparent"}>
+                        <IconCheck size={13} />
+                      </span>
                     </span>
                   </button>
                 );
@@ -435,21 +531,23 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
             <div className="grid gap-3 border-t border-white/[0.08] px-3.5 py-3 sm:grid-cols-2">
               <Field label="Stock on hand">
                 <input
-                  className="input mono"
+                  className="input mono text-base sm:text-[14px]"
                   value={stockText}
                   onChange={(e) => setStockText(e.target.value)}
                   placeholder="0"
                   inputMode="numeric"
+                  enterKeyHint="next"
                   autoComplete="off"
                 />
               </Field>
               <Field label="Low stock at" hint="optional">
                 <input
-                  className="input mono"
+                  className="input mono text-base sm:text-[14px]"
                   value={lowStockText}
                   onChange={(e) => setLowStockText(e.target.value)}
                   placeholder="none"
                   inputMode="numeric"
+                  enterKeyHint="done"
                   autoComplete="off"
                 />
               </Field>
@@ -470,42 +568,52 @@ function ItemEditor({ item, onClose }: { item: CatalogueItem | null; onClose: ()
 
         <ErrorText message={error} />
 
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>{isEdit ? "Save Changes" : "Add Item"}</Button>
-        </div>
-
-        {isEdit &&
-          (confirmingDelete ? (
-            <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/10 p-3.5">
-              <p className="text-[13px] leading-relaxed text-neutral-200">
-                Delete {item.name}? Orders already rung up keep their lines, so the takings stay
-                intact. The item simply stops being sellable.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
-                <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>
-                  Keep Item
-                </Button>
-                <Button variant="danger" onClick={handleDelete}>
-                  Delete
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <button
+        <ModalFooter
+          secondary={
+            <Button
               type="button"
-              className="btn btn-danger w-full"
+              variant="ghost"
               onClick={() => {
-                triggerHaptic("warning");
-                setConfirmingDelete(true);
+                if (modal) modal.requestClose("close");
+                else onClose();
               }}
             >
-              Delete Item
-            </button>
-          ))}
-      </div>
-    </Modal>
+              Cancel
+            </Button>
+          }
+          primary={
+            <Button type="button" loading={pending} onClick={handleSave}>
+              {isEdit ? "Save changes" : "Add item"}
+            </Button>
+          }
+        />
+
+        {isEdit && (
+          <Button
+            type="button"
+            variant="danger"
+            className="w-full"
+            disabled={pending}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete item
+          </Button>
+        )}
+      </ModalBody>
+
+      {isEdit && (
+        <ConfirmModal
+          open={confirmingDelete}
+          title={`Delete ${item.name}?`}
+          message="Orders already rung up keep their lines, so the takings stay intact. The item simply stops being sellable."
+          confirmLabel="Delete item"
+          cancelLabel="Keep item"
+          destructive
+          busy={pending}
+          onClose={() => setConfirmingDelete(false)}
+          onConfirm={() => void handleDelete()}
+        />
+      )}
+    </>
   );
 }

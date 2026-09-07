@@ -3,7 +3,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { triggerHaptic } from "@/lib/haptics";
-import { MODAL_EXIT_DURATION_MS } from "@/lib/motion";
+import {
+  MODAL_EXIT_DURATION_MS,
+  MODAL_SHEET_EXIT_DURATION_MS,
+  POPOVER_EXIT_DURATION_MS,
+  REDUCED_MOTION_EXIT_DURATION_MS,
+} from "@/lib/motion";
 import { calculatePopoverPosition, type PopoverPosition } from "@/lib/popover";
 import { tabIndexAfterKey } from "@/lib/tabs";
 import { IconCheck, IconChevronDown, IconClose, IconCopy } from "./icons";
@@ -222,10 +227,7 @@ export function IOSBackButton({
       type="button"
       aria-label={label}
       disabled={disabled}
-      onClick={() => {
-        triggerHaptic("selection");
-        onClick();
-      }}
+      onClick={onClick}
       className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 ${className}`}
     >
       <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
@@ -235,10 +237,61 @@ export function IOSBackButton({
   );
 }
 
-const ModalLabelContext = React.createContext<{
+/* ------------------------------------------------------------------ */
+/* Modal — the one dialog shell. Presentation follows the platform:     */
+/* a bottom sheet on compact widths, a centred card above them, a       */
+/* centred alert for confirmations, or a full-screen takeover.          */
+/* ------------------------------------------------------------------ */
+
+export type ModalPresentation = "auto" | "card" | "sheet" | "alert" | "fullscreen";
+type ResolvedPresentation = Exclude<ModalPresentation, "auto">;
+export type ModalCloseReason = "escape" | "backdrop" | "drag" | "close" | "back" | "programmatic";
+
+interface ModalContextValue {
   titleId: string;
   descriptionId: string;
-} | null>(null);
+  busyReasonId: string;
+  busy: boolean;
+  busyReason: string;
+  presentation: ResolvedPresentation;
+  registerTitle(): () => void;
+  registerDescription(): () => void;
+  /** Routes a dismissal through the shell's busy/dirty policy. Returns whether it will close. */
+  requestClose(reason: ModalCloseReason, action?: () => void): boolean;
+}
+
+const ModalLabelContext = React.createContext<ModalContextValue | null>(null);
+
+/** Shell state for children that render their own chrome (ConfirmModal, custom headers). */
+export function useModalContext(): ModalContextValue | null {
+  return React.useContext(ModalLabelContext);
+}
+
+const COMPACT_VIEWPORT_QUERY = "(max-width: 639px)";
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
+/** True below the `sm` breakpoint, where dialogs present as bottom sheets. */
+export function useCompactViewport(): boolean {
+  return useMediaQuery(COMPACT_VIEWPORT_QUERY);
+}
+
+export function useReducedMotion(): boolean {
+  return useMediaQuery(REDUCED_MOTION_QUERY);
+}
 
 /* Reference-counted body scroll lock so nested overlays don't fight. */
 let scrollLockCount = 0;
@@ -333,26 +386,230 @@ export function useBodyScrollLock(active: boolean) {
   }, [active]);
 }
 
+const SHEET_DISMISS_DISTANCE_PX = 96;
+const SHEET_DISMISS_VELOCITY_PX_PER_MS = 0.5;
+const SHEET_DRAG_SLOP_PX = 8;
+const BACKDROP_TAP_SLOP_PX = 8;
+
+/**
+ * Sheet drag-to-dismiss. Touches start a drag from the grabber/header at any
+ * time, or from the body once its scroll position is at the top; anything else
+ * stays a native scroll. Mouse pointers drag from the handle only.
+ */
+function useSheetDrag({
+  enabled,
+  panelRef,
+  backdropRef,
+  onDismiss,
+}: {
+  enabled: boolean;
+  panelRef: React.RefObject<HTMLDivElement | null>;
+  backdropRef: React.RefObject<HTMLDivElement | null>;
+  onDismiss: () => boolean;
+}) {
+  useEffect(() => {
+    const panel = panelRef.current;
+    const backdrop = backdropRef.current;
+    if (!enabled || !panel || !backdrop) return;
+
+    let startY = 0;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocity = 0;
+    let tracking = false;
+    let dragging = false;
+    let fromHandle = false;
+    let activePointer: number | null = null;
+
+    const isHandle = (target: EventTarget | null) =>
+      target instanceof Element && target.closest("[data-sheet-handle]") !== null;
+    // A press on a control inside the handle is a click, never a drag start.
+    const isControl = (target: EventTarget | null) =>
+      target instanceof Element
+      && target.closest("button, a, input, select, textarea, summary, [role=\"button\"], [role=\"tab\"], [role=\"switch\"]") !== null;
+    const insidePopup = (target: EventTarget | null) =>
+      target instanceof Element && target.closest("[data-popover-panel]") !== null;
+
+    const applyOffset = (offset: number) => {
+      const clamped = Math.max(0, offset);
+      panel.dataset.dragging = "true";
+      panel.style.transition = "none";
+      panel.style.transform = `translate3d(0, ${clamped}px, 0)`;
+      backdrop.style.opacity = String(Math.max(0.25, 1 - clamped / 480));
+    };
+
+    const settle = (dismiss: boolean) => {
+      const closing = dismiss && onDismiss();
+      delete panel.dataset.dragging;
+      backdrop.style.opacity = "";
+      if (closing) {
+        // The exit keyframe continues from the dragged position.
+        panel.style.transition = "";
+        return;
+      }
+      panel.style.transition = "transform var(--motion-duration-standard) var(--motion-ease-standard)";
+      panel.style.transform = "";
+      const clear = () => {
+        panel.style.transition = "";
+        panel.removeEventListener("transitionend", clear);
+      };
+      panel.addEventListener("transitionend", clear);
+    };
+
+    const begin = (y: number, time: number, target: EventTarget | null) => {
+      if (insidePopup(target)) return false;
+      startY = lastY = y;
+      lastTime = time;
+      velocity = 0;
+      tracking = true;
+      dragging = false;
+      fromHandle = isHandle(target);
+      return true;
+    };
+
+    /** Returns true once the gesture is owned as a drag. */
+    const move = (y: number, time: number): boolean => {
+      if (!tracking) return false;
+      const dy = y - startY;
+      if (!dragging) {
+        if (dy > SHEET_DRAG_SLOP_PX && (fromHandle || panel.scrollTop <= 0)) {
+          dragging = true;
+        } else if (dy < -SHEET_DRAG_SLOP_PX || (!fromHandle && panel.scrollTop > 0)) {
+          tracking = false;
+          return false;
+        } else {
+          return false;
+        }
+      }
+      velocity = (y - lastY) / Math.max(1, time - lastTime);
+      lastY = y;
+      lastTime = time;
+      applyOffset(dy);
+      return true;
+    };
+
+    const end = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!dragging) return;
+      dragging = false;
+      const dy = lastY - startY;
+      settle(dy > SHEET_DISMISS_DISTANCE_PX || velocity > SHEET_DISMISS_VELOCITY_PX_PER_MS);
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1 || isControl(event.target)) return;
+      begin(event.touches[0].clientY, event.timeStamp, event.target);
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 1) { tracking = false; return; }
+      if (move(event.touches[0].clientY, event.timeStamp)) event.preventDefault();
+    };
+    const onTouchEnd = () => end();
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || event.button !== 0 || !isHandle(event.target) || isControl(event.target)) return;
+      if (!begin(event.clientY, event.timeStamp, event.target)) return;
+      activePointer = event.pointerId;
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      if (!move(event.clientY, event.timeStamp)) return;
+      event.preventDefault();
+      // Capture only once the gesture is owned, so clicks on the handle still land.
+      if (!panel.hasPointerCapture(event.pointerId)) panel.setPointerCapture(event.pointerId);
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      activePointer = null;
+      if (panel.hasPointerCapture(event.pointerId)) panel.releasePointerCapture(event.pointerId);
+      end();
+    };
+
+    panel.addEventListener("touchstart", onTouchStart, { passive: true });
+    panel.addEventListener("touchmove", onTouchMove, { passive: false });
+    panel.addEventListener("touchend", onTouchEnd);
+    panel.addEventListener("touchcancel", onTouchEnd);
+    panel.addEventListener("pointerdown", onPointerDown);
+    panel.addEventListener("pointermove", onPointerMove);
+    panel.addEventListener("pointerup", onPointerEnd);
+    panel.addEventListener("pointercancel", onPointerEnd);
+    return () => {
+      panel.removeEventListener("touchstart", onTouchStart);
+      panel.removeEventListener("touchmove", onTouchMove);
+      panel.removeEventListener("touchend", onTouchEnd);
+      panel.removeEventListener("touchcancel", onTouchEnd);
+      panel.removeEventListener("pointerdown", onPointerDown);
+      panel.removeEventListener("pointermove", onPointerMove);
+      panel.removeEventListener("pointerup", onPointerEnd);
+      panel.removeEventListener("pointercancel", onPointerEnd);
+      delete panel.dataset.dragging;
+      panel.style.transform = "";
+      panel.style.transition = "";
+      backdrop.style.opacity = "";
+    };
+  }, [enabled, panelRef, backdropRef, onDismiss]);
+}
+
 export function Modal({
   open,
   onClose,
   children,
   wide = false,
+  presentation = "auto",
+  anchor = "center",
+  busy = false,
+  busyReason = "Wait for the current action to finish before closing.",
   dismissable = true,
+  dirty = false,
+  initialFocus,
+  ariaLabel,
 }: {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
   wide?: boolean;
+  /** `auto` presents a sheet on compact widths and a card above them. */
+  presentation?: ModalPresentation;
+  /** Card/alert placement; `top` anchors a palette-style dialog near the top edge. */
+  anchor?: "center" | "top";
+  /** Blocks every dismissal path while work is in flight; the close control stays visible and explains why. */
+  busy?: boolean;
+  busyReason?: string;
+  /** `false` keeps Escape, backdrop and drag from closing (the dialog must be answered). */
   dismissable?: boolean;
+  /** Unsaved edits: gestures and the close control ask before discarding. */
+  dirty?: boolean | (() => boolean);
+  /** Element to focus on open. Defaults to the dialog itself so its name is announced first. */
+  initialFocus?: React.RefObject<HTMLElement | null> | (() => HTMLElement | null);
+  /** Accessible name when no ModalHeader supplies a title. */
+  ariaLabel?: string;
 }) {
   const [mounted, setMounted] = useState(open);
   const [closing, setClosing] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
+  const [exitGeometry, setExitGeometry] = useState<{
+    width: number;
+    height: number;
+    presentation: ResolvedPresentation;
+    wide: boolean;
+  } | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [titleCount, setTitleCount] = useState(0);
+  const [descriptionCount, setDescriptionCount] = useState(0);
+  const compact = useCompactViewport();
+  const reducedMotion = useReducedMotion();
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const restoreFocusFrameRef = useRef<number | null>(null);
+  const [panelSize, setPanelSize] = useState<{ width: number; height: number } | null>(null);
+  const discardActionRef = useRef<(() => void) | null>(null);
+  const onCloseRef = useRef(onClose);
+  const busyRef = useRef(busy);
+  const dismissableRef = useRef(dismissable);
+  const dirtyRef = useRef(dirty);
+  const initialFocusRef = useRef(initialFocus);
   const [visualViewport, setVisualViewport] = useState<{
     offsetTop: number;
     height: number;
@@ -360,27 +617,63 @@ export function Modal({
   const labelBaseId = React.useId();
   const titleId = `${labelBaseId}-title`;
   const descriptionId = `${labelBaseId}-description`;
+  const busyReasonId = `${labelBaseId}-busy`;
+
+  // Handlers and the focus frame read the latest props without re-subscribing.
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+    busyRef.current = busy;
+    dismissableRef.current = dismissable;
+    dirtyRef.current = dirty;
+    initialFocusRef.current = initialFocus;
+  });
+
+  const livePresentation: ResolvedPresentation =
+    presentation === "auto" ? (compact ? "sheet" : "card") : presentation;
 
   // Stay mounted briefly after `open` flips false so the exit animation plays.
+  // The shell keeps its last size and presentation through the exit so owners
+  // may clear sensitive content immediately without collapsing the dialog.
   // (State adjusted during render per https://react.dev/learn/you-might-not-need-an-effect)
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
       setMounted(true);
       setClosing(false);
+      setExitGeometry(null);
+      setConfirmingDiscard(false);
     } else if (mounted) {
       setClosing(true);
+      setConfirmingDiscard(false);
+      setExitGeometry({
+        width: panelSize?.width ?? 0,
+        height: panelSize?.height ?? 0,
+        presentation: livePresentation,
+        wide,
+      });
     }
   }
 
+  const resolvedPresentation = closing && exitGeometry ? exitGeometry.presentation : livePresentation;
+  const resolvedWide = closing && exitGeometry ? exitGeometry.wide : wide;
+  const isSheet = resolvedPresentation === "sheet";
+  const isAlert = resolvedPresentation === "alert";
+  const isFullscreen = resolvedPresentation === "fullscreen";
+
   useEffect(() => {
     if (!closing) return;
+    const duration = reducedMotion
+      ? REDUCED_MOTION_EXIT_DURATION_MS
+      : resolvedPresentation === "sheet"
+        ? MODAL_SHEET_EXIT_DURATION_MS
+        : MODAL_EXIT_DURATION_MS;
     const t = window.setTimeout(() => {
       setMounted(false);
       setClosing(false);
-    }, MODAL_EXIT_DURATION_MS);
+      setExitGeometry(null);
+    }, duration);
     return () => window.clearTimeout(t);
-  }, [closing]);
+  }, [closing, reducedMotion, resolvedPresentation]);
 
   // Scroll lock + focus restore for as long as the dialog is in the tree.
   useLayoutEffect(() => {
@@ -424,15 +717,37 @@ export function Modal({
     const backdrop = backdropRef.current;
     // The opening owns this callback, not a later render or newer focus intent.
     // Closing revokes it even while the exit animation retains the same shell.
+    // Focus lands on the dialog itself so assistive technology announces its
+    // name before any control; a sheet whose purpose is entry opts into a field.
     const frame = window.requestAnimationFrame(() => {
       if (!panel?.isConnected || !isTopModal(backdrop) || panel.contains(document.activeElement)) return;
-      const first = panel.querySelector<HTMLElement>(
-        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
-      );
+      const requested = initialFocusRef.current;
+      const target = typeof requested === "function" ? requested() : requested?.current ?? null;
+      const first = target && panel.contains(target) && !target.matches(":disabled, [aria-disabled='true']")
+        ? target
+        : null;
       (first ?? panel).focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, mounted]);
+
+  // Remember the rendered size so the shell can hold it through the exit.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!mounted || !panel || typeof ResizeObserver === "undefined") return;
+    const record = () => {
+      // Layout size: transforms from the entrance or a drag must not distort it.
+      const width = panel.offsetWidth;
+      const height = panel.offsetHeight;
+      if (width > 0 && height > 0) {
+        setPanelSize((current) => current?.width === width && current.height === height ? current : { width, height });
+      }
+    };
+    record();
+    const observer = new ResizeObserver(record);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [mounted]);
 
   // iOS keeps a separate visual viewport while the keyboard is open. Following
   // it prevents a sheet from being centred behind the keyboard or clipped by
@@ -463,13 +778,31 @@ export function Modal({
     };
   }, [mounted]);
 
+  const requestClose = useCallback((reason: ModalCloseReason, action?: () => void): boolean => {
+    if (busyRef.current) return false;
+    const gesture = reason === "escape" || reason === "backdrop" || reason === "drag";
+    if (gesture && !dismissableRef.current) return false;
+    const perform = action ?? onCloseRef.current;
+    // Back navigates within the dialog; only leaving it can discard edits.
+    const isDirty = typeof dirtyRef.current === "function" ? dirtyRef.current() : dirtyRef.current;
+    if (isDirty && reason !== "programmatic" && reason !== "back") {
+      discardActionRef.current = perform;
+      setConfirmingDiscard(true);
+      return false;
+    }
+    perform();
+    return true;
+  }, []);
+
+  const dismissFromDrag = useCallback(() => requestClose("drag"), [requestClose]);
+  useSheetDrag({ enabled: mounted && !closing && isSheet, panelRef, backdropRef, onDismiss: dismissFromDrag });
+
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
       if (!isTopModal(backdropRef.current)) return;
-      if (e.key === "Escape" && dismissable) {
-        triggerHaptic("selection");
-        onClose();
+      if (e.key === "Escape") {
+        requestClose("escape");
         return;
       }
       if (e.key === "Tab" && panelRef.current) {
@@ -483,43 +816,110 @@ export function Modal({
           panelRef.current.focus();
           return;
         }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (!panelRef.current.contains(document.activeElement)) {
-          e.preventDefault();
-          (e.shiftKey ? last : first).focus();
-        } else if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+        // The dialog owns Tab order outright: engines disagree about which
+        // controls native Tab reaches (mobile WebKit skips buttons), so the
+        // next stop is chosen here and wraps within the dialog.
+        e.preventDefault();
+        const index = focusable.indexOf(document.activeElement as HTMLElement);
+        const next = index === -1
+          ? (e.shiftKey ? focusable.length - 1 : 0)
+          : (index + (e.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+        focusable[next].focus();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, dismissable]);
+  }, [open, requestClose]);
+
+  const registerTitle = useCallback(() => {
+    setTitleCount((count) => count + 1);
+    return () => setTitleCount((count) => count - 1);
+  }, []);
+  const registerDescription = useCallback(() => {
+    setDescriptionCount((count) => count + 1);
+    return () => setDescriptionCount((count) => count - 1);
+  }, []);
+
+  const contextValue = React.useMemo<ModalContextValue>(() => ({
+    titleId,
+    descriptionId,
+    busyReasonId,
+    busy,
+    busyReason,
+    presentation: resolvedPresentation,
+    registerTitle,
+    registerDescription,
+    requestClose,
+  }), [titleId, descriptionId, busyReasonId, busy, busyReason, resolvedPresentation, registerTitle, registerDescription, requestClose]);
+
+  // Backdrop taps dismiss only when press and release both land on the dim
+  // without travelling; a drag that starts on the dim is not a dismissal.
+  const backdropPressRef = useRef<{ id: number; x: number; y: number } | null>(null);
 
   if (!mounted || typeof document === "undefined") return null;
+
+  const backdropDismisses = !isAlert && !isFullscreen;
+  const overlayClass = isSheet
+    ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0"
+    : isAlert
+      ? "modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm"
+      : isFullscreen
+        ? "modal-overlay fixed inset-0 z-50 flex items-stretch justify-center bg-black p-0"
+        : `modal-overlay app-safe-overlay fixed inset-0 z-50 flex ${anchor === "top" ? "items-start pt-[15vh]" : "items-center"} justify-center bg-black/75 p-4 backdrop-blur-md`;
+  const panelClass = isSheet
+    ? `modal-sheet relative max-h-[calc(100dvh-var(--app-safe-area-top)-1.5rem)] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain rounded-t-[28px] border border-b-0 border-white/[0.12] bg-[#121214]/98 pb-[env(safe-area-inset-bottom)] shadow-[0_-12px_50px_-20px_rgba(0,0,0,0.9)] ${
+        resolvedWide ? "max-w-2xl" : "max-w-xl"
+      }`
+    : isAlert
+      ? "modal-alert relative w-full min-w-0 max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
+      : isFullscreen
+        ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[#0A0A0B]"
+        : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
+            resolvedWide ? "max-w-xl" : "max-w-md"
+          }`;
+  const holdStyle: React.CSSProperties | undefined = closing && exitGeometry && !isFullscreen
+    ? {
+        height: exitGeometry.height,
+        ...(isSheet ? {} : { width: exitGeometry.width, maxWidth: "none" }),
+      }
+    : undefined;
+  const viewportReduced = visualViewport !== null
+    && (visualViewport.offsetTop !== 0 || Math.abs(visualViewport.height - window.innerHeight) > 1);
+  const heightStyle: React.CSSProperties | undefined = viewportReduced && visualViewport && !isFullscreen
+    ? {
+        maxHeight: isSheet
+          ? `calc(${visualViewport.height}px - 1.5rem - var(--app-safe-area-top))`
+          : `calc(${visualViewport.height}px - 2rem - var(--app-safe-area-top))`,
+      }
+    : undefined;
 
   return createPortal(
     <div
       ref={backdropRef}
       data-modal-backdrop
       data-overlay-state={closing ? "closing" : "open"}
+      data-presentation={resolvedPresentation}
       role="dialog"
       aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={descriptionId}
-      onMouseDown={(e) => {
-        if (e.target === backdropRef.current && dismissable) {
-          triggerHaptic("selection");
-          onClose();
-        }
+      aria-labelledby={titleCount > 0 ? titleId : undefined}
+      aria-label={titleCount > 0 ? undefined : ariaLabel}
+      aria-describedby={descriptionCount > 0 ? descriptionId : undefined}
+      aria-busy={busy || undefined}
+      onPointerDown={(e) => {
+        backdropPressRef.current = e.target === backdropRef.current && backdropDismisses
+          ? { id: e.pointerId, x: e.clientX, y: e.clientY }
+          : null;
       }}
+      onPointerUp={(e) => {
+        const press = backdropPressRef.current;
+        backdropPressRef.current = null;
+        if (!press || press.id !== e.pointerId || e.target !== backdropRef.current) return;
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > BACKDROP_TAP_SLOP_PX) return;
+        requestClose("backdrop");
+      }}
+      onPointerCancel={() => { backdropPressRef.current = null; }}
       style={
-        visualViewport
+        viewportReduced && visualViewport
           ? {
               top: visualViewport.offsetTop,
               bottom: "auto",
@@ -527,26 +927,38 @@ export function Modal({
             }
           : undefined
       }
-      className={`modal-overlay app-safe-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md${closing ? " closing" : ""}`}
+      className={`${overlayClass}${closing ? " closing" : ""}`}
     >
-      <ModalLabelContext.Provider value={{ titleId, descriptionId }}>
+      <ModalLabelContext.Provider value={contextValue}>
         <div
           ref={panelRef}
           data-modal-shell
           tabIndex={-1}
-          style={
-            visualViewport
-              ? {
-                  maxHeight: `calc(${visualViewport.height}px - 2rem - var(--app-safe-area-top))`,
-                }
-              : undefined
-          }
-          className={`modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
-            wide ? "max-w-xl" : "max-w-md"
-          }${closing ? " closing" : ""}`}
+          style={{ ...heightStyle, ...holdStyle }}
+          className={`${panelClass}${closing ? " closing" : ""}`}
         >
+          {isSheet && <div aria-hidden="true" data-sheet-handle className="modal-grabber" />}
+          <span id={busyReasonId} className="sr-only">{busy ? busyReason : ""}</span>
           {children}
         </div>
+        <ConfirmModal
+          open={confirmingDiscard}
+          title="Discard changes?"
+          message="Your unsaved edits will be lost."
+          confirmLabel="Discard"
+          cancelLabel="Keep Editing"
+          destructive
+          onClose={() => {
+            discardActionRef.current = null;
+            setConfirmingDiscard(false);
+          }}
+          onConfirm={() => {
+            const action = discardActionRef.current;
+            discardActionRef.current = null;
+            setConfirmingDiscard(false);
+            action?.();
+          }}
+        />
       </ModalLabelContext.Provider>
     </div>,
     document.body,
@@ -558,33 +970,71 @@ export function ModalHeader({
   subtitle,
   onClose,
   closeDisabled = false,
+  onBack,
+  backLabel = "Back",
+  action,
+  className = "",
 }: {
   title: string;
   subtitle?: string;
   onClose?: () => void;
+  /** Prefer `busy` on Modal; this keeps a single header control unavailable. */
   closeDisabled?: boolean;
+  /** Multi-step flows: a leading back control instead of a footer button. */
+  onBack?: () => void;
+  backLabel?: string;
+  /** Trailing control such as a text "Done" or "Save" action. */
+  action?: React.ReactNode;
+  /** Extra classes, e.g. a print-hiding hook. */
+  className?: string;
 }) {
-  const labels = React.useContext(ModalLabelContext);
+  const modal = React.useContext(ModalLabelContext);
+  const registerTitle = modal?.registerTitle;
+  const registerDescription = modal?.registerDescription;
+  const hasSubtitle = Boolean(subtitle);
+  useLayoutEffect(() => registerTitle?.(), [registerTitle]);
+  useLayoutEffect(() => (hasSubtitle ? registerDescription?.() : undefined), [hasSubtitle, registerDescription]);
+
+  const busy = modal?.busy ?? false;
+  const closeBlocked = closeDisabled || busy;
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.08] bg-[#121214]/80 px-4 py-4 backdrop-blur-xl sm:px-6">
-      <div>
-        <h2 id={labels?.titleId} className="text-[17px] font-bold tracking-tight text-white">{title}</h2>
-        {subtitle ? (
-          <p id={labels?.descriptionId} className="text-[12px] text-neutral-400 mt-0.5">{subtitle}</p>
-        ) : (
-          <span id={labels?.descriptionId} className="sr-only">Dialog</span>
+    <div
+      data-sheet-handle={modal?.presentation === "sheet" ? "true" : undefined}
+      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[#121214]/80 px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
+    >
+      {onBack && (
+        <IOSBackButton
+          label={backLabel}
+          disabled={busy}
+          className="-ml-2"
+          onClick={() => {
+            if (modal) modal.requestClose("back", onBack);
+            else onBack();
+          }}
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <h2 id={modal?.titleId} className="text-[17px] font-semibold tracking-tight text-white">{title}</h2>
+        {subtitle && (
+          <p id={modal?.descriptionId} className="mt-0.5 text-[12px] text-neutral-400">{subtitle}</p>
         )}
       </div>
+      {action}
       {onClose && (
         <button
           type="button"
-          disabled={closeDisabled}
-          onClick={() => {
-            if (closeDisabled) return;
-            triggerHaptic("selection");
-            onClose();
+          aria-disabled={closeBlocked || undefined}
+          aria-describedby={closeBlocked ? modal?.busyReasonId : undefined}
+          title={closeBlocked ? modal?.busyReason : undefined}
+          onClick={(event) => {
+            if (closeBlocked) {
+              event.preventDefault();
+              return;
+            }
+            if (modal) modal.requestClose("close", onClose);
+            else onClose();
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 sm:h-9 sm:w-9"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 sm:h-9 sm:w-9 shrink-0"
           aria-label="Close"
         >
           <IconClose size={14} />
@@ -592,6 +1042,175 @@ export function ModalHeader({
       )}
     </div>
   );
+}
+
+const MODAL_BODY_GAP: Record<3 | 4 | 5, string> = {
+  3: "space-y-3",
+  4: "space-y-4",
+  5: "space-y-5",
+};
+
+/** The one body rhythm: `p-4 sm:p-6` with a vertical stack. */
+export function ModalBody({
+  children,
+  gap = 4,
+  className = "",
+}: {
+  children: React.ReactNode;
+  gap?: 3 | 4 | 5;
+  className?: string;
+}) {
+  return <div className={`${MODAL_BODY_GAP[gap]} p-4 sm:p-6 ${className}`}>{children}</div>;
+}
+
+/**
+ * Footer actions in iOS order: the primary action trails in a row and sits on
+ * top in a stack; Cancel/Back leads. A lone primary fills the width.
+ */
+export function ModalFooter({
+  primary,
+  secondary,
+  stack = false,
+  className = "",
+}: {
+  primary: React.ReactNode;
+  secondary?: React.ReactNode;
+  stack?: boolean;
+  className?: string;
+}) {
+  if (!secondary) {
+    return <div className={`mt-6 grid grid-cols-1 gap-3 ${className}`}>{primary}</div>;
+  }
+  return (
+    <div className={`mt-6 ${stack ? "flex flex-col-reverse gap-2" : "grid grid-cols-2 gap-3"} ${className}`}>
+      {secondary}
+      {primary}
+    </div>
+  );
+}
+
+/**
+ * The confirmation alert: centred, not dismissed by tapping outside, with a
+ * specific verb on the confirming button and Cancel leading.
+ */
+export function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  destructive = false,
+  busy = false,
+  stack = false,
+  error = "",
+  confirmFocusableWhenDisabled = false,
+  onConfirm,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  message?: React.ReactNode;
+  confirmLabel: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  busy?: boolean;
+  /** Stack the buttons (long titles); the confirming action sits on top. */
+  stack?: boolean;
+  /** A failure from the last attempt, shown inside the alert so focus never leaves it. */
+  error?: string;
+  /** Keep the confirming button focusable while pending so focus survives the attempt. */
+  confirmFocusableWhenDisabled?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Modal open={open} onClose={onClose} presentation="alert" busy={busy}>
+      <AlertContent
+        title={title}
+        message={message}
+        actions={
+          <ModalFooter
+            stack={stack}
+            secondary={
+              <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+                {cancelLabel}
+              </Button>
+            }
+            primary={
+              <Button
+                type="button"
+                variant={destructive ? "danger" : "primary"}
+                loading={busy}
+                focusableWhenDisabled={confirmFocusableWhenDisabled}
+                onClick={onConfirm}
+              >
+                {confirmLabel}
+              </Button>
+            }
+          />
+        }
+      >
+        {children}
+        {error && <div className="mt-3"><ErrorText message={error} /></div>}
+      </AlertContent>
+    </Modal>
+  );
+}
+
+/** Centred alert copy that supplies the dialog's accessible name and description. */
+export function AlertContent({
+  title,
+  message,
+  actions,
+  children,
+}: {
+  title: string;
+  message?: React.ReactNode;
+  actions?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const modal = React.useContext(ModalLabelContext);
+  const registerTitle = modal?.registerTitle;
+  const registerDescription = modal?.registerDescription;
+  const hasMessage = Boolean(message);
+  useLayoutEffect(() => registerTitle?.(), [registerTitle]);
+  useLayoutEffect(() => (hasMessage ? registerDescription?.() : undefined), [hasMessage, registerDescription]);
+  return (
+    <div className="p-5 text-center">
+      <h2 id={modal?.titleId} className="text-[17px] font-semibold tracking-tight text-white">{title}</h2>
+      {message && (
+        <div id={modal?.descriptionId} className="mt-1.5 text-[13px] leading-relaxed text-neutral-300">{message}</div>
+      )}
+      {children && <div className="mt-4 text-left">{children}</div>}
+      {actions}
+    </div>
+  );
+}
+
+/**
+ * Keeps the last non-null value briefly after it clears so a dialog can show
+ * its content through the exit animation. Use only for non-sensitive content;
+ * private panels clear immediately and rely on the shell's geometry hold.
+ */
+export function useRetainedForExit<T>(value: T | null | undefined, holdMs = MODAL_SHEET_EXIT_DURATION_MS + 40): T | null {
+  const [retained, setRetained] = useState<T | null>(value ?? null);
+  if (value != null && value !== retained) setRetained(value);
+  useEffect(() => {
+    if (value != null) return;
+    const timer = window.setTimeout(() => setRetained(null), holdMs);
+    return () => window.clearTimeout(timer);
+  }, [value, holdMs]);
+  return value ?? retained;
+}
+
+/**
+ * Keeps a lazily mounted dialog in the tree through its exit animation.
+ * Mount on first open, stay mounted while the shell is exiting, then leave.
+ */
+export function useMountedThroughExit(open: boolean): boolean {
+  return useRetainedForExit(open ? true : null) ?? false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -616,6 +1235,26 @@ function usePopover({
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<PopoverPosition | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+
+  // The panel stays for its fade-out; it is inert and ignores input meanwhile.
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setClosing(!open && pos !== null);
+  }
+  useLayoutEffect(() => {
+    if (!closing) return;
+    // A closing panel owns nothing: move focus out before it turns inert so
+    // the owner's repair logic sees an unowned focus, as it did on unmount.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && panelRef.current?.contains(active)) active.blur();
+  }, [closing]);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = window.setTimeout(() => setClosing(false), POPOVER_EXIT_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [closing]);
 
   // Position against the anchor; flip above when space below runs out.
   useEffect(() => {
@@ -688,7 +1327,7 @@ function usePopover({
     };
   }, [open, onClose, anchorRef]);
 
-  return { panelRef, pos, portalContainer };
+  return { panelRef, pos, portalContainer, rendered: open || closing, closing };
 }
 
 function popoverStyle(pos: PopoverPosition): React.CSSProperties {
@@ -783,7 +1422,7 @@ export function Select({
     setOpen(false);
     if (reason === "escape") anchorRef.current?.focus({ preventScroll: true });
   }, []);
-  const { panelRef, pos, portalContainer } = usePopover({
+  const { panelRef, pos, portalContainer, rendered, closing } = usePopover({
     open,
     onClose: close,
     anchorRef,
@@ -803,7 +1442,6 @@ export function Select({
 
   function openMenu() {
     if (disabled) return;
-    triggerHaptic("selection");
     setActiveValue(selected && !selected.disabled
       ? selected.value : options.find(option => !option.disabled)?.value ?? null);
     typeahead.current = { text: "", at: 0 };
@@ -951,7 +1589,7 @@ export function Select({
           />
         </button>
       )}
-      {open &&
+      {rendered &&
         pos &&
         portalContainer &&
         createPortal(
@@ -972,7 +1610,9 @@ export function Select({
               // ownership until the layout effect repairs that lost focus.
               if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) popupHadFocus.current = false;
             }}
-            className={POPOVER_PANEL_CLASS}
+            inert={closing || undefined}
+            aria-hidden={closing || undefined}
+            className={`${POPOVER_PANEL_CLASS}${closing ? " closing" : ""}`}
             style={popoverStyle(pos)}
           >
             {options.length === 0 && (
@@ -1063,7 +1703,7 @@ export function Dropdown({
     setOpen(false);
     setRestoreFocus(true);
   }, []);
-  const { panelRef, pos, portalContainer } = usePopover({
+  const { panelRef, pos, portalContainer, rendered, closing } = usePopover({
     open,
     onClose: close,
     anchorRef,
@@ -1127,7 +1767,6 @@ export function Dropdown({
     "aria-haspopup": "menu",
     "aria-expanded": open,
     onClick: () => {
-      triggerHaptic("selection");
       setOpen((previous) => !previous);
     },
     onKeyDown: (event) => {
@@ -1141,7 +1780,7 @@ export function Dropdown({
   return (
     <div className={`inline-block max-w-full min-w-0 text-left ${className}`}>
       {trigger(open, triggerProps)}
-      {open &&
+      {rendered &&
         pos &&
         portalContainer &&
         createPortal(
@@ -1150,7 +1789,9 @@ export function Dropdown({
             role="menu"
             data-popover-panel
             onKeyDown={onMenuKeyDown}
-            className={POPOVER_PANEL_CLASS}
+            inert={closing || undefined}
+            aria-hidden={closing || undefined}
+            className={`${POPOVER_PANEL_CLASS}${closing ? " closing" : ""}`}
             style={popoverStyle(pos)}
           >
             {children(close)}
@@ -1616,9 +2257,9 @@ export function Button({
     variant === "primary"
       ? "btn-primary"
       : variant === "danger"
-        ? "bg-[#D70015] text-white hover:bg-[#B60012] shadow-sm"
+        ? "btn-danger"
         : variant === "secondary"
-          ? "bg-white/[0.08] text-white hover:bg-white/[0.14] border border-white/10"
+          ? "btn-secondary"
           : "btn-ghost";
 
   return (

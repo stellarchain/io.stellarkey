@@ -25,9 +25,16 @@ test('the activity check speaks plainly, is named honestly, and reports concrete
   assert.match(recovery, /Restored \$\{restorationProgress\.restoredCount\} of \$\{restorationProgress\.totalCount\} records/);
   assert.match(recovery, /AbortController/);
   assert.match(recovery, /operationRef\.current\?\.abort\(\)/);
-  assert.match(recovery, /<Modal open onClose=\{onClose\} dismissable=\{!working\}>/);
-  assert.equal([...recovery.matchAll(/<Modal\b/g)].length, 1);
-  assert.equal([...recovery.matchAll(/<ModalHeader\b/g)].length, 1);
+  // Recovery is one step of the Private Payments dialog: no shell of its own,
+  // no remount tricks, and a running check keeps that shell busy.
+  const details = read('src/features/private-balance/components/PrivatePaymentsDetails.tsx');
+  assert.match(recovery, /export function PrivateRecoveryContent\(/);
+  assert.doesNotMatch(recovery, /<Modal\b|<ModalHeader\b/);
+  assert.match(recovery, /useReportToOwner\(onBusyChange, working, false\)/);
+  assert.match(details, /<PrivateRecoveryContent onBusyChange=\{onBusyChange\} \/>/);
+  assert.equal([...details.matchAll(/<Modal\b/g)].length, 1);
+  assert.equal([...details.matchAll(/<ModalHeader\b/g)].length, 1);
+  assert.match(details, /busy=\{busy\}/);
   assert.doesNotMatch(recovery, /Suspense|dynamic\(|key=\{/);
   assert.match(recovery, /aria-live="polite"/);
   assert.match(recovery, /every confirmed group advances the saved resume point/i);

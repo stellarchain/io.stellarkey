@@ -19,8 +19,9 @@ const effects = modal.body.statements.flatMap(node => {
     && !(callback.includes('const first =') && callback.includes('window.requestAnimationFrame'))) return [];
   return [{ kind, callback }];
 });
+assert.equal(effects.length, 3, 'scroll lock, stack registration and initial focus stay separate owned effects');
 
-function opening() {
+function opening({ initialFocus = null } = {}) {
   const frames = new Map();
   let nextFrame = 0;
   const document = { activeElement: null, body: null };
@@ -28,6 +29,7 @@ function opening() {
     isConnected = true;
     constructor(label) { this.label = label; }
     focus() { if (this.isConnected) document.activeElement = this; }
+    matches() { return false; }
   }
   const opener = new Element('opener');
   const first = new Element('first-control');
@@ -44,6 +46,7 @@ function opening() {
     open: true, mounted: true, document, HTMLElement: Element, latestPointerTarget: null,
     panelRef: { current: panel }, backdropRef: { current: backdrop },
     restoreFocusRef: { current: null }, restoreFocusFrameRef: { current: null },
+    initialFocusRef: { current: initialFocus === 'first' ? { current: first } : initialFocus === 'function' ? () => first : null },
     window: {
       requestAnimationFrame(callback) { frames.set(++nextFrame, callback); return nextFrame; },
       cancelAnimationFrame(id) { frames.delete(id); },
@@ -66,7 +69,7 @@ function opening() {
     const current = [...frames.values()]; frames.clear();
     for (const callback of current) callback(0);
   };
-  return { document, opener, first, frame, runEffects, get locks() { return locks; }, close() {
+  return { document, opener, first, panel, frame, runEffects, get locks() { return locks; }, close() {
     for (const item of cleanups.filter(item => item.kind === 'useLayoutEffect')) item.cleanup();
     panel.isConnected = false; first.isConnected = false; backdrop.isConnected = false;
     document.activeElement = body;
@@ -75,15 +78,39 @@ function opening() {
   } };
 }
 
-for (const deferredPassiveEffects of [false, true]) test(`Modal captures its opener before initial focus when passive effects are ${deferredPassiveEffects ? 'after' : 'before'} the frame`, () => {
+for (const deferredPassiveEffects of [false, true]) test(`Modal captures its opener, focuses the dialog itself, and restores the opener when passive effects are ${deferredPassiveEffects ? 'after' : 'before'} the frame`, () => {
   const view = opening();
   view.runEffects('useLayoutEffect');
   if (deferredPassiveEffects) view.frame();
   view.runEffects('useEffect');
   if (!deferredPassiveEffects) view.frame();
-  assert.equal(view.document.activeElement, view.first);
+  assert.equal(view.document.activeElement, view.panel, 'the dialog is announced by name before any control receives focus');
   assert.equal(view.locks, 1);
   view.close();
   assert.equal(view.document.activeElement, view.opener, 'closing restores the surviving opener, not the removed first control');
   assert.equal(view.locks, 0);
+});
+
+for (const initialFocus of ['first', 'function']) test(`Modal honours an explicit initialFocus ${initialFocus === 'first' ? 'ref' : 'resolver'} inside the panel`, () => {
+  const view = opening({ initialFocus });
+  view.runEffects('useLayoutEffect');
+  view.runEffects('useEffect');
+  view.frame();
+  assert.equal(view.document.activeElement, view.first);
+});
+
+test('Modal never moves focus that a child already placed inside the panel', () => {
+  const view = opening({ initialFocus: 'first' });
+  view.runEffects('useLayoutEffect');
+  view.runEffects('useEffect');
+  view.document.activeElement = view.panel;
+  view.frame();
+  assert.equal(view.document.activeElement, view.panel);
+});
+
+test('the shell never focuses the header close control by default', () => {
+  const focusEffect = effects.find(effect => effect.callback.includes('const first ='));
+  assert.ok(focusEffect);
+  assert.doesNotMatch(focusEffect.callback, /querySelector<HTMLElement>\(\s*'input:not/, 'the first-focusable query has been retired');
+  assert.match(focusEffect.callback, /\(first \?\? panel\)\.focus/);
 });

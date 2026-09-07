@@ -24,7 +24,7 @@ function contrastRatio(foreground, background) {
 }
 
 test("local-device signer badges sit below their addresses", () => {
-  const multisig = read("src/components/MultiSigStudioModal.tsx");
+  const multisig = read("src/components/MultiSigStudioModalBody.tsx");
   const separatedBadges = multisig.match(
     /className="mt-1 block w-fit rounded-md bg-\[#30D158\]\/15/g,
   );
@@ -136,9 +136,11 @@ test("tax records use a summary-first iOS hub with focused task sheets", () => {
 
   assert.match(taxRecords, /type TaxRecordsSheet\s*=/);
   assert.match(taxRecords, /const \[activeSheet, setActiveSheet\]/);
-  assert.match(taxRecords, /activeSheet === "period"/);
-  assert.match(taxRecords, /activeSheet === "export"/);
-  assert.match(taxRecords, /activeSheet === "retention"/);
+  // The sheet renders from the retained value so its content survives the exit animation.
+  assert.match(taxRecords, /const shownSheet = useRetainedForExit\(activeSheet\)/);
+  assert.match(taxRecords, /shownSheet === "period"/);
+  assert.match(taxRecords, /shownSheet === "export"/);
+  assert.match(taxRecords, /shownSheet === "retention"/);
   assert.match(taxRecords, /<Modal[\s\S]*open=\{activeSheet !== null\}/);
   assert.match(
     taxRecords,

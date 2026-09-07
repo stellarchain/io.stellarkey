@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useState } from "react";
 import {
   useWalletIdentity,
   useWalletLedger,
@@ -23,24 +23,30 @@ import {
   MAX_TRUSTLINE_SELECTIONS,
   toggleTrustlineSelection,
 } from "@/lib/transaction-intent";
-import { Button, ErrorText, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, ModalBody, ModalFooter, Notice } from "./ui";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconCheck,
+  IconClose,
   IconLedger,
   IconPlus,
   IconSearch,
   IconTrezor,
 } from "./icons";
 
+/** Header override the panel reports so the owning shell shows stage-aware titles. */
+export type AddAssetHeader = { title: string; subtitle?: string; onBack?: () => void };
+
 export function AddAssetPublicPanel({
   onClose,
   onBusyChange,
-  embedded = false,
+  onDirtyChange,
+  onHeaderChange,
 }: {
   onClose: () => void;
   onBusyChange(busy: boolean): void;
-  embedded?: boolean;
+  onDirtyChange?(dirty: boolean): void;
+  onHeaderChange?(header: AddAssetHeader | null): void;
 }) {
   const { network, activeAccount } = useWalletIdentity();
   const { balances, recommendedBaseFeeStroops } = useWalletLedger();
@@ -58,15 +64,44 @@ export function AddAssetPublicPanel({
   // Multi-select: queued trustlines added atomically in ONE transaction
   const [selected, setSelected] = useState<Array<{ code: string; issuer: string }>>([]);
   const trackedSubmissionStatus = pendingSubmission ? submissionStatus(pendingSubmission) : null;
+  const confirmed = trackedSubmissionStatus === "confirmed";
   const selectedFeeXlm = networkFeeXlm(
     recommendedBaseFeeStroops,
     Math.min(selected.length, MAX_TRUSTLINE_SELECTIONS),
   );
+  const dirty =
+    !pendingSubmission &&
+    (selected.length > 0 || code.trim() !== "" || issuer.trim() !== "");
 
   useEffect(() => {
     onBusyChange(busy);
     return () => onBusyChange(false);
   }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  useLayoutEffect(() => {
+    if (!onHeaderChange) return;
+    onHeaderChange(
+      confirmed
+        ? {
+            title: selected.length > 1 ? "Trustlines Added" : "Trustline Added",
+            subtitle: "Confirmed on-chain in one transaction",
+          }
+        : pendingSubmission
+          ? {
+              title: "Trustline Submitted",
+              subtitle: trackedSubmissionStatus === "status_unknown"
+                ? "Checking the canonical hash"
+                : "Waiting for on-chain confirmation",
+            }
+          : null,
+    );
+    return () => onHeaderChange(null);
+  }, [confirmed, onHeaderChange, pendingSubmission, selected.length, trackedSubmissionStatus]);
 
   useEffect(() => {
     let alive = true;
@@ -76,7 +111,6 @@ export function AddAssetPublicPanel({
       if (trackedSubmissionStatus === "confirmed") {
         triggerHaptic("success");
         void refresh();
-        onClose();
         return;
       }
       if (trackedSubmissionStatus === "failed") {
@@ -88,7 +122,7 @@ export function AddAssetPublicPanel({
     return () => {
       alive = false;
     };
-  }, [onClose, refresh, trackedSubmissionStatus]);
+  }, [refresh, trackedSubmissionStatus]);
 
   const existingAssets = useMemo(
     () => new Set((balances ?? []).filter((b) => b.issuer).map((b) => `${b.code}:${b.issuer}`)),
@@ -108,9 +142,9 @@ export function AddAssetPublicPanel({
   }, [network, search]);
 
   function handleSelectPopular(asset: KnownAsset) {
-    triggerHaptic("selection");
     const iss = knownAssetIssuer(asset, network) ?? "";
     if (!iss) return;
+    triggerHaptic("selection");
     const update = toggleTrustlineSelection(selected, {
       code: asset.code,
       issuer: iss,
@@ -120,7 +154,6 @@ export function AddAssetPublicPanel({
   }
 
   function queueCustom() {
-    triggerHaptic("medium");
     const c = code.trim();
     const iss = issuer.trim();
     if (!/^[A-Za-z0-9]{1,12}$/.test(c) || !isValidPublicAddress(iss)) {
@@ -133,6 +166,7 @@ export function AddAssetPublicPanel({
       setError(update.error);
       return;
     }
+    triggerHaptic("medium");
     setError(null);
     setCode("");
     setIssuer("");
@@ -163,28 +197,64 @@ export function AddAssetPublicPanel({
     }
   }
 
-  return (
-    <>
-      {!embedded && <ModalHeader
-        title="Add Assets"
-        subtitle="Select one or more — all added in a single atomic transaction"
-        onClose={onClose}
-      />}
-      <div className="p-4 sm:p-6">
-        {/* Search */}
-        <div className="search-field mb-4 flex items-center gap-2">
-          <IconSearch size={15} className="text-neutral-400 shrink-0" />
-          <label htmlFor={searchInputId} className="sr-only">Search verified assets</label>
-          <input
-            id={searchInputId}
-            placeholder="Search popular tokens (USDC, EURC, AQUA, BTC...)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13.5px]"
-          />
-        </div>
+  const canQueueCustom =
+    /^[A-Za-z0-9]{1,12}$/.test(code.trim()) && isValidPublicAddress(issuer.trim());
 
-        {/* Verified assets grid */}
+  if (confirmed && pendingSubmission) {
+    const count = selected.length;
+    return (
+      <ModalBody>
+        <div className="flex flex-col items-center py-4 text-center">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
+            <IconCheck size={28} />
+          </span>
+          <h2 className="display-h mt-4 text-xl font-light text-white">
+            {count > 1 ? "Trustlines Added" : "Trustline Added"}
+          </h2>
+          <p className="mt-1 text-[13px] text-neutral-400">
+            Your wallet can now hold {count > 1 ? "these assets" : "this asset"}.
+          </p>
+        </div>
+        <Notice tone="pos">
+          <p className="font-semibold text-white">
+            {count > 1
+              ? `${count} trustlines confirmed on-chain.`
+              : "Trustline confirmed on-chain."}
+          </p>
+          {count > 0 && (
+            <p className="mt-1 text-neutral-300">
+              {selected.map((s) => s.code).join(", ")}
+            </p>
+          )}
+          <span className="mt-2 block break-all font-mono text-[10px] text-neutral-400">
+            {pendingSubmission.network} · {pendingSubmission.hash}
+          </span>
+        </Notice>
+        <ModalFooter primary={<Button onClick={onClose}>Done</Button>} />
+      </ModalBody>
+    );
+  }
+
+  return (
+    <ModalBody>
+      {/* Search */}
+      <div className="search-field flex items-center gap-2">
+        <IconSearch size={15} className="text-neutral-400 shrink-0" />
+        <label htmlFor={searchInputId} className="sr-only">Search verified assets</label>
+        <input
+          id={searchInputId}
+          type="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          placeholder="Search popular tokens (USDC, EURC, AQUA, BTC...)"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full bg-transparent text-base text-white outline-none placeholder:text-neutral-500 sm:text-[13.5px]"
+        />
+      </div>
+
+      {/* Verified assets grid */}
+      <div>
         <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
           Verified Stellar Assets
         </p>
@@ -201,9 +271,10 @@ export function AddAssetPublicPanel({
               <button
                 key={`${asset.code}:${iss}`}
                 type="button"
+                aria-pressed={isSelected}
                 disabled={alreadyAdded || !available || busy}
                 onClick={() => handleSelectPopular(asset)}
-                className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-[background-color,border-color,color,opacity] ${
+                className={`flex min-h-11 items-center justify-between rounded-2xl border p-2.5 text-left transition-[background-color,border-color,color,opacity] ${
                   alreadyAdded
                     ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-50"
                     : isSelected
@@ -245,247 +316,185 @@ export function AddAssetPublicPanel({
             );
           })}
         </div>
+      </div>
 
-        {/* Custom asset row */}
-        <div className="mt-4 flex gap-2 border-t border-white/[0.08] pt-4">
-          <label htmlFor={assetCodeInputId} className="sr-only">Custom asset code</label>
-          <input
-            id={assetCodeInputId}
-            className="input !h-11 w-[110px] shrink-0 uppercase text-base md:!h-9 sm:text-[13px]"
-            placeholder="CODE"
-            maxLength={12}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-          <label htmlFor={issuerInputId} className="sr-only">Custom asset issuer address</label>
-          <input
-            id={issuerInputId}
-            className="input mono !h-11 min-w-0 flex-1 text-base md:!h-9 sm:text-[12.5px]"
-            placeholder="Issuer G..."
-            value={issuer}
-            onChange={(e) => setIssuer(e.target.value)}
-          />
-          <Button
-            variant="secondary"
-            className="!h-11 shrink-0 !px-3 !text-[12px] md:!h-9"
-            disabled={!/^[A-Za-z0-9]{1,12}$/.test(code.trim()) || !isValidPublicAddress(issuer)}
-            onClick={queueCustom}
-          >
-            Queue
-          </Button>
-        </div>
+      {/* Custom asset row */}
+      <div className="flex gap-2 border-t border-white/[0.08] pt-4">
+        <label htmlFor={assetCodeInputId} className="sr-only">Custom asset code</label>
+        <input
+          id={assetCodeInputId}
+          className="input w-[110px] shrink-0 uppercase text-base sm:text-[13px]"
+          placeholder="CODE"
+          maxLength={12}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+          enterKeyHint="next"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        <label htmlFor={issuerInputId} className="sr-only">Custom asset issuer address</label>
+        <input
+          id={issuerInputId}
+          className="input mono min-w-0 flex-1 text-base sm:text-[13px]"
+          placeholder="Issuer G..."
+          autoCapitalize="none"
+          autoComplete="off"
+          spellCheck={false}
+          enterKeyHint="done"
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && canQueueCustom) {
+              event.preventDefault();
+              queueCustom();
+            }
+          }}
+        />
+        <Button
+          variant="secondary"
+          className="btn-sm min-h-11 shrink-0"
+          disabled={!canQueueCustom}
+          onClick={queueCustom}
+        >
+          Queue
+        </Button>
+      </div>
 
-        {/* Queued trustlines */}
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
-          <div className="flex items-center justify-between pb-2">
-            <p className="text-[12px] font-semibold text-white">
-              Queued Trustlines ({selected.length})
-            </p>
-            {selected.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setSelected([]);
-                }}
-                className="text-[11.5px] font-medium text-neutral-400 hover:text-[#FF453A]"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
-          {selected.length === 0 ? (
-            <p className="text-[11.5px] text-neutral-500">
-              Tap verified assets or queue a custom asset above — they&apos;ll be added atomically
-              in one transaction.
-            </p>
-          ) : (
-            <div className="scrollbar-none max-h-[120px] space-y-1 overflow-y-auto">
-              {selected.map((s) => {
-                const known = lookupKnownAsset(s.code, s.issuer, network);
-                return (
-                  <div
-                    key={`${s.code}:${s.issuer}`}
-                    className="flex items-center justify-between rounded-xl bg-white/[0.04] px-2.5 py-1.5"
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      {known?.iconUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={known.iconUrl}
-                          alt=""
-                          width={20}
-                          height={20}
-                          className="h-5 w-5 shrink-0 rounded-full object-cover"
-                        />
-                      ) : (
-                        <span
-                          className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                          style={{ background: known?.color ?? "#5E5CE6" }}
-                        >
-                          {s.code.slice(0, 2)}
-                        </span>
-                      )}
-                      <span className="truncate text-[12.5px] font-medium text-white">
-                        {s.code}
-                      </span>
-                      <span className="mono hidden truncate text-[10.5px] text-neutral-500 sm:inline">
-                        {formatTrezorAddress(s.issuer)}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        setSelected((prev) =>
-                          prev.filter(
-                            (p) => `${p.code}:${p.issuer}` !== `${s.code}:${s.issuer}`,
-                          ),
-                        );
-                      }}
-                      className="text-neutral-500 hover:text-[#FF453A]"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {/* Queued trustlines */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
+        <div className="flex min-h-11 items-center justify-between">
+          <p className="text-[12px] font-semibold text-white">
+            Queued Trustlines ({selected.length})
+          </p>
           {selected.length > 0 && (
-            <div className="pt-2 text-[11px] text-neutral-400">
-              <p>Fee: {selectedFeeXlm} XLM — one atomic transaction.</p>
-              <XlmFeeFiatValue amount={selectedFeeXlm} className="mt-0.5 block" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setSelected([])}
+              className="min-h-11 rounded-lg px-2 text-[12px] font-medium text-neutral-300 hover:text-[#FF453A]"
+            >
+              Clear all
+            </button>
           )}
         </div>
-
-        {/* Hardware Device Indicator */}
-        {activeAccount?.hardware && (
-          <div className="mt-3 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
-            <div className="flex items-center gap-2">
-              {activeAccount.hardware === "ledger" ? (
-                <IconLedger size={15} className="text-[#64D2FF]" />
-              ) : (
-                <IconTrezor size={15} className="text-emerald-400" />
-              )}
-              <span className="font-semibold">
-                Sign Trustline on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
-              </span>
-            </div>
-            <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
+        {selected.length === 0 ? (
+          <p className="text-[11.5px] text-neutral-500">
+            Tap verified assets or queue a custom asset above — they&apos;ll be added atomically
+            in one transaction.
+          </p>
+        ) : (
+          <div className="scrollbar-none max-h-[160px] space-y-1 overflow-y-auto">
+            {selected.map((s) => {
+              const known = lookupKnownAsset(s.code, s.issuer, network);
+              return (
+                <div
+                  key={`${s.code}:${s.issuer}`}
+                  className="flex items-center justify-between gap-2 rounded-xl bg-white/[0.04] py-0.5 pl-2.5 pr-0.5"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {known?.iconUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={known.iconUrl}
+                        alt=""
+                        width={20}
+                        height={20}
+                        className="h-5 w-5 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                        style={{ background: known?.color ?? "#5E5CE6" }}
+                      >
+                        {s.code.slice(0, 2)}
+                      </span>
+                    )}
+                    <span className="truncate text-[12.5px] font-medium text-white">
+                      {s.code}
+                    </span>
+                    <span className="mono hidden truncate text-[10.5px] text-neutral-500 sm:inline">
+                      {formatTrezorAddress(s.issuer)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${s.code} from the queue`}
+                    onClick={() =>
+                      setSelected((prev) =>
+                        prev.filter(
+                          (p) => `${p.code}:${p.issuer}` !== `${s.code}:${s.issuer}`,
+                        ),
+                      )
+                    }
+                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
+                  >
+                    <IconClose size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
+        {selected.length > 0 && (
+          <div className="pt-2 text-[11px] text-neutral-400">
+            <p>Fee: {selectedFeeXlm} XLM — one atomic transaction.</p>
+            <XlmFeeFiatValue amount={selectedFeeXlm} className="mt-0.5 block" />
+          </div>
+        )}
+      </div>
 
-        <div className="mt-4">
-          {pendingSubmission && (
-            <div className={`mb-3 rounded-xl border p-3 text-[12px] leading-relaxed ${
-              trackedSubmissionStatus === "status_unknown"
-                ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]"
-                : "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#64D2FF]"
-            }`}>
-              {trackedSubmissionStatus === "status_unknown"
-                ? "Trustline status unknown. Do not resubmit blindly."
-                : trackedSubmissionStatus === "confirmed"
-                  ? "Trustline transaction confirmed."
-                  : "Trustline transaction accepted and confirming."}
-              <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
-                {pendingSubmission.network} · {pendingSubmission.hash}
-              </span>
-            </div>
-          )}
-          <ErrorText message={error ?? ""} />
+      {/* Hardware Device Indicator */}
+      {activeAccount?.hardware && (
+        <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+          <div className="flex items-center gap-2">
+            {activeAccount.hardware === "ledger" ? (
+              <IconLedger size={15} className="text-[#64D2FF]" />
+            ) : (
+              <IconTrezor size={15} className="text-emerald-400" />
+            )}
+            <span className="font-semibold">
+              Sign Trustline on {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} Device
+            </span>
+          </div>
+          <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
         </div>
+      )}
 
-        {/* Footer actions */}
-        <div className="mt-6 flex gap-3">
-          <Button variant="ghost" className="flex-1" onClick={onClose} disabled={busy}>
+      {pendingSubmission && (
+        <Notice tone={trackedSubmissionStatus === "status_unknown" ? "warn" : "info"}>
+          <p role="status">
+            {trackedSubmissionStatus === "status_unknown"
+              ? "Trustline status unknown. Do not resubmit blindly."
+              : "Trustline transaction accepted and confirming."}
+          </p>
+          <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
+            {pendingSubmission.network} · {pendingSubmission.hash}
+          </span>
+        </Notice>
+      )}
+      {error && <ErrorText message={error} />}
+
+      <ModalFooter
+        secondary={
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
+        }
+        primary={
           <Button
-            className="flex-[2]"
             loading={busy}
             loadingLabel="Submitting trustline transaction"
             disabled={selected.length === 0 || busy || Boolean(pendingSubmission)}
             onClick={() => void handleAddBatch()}
           >
             {selected.length > 1
-                ? `Add ${selected.length} Trustlines · 1 Tx`
-                : selected.length === 1
-                  ? "Add Trustline · 1 Tx"
-                  : "Add Trustlines"}
+              ? `Add ${selected.length} Trustlines · 1 Tx`
+              : selected.length === 1
+                ? "Add Trustline · 1 Tx"
+                : "Add Trustlines"}
           </Button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-export function ConfirmModal({
-  open,
-  onClose,
-  onConfirm,
-  title,
-  body,
-  confirmLabel,
-  danger = false,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  body: string;
-  confirmLabel: string;
-  danger?: boolean;
-}) {
-  if (!open) return null;
-  return (
-    <ConfirmInner
-      onClose={onClose}
-      onConfirm={onConfirm}
-      title={title}
-      body={body}
-      confirmLabel={confirmLabel}
-      danger={danger}
-    />
-  );
-}
-
-function ConfirmInner({
-  onClose,
-  onConfirm,
-  title,
-  body,
-  confirmLabel,
-  danger = false,
-}: {
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  body: string;
-  confirmLabel: string;
-  danger?: boolean;
-}) {
-  return (
-    <Modal open onClose={onClose}>
-      <ModalHeader title={title} subtitle="Please confirm this action" onClose={onClose} />
-      <div className="p-4 sm:p-6">
-        <p className="text-[14px] leading-relaxed text-neutral-300">{body}</p>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant={danger ? "danger" : "primary"}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </Modal>
+        }
+      />
+    </ModalBody>
   );
 }

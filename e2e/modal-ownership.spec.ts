@@ -126,6 +126,8 @@ async function closed(page: Page, opener: string) {
 
 async function startImport(page: Page) {
   await deliver(page, 'Hold next encryption');
+  // The dialog body loads lazily behind its static shell; the imperative fill needs the field present.
+  await expect(page.getByPlaceholder('S...')).toBeVisible();
   await deliver(page, 'Fill synthetic import');
   await page.getByRole('button', { name: 'Import Account', exact: true }).click();
   await expect(page.getByTestId('modal-stage')).toHaveText('encryption');
@@ -143,7 +145,7 @@ async function startClaim(page: Page, response: string) {
 
 async function openEntranceObserverControl(page: Page) {
   await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await expect(page.locator('[data-modal-shell]').last()).toBeFocused();
   const counts = await page.evaluate(() => [
     ['[data-modal-shell]', 'dialogIn var(--motion-duration-emphasized) var(--motion-ease-enter) both'],
     ['[data-modal-backdrop]', 'overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both'],
@@ -234,7 +236,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
         test('account wording describes the actual mode in the same accessible header', async ({ page }) => {
           await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
           const dialog = page.getByRole('dialog', { name: 'Add Account', exact: true });
-          await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+          await expect(page.locator('[data-modal-shell]').last()).toBeFocused();
           await expect(dialog).toHaveAccessibleDescription(mnemonicWallet
             ? "Create another account from this wallet's recovery phrase"
             : 'Import an existing Stellar secret key');
@@ -289,7 +291,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
         await deliver(page, 'Force account closed');
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await page.getByRole('button', { name: 'Open account modal', exact: true }).click();
-        await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+        await expect(page.locator('[data-modal-shell]').last()).toBeFocused();
         await page.getByLabel('Account Label', { exact: true }).fill('Synthetic replacement');
         await expect(page.getByLabel('Account Label', { exact: true })).toHaveValue('Synthetic replacement');
         await startImport(page);

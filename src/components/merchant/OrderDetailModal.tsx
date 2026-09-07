@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
@@ -24,10 +24,12 @@ import {
   Field,
   HashValue,
   Modal,
+  ModalBody,
+  ModalFooter,
   ModalHeader,
   Notice,
   Select,
-  Spinner,
+  useRetainedForExit,
 } from "../ui";
 import { IconAlert, IconCheck, IconClose, IconExternal } from "../icons";
 import { IconClock, IconQr, IconReceipt, IconRefund, IconXCircle } from "./icons";
@@ -256,7 +258,7 @@ function FactRow({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="px-1 pb-1.5 pt-5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+    <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
       {children}
     </h3>
   );
@@ -302,6 +304,33 @@ export function OrderDetailModal({
   order: Order | null;
   onClose: () => void;
 }) {
+  // The receipt stays rendered through the exit; each order gets a clean form.
+  const shown = useRetainedForExit(order);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      open={order !== null}
+      onClose={onClose}
+      wide
+      busy={busy}
+      busyReason="Wait for the refund to finish before closing."
+    >
+      {shown && (
+        <OrderDetail key={shown.id} order={shown} onClose={onClose} onBusyChange={setBusy} />
+      )}
+    </Modal>
+  );
+}
+
+function OrderDetail({
+  order,
+  onClose,
+  onBusyChange,
+}: {
+  order: Order;
+  onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
+}) {
   const {
     charges,
     refunds,
@@ -311,14 +340,19 @@ export function OrderDetailModal({
   const { settings } = useMerchantConfiguration();
   const { toast } = useToast();
 
-  const orderId = order?.id ?? null;
-  const [formOrderId, setFormOrderId] = useState<string | null>(orderId);
+  const orderId = order.id;
   const [confirming, setConfirming] = useState(false);
   const [amountText, setAmountText] = useState("");
   const [reason, setReason] = useState<RefundReason>("customer_request");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* A refund in flight keeps the sheet open until the network answers. */
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
 
   const orderCharges = useMemo(
     () => charges.filter((c) => c.orderId === orderId),
@@ -344,19 +378,6 @@ export function OrderDetailModal({
         .sort((a, b) => b.createdAt - a.createdAt),
     [orderId, refunds],
   );
-
-  // A different order in the same mounted dialog starts from a clean form.
-  if (orderId !== formOrderId) {
-    setFormOrderId(orderId);
-    setConfirming(false);
-    setAmountText("");
-    setReason("customer_request");
-    setNote("");
-    setError(null);
-    setBusy(false);
-  }
-
-  if (!order) return null;
 
   const currency = order.currency;
   const totals = order.totals;
@@ -401,14 +422,12 @@ export function OrderDetailModal({
   }
 
   function showPaymentRequest(chargeId: string) {
-    triggerHaptic("light");
     // The charge sheet is a dialog of its own; leaving this one open stacks two.
     onClose();
     openCharge(chargeId);
   }
 
   function openConfirm() {
-    triggerHaptic("selection");
     setAmountText(minorToDecimal(remainingMinor));
     setReason("customer_request");
     setNote("");
@@ -417,14 +436,12 @@ export function OrderDetailModal({
   }
 
   function closeConfirm() {
-    triggerHaptic("selection");
     setConfirming(false);
     setError(null);
   }
 
   async function submitRefund() {
-    if (!order || amountError || busy) return;
-    triggerHaptic("light");
+    if (amountError || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -436,16 +453,22 @@ export function OrderDetailModal({
       });
       if (outcome.kind === "requested") {
         triggerHaptic("warning");
-        toast(`Sent ${fmtMinor(requestedMinor, currency)} for approval`, "info");
+        toast(`Sent ${fmtMinor(requestedMinor, currency)} for approval`, "info", { silent: true });
       } else if (outcome.refund.submissionStatus === "confirmed") {
         triggerHaptic("success");
-        toast(`Refund confirmed for ${fmtMinor(requestedMinor, currency)}`, "success");
+        toast(`Refund confirmed for ${fmtMinor(requestedMinor, currency)}`, "success", {
+          silent: true,
+        });
       } else if (outcome.refund.submissionStatus === "status_unknown") {
         triggerHaptic("warning");
-        toast("Refund status unknown. Do not retry while its hash is being tracked.", "info");
+        toast("Refund status unknown. Do not retry while its hash is being tracked.", "info", {
+          silent: true,
+        });
       } else {
         triggerHaptic("medium");
-        toast(`Refund submitted for ${fmtMinor(requestedMinor, currency)} and confirming`, "info");
+        toast(`Refund submitted for ${fmtMinor(requestedMinor, currency)} and confirming`, "info", {
+          silent: true,
+        });
       }
       setConfirming(false);
     } catch (cause) {
@@ -457,14 +480,14 @@ export function OrderDetailModal({
   }
 
   return (
-    <Modal open onClose={onClose} wide dismissable={!busy}>
+    <>
       <ModalHeader
         title={`Order #${order.number}`}
         subtitle={`${fmtWhen(order.createdAt)} · ${order.staffName} · ${order.terminalName}`}
-        onClose={busy ? undefined : onClose}
+        onClose={onClose}
       />
 
-      <div className="p-4 sm:p-6">
+      <ModalBody>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <OrderStatusPill view={view} />
@@ -477,71 +500,73 @@ export function OrderDetailModal({
 
         {/* ---------------- receipt ---------------- */}
 
-        <SectionTitle>Receipt</SectionTitle>
-        <div className="panel py-1.5">
-          {order.lines.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-neutral-500">
-              This order was rung up without any lines.
-            </p>
-          ) : (
-            order.lines.map((line) => (
-              <LineRow key={line.id} line={line} currency={currency} />
-            ))
-          )}
+        <section>
+          <SectionTitle>Receipt</SectionTitle>
+          <div className="panel py-1.5">
+            {order.lines.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-neutral-500">
+                This order was rung up without any lines.
+              </p>
+            ) : (
+              order.lines.map((line) => (
+                <LineRow key={line.id} line={line} currency={currency} />
+              ))
+            )}
 
-          <div className="mt-1.5 border-t border-white/[0.08] pb-1 pt-2">
-            <TotalRow label="Subtotal" value={fmtMinor(totals.grossMinor, currency)} />
-            {totals.discountMinor > 0 && (
-              <TotalRow
-                label="Discount"
-                value={`−${fmtMinor(totals.discountMinor, currency)}`}
-                tone="neg"
-              />
-            )}
-            {taxIncluded && (
-              <TotalRow
-                label="Net of tax"
-                value={fmtMinor(totals.netMinor, currency)}
-                tone="muted"
-              />
-            )}
-            {Object.entries(totals.taxByRate).map(([rateId, minor]) => {
-              const rate = settings.taxRates.find((r) => r.id === rateId);
-              const name = rate ? `${rate.label} ${rate.percent} %` : `Tax (${rateId})`;
-              return (
+            <div className="mt-1.5 border-t border-white/[0.08] pb-1 pt-2">
+              <TotalRow label="Subtotal" value={fmtMinor(totals.grossMinor, currency)} />
+              {totals.discountMinor > 0 && (
                 <TotalRow
-                  key={rateId}
-                  label={taxIncluded ? `${name} · included` : name}
-                  value={fmtMinor(minor, currency)}
+                  label="Discount"
+                  value={`−${fmtMinor(totals.discountMinor, currency)}`}
+                  tone="neg"
                 />
-              );
-            })}
-            {totals.tipMinor > 0 && (
-              <TotalRow label="Tip" value={fmtMinor(totals.tipMinor, currency)} />
-            )}
-          </div>
+              )}
+              {taxIncluded && (
+                <TotalRow
+                  label="Net of tax"
+                  value={fmtMinor(totals.netMinor, currency)}
+                  tone="muted"
+                />
+              )}
+              {Object.entries(totals.taxByRate).map(([rateId, minor]) => {
+                const rate = settings.taxRates.find((r) => r.id === rateId);
+                const name = rate ? `${rate.label} ${rate.percent} %` : `Tax (${rateId})`;
+                return (
+                  <TotalRow
+                    key={rateId}
+                    label={taxIncluded ? `${name} · included` : name}
+                    value={fmtMinor(minor, currency)}
+                  />
+                );
+              })}
+              {totals.tipMinor > 0 && (
+                <TotalRow label="Tip" value={fmtMinor(totals.tipMinor, currency)} />
+              )}
+            </div>
 
-          <div className="mt-1 border-t border-white/[0.08] pb-2 pt-2.5">
-            <TotalRow label="Total" value={fmtMinor(totals.totalMinor, currency)} strong />
-            {refundedMinor > 0 && (
-              <TotalRow
-                label="Refunded"
-                value={`−${fmtMinor(refundedMinor, currency)}`}
-                tone="neg"
-              />
-            )}
-            {pendingRefundMinor > 0 && (
-              <TotalRow
-                label="Refund pending"
-                value={`−${fmtMinor(pendingRefundMinor, currency)}`}
-                tone="muted"
-              />
-            )}
+            <div className="mt-1 border-t border-white/[0.08] pb-2 pt-2.5">
+              <TotalRow label="Total" value={fmtMinor(totals.totalMinor, currency)} strong />
+              {refundedMinor > 0 && (
+                <TotalRow
+                  label="Refunded"
+                  value={`−${fmtMinor(refundedMinor, currency)}`}
+                  tone="neg"
+                />
+              )}
+              {pendingRefundMinor > 0 && (
+                <TotalRow
+                  label="Refund pending"
+                  value={`−${fmtMinor(pendingRefundMinor, currency)}`}
+                  tone="muted"
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </section>
 
         {stockExceptions.length > 0 && (
-          <>
+          <section>
             <SectionTitle>Stock needs attention</SectionTitle>
             <Notice tone="warn">
               <span className="block font-semibold">Payment is recorded.</span>
@@ -557,87 +582,89 @@ export function OrderDetailModal({
                 ))}
               </ul>
             </Notice>
-          </>
+          </section>
         )}
 
         {/* ---------------- payment ---------------- */}
 
-        <SectionTitle>Payment</SectionTitle>
-        {payment && (view === "underpaid" || view === "overpaid") && (
-          <div className="pb-2.5">
-            <Notice tone="warn">
-              {view === "underpaid"
-                ? "Less arrived than this charge asked for, so the order is still open. Review this receipt before taking the difference or returning it."
-                : "More arrived than this charge asked for. Review the receipt separately before returning any funds."}
+        <section>
+          <SectionTitle>Payment</SectionTitle>
+          {payment && (view === "underpaid" || view === "overpaid") && (
+            <div className="pb-2.5">
+              <Notice tone="warn">
+                {view === "underpaid"
+                  ? "Less arrived than this charge asked for, so the order is still open. Review this receipt before taking the difference or returning it."
+                  : "More arrived than this charge asked for. Review the receipt separately before returning any funds."}
+              </Notice>
+            </div>
+          )}
+          {payment ? (
+            <div className="panel">
+              <FactRow label="Received" sep={false}>
+                <span className="mono text-[15.5px] font-semibold text-[#30D158]">
+                  {fmtAmount(payment.amount)} {payment.asset.code}
+                </span>
+              </FactRow>
+              <FactRow label="Payer">
+                <HashValue value={payment.from} className="text-[12.5px] text-neutral-300" />
+              </FactRow>
+              <FactRow label="Transaction">
+                <span className="flex flex-wrap items-center justify-end gap-2">
+                  <HashValue
+                    value={payment.transactionHash}
+                    className="text-[12.5px] text-neutral-300"
+                  />
+                  <a
+                    href={explorer.explorerTxUrl(payment.transactionHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link inline-flex items-center gap-1 text-[12px] font-semibold"
+                  >
+                    Explorer
+                    <IconExternal size={11} />
+                  </a>
+                </span>
+              </FactRow>
+              <FactRow label="Memo">
+                {payment.memo ? (
+                  <span className="mono text-[12.5px] text-neutral-300">{payment.memo}</span>
+                ) : (
+                  <span className="text-[12.5px] text-neutral-500">No memo</span>
+                )}
+              </FactRow>
+              <FactRow label="Filed by">
+                <span className="text-[12.5px] text-neutral-300">{LANE_LABEL[payment.lane]}</span>
+              </FactRow>
+              <FactRow label="Ledger">
+                <span className="mono text-[12.5px] text-neutral-300">
+                  {payment.ledger.toLocaleString("en-US")}
+                </span>
+              </FactRow>
+            </div>
+          ) : (
+            <Notice tone={view === "expired" || view === "voided" ? "info" : "warn"}>
+              {view === "voided"
+                ? "This order was voided before anything was paid."
+                : view === "expired"
+                  ? "The charge for this order expired before a payment arrived. Nothing was taken."
+                  : "No payment has been matched to this order yet. Anything that arrives with the reference above will be filed here automatically."}
             </Notice>
-          </div>
-        )}
-        {payment ? (
-          <div className="panel">
-            <FactRow label="Received" sep={false}>
-              <span className="mono text-[15.5px] font-semibold text-[#30D158]">
-                {fmtAmount(payment.amount)} {payment.asset.code}
-              </span>
-            </FactRow>
-            <FactRow label="Payer">
-              <HashValue value={payment.from} className="text-[12.5px] text-neutral-300" />
-            </FactRow>
-            <FactRow label="Transaction">
-              <span className="flex flex-wrap items-center justify-end gap-2">
-                <HashValue
-                  value={payment.transactionHash}
-                  className="text-[12.5px] text-neutral-300"
-                />
-                <a
-                  href={explorer.explorerTxUrl(payment.transactionHash)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="link inline-flex items-center gap-1 text-[12px] font-semibold"
-                >
-                  Explorer
-                  <IconExternal size={11} />
-                </a>
-              </span>
-            </FactRow>
-            <FactRow label="Memo">
-              {payment.memo ? (
-                <span className="mono text-[12.5px] text-neutral-300">{payment.memo}</span>
-              ) : (
-                <span className="text-[12.5px] text-neutral-500">No memo</span>
-              )}
-            </FactRow>
-            <FactRow label="Filed by">
-              <span className="text-[12.5px] text-neutral-300">{LANE_LABEL[payment.lane]}</span>
-            </FactRow>
-            <FactRow label="Ledger">
-              <span className="mono text-[12.5px] text-neutral-300">
-                {payment.ledger.toLocaleString("en-US")}
-              </span>
-            </FactRow>
-          </div>
-        ) : (
-          <Notice tone={view === "expired" || view === "voided" ? "info" : "warn"}>
-            {view === "voided"
-              ? "This order was voided before anything was paid."
-              : view === "expired"
-                ? "The charge for this order expired before a payment arrived. Nothing was taken."
-                : "No payment has been matched to this order yet. Anything that arrives with the reference above will be filed here automatically."}
-          </Notice>
-        )}
+          )}
 
-        {liveCharge && (
-          <div className="pt-3">
-            <Button className="w-full" onClick={() => showPaymentRequest(liveCharge.id)}>
-              <IconQr size={15} />
-              Show the payment request
-            </Button>
-          </div>
-        )}
+          {liveCharge && (
+            <div className="pt-3">
+              <Button className="w-full" onClick={() => showPaymentRequest(liveCharge.id)}>
+                <IconQr size={15} />
+                Show the payment request
+              </Button>
+            </div>
+          )}
+        </section>
 
         {/* ---------------- refunds already issued ---------------- */}
 
         {orderRefunds.length > 0 && (
-          <>
+          <section>
             <SectionTitle>Refunds issued</SectionTitle>
             <div className="panel">
               {orderRefunds.map((refund, i) => (
@@ -694,13 +721,13 @@ export function OrderDetailModal({
                 </div>
               ))}
             </div>
-          </>
+          </section>
         )}
 
         {/* ---------------- refund action ---------------- */}
 
         {settled?.status === "paid" && payment && (
-          <div className="pt-5">
+          <section>
             {!canRefund ? (
               <p className="text-center text-[12.5px] text-neutral-500">
                 This order has been refunded in full.
@@ -715,11 +742,8 @@ export function OrderDetailModal({
                   <p className="text-[13.5px] font-semibold text-white">Refund this order</p>
                   <button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setAmountText(minorToDecimal(remainingMinor));
-                    }}
-                    className="chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+                    onClick={() => setAmountText(minorToDecimal(remainingMinor))}
+                    className="chip min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
                   >
                     Full · {fmtMinor(remainingMinor, currency)}
                   </button>
@@ -731,8 +755,9 @@ export function OrderDetailModal({
                   error={amountError ?? undefined}
                 >
                   <input
-                    className="input input-mono"
+                    className="input input-mono text-base sm:text-[15px]"
                     inputMode="decimal"
+                    enterKeyHint="next"
                     autoComplete="off"
                     value={amountText}
                     onChange={(e) => setAmountText(e.target.value)}
@@ -753,9 +778,10 @@ export function OrderDetailModal({
 
                 <Field label="Note" hint="Optional">
                   <input
-                    className="input"
+                    className="input text-base sm:text-[14px]"
                     autoComplete="off"
                     placeholder="What happened?"
+                    enterKeyHint="done"
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     disabled={busy}
@@ -769,31 +795,29 @@ export function OrderDetailModal({
 
                 {error && <ErrorText message={error} />}
 
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    className="flex-1"
-                    onClick={closeConfirm}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="danger"
-                    className="flex-1"
-                    onClick={() => void submitRefund()}
-                    disabled={Boolean(amountError) || busy}
-                    aria-busy={busy}
-                  >
-                    {busy && <Spinner size={14} />}
-                    {busy ? "Sending the refund" : `Refund ${fmtMinor(requestedMinor, currency)}`}
-                  </Button>
-                </div>
+                <ModalFooter
+                  secondary={
+                    <Button variant="ghost" onClick={closeConfirm} disabled={busy}>
+                      Cancel
+                    </Button>
+                  }
+                  primary={
+                    <Button
+                      variant="danger"
+                      onClick={() => void submitRefund()}
+                      disabled={Boolean(amountError)}
+                      loading={busy}
+                      loadingLabel="Sending the refund"
+                    >
+                      Refund {fmtMinor(requestedMinor, currency)}
+                    </Button>
+                  }
+                />
               </div>
             )}
-          </div>
+          </section>
         )}
-      </div>
-    </Modal>
+      </ModalBody>
+    </>
   );
 }

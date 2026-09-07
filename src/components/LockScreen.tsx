@@ -54,7 +54,10 @@ export function LockScreen() {
   }
 
   return (
-    <div className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-sm sm:max-w-md flex-col items-center justify-center px-6 py-12">
+    <div
+      data-app-surface
+      className="app-safe-top app-safe-top-pad-12 mx-auto flex min-h-screen w-full max-w-sm sm:max-w-md flex-col items-center justify-center px-6 py-12"
+    >
       <div className={`w-full ${shaking ? "shake" : ""}`}>
         <div className="flex flex-col items-center text-center">
           <LogoMark size={56} />

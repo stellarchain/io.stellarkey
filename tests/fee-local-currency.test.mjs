@@ -49,11 +49,11 @@ test("fee equivalent is granular, testnet-capable, and privacy-aware", () => {
 test("every numeric wallet fee surface includes its local-currency equivalent", () => {
   const inventory = [
     ["src/components/AddAssetModal.tsx", 1],
-    ["src/components/AssetDetailModal.tsx", 1],
-    ["src/components/BatchSendModal.tsx", 2],
-    ["src/components/ClaimableBalancesModal.tsx", 1],
-    ["src/components/MultiSigStudioModal.tsx", 1],
-    ["src/components/NetworkStatsModal.tsx", 2],
+    ["src/components/AssetDetailModalBody.tsx", 1],
+    ["src/components/BatchSendModalBody.tsx", 2],
+    ["src/components/ClaimableBalancesModalBody.tsx", 1],
+    ["src/components/MultiSigStudioModalBody.tsx", 1],
+    ["src/components/NetworkStatsModalBody.tsx", 2],
     ["src/components/SendModal.tsx", 4],
     ["src/components/SettingsPage.tsx", 3],
     ["src/components/SwapPage.tsx", 3],

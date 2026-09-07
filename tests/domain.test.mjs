@@ -561,7 +561,7 @@ test("every broadcast builder applies the shared surge fee per operation", async
 test("active transaction UIs use the selected fee for display and native reserve", () => {
   const wallet = readFileSync(new URL("../src/hooks/useWallet.tsx", import.meta.url), "utf8");
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
-  const batch = readFileSync(new URL("../src/components/BatchSendModal.tsx", import.meta.url), "utf8");
+  const batch = readFileSync(new URL("../src/components/BatchSendModalBody.tsx", import.meta.url), "utf8");
   const swap = readFileSync(new URL("../src/components/SwapPage.tsx", import.meta.url), "utf8");
   const assets = readFileSync(new URL("../src/components/AddAssetModal.tsx", import.meta.url), "utf8");
   const settings = readFileSync(new URL("../src/components/SettingsPage.tsx", import.meta.url), "utf8");
@@ -871,7 +871,7 @@ test("approval signing stays bound to the exact reviewed XDR and network", () =>
 
 test("approval review renders every security-sensitive address in full", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   const approvalReview = source
@@ -885,7 +885,7 @@ test("approval review renders every security-sensitive address in full", () => {
 
 test("multisig review renders every changed signer key in full", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   const changeReview = source
@@ -893,7 +893,7 @@ test("multisig review renders every changed signer key in full", () => {
     ?.split("<Notice tone=\"warn\">")[0];
   const disableReview = source
     .split("This removes every cosigner")[1]
-    ?.split("Disable Multi-Sig")[0];
+    ?.split("Disable multi-sig")[0];
 
   assert.ok(changeReview, "expected the changed-signer review section");
   assert.match(changeReview, /break-all/);
@@ -940,7 +940,7 @@ test("local signer preserves decoded effects and offers authorization retry", ()
 
 test("multisig signer-info loading discards stale account or network responses", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /signerInfoRequestGeneration\s*=\s*useRef/);
@@ -954,7 +954,7 @@ test("multisig signer-info loading discards stale account or network responses",
 
 test("multisig UI never presents unavailable signer state as single-signature", () => {
   const source = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   const uiSource = readFileSync(

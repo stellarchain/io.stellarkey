@@ -1,10 +1,9 @@
 'use client';
 
-import { useMemo, useState, type FormEvent } from 'react';
-import { Button, Field, Modal, ModalHeader, Notice } from '@/components/ui';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, Notice } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
-import { triggerHaptic } from '@/lib/haptics';
 import { NETWORKS } from '@/lib/stellar';
 import { humanizePrivateError, PRIVACY_ROW } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
@@ -24,24 +23,95 @@ import {
   usePrivateActionController,
   type PrivateSubmissionMode,
 } from './usePrivateActionController';
+import {
+  useReportToOwner,
+  type PrivateFlowHeader,
+  type PrivateFlowHeaderChange,
+} from './useReportToOwner';
+
+export interface WithdrawPrivateFlowProps {
+  onClose(): void;
+  /** Fires when a confirmed withdrawal reaches the network. */
+  onSubmitted?: () => void;
+  onCloseHandlerChange?: (handler: (() => void) | null) => void;
+  onWorkingChange?: (working: boolean) => void;
+  /** Stage-aware header for the owning shell; `null` means the form's default. */
+  onHeaderChange?: PrivateFlowHeaderChange;
+  /** True while an amount or a changed recipient is typed that was not sent. */
+  onDirtyChange?: (dirty: boolean) => void;
+}
 
 /**
  * Moves private funds back to a public Stellar account — prefilled with the
  * active account. This leg is public, like any Stellar payment, and the copy
  * says so plainly; the flow itself mirrors the send exactly.
+ *
+ * The shell is owned here; the flow inside reports its close handler, busy
+ * state, dirty state and stage header through the same contract the shared
+ * Send and Add sheets use, so an owner may embed it later.
  */
 export function WithdrawPrivate({
+  open = true,
   onClose,
   onSubmitted,
 }: {
+  open?: boolean;
   onClose(): void;
-  /** Fires when a confirmed withdrawal reaches the network. */
   onSubmitted?: () => void;
 }) {
+  const { asset } = usePrivateBalanceRuntimeData();
+  const [closeHandler, setCloseHandler] = useState<(() => void) | null>(null);
+  const [working, setWorking] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [header, setHeader] = useState<PrivateFlowHeader | null>(null);
+  const reportCloseHandler = useCallback((handler: (() => void) | null) => {
+    setCloseHandler(() => handler);
+  }, []);
+
+  const code = asset?.code ?? 'Asset';
+  const close = closeHandler ?? onClose;
+  const shown = header ?? { title: 'Withdraw Funds', subtitle: `Move ${code} to your public balance` };
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      busy={working}
+      busyReason="Wait for the withdrawal to finish before closing."
+      dirty={dirty}
+    >
+      <ModalHeader
+        title={shown.title}
+        subtitle={shown.subtitle}
+        onBack={shown.onBack}
+        onClose={close}
+      />
+      {open ? (
+        <WithdrawPrivateFlow
+          onClose={onClose}
+          onSubmitted={onSubmitted}
+          onCloseHandlerChange={reportCloseHandler}
+          onWorkingChange={setWorking}
+          onHeaderChange={setHeader}
+          onDirtyChange={setDirty}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+export function WithdrawPrivateFlow({
+  onClose,
+  onSubmitted,
+  onCloseHandlerChange,
+  onWorkingChange,
+  onHeaderChange,
+  onDirtyChange,
+}: WithdrawPrivateFlowProps) {
   const { asset, publicAddress, verifiedBalanceStroops, networkLabel } =
     usePrivateBalanceRuntimeData();
   const decimals = asset?.decimals ?? 7;
   const code = asset?.code ?? 'Asset';
+  const headerOwned = onHeaderChange !== undefined;
   const [stage, setStage] = useState<'form' | 'review'>('form');
   const [amount, setAmount] = useState('');
   const [publicRecipient, setPublicRecipient] = useState(publicAddress ?? '');
@@ -76,7 +146,6 @@ export function WithdrawPrivate({
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     if (amountCheck.stroops === null || !recipientShapeOk) return;
-    triggerHaptic('selection');
     setStage('review');
     void flow.prepare(
       { kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient },
@@ -84,35 +153,52 @@ export function WithdrawPrivate({
     );
   };
 
-  const backToForm = () => {
-    void flow.cancelPrepared();
+  // Back keeps the draft: it releases the preparation and returns to the form.
+  const { cancelPrepared } = flow;
+  const backToForm = useCallback(() => {
+    void cancelPrepared();
     setStage('form');
-  };
+  }, [cancelPrepared]);
 
   const networkKey = networkLabel === 'Mainnet' ? ('mainnet' as const) : ('testnet' as const);
   const explorerHref = flow.submittedHash
     ? NETWORKS[networkKey].explorerTxUrl(flow.submittedHash)
     : undefined;
 
+  useEffect(() => {
+    onCloseHandlerChange?.(flow.close);
+    return () => onCloseHandlerChange?.(null);
+  }, [flow.close, onCloseHandlerChange]);
+
+  // Signing and submitting must finish; preparing a proof may be abandoned,
+  // so it never blocks the shell.
+  useEffect(() => {
+    onWorkingChange?.(flow.working);
+    return () => onWorkingChange?.(false);
+  }, [flow.working, onWorkingChange]);
+
+  const header = useMemo<PrivateFlowHeader | null>(() => {
+    if (flow.submission) {
+      return { title: flow.submission === 'broadcast' ? 'Withdrawal Sent' : 'Payment Status' };
+    }
+    if (stage === 'review') {
+      return {
+        title: 'Review Withdrawal',
+        subtitle: 'Verify details before confirming',
+        onBack: backToForm,
+      };
+    }
+    return null;
+  }, [backToForm, flow.submission, stage]);
+  useReportToOwner(onHeaderChange, header, null);
+
+  const dirty = flow.submission === null && (
+    amount.trim() !== '' || trimmedRecipient !== (publicAddress ?? '')
+  );
+  useReportToOwner(onDirtyChange, dirty, false);
+
   return (
-    <Modal open onClose={flow.close} dismissable={!flow.working}>
-      <ModalHeader
-        title={
-          flow.submission
-            ? flow.submission === 'broadcast' ? 'Withdrawal Sent' : 'Payment Status'
-            : stage === 'review'
-              ? 'Review Withdrawal'
-              : 'Withdraw Funds'
-        }
-        subtitle={
-          flow.submission
-            ? undefined
-            : stage === 'review'
-              ? 'Verify details before confirming'
-              : `Move ${code} to your public balance`
-        }
-        onClose={flow.working ? undefined : flow.close}
-      />
+    <>
       {flow.submission ? (
         <PrivateSubmissionStatus
           status={flow.submission}
@@ -138,75 +224,80 @@ export function WithdrawPrivate({
           confirmLabel="Confirm"
           onConfirm={() => void flow.submit()}
           onBack={backToForm}
+          backInHeader={headerOwned}
           onSelectRelayQuote={quoteId => void flow.selectRelayQuote(quoteId)}
         />
       ) : (
-        <form className="space-y-4 p-4 sm:p-6" onSubmit={submitForm}>
-          <Notice>
-            {PRIVACY_ROW.withdraw} — the amount, recipient, and timing appear on Stellar.
-          </Notice>
-          {asset?.kind === 'stellar' ? (
+        <form onSubmit={submitForm}>
+          <ModalBody>
             <Notice>
-              The public recipient needs an existing authorized {asset.code} trustline. Issuer
-              authorization, freeze and clawback controls still apply.
+              {PRIVACY_ROW.withdraw} — the amount, recipient, and timing appear on Stellar.
             </Notice>
-          ) : null}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <span className="field-label">Asset</span>
-              <PrivateAssetSelector
-                presentation="field"
-                balance={privateBalanceMax}
+            {asset?.kind === 'stellar' ? (
+              <Notice>
+                The public recipient needs an existing authorized {asset.code} trustline. Issuer
+                authorization, freeze and clawback controls still apply.
+              </Notice>
+            ) : null}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <span className="field-label">Asset</span>
+                <PrivateAssetSelector
+                  presentation="field"
+                  balance={privateBalanceMax}
+                />
+              </div>
+              <PrivateAmountField
+                amount={amount}
+                onAmount={setAmount}
+                max={privateBalanceMax}
+                code={code}
+                issuer={asset?.issuer}
+                isNative={asset?.kind === 'native'}
+                error={amountCheck.error}
+                showQuickAmounts={false}
+                enterKeyHint="done"
               />
             </div>
-            <PrivateAmountField
-              amount={amount}
-              onAmount={setAmount}
-              max={privateBalanceMax}
-              code={code}
-              issuer={asset?.issuer}
-              isNative={asset?.kind === 'native'}
-              error={amountCheck.error}
-              showQuickAmounts={false}
+            <PrivateQuickAmounts onAmount={setAmount} max={privateBalanceMax} />
+            <PrivateRelaySubmissionChoice
+              value={submissionMode}
+              onChange={setSubmissionMode}
             />
-          </div>
-          <PrivateQuickAmounts onAmount={setAmount} max={privateBalanceMax} />
-          <PrivateRelaySubmissionChoice
-            value={submissionMode}
-            onChange={setSubmissionMode}
-          />
-          <Field
-            label="Public recipient"
-            hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}
-            error={
-              trimmedRecipient && !recipientShapeOk
-                ? 'Enter a Stellar G or C address.'
-                : undefined
-            }
-          >
-            <input
-              type="text"
-              className="input mono text-base sm:text-[13px]"
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoComplete="off"
-              spellCheck={false}
-              value={publicRecipient}
-              onChange={event => setPublicRecipient(event.target.value)}
+            <Field
+              label="Public recipient"
+              hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}
+              error={
+                trimmedRecipient && !recipientShapeOk
+                  ? 'Enter a Stellar G or C address.'
+                  : undefined
+              }
+            >
+              <input
+                type="text"
+                className="input mono text-base sm:text-[13px]"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                enterKeyHint="next"
+                spellCheck={false}
+                value={publicRecipient}
+                onChange={event => setPublicRecipient(event.target.value)}
+              />
+            </Field>
+            {flow.errorCause ?? flow.error ? (
+              <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
+            ) : null}
+            <ModalFooter
+              primary={
+                <Button type="submit" disabled={amountCheck.stroops === null || !recipientShapeOk}>
+                  Review Withdrawal
+                </Button>
+              }
             />
-          </Field>
-          {flow.errorCause ?? flow.error ? (
-            <PrivateActionError cause={flow.errorCause ?? new Error(flow.error ?? '')} />
-          ) : null}
-          <Button
-            type="submit"
-            className="!mt-6 w-full"
-            disabled={amountCheck.stroops === null || !recipientShapeOk}
-          >
-            Review Withdrawal
-          </Button>
+          </ModalBody>
         </form>
       )}
-    </Modal>
+    </>
   );
 }

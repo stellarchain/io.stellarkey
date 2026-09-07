@@ -18,7 +18,7 @@ async function openEarn(page: Page) {
   await page.getByRole('button', { name: /Earn by relaying/ }).click();
   const dialog = dialogFor(page);
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
   return dialog;
 }
 
@@ -273,7 +273,7 @@ test('Earn lab acknowledgement and structural layout budgets', async ({ page, br
       (document.querySelector('section[aria-label="Synthetic earn checks"] button[aria-haspopup="dialog"]') as HTMLButtonElement).click();
     })));
     const dialog = dialogFor(page);
-    await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+    await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
     acknowledgement.push(await dialog.getByRole('button', { name: 'Start relaying', exact: true }).evaluate(node => new Promise<number>(resolve => {
       const started = performance.now();
       const observer = new MutationObserver(() => {
