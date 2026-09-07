@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { useWalletContacts } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { CustomerRecord, LoyaltyCard } from "@/lib/merchant/types";
-import { useToast } from "../Toast";
-import { Avatar, Button, HashValue, Modal, ModalHeader } from "../ui";
+import { Avatar, Button, ErrorText, HashValue, Modal, ModalHeader } from "../ui";
+import { useMerchantAction } from "./useMerchantAction";
 import { IconCheck, IconChevronDown, IconGift, IconUserPlus } from "../icons";
 import { IconCheckCircle, IconReceipt, IconTag } from "./icons";
 
@@ -143,7 +143,28 @@ function CustomerDetail({
   } = useMerchantRecords();
   const { settings } = useMerchantConfiguration();
   const { addContact } = useWalletContacts();
-  const { toast } = useToast();
+  const rewardAction = useMerchantAction();
+  const cardAction = useMerchantAction();
+  const noteAction = useMerchantAction();
+  const contactAction = useMerchantAction();
+  const forgetAction = useMerchantAction();
+  const cardHeading = useRef<HTMLHeadingElement>(null);
+  const cardFocus = useRef<{ removedFocused: boolean; current: (() => boolean) | null }>({ removedFocused: false, current: null });
+  const startButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    if (!node) return;
+    // Capture actual focus at removal, not at invocation or promise completion.
+    return () => { cardFocus.current.removedFocused = document.activeElement === node; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const moved = () => { cardFocus.current.removedFocused = false; };
+    document.addEventListener("focusin", moved);
+    document.addEventListener("pointerdown", moved, true);
+    return () => {
+      document.removeEventListener("focusin", moved);
+      document.removeEventListener("pointerdown", moved, true);
+    };
+  }, []);
 
   const [note, setNote] = useState(customer.note ?? "");
   const [contactName, setContactName] = useState(customer.name ?? "");
@@ -156,66 +177,42 @@ function CustomerDetail({
   const full = loyalty !== null && loyalty.stamps >= loyalty.target;
   const noteDirty = note.trim() !== (customer.note ?? "").trim();
 
-  async function redeem() {
-    try {
-      await redeemLoyaltyReward(customer.address);
-      triggerHaptic("success");
-      toast("Reward redeemed and added to the loyalty audit.", "success");
-    } catch (error) {
-      triggerHaptic("error");
-      toast(error instanceof Error ? error.message : "The reward could not be redeemed.", "error");
+  useLayoutEffect(() => {
+    const handoff = cardFocus.current;
+    if (!loyalty || !handoff.current) return;
+    const current = handoff.current;
+    handoff.current = null;
+    if (handoff.removedFocused && document.activeElement === document.body && current()) {
+      cardHeading.current?.focus({ preventScroll: true });
     }
+    handoff.removedFocused = false;
+  }, [loyalty, cardAction.pending]);
+
+  async function redeem() {
+    await rewardAction.run(() => redeemLoyaltyReward(customer.address),
+      "Reward redeemed and added to the loyalty audit.", "The reward could not be redeemed. Try again.");
   }
 
   async function startCard() {
-    try {
-      await startLoyaltyCard(customer.address, 10);
-      triggerHaptic("success");
-      toast("Loyalty card opened. New eligible payments earn one stamp.", "success");
-    } catch (error) {
-      triggerHaptic("error");
-      toast(error instanceof Error ? error.message : "The loyalty card could not be opened.", "error");
-    }
+    await cardAction.run(() => startLoyaltyCard(customer.address, 10),
+      "Loyalty card opened. New eligible payments earn one stamp.", "The loyalty card could not be opened. Try again.",
+      current => { cardFocus.current.current = current; });
   }
 
   async function saveNote() {
-    try {
-      await updateCustomerNote(customer.address, note);
-      triggerHaptic("success");
-      toast("Customer note saved on this device.", "success");
-    } catch (error) {
-      triggerHaptic("error");
-      toast(error instanceof Error ? error.message : "The note could not be saved.", "error");
-    }
+    await noteAction.run(() => updateCustomerNote(customer.address, note),
+      "Customer note saved on this device.", "The note could not be saved. Try again.");
   }
 
   async function saveToContacts() {
     const name = contactName.trim();
-    if (!name) {
-      triggerHaptic("error");
-      toast("Enter a name before saving this address to Contacts.", "error");
-      return;
-    }
-    try {
-      await addContact({ name, address: customer.address });
-      triggerHaptic("success");
-      toast(`${name} saved to Contacts.`, "success");
-    } catch (error) {
-      triggerHaptic("error");
-      toast(error instanceof Error ? error.message : "The contact could not be saved.", "error");
-    }
+    await contactAction.run(() => addContact({ name, address: customer.address }), "Contact saved.",
+      name ? "The contact could not be saved. Try again." : "Enter a name before saving this address to Contacts.");
   }
 
   async function forget() {
-    triggerHaptic("warning");
-    try {
-      await forgetCustomer(customer.address);
-      toast("Local customer record forgotten. Ledger payments are unchanged.", "info");
-      onClose();
-    } catch (error) {
-      triggerHaptic("error");
-      toast(error instanceof Error ? error.message : "The customer could not be forgotten.", "error");
-    }
+    await forgetAction.run(() => forgetCustomer(customer.address),
+      "Local customer record forgotten. Ledger payments are unchanged.", "The customer could not be forgotten. Try again.", onClose);
   }
 
   /*
@@ -259,12 +256,16 @@ function CustomerDetail({
           <Button
             variant="secondary"
             className="shrink-0"
+            focusableWhenDisabled
+            loading={contactAction.pending}
+            loadingLabel="Saving contact"
             onClick={() => void saveToContacts()}
           >
             <IconUserPlus size={13} />
             {customer.name ? "Update" : "Save contact"}
           </Button>
         </div>
+        <ErrorText message={contactAction.error} />
 
         {/* The money first; the rest of the record is one quiet line under it. */}
         <div>
@@ -285,7 +286,7 @@ function CustomerDetail({
             <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-neutral-400">
               No loyalty card. Open one and the till stamps it as this address pays.
             </p>
-            <Button variant="secondary" onClick={startCard}>
+            <Button ref={startButtonRef} variant="secondary" focusableWhenDisabled loading={cardAction.pending} loadingLabel="Opening loyalty card" onClick={startCard}>
               Start a card
             </Button>
           </div>
@@ -297,6 +298,8 @@ function CustomerDetail({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3
                 id="loyalty-heading"
+                ref={cardHeading}
+                tabIndex={-1}
                 className="flex items-center gap-2 text-[13.5px] font-semibold text-white"
               >
                 <span style={{ color: LOYALTY_HUE }}>
@@ -350,10 +353,11 @@ function CustomerDetail({
                     loyalty.redeemedCount === 1 ? "time" : "times"
                   } before.`}
               </p>
-              <Button disabled={!full} onClick={redeem}>
+              <Button focusableWhenDisabled disabled={!full} loading={rewardAction.pending} loadingLabel="Redeeming reward" onClick={redeem}>
                 Redeem
               </Button>
             </div>
+            <ErrorText message={rewardAction.error} />
             {loyalty.events.length > 0 && (
               <p className="mono mt-3 border-t border-[#BF5AF2]/15 pt-3 text-[10.5px] text-neutral-500">
                 {loyalty.events.length} audited {loyalty.events.length === 1 ? "event" : "events"}
@@ -364,6 +368,7 @@ function CustomerDetail({
             )}
           </section>
         )}
+        <ErrorText message={cardAction.error} />
 
         {/* History */}
         <section aria-labelledby="history-heading" className="space-y-2">
@@ -435,10 +440,11 @@ function CustomerDetail({
           />
           <div className="flex items-center justify-between gap-3">
             <p className="text-[11.5px] text-neutral-500">Kept on this device.</p>
-            <Button variant="secondary" disabled={!noteDirty} onClick={saveNote}>
+            <Button variant="secondary" focusableWhenDisabled disabled={!noteDirty} loading={noteAction.pending} loadingLabel="Saving note" onClick={saveNote}>
               Save note
             </Button>
           </div>
+          <ErrorText message={noteAction.error} />
         </div>
 
         {/* The honesty about Forget, folded up rather than shouted */}
@@ -459,10 +465,11 @@ function CustomerDetail({
               <Button variant="secondary" onClick={() => setConfirmingForget(false)}>
                 Keep Record
               </Button>
-              <Button variant="danger" onClick={forget}>
+              <Button variant="danger" focusableWhenDisabled loading={forgetAction.pending} loadingLabel="Forgetting customer" onClick={forget}>
                 Forget
               </Button>
             </div>
+            <ErrorText message={forgetAction.error} />
           </div>
         ) : (
           <button

@@ -365,10 +365,11 @@ body::after {
     user-select: none;
     white-space: nowrap;
   }
-  .btn:active:not(:disabled) {
+  .btn:active:not(:disabled):not([aria-disabled="true"]) {
     transform: scale(0.97);
   }
-  .btn:disabled {
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
     opacity: 0.4;
     cursor: not-allowed;
   }
@@ -377,7 +378,7 @@ body::after {
     color: #ffffff;
     background: #006edb;
   }
-  .btn-primary:hover:not(:disabled) {
+  .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
     background: #005fbe;
   }
 
@@ -385,7 +386,7 @@ body::after {
     color: var(--color-accent);
     background: rgba(10, 132, 255, 0.12);
   }
-  .btn-ghost:hover:not(:disabled) {
+  .btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
     background: rgba(10, 132, 255, 0.2);
   }
 
@@ -393,7 +394,7 @@ body::after {
     color: var(--color-neg);
     background: rgba(255, 69, 58, 0.12);
   }
-  .btn-danger:hover:not(:disabled) {
+  .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
     background: rgba(255, 69, 58, 0.2);
   }
 
@@ -402,7 +403,7 @@ body::after {
     background: rgba(255, 255, 255, 0.1);
   }
 
-  .btn-secondary:hover:not(:disabled) {
+  .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
     background: rgba(255, 255, 255, 0.15);
   }
 
@@ -875,7 +876,7 @@ body::after {
     background: rgba(255, 255, 255, 0.04);
     transform: translateY(-0.5px);
   }
-  .btn:hover:not(:disabled) {
+  .btn:hover:not(:disabled):not([aria-disabled="true"]) {
     transform: translateY(-1px);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   }

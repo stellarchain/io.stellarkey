@@ -113,7 +113,8 @@ test("long transaction toasts stay inside the narrowest mobile viewport", () => 
   const toast = read("src/components/Toast.tsx");
 
   assert.match(toast, /fade-up pointer-events-auto flex min-w-0 max-w-full/);
-  assert.match(toast, /min-w-0 truncate text-\[13px\]/);
+  assert.match(toast, /min-w-0 break-words text-\[13px\]/);
+  assert.doesNotMatch(toast, /truncate|text-ellipsis|whitespace-nowrap/);
 });
 
 test("paper wallet encrypted export keeps its icon, title, and description aligned", () => {

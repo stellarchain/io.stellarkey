@@ -82,6 +82,7 @@ export function UxPrimitivesFixture() {
         </div>)}
         <Button variant="secondary" onClick={() => setFieldError(value => !value)}>Toggle synthetic field error</Button>
         <div data-testid="named-switch"><Toggle label="Synthetic privacy setting" checked={switchOn} onChange={value => setSwitchOn(Boolean(value))} /></div>
+        <FocusableActionFixture />
         {tooltipMounted && <div data-testid="tooltip-checks" className="space-y-10">
           <p id="synthetic-tooltip-description">Existing synthetic help description</p>
           {(['top', 'right', 'flipped'] as const).map(placement => <div key={placement}
@@ -107,4 +108,26 @@ export function UxPrimitivesFixture() {
       </div>
     </Modal>
   </>;
+}
+
+function FocusableActionFixture() {
+  const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [actions, setActions] = useState(0);
+  const [submissions, setSubmissions] = useState(0);
+  const [nativeActions, setNativeActions] = useState(0);
+  return <div>
+    <form onSubmit={event => { event.preventDefault(); setSubmissions(value => value + 1); }}>
+      <label htmlFor="synthetic-action-input">Synthetic action input</label>
+      <input id="synthetic-action-input" className="input" />
+      <Button type="submit" focusableWhenDisabled loading={pending} disabled={saved}
+        onClick={() => { setActions(value => value + 1); setPending(true); }}>Synthetic focusable action</Button>
+      <Button type="button" onClick={() => { setPending(false); setSaved(false); }}>Fail synthetic action</Button>
+      <Button type="button" onClick={() => { setPending(false); setSaved(true); }}>Save synthetic action</Button>
+    </form>
+    <Button disabled onClick={() => setNativeActions(value => value + 1)}>Synthetic native disabled action</Button>
+    <Button loading onClick={() => setNativeActions(value => value + 1)}>Synthetic native pending action</Button>
+    <Toggle label="Synthetic native disabled switch" disabled checked={false} onChange={() => setNativeActions(value => value + 1)} />
+    <p data-testid="synthetic-action-counts" className="sr-only">{actions}:{submissions}:{nativeActions}</p>
+  </div>;
 }

@@ -10,7 +10,11 @@ test('shared Button preserves its accessible purpose and width while pending', (
 
   assert.doesNotMatch(button, /loading\s*\?\s*<Spinner\s*\/>\s*:\s*children/);
   assert.match(button, /aria-busy=\{loading \|\| undefined\}/);
-  assert.match(button, /disabled=\{disabled \|\| loading\}/);
+  assert.match(button, /focusableWhenDisabled = false/);
+  assert.match(button, /const unavailable = disabled \|\| loading/);
+  assert.match(button, /disabled=\{!focusableWhenDisabled && unavailable\}/);
+  assert.match(button, /aria-disabled=\{focusableWhenDisabled && unavailable \? true : props\["aria-disabled"\]\}/);
+  assert.match(button, /if \(unavailable\) \{[\s\S]*?event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*return;\s*}\s*props\.onClick\?\.\(event\);/);
   assert.match(button, /data-loading=\{loading \|\| undefined\}/);
   assert.match(button, /loading \? "opacity-0"/);
   assert.match(button, /whitespace-normal/);
@@ -36,6 +40,10 @@ test('shared Field associates its label, hint, existing description, and error',
 test('shared Toggle requires its purpose instead of a generic fallback', () => {
   const toggle = ui.match(/export function Toggle\([\s\S]*?\n}\n\nexport function Avatar/)?.[0] ?? '';
   assert.match(toggle, /label: string;/);
+  assert.match(toggle, /focusableWhenDisabled = false/);
+  assert.match(toggle, /disabled=\{disabled && !focusableWhenDisabled\}/);
+  assert.match(toggle, /aria-disabled=\{focusableWhenDisabled && disabled \|\| undefined\}/);
+  assert.match(toggle, /if \(disabled\) \{\s*event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*return;\s*}\s*triggerHaptic/);
   assert.doesNotMatch(toggle, /label\?: string|label \?\? "Toggle"|ring-0 transition duration/);
   const settings = readFileSync(new URL('../src/components/SettingsPage.tsx', import.meta.url), 'utf8');
   assert.match(settings, /<Toggle[^>]*label="Hide Balances \(Privacy\)"[^>]*on=\{privacyMode\}/);
