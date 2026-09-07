@@ -55,7 +55,7 @@ test('scanner maps envelope trials concurrently in bounded ordered batches', asy
   assert.deepEqual(results, values.map(value => value * 2), 'results must retain input order');
 });
 
-test('scanner recovers and authenticates an owned encrypted deposit', async () => {
+test('scanner recovers and authenticates an owned encrypted deposit', async (t) => {
   const networkId = bytes(1);
   const realmId = bytes(2);
   const poolId = bytes(3);
@@ -322,7 +322,12 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     },
   ];
   const transferDummyRho = bytes(23);
-  const transferDummy = { ...dummyNote, diversifier: new Uint8Array(4), rho: transferDummyRho };
+  const transferDummy = {
+    ...dummyNote,
+    diversifier: new Uint8Array(4),
+    ownerCommitment: keys.ownerCommitment,
+    rho: transferDummyRho,
+  };
   const transferDummyCommitment = computeCommitment(
     contextField,
     assetField,
@@ -547,6 +552,203 @@ test('scanner recovers and authenticates an owned encrypted deposit', async () =
     duplicateResult.nullifiersByCommitment.get(duplicateResult.notes[1].id),
   );
   assert.equal(duplicateResult.tree.nextIndex, 6, 'every on-chain output still advances the tree');
+
+  const scanContext = {
+    protocolVersion: 1,
+    networkId,
+    realmId,
+    poolId,
+    contextHash,
+    contextField,
+    deploymentBindingHash,
+    addressPrefix: 'tskpay_',
+    // Trial the wrong registered asset first; plaintext metadata must not select it.
+    assets: [
+      { index: 1, contractId: StrKey.encodeContract(bytes(40)) },
+      { index: 0, contractId: assetContractId },
+    ],
+    accountAddress: { kind: 0, payload: accountPublicKey },
+  };
+  const scanInput = {
+    viewingKey: toViewingKey(keys),
+    context: scanContext,
+    expectedPriorRecordHash: priorRecordHash,
+  };
+  const resealTransferMetadata = async (recipientIndexes, outgoingIndex = 0) => Promise.all(
+    transferOutputs.map(async (output, outputIndex) => {
+      const canonicalNote = [recipientNote, changeNote, transferDummy][outputIndex];
+      const recipientHpkePublicKey = outputIndex === 0
+        ? recipientKeys.hpkePublicKey
+        : keys.hpkePublicKey;
+      const { recipientEnvelope } = await createOutputPackage(
+        recipientHpkePublicKey,
+        canonicalNote.diversifier,
+        encodeNotePlaintext({ ...canonicalNote, assetIndex: recipientIndexes[outputIndex] }),
+        contextHash,
+        output.cm,
+        transferNonce,
+        outputIndex,
+      );
+      // Resealing changes Epub, so rebind genuine sender recovery to that envelope.
+      const outgoingEnvelope = await sealOutgoingEnvelope(
+        keys.outgoingViewingKey,
+        recipientEnvelope.slice(5, 37),
+        encodeOutgoingPlaintext({
+          ...canonicalNote,
+          assetIndex: outgoingIndex,
+          recipientHpkePublicKey,
+        }),
+        deriveOutgoingAad(
+          deploymentBindingHash,
+          contextHash,
+          assetField,
+          output.cm,
+          transferNonce,
+          outputIndex,
+        ),
+        bytes(41 + outputIndex, 12),
+      );
+      return { ...output, recipientEnvelope, outgoingEnvelope };
+    }),
+  );
+  const laterTreeRoot = await appendCommitments(tree, duplicateOutputs.map(output => output.cm));
+  const laterRecord = {
+    ...duplicateRecord,
+    actionIndex: 2,
+    ledgerSequence: 125,
+    startingLeafIndex: 6,
+    nullifiers: [bytes(27), bytes(28)],
+    treeRootAfter: laterTreeRoot,
+  };
+
+  for (const [name, recipientIndexes] of [
+    ['another registered asset', [1, 0, 0]],
+    ['an unregistered asset in change and dummy outputs', [0, 0xffff_ffff, 0xffff_ffff]],
+  ]) {
+    await t.test(`scanner contains recipient metadata naming ${name}`, async () => {
+      const mixedRecord = {
+        ...transferRecord,
+        outputs: await resealTransferMetadata(recipientIndexes),
+      };
+      const mixedRecordHash = computeRecordHash(mixedRecord, 1, recordHash);
+      const laterRecordHash = computeRecordHash(laterRecord, 1, mixedRecordHash);
+      for (const [owner, ownerKeys] of [['sender', keys], ['recipient', recipientKeys]]) {
+        const input = { ...scanInput, viewingKey: toViewingKey(ownerKeys) };
+        const full = await scanArchiveRecords({
+          ...input,
+          records: [record, mixedRecord, laterRecord],
+        });
+        assert.deepEqual(
+          full.notes.map(owned => ({
+            value: owned.value,
+            assetIndex: owned.assetIndex,
+            assetContractId: owned.assetContractId,
+            leafIndex: owned.leafIndex,
+            status: owned.status,
+          })),
+          (owner === 'sender'
+            ? [['50000000', 0, 'spent'], ['20000000', 4, 'unspent'], ['50000000', 6, 'unspent']]
+            : [['30000000', 3, 'unspent']]
+          ).map(([value, leafIndex, status]) => ({
+            value, assetIndex: 0, assetContractId, leafIndex, status,
+          })),
+          'only commitment-authenticated real outputs enter canonical note accounting',
+        );
+        assert.deepEqual(
+          full.activities.map(activity => [activity.actionKind, activity.direction, activity.amount]),
+          owner === 'sender'
+            ? [['deposit', 'inflow', '50000000'], ['transfer', 'outflow', '30000000'], ['deposit', 'inflow', '50000000']]
+            : [['transfer', 'inflow', '30000000']],
+        );
+        assert.ok(full.activities.every(activity => (
+          activity.assetIndex === 0 && activity.assetContractId === assetContractId
+        )));
+        const activity = full.activities.find(activity => activity.actionIndex === 1);
+        assert.equal(activity.memoHex, Buffer.from('pay').toString('hex'));
+        if (owner === 'sender') {
+          assert.equal(activity.recipientFingerprint, privateAddressFingerprint(recipientAddress));
+          assert.deepEqual(full.spentNullifierHexes, [hex(transferNullifier)]);
+        } else {
+          assert.deepEqual(full.spentNullifierHexes, []);
+        }
+        assert.equal(full.tree.nextIndex, 9);
+        assert.deepEqual(full.tree.currentRoot, laterTreeRoot);
+        assert.deepEqual(full.lastRecordHash, laterRecordHash);
+
+        const firstPage = await scanArchiveRecords({ ...input, records: [record, mixedRecord] });
+        assert.equal(firstPage.tree.nextIndex, 6);
+        assert.deepEqual(firstPage.lastRecordHash, mixedRecordHash);
+        const nextPage = await scanArchiveRecords({
+          ...input,
+          records: [laterRecord],
+          initialTree: firstPage.tree,
+          existingNotes: firstPage.notes,
+          expectedPriorRecordHash: firstPage.lastRecordHash,
+        });
+        assert.deepEqual(nextPage.notes, full.notes);
+        assert.deepEqual([...firstPage.activities, ...nextPage.activities], full.activities);
+        assert.deepEqual(nextPage.tree, full.tree);
+        assert.deepEqual(nextPage.lastRecordHash, full.lastRecordHash);
+        assert.deepEqual(nextPage.nullifiersByCommitment, full.nullifiersByCommitment);
+        assert.equal(firstPage.tree.nextIndex, 6, 'incremental scanning must not mutate its prior cursor');
+      }
+    });
+  }
+
+  await t.test('recipient metadata containment preserves canonical rejection boundaries', async () => {
+    for (const [name, patch, expected] of [
+      ['boundary registry mismatch', { assetIndex: 1 }, /authenticated registry/i],
+      ['noncanonical commitment', {
+        outputs: [{ ...outputs[0], cm: bytes(255) }, ...outputs.slice(1)],
+      }, /commitment is not canonical/i],
+      ['noncanonical nullifier', { nullifiers: [bytes(255), bytes(14)] }, /nullifier.*not canonical/i],
+      ['duplicate nullifier', { nullifiers: [bytes(13), bytes(13)] }, /nullifiers must differ/i],
+      ['malformed transcript field', { actionNonce: bytes(9, 31) }, /action nonce must be 32 bytes/i],
+      ['wrong tree root', { treeRootAfter: bytes(10) }, /tree root mismatch/i],
+      ['wrong action sequence', { actionIndex: 1 }, /action sequence mismatch/i],
+      ['wrong leaf position', { actionIndex: 1, startingLeafIndex: 3 }, /leaf position mismatch/i],
+    ]) {
+      await assert.rejects(
+        () => scanArchiveRecords({ ...scanInput, records: [{ ...record, ...patch }] }),
+        expected,
+        name,
+      );
+    }
+    for (const [name, assets, expected] of [
+      ['invalid registry index', [{ index: -1, contractId: assetContractId }], /registry index is invalid/i],
+      ['invalid registry contract', [{ index: 0, contractId: 'invalid' }], /registry contract is invalid/i],
+      ['duplicate registry index', scanContext.assets.map(asset => ({ ...asset, index: 0 })), /duplicate entries/i],
+      ['duplicate registry contract', scanContext.assets.map(asset => ({ ...asset, contractId: assetContractId })), /duplicate entries/i],
+    ]) {
+      await assert.rejects(
+        () => scanArchiveRecords({
+          ...scanInput, records: [record], context: { ...scanContext, assets },
+        }),
+        expected,
+        name,
+      );
+    }
+    const wrongOutgoing = { ...transferRecord, outputs: await resealTransferMetadata([0, 0, 0], 1) };
+    await assert.rejects(
+      () => scanArchiveRecords({ ...scanInput, records: [record, wrongOutgoing] }),
+      /outgoing asset index does not match its authenticated asset/i,
+    );
+    for (const [patch, expected] of [
+      [{ assetIndex: 1 }, /not in the authenticated registry/i],
+      [{ status: 'spent' }, /spent more than once/i],
+    ]) {
+      await assert.rejects(
+        () => scanArchiveRecords({
+          ...scanInput,
+          records: [transferRecord],
+          initialTree: result.tree,
+          existingNotes: result.notes.map(owned => ({ ...owned, ...patch })),
+          expectedPriorRecordHash: result.lastRecordHash,
+        }),
+        expected,
+      );
+    }
+  });
 
   await assert.rejects(
     () => scanArchiveRecords({

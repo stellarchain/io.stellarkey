@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recovered private notes using their commitment-authenticated registry asset even when redundant recipient metadata names a different asset, without weakening canonical archive checks or sender-recovery validation.
 - Kept merchant customer and counter-code failures beside their actions with retained drafts and explicit retries, preserved action focus, prevented duplicate actions, and ignored feedback from closed panels or revoked sessions.
 - Announced supplementary toasts politely without repeating retained messages, kept longer feedback readable, and cleaned up notification timers when their provider closes.
 - Dismissed hover-retained tooltip content when opening a dialog makes its source inert, while allowing fresh focus to reopen help after the dialog closes.
