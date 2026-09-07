@@ -367,6 +367,8 @@ test('a code switch keeps keyboard focus while its own mutation is pending', asy
   await baseline.focus();
   await page.keyboard.press(nextKey);
   await expect(page.getByRole('button', { name: 'More actions for First code', exact: true })).toBeFocused();
+  const writes = Number(await page.getByTestId('feedback-writes').textContent());
+  await control(page, 'Hold rejected feedback continuation');
   await control(page, 'Hold before merchant write');
   const toggle = page.getByRole('switch', { name: 'First code in use', exact: true });
   await toggle.focus();
@@ -378,10 +380,24 @@ test('a code switch keeps keyboard focus while its own mutation is pending', asy
   await page.keyboard.press(nextKey);
   await expect(page.getByRole('button', { name: 'More actions for First code', exact: true })).toBeFocused();
   await control(page, 'Reject feedback response');
+  await expect(page.getByTestId('feedback-stage')).toHaveText('rejection-continuation');
+  await expect(toggle).toBeDisabled();
   await toggle.focus();
+  await page.keyboard.press('Enter');
+  await toggle.evaluate(node => (node as HTMLButtonElement).click());
+  await expect(toggle).toBeChecked();
+  await expect(page.getByTestId('feedback-writes')).toHaveText(String(writes + 1));
+  await expect(toggle).toBeFocused();
+  await control(page, 'Deliver feedback response');
+  const row = toggle.locator('xpath=ancestor::div[contains(@class,"row-hover")]');
+  await expect(row.getByRole('alert')).toHaveText('The counter code could not be updated. Try again.');
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(toggle).not.toBeChecked();
   await expect(toggle).toBeFocused();
+  await expect(row.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByTestId('feedback-writes')).toHaveText(String(writes + 2));
 });
 
 test('counter code failures belong to their row and leave other rows and actions usable', async ({ page }) => {

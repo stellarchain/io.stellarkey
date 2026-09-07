@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Made merchant browser retries wait for settled row feedback and switch enablement, with controlled checks that early activations cannot duplicate write attempts.
 - Added validated failed-step source lines to wallet browser diagnostics without exposing error payloads or changing test results.
 - Kept synthetic merchant-feedback checks in their mandatory isolated runner so normal release browser checks do not require a removed fixture.
 - Preserve newer in-dialog focus during modal initialization and cancel obsolete initial-focus callbacks on close, unmount, or rapid reopening.
