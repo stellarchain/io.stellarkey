@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve Send review state and keyboard focus across account changes and password approval, allow intentional fresh-review retry after cancellation, and keep receipt links on their originating network.
 - Recovered private notes using their commitment-authenticated registry asset even when redundant recipient metadata names a different asset, without weakening canonical archive checks or sender-recovery validation.
 - Kept merchant customer and counter-code failures beside their actions with retained drafts and explicit retries, preserved action focus, prevented duplicate actions, and ignored feedback from closed panels or revoked sessions.
 - Announced supplementary toasts politely without repeating retained messages, kept longer feedback readable, and cleaned up notification timers when their provider closes.
@@ -139,6 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bind public payment review, signing, and pre-broadcast authorization to the originating account, network, and unlock session, including delayed approval, preparation, and hardware responses; preserve canonical tracking after broadcast.
 - Bound private-relay Nostr frame processing and verified-event duplicate retention, reject malformed ingress without raw payload logging, and reconnect with the original filters without letting invalid event IDs or timestamps suppress valid delivery.
 - Bound queued contact edits, encrypted storage writes, and contact-list updates to their originating unlock session, while preserving writes already committed before a lock.
 - Revoke pending merchant loads, queued edits, PIN actions, and UI publication on vault lock, reset, session replacement, or provider teardown while preserving completed encrypted commits for recovery.

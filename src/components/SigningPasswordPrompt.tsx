@@ -125,7 +125,6 @@ function SigningPasswordDialog({
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Enter password"
                 disabled={busy}
-                autoFocus
               />
             </Field>
             <ErrorText message={error ?? ""} />

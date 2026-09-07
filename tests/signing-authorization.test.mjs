@@ -5,7 +5,19 @@ import test from "node:test";
 import {
   SigningAuthorizationCancelledError,
   createSigningAuthorizationGate,
+  captureSigningContextAuthorization,
 } from "../src/lib/signing-authorization.ts";
+
+test('captured signing context checks live ownership at capture and every continuation', () => {
+  let current = true;
+  let checks = 0;
+  const guard = captureSigningContextAuthorization(() => { checks++; return current; });
+  guard();
+  assert.equal(checks, 2);
+  current = false;
+  assert.throws(guard, SigningAuthorizationCancelledError);
+  assert.throws(() => captureSigningContextAuthorization(() => false), SigningAuthorizationCancelledError);
+});
 
 test("a signing approval is single-use and publishes one stable pending request", async () => {
   const snapshots = [];

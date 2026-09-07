@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { Federation } from "@stellar/stellar-sdk";
 import {
@@ -176,7 +176,6 @@ export function SendModal({
       prefill={prefill}
       openPrivateSend={openPrivateSend}
       onBusyChange={setSurfaceBusy}
-      embedded
     />
   );
 
@@ -188,25 +187,21 @@ export function SendModal({
         onClose={requestClose}
         closeDisabled={surfaceBusy}
       />
-      {availableAssets.length > 0 ? (
-        <Tabs
-          value={sendMode}
-          onChange={changeMode}
-          ariaLabel="Send type"
-          activationMode="manual"
-          options={[
-            { value: "public", label: "Public", disabled: surfaceBusy },
-            { value: "private", label: "Private", disabled: surfaceBusy },
-          ]}
-          panelBusy={surfaceBusy}
-          tabListClassName="mx-4 mt-4 sm:mx-6"
-          panelClassName="min-h-56"
-        >
-          {panel}
-        </Tabs>
-      ) : (
-        panel
-      )}
+      <Tabs
+        value={sendMode}
+        onChange={changeMode}
+        ariaLabel="Send type"
+        activationMode="manual"
+        options={[
+          { value: "public", label: "Public", disabled: surfaceBusy },
+          { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
+        ]}
+        panelBusy={surfaceBusy}
+        tabListClassName={availableAssets.length > 0 || sendMode === "private" ? "mx-4 mt-4 sm:mx-6" : "hidden"}
+        panelClassName="min-h-56"
+      >
+        {panel}
+      </Tabs>
     </Modal>
   );
 }
@@ -216,13 +211,11 @@ function SendInner({
   prefill,
   openPrivateSend,
   onBusyChange,
-  embedded = false,
 }: {
   onClose: () => void;
   prefill?: SendPrefill | null;
   openPrivateSend(address: string): void;
   onBusyChange(busy: boolean): void;
-  embedded?: boolean;
 }) {
   const { network, activeAccount, accounts } = useWalletIdentity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
@@ -231,6 +224,7 @@ function SendInner({
   const { submissionStatus } = useWalletSubmission();
   const {
     send,
+    captureSigningContext,
     prepareStealthPayment,
     submitStealthPayment,
     prepareCosignPayment,
@@ -250,6 +244,30 @@ function SendInner({
       ? { assetKey: null, error: null }
     : { assetKey: "native", error: null };
   const [stage, setStage] = useState<Stage>("form");
+  const publicReviewAuthorization = useRef<(() => void) | null>(null);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  const resultFocus = useRef(false);
+  const confirmButtonRef = useCallback((node: HTMLButtonElement | null) => {
+    if (!node) return;
+    // Only hand off focus actually owned by this button when it disappears.
+    return () => { resultFocus.current = document.activeElement === node; };
+  }, []);
+  useLayoutEffect(() => {
+    const moved = () => { resultFocus.current = false; };
+    document.addEventListener("focusin", moved);
+    document.addEventListener("pointerdown", moved, true);
+    return () => {
+      document.removeEventListener("focusin", moved);
+      document.removeEventListener("pointerdown", moved, true);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const heading = resultHeading.current;
+    if (heading && resultFocus.current && document.activeElement === document.body && !heading.closest("[inert]")) {
+      heading.focus({ preventScroll: true });
+    }
+    resultFocus.current = false;
+  }, [stage]);
   const [destination, setDestination] = useState(acceptedPrefill?.destination ?? "");
   const [amount, setAmount] = useState(
     acceptedPrefill?.amount && isValidAmount(acceptedPrefill.amount) ? acceptedPrefill.amount : "",
@@ -283,6 +301,7 @@ function SendInner({
 
   const [signerInfo, setSignerInfo] = useState<AccountSignerInfo | null>(null);
   const trackedSubmissionStatus = submission ? submissionStatus(submission) : null;
+  const receiptNetwork = submission?.network ?? publicReview?.network ?? stealthReview?.network ?? network;
 
   useEffect(() => {
     onBusyChange(stage === "sending");
@@ -531,6 +550,12 @@ function SendInner({
   async function handleReview() {
     if (!stealthDestination) {
       if (!selectedAsset || !activeAccount) return;
+      try {
+        publicReviewAuthorization.current = captureSigningContext();
+      } catch {
+        setError("Wallet context changed. Review the payment again before signing.");
+        return;
+      }
       const paymentMemo: StellarMemoInput | undefined = memo.trim()
         ? { type: memoType, value: memo.trim() }
         : undefined;
@@ -636,6 +661,9 @@ function SendInner({
         sourcePublicKey: activeAccount?.publicKey ?? "",
         network,
       });
+      const authorizeBeforeSigning = publicReviewAuthorization.current;
+      if (!authorizeBeforeSigning) throw new Error("Review this payment before signing it.");
+      authorizeBeforeSigning();
       if (reviewed.needsCosigners) {
         // Multi-sig account: collect our signature, share the envelope instead of submitting
         const result = await prepareCosignPayment({
@@ -645,6 +673,7 @@ function SendInner({
           issuer: reviewed.asset.issuer ?? undefined,
           memo: reviewed.memo,
           feeStroops: reviewed.feeStroops,
+          authorizeBeforeSigning,
         });
         setCosignXdr(result.xdr);
         setStage("cosign");
@@ -658,6 +687,7 @@ function SendInner({
         issuer: reviewed.asset.issuer ?? undefined,
         memo: reviewed.memo,
         feeStroops: reviewed.feeStroops,
+        authorizeBeforeSigning,
       });
       setHash(result.hash);
       setSubmission(result);
@@ -723,47 +753,20 @@ function SendInner({
   }
 
   const knownSelected = reviewedAsset
-    ? lookupKnownAsset(reviewedAsset.code, reviewedAsset.issuer, publicReview?.network ?? network)
+    ? lookupKnownAsset(reviewedAsset.code, reviewedAsset.issuer, receiptNetwork)
     : null;
 
   return (
     <>
-      {!embedded && <ModalHeader
-        title={
-          stage === "done"
-            ? trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"
-            : stage === "status_unknown"
-              ? "Payment Status Unknown"
-            : stage === "cosign"
-              ? "Awaiting Cosigners"
-              : stage === "review" || stage === "sending"
-                ? "Review Transfer"
-                : "Send Payment"
-        }
-        subtitle={
-          stage === "done"
-            ? trackedSubmissionStatus === "confirmed"
-              ? `Confirmed on Stellar ${NETWORKS[network].label}`
-              : `Accepted on Stellar ${NETWORKS[network].label} — confirming on-chain`
-            : stage === "status_unknown"
-              ? `Tracking the canonical hash on Stellar ${NETWORKS[network].label}`
-            : stage === "cosign"
-              ? "Signed — share the envelope to collect signatures"
-              : stage === "review" || stage === "sending"
-                ? "Verify details before broadcasting"
-                : `Transfer assets on Stellar ${NETWORKS[network].label}`
-        }
-        onClose={stage === "sending" ? undefined : onClose}
-      />}
       <div className="p-4 sm:p-6">
         {stage === "done" ? (
           <div className="flex flex-col items-center py-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
               <IconCheck size={28} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">
+            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">
               {trackedSubmissionStatus === "confirmed" ? "Payment Confirmed" : "Payment Accepted"}
-            </p>
+            </h2>
             <p className="mt-1 text-[13px] text-neutral-400">
               {trackedSubmissionStatus === "confirmed"
                 ? "The payment is confirmed on-chain."
@@ -772,7 +775,7 @@ function SendInner({
             {hash && (
               <a
                 className="chip mt-4"
-                href={NETWORKS[network].explorerTxUrl(hash)}
+                href={NETWORKS[receiptNetwork].explorerTxUrl(hash)}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -788,14 +791,14 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconAlert size={28} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Submission Status Unknown</p>
+            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Submission Status Unknown</h2>
             <p className="mt-2 max-w-md text-[13px] leading-relaxed text-neutral-300">
               Horizon did not confirm whether it accepted this transaction. Do not resubmit blindly.
               The wallet will keep checking the canonical hash.
             </p>
             {hash && (
               <p className="mt-4 w-full break-all rounded-xl bg-white/[0.04] p-3 font-mono text-[10.5px] text-neutral-300">
-                {network} · {hash}
+                {receiptNetwork} · {hash}
               </p>
             )}
             <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
@@ -807,7 +810,7 @@ function SendInner({
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
               <IconUsers size={26} />
             </span>
-            <p className="display-h mt-4 text-xl font-light text-white">Awaiting Cosigners</p>
+            <h2 ref={resultHeading} tabIndex={-1} className="display-h mt-4 text-xl font-light text-white outline-none">Awaiting Cosigners</h2>
             <p className="mt-1 max-w-[340px] text-[13px] leading-relaxed text-neutral-400">
               Your signature is collected (weight {myWeight} of{" "}
               {signerInfo?.thresholds.med_threshold ?? 0} needed). Share this envelope with a
@@ -1078,13 +1081,16 @@ function SendInner({
                 onClick={() => {
                   triggerHaptic("selection");
                   setPublicReview(null);
+                  setError(null);
                   setStage("form");
                 }}
               >
                 Back
               </Button>
               <Button
+                ref={confirmButtonRef}
                 loading={stage === "sending"}
+                focusableWhenDisabled
                 loadingLabel={reviewNeedsCosigners ? "Signing transaction" : "Sending payment"}
                 disabled={stage === "sending"}
                 onClick={() => void handleConfirm()}

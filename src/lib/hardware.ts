@@ -406,6 +406,7 @@ export async function signTrezorTransaction(
   tx: Transaction,
   path: string,
   expectedPublicKey = tx.source,
+  assertSessionActive?: () => void,
 ): Promise<void> {
   if (
     tx.ledgerBounds !== undefined ||
@@ -426,6 +427,7 @@ export async function signTrezorTransaction(
   const offerPrices = xdrOfferPrices(tx);
 
   const tc = await loadTrezorConnect();
+  assertSessionActive?.();
   const res = await tc.stellarSignTransaction({
     path,
     networkPassphrase: tx.networkPassphrase,
@@ -486,7 +488,7 @@ export async function signHardwareTx(tx: Transaction, signer: HardwareSigner): P
   const signatureCount = tx.signatures.length;
   signer.assertSessionActive?.();
   if (signer.device === "trezor") {
-    await signTrezorTransaction(tx, signer.path, signer.publicKey);
+    await signTrezorTransaction(tx, signer.path, signer.publicKey, signer.assertSessionActive);
     try {
       signer.assertSessionActive?.();
       return;

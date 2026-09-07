@@ -771,7 +771,7 @@ export async function signAndSubmit(
   } else {
     throw new SendError("No signing credential available.");
   }
-  return submitSignedTx(tx, network, 15_000, onPrepared);
+  return submitSignedTx(tx, network, 15_000, onPrepared, beforeSign);
 }
 
 function preparedSubmissionIdentity(
@@ -867,12 +867,16 @@ export async function submitSignedTx(
   network: NetworkKey,
   requestTimeoutMs = 15_000,
   onPrepared?: SubmissionPreparedCallback,
+  beforeSubmit?: () => void,
 ): Promise<SubmissionResult> {
   const horizonUrl = getHorizonUrl(network);
   const hash = Array.from(tx.hash(), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const form = new URLSearchParams();
   form.set("tx", tx.toXdr());
   await onPrepared?.(preparedSubmissionIdentity(tx, network, hash));
+  // Prepared-journal callbacks can themselves queue a context change. Keep
+  // this final refusal outside the possibly-broadcast error boundary.
+  beforeSubmit?.();
 
   try {
     const body = await getHorizonJson<SubmitFailureBody & { hash?: unknown }>(

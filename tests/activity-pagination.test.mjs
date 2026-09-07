@@ -59,10 +59,13 @@ function harness() {
   const requests = [];
   const pages = [page];
   let sessionActive = true;
-  const state = { activity: [{ id: "first-page" }], cursor: "first-cursor", error: null, loading: false };
+  const state = { activity: [{ id: "first-page" }], cursor: "first-cursor", error: null, loading: false, signingRevision: 0 };
   const context = vm.createContext({
     phase: "unlocked",
     activeAccount: { id: "first", publicKey: "synthetic-first" },
+    activeId: "first",
+    signingContextRef: { current: {} },
+    setSigningContextRevision: update => { state.signingRevision = update(state.signingRevision); },
     activityCursor: state.cursor,
     loadingMore: false,
     activityPaginationLane: createLatestRequestLane(),
@@ -128,6 +131,10 @@ for (const change of ["account", "network", "lock"]) {
     if (change === "account") scope.select("second");
     else if (change === "network") scope.network("mainnet");
     else scope.lock();
+    if (change !== "lock") {
+      assert.equal(scope.context.signingContextRef.current, null);
+      assert.equal(scope.state.signingRevision, 1);
+    }
     scope.state.activity = [{ id: "replacement-first-page" }];
     scope.state.cursor = "replacement-cursor";
     scope.page.resolve({ items: [{ id: "obsolete-page" }], nextCursor: "obsolete-cursor" });

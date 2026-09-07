@@ -42,6 +42,73 @@ mockTrezorMethod("stellarGetAddress", async () => ({
 
 const hardware = await import("../src/lib/hardware.ts");
 const { cosignTransaction } = await import("../src/lib/multisig.ts");
+const { signAndSubmit } = await import('../src/lib/api.ts');
+const { captureSigningContextAuthorization } = await import('../src/lib/signing-authorization.ts');
+
+test('hardware initialization cannot continue a revoked originating operation', async () => {
+  const signer = Keypair.random();
+  const tx = new TransactionBuilder(new Account(signer.publicKey(), '0'), { fee: '100', networkPassphrase: Networks.TESTNET })
+    .addOperation(Operation.payment({ destination: Keypair.random().publicKey(), asset: Asset.native(), amount: '1' })).setTimeout(180).build();
+  let finishInit;
+  let enteredInit;
+  let current = true;
+  let deviceRequests = 0;
+  const waiting = new Promise(resolve => { enteredInit = resolve; });
+  mockTrezorMethod('init', async settings => {
+    initSettings = settings;
+    enteredInit();
+    await new Promise(resolve => { finishInit = resolve; });
+  });
+  mockTrezorMethod('stellarSignTransaction', async () => {
+    deviceRequests++;
+    return { success: true, payload: { signature: transactionSignatureHex(signer, tx) } };
+  });
+  const outcome = hardware.signHardwareTx(tx, {
+    device: 'trezor', publicKey: signer.publicKey(), path: "m/44'/148'/0'",
+    assertSessionActive: () => { if (!current) throw new Error('Originating signing context was revoked.'); },
+  });
+  const rejection = assert.rejects(outcome, /context was revoked/);
+  await waiting;
+  current = false;
+  finishInit();
+  await rejection;
+  assert.equal(deviceRequests, 0);
+  assert.equal(tx.signatures.length, 0);
+});
+
+for (const revoke of [true, false]) test(`public payment ${revoke ? 'rejects revoked' : 'retains unchanged'} context after deferred hardware approval`, async t => {
+  const signer = Keypair.random();
+  const tx = new TransactionBuilder(new Account(signer.publicKey(), '0'), { fee: '100', networkPassphrase: Networks.TESTNET })
+    .addOperation(Operation.payment({ destination: Keypair.random().publicKey(), asset: Asset.native(), amount: '1' })).setTimeout(180).build();
+  const origin = {};
+  let current = origin;
+  const guard = captureSigningContextAuthorization(() => current === origin);
+  let finishDevice;
+  let enteredDevice;
+  let posts = 0;
+  let prepared = 0;
+  const waiting = new Promise(resolve => { enteredDevice = resolve; });
+  mockTrezorMethod('stellarSignTransaction', async () => {
+    enteredDevice();
+    await new Promise(resolve => { finishDevice = resolve; });
+    return { success: true, payload: { signature: transactionSignatureHex(signer, tx) } };
+  });
+  t.mock.method(globalThis, 'fetch', async (_input, init) => {
+    if (init?.method === 'POST') posts++;
+    return new Response('{}', { status: init?.method === 'POST' ? 200 : 503, headers: { 'Content-Type': 'application/json' } });
+  });
+  const outcome = signAndSubmit(tx, 'testnet', null, {
+    device: 'trezor', publicKey: signer.publicKey(), path: "m/44'/148'/0'", assertSessionActive: guard,
+  }, () => { prepared++; guard(); }, guard);
+  const result = outcome.then(value => value.status, () => 'rejected');
+  await waiting;
+  if (revoke) current = {};
+  finishDevice();
+  assert.equal(await result, revoke ? 'rejected' : 'status_unknown');
+  assert.equal(tx.signatures.length, revoke ? 0 : 1);
+  assert.equal(prepared, revoke ? 0 : 1);
+  assert.equal(posts, revoke ? 0 : 1);
+});
 
 test("rejects invalid Stellar derivation indices", () => {
   assert.throws(() => hardware.getStellarDerivationPath(-1), /index/i);
@@ -176,7 +243,7 @@ test("hardware signing rejects approval completed after wallet authority is revo
     }),
     /authority was revoked/i,
   );
-  assert.equal(checks, 2);
+  assert.equal(checks, 3);
   assert.equal(tx.signatures.length, 0);
 });
 
