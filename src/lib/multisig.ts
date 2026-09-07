@@ -410,6 +410,7 @@ export async function prepareCosignPayment(params: {
   secretKey?: string;
   softwareSigner?: Keypair;
   hardwareSigner?: HardwareSigner;
+  beforeSign?: () => void;
 }): Promise<{ xdr: string }> {
   const { network, destination, amount, assetCode, issuer } = params;
   const feeStroops = await loadRecommendedBaseFee(network, params.feeStroops);
@@ -467,8 +468,10 @@ export async function prepareCosignPayment(params: {
   if (memo) builder.addMemo(memo);
 
   const tx = builder.setTimeout(180).build();
+  params.beforeSign?.();
   if (kp) tx.sign(kp);
   else if (params.hardwareSigner) await signHardwareTx(tx, params.hardwareSigner);
+  params.beforeSign?.();
   return { xdr: tx.toXdr() };
 }
 

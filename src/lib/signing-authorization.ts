@@ -12,6 +12,17 @@ export class SigningAuthorizationCancelledError extends Error {
   }
 }
 
+/** A local operation's captured authority, never a mutable global signer. */
+export function captureSigningContextAuthorization(isCurrent: () => boolean): () => void {
+  const assertCurrent = () => {
+    if (!isCurrent()) {
+      throw new SigningAuthorizationCancelledError("Wallet context changed. Review the payment again before signing.");
+    }
+  };
+  assertCurrent();
+  return assertCurrent;
+}
+
 interface PendingSigningAuthorization extends SigningAuthorizationRequest {
   resolve: () => void;
   reject: (error: Error) => void;

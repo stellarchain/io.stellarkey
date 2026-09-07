@@ -1203,7 +1203,8 @@ test("the send dialog cannot be dismissed while signing or broadcasting", () => 
   assert.match(send, /<Modal open onClose=\{requestClose\} wide dismissable=\{!surfaceBusy\}>/);
   assert.match(send, /closeDisabled=\{surfaceBusy\}/);
   assert.match(send, /if \(next === sendMode \|\| surfaceBusy\) return/);
-  assert.match(send, /onClose=\{stage === "sending" \? undefined : onClose\}/);
+  assert.equal((send.match(/<ModalHeader\b/g) ?? []).length, 1);
+  assert.match(send, /<ModalHeader\s+title="Send Payment"[\s\S]*?onClose=\{requestClose\}[\s\S]*?closeDisabled=\{surfaceBusy\}/);
 });
 
 test("every locked transaction flow consumes shared confirmed and failed resolutions", () => {

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -22,6 +23,7 @@ import {
   addWatchOnlyAccount,
   changeVaultPassword as changeVaultPasswordRecord,
   getArchivedAccounts,
+  getSessionSnapshot,
   hasMnemonic,
   invalidateWalletLifecycle,
   revealMnemonic as revealMnemonicVault,
@@ -56,6 +58,7 @@ import {
 } from "@/lib/vault";
 import {
   createSigningAuthorizationGate,
+  captureSigningContextAuthorization,
   type SigningAuthorizationRequest,
 } from "@/lib/signing-authorization";
 import { IndexedDbEncryptedRecordDriver } from "@/lib/indexed-db";
@@ -349,6 +352,8 @@ interface WalletContextValue {
   switchNetwork: (network: NetworkKey) => void;
   refresh: () => Promise<void>;
   loadMoreActivity: (options?: { retry?: boolean }) => Promise<void>;
+  /** Bind an explicit public-payment review to this visible wallet context. */
+  captureSigningContext: () => () => void;
 
   send: (params: {
     destination: string;
@@ -418,6 +423,7 @@ interface WalletContextValue {
     issuer?: string | null;
     memo?: StellarMemoInput;
     feeStroops?: number;
+    authorizeBeforeSigning?: () => void;
   }) => Promise<{ xdr: string }>;
   /** Co-sign a shared envelope XDR; submits automatically once weight suffices */
   cosignTransaction: (xdr: string, confirmedNetwork: NetworkKey | null) => Promise<CosignOutcome>;
@@ -505,6 +511,7 @@ type WalletTransactionsContextValue = Pick<
   WalletContextValue,
   | "refresh"
   | "send"
+  | "captureSigningContext"
   | "authorizeTransactionSigning"
   | "prepareStealthPayment"
   | "submitStealthPayment"
@@ -576,6 +583,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<AccountMeta[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<AccountMeta[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [signingContextRevision, setSigningContextRevision] = useState(0);
+  const signingSession = getSessionSnapshot();
+  // Identity, not stored preferences: returning to the same account/network
+  // creates a new token. Reading the session here grants no signing authority.
+  const signingContext = useMemo(() => ({ accountId: activeId, network, phase, session: signingSession, revision: signingContextRevision }),
+    [activeId, network, phase, signingSession, signingContextRevision]);
+  const signingContextRef = useRef<typeof signingContext | null>(signingContext);
+  useLayoutEffect(() => {
+    signingContextRef.current = signingContext;
+    return () => { signingContextRef.current = null; };
+  }, [signingContext]);
+  const captureSigningContext = useCallback(() => {
+    const assertSessionCurrent = createSessionRevocationGuard();
+    return captureSigningContextAuthorization(() => {
+      assertSessionCurrent();
+      return signingContextRef.current === signingContext && signingContext.session === getSessionSnapshot();
+    });
+  }, [signingContext]);
   const [balances, setBalances] = useState<AssetBalance[] | null>(null);
   const [minimumBalanceXlm, setMinimumBalanceXlm] = useState<string | null>(null);
   const [recommendedFeeSelection, setRecommendedFeeSelection] = useState<{
@@ -754,8 +779,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     account: AccountMeta,
     hardwareSigner: HardwareSigner | undefined,
     operation: (softwareSigner: Keypair | undefined) => T | Promise<T>,
+    authorizeBeforeSigning?: () => void,
   ): Promise<T> => {
+    authorizeBeforeSigning?.();
     await requestSigningAuthorization(label, Boolean(hardwareSigner));
+    authorizeBeforeSigning?.();
     return withSigningSecret(account, hardwareSigner, operation);
   }, [requestSigningAuthorization]);
 
@@ -2036,6 +2064,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const selectAccount = useCallback((id: string) => {
     const vault = setActiveStoredAccount(id);
     if (!vault) return;
+    if (id !== activeId) {
+      signingContextRef.current = null;
+      setSigningContextRevision(value => value + 1);
+    }
     cancelActivityPagination();
     const target = vault.accounts.find((a) => a.id === id);
     refreshGeneration.current += 1;
@@ -2057,7 +2089,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setClaimableBalances([]);
     setDataError(null);
     setActiveId(id);
-  }, [cancelActivityPagination, endpointRevision, network]);
+  }, [activeId, cancelActivityPagination, endpointRevision, network]);
 
   const addAccount = useCallback(async (opts: { secret?: string; label?: string }) => {
     const account = await addStoredAccount(opts);
@@ -2328,6 +2360,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [cancelActivityPagination]);
 
   const switchNetwork = useCallback((net: NetworkKey) => {
+    if (net !== network) {
+      signingContextRef.current = null;
+      setSigningContextRevision(value => value + 1);
+    }
     cancelActivityPagination();
     refreshGeneration.current += 1;
     accountBalanceGeneration.current += 1;
@@ -2345,7 +2381,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setXlmPriceSample(UNAVAILABLE_MARKET_SAMPLE);
     setPriceData(null);
     setPriceRequestStatus("idle");
-  }, [cancelActivityPagination, marketRefreshLane]);
+  }, [cancelActivityPagination, marketRefreshLane, network]);
 
   const loadMoreActivity = useCallback(async (options?: { retry?: boolean }) => {
     if (phase !== "unlocked" || !activeAccount || !activityCursor
@@ -2418,8 +2454,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (activeAccount.watchOnly) {
         throw new Error("This is a watch-only account — switch to a signing account to send.");
       }
+      const assertContextCurrent = captureSigningContext();
+      const beforeSign = () => { assertContextCurrent(); params.authorizeBeforeSigning?.(); };
       const api = await loadWalletApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Send payment", activeAccount, hw, (softwareSigner) => runTrackedBroadcast(
         "Payment",
         undefined,
@@ -2430,14 +2469,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           ...params,
           feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
           onPrepared,
-          beforeSign: params.authorizeBeforeSigning,
+          beforeSign,
         }),
         (result) => result,
         params.submissionJournal,
-        params.authorizeBeforeSigning,
-      ));
+        beforeSign,
+      ), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, runTrackedBroadcast, withAuthorizedSigningSecret],
   );
 
   const prepareStealthPayment = useCallback(async (params: {
@@ -2755,10 +2794,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       issuer?: string | null;
       memo?: StellarMemoInput;
       feeStroops?: number;
+      authorizeBeforeSigning?: () => void;
     }) => {
       if (!activeAccount) throw new Error("No active account");
+      const assertContextCurrent = captureSigningContext();
+      const beforeSign = () => { assertContextCurrent(); params.authorizeBeforeSigning?.(); };
       const msig = await loadMultisigApi();
       const hw = hardwareSignerFor(activeAccount);
+      if (hw) hw.assertSessionActive = beforeSign;
       return withAuthorizedSigningSecret("Prepare co-signed payment", activeAccount, hw, (softwareSigner) => msig.prepareCosignPayment({
         network,
         sourcePublicKey: activeAccount.publicKey,
@@ -2766,9 +2809,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         hardwareSigner: hw,
         ...params,
         feeStroops: params.feeStroops ?? recommendedBaseFeeStroops,
-      }));
+        beforeSign,
+      }), beforeSign);
     },
-    [activeAccount, network, recommendedBaseFeeStroops, withAuthorizedSigningSecret],
+    [activeAccount, captureSigningContext, network, recommendedBaseFeeStroops, withAuthorizedSigningSecret],
   );
 
   const cosignTransaction = useCallback(
@@ -2952,6 +2996,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     refresh,
     loadMoreActivity,
     send,
+    captureSigningContext,
     authorizeTransactionSigning,
     prepareStealthPayment,
       submitStealthPayment,
@@ -3039,6 +3084,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       refresh,
       loadMoreActivity,
       send,
+      captureSigningContext,
       authorizeTransactionSigning,
       prepareStealthPayment,
       submitStealthPayment,
@@ -3220,6 +3266,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const transactionsValue = useMemo<WalletTransactionsContextValue>(() => ({
     refresh,
     send,
+    captureSigningContext,
     authorizeTransactionSigning,
     prepareStealthPayment,
     submitStealthPayment,
@@ -3238,6 +3285,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     fundFromFriendbot,
   }), [
     applyMultisigConfig,
+    captureSigningContext,
     authorizeTransactionSigning,
     claimAirdrop,
     claimAirdrops,
