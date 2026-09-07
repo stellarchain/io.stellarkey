@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.
 - Made verified Private Payments commitment-cache appends read only new and overlapping records, with atomic checkpoint checks, full history validation during recovery, and compatible migration that preserves existing cache data.
 - Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
 - Redesigned Earn by relaying as a live, fee-first control panel with explicit Start/Stop, clearer approval and cost disclosures, and secondary connection and peer-discovery tools. Settings save in place, preserve unfinished edits, and incorporate untouched preferences changed in another tab.

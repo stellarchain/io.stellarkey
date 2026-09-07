@@ -190,9 +190,12 @@ deployment target.
 | `npm run test:e2e` | Production build plus the complete Playwright browser matrix |
 | `npm run test:hardware` | Deterministic Trezor adapter tests |
 | `npm run audit:prod` | High/critical production dependency gate |
-| `npm run release:verify` | Clean-tree preflight and every automated release gate |
+| `npm run release:verify` | Clean-tree preflight and the complete application verification suite |
 
 The browser matrix covers desktop Chromium, iPhone WebKit, and iPad WebKit.
+The required isolated private-component matrix uses Chromium and iPhone WebKit;
+the nested browser protocol tests run separately within application verification.
+Rust security and circuit Gate A jobs remain separately required in CI and releases.
 Physical Trezor, installed-PWA, backup/restore, and mainnet checks remain manual
 because emulation cannot prove device or network behavior.
 
@@ -204,14 +207,19 @@ hash-bound CSP; the host headers add response-only protections including
 `frame-ancestors 'none'`. Do not rebuild the source on the hosting platform or
 mix files from different releases.
 
-The optional `@trezor/connect-web@9.7.3` dependency currently brings ten
-low-severity `elliptic` advisories through its Bitcoin/UTXO support graph, not
-StellarKey's Stellar signing path. npm offers no fixed stable release. High and
-critical production advisories remain release-blocking.
+As checked on 2026-09-07, the installed production graph has ten low-severity
+vulnerable packages associated with one `elliptic` advisory through Trezor's
+dependency graph, and no high or critical findings. Trezor is a regular production
+dependency whose UI is optional. A reviewed, SDK-14.2.0-scoped TOML override removes
+the installed parser's high-severity findings; it does not patch upstream browser
+prebundles or Trezor's remotely hosted popup core. See the [dependency evidence and
+remaining limits](docs/dependency-security.md). High and critical production
+advisories remain release-blocking.
 
 Read the [production deployment runbook](docs/production-deployment.md) and
-[release checklist](docs/release-checklist.md) before publishing. Pinch zoom is
-disabled by product requirement and covered by the mobile release gate.
+[release checklist](docs/release-checklist.md) before publishing. Viewport metadata
+and global touch CSS permit user zoom. Automated 200% equivalent reflow checks do
+not replace physical-device pinch zoom or human VoiceOver/NVDA checks.
 
 ## Project documentation
 

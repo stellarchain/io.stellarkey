@@ -1,10 +1,13 @@
 # Test strategy
 
-StellarKey has one deterministic release path: `npm run release:verify`. Browser tests are owned by the Playwright Test runner, start their own production static server, install bounded network fixtures, and fail on unexpected page or console errors. There are no scripts that depend on a developer-owned browser session, `/tmp` secrets, a pre-running development server, or mutable public-testnet accounts.
+`npm run release:verify` requires a clean worktree and runs `verify:application`, the complete application verification suite. CI and tagged releases also require the separate Rust security and circuit Gate A jobs; the application command does not run those jobs. Normal browser tests own their production static server, install bounded synthetic network fixtures, and fail on unexpected page or console errors. Required private UI and component tests own an isolated development server. None of these automated gates uses a developer-owned browser session or a funded public-testnet account.
 
 ## Coverage map
 
 - `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, current wallet and merchant storage schemas, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.
+- `npm run test:hardware` includes real installed Trezor request-schema and device-protocol conversion, nested Stellar SDK transaction utilities, and resolver parser regressions. Device responses and metadata HTTP boundaries are synthetic; see [dependency compatibility and coverage limits](dependency-security.md).
+- `npm run test:private-protocol` runs the nested browser protocol package tests and is required by application verification.
+- `npm run test:e2e:private-ui` requires the Public/Private continuity, overlay-contract, and manifest-tamper gates in Chromium and iPhone WebKit; `npm run test:e2e:private-components` requires every isolated synthetic private-component scenario in those two projects.
 - `cargo test --workspace --locked` in `protocol/private-balance/` gates the pool contract, verifier, protocol crate, and deterministic recovery model in both CI and tagged releases.
 - `e2e/wallet.spec.ts` covers onboarding, corrupt-data recovery, endpoint preferences, unlock, send and swap review, and watch-only safety.
 - `e2e/merchant.spec.ts` covers setup, operators and shifts, cash/crypto/split settlement, reload reconciliation, refunds, invoices, counter codes, customers, reports, full IndexedDB backup/wipe/restore, offline recovery, install handoff, and mobile overflow.
@@ -17,7 +20,9 @@ StellarKey has one deterministic release path: `npm run release:verify`. Browser
 
 Physical Trezor signing, passkey prompts, and installed iOS behavior remain manual release boundaries because a headless browser cannot prove the hardware or operating-system interaction. Follow [the release checklist](release-checklist.md) for those checks.
 
-Private Balance unit tests cover protocol encodings, circuit/contract parity, archive verification, encrypted storage, isolated workers, exact transaction review, durable submission recovery, bounded restoration, mirrors, public-cache root verification, coordination, and factual privacy copy. The production gate must keep the development manifest unmounted. Full setup/payment/recovery journeys, archive-expiry drills, ceremony hashes, and physical-device proof memory/background behavior remain release evidence and cannot be replaced by mocked unit tests.
+The normal active browser matrix uses desktop Chromium, iPhone WebKit, and iPad WebKit. The base configuration also defines Firefox and desktop WebKit projects restricted to opt-in private browser-smoke tests; those live cases are skipped without a fixture and their funded runner remains blocked. The required isolated matrix uses only Chromium and iPhone WebKit. Screenshots, traces, and video are disabled. The structural-only reporter omits wallet text and raw errors. Playwright 1.62.1 can still capture ARIA context on locator failures, so these tests must use isolated non-usable synthetic fixtures with external transaction traffic blocked. `check:fixture-clean` runs before and after the production build; the build also refuses a leftover synthetic component route. Record human VoiceOver/NVDA and physical pinch zoom checks separately from automated accessibility and 200% equivalent reflow checks.
+
+Private Balance unit tests cover protocol encodings, circuit/contract parity, archive verification, encrypted storage, isolated workers, exact transaction review, durable submission recovery, bounded restoration, mirrors, public-cache root verification, coordination, and factual privacy copy. Production-hosted builds explicitly permit the exact pinned Testnet development fixture; they must reject altered manifest bytes, unapproved development fixtures, and Mainnet use. Full setup/payment/recovery journeys, archive-expiry drills, ceremony hashes, and physical-device proof memory/background behavior remain release evidence and cannot be replaced by mocked unit tests.
 
 The ignored 100,000-action deterministic recovery model is Gate B. GitHub runs it weekly and it can
 also be started manually through the `Private Balance Gate B` workflow; it remains separate from the
@@ -25,11 +30,13 @@ bounded pull-request suite.
 
 ## Isolated Private Balance testnet fixture
 
-The replacement protocol currently publishes an authenticated empty catalogue.
+The authenticated catalogue currently publishes one Testnet development pool with
+XLM and USDC. The exact manifest pin and explicit development-fixture flag permit
+that fixture in production-hosted builds; this is not Mainnet or promotion approval.
 `npm run private:generate` regenerates local artifacts and cannot make them a
 deployment. Retired fixture records are removed so they cannot be mistaken for
-or block current deployment evidence. After fresh XLM and USDC deployments produce evidence matching the current
-artifacts, publication must be requested explicitly with:
+or block current deployment evidence. Publishing a replacement deployment requires
+fresh evidence matching the current artifacts and explicit authorization before:
 
 ```sh
 node protocol/private-balance/scripts/generate-manifest.mjs --publish-deployment
@@ -63,25 +70,15 @@ beta, or release approval and becomes disposable whenever testnet resets.
 
 ## Minimal Private Balance browser MVP
 
-The bounded live MVP runner builds the production application against the exact
-public-testnet fixture, funds fresh test accounts through Friendbot, and runs
-seven Chromium journeys plus four cross-browser smoke checks:
+The live runner at `protocol/private-balance/scripts/run-testnet-e2e.mjs` currently
+fails closed before build, fixture mutation, funding, wallet import, or navigation.
+Playwright 1.62.1 has no supported way to suppress locator-failure ARIA snapshots;
+turning off screenshots, traces, and video does not solve that capture path.
+Deleting output afterward is insufficient. This runner cannot currently produce
+new usable-wallet release evidence.
 
-```sh
-node protocol/private-balance/scripts/run-testnet-e2e.mjs
-```
-
-The journeys cover two isolated profiles, real deposits and canonical reconciliation, consolidation,
-private send with recipient output and sender change, withdrawal, lock/restart, ambiguous submission,
-encrypted-backup restore, seed-only recovery, endpoint switching, private receive validation,
-the fixture-independent fail-closed manifest gate, and critical accessibility. Firefox, desktop WebKit, iPhone WebKit,
-and iPad WebKit then repeat the setup/receive smoke path. The runner temporarily builds with an exact
-fixture-manifest hash and a generated development-fixture flag; both tracked release files are
-restored byte-for-byte even on failure. It writes only redacted public evidence to
-`protocol/private-balance/results/mvp-e2e.json` after every journey passes. Test account secrets exist
-only in the runner's child-process environment and are never written to the evidence file.
-
-This is deliberately minimal MVP evidence. It does not replace archive-expiry
-and paid-restoration drills, the full browser and physical-device matrix, the
-parameter ceremony, independent security audits, or final beta/release
-approval.
+Its intended funded setup/payment/recovery journeys remain blocked until safe
+capture prevention is established and reviewed. The synthetic gates above remain
+required and usable, but do not establish live Testnet, physical-device,
+archive-expiry, paid-restoration, ceremony, audit, or promotion evidence. Any older
+MVP evidence must retain its original date and deployment identity.
