@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { Button, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
 
 // Only opaque synthetic strings. Clipboard behaviour is controlled at the
@@ -106,6 +106,33 @@ export function UxPrimitivesFixture() {
       <div className="p-10 text-center">
         <Tooltip label="Synthetic nested guidance"><button type="button" className="chip">Show synthetic nested help</button></Tooltip>
       </div>
+    </Modal>
+    <StrictMode><ModalInitialFocusFixture /></StrictMode>
+  </>;
+}
+
+function ModalInitialFocusFixture() {
+  const [open, setOpen] = useState(false);
+  const [present, setPresent] = useState(true);
+  const [newerOpen, setNewerOpen] = useState(false);
+  return <>
+    <Button onClick={() => { setPresent(true); setOpen(true); }}>Open initial focus checks</Button>
+    <Button onClick={() => { window.setTimeout(() => { setPresent(true); setOpen(true); }, 0); }}>Open deferred initial focus checks</Button>
+    <div hidden>
+      <Button onClick={() => setOpen(false)}>Close initial focus opening</Button>
+      <Button onClick={() => setOpen(true)}>Reopen initial focus opening</Button>
+      <Button onClick={() => setPresent(false)}>Unmount initial focus opening</Button>
+    </div>
+    {present && <Modal open={open} onClose={() => setOpen(false)}>
+      <ModalHeader title="Synthetic initial focus" onClose={() => setOpen(false)} />
+      <div className="space-y-4 p-4">
+        <Field label="Synthetic owned focus"><input className="input" /></Field>
+        <Button onClick={() => setNewerOpen(true)}>Open newer initial focus</Button>
+      </div>
+    </Modal>}
+    <Modal open={newerOpen} onClose={() => setNewerOpen(false)}>
+      <ModalHeader title="Synthetic newer initial focus" onClose={() => setNewerOpen(false)} />
+      <div className="p-4"><Field label="Synthetic newer owned focus"><input className="input" /></Field></div>
     </Modal>
   </>;
 }

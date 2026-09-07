@@ -383,7 +383,7 @@ export function Modal({
   }, [closing]);
 
   // Scroll lock + focus restore for as long as the dialog is in the tree.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!mounted) return;
     if (restoreFocusFrameRef.current !== null) {
       window.cancelAnimationFrame(restoreFocusFrameRef.current);
@@ -396,12 +396,6 @@ export function Modal({
     restoreFocusRef.current = activeElement ?? latestPointerTarget ?? restoreFocusRef.current;
     latestPointerTarget = null;
     lockBodyScroll();
-    window.requestAnimationFrame(() => {
-      const first = panelRef.current?.querySelector<HTMLElement>(
-        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
-      );
-      (first ?? panelRef.current)?.focus({ preventScroll: true });
-    });
     return () => {
       unlockBodyScroll();
       const restoreTarget = restoreFocusRef.current;
@@ -423,6 +417,22 @@ export function Modal({
     registerModal(modal);
     return () => unregisterModal(modal);
   }, [mounted]);
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return;
+    const panel = panelRef.current;
+    const backdrop = backdropRef.current;
+    // The opening owns this callback, not a later render or newer focus intent.
+    // Closing revokes it even while the exit animation retains the same shell.
+    const frame = window.requestAnimationFrame(() => {
+      if (!panel?.isConnected || !isTopModal(backdrop) || panel.contains(document.activeElement)) return;
+      const first = panel.querySelector<HTMLElement>(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], details > summary:first-of-type, [tabindex]:not([tabindex="-1"])',
+      );
+      (first ?? panel).focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, mounted]);
 
   // iOS keeps a separate visual viewport while the keyboard is open. Following
   // it prevents a sheet from being centred behind the keyboard or clipped by
