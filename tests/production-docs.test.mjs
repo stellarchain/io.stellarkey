@@ -105,8 +105,12 @@ test("Private Balance ceremony and testnet guidance match the current candidate"
   assert.match(ceremony, /independent/i);
   assert.doesNotMatch(ceremony, /57,838/);
   assert.match(testing, /exact manifest-pinned[\s\S]*Wasm/i);
-  assert.match(testing, /seven Chromium journeys/i);
-  assert.match(testing, /four.*browser.*smoke/i);
+  assert.match(testing, /fails closed before build, fixture mutation, funding, wallet import, or navigation/i);
+  assert.match(testing, /Playwright 1\.62\.1.*suppress locator-failure ARIA snapshots/i);
+  assert.match(testing, /test:private-protocol/);
+  assert.match(testing, /test:e2e:private-components/);
+  assert.match(testing, /publishes one Testnet development pool/i);
+  assert.doesNotMatch(testing, /authenticated empty catalogue|development manifest unmounted/i);
 });
 
 test("Trezor remains an explicit separately licensed production boundary", () => {
