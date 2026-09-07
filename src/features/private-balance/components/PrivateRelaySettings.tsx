@@ -13,6 +13,7 @@ import {
 import { validatePrivateRelayUrls } from '../relay/transport';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceXlm } from '../runtime/selectors';
+import { useReportToOwner } from './useReportToOwner';
 
 function feeForInput(feeAtomic: string): string {
   return formatPrivateBalanceXlm(BigInt(feeAtomic)).replace(/(?:\.0+|(\.\d*?)0+)$/u, '$1');
@@ -45,9 +46,12 @@ function RelayToggleRow({
 export function PrivateRelaySettings({
   helperOnly = false,
   onSaved,
+  onDirtyChange,
 }: {
   helperOnly?: boolean;
   onSaved?(): void;
+  /** Reports unfinished fee or relay-address edits so the owning dialog can guard its dismissal. */
+  onDirtyChange?(dirty: boolean): void;
 } = {}) {
   const { requested, requestRuntime } = usePrivateBalanceRuntime();
   const [draft, setDraft] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
@@ -63,6 +67,7 @@ export function PrivateRelaySettings({
   const error = feedback.state === 'error' ? feedback : null;
   const dirty = feeAmount !== feeForInput(saved.feeAtomic) ||
     draft.relayUrls.join('\n') !== saved.relayUrls.join('\n');
+  useReportToOwner(onDirtyChange, dirty, false);
 
   useEffect(() => {
     // Keep participation current without discarding unfinished fee/URL edits.
@@ -165,6 +170,7 @@ export function PrivateRelaySettings({
   const relayFields = <div className="space-y-3">
     {[0, 1].map(index => <Field key={index} label={`Public relay ${index + 1}`}>
       <input className="input font-mono text-base sm:text-[13px]" inputMode="url" autoCapitalize="none"
+        enterKeyHint={index === 0 ? 'next' : 'done'}
         autoCorrect="off" spellCheck={false} value={draft.relayUrls[index] ?? ''}
         aria-invalid={error?.field === 'connections' || undefined}
         aria-describedby={error?.field === 'connections' ? `${id}-error` : undefined}
@@ -183,7 +189,7 @@ export function PrivateRelaySettings({
       </div>
       <div className="mt-2 flex items-baseline gap-2">
         <input id={`${id}-fee`} className="min-w-0 flex-1 rounded-lg bg-transparent py-1 text-[38px]! font-semibold leading-tight tracking-[-0.04em] text-ink tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent sm:text-[44px]!"
-          inputMode="decimal" autoComplete="off" spellCheck={false} value={feeAmount}
+          inputMode="decimal" enterKeyHint="done" autoComplete="off" spellCheck={false} value={feeAmount}
           aria-describedby={`${id}-fee-hint${error?.field === 'fee' ? ` ${id}-error` : ''}`}
           aria-invalid={error?.field === 'fee' || undefined}
           onChange={event => { edited.current.add('feeAtomic'); setFeeAmount(event.target.value); setFeedback({ state: 'idle' }); }} />
@@ -237,7 +243,7 @@ export function PrivateRelaySettings({
       <h3 id={`${id}-title`} className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
         Peer relay
       </h3>
-      <div className="ios-group overflow-hidden">
+      <div className="list-group">
           <RelayToggleRow
             title="Prefer privacy relay"
             description="Preselect a peer wallet for new private sends and withdrawals."
@@ -263,6 +269,7 @@ export function PrivateRelaySettings({
             <input
               className="input font-mono text-base sm:text-[13px]"
               inputMode="decimal"
+              enterKeyHint="done"
               value={feeAmount}
               onChange={event => {
                 edited.current.add('feeAtomic');

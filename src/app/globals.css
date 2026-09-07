@@ -25,6 +25,9 @@
   --motion-duration-fast: 120ms;
   --motion-duration-standard: 180ms;
   --motion-duration-emphasized: 220ms;
+  --motion-duration-sheet-in: 380ms;
+  --motion-duration-sheet-out: 260ms;
+  --motion-duration-progress: 700ms;
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-enter: cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -151,6 +154,28 @@ body::after {
   *::after {
     animation: none !important;
     transition-duration: 0.01ms !important;
+  }
+  /* Overlays keep a brief crossfade so open and close remain understandable. */
+  .modal-overlay,
+  .modal-dialog,
+  .modal-sheet,
+  .modal-alert,
+  .modal-fullscreen,
+  .menu-pop,
+  .toast-enter {
+    animation: fadeIn var(--motion-duration-fast) linear both !important;
+  }
+  .modal-overlay.closing,
+  .modal-dialog.closing,
+  .modal-sheet.closing,
+  .modal-alert.closing,
+  .modal-fullscreen.closing,
+  .menu-pop.closing,
+  .toast-leave {
+    animation: fadeOut var(--motion-duration-fast) linear both !important;
+  }
+  .modal-sheet[data-dragging="true"] {
+    animation: none !important;
   }
 }
 
@@ -382,8 +407,9 @@ body::after {
     background: #005fbe;
   }
 
+  /* Tinted text buttons use the iOS elevated accents so 16px text clears 4.5:1 on raised surfaces. */
   .btn-ghost {
-    color: var(--color-accent);
+    color: #409cff;
     background: rgba(10, 132, 255, 0.12);
   }
   .btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -391,7 +417,7 @@ body::after {
   }
 
   .btn-danger {
-    color: var(--color-neg);
+    color: #ff6961;
     background: rgba(255, 69, 58, 0.12);
   }
   .btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -400,7 +426,8 @@ body::after {
 
   .btn-secondary {
     color: #ffffff;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   }
 
   .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
@@ -695,12 +722,72 @@ body::after {
   .modal-dialog {
     animation: dialogIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
   }
+  /* Panel and dim finish together: one exit duration for both. */
   .modal-dialog.closing {
-    animation: dialogOut var(--motion-duration-fast) var(--motion-ease-standard) both;
+    animation: dialogOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  /* Compact widths: the sheet rises from the bottom edge and slides back down. */
+  .modal-sheet {
+    animation: sheetIn var(--motion-duration-sheet-in) var(--motion-ease-enter) both;
+    touch-action: pan-y;
+  }
+  .modal-sheet.closing {
+    animation: sheetOut var(--motion-duration-sheet-out) var(--motion-ease-standard) both;
+  }
+  .modal-overlay[data-presentation="sheet"].closing {
+    animation-duration: var(--motion-duration-sheet-out);
+  }
+  .modal-sheet[data-dragging="true"] {
+    animation: none;
+  }
+  .modal-grabber {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: 0;
+    touch-action: none;
+  }
+  .modal-grabber::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 5px;
+    margin-left: -18px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+  [data-sheet-handle] {
+    touch-action: none;
+  }
+  /* Confirmations: the centred iOS alert settles from slightly above scale. */
+  .modal-alert {
+    animation: alertIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+  .modal-alert.closing {
+    animation: alertOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-fullscreen {
+    animation: overlayIn var(--motion-duration-standard) var(--motion-ease-standard) both;
+  }
+  .modal-fullscreen.closing {
+    animation: overlayOut var(--motion-duration-standard) var(--motion-ease-standard) both;
   }
   .menu-pop {
     animation: menuPop var(--motion-duration-standard) var(--motion-ease-enter) both;
     transform-origin: var(--pop-origin, top);
+  }
+  .menu-pop.closing {
+    animation: menuOut var(--motion-duration-fast) var(--motion-ease-standard) both;
+    pointer-events: none;
+  }
+  .toast-enter {
+    animation: toastIn var(--motion-duration-emphasized) var(--motion-ease-enter) both;
+  }
+  .toast-leave {
+    animation: toastOut var(--motion-duration-standard) var(--motion-ease-standard) both;
+    pointer-events: none;
   }
 
   /* ---------- List rows ---------- */
@@ -835,6 +922,54 @@ body::after {
   to {
     opacity: 0;
     transform: translateY(10px) scale(0.97);
+  }
+}
+@keyframes sheetIn {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+@keyframes sheetOut {
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+@keyframes alertIn {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+@keyframes alertOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes menuOut {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+}
+@keyframes toastOut {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fadeOut {
+  to {
+    opacity: 0;
   }
 }
 @keyframes menuPop {

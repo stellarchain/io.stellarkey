@@ -5,12 +5,16 @@ import test from 'node:test';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('private balance setup and status expose accessible dialog and progress semantics', () => {
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const shell = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
   const status = read('src/features/private-balance/components/PrivateBalanceStatus.tsx');
   const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
 
-  assert.match(setup, /<Modal\b/);
-  assert.match(setup, /<ModalHeader\b/);
+  // The dialog and its named header are the static shell; the body renders
+  // only content inside it.
+  assert.match(shell, /<Modal\b/);
+  assert.match(shell, /<ModalHeader\b/);
+  assert.doesNotMatch(setup, /<Modal\b|<ModalHeader\b/);
   assert.match(setup, /aria-live="polite"/);
   assert.match(setup, /role="progressbar"/);
   assert.match(setup, /aria-label="Private Payments setup progress"/);
@@ -21,7 +25,7 @@ test('private balance setup and status expose accessible dialog and progress sem
   assert.match(card, /h-\[clamp\(48px,16vw,60px\)\]/);
   assert.match(card, /aria-label=\{`\$\{label\} · private balance`\}/);
   assert.match(card, /min-h-11/);
-  for (const source of [setup, status, card]) {
+  for (const source of [shell, setup, status, card]) {
     assert.doesNotMatch(source, /<button(?![^>]*type=)/);
   }
 });
@@ -38,9 +42,9 @@ test('the review keeps one persistent live region so readiness is announced', ()
 });
 
 test('private setup progress is one flat instrument inside the modal shell', () => {
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
   const start = setup.indexOf("{stage === 'running' ? (");
-  const end = setup.indexOf("</div>\n    </Modal>", start);
+  const end = setup.indexOf("</ModalBody>", start);
   assert.ok(start >= 0 && end > start);
   const running = setup.slice(start, end);
 

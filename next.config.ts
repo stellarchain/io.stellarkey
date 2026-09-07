@@ -68,6 +68,9 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   poweredByHeader: false,
+  // Browser checks against the dev server must not have the dev-tools badge
+  // covering the bottom-left tab on narrow phones. Humans keep it.
+  ...(process.env.E2E_NEXT_DEV === "1" ? { devIndicators: false as const } : {}),
 };
 
 export default nextConfig;

@@ -36,6 +36,18 @@ Modal requirements:
 - The shell remains mounted during internal mode, tab, validation, refresh, or submission-state changes.
 - Owner components pass controlled `open`; they do not conditionally erase the component before its exit lifecycle when animation/focus restoration matters.
 
+Shell primitives (`src/components/ui.tsx`) and how to use them:
+
+- `Modal` presents a bottom sheet below the `sm` breakpoint and a centred card above it (`presentation="auto"`). Confirmations and yes/no interrupts use `presentation="alert"` (centred, never dismissed by tapping outside, Escape still cancels). Full-surface takeovers use `presentation="fullscreen"`. Palette-style dialogs use `anchor="top"`.
+- Sheets carry a grabber, swipe down to dismiss (from the grabber/header anywhere, from the body once scrolled to the top), and rest above the visual viewport when the keyboard is open.
+- `busy` is the single close policy: while true, Escape, backdrop, drag and the header close control are blocked; the close control stays visible, disabled, and describes why (`busyReason`). Never hide the close control and never hand-wire `dismissable={!busy}`.
+- `dirty` marks unsaved user input; gestures and the close control then ask "Discard changes?" first. Back navigation within a dialog never prompts.
+- The shell holds its last size and presentation through the exit animation, so owners clear sensitive content immediately (`{open ? … : null}`) and keep non-sensitive content with `useRetainedForExit`. Lazily loaded dialogs stay mounted through the exit with `useMountedThroughExit`.
+- Initial focus lands on the dialog itself so its name is announced first; pass `initialFocus` only when the sheet exists to collect text (rename, password, PIN, an editor whose first field is the title). Never focus the close control.
+- `ModalHeader` (title, subtitle, `onBack` for multi-step flows, `action` for a trailing text control), `ModalBody` (`p-4 sm:p-6` with a vertical stack), `ModalFooter` (Cancel/Back leading, primary trailing; `stack` puts the primary on top) and `ConfirmModal` (verb-labelled confirmation) are the only chrome. Embedded panels report stage titles and Back to their owning shell through `onHeaderChange`.
+- Destructive actions use `Button variant="danger"` (the tinted iOS red) both as the trigger and as the confirming button; uncommon irreversible actions always confirm through `ConfirmModal`.
+- `data-app-surface` marks the root of every app phase so the shell can make the background inert.
+
 ## 3. Tabs and segmented controls
 
 - Use Tabs for mutually exclusive content panels. Use SegmentedControl for filters or direct mode values that do not own tab panels.
@@ -126,6 +138,16 @@ Clipboard writes cannot be cancelled. Do not race duplicate OS writes, read back
 - Interaction remains available while non-blocking motion completes.
 - `prefers-reduced-motion: reduce` removes spatial/non-essential motion and leaves state understandable.
 - Spinners stop on success, error, cancel, or timeout. Continuous motion represents active work only.
+- Tokens: `--motion-duration-fast` 120 ms (popover and toast exits, Reduce Motion crossfades), `standard` 180 ms (card/dim exits), `emphasized` 220 ms (card/alert entrances), `sheet-in` 380 ms, `sheet-out` 260 ms, `progress` 700 ms. Panel and dim always finish together.
+- Reduce Motion replaces sheet, card, alert, popover and toast movement with a fast crossfade; it never removes the exit.
+- Dialog files contain no `transition-all` and no numeric `duration-*` literal (`tests/motion-contract.test.mjs` enforces both).
+
+## 7a. Haptics and sound
+
+- Patterns follow their documented meanings. `selection` plays only while a control changes value (`Tabs`, `SegmentedControl`, `Toggle`, `Select` choose). Impact (`light`/`medium`) accompanies a physical metaphor such as a keypad key. Notification (`success`/`warning`/`error`) fires once, at the outcome site, for outcomes only: `warning` means the outcome needs attention (expired, ambiguous), never "about to do something".
+- Opening, dismissing, Back, tab and segment switches, chips that fill a field, and navigation play nothing. The shell, `ModalHeader`, `IOSBackButton`, `Dropdown` and `Select` open are silent.
+- Never fire two haptics for one event. `triggerHaptic` collapses a repeated type within 150 ms; a caller that already played an outcome passes `{ silent: true }` to `toast`.
+- Sounds are opt-in (off until the person turns "Audio & Haptic Feedback" on) and only ever accompany `success` and `warning`; taps and selections stay silent.
 
 ## 8. Information and terminology
 

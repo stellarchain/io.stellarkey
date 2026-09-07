@@ -259,5 +259,9 @@ test("operator lock choices expose selection state and mobile-size targets", () 
   assert.match(ui, /!panelRef\.current\.contains\(document\.activeElement\)/);
   assert.match(staffPage, /ariaLabel="Operator lock timing"/);
   assert.match(staffPage, /ariaLabel="Operator inactivity timeout"/);
-  assert.match(staffPage, /autoFocus=\{index === 0\}/);
+  // The PIN field is the one entry point in the operator sheets: it takes focus on
+  // open through the shell, and again when the picker hands over to it.
+  assert.match(staffPage, /initialFocus=\{pinRef\}/);
+  assert.match(staffPage, /pinRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.doesNotMatch(staffPage, /autoFocus/);
 });

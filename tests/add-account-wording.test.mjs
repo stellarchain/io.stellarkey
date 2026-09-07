@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 function subtitle(mode, accounts, archivedAccounts) {
-  const source = readFileSync(new URL('../src/components/AddAccountModal.tsx', import.meta.url), 'utf8');
-  const parsed = ts.createSourceFile('AddAccountModal.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = readFileSync(new URL('../src/components/AddAccountModalBody.tsx', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('AddAccountModalBody.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(parsed) === 'subtitle') expression = node.initializer.getText(parsed);

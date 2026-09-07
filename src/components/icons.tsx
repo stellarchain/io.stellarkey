@@ -534,3 +534,24 @@ export function IconLedger(p: IconProps) {
     </svg>
   );
 }
+
+/** Favourite marker. `filled` renders the solid star; otherwise an outline. */
+export function IconStar({ filled = true, size = 16, className = "" }: IconProps & { filled?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={className}
+    >
+      <polygon points="12 2.5 14.9 8.6 21.5 9.4 16.6 14 17.9 20.6 12 17.3 6.1 20.6 7.4 14 2.5 9.4 9.1 8.6" />
+    </svg>
+  );
+}

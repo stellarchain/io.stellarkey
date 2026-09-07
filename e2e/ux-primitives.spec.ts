@@ -239,7 +239,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await icon.click();
       expect(await page.evaluate(() => window.__syntheticSvgPointer)).toEqual({ svg: true, bodyFocused: true });
       const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
@@ -250,7 +250,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await opener.focus();
       await page.keyboard.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
@@ -260,7 +260,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       const { dialog, opener } = await openPausedInitialFocus(page);
       expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(false);
       await page.clock.runFor(17);
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await expect.poll(() => page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('[data-app-surface]')?.hasAttribute('inert') })))
         .toEqual({ locked: true, inert: true });
       await page.clock.resume();
@@ -273,7 +273,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       const opener = page.getByRole('button', { name: 'Open deferred initial focus checks', exact: true });
       await opener.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Synthetic initial focus', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
       await expect(opener).toBeFocused();
@@ -373,7 +373,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       expect(await page.evaluate(() => ({ scheduled: window.__syntheticInitialFocus?.scheduled, cancelled: window.__syntheticInitialFocus?.cancelled, pending: window.__syntheticInitialFocus?.pending.size })))
         .toEqual({ scheduled: 3, cancelled: 2, pending: 1 });
       await page.clock.runFor(17);
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.clock.resume();
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
@@ -504,7 +504,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       expect(await tooltip.evaluate(node => node.matches(':hover') && !node.closest('[data-modal-backdrop]'))).toBe(true);
       await expect(trigger).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       expect(await page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
       await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -581,7 +581,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     test('Tooltip inside the nested modal consumes only its own first Escape', async ({ page }) => {
       await page.getByRole('button', { name: 'Open nested tooltip check', exact: true }).click();
       const nested = page.getByRole('dialog', { name: 'Synthetic nested tooltip check', exact: true });
-      await expect(nested.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(nested.locator('[data-modal-shell]')).toBeFocused();
       const trigger = nested.getByRole('button', { name: 'Show synthetic nested help', exact: true });
       await trigger.focus();
       await expect(nested.getByRole('tooltip', { name: 'Synthetic nested guidance', exact: true })).toBeVisible();

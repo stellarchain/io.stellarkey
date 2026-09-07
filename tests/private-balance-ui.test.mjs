@@ -6,7 +6,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('private balance surfaces use factual privacy claims and exact amount formatting', () => {
   const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
   const disclosure = read('src/features/private-balance/components/PrivacyDisclosure.tsx');
   const status = read('src/features/private-balance/components/PrivateBalanceStatus.tsx');
   const dashboard = read('src/components/Dashboard.tsx');
@@ -358,7 +358,7 @@ test('private assets coexist with wallet home and open one focused detail modal'
     'the private balance should appear as a row in Your Assets',
   );
   const row = read('src/features/private-balance/components/PrivateBalanceAssetRow.tsx');
-  const details = read('src/features/private-balance/components/PrivateAssetDetailModal.tsx');
+  const details = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
 
   const viewUnion = dashboard.slice(dashboard.indexOf('type View ='), dashboard.indexOf('const MERCHANT_VIEWS'));
   assert.doesNotMatch(viewUnion, /\| "private"/);
@@ -381,13 +381,13 @@ test('private assets coexist with wallet home and open one focused detail modal'
 });
 
 test('private asset details keep refresh, recovery, and advanced privacy reachable', () => {
-  const detail = read('src/features/private-balance/components/PrivateAssetDetailModal.tsx');
+  const detail = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
   assert.match(detail, /PrivatePaymentsDetails/);
   assert.match(detail, /Private Payments settings/);
 });
 
 test('reusable XLM receipts move into the private balance inside the existing asset sheet', () => {
-  const details = read('src/features/private-balance/components/PrivateAssetDetailModal.tsx');
+  const details = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
   const receipts = read('src/features/private-balance/components/StealthReceipts.tsx');
 
   assert.match(details, /entry\.asset\.kind === 'native'/);
@@ -399,13 +399,13 @@ test('reusable XLM receipts move into the private balance inside the existing as
   assert.match(receipts, /One-time account/);
   assert.match(receipts, /Maximum network fee/);
   assert.match(receipts, /cancelAction/);
-  assert.doesNotMatch(receipts, /<Modal/);
+  assert.doesNotMatch(receipts, /<Modal\b/);
 });
 
 test('private asset rows stay concise and testnet value help works on touch', () => {
   const dashboard = read('src/components/Dashboard.tsx');
   const row = read('src/features/private-balance/components/PrivateBalanceAssetRow.tsx');
-  const details = read('src/features/private-balance/components/PrivateAssetDetailModal.tsx');
+  const details = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
 
   assert.doesNotMatch(row, /Checked through ledger/);
   assert.match(row, /Ready/);
@@ -487,7 +487,7 @@ test('development keeps the private-assets section visible during bootstrap', ()
 
 test('a wallet without consent opens setup while an available sibling opens private Add', () => {
   const dashboard = read('src/components/Dashboard.tsx');
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
 
   assert.match(dashboard, /const PrivateBalanceSetup = dynamic\(/);
   assert.match(dashboard, /privateSetupOpen/);
@@ -498,7 +498,7 @@ test('a wallet without consent opens setup while an available sibling opens priv
   assert.match(dashboard, /initialMode=\{addAssetInitialMode\}/);
   assert.match(
     dashboard,
-    /\{privateSetupOpen && \([\s\S]{0,120}?<PrivateBalanceSetup[\s\S]{0,120}?open[\s\S]{0,120}?setPrivateSetupOpen\(false\)/,
+    /\{privateSetupMounted && \([\s\S]{0,120}?<PrivateBalanceSetup[\s\S]{0,120}?open=\{privateSetupOpen\}[\s\S]{0,120}?setPrivateSetupOpen\(false\)/,
   );
   assert.match(setup, /usePrivateBalanceRuntime\(\)/);
   assert.match(setup, /availableAssets/);
@@ -509,7 +509,7 @@ test('a wallet without consent opens setup while an available sibling opens priv
 
 test('asset section headers contain no add-asset links and private details identify the selected asset', () => {
   const dashboard = read('src/components/Dashboard.tsx');
-  const details = read('src/features/private-balance/components/PrivateAssetDetailModal.tsx');
+  const details = read('src/features/private-balance/components/PrivateAssetDetailModalBody.tsx');
 
   const publicHeader = dashboard.slice(
     dashboard.indexOf('Your Assets'),
@@ -522,14 +522,15 @@ test('asset section headers contain no add-asset links and private details ident
   assert.doesNotMatch(publicHeader, /\+ Add Asset/);
   assert.doesNotMatch(privateHeader, /\+ Add Asset|Add XLM privately/);
   assert.match(dashboard, /entry=\{privateAssetEntry\}/);
-  assert.match(details, /subtitle="Private balance"/);
-  assert.match(details, /title=\{entry\.asset\.code\}/);
+  // The asset step names the asset; the settings steps share the same header.
+  assert.match(details, /title: entry\.asset\.code, subtitle: 'Private balance'/);
+  assert.match(details, /PRIVATE_SETTINGS_STEP_HEADER\[step\]/);
   assert.doesNotMatch(dashboard, /showAssetSelector=\{false\}/);
 });
 
 test('wallet activity merges cached private actions and labels their provenance', () => {
   const dashboard = read('src/components/Dashboard.tsx');
-  const details = read('src/components/TxDetailModal.tsx');
+  const details = read('src/components/TxDetailModalBody.tsx');
   const notch = read('src/components/PrivateShieldNotch.tsx');
   assert.match(dashboard, /privatePortfolioActivityItems/);
   assert.match(dashboard, /mergedActivity/);
@@ -558,7 +559,7 @@ test('wallet activity merges cached private actions and labels their provenance'
 });
 
 test('public private-balance boundary actions expose only real explorer transactions', () => {
-  const walletDetails = read('src/components/TxDetailModal.tsx');
+  const walletDetails = read('src/components/TxDetailModalBody.tsx');
   const privateDetails = read('src/features/private-balance/components/PrivateActivityDetails.tsx');
 
   assert.match(
@@ -596,7 +597,8 @@ test('incoming private payments surface as one toast with sound inside the runti
   assert.match(toasts, /privacyMode/);
   assert.match(toasts, /Received a private payment/);
   assert.match(toasts, /privately/);
-  assert.match(toasts, /toast\(message, 'success'\)/);
+  // One feedback per event: the chime plays, so the toast stays silent.
+  assert.match(toasts, /toast\(message, 'success', \{ silent: true \}\)/);
 });
 
 test('private payments select and label the verified asset without eager note optimization', () => {
@@ -604,7 +606,7 @@ test('private payments select and label the verified asset without eager note op
   const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
   const activity = read('src/features/private-balance/components/PrivateActivity.tsx');
   const receive = read('src/features/private-balance/components/ReceivePrivate.tsx');
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
 
   assert.match(selector, /availableAssets/);
   assert.match(selector, /selectedDeploymentId/);

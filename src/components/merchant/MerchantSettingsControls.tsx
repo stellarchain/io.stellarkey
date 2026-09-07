@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { triggerHaptic } from "@/lib/haptics";
+import { ModalBody } from "../ui";
 
 export function SettingsSection({
   title,
@@ -130,10 +130,7 @@ export function SettingsRow({
       <button
         type="button"
         aria-haspopup={opensDialog ? "dialog" : undefined}
-        onClick={() => {
-          triggerHaptic("selection");
-          onClick();
-        }}
+        onClick={onClick}
         className={className}
       >
         {content}
@@ -190,7 +187,7 @@ export function DraftInput({
         aria-busy={pending}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
-        className={`input resize-none text-base sm:text-[13.5px] ${className}`}
+        className={`input resize-none text-base sm:text-[14px] ${className}`}
       />
     );
   }
@@ -201,6 +198,7 @@ export function DraftInput({
       aria-label={ariaLabel}
       placeholder={placeholder}
       inputMode={inputMode}
+      enterKeyHint="done"
       value={draft}
       aria-busy={pending}
       onChange={(event) => setDraft(event.target.value)}
@@ -213,7 +211,7 @@ export function DraftInput({
           ? `w-full min-w-0 rounded-lg bg-transparent py-1.5 text-base leading-tight text-white outline-none placeholder:text-neutral-500 focus:bg-white/[0.06] sm:text-[15.5px] ${
               align === "right" ? "text-right" : ""
             } ${className}`
-          : `input text-base sm:text-[13.5px] ${className}`
+          : `input text-base sm:text-[14px] ${className}`
       }
     />
   );
@@ -295,6 +293,7 @@ export function NoteRow({ children }: { children: ReactNode }) {
   );
 }
 
+/** The shared body rhythm, tagged with the sheet it carries for the layout tests. */
 export function SheetBody({
   sheet,
   children,
@@ -303,8 +302,8 @@ export function SheetBody({
   children: ReactNode;
 }) {
   return (
-    <div data-merchant-settings-sheet={sheet} className="space-y-5 p-4 sm:p-6">
-      {children}
+    <div data-merchant-settings-sheet={sheet}>
+      <ModalBody gap={5}>{children}</ModalBody>
     </div>
   );
 }

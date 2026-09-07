@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   useMerchantConfiguration,
   useMerchantStaff,
@@ -12,7 +12,7 @@ import { fmtMinor, toMinor } from "@/lib/merchant/money";
 import { neutralizeSpreadsheetFormula } from "@/lib/merchant/reporting";
 import type { Adjustment, AdjustmentKind, Minor, ShiftReport, TaxRate } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { Avatar, Button, Modal, ModalHeader, Notice } from "../ui";
+import { Avatar, Button, Modal, ModalBody, ModalFooter, ModalHeader, Notice } from "../ui";
 import {
   IconAlert,
   IconArrowDownLeft,
@@ -32,6 +32,53 @@ import {
 } from "./icons";
 
 type Step = "overview" | "count" | "report";
+
+/**
+ * Printing a report leaves the app, the backdrop and the sheet chrome behind:
+ * only the report body survives onto the page, in black on white.
+ */
+const PRINT_CSS = `
+@media print {
+  html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; }
+  body > *:not(.modal-overlay) { display: none !important; }
+  body::before, body::after { display: none !important; }
+  .modal-overlay {
+    position: static !important;
+    display: block !important;
+    padding: 0 !important;
+    background: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    animation: none !important;
+  }
+  .modal-dialog,
+  .modal-sheet {
+    position: static !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    animation: none !important;
+  }
+  [data-modal-shell] > .sticky,
+  .modal-grabber,
+  .shift-no-print { display: none !important; }
+  #shift-report, #shift-report * {
+    color: #000000 !important;
+    background: transparent !important;
+    border-color: #000000 !important;
+    box-shadow: none !important;
+  }
+  @page { margin: 12mm; }
+}
+`;
 
 const ADJUSTMENT_LABEL: Record<AdjustmentKind, string> = {
   discount: "Discount",
@@ -154,15 +201,40 @@ function emailReport(report: ShiftReport, currency: FiatCurrency): void {
 }
 
 export function ShiftSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
+  // The body owns the step state and unmounts after the exit, so each opening
+  // starts on the right step for the till's current shift.
+  const [pending, setPending] = useState(false);
+  const amountRef = useRef<HTMLInputElement>(null);
   return (
-    <Modal open onClose={onClose} wide>
-      <ShiftBody onClose={onClose} />
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      busy={pending}
+      busyReason="Wait for the shift record to be written before closing."
+      initialFocus={amountRef}
+    >
+      <ShiftBody
+        onClose={onClose}
+        pending={pending}
+        onPendingChange={setPending}
+        amountRef={amountRef}
+      />
     </Modal>
   );
 }
 
-function ShiftBody({ onClose }: { onClose: () => void }) {
+function ShiftBody({
+  onClose,
+  pending,
+  onPendingChange,
+  amountRef,
+}: {
+  onClose: () => void;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
+  amountRef: RefObject<HTMLInputElement | null>;
+}) {
   const { settings } = useMerchantConfiguration();
   const { activeStaff } = useMerchantStaff();
   const { activeShift, shiftReport, shiftBlockers, openShift, closeShift } = useMerchantTill();
@@ -173,6 +245,12 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState(activeShift ? "" : "0");
   const [error, setError] = useState<string | null>(null);
   const [zReport, setZReport] = useState<ShiftReport | null>(null);
+
+  /* The blind count is an entry step reached from the overview, so it takes focus
+     the way an entry sheet does on open. */
+  useEffect(() => {
+    if (step === "count") amountRef.current?.focus({ preventScroll: true });
+  }, [step, amountRef]);
   const report = zReport ?? shiftReport;
   const rates = useMemo(() => (report ? taxRows(report, settings.taxRates) : []), [report, settings.taxRates]);
   const taxTotal = rates.reduce((sum, rate) => sum + rate.minor, 0);
@@ -182,11 +260,12 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
 
   async function submitOpen() {
     const floatMinor = parseAmount(draft);
-    if (floatMinor === null) return;
+    if (floatMinor === null || pending) return;
+    onPendingChange(true);
     try {
       const shift = await openShift(floatMinor);
       triggerHaptic("success");
-      toast(`Shift ${shift.number} opened on ${shift.terminalName}.`, "success");
+      toast(`Shift ${shift.number} opened on ${shift.terminalName}.`, "success", { silent: true });
       setOpening(false);
       setStep("overview");
       setDraft("");
@@ -194,12 +273,15 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
     } catch (caught) {
       triggerHaptic("error");
       setError(caught instanceof Error ? caught.message : "The shift could not be opened.");
+    } finally {
+      onPendingChange(false);
     }
   }
 
   async function submitClose() {
     const countedMinor = parseAmount(draft);
-    if (countedMinor === null) return;
+    if (countedMinor === null || pending) return;
+    onPendingChange(true);
     try {
       const closed = await closeShift(countedMinor);
       triggerHaptic("success");
@@ -207,11 +289,21 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
       setStep("report");
       setDraft("");
       setError(null);
-      toast(`Shift ${closed.sequence} closed. Z-${closed.sequence} is now immutable.`, "success");
+      toast(`Shift ${closed.sequence} closed. Z-${closed.sequence} is now immutable.`, "success", {
+        silent: true,
+      });
     } catch (caught) {
       triggerHaptic("error");
       setError(caught instanceof Error ? caught.message : "The shift could not be closed.");
+    } finally {
+      onPendingChange(false);
     }
+  }
+
+  function backToOverview() {
+    setDraft("");
+    setError(null);
+    setStep("overview");
   }
 
   if (opening && !activeShift && !zReport) {
@@ -219,7 +311,7 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
     return (
       <>
         <ModalHeader title="Open shift" subtitle={`${settings.terminalName} · next Z-report starts here`} onClose={onClose} />
-        <div className="space-y-4 p-4 sm:p-5">
+        <ModalBody>
           <Notice>
             <p className="font-semibold text-white">A clean operating boundary</p>
             <p className="mt-1">
@@ -244,6 +336,7 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
             value={draft}
             currency={currency}
             hint="Notes and coin placed in the drawer before the first sale. Enter zero for a cashless till."
+            inputRef={amountRef}
             onChange={(value) => {
               setDraft(value);
               setError(null);
@@ -251,19 +344,23 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
             onEnter={submitOpen}
           />
           {error && <Notice tone="warn">{error}</Notice>}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="secondary" className="flex-1" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={amount === null || !canOperateShift}
-              onClick={submitOpen}
-            >
-              Open shift
-            </Button>
-          </div>
-        </div>
+          <ModalFooter
+            secondary={
+              <Button variant="ghost" disabled={pending} onClick={onClose}>
+                Cancel
+              </Button>
+            }
+            primary={
+              <Button
+                disabled={amount === null || !canOperateShift}
+                loading={pending}
+                onClick={submitOpen}
+              >
+                Open shift
+              </Button>
+            }
+          />
+        </ModalBody>
       </>
     );
   }
@@ -272,11 +369,11 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
     return (
       <>
         <ModalHeader title="Shift" subtitle={settings.terminalName} onClose={onClose} />
-        <div className="p-5">
+        <ModalBody>
           <Notice tone="warn">
             The shift record could not be read. Close this sheet and try again.
           </Notice>
-        </div>
+        </ModalBody>
       </>
     );
   }
@@ -293,10 +390,20 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
       ? `Closed ${fmtClock(report.generatedAt)} · ${report.closedBy}`
       : `Open since ${fmtClock(report.openedAt)} · ${report.openedBy}`;
 
+  const stepSubtitle =
+    step === "count"
+      ? "Step 1 of 2 · count, then the Z-report"
+      : step === "report" && report.kind === "z"
+        ? "Step 2 of 2 · issued"
+        : subtitle;
+  const onBack =
+    step === "count" || (step === "report" && report.kind === "x") ? backToOverview : undefined;
+
   return (
     <>
-      <ModalHeader title={title} subtitle={subtitle} onClose={onClose} />
-      <div className="space-y-4 p-4 sm:p-5">
+      <style>{PRINT_CSS}</style>
+      <ModalHeader title={title} subtitle={stepSubtitle} onBack={onBack} onClose={onClose} />
+      <ModalBody className={step === "report" ? "" : "shift-no-print"}>
         {step === "overview" && (
           <>
             <div className="panel-inset grid grid-cols-2 gap-px overflow-hidden">
@@ -368,32 +475,26 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
               </p>
             )}
             {error && <Notice tone="warn">{error}</Notice>}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                disabled={!canSeeReports}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setStep("report");
-                }}
-              >
-                X-report
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={shiftBlockers.length > 0 || !canOperateShift}
-                aria-describedby={shiftBlockers.length > 0 ? "shift-blocker-title" : undefined}
-                onClick={() => {
-                  triggerHaptic("medium");
-                  setDraft("");
-                  setError(null);
-                  setStep("count");
-                }}
-              >
-                Count drawer & close
-              </Button>
-            </div>
+            <ModalFooter
+              secondary={
+                <Button variant="ghost" disabled={!canSeeReports} onClick={() => setStep("report")}>
+                  X-report
+                </Button>
+              }
+              primary={
+                <Button
+                  disabled={shiftBlockers.length > 0 || !canOperateShift}
+                  aria-describedby={shiftBlockers.length > 0 ? "shift-blocker-title" : undefined}
+                  onClick={() => {
+                    setDraft("");
+                    setError(null);
+                    setStep("count");
+                  }}
+                >
+                  Count drawer & close
+                </Button>
+              }
+            />
           </>
         )}
 
@@ -412,6 +513,7 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
               value={draft}
               currency={currency}
               hint="Notes and coin together, including the opening float."
+              inputRef={amountRef}
               onChange={(value) => {
                 setDraft(value);
                 setError(null);
@@ -419,31 +521,18 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
               onEnter={submitClose}
             />
             {error && <Notice tone="warn">{error}</Notice>}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => {
-                  setDraft("");
-                  setError(null);
-                  setStep("overview");
-                }}
-              >
-                Back to shift
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={parseAmount(draft) === null}
-                onClick={submitClose}
-              >
-                Commit count & issue Z
-              </Button>
-            </div>
+            <ModalFooter
+              primary={
+                <Button disabled={parseAmount(draft) === null} loading={pending} onClick={submitClose}>
+                  Commit count & issue Z
+                </Button>
+              }
+            />
           </>
         )}
 
         {step === "report" && (
-          <>
+          <div id="shift-report" className="space-y-4">
             {report.kind === "x" ? (
               <Notice>
                 <p className="font-semibold text-white">Live reading only</p>
@@ -513,7 +602,7 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
               </Notice>
             )}
             {canSeeReports && (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="shift-no-print grid grid-cols-3 gap-2">
                 <ReportAction
                   icon={<IconPrinter size={15} />}
                   label="Print"
@@ -532,23 +621,10 @@ function ShiftBody({ onClose }: { onClose: () => void }) {
                 />
               </div>
             )}
-            <div className="flex flex-col gap-2 sm:flex-row">
-              {report.kind === "x" && (
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => setStep("overview")}
-                >
-                  Back to shift
-                </Button>
-              )}
-              <Button className="flex-1" onClick={onClose}>
-                Done
-              </Button>
-            </div>
-          </>
+            <ModalFooter className="shift-no-print" primary={<Button onClick={onClose}>Done</Button>} />
+          </div>
         )}
-      </div>
+      </ModalBody>
     </>
   );
 }
@@ -559,6 +635,7 @@ function AmountInput({
   value,
   currency,
   hint,
+  inputRef,
   onChange,
   onEnter,
 }: {
@@ -567,6 +644,7 @@ function AmountInput({
   value: string;
   currency: FiatCurrency;
   hint: string;
+  inputRef: RefObject<HTMLInputElement | null>;
   onChange: (value: string) => void;
   onEnter: () => void;
 }) {
@@ -580,9 +658,11 @@ function AmountInput({
           {FIAT_SYMBOLS[currency]}
         </span>
         <input
+          ref={inputRef}
           id={id}
           type="text"
           inputMode="decimal"
+          enterKeyHint="done"
           autoComplete="off"
           value={value}
           placeholder="0.00"
@@ -590,8 +670,7 @@ function AmountInput({
           onKeyDown={(event) => {
             if (event.key === "Enter") onEnter();
           }}
-          className="input mono text-base sm:text-[17px]"
-          autoFocus
+          className="input mono text-base sm:text-[15px]"
         />
       </div>
       <p className="mt-2 text-[12px] leading-relaxed text-neutral-500">{hint}</p>
@@ -910,10 +989,7 @@ function ReportAction({
     <button
       type="button"
       disabled={disabled}
-      onClick={() => {
-        triggerHaptic("light");
-        onClick();
-      }}
+      onClick={onClick}
       className="row-hover flex min-h-11 flex-col items-center justify-center gap-1 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-2 py-3 text-[12.5px] font-semibold text-white focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#0A84FF] disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span className="text-[#0A84FF]" aria-hidden="true">

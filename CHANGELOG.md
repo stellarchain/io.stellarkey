@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Redesigned every dialog for iOS conventions: on phones dialogs present as bottom sheets with a grabber and swipe-to-dismiss that rest above the keyboard, confirmations present as centred alerts that must be answered, and desktop keeps the centred card. Sheets, cards, alerts, menus and toasts now animate out as well as in, Reduce Motion crossfades instead of removing feedback, and the panel and dim finish together.
+- Unified dialog chrome: one busy policy that keeps the close control visible and explains why it is disabled, one footer order (Cancel leading, primary trailing, primary on top when stacked), a leading Back chevron for multi-step flows with stage-aware titles, one body rhythm, one destructive style, and "Discard changes?" before unsaved edits are lost.
+- Reduced haptic and sound feedback to documented meanings: no vibration or sound on opening, closing, Back, tab changes or chips; outcome feedback fires once; sounds are off until turned on.
+- Dialogs now receive keyboard focus themselves on open so assistive technology announces their name before any control; entry-first sheets focus their field.
+- Raised touch targets inside dialogs to 44 px, replaced text-glyph icons with real icons, and added keyboard hints and input modes to dialog fields.
+- Re-baselined the initial, unlocked-wallet and merchant JavaScript release budgets for the shared dialog shell and the static dialog shells that now ship with the wallet so a first open never waits for a chunk; dialog bodies stay lazily loaded and separately counted.
+
 - Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.
 - Made verified Private Payments commitment-cache appends read only new and overlapping records, with atomic checkpoint checks, full history validation during recovery, and compatible migration that preserves existing cache data.
 - Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
@@ -58,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed retired archive-page constants from Private Payments constructors, deployment bindings, manifests, runtime validation, and generated clients now that every archive record occupies its own persistent entry.
 
 ### Fixed
+
+- Closing a dialog no longer removes it in one frame while the dim fades: every dialog keeps its size and content through the exit, and sheets whose content depended on the closing state no longer go blank or switch variant mid-exit.
+- The wallet background is now inert behind dialogs on the lock, onboarding and recovery screens, and the command palette and customer display use the shared dialog shell (focus containment, inert background, Escape).
+- The point-of-sale tip prompt can no longer be closed from a header control while declaring itself undismissable, and destructive actions that previously ran without confirmation (cancelling a live charge, voiding an adjustment, deleting a contact, removing a trustline) now confirm first.
 
 - Corrected merchant contact browser tests to verify retained dialog and action identity and focus after saving changes the dialog's accessible name.
 - Made merchant browser tests wait for settled row feedback and switch enablement before retrying, with controlled checks that early activations cannot duplicate write attempts.

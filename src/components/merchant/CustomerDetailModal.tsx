@@ -1,13 +1,23 @@
 "use client";
 
-import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMerchantConfiguration, useMerchantRecords } from "@/hooks/useMerchant";
 import { useLiveNow } from "@/hooks/useLiveNow";
 import { useWalletContacts } from "@/hooks/useWallet";
-import { triggerHaptic } from "@/lib/haptics";
 import { fmtMinor } from "@/lib/merchant/money";
 import type { CustomerRecord, LoyaltyCard } from "@/lib/merchant/types";
-import { Avatar, Button, ErrorText, HashValue, Modal, ModalHeader } from "../ui";
+import {
+  AlertContent,
+  Avatar,
+  Button,
+  ErrorText,
+  HashValue,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  useRetainedForExit,
+} from "../ui";
 import { useMerchantAction } from "./useMerchantAction";
 import { IconCheck, IconChevronDown, IconGift, IconUserPlus } from "../icons";
 import { IconCheckCircle, IconReceipt, IconTag } from "./icons";
@@ -37,10 +47,7 @@ export function Disclosure({
     <div>
       <button
         type="button"
-        onClick={() => {
-          triggerHaptic("selection");
-          setOpen((o) => !o);
-        }}
+        onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={regionId}
         className="flex min-h-[44px] w-full items-center gap-3 rounded-xl px-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
@@ -117,22 +124,37 @@ export function CustomerDetailModal({
   customer: CustomerRecord | null;
   onClose: () => void;
 }) {
-  if (!customer) return null;
+  // The record stays rendered through the exit so the card does not blank mid-animation.
+  const shown = useRetainedForExit(customer);
+  const [busy, setBusy] = useState(false);
   return (
-    <CustomerDetail
-      key={customer.address}
-      customer={customer}
+    <Modal
+      open={customer !== null}
       onClose={onClose}
-    />
+      wide
+      busy={busy}
+      busyReason="Wait for the customer record to be forgotten before closing."
+    >
+      {shown && (
+        <CustomerDetail
+          key={shown.address}
+          customer={shown}
+          onClose={onClose}
+          onBusyChange={setBusy}
+        />
+      )}
+    </Modal>
   );
 }
 
 function CustomerDetail({
   customer,
   onClose,
+  onBusyChange,
 }: {
   customer: CustomerRecord;
   onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const {
     customerHistory,
@@ -170,6 +192,13 @@ function CustomerDetail({
   const [contactName, setContactName] = useState(customer.name ?? "");
   const [confirmingForget, setConfirmingForget] = useState(false);
   const now = useLiveNow();
+
+  /* Only Forget rewrites the record; the shell stays open while it runs. */
+  const forgetting = forgetAction.pending;
+  useEffect(() => {
+    onBusyChange(forgetting);
+    return () => onBusyChange(false);
+  }, [forgetting, onBusyChange]);
 
   const history = customerHistory(customer.address);
 
@@ -212,7 +241,11 @@ function CustomerDetail({
 
   async function forget() {
     await forgetAction.run(() => forgetCustomer(customer.address),
-      "Local customer record forgotten. Ledger payments are unchanged.", "The customer could not be forgotten. Try again.", onClose);
+      "Local customer record forgotten. Ledger payments are unchanged.", "The customer could not be forgotten. Try again.",
+      () => {
+        setConfirmingForget(false);
+        onClose();
+      });
   }
 
   /*
@@ -222,14 +255,14 @@ function CustomerDetail({
     nowhere else — gets the only coloured surface on the screen.
   */
   return (
-    <Modal open onClose={onClose} wide>
+    <>
       <ModalHeader
         title={customerTitle(customer)}
         subtitle={`Customer since ${fmtDay(customer.firstSeenAt)}`}
         onClose={onClose}
       />
 
-      <div className="space-y-5 p-4 sm:p-6">
+      <ModalBody gap={5}>
         {/* Who they are on the ledger */}
         <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
           <Avatar
@@ -247,11 +280,13 @@ function CustomerDetail({
 
         <div className="flex gap-2">
           <input
-            className="input min-w-0 flex-1"
+            className="input min-w-0 flex-1 text-base sm:text-[14px]"
             value={contactName}
             onChange={(event) => setContactName(event.target.value.slice(0, 24))}
             placeholder="Name this address"
             aria-label="Contact name"
+            enterKeyHint="done"
+            autoCapitalize="words"
           />
           <Button
             variant="secondary"
@@ -433,7 +468,7 @@ function CustomerDetail({
           </div>
           <textarea
             id="customer-note"
-            className="input min-h-[76px] resize-y text-base sm:text-[13.5px]"
+            className="input min-h-[76px] resize-y text-base sm:text-[14px]"
             value={note}
             onChange={(e) => setNote(e.target.value.slice(0, 140))}
             placeholder="Oat flat white, no sugar."
@@ -455,36 +490,54 @@ function CustomerDetail({
           </Disclosure>
         </div>
 
-        {confirmingForget ? (
-          <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/10 p-3.5">
-            <p className="text-[13px] leading-relaxed text-neutral-200">
-              Forget {customerTitle(customer)}? The name, note, counters and card go. The payments
-              stay on the ledger — they were never ours to withdraw.
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2.5">
-              <Button variant="secondary" onClick={() => setConfirmingForget(false)}>
-                Keep Record
-              </Button>
-              <Button variant="danger" focusableWhenDisabled loading={forgetAction.pending} loadingLabel="Forgetting customer" onClick={forget}>
-                Forget
-              </Button>
-            </div>
-            <ErrorText message={forgetAction.error} />
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="btn btn-danger w-full"
-            onClick={() => {
-              triggerHaptic("warning");
-              setConfirmingForget(true);
-            }}
-          >
-            Forget This Customer
-          </button>
-        )}
-      </div>
-    </Modal>
+        <Button variant="danger" className="w-full" onClick={() => setConfirmingForget(true)}>
+          Forget this customer
+        </Button>
+      </ModalBody>
+
+      {/* Composed rather than ConfirmModal so the confirming button keeps focus
+          across its pending and rejected states, as the feedback journey expects. */}
+      <Modal
+        open={confirmingForget}
+        onClose={() => setConfirmingForget(false)}
+        presentation="alert"
+        busy={forgetAction.pending}
+        busyReason="Wait for the record to be forgotten."
+      >
+        <AlertContent
+          title={`Forget ${customerTitle(customer)}?`}
+          message="The name, note, counters and card go. The payments stay on the ledger — they were never ours to withdraw."
+          actions={
+            <ModalFooter
+              secondary={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={forgetAction.pending}
+                  onClick={() => setConfirmingForget(false)}
+                >
+                  Keep record
+                </Button>
+              }
+              primary={
+                <Button
+                  type="button"
+                  variant="danger"
+                  focusableWhenDisabled
+                  loading={forgetAction.pending}
+                  loadingLabel="Forgetting customer"
+                  onClick={() => void forget()}
+                >
+                  Forget
+                </Button>
+              }
+            />
+          }
+        >
+          <ErrorText message={forgetAction.error} />
+        </AlertContent>
+      </Modal>
+    </>
   );
 }
 

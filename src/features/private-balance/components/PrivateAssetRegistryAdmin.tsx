@@ -81,7 +81,7 @@ export function PrivateAssetRegistryAdmin() {
       <h3 id="private-asset-admin-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
         Asset administrator
       </h3>
-      <div className="ios-group overflow-hidden">
+      <div className="list-group">
         <div className="space-y-3 p-4">
           <div>
             <p className="text-[13.5px] font-semibold text-white">Admitted private assets</p>
@@ -148,7 +148,7 @@ export function PrivateAssetRegistryAdmin() {
             href={NETWORKS[network].explorerTxUrl(result)}
             target="_blank"
             rel="noreferrer"
-            className="block px-1 text-[11.5px] font-semibold text-[#0A84FF] hover:underline"
+            className="inline-flex min-h-11 items-center px-1 text-[12.5px] font-semibold text-[#0A84FF]"
           >
             View registry transaction
           </a>

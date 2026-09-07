@@ -85,7 +85,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) test.describe(
 test.use({ contextOptions: { reducedMotion } });
 
 test('signing context approval preserves owned focus through its pending initializer', async ({ page }) => {
-  const { send, approval } = await openSigningApproval(page, true);
+  const { approval } = await openSigningApproval(page, true);
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(reducedMotion === 'reduce');
   await approval.getByLabel('Wallet Password').fill('synthetic signing correct horse battery staple');
   const authorize = approval.getByRole('button', { name: 'Authorize', exact: true });
@@ -100,7 +100,7 @@ test('signing context approval preserves owned focus through its pending initial
   await expect(approval).toHaveCount(0);
   await expect(page.getByTestId('signing-signs')).toHaveText('1');
   await expect(page.getByTestId('signing-posts')).toHaveText('1');
-  await expect(send.getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Payment Status', exact: true }).getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeFocused();
   await stableShell(page);
 });
 
@@ -148,10 +148,10 @@ for (const switchAccount of [true, false]) test(`signing context ${switchAccount
   }
   await expect(page.getByTestId('signing-signs')).toHaveText('1');
   await expect(page.getByTestId('signing-posts')).toHaveText('1');
-  await expect(send.getByRole('button', { name: 'Close and Keep Tracking', exact: true })).toBeVisible();
-  await expect(send.getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Payment Status', exact: true }).getByRole('button', { name: 'Done', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Payment Status', exact: true }).getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeFocused();
   await stableShell(page);
-  await send.getByRole('button', { name: 'Close and Keep Tracking', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Payment Status', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
   await expect(send).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('main')?.closest('[inert]') }))).toEqual({ locked: false, inert: false });
 });
@@ -242,15 +242,13 @@ for (const intent of ['pointer', 'overlay']) test(`signing context completion re
 
 test('signing context real network command stays inert during approval', async ({ page }) => {
   const { send, approval } = await openSigningApproval(page);
+  // App-level launchers stay quiet while a dialog holds focus: the palette never opens.
   await page.keyboard.press('Control+k');
   const networkChoice = page.getByText('Switch to Mainnet', { exact: true });
-  await expect(networkChoice).toHaveCount(1);
-  expect(await networkChoice.evaluate(element => !!element.closest('[inert]'))).toBe(true);
-  const selected = await networkChoice.click({ timeout: 600 }).then(() => true, () => false);
-  expect(selected).toBe(false);
+  await expect(networkChoice).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Command palette', exact: true })).toHaveCount(0);
   await expect(page.getByTestId('signing-network')).toHaveText('testnet');
   await expect(approval).toBeVisible();
-  await page.keyboard.press('Control+k');
   await approval.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(approval).toHaveCount(0);
   await stableShell(page);
@@ -261,20 +259,22 @@ test('signing context real network command stays inert during approval', async (
 });
 
 test('signing context keeps a broadcast receipt and its canonical tracking on the originating network', async ({ page }) => {
-  const { send, approval } = await openSigningApproval(page);
+  const { approval } = await openSigningApproval(page);
   await approval.getByLabel('Wallet Password').fill('synthetic signing correct horse battery staple');
   await approval.getByRole('button', { name: 'Authorize', exact: true }).press('Enter');
   await expect(page.getByTestId('signing-posts')).toHaveText('1');
-  await expect(send.getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Payment Status', exact: true }).getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeVisible();
   // Supplementary post-broadcast provider delivery. The real network command
   // is separately proved inert, so this is not a claimed menu exploit.
   await page.getByText('Switch provider result network', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
   await expect(page.getByTestId('signing-network')).toHaveText('mainnet');
   // Inspect only the fixed network text node, never the neighboring hash.
-  expect(await send.locator('p.break-all').evaluate(element => element.firstChild?.textContent === 'testnet')).toBe(true);
+  const status = page.getByRole('dialog', { name: 'Payment Status', exact: true });
+  expect(await status.locator('p.break-all').evaluate(element => element.firstChild?.textContent === 'testnet')).toBe(true);
   await page.getByText('Confirm canonical synthetic submission', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
-  await expect(send.getByRole('heading', { name: 'Payment Confirmed', exact: true })).toBeVisible();
-  expect(await send.getByRole('link', { name: 'View on Explorer', exact: true }).evaluate(element => new URL((element as HTMLAnchorElement).href).hostname === 'testnet.stellarchain.io')).toBe(true);
+  const sent = page.getByRole('dialog', { name: 'Payment Sent', exact: true });
+  await expect(sent.getByRole('heading', { name: 'Payment Confirmed', exact: true })).toBeVisible();
+  expect(await sent.getByRole('link', { name: 'View on Explorer', exact: true }).evaluate(element => new URL((element as HTMLAnchorElement).href).hostname === 'testnet.stellarchain.io')).toBe(true);
   await expect(page.getByTestId('signing-signs')).toHaveText('1');
   await expect(page.getByTestId('signing-posts')).toHaveText('1');
 });
@@ -760,6 +760,10 @@ test('relay preflight preserves the direct form and distinguishes the earlier-pa
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(amount).toHaveValue('1'); await expect(memo).toHaveValue('Synthetic memo');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+  // Typed amount and memo: the sheet asks before discarding them.
+  const discard = page.getByRole('dialog', { name: 'Discard changes?', exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByLabel('Private recipient', { exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open synthetic private send' })).toBeFocused();
 });
@@ -795,14 +799,15 @@ async function openHelperApproval(page: Page) {
   await syntheticDelivery(page, 'Deliver helper preparation');
   await expect(page.getByTestId('helper-phase')).toHaveText('prepared');
   await syntheticDelivery(page, 'Deliver helper sign request');
-  await expect(page.getByRole('dialog', { name: 'Relay Private Payment?' })).toBeVisible();
-  await expect(page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await expect(page.getByRole('dialog', { name: 'Relay a private payment?' })).toBeVisible();
+  // An alert has no close control; the shell focuses the dialog itself.
+  await expect(page.getByRole('dialog', { name: 'Relay a private payment?' }).locator('[data-modal-shell]')).toBeFocused();
   await markShell(page);
 }
 
 test('helper accepts exact submit before signature acknowledgement and prevents duplicate submission', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
   await syntheticDelivery(page, 'Finish synthetic signing');
   await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
@@ -820,7 +825,7 @@ test('helper accepts exact submit before signature acknowledgement and prevents 
 
 test('helper duplicate approval clicks sign only once', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve & sign', exact: true }).evaluate(element => {
+  await page.getByRole('button', { name: 'Approve and sign', exact: true }).evaluate(element => {
     (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click();
   });
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
@@ -828,7 +833,7 @@ test('helper duplicate approval clicks sign only once', async ({ page }) => {
 
 test('helper does not automatically resubmit after an uncertain RPC outcome', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
   await syntheticDelivery(page, 'Finish synthetic signing');
   await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
   await syntheticDelivery(page, 'Deliver duplicate helper submits');
@@ -844,7 +849,7 @@ test('helper does not automatically resubmit after an uncertain RPC outcome', as
 test('lost signature acknowledgement preserves exact authorization and never invites another signature', async ({ page, browserName }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openHelperApproval(page);
-  const approve = page.getByRole('button', { name: 'Approve & sign', exact: true });
+  const approve = page.getByRole('button', { name: 'Approve and sign', exact: true });
   await approve.focus(); await page.keyboard.press('Enter');
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
   await syntheticDelivery(page, 'Finish synthetic signing');
@@ -870,7 +875,7 @@ test('lost signature acknowledgement preserves exact authorization and never inv
 
 test('helper account replacement cannot be undone by a late signature acknowledgement', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve & sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
   await syntheticDelivery(page, 'Finish synthetic signing');
   await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
   await syntheticDelivery(page, 'Replace synthetic helper account');

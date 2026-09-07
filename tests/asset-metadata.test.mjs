@@ -27,7 +27,7 @@ test("public and private asset surfaces share one canonical asset avatar", () =>
     "utf8",
   );
   const details = readFileSync(
-    new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    new URL("../src/components/AssetDetailModalBody.tsx", import.meta.url),
     "utf8",
   );
   const privateRow = readFileSync(
@@ -35,7 +35,7 @@ test("public and private asset surfaces share one canonical asset avatar", () =>
     "utf8",
   );
   const privateDetails = readFileSync(
-    new URL("../src/features/private-balance/components/PrivateAssetDetailModal.tsx", import.meta.url),
+    new URL("../src/features/private-balance/components/PrivateAssetDetailModalBody.tsx", import.meta.url),
     "utf8",
   );
 
@@ -237,7 +237,7 @@ test("stellar.toml responses larger than the SEP-1 limit are cancelled", async (
 
 test("asset details distinguish curated assets from issuer self-declarations", () => {
   const source = readFileSync(
-    new URL("../src/components/AssetDetailModal.tsx", import.meta.url),
+    new URL("../src/components/AssetDetailModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /Known asset/);

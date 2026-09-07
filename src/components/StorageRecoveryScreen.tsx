@@ -25,7 +25,7 @@ export function StorageRecoveryScreen({
   const storageUnavailable = issue.kind === "unavailable";
 
   return (
-    <main className="app-safe-top flex min-h-screen items-center justify-center px-5 py-10">
+    <main data-app-surface className="app-safe-top flex min-h-screen items-center justify-center px-5 py-10">
       <section className="panel w-full max-w-[460px] p-6 text-center sm:p-8">
         <LogoMark size={42} />
         <span className="mx-auto mt-6 flex h-12 w-12 items-center justify-center rounded-full bg-[#FF9F0A]/15 text-[#FF9F0A]">

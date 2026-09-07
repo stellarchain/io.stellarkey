@@ -9,7 +9,7 @@ import {
   IconShare,
   IconShieldStellar,
 } from '@/components/icons';
-import { CopyButton, Modal, ModalHeader, SegmentedControl, Spinner } from '@/components/ui';
+import { CopyButton, Modal, ModalBody, ModalHeader, SegmentedControl, Spinner } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { triggerHaptic } from '@/lib/haptics';
 import {
@@ -20,13 +20,19 @@ import {
   type PrivateAddressPrefix,
   type StealthAddressPrefix,
 } from '../runtime/receive';
+import { useReportToOwner } from './useReportToOwner';
 
 /**
  * The receive body without the Modal wrapper, so it can embed inside other
  * surfaces (the public ReceiveModal's Public | Private segments). Available
- * whenever the durable privateAddress exists — no sync required.
+ * whenever the durable privateAddress exists — no sync required. Creating a
+ * fresh address reports busy so the owning dialog blocks dismissal meanwhile.
  */
-export function PrivateReceiveContent() {
+export function PrivateReceiveContent({
+  onBusyChange,
+}: {
+  onBusyChange?(busy: boolean): void;
+} = {}) {
   const {
     privateAddress,
     stealthMetaAddress,
@@ -67,17 +73,16 @@ export function PrivateReceiveContent() {
   // effect cleanup alone only prevents a late result, not a stale old image.
   const qrDataUrl = payload && qrImage?.payload === payload ? qrImage.url : null;
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [showFullAddress, setShowFullAddress] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [rotationError, setRotationError] = useState<string | null>(null);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  useReportToOwner(onBusyChange, rotating, false);
   const addressChoice = nativeAsset ? (
     <div className="space-y-2">
       <SegmentedControl
         value={receiveKind}
-        onChange={(next) => {
-          triggerHaptic('selection');
-          setReceiveKind(next);
-        }}
+        onChange={setReceiveKind}
         ariaLabel="Private receive address type"
         options={[
           { value: 'reusable', label: 'Reusable' },
@@ -109,7 +114,6 @@ export function PrivateReceiveContent() {
 
   const share = async () => {
     try {
-      triggerHaptic('light');
       await navigator.share({
         title: reusable ? 'My reusable private address' : 'My shielded address',
         text: `Send ${asset?.code ?? 'funds'} to: ${payload}`,
@@ -123,7 +127,6 @@ export function PrivateReceiveContent() {
     if (rotating) return;
     setRotating(true);
     setRotationError(null);
-    triggerHaptic('selection');
     try {
       await rotatePrivateAddress();
       triggerHaptic('success');
@@ -163,7 +166,7 @@ export function PrivateReceiveContent() {
   }
 
   return (
-    <div className="px-4 pb-5 pt-3 sm:px-6 sm:pb-6">
+    <ModalBody>
       <div className="mx-auto max-w-[420px] space-y-4">
       {addressChoice}
       <div className="flex justify-center">
@@ -193,17 +196,31 @@ export function PrivateReceiveContent() {
 
       <div
         aria-label="Private address"
-        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3.5 py-3"
+        className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-3.5 py-3"
       >
-        <div className="min-w-0">
-          <p className="text-[10.5px] font-medium text-neutral-500">
-            {reusable ? 'Reusable private address' : 'Shielded address'}
-          </p>
-          <p className="mono mt-0.5 truncate text-[12px] text-neutral-200" title={payload}>
-            {compactAddress}
-          </p>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <div className="min-w-0">
+            <p className="text-[10.5px] font-medium text-neutral-500">
+              {reusable ? 'Reusable private address' : 'Shielded address'}
+            </p>
+            <p className="mono mt-0.5 truncate text-[12px] text-neutral-200">
+              {showFullAddress ? '' : compactAddress}
+            </p>
+          </div>
+          <CopyButton value={payload} label="Copy Address" className="chip min-h-11 shrink-0" />
         </div>
-        <CopyButton value={payload} label="Copy Address" className="chip min-h-11 shrink-0" />
+        {showFullAddress ? (
+          <p className="mono -mt-3 break-all text-[11.5px] leading-relaxed text-neutral-200">{payload}</p>
+        ) : null}
+        <button
+          type="button"
+          aria-expanded={showFullAddress}
+          onClick={() => setShowFullAddress(value => !value)}
+          className="-mb-1 mt-1 flex min-h-11 items-center gap-1 text-[12.5px] font-semibold text-[#0A84FF]"
+        >
+          {showFullAddress ? 'Hide full address' : 'Show full address'}
+          <IconChevronDown size={12} className={`transition-transform ${showFullAddress ? 'rotate-180' : ''}`} />
+        </button>
       </div>
 
       <div className="flex min-h-11 flex-wrap items-center justify-center gap-x-4 gap-y-2">
@@ -235,7 +252,6 @@ export function PrivateReceiveContent() {
           <a
             href={qrDataUrl}
             download="stellarkey-private-receive-qr.png"
-            onClick={() => triggerHaptic('selection')}
             className="flex min-h-11 items-center gap-1.5 text-[12px] font-semibold text-neutral-400 transition-colors hover:text-white"
           >
             <IconDownload size={13} /> Save QR
@@ -250,10 +266,7 @@ export function PrivateReceiveContent() {
         <button
           type="button"
           aria-expanded={aboutOpen}
-          onClick={() => {
-            triggerHaptic('selection');
-            setAboutOpen(value => !value);
-          }}
+          onClick={() => setAboutOpen(value => !value)}
           className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
         >
           <span className="text-[12.5px] font-semibold text-neutral-200">About this address</span>
@@ -305,20 +318,31 @@ export function PrivateReceiveContent() {
         ) : null}
       </div>
       </div>
-    </div>
+    </ModalBody>
   );
 }
 
-export function ReceivePrivate({ onClose }: { onClose: () => void }) {
+/**
+ * The standalone receive dialog. The address and QR are sensitive, so the
+ * content leaves the moment the dialog closes while the shell keeps its
+ * geometry through the exit.
+ */
+export function ReceivePrivate({ open = true, onClose }: { open?: boolean; onClose: () => void }) {
   const { asset } = usePrivateBalanceRuntimeData();
+  const [busy, setBusy] = useState(false);
   return (
-    <Modal open onClose={onClose}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      busy={busy}
+      busyReason="Wait for the new address to finish before closing."
+    >
       <ModalHeader
         title="Receive Privately"
         subtitle={`Your private ${asset?.code ?? ''} address`.replace(/\s+/g, ' ')}
         onClose={onClose}
       />
-      <PrivateReceiveContent />
+      {open ? <PrivateReceiveContent onBusyChange={setBusy} /> : null}
     </Modal>
   );
 }

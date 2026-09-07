@@ -23,7 +23,7 @@ function getAudioContext(): AudioContext | null {
 export function loadSoundPref(): boolean {
   if (typeof window === "undefined") return true;
   const stored = window.localStorage.getItem(SOUND_PREF_KEY);
-  return stored !== "0"; // Enabled by default
+  return stored === "1"; // Off until chosen: sounds never accompany taps or navigation
 }
 
 export function saveSoundPref(enabled: boolean): void {

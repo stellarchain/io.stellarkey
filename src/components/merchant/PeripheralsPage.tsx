@@ -297,7 +297,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                                 item ? "success" : "error",
                               );
                             }}
-                            className="input mono text-base sm:text-[13.5px]"
+                            className="input mono text-base sm:text-[14px]"
                           />
                           {lastScan && (
                             <p className="mt-2 flex items-center gap-1.5 text-[12px] text-[#30D158]">

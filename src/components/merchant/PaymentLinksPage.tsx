@@ -209,15 +209,14 @@ export function PaymentLinksPage() {
         </div>
       )}
 
-      {editorOpen && (
-        <CodeEditorModal
-          code={editing}
-          onClose={() => {
-            setEditorOpen(false);
-            setEditing(null);
-          }}
-        />
-      )}
+      <CodeEditorModal
+        open={editorOpen}
+        code={editing}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditing(null);
+        }}
+      />
 
       <CounterPosterModal code={posterCode} onClose={() => setPosterCode(null)} />
       {/* The explanation lives under the codes: the figures lead, and the

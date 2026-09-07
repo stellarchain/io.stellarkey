@@ -29,8 +29,8 @@ export function RelayRecipientFixture() {
     <Button onClick={() => finishes.current.shift()?.()}>Finish recipient validation</Button>
     <Button onClick={() => setDelay(false)}>Resume recipient validation</Button>
     <p data-testid="recipient-preparations">{calls}</p>
-    {open ? <PrivateBalanceRuntimeDataProvider value={runtime}>
-      <SendPrivate prefill={{ recipient: defaultAddress }} onClose={() => setOpen(false)} />
-    </PrivateBalanceRuntimeDataProvider> : null}
+    <PrivateBalanceRuntimeDataProvider value={runtime}>
+      <SendPrivate open={open} prefill={{ recipient: defaultAddress }} onClose={() => setOpen(false)} />
+    </PrivateBalanceRuntimeDataProvider>
   </section>;
 }

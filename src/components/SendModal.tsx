@@ -52,7 +52,22 @@ import {
 } from "@/lib/private-address";
 import type { SubmissionResult } from "@/lib/submission";
 import type { SettlementSweepIntent } from "@/lib/merchant/settlement";
-import { Button, CopyButton, ErrorText, HashValue, LoadingRegion, Modal, ModalHeader, QrScannerBox, SegmentedControl, Select, Spinner, Tabs } from "./ui";
+import {
+  Button,
+  CopyButton,
+  ErrorText,
+  HashValue,
+  LoadingRegion,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  QrScannerBox,
+  SegmentedControl,
+  Select,
+  Spinner,
+  Tabs,
+} from "./ui";
 import { FiatValue } from "./FiatValue";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
@@ -61,11 +76,13 @@ import {
   IconExternal,
   IconQrScan,
   IconShieldStellar,
+  IconStar,
   IconUsers,
   IconWallet,
   IconTrezor,
   IconLedger,
 } from "./icons";
+import { IconInfo } from "./merchant/icons";
 
 type Stage = "form" | "review" | "sending" | "cosign" | "done" | "status_unknown";
 type MemoType = StellarMemoInput["type"];
@@ -97,6 +114,9 @@ export type SendPrefill = PayUriPayload & {
   settlementIntent?: SettlementSweepIntent;
 };
 
+/** Header override an embedded flow reports so the shell shows stage-aware titles. */
+export type SendHeader = { title: string; subtitle?: string; onBack?: () => void };
+
 export function SendModal({
   open,
   onClose,
@@ -108,6 +128,74 @@ export function SendModal({
   prefill?: SendPrefill | null;
   initialMode?: "public" | "private";
 }) {
+  const [surfaceBusy, setSurfaceBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [header, setHeader] = useState<SendHeader | null>(null);
+  const privateCloseHandler = useRef<(() => void) | null>(null);
+
+  const setPrivateCloseHandler = useCallback((handler: (() => void) | null) => {
+    privateCloseHandler.current = handler;
+  }, []);
+
+  const requestClose = useCallback(() => {
+    const closePrivate = privateCloseHandler.current;
+    if (closePrivate) {
+      closePrivate();
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
+  return (
+    <Modal
+      open={open}
+      onClose={requestClose}
+      wide
+      busy={surfaceBusy}
+      busyReason="Wait for the payment to finish before closing."
+      dirty={dirty}
+    >
+      <ModalHeader
+        title={header?.title ?? "Send Payment"}
+        subtitle={header ? header.subtitle : "Choose a public or private payment"}
+        onBack={header?.onBack}
+        onClose={requestClose}
+      />
+      <SendSurface
+        initialMode={initialMode}
+        prefill={prefill}
+        surfaceBusy={surfaceBusy}
+        onClose={onClose}
+        onBusyChange={setSurfaceBusy}
+        onDirtyChange={setDirty}
+        onHeaderChange={setHeader}
+        onPrivateCloseHandlerChange={setPrivateCloseHandler}
+      />
+    </Modal>
+  );
+}
+
+// Mounted with the shell and unmounted after its exit, so every opening starts
+// on the requested mode with a clean form.
+function SendSurface({
+  initialMode,
+  prefill,
+  surfaceBusy,
+  onClose,
+  onBusyChange,
+  onDirtyChange,
+  onHeaderChange,
+  onPrivateCloseHandlerChange,
+}: {
+  initialMode: "public" | "private";
+  prefill?: SendPrefill | null;
+  surfaceBusy: boolean;
+  onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onHeaderChange: (header: SendHeader | null) => void;
+  onPrivateCloseHandlerChange: (handler: (() => void) | null) => void;
+}) {
   const {
     availableAssets,
     requestRuntime,
@@ -115,32 +203,11 @@ export function SendModal({
   const [sendMode, setSendMode] = useState<"public" | "private">(initialMode);
   const [, startRuntimeTransition] = useTransition();
   const [privatePrefill, setPrivatePrefill] = useState<string | undefined>(undefined);
-  const [surfaceBusy, setSurfaceBusy] = useState(false);
-  const privateCloseHandler = useRef<(() => void) | null>(null);
   const privateLeaveHandler = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
-    if (open && initialMode === "private") requestRuntime();
-  }, [initialMode, open, requestRuntime]);
-
-  const close = useCallback(() => {
-    privateCloseHandler.current = null;
-    privateLeaveHandler.current = null;
-    setSendMode("public");
-    setPrivatePrefill(undefined);
-    setSurfaceBusy(false);
-    onClose();
-  }, [onClose]);
-
-  const requestClose = useCallback(() => {
-    if (sendMode === "private" && privateCloseHandler.current) {
-      privateCloseHandler.current();
-      return;
-    }
-    close();
-  }, [close, sendMode]);
-
-  if (!open) return null;
+    if (initialMode === "private") requestRuntime();
+  }, [initialMode, requestRuntime]);
 
   const changeMode = (next: "public" | "private") => {
     if (next === sendMode || surfaceBusy) return;
@@ -157,52 +224,45 @@ export function SendModal({
   const panel = sendMode === "private" ? (
     <PrivatePaymentAccessGate action="send">
       <PrivateSend
-        onClose={close}
+        onClose={onClose}
         prefill={privatePrefill ? { recipient: privatePrefill } : undefined}
         showAssetSelector
         embedded
-        onCloseHandlerChange={(handler) => {
-          privateCloseHandler.current = handler;
-        }}
+        onCloseHandlerChange={onPrivateCloseHandlerChange}
         onBeforeLeaveChange={(handler) => {
           privateLeaveHandler.current = handler;
         }}
-        onWorkingChange={setSurfaceBusy}
+        onWorkingChange={onBusyChange}
+        onHeaderChange={onHeaderChange}
       />
     </PrivatePaymentAccessGate>
   ) : (
     <SendInner
-      onClose={close}
+      onClose={onClose}
       prefill={prefill}
       openPrivateSend={openPrivateSend}
-      onBusyChange={setSurfaceBusy}
+      onBusyChange={onBusyChange}
+      onDirtyChange={onDirtyChange}
+      onHeaderChange={onHeaderChange}
     />
   );
 
   return (
-    <Modal open onClose={requestClose} wide dismissable={!surfaceBusy}>
-      <ModalHeader
-        title="Send Payment"
-        subtitle="Choose a public or private payment"
-        onClose={requestClose}
-        closeDisabled={surfaceBusy}
-      />
-      <Tabs
-        value={sendMode}
-        onChange={changeMode}
-        ariaLabel="Send type"
-        activationMode="manual"
-        options={[
-          { value: "public", label: "Public", disabled: surfaceBusy },
-          { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
-        ]}
-        panelBusy={surfaceBusy}
-        tabListClassName={availableAssets.length > 0 || sendMode === "private" ? "mx-4 mt-4 sm:mx-6" : "hidden"}
-        panelClassName="min-h-56"
-      >
-        {panel}
-      </Tabs>
-    </Modal>
+    <Tabs
+      value={sendMode}
+      onChange={changeMode}
+      ariaLabel="Send type"
+      activationMode="manual"
+      options={[
+        { value: "public", label: "Public", disabled: surfaceBusy },
+        { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
+      ]}
+      panelBusy={surfaceBusy}
+      tabListClassName={availableAssets.length > 0 || sendMode === "private" ? "mx-4 mt-4 sm:mx-6" : "hidden"}
+      panelClassName="min-h-56"
+    >
+      {panel}
+    </Tabs>
   );
 }
 
@@ -211,11 +271,15 @@ function SendInner({
   prefill,
   openPrivateSend,
   onBusyChange,
+  onDirtyChange,
+  onHeaderChange,
 }: {
   onClose: () => void;
   prefill?: SendPrefill | null;
   openPrivateSend(address: string): void;
   onBusyChange(busy: boolean): void;
+  onDirtyChange?(dirty: boolean): void;
+  onHeaderChange?(header: SendHeader | null): void;
 }) {
   const { network, activeAccount, accounts } = useWalletIdentity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
@@ -304,9 +368,27 @@ function SendInner({
   const receiptNetwork = submission?.network ?? publicReview?.network ?? stealthReview?.network ?? network;
 
   useEffect(() => {
-    onBusyChange(stage === "sending");
+    onBusyChange(stage === "sending" || preparingReview);
     return () => onBusyChange(false);
-  }, [onBusyChange, stage]);
+  }, [onBusyChange, preparingReview, stage]);
+
+  // Typed recipient or amount is unsaved input until the review is signed.
+  const dirty = stage === "form" && (destination.trim() !== "" || amount.trim() !== "");
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
+
+  const backToForm = useCallback(() => {
+    setPublicReview(null);
+    setError(null);
+    setStage("form");
+  }, []);
+  useLayoutEffect(() => {
+    if (!onHeaderChange) return;
+    onHeaderChange(sendStageHeader(stage, backToForm));
+    return () => onHeaderChange(null);
+  }, [backToForm, onHeaderChange, stage]);
 
   useEffect(() => {
     let alive = true;
@@ -575,7 +657,6 @@ function SendInner({
         feeStroops,
         needsCosigners,
       }));
-      triggerHaptic("selection");
       setStealthReview(null);
       setStage("review");
       return;
@@ -602,7 +683,6 @@ function SendInner({
       }
       setStealthReview(review);
       setStage("review");
-      triggerHaptic("selection");
     } catch (cause) {
       setStealthReview(null);
       setError(cause instanceof Error ? cause.message : "Could not prepare this private recipient.");
@@ -757,8 +837,7 @@ function SendInner({
     : null;
 
   return (
-    <>
-      <div className="p-4 sm:p-6">
+    <ModalBody>
         {stage === "done" ? (
           <div className="flex flex-col items-center py-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#30D158]/30 bg-[#30D158]/10 text-[#30D158]">
@@ -774,7 +853,7 @@ function SendInner({
             </p>
             {hash && (
               <a
-                className="chip mt-4"
+                className="chip mt-4 min-h-11"
                 href={NETWORKS[receiptNetwork].explorerTxUrl(hash)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -782,9 +861,7 @@ function SendInner({
                 View on Explorer <IconExternal size={11} />
               </a>
             )}
-            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
-              Done
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "status_unknown" ? (
           <div className="flex flex-col items-center py-4 text-center">
@@ -801,9 +878,7 @@ function SendInner({
                 {receiptNetwork} · {hash}
               </p>
             )}
-            <Button variant="ghost" className="mt-6 w-full" onClick={onClose}>
-              Close and Keep Tracking
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "cosign" ? (
           <div className="flex flex-col items-center py-2 text-center">
@@ -822,18 +897,16 @@ function SendInner({
             <CopyButton
               value={cosignXdr ?? ""}
               label="Copy Envelope XDR"
-              className="chip mt-3 w-full justify-center"
+              className="chip mt-3 min-h-11 w-full justify-center"
             />
             <p className="mt-2.5 text-[11px] leading-relaxed text-neutral-500">
               Cosigners open Multi-Sig Studio → Approvals, paste the envelope, and sign — it
               submits automatically once the threshold is met.
             </p>
-            <Button variant="ghost" className="mt-4 w-full" onClick={onClose}>
-              Done
-            </Button>
+            <ModalFooter className="w-full" primary={<Button onClick={onClose}>Done</Button>} />
           </div>
         ) : stage === "review" || stage === "sending" ? (
-          <>
+          <div>
             <div className="flex flex-col items-center pb-2">
               <p className="display-h text-[36px] text-white">
                 {fmtAmount(reviewedAmount)}
@@ -1017,7 +1090,7 @@ function SendInner({
             {/* Multi-sig cosigner requirement warning */}
             {reviewNeedsCosigners && (
               <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FF9F0A]">
-                <span className="shrink-0 text-[16px]">✍️</span>
+                <IconUsers size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span>
                   <strong>Multi-signature account.</strong> Your signature weight ({myWeight}) is
                   below the required threshold ({signerInfo?.thresholds.med_threshold}). Additional
@@ -1074,31 +1147,21 @@ function SendInner({
               </div>
             )}
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <Button
-                variant="ghost"
-                disabled={stage === "sending"}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setPublicReview(null);
-                  setError(null);
-                  setStage("form");
-                }}
-              >
-                Back
-              </Button>
-              <Button
-                ref={confirmButtonRef}
-                loading={stage === "sending"}
-                focusableWhenDisabled
-                loadingLabel={reviewNeedsCosigners ? "Signing transaction" : "Sending payment"}
-                disabled={stage === "sending"}
-                onClick={() => void handleConfirm()}
-              >
-                {reviewNeedsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
-              </Button>
-            </div>
-          </>
+            <ModalFooter
+              primary={
+                <Button
+                  ref={confirmButtonRef}
+                  loading={stage === "sending"}
+                  focusableWhenDisabled
+                  loadingLabel={reviewNeedsCosigners ? "Signing transaction" : "Sending payment"}
+                  disabled={stage === "sending"}
+                  onClick={() => void handleConfirm()}
+                >
+                  {reviewNeedsCosigners ? "Sign & Share for Approval" : "Confirm Send"}
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <div className="space-y-4">
             {settlementIntent && (
@@ -1140,11 +1203,10 @@ function SendInner({
                       <button
                         type="button"
                         onClick={() => {
-                          triggerHaptic("selection");
                           setStealthReview(null);
                           setAmount(maxSendable);
                         }}
-                        className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+                        className="min-h-11 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
                       >
                         Max: {fmtAmount(maxSendable)} {selectedAsset.code}
                       </button>
@@ -1154,6 +1216,7 @@ function SendInner({
                     id={amountInputId}
                     type="text"
                     inputMode="decimal"
+                    enterKeyHint="next"
                     autoComplete="off"
                     placeholder="0.00"
                     value={amount}
@@ -1187,11 +1250,10 @@ function SendInner({
                     key={val}
                     type="button"
                     onClick={() => {
-                      triggerHaptic("selection");
                       setStealthReview(null);
                       setAmount(String(val));
                     }}
-                    className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                    className="min-h-11 rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-medium text-neutral-300 hover:bg-white/[0.12]"
                   >
                     {val}
                   </button>
@@ -1200,11 +1262,10 @@ function SendInner({
                   <button
                     type="button"
                     onClick={() => {
-                      triggerHaptic("selection");
                       setStealthReview(null);
                       setAmount(maxSendable);
                     }}
-                    className="rounded-lg bg-[#0A84FF]/15 border border-[#0A84FF]/30 px-2.5 py-1 text-[11.5px] font-bold text-accent-2"
+                    className="min-h-11 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[12px] font-bold text-accent-2"
                   >
                     MAX
                   </button>
@@ -1216,8 +1277,9 @@ function SendInner({
                   <label htmlFor={destinationInputId} className="field-label !pb-0">Recipient Address or Federation</label>
                   <button
                     type="button"
+                    aria-expanded={showScanner}
                     onClick={() => setShowScanner((s) => !s)}
-                    className="text-[12px] font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
+                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
                   >
                     <IconQrScan size={13} />
                     <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
@@ -1231,7 +1293,9 @@ function SendInner({
                   onChange={(e) => handleDestinationChange(e.target.value)}
                   className="input mono text-base sm:text-[13px]"
                   spellCheck={false}
+                  autoCapitalize="none"
                   autoComplete="off"
+                  enterKeyHint="next"
                 />
 
                 {/* Private-address handoff card */}
@@ -1247,10 +1311,7 @@ function SendInner({
                     </p>
                     <Button
                       className="mt-2.5 w-full"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        openPrivateSend(destination.trim());
-                      }}
+                      onClick={() => openPrivateSend(destination.trim())}
                     >
                       Send Privately
                     </Button>
@@ -1283,11 +1344,8 @@ function SendInner({
                         <button
                           key={acc.id}
                           type="button"
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            handleDestinationChange(acc.publicKey);
-                          }}
-                          className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-200 hover:text-white bg-[#0A84FF]/10 border border-[#0A84FF]/25 font-medium flex items-center gap-1"
+                          onClick={() => handleDestinationChange(acc.publicKey)}
+                          className="chip min-h-11 border border-[#0A84FF]/25 bg-[#0A84FF]/10 font-medium text-neutral-200 hover:text-white"
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
                           <span>{acc.label}</span>
@@ -1306,17 +1364,14 @@ function SendInner({
                         <button
                           key={c.address}
                           type="button"
-                          onClick={() => {
-                            triggerHaptic("selection");
-                            handleDestinationChange(c.address);
-                          }}
-                          className={`chip !py-0.5 !px-2 text-[11.5px] flex items-center gap-1 transition-[background-color,color,border-color,box-shadow] ${
+                          onClick={() => handleDestinationChange(c.address)}
+                          className={`chip min-h-11 transition-[background-color,color,border-color,box-shadow] ${
                             c.favorite
-                              ? "bg-[#FFD60A]/15 border border-[#FFD60A]/30 text-white font-medium"
+                              ? "border border-[#FFD60A]/30 bg-[#FFD60A]/15 font-medium text-white"
                               : "text-neutral-300 hover:text-white"
                           }`}
                         >
-                          {c.favorite && <span className="text-[#FFD60A] text-[10px]">★</span>}
+                          {c.favorite && <IconStar size={11} className="shrink-0 text-[#FFD60A]" />}
                           <span>{c.name}</span>
                         </button>
                       ))}
@@ -1329,11 +1384,8 @@ function SendInner({
                       <button
                         key={addr}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          handleDestinationChange(addr);
-                        }}
-                        className="chip !py-0.5 !px-2 text-[11.5px] text-neutral-300 hover:text-white"
+                        onClick={() => handleDestinationChange(addr)}
+                        className="chip min-h-11 text-neutral-300 hover:text-white"
                       >
                         {formatTrezorAddress(addr)}
                       </button>
@@ -1344,8 +1396,9 @@ function SendInner({
                   <p className="mt-1 text-[11px] text-[#0A84FF]">Resolving federation address…</p>
                 )}
                 {fedResolvedAddr && (
-                  <p className="mt-1 mono text-[11px] text-[#30D158] truncate">
-                    ✓ Resolved: {fedResolvedAddr}
+                  <p className="mono mt-1 flex items-center gap-1 text-[11px] text-[#30D158]">
+                    <IconCheck size={11} className="shrink-0" aria-hidden="true" />
+                    <span className="truncate">Resolved: {fedResolvedAddr}</span>
                   </p>
                 )}
                 {matchedContact && (
@@ -1360,7 +1413,6 @@ function SendInner({
                   onScan={(text) => {
                     handleDestinationChange(text);
                     setShowScanner(false);
-                    triggerHaptic("success");
                   }}
                 />
               )}
@@ -1372,7 +1424,6 @@ function SendInner({
                   ariaLabel="Speed and network fee"
                   value={feeTier}
                   onChange={(val) => {
-                    triggerHaptic("selection");
                     setStealthReview(null);
                     setFeeTier(val as FeeTier);
                   }}
@@ -1418,17 +1469,15 @@ function SendInner({
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2 text-[11px]">
+                  <div role="group" aria-label="Memo type" className="flex gap-1">
                     {(["text", "id", "hash", "return"] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setMemoType(t);
-                        }}
-                        className={`capitalize ${
-                          memoType === t ? "text-white font-semibold" : "text-neutral-500"
+                        aria-pressed={memoType === t}
+                        onClick={() => setMemoType(t)}
+                        className={`min-h-11 rounded-lg px-2 text-[12px] capitalize ${
+                          memoType === t ? "font-semibold text-white" : "text-neutral-500"
                         }`}
                       >
                         {t}
@@ -1449,59 +1498,80 @@ function SendInner({
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   autoComplete="off"
+                  inputMode={memoType === "id" ? "numeric" : undefined}
+                  enterKeyHint="done"
                   aria-describedby={memoType === "text" ? memoCounterId : undefined}
                   aria-invalid={memoType === "text" && memoBytes > 28 ? true : undefined}
                   className={`input text-base sm:text-[13px] ${memoBytes > 28 && memoType === "text" ? "!ring-2 !ring-[#FF453A]" : ""}`}
                 />
                 {memoType === "text" && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10.5px] text-neutral-500">Presets:</span>
-                    {[
-                      { label: "⚡ Payment", val: "Payment" },
-                      { label: "🧾 Invoice", val: "Invoice" },
-                      { label: "🎁 Gift", val: "Gift" },
-                      { label: "☕ Tip", val: "Tip" },
-                    ].map((p) => (
+                    <span className="text-[12px] text-neutral-500">Presets:</span>
+                    {["Payment", "Invoice", "Gift", "Tip"].map((preset) => (
                       <button
-                        key={p.val}
+                        key={preset}
                         type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          setMemo(p.val);
-                        }}
-                        className={`rounded-md bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
-                          memo === p.val ? "bg-[#0A84FF] text-white font-semibold" : "text-neutral-400 hover:text-white"
+                        aria-pressed={memo === preset}
+                        onClick={() => setMemo(preset)}
+                        className={`min-h-11 rounded-lg px-3 text-[12px] font-medium transition-colors ${
+                          memo === preset ? "bg-[#0A84FF] font-semibold text-white" : "bg-white/[0.06] text-neutral-400 hover:text-white"
                         }`}
                       >
-                        {p.label}
+                        {preset}
                       </button>
                     ))}
                   </div>
                 )}
                 {!memo.trim() && (
-                  <p className="mt-1.5 text-[11px] text-neutral-400">
-                    💡 Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.
+                  <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-neutral-400">
+                    <IconInfo size={13} className="mt-px shrink-0" aria-hidden="true" />
+                    <span>Sending to an exchange (Binance, Coinbase, etc.)? Enter a Memo ID to prevent lost funds.</span>
                   </p>
                 )}
               </div>}
 
-              <Button
-                className="!mt-6 w-full"
-                disabled={!canReview}
-                loading={preparingReview}
-                loadingLabel="Preparing transfer review"
-                onClick={() => void handleReview()}
-              >
-                Review Transfer
-              </Button>
               {sendError && <ErrorText message={sendError} />}
+              <ModalFooter
+                primary={
+                  <Button
+                    disabled={!canReview}
+                    loading={preparingReview}
+                    loadingLabel="Preparing transfer review"
+                    onClick={() => void handleReview()}
+                  >
+                    Review Transfer
+                  </Button>
+                }
+              />
           </div>
         )}
-      </div>
-    </>
+    </ModalBody>
   );
 }
 
+/** Stage-aware header the shell renders; the form keeps the shell's default. */
+function sendStageHeader(stage: Stage, backToForm: () => void): SendHeader | null {
+  switch (stage) {
+    case "form":
+      return null;
+    case "review":
+      return {
+        title: "Send Payment",
+        subtitle: "Review before signing · Step 2 of 2",
+        onBack: backToForm,
+      };
+    case "sending":
+      return { title: "Send Payment", subtitle: "Signing and sending…", onBack: backToForm };
+    case "cosign":
+      return { title: "Signature Collected", subtitle: "Share the envelope with a cosigner" };
+    case "status_unknown":
+      return { title: "Payment Status", subtitle: "Tracking the canonical hash" };
+    case "done":
+      return { title: "Payment Sent" };
+  }
+}
+
+/** Favourite marker on contact chips; `./icons` has no star glyph yet. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2.5 text-[13px]">

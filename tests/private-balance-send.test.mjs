@@ -90,7 +90,7 @@ test('review opens immediately and the proof prepares underneath it', () => {
   assert.match(review, /disabled=\{working \|\| settling \|\| !ready/);
   assert.match(review, /PrivateReviewMismatchError/);
   // Back keeps the draft: it releases the preparation and returns to the form.
-  assert.match(source, /flow\.cancelPrepared\(\);[\s\S]{0,80}setStage\('form'\)/);
+  assert.match(source, /const \{ cancelPrepared \} = flow;[\s\S]{0,120}cancelPrepared\(\);[\s\S]{0,80}setStage\('form'\)/);
 });
 
 test('an expired review re-prepares once and visibly diffs the changed rows', () => {

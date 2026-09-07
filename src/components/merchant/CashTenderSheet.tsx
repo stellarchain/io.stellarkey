@@ -12,7 +12,17 @@ import { fmtMinor, minorToDecimal, toMinor } from "@/lib/merchant/money";
 import type { Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { Button, ErrorText, Field, Modal, ModalHeader, Notice, SegmentedControl } from "../ui";
+import {
+  Button,
+  ErrorText,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  SegmentedControl,
+} from "../ui";
 import { IconAlert, IconCheck } from "../icons";
 import { IconBackspace, IconInfo, IconQr, IconTerminal } from "./icons";
 
@@ -101,7 +111,7 @@ function TenderKeypad({
             type="button"
             onClick={() => press(key)}
             aria-label={key === "backspace" ? "Backspace" : key}
-            className="flex min-h-[52px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-white transition-[transform,background-color] duration-150 hover:bg-white/[0.13] active:scale-95"
+            className="flex min-h-[52px] items-center justify-center rounded-2xl bg-white/[0.08] text-[26px] font-medium leading-none text-white transition-[transform,background-color] hover:bg-white/[0.13] active:scale-95"
           >
             {key === "backspace" ? <IconBackspace size={24} /> : key}
           </button>
@@ -128,14 +138,23 @@ export function CashTenderSheet({
   currency: FiatCurrency;
   onSettled: (outcome: MerchantTenderOutcome) => void;
 }) {
-  if (!open) return null;
+  const [pending, setPending] = useState(false);
   return (
-    <CashTenderSheetInner
+    <Modal
+      open={open}
       onClose={onClose}
-      totalMinor={totalMinor}
-      currency={currency}
-      onSettled={onSettled}
-    />
+      busy={pending}
+      busyReason="Wait for the tender to be saved before closing."
+    >
+      <CashTenderSheetInner
+        onClose={onClose}
+        totalMinor={totalMinor}
+        currency={currency}
+        onSettled={onSettled}
+        pending={pending}
+        onPendingChange={setPending}
+      />
+    </Modal>
   );
 }
 
@@ -144,11 +163,15 @@ function CashTenderSheetInner({
   totalMinor,
   currency,
   onSettled,
+  pending,
+  onPendingChange,
 }: {
   onClose: () => void;
   totalMinor: Minor;
   currency: FiatCurrency;
   onSettled: (outcome: MerchantTenderOutcome) => void;
+  pending: boolean;
+  onPendingChange: (pending: boolean) => void;
 }) {
   const { toast } = useToast();
   const { activeStaff, terminal } = useMerchantStaff();
@@ -192,76 +215,126 @@ function CashTenderSheetInner({
 
   function finish(outcome: MerchantTenderOutcome, detail: string, kind: "success" | "info") {
     triggerHaptic(kind === "success" ? "success" : "light");
-    toast(detail, kind === "success" ? "success" : "info");
+    toast(detail, kind === "success" ? "success" : "info", { silent: true });
     onSettled(outcome);
     onClose();
   }
 
   function fail(error: unknown) {
-    triggerHaptic("warning");
-    toast(error instanceof Error ? error.message : "This tender could not be saved.", "error");
+    triggerHaptic("error");
+    toast(error instanceof Error ? error.message : "This tender could not be saved.", "error", {
+      silent: true,
+    });
+  }
+
+  /** One tender at a time: the sheet is busy until the record is written. */
+  async function settle(task: () => Promise<void>) {
+    if (pending) return;
+    onPendingChange(true);
+    try {
+      await task();
+    } finally {
+      onPendingChange(false);
+    }
   }
 
   async function takeCash() {
-    try {
-      const order = await settleCash(receivedMinor);
-      finish(
-        { order, charge: null },
-        changeMinor > 0
-          ? `Cash saved. Return ${fmtMinor(changeMinor, currency)} change.`
-          : "Cash saved as exact money.",
-        "success",
-      );
-    } catch (error) {
-      fail(error);
-    }
+    await settle(async () => {
+      try {
+        const order = await settleCash(receivedMinor);
+        finish(
+          { order, charge: null },
+          changeMinor > 0
+            ? `Cash saved. Return ${fmtMinor(changeMinor, currency)} change.`
+            : "Cash saved as exact money.",
+          "success",
+        );
+      } catch (error) {
+        fail(error);
+      }
+    });
   }
 
   async function takeCard() {
-    try {
-      const order = await settleCard(cardReference);
-      finish(
-        { order, charge: null },
-        `Card sale saved${cardReference.trim() ? ` · ${cardReference.trim()}` : ""}.`,
-        "success",
-      );
-    } catch (error) {
-      fail(error);
-    }
+    await settle(async () => {
+      try {
+        const order = await settleCard(cardReference);
+        finish(
+          { order, charge: null },
+          `Card sale saved${cardReference.trim() ? ` · ${cardReference.trim()}` : ""}.`,
+          "success",
+        );
+      } catch (error) {
+        fail(error);
+      }
+    });
   }
 
   async function takeSplit() {
     if (firstMinor === null) return;
     setSplitError("");
-    try {
-      const outcome = await startSplitCharge({
-        firstKind: firstLeg,
-        secondKind: secondLeg,
-        firstMinor,
-        cardReference,
-      });
-      finish(
-        outcome,
-        outcome.charge
-          ? `${LEG_LABEL[firstLeg]} saved. Stellar charge ready for ${fmtMinor(outcome.charge.amountMinor, currency)}.`
-          : `Split sale saved: ${LEG_LABEL[firstLeg]} + ${LEG_LABEL[secondLeg]}.`,
-        "success",
-      );
-    } catch (error) {
-      setSplitError(error instanceof Error ? error.message : "This split could not be saved.");
-      fail(error);
-    }
+    await settle(async () => {
+      try {
+        const outcome = await startSplitCharge({
+          firstKind: firstLeg,
+          secondKind: secondLeg,
+          firstMinor,
+          cardReference,
+        });
+        finish(
+          outcome,
+          outcome.charge
+            ? `${LEG_LABEL[firstLeg]} saved. Stellar charge ready for ${fmtMinor(outcome.charge.amountMinor, currency)}.`
+            : `Split sale saved: ${LEG_LABEL[firstLeg]} + ${LEG_LABEL[secondLeg]}.`,
+          "success",
+        );
+      } catch (error) {
+        setSplitError(error instanceof Error ? error.message : "This split could not be saved.");
+        fail(error);
+      }
+    });
   }
 
+  const cardReferenceField = (
+    <Field label="Terminal receipt number" hint="Optional — ties the two records together">
+      <input
+        type="text"
+        value={cardReference}
+        onChange={(event) => setCardReference(event.target.value)}
+        placeholder="e.g. 004913"
+        enterKeyHint="done"
+        autoCapitalize="characters"
+        className="input input-mono text-base sm:text-[13px]"
+      />
+    </Field>
+  );
+
+  const primary =
+    choice === "cash" ? (
+      <Button type="button" disabled={!cashReady} loading={pending} onClick={takeCash}>
+        {changeMinor > 0
+          ? `Take cash · ${fmtMinor(changeMinor, currency)} change`
+          : `Take ${fmtMinor(totalMinor, currency)} cash`}
+      </Button>
+    ) : choice === "card" ? (
+      <Button type="button" loading={pending} onClick={takeCard}>
+        Ring up {fmtMinor(totalMinor, currency)} as card
+      </Button>
+    ) : (
+      <Button type="button" disabled={!splitReady} loading={pending} onClick={takeSplit}>
+        Record split
+      </Button>
+    );
+
   return (
-    <Modal open onClose={onClose}>
+    <>
       <ModalHeader
         title="Other tender"
         subtitle={`${fmtMinor(totalMinor, currency)} to settle`}
         onClose={onClose}
       />
 
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         <SegmentedControl<TenderChoice>
           ariaLabel="How this order is paid"
           value={choice}
@@ -306,10 +379,7 @@ function CashTenderSheetInner({
               <button
                 type="button"
                 aria-pressed={receivedMinor === totalMinor}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setReceivedMinor(totalMinor);
-                }}
+                onClick={() => setReceivedMinor(totalMinor)}
                 className={`min-h-[52px] rounded-2xl px-2 text-[13.5px] font-semibold transition-colors ${
                   receivedMinor === totalMinor
                     ? "bg-[#0A84FF]/20 text-[#0A84FF]"
@@ -326,10 +396,7 @@ function CashTenderSheetInner({
                   key={amount}
                   type="button"
                   aria-pressed={receivedMinor === amount}
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setReceivedMinor(amount);
-                  }}
+                  onClick={() => setReceivedMinor(amount)}
                   className={`mono min-h-[52px] rounded-2xl px-2 text-[15.5px] font-semibold transition-colors ${
                     receivedMinor === amount
                       ? "bg-[#0A84FF]/20 text-[#0A84FF]"
@@ -342,17 +409,6 @@ function CashTenderSheetInner({
             </div>
 
             <TenderKeypad minor={receivedMinor} currency={currency} onChange={setReceivedMinor} />
-
-            <button
-              type="button"
-              disabled={!cashReady}
-              onClick={takeCash}
-              className="btn btn-primary w-full"
-            >
-              {changeMinor > 0
-                ? `Take cash · ${fmtMinor(changeMinor, currency)} change`
-                : `Take ${fmtMinor(totalMinor, currency)} cash`}
-            </button>
           </div>
         )}
 
@@ -384,22 +440,7 @@ function CashTenderSheetInner({
               </div>
             </div>
 
-            <Field
-              label="Terminal receipt number"
-              hint="Optional — ties the two records together"
-            >
-              <input
-                type="text"
-                value={cardReference}
-                onChange={(e) => setCardReference(e.target.value)}
-                placeholder="e.g. 004913"
-                className="input input-mono text-base sm:text-[13.5px]"
-              />
-            </Field>
-
-            <button type="button" onClick={takeCard} className="btn btn-primary w-full">
-              Ring up {fmtMinor(totalMinor, currency)} as card
-            </button>
+            {cardReferenceField}
           </div>
         )}
 
@@ -442,6 +483,7 @@ function CashTenderSheetInner({
                   <input
                     type="text"
                     inputMode="decimal"
+                    enterKeyHint={firstLeg === "card" || secondLeg === "card" ? "next" : "done"}
                     value={firstRaw}
                     onChange={(e) => setFirstRaw(e.target.value)}
                     placeholder={minorToDecimal(Math.floor(totalMinor / 2))}
@@ -449,16 +491,14 @@ function CashTenderSheetInner({
                     aria-invalid={firstRaw.trim() !== "" && !firstValid}
                     className="input input-mono text-base sm:text-[15px]"
                   />
-                  <button
+                  <Button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setFirstRaw(minorToDecimal(Math.floor(totalMinor / 2)));
-                    }}
-                    className="btn btn-secondary btn-sm shrink-0"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => setFirstRaw(minorToDecimal(Math.floor(totalMinor / 2)))}
                   >
                     Half
-                  </button>
+                  </Button>
                 </div>
                 {firstRaw.trim() !== "" && !firstValid && (
                   <p className="text-[12px] text-[#FF9F0A]">
@@ -502,17 +542,7 @@ function CashTenderSheetInner({
               </div>
             </section>
 
-            {(firstLeg === "card" || secondLeg === "card") && (
-              <Field label="Terminal receipt number" hint="Optional — ties the two records together">
-                <input
-                  type="text"
-                  value={cardReference}
-                  onChange={(event) => setCardReference(event.target.value)}
-                  placeholder="e.g. 004913"
-                  className="input input-mono text-base sm:text-[13.5px]"
-                />
-              </Field>
-            )}
+            {(firstLeg === "card" || secondLeg === "card") && cardReferenceField}
 
             <ErrorText message={splitError} />
             {splitError.startsWith("No live price") && (
@@ -521,16 +551,10 @@ function CashTenderSheetInner({
                 <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
               </div>
             )}
-            <button
-              type="button"
-              disabled={!splitReady}
-              onClick={takeSplit}
-              className="btn btn-primary w-full"
-            >
-              Record split
-            </button>
           </div>
         )}
+
+        <ModalFooter primary={primary} />
 
         <p className="border-t border-white/[0.08] pt-3 text-center text-[11.5px] leading-relaxed text-neutral-500">
           {activeStaff
@@ -538,7 +562,7 @@ function CashTenderSheetInner({
             : "Choose a staff member before settling this sale."} The app records card payments
           but never handles card data.
         </p>
-      </div>
-    </Modal>
+      </ModalBody>
+    </>
   );
 }
