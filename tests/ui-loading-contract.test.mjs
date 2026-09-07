@@ -33,6 +33,15 @@ test('shared Field associates its label, hint, existing description, and error',
   assert.match(field, /role="alert"/);
 });
 
+test('shared Toggle requires its purpose instead of a generic fallback', () => {
+  const toggle = ui.match(/export function Toggle\([\s\S]*?\n}\n\nexport function Avatar/)?.[0] ?? '';
+  assert.match(toggle, /label: string;/);
+  assert.doesNotMatch(toggle, /label\?: string|label \?\? "Toggle"|ring-0 transition duration/);
+  const settings = readFileSync(new URL('../src/components/SettingsPage.tsx', import.meta.url), 'utf8');
+  assert.match(settings, /<Toggle[^>]*label="Hide Balances \(Privacy\)"[^>]*on=\{privacyMode\}/);
+  assert.match(settings, /<Toggle[^>]*label="Audio & Haptic Feedback"[^>]*on=\{soundEnabled\}/);
+});
+
 test('critical wallet modal shells do not wait for an outer dynamic chunk', () => {
   for (const [component, source] of [
     ['SendModal', 'SendModal'],

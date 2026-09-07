@@ -997,7 +997,7 @@ export function SettingsPage({
                     tint="#BF5AF2"
                     label="Hide Balances (Privacy)"
                   >
-                    <Toggle on={privacyMode} onChange={togglePrivacy} />
+                    <Toggle label="Hide Balances (Privacy)" on={privacyMode} onChange={togglePrivacy} />
                   </RowButton>
                   <RowButton
                     as="div"
@@ -1006,7 +1006,7 @@ export function SettingsPage({
                     label="Audio & Haptic Feedback"
                     sep
                   >
-                    <Toggle on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
+                    <Toggle label="Audio & Haptic Feedback" on={soundEnabled} onChange={() => toggleSound(!soundEnabled)} />
                   </RowButton>
                 </div>
               </section>

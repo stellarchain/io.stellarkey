@@ -647,6 +647,9 @@ export interface SelectOption {
 }
 
 export function Select({
+  id,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
   value,
   onChange,
   options,
@@ -658,6 +661,9 @@ export function Select({
   panelMinWidth,
   preserveOptionLabels = false,
 }: {
+  id?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: React.AriaAttributes["aria-invalid"];
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
@@ -794,12 +800,15 @@ export function Select({
     ref: React.RefObject<HTMLButtonElement | null>;
   } = {
     ref: anchorRef,
+    id,
     type: "button",
     disabled,
     "aria-haspopup": "listbox",
     "aria-expanded": open,
     "aria-controls": open ? listboxId : undefined,
     "aria-label": ariaLabel,
+    "aria-describedby": ariaDescribedBy,
+    "aria-invalid": ariaInvalid,
     onClick: () => (open ? closeMenu() : openMenu()),
     onKeyDown: (e) => {
       if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
@@ -1634,7 +1643,7 @@ export function Toggle({
   on?: boolean;
   onChange: (c?: boolean) => void;
   disabled?: boolean;
-  label?: string;
+  label: string;
 }) {
   const isChecked = checked ?? on ?? false;
   return (
@@ -1647,13 +1656,13 @@ export function Toggle({
         triggerHaptic("selection");
         onChange(!isChecked);
       }}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
         isChecked ? "bg-[#30D158]" : "bg-neutral-700"
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
-      <span className="sr-only">{label ?? "Toggle"}</span>
+      <span className="sr-only">{label}</span>
       <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out ${
           isChecked ? "translate-x-5" : "translate-x-0"
         }`}
       />
