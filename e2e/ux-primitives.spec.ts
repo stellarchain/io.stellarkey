@@ -5,6 +5,7 @@ declare global {
   interface Window {
     __syntheticTooltipListeners?: { count(): number; observerCount(): number; restore(): void };
     __syntheticSvgPointer?: { svg: boolean; bodyFocused: boolean };
+    __syntheticInitialFocus?: { pending: Set<number>; scheduled: number; cancelled: number; olderFocusAttempts: number; restore(): void };
   }
 }
 
@@ -45,6 +46,46 @@ async function finishClipboard(page: Page) {
     (window as typeof window & { __syntheticClipboard: { finish: (() => void) | null } }).__syntheticClipboard.finish?.();
   });
 }
+
+async function openPausedInitialFocus(page: Page) {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame;
+    const cancel = window.cancelAnimationFrame;
+    const focus = HTMLElement.prototype.focus;
+    const state = { pending: new Set<number>(), scheduled: 0, cancelled: 0, olderFocusAttempts: 0, restore: () => {
+      window.requestAnimationFrame = request;
+      window.cancelAnimationFrame = cancel;
+      HTMLElement.prototype.focus = focus;
+    } };
+    window.__syntheticInitialFocus = state;
+    window.requestAnimationFrame = callback => {
+      const id = request.call(window, time => { state.pending.delete(id); callback(time); });
+      state.pending.add(id); state.scheduled += 1;
+      return id;
+    };
+    window.cancelAnimationFrame = id => {
+      if (state.pending.delete(id)) state.cancelled += 1;
+      cancel.call(window, id);
+    };
+    HTMLElement.prototype.focus = function (...args) {
+      if (this.closest('[data-initial-focus-owner="older"]')) state.olderFocusAttempts += 1;
+      focus.apply(this, args);
+    };
+  });
+  const opener = page.getByRole('button', { name: 'Open initial focus checks', exact: true });
+  await opener.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Synthetic initial focus', exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate(node => { (node as HTMLElement).dataset.initialFocusOwner = 'older'; });
+  await expect.poll(() => page.evaluate(() => window.__syntheticInitialFocus?.pending.size)).toBe(1);
+  return { dialog, opener };
+}
+
+test.afterEach(async ({ page }) => {
+  await page.evaluate(() => window.__syntheticInitialFocus?.restore());
+});
 
 test('manual tabs separate focus from activation and preserve the dialog shell', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives' });
@@ -213,6 +254,131 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer keeps ordinary unowned focus and opener restoration', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(false);
+      await page.clock.runFor(17);
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect.poll(() => page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('[data-app-surface]')?.hasAttribute('inert') })))
+        .toEqual({ locked: true, inert: true });
+      await page.clock.resume();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer preserves the surviving opener after a deferred opening', async ({ page }) => {
+      const opener = page.getByRole('button', { name: 'Open deferred initial focus checks', exact: true });
+      await opener.press('Enter');
+      const dialog = page.getByRole('dialog', { name: 'Synthetic initial focus', exact: true });
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer preserves newer focus already inside its panel', async ({ page }) => {
+      const { dialog } = await openPausedInitialFocus(page);
+      const input = dialog.getByLabel('Synthetic owned focus', { exact: true });
+      await input.focus();
+      await page.clock.runFor(17);
+      await expect(input).toBeFocused();
+      await page.clock.resume();
+    });
+
+    test('Modal initializer cannot target an older inert dialog or overwrite a newer dialog focus', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      await dialog.getByRole('button', { name: 'Open newer initial focus', exact: true }).press('Enter');
+      const newer = page.getByRole('dialog', { name: 'Synthetic newer initial focus', exact: true });
+      await expect(newer).toBeVisible();
+      const input = newer.getByLabel('Synthetic newer owned focus', { exact: true });
+      await input.focus();
+      await page.evaluate(() => { window.__syntheticInitialFocus!.olderFocusAttempts = 0; });
+      await page.clock.runFor(17);
+      await expect(input).toBeFocused();
+      expect(await page.evaluate(() => window.__syntheticInitialFocus?.olderFocusAttempts)).toBe(0);
+      await expect(page.locator('[data-initial-focus-owner="older"]')).toHaveAttribute('inert');
+      await page.clock.resume();
+      await page.keyboard.press('Escape');
+      await expect(newer).toHaveCount(0);
+      await expect(dialog.getByRole('button', { name: 'Open newer initial focus', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer is cancelled when its opening closes before the exit animation ends', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      await page.getByText('Close initial focus opening', { exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toHaveAttribute('data-overlay-state', 'closing');
+      expect(await page.evaluate(() => window.__syntheticInitialFocus?.cancelled)).toBe(1);
+      await dialog.click({ position: { x: 2, y: 2 } });
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      await page.clock.runFor(17);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      await expect(dialog).toHaveCount(1);
+      await page.clock.resume();
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer is cancelled on unmount before restoring its surviving opener', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      await page.getByText('Unmount initial focus opening', { exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toHaveCount(0);
+      expect(await page.evaluate(() => window.__syntheticInitialFocus?.cancelled)).toBe(1);
+      await page.clock.runFor(17);
+      await expect(opener).toBeFocused();
+      expect(await page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('[data-app-surface]')?.hasAttribute('inert') })))
+        .toEqual({ locked: false, inert: false });
+      await page.clock.resume();
+    });
+
+    test('Modal initializer revokes the old opening when the retained shell rapidly reopens', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      await dialog.locator('[data-modal-shell]').evaluate(node => { (node as HTMLElement).dataset.initialFocusIdentity = 'retained'; });
+      await page.getByText('Close initial focus opening', { exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toHaveAttribute('data-overlay-state', 'closing');
+      await page.getByText('Reopen initial focus opening', { exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+      await expect(dialog.locator('[data-modal-shell]')).toHaveAttribute('data-initial-focus-identity', 'retained');
+      expect(await page.evaluate(() => ({ scheduled: window.__syntheticInitialFocus?.scheduled, cancelled: window.__syntheticInitialFocus?.cancelled, pending: window.__syntheticInitialFocus?.pending.size })))
+        .toEqual({ scheduled: 2, cancelled: 1, pending: 1 });
+      const input = dialog.getByLabel('Synthetic owned focus', { exact: true });
+      await input.focus();
+      await page.clock.runFor(17);
+      await expect(input).toBeFocused();
+      await page.clock.resume();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+    });
+
+    test('Modal initializer and opener restoration survive a Strict Mode remount', async ({ page }) => {
+      const { dialog, opener } = await openPausedInitialFocus(page);
+      await page.getByText('Unmount initial focus opening', { exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toHaveCount(0);
+      await page.clock.runFor(17);
+      await expect(opener).toBeFocused();
+      await page.evaluate(() => {
+        const state = window.__syntheticInitialFocus!;
+        state.scheduled = 0; state.cancelled = 0;
+      });
+      await opener.press('Enter');
+      await expect(dialog).toBeVisible();
+      // Strict Mode performs setup-cleanup-setup for this new mounted Modal.
+      // One initializer and its obsolete restore frame must both be cancelled.
+      expect(await page.evaluate(() => ({ scheduled: window.__syntheticInitialFocus?.scheduled, cancelled: window.__syntheticInitialFocus?.cancelled, pending: window.__syntheticInitialFocus?.pending.size })))
+        .toEqual({ scheduled: 3, cancelled: 2, pending: 1 });
+      await page.clock.runFor(17);
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.clock.resume();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(opener).toBeFocused();
+      expect(await page.evaluate(() => document.body.style.overflow === 'hidden')).toBe(false);
     });
   });
 

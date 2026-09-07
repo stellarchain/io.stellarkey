@@ -48,7 +48,7 @@ async function syntheticDelivery(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
 }
 
-async function openSigningApproval(page: Page) {
+async function openSigningApproval(page: Page, pauseInitialFocus = false) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Test signing context', exact: true }).click();
@@ -67,9 +67,14 @@ async function openSigningApproval(page: Page) {
   // Keyboard activation intentionally does not dispatch an outside mousedown.
   await expect(send.getByRole('button', { name: 'Review Transfer', exact: true })).toBeEnabled();
   await send.getByRole('button', { name: 'Review Transfer', exact: true }).press('Enter');
+  if (pauseInitialFocus) {
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+  }
   await send.getByRole('button', { name: 'Confirm Send', exact: true }).press('Enter');
   const approval = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
   await expect(approval).toBeVisible();
+  if (pauseInitialFocus) return { send, approval };
   await expect.poll(() => approval.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Tab');
   await expect.poll(() => approval.evaluate(element => element.contains(document.activeElement))).toBe(true);
@@ -78,6 +83,26 @@ async function openSigningApproval(page: Page) {
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) test.describe(`signing context motion ${reducedMotion}`, () => {
 test.use({ contextOptions: { reducedMotion } });
+
+test('signing context approval preserves owned focus through its pending initializer', async ({ page }) => {
+  const { send, approval } = await openSigningApproval(page, true);
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(reducedMotion === 'reduce');
+  await approval.getByLabel('Wallet Password').fill('synthetic signing correct horse battery staple');
+  const authorize = approval.getByRole('button', { name: 'Authorize', exact: true });
+  await authorize.focus();
+  await expect(authorize).toBeFocused();
+  // Dispatch the genuine opening frame between focus and Enter. It must not
+  // replace the user's newer Authorize focus with the header Close control.
+  await page.clock.runFor(17);
+  await expect(authorize).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.clock.resume();
+  await expect(approval).toHaveCount(0);
+  await expect(page.getByTestId('signing-signs')).toHaveText('1');
+  await expect(page.getByTestId('signing-posts')).toHaveText('1');
+  await expect(send.getByRole('heading', { name: 'Submission Status Unknown', exact: true })).toBeFocused();
+  await stableShell(page);
+});
 
 for (const switchAccount of [true, false]) test(`signing context ${switchAccount ? 'rejects changed' : 'retains unchanged'} account during real approval`, async ({ page }) => {
   const { send, approval } = await openSigningApproval(page);
