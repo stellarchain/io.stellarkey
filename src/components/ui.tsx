@@ -241,11 +241,12 @@ const pointerCaptureDocument = typeof document === "undefined"
 if (pointerCaptureDocument && !pointerCaptureDocument.__stellarkeyOverlayPointerCapture) {
   pointerCaptureDocument.__stellarkeyOverlayPointerCapture = true;
   pointerCaptureDocument.addEventListener("pointerdown", (event) => {
-    latestPointerTarget = event.target instanceof HTMLElement
-      ? event.target.closest<HTMLElement>(
+    const target = event.target instanceof Element
+      ? event.target.closest(
           'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         )
       : null;
+    latestPointerTarget = target instanceof HTMLElement ? target : null;
   }, true);
 }
 

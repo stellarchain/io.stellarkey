@@ -31,6 +31,9 @@ export function UxPrimitivesFixture() {
   const manualTabProps = { activationMode: 'manual' as const };
   return <>
     <Tooltip label="Synthetic outside guidance"><Button onClick={() => setOpen(true)}>Open UX primitive checks</Button></Tooltip>
+    <Button aria-label="Open SVG modal checks" variant="secondary" onClick={() => setOpen(true)}>
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6"><path d="M0 0H24V24H0Z" fill="currentColor" /></svg>
+    </Button>
     {edgeHelp && <div className="fixed left-1/2 top-2 z-40 -translate-x-1/2">
       <Tooltip label="Synthetic edge guidance">
         <button type="button" aria-label="Show synthetic edge help" className="h-11 w-11 rounded-xl bg-white/10 text-white"
