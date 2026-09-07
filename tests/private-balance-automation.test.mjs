@@ -88,11 +88,11 @@ test('losing leadership mid-sync presents as a follower, never as a safe-error',
 test('an aborted prepare skips the automatic resync so Back returns instantly', () => {
   assert.match(
     provider,
-    /signal\?\.aborted \|\|\s*\(error instanceof DOMException && error\.name === 'AbortError'\)/,
+    /operation\.signal\.aborted \|\|\s*\(error instanceof DOMException && error\.name === 'AbortError'\)/,
   );
   // The abort check comes before both resync paths in the prepare catch.
   const catchBody = provider.slice(
-    provider.indexOf("signal?.aborted"),
+    provider.indexOf("operation.signal.aborted"),
     provider.indexOf('PrivateStaleChainStateError && attempt === 0'),
   );
   assert.match(catchBody, /throw error;/);

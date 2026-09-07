@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added explicit held-balance recovery for disclosed private payment proofs: self-transfer the held inputs through the selected RPC with no private helper fee, while keeping them reserved until canonical confirmation and reporting if the original payment confirms first.
 - Added an account- and deployment-scoped outgoing-recovery preference with separate consent to omit future sender-recoverable recipient and memo details. Recovery remains enabled by default, and earlier records and backups are unchanged.
 - Added relayed preparation of fragmented private balances with fresh helper selection for every step, fixed input plans, separately bounded private and network fees, and canonical owned-output checks before continuing.
 - Added an explicit, memory-only privacy-relay availability check that shows unique responding peers and their current fees, ordered with the lowest fee first.
@@ -146,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Revalidated private proof preparation and transaction signing against the wallet session, account, network, RPC and private runtime, including changes while password approval is open. Cancelling local recovery does not release inputs exposed by an earlier proof.
 - Refreshed generated Private Payments development-manifest provenance and dependent pins after the dependency lockfile update, preserving deployment identity, development-only flags, and all proving artifacts.
 - Pinned TOML 4.2.0 for Trezor's nested Stellar SDK 14.2.0 resolvers to fix installed parser prototype pollution and unbounded recursion, with real adapter compatibility tests. Upstream browser prebundles and the remote Trezor popup are outside this override; the remaining elliptic advisory is documented.
 - Bind public payment review, signing, and pre-broadcast authorization to the originating account, network, and unlock session, including delayed approval, preparation, and hardware responses; preserve canonical tracking after broadcast.

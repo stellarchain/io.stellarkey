@@ -8,6 +8,7 @@ import {
 import { triggerHaptic } from '@/lib/haptics';
 import type { PrivateArchiveRestorationProgress } from '../runtime/archive-restoration';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
+import { PrivateHeldBalanceRecovery } from './PrivateHeldBalanceRecovery';
 
 /**
  * Recovery is a local verification pass over immutable on-chain records.
@@ -21,6 +22,7 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
     restoreRequiredActionIndex,
   } = usePrivateBalanceRuntimeData();
   const [working, setWorking] = useState(false);
+  const [recoveryActivity, setRecoveryActivity] = useState({ busy: false, signing: false });
   const [error, setError] = useState<unknown>(null);
   const [restorationProgress, setRestorationProgress] =
     useState<PrivateArchiveRestorationProgress | null>(null);
@@ -69,11 +71,11 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
     : 'Checking…';
 
   return (
-    <Modal open onClose={onClose} dismissable={!working}>
+    <Modal open onClose={onClose} dismissable={!working && !recoveryActivity.signing}>
       <ModalHeader
         title="Recovery"
         subtitle="Restore access on this device"
-        onClose={working ? undefined : onClose}
+        onClose={working || recoveryActivity.signing ? undefined : onClose}
       />
       <div className="space-y-4 p-4 sm:p-6">
         <>
@@ -106,7 +108,7 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
                 <p className="text-center text-[12.5px] font-medium text-neutral-300">{checking}</p>
               ) : null}
             </div>
-            <Button type="button" className="w-full" loading={working} onClick={() => void scan()}>
+            <Button type="button" className="w-full" loading={working} disabled={recoveryActivity.busy} onClick={() => void scan()}>
               {working ? checking : restorationVisible ? 'Restore Private History' : 'Check for New Activity'}
             </Button>
             <p className="text-center text-[11px] leading-relaxed text-neutral-500">
@@ -114,6 +116,7 @@ export function PrivateRecovery({ onClose }: { onClose(): void }) {
                 ? 'Only contiguous records needed for this check are restored. Every confirmed group advances the saved resume point before StellarKey continues.'
                 : 'Picks up where your last check left off. For a from-scratch recheck of your whole history, open Advanced privacy → Verify private history.'}
             </p>
+            <PrivateHeldBalanceRecovery scanWorking={working} onActivityChange={setRecoveryActivity} />
         </>
       </div>
     </Modal>

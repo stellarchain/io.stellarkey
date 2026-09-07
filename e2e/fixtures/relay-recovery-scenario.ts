@@ -2,7 +2,7 @@
 // Production preparation, encryption, storage, signing classification and scan
 // run unchanged. The worker bridge invokes the real builder/scanner; only the
 // prover, archive transport and helper/RPC responses are controlled here.
-import { Account, Keypair, SorobanDataBuilder, StrKey, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
+import { Account, Keypair, SorobanDataBuilder, StrKey, TransactionBuilder, xdr, rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { appendCommitments, computeContextField, computeContextHash, computeGenesisRecordHash,
   computeRecordHash, createEmptyTree, deriveDiversifiedAddressKeys, deriveExpandedSpendingKey,
   derivePrivateAddressDeploymentTag, encodePrivateAddress, toViewingKey,
@@ -13,7 +13,8 @@ import type { PrivateBalanceManifest } from '../../src/lib/private-balance-manif
 import { PrivateBalanceArchiveClient, type ArchiveHeadState } from '../../src/features/private-balance/runtime/archive-client';
 import { preparePrivateBalanceActionFlow, type PreparedPrivateActionReview } from '../../src/features/private-balance/runtime/action-flow';
 import { preparePrivateAction } from '../../src/features/private-balance/worker/action-builder';
-import type { PrivateBalanceWorkerClient } from '../../src/features/private-balance/worker/client';
+import { PrivateBalanceWorkerClient } from '../../src/features/private-balance/worker/client';
+import { HorizonStealthAnnouncementReader } from '../../src/features/private-balance/runtime/stealth-horizon';
 import { scanArchiveRecords } from '../../src/features/private-balance/runtime/scanner';
 import { syncPrivateBalance } from '../../src/features/private-balance/runtime/sync-machine';
 import { commitPrivateBalanceState, createEmptyPrivateBalanceState, loadPrivateBalanceState,
@@ -23,6 +24,7 @@ import { parsePrivateAmount } from '../../src/features/private-balance/runtime/c
 import { selectTotalShieldedBalance } from '../../src/features/private-balance/runtime/selectors';
 import type { PrivateBalanceDurableState } from '../../src/features/private-balance/runtime/types';
 import type { AuthorizePrivateProofDisclosure } from '../../src/features/private-balance/runtime/proof-disclosure';
+import { exportPrivateBalanceBackupArchive, restorePrivateBalanceBackupArchive } from '../../src/features/private-balance/runtime/backup';
 
 export class SyntheticRecordDriver implements EncryptedRecordDriver {
   records = new Map<string, string>();
@@ -78,11 +80,16 @@ export async function readRelayRecoveryBalances(manifest: PrivateBalanceManifest
     alice: format(selectTotalShieldedBalance(alice)), charlie: format(selectTotalShieldedBalance(charlie)), pending: bob.pendingActions.length };
 }
 
+export async function readRelayRecoveryState(manifest: PrivateBalanceManifest, driver: EncryptedRecordDriver) {
+  return loadPrivateBalanceState(scopeFor(manifest, 'bob'), keyFor('bob'), driver);
+}
+
 export type PrepareMode = 'approve' | 'cancel' | 'proof-failure' | 'quote-expired' | 'helper-reject' | 'helper-timeout';
 export type SubmitMode = 'PENDING' | 'ERROR' | 'timeout' | 'signer-reject';
 
 export async function createRelayRecoveryScenario(development: PrivateBalanceManifest, driver: EncryptedRecordDriver,
-  options: { deposits?: string[]; amount?: string; outgoingHistory?: 'recoverable' | 'minimized' } = {}) {
+  options: { deposits?: string[]; amount?: string; outgoingHistory?: 'recoverable' | 'minimized';
+    bob?: { accountId: string; publicKey: string; root: Uint8Array; storageKey: Uint8Array } } = {}) {
   const manifest = structuredClone(development);
   const artifacts = new Map<string, Uint8Array>([
     ['circuit.wasm', Uint8Array.of(0, 1)], ['circuit.zkey', Uint8Array.of(2, 3)],
@@ -101,9 +108,10 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
   const contextHash = computeContextHash(1, base.networkId, base.realmId, base.poolId);
   const contextField = computeContextField(contextHash);
   const actors = await Promise.all(names.map(async (name, index) => {
-    const accountPublicKey = bytes(11 + index);
+    const override = name === 'bob' ? options.bob : undefined;
+    const accountPublicKey = new Uint8Array(override ? StrKey.decodeEd25519PublicKey(override.publicKey) : Keypair.fromRawEd25519Seed(bytes(11 + index)).rawPublicKey());
     const keyContext = { ...base, accountPublicKey, contextField };
-    const esk = await deriveExpandedSpendingKey(new Uint8Array(64).fill(21 + index), 1, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
+    const esk = await deriveExpandedSpendingKey(override?.root ?? new Uint8Array(64).fill(21 + index), 1, base.networkId, base.realmId, base.poolId, accountPublicKey, contextField);
     // Alice's fee lane must use Charlie's recipient diversifier, exactly as
     // the real helper quote binds it; ownership keys remain independent.
     const diversifier = Uint8Array.of(0, 0, 0, name === 'alice' ? 3 : index + 1);
@@ -112,11 +120,12 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
       ownerCommitment: identity.ownerCommitment, hpkePublicKey: identity.hpkePublicKey }, 'tskpay_');
     const state = createEmptyPrivateBalanceState('09'.repeat(32));
     state.outgoingHistoryMode = options.outgoingHistory ?? 'recoverable';
-    const scope = scopeFor(manifest, name);
+    const scope = { ...scopeFor(manifest, name), ...(override ? { accountId: override.accountId } : {}) };
+    const storageKey = override?.storageKey.slice() ?? keyFor(name);
     // Refuse to overwrite a scenario: browser reload must inspect real storage.
-    if (await loadPrivateBalanceState(scope, keyFor(name), driver)) throw new Error('Synthetic scenario already exists');
-    await commitPrivateBalanceState(scope, keyFor(name), state, null, driver);
-    return { name, esk, keyContext, address, scope, storageKey: keyFor(name),
+    if (await loadPrivateBalanceState(scope, storageKey, driver)) throw new Error('Synthetic scenario already exists');
+    await commitPrivateBalanceState(scope, storageKey, state, null, driver);
+    return { name, esk, keyContext, address, scope, storageKey,
       scanContext: { ...base, contextHash, contextField, accountAddress: { kind: 0, payload: accountPublicKey } } };
   }));
   const [bob, alice, charlie] = actors;
@@ -155,21 +164,38 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
   await sync();
   let review: PreparedPrivateActionReview | undefined;
   let sharedAction: ActionModel | undefined;
+  let recoveryAction: ActionModel | undefined;
   let confirmed = false;
   let shared = 0;
   let submissions = 0;
   let senderLookups = 0;
   const stages: string[] = [];
   const helperSigner = Keypair.fromRawEd25519Seed(bytes(42));
+  const bobSigner = Keypair.fromRawEd25519Seed(bytes(11));
   const loadBob = async () => {
     const state = await loadPrivateBalanceState(bob.scope, bob.storageKey, driver);
     if (!state) throw new Error('Synthetic Bob state missing');
     return state;
   };
   return {
+    manifest, scope: bob.scope,
     get shared() { return shared; }, get submissions() { return submissions; },
     get senderLookups() { return senderLookups; }, get stages() { return [...stages]; },
     get review() { return review ?? null; },
+    state: loadBob,
+    async changeState(update: (state: PrivateBalanceDurableState) => PrivateBalanceDurableState) {
+      const state = await loadBob();
+      const next = { ...update(structuredClone(state)), revision: state.revision + 1 };
+      await commitPrivateBalanceState(bob.scope, bob.storageKey, next, state.revision, driver);
+    },
+    async restoreBackup() {
+      const archive = await exportPrivateBalanceBackupArchive(driver);
+      await restorePrivateBalanceBackupArchive({ archive, driver, validateContext: async () => {}, resolveStorageKey: async context => {
+        const actor = actors.find(actor => actor.scope.accountId === context.accountId);
+        if (!actor) throw new Error('Synthetic backup context mismatch');
+        return actor.storageKey.slice();
+      } });
+    },
     draft: { kind: 'transfer' as const, amount, recipientAddress: charlie.address },
     async journal() {
       const state = await loadBob();
@@ -177,15 +203,82 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
         exposure: action.proofExposure, attempts: action.broadcastAttempts, rpc: action.latestRpcStatus ?? null,
         hasEnvelope: !!action.signedEnvelopeXdr })) };
     },
-    balances: () => readRelayRecoveryBalances(manifest, driver), sync,
-    async prepare(mode: PrepareMode, authorize?: AuthorizePrivateProofDisclosure) {
+    balances: async () => {
+      const states = await Promise.all(actors.map(actor => loadPrivateBalanceState(actor.scope, actor.storageKey, driver)));
+      const [sender, helper, recipient] = states as PrivateBalanceDurableState[];
+      return { bob: format(selectTotalShieldedBalance(sender)),
+        reserved: format(sender.notes.filter(note => note.status === 'reserved').reduce((sum, note) => sum + BigInt(note.value), 0n)),
+        alice: format(selectTotalShieldedBalance(helper)), charlie: format(selectTotalShieldedBalance(recipient)), pending: sender.pendingActions.length };
+    }, sync,
+    installProviderTransport() {
+      const archivePrototype = PrivateBalanceArchiveClient.prototype;
+      const savedArchive = { readHead: archivePrototype.readHead, readRecords: archivePrototype.readRecords,
+        readLedgerCloseTimes: archivePrototype.readLedgerCloseTimes, readDepositsPaused: archivePrototype.readDepositsPaused,
+        readNetworkPassphrase: archivePrototype.readNetworkPassphrase, readOldestLedgerSequence: archivePrototype.readOldestLedgerSequence,
+        readLatestLedgerSequence: archivePrototype.readLatestLedgerSequence, readLedgerIdentity: archivePrototype.readLedgerIdentity };
+      const rpcPrototype = SorobanRpc.Server.prototype;
+      const savedRpc = { getAccount: rpcPrototype.getAccount, simulateTransaction: rpcPrototype.simulateTransaction,
+        sendTransaction: rpcPrototype.sendTransaction, getTransaction: rpcPrototype.getTransaction };
+      const workerPrototype = PrivateBalanceWorkerClient.prototype;
+      const savedBuild = workerPrototype.buildAction;
+      const savedProof = workerPrototype.generateProof;
+      const savedFetch = globalThis.fetch;
+      const savedStealth = HorizonStealthAnnouncementReader.prototype.readPage;
+      Object.assign(archivePrototype, { ...archive, readDepositsPaused: async () => false,
+        readNetworkPassphrase: async () => manifest.networkPassphrase, readOldestLedgerSequence: async () => 0,
+        readLatestLedgerSequence: async () => head().latestLedger,
+        readLedgerIdentity: async (sequence: number) => ({ sequence, hash: manifest.deploymentCheckpoint.hash }) });
+      HorizonStealthAnnouncementReader.prototype.readPage = async () => ({ announcements: [], latestLedger: head().latestLedger, hasMore: false, nextCursor: '1' });
+      rpcPrototype.getAccount = async address => new Account(address, '7');
+      rpcPrototype.simulateTransaction = async () => {
+        shared++;
+        return { _parsed: true, id: 'synthetic', latestLedger: head().latestLedger, events: [],
+          transactionData: new SorobanDataBuilder().setResourceFee('500'), minResourceFee: '500', result: { auth: [], retval: xdr.ScVal.scvVoid() } };
+      };
+      rpcPrototype.sendTransaction = async transaction => {
+        submissions++;
+        return { status: 'PENDING', hash: hex(transaction.hash()), latestLedger: head().latestLedger, latestLedgerCloseTime: 1_800_000_000 };
+      };
+      rpcPrototype.getTransaction = async hash => ({ status: SorobanRpc.Api.GetTransactionStatus.NOT_FOUND, txHash: hash,
+        latestLedger: head().latestLedger, latestLedgerCloseTime: 1_800_000_000, oldestLedger: 0, oldestLedgerCloseTime: 1_800_000_000 });
+      workerPrototype.buildAction = async function (...args) {
+        const built = await savedBuild.apply(this, args);
+        recoveryAction = built.action;
+        return built;
+      };
+      workerPrototype.generateProof = async () => ({ messageVersion: 1, id: 'synthetic', sessionId: 'synthetic', type: 'PROOF_OK',
+        proof: { pi_a: [], pi_b: [], pi_c: [], protocol: 'groth16', curve: 'bn128' }, publicSignals: [], sorobanProofHex: '01'.repeat(256) });
+      globalThis.fetch = async (resource, init) => {
+        const url = typeof resource === 'string' ? resource : resource instanceof URL ? resource.href : resource.url;
+        const path = url.split('?')[0].split('/').at(-1)!;
+        const payload = artifacts.get(path);
+        if (url.includes('/protocol/private-balance/v1/') && payload) return new Response(payload.slice().buffer);
+        if (init?.method === 'POST' && typeof init.body === 'string') {
+          const request = JSON.parse(init.body) as { method?: string; id?: number };
+          if (request.method === 'getNetwork') return new Response(JSON.stringify({ jsonrpc: '2.0', id: request.id,
+            result: { passphrase: manifest.networkPassphrase, protocolVersion: 25 } }), { headers: { 'Content-Type': 'application/json' } });
+          throw new Error('Synthetic provider forbids external mutation');
+        }
+        return savedFetch(resource, init); // Browser routing blocks external reads.
+      };
+      return () => {
+        Object.assign(archivePrototype, savedArchive); Object.assign(rpcPrototype, savedRpc);
+        workerPrototype.buildAction = savedBuild; workerPrototype.generateProof = savedProof;
+        globalThis.fetch = savedFetch; HorizonStealthAnnouncementReader.prototype.readPage = savedStealth;
+      };
+    },
+    async prepare(mode: PrepareMode, authorize?: AuthorizePrivateProofDisclosure, recovery = false, signal?: AbortSignal) {
       const originalHead = PrivateBalanceArchiveClient.prototype.readHead;
       const originalPaused = PrivateBalanceArchiveClient.prototype.readDepositsPaused;
       const originalFetch = globalThis.fetch;
+      const originalAccount = SorobanRpc.Server.prototype.getAccount;
+      const originalSimulate = SorobanRpc.Server.prototype.simulateTransaction;
+      const recoveryActionId = recovery ? (await loadBob()).pendingActions[0]?.id : undefined;
       const expiresAt = Math.floor(Date.now() / 1000) + 240;
       stages.length = 0;
       const relayPreparation = { expiresAt, prepare: async (request: { operationXdr: string; maxTime: number; classicFeeStroops: string }) => {
         shared++;
+        sharedAction = built?.action;
         if (mode === 'helper-reject') throw new Error('Synthetic helper rejected preparation');
         if (mode === 'helper-timeout') throw new Error('Synthetic helper preparation timed out');
         const transaction = new TransactionBuilder(new Account(helperSigner.publicKey(), '7'), { fee: request.classicFeeStroops,
@@ -198,7 +291,12 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
       // No Worker thread/prover is claimed here. The real action builder runs
       // in-process against exactly the notes/paths supplied by the real flow.
       const worker = {
-        buildAction: async (reservationId, intent, merklePaths, availableNotes) => {
+        deriveAddressForDiversifier: async (diversifier: Uint8Array) => {
+          const identity = await deriveDiversifiedAddressKeys(bob.esk.baseOwnerCommitment, bob.esk.hpkePrivateKey, diversifier);
+          return { address: encodePrivateAddress({ deploymentTag: derivePrivateAddressDeploymentTag(base.deploymentBindingHash), diversifier,
+            ownerCommitment: identity.ownerCommitment, hpkePublicKey: identity.hpkePublicKey }, 'tskpay_') };
+        },
+        buildAction: async (...[reservationId, intent, merklePaths, availableNotes]: Parameters<PrivateBalanceWorkerClient['buildAction']>) => {
           built = await preparePrivateAction({ esk: bob.esk, keyContext: bob.keyContext, intent, merklePaths, availableNotes });
           return { messageVersion: 1, id: 'synthetic', sessionId: 'synthetic', type: 'ACTION_PREPARED', reservationId,
             preparedActionId: 'synthetic-prepared', ...built, actionFieldHex: hex(built.actionField) };
@@ -208,7 +306,16 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
           return { messageVersion: 1, id: 'synthetic', sessionId: 'synthetic', type: 'PROOF_OK',
             proof: { pi_a: [], pi_b: [], pi_c: [], protocol: 'groth16', curve: 'bn128' }, publicSignals: [], sorobanProofHex: '01'.repeat(256) };
         },
-      } satisfies Pick<PrivateBalanceWorkerClient, 'buildAction' | 'generateProof'>;
+      };
+      SorobanRpc.Server.prototype.getAccount = async address => new Account(address, '7');
+      SorobanRpc.Server.prototype.simulateTransaction = async () => {
+        shared++;
+        recoveryAction = built?.action;
+        if (mode === 'helper-reject') throw new Error('Synthetic recovery simulation failed');
+        return { id: 'synthetic', latestLedger: 100 + records.length, events: [],
+          transactionData: new SorobanDataBuilder().setResourceFee('500'), minResourceFee: '500',
+          result: { auth: [], retval: xdr.ScVal.scvVoid() }, _parsed: true };
+      };
       PrivateBalanceArchiveClient.prototype.readHead = async () => head();
       PrivateBalanceArchiveClient.prototype.readDepositsPaused = async () => false;
       globalThis.fetch = async resource => {
@@ -223,21 +330,23 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
           privateAddress: bob.address, storageContext: bob.scope, storageKey: bob.storageKey, storageDriver: driver,
           worker: worker as unknown as PrivateBalanceWorkerClient, rpcUrl: 'http://127.0.0.1:1', classicFeeStroops: 100n,
           assetContractId, assetIndex: 0, registryAssets: base.assets, assetCode: 'XLM', assetDecimals: 7,
-          draft: { kind: 'transfer', amount, recipientAddress: charlie.address, relay: { feeAtomic: '30000000', privateFeeAddress: alice.address,
+          recoveryActionId,
+          signal,
+          draft: recovery ? { kind: 'consolidate' } : { kind: 'transfer', amount, recipientAddress: charlie.address, relay: { feeAtomic: '30000000', privateFeeAddress: alice.address,
             sourceAccount: helperSigner.publicKey(), requestId: '51'.repeat(32), quoteId: '52'.repeat(32), peerPublicKey: '53'.repeat(32) } },
-          relayPreparation, onProgress: stage => { stages.push(stage); }, authorizeDisclosure: async request => {
+          relayPreparation: recovery ? undefined : relayPreparation, onProgress: stage => { stages.push(stage); }, authorizeDisclosure: async request => {
             if (mode === 'cancel') throw new DOMException('Synthetic consent cancelled', 'AbortError');
             await authorize?.(request);
             if (mode === 'quote-expired') relayPreparation.expiresAt = Math.floor(Date.now() / 1000) - 1;
-            // This is only a test ledger input; it can be appended after the
-            // production journal establishes proof disclosure, never before.
-            sharedAction = built?.action;
           } });
         review = result.review;
+        return review;
       } finally {
         PrivateBalanceArchiveClient.prototype.readHead = originalHead;
         PrivateBalanceArchiveClient.prototype.readDepositsPaused = originalPaused;
         globalThis.fetch = originalFetch;
+        SorobanRpc.Server.prototype.getAccount = originalAccount;
+        SorobanRpc.Server.prototype.simulateTransaction = originalSimulate;
       }
     },
     async submit(mode: SubmitMode) {
@@ -248,10 +357,10 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
         sign: async request => {
           if (mode === 'signer-reject') throw new Error('Synthetic Alice rejected signing');
           const transaction = TransactionBuilder.fromXdr(request.envelopeXdr, manifest.networkPassphrase);
-          transaction.sign(helperSigner); return transaction.toXdr();
+          transaction.sign(review!.relay ? helperSigner : bobSigner); return transaction.toXdr();
         } });
       return broadcastPrivateBalanceAction({ context: bob.scope, storageKey: bob.storageKey, expectedRevision: signed.revision,
-        actionId: review.id, networkPassphrase: manifest.networkPassphrase, submissionMode: 'relay', storageDriver: driver,
+        actionId: review.id, networkPassphrase: manifest.networkPassphrase, submissionMode: review.relay ? 'relay' : 'direct', storageDriver: driver,
         rpc: { sendTransaction: async transaction => {
           submissions++;
           if (mode === 'timeout') throw new Error('Synthetic uncertain relay RPC outcome');
@@ -272,10 +381,11 @@ export async function createRelayRecoveryScenario(development: PrivateBalanceMan
             headCloseTimeSeconds: Math.floor(future / 1000) };
         } });
     },
-    async confirm() {
-      if (!sharedAction || !shared) throw new Error('Cannot include a proof that was never shared');
-      if (!confirmed) { await append(sharedAction); confirmed = true; }
-      await sync();
+    async confirm(recovery = false, scan = true) {
+      const action = recovery ? recoveryAction : sharedAction;
+      if (!action || !shared) throw new Error('Cannot include a proof that was never shared');
+      if (!confirmed) { await append(action); confirmed = true; }
+      if (scan) await sync();
     },
     async freshScanBalances() {
       const values = await Promise.all(actors.map(async actor => {

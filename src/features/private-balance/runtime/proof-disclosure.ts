@@ -1,6 +1,24 @@
+import { createSessionRevocationGuard, subscribeSessionRevocation } from '../../../lib/vault';
+
+/** A lock/unlock ABA cannot revive an in-flight proof or signing operation. */
+export function createPrivateActionLifetime(assertContext: () => void, signal?: AbortSignal) {
+  const assertSession = createSessionRevocationGuard();
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const unsubscribe = subscribeSessionRevocation(abort);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  const dispose = () => { unsubscribe(); signal?.removeEventListener('abort', abort); };
+  const assertAuthority = () => { assertSession(); assertContext(); };
+  const assertCurrent = () => { controller.signal.throwIfAborted(); assertAuthority(); };
+  try { assertCurrent(); } catch (error) { dispose(); throw error; }
+  return { signal: controller.signal, assertCurrent, assertAuthority, dispose };
+}
+
 export interface PrivateProofDisclosure {
   kind: 'deposit' | 'transfer' | 'withdraw' | 'consolidate';
   actionId: string;
+  recoveryOfActionId?: string;
   actionField: string;
   assetContractId: string;
   amountStroops: string;

@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { StrKey, rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { hasExposedPrivateSpend } from './proof-exposure';
-import type { AuthorizePrivateProofDisclosure } from './proof-disclosure';
+import { createPrivateActionLifetime, type AuthorizePrivateProofDisclosure } from './proof-disclosure';
 import { privateOutgoingHistoryMode, type PrivateOutgoingHistoryMode } from './outgoing-history';
 import { changePrivateOutgoingHistory } from './outgoing-history-change';
 import {
@@ -361,7 +361,7 @@ export function PrivateBalanceProvider({
 }: PrivateBalanceProviderProps) {
   const { recommendedBaseFeeStroops, balances } = useWalletLedger();
   const { phase: walletPhase } = useWalletPhase();
-  const { authorizeTransactionSigning, signPrivateBalanceEnvelope } = useWalletTransactions();
+  const { authorizeTransactionSigning, signPrivateBalanceEnvelope, captureSigningContext } = useWalletTransactions();
   const [state, dispatch] = useReducer(privateBalanceReducer, initialPrivateBalanceState);
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot>(() => ({
     phase: encryptedStateExists ? 'reading-meta' : 'disabled',
@@ -655,6 +655,7 @@ export function PrivateBalanceProvider({
       dispatch({ type: 'SET_NOTES', notes: durable.notes });
       dispatch({ type: 'SET_ACTIVITIES', activities: durable.activities });
       dispatch({ type: 'SET_PENDING_ACTIONS', pendingActions: durable.pendingActions });
+      dispatch({ type: 'SET_SPEND_RECOVERY', spendRecovery: durable.spendRecovery });
       dispatch({
         type: 'SET_RECENT_RECIPIENTS',
         recentRecipients: durable.recentPrivateRecipients ?? [],
@@ -1467,6 +1468,7 @@ export function PrivateBalanceProvider({
     dispatch({ type: 'SET_NOTES', notes: durable.notes });
     dispatch({ type: 'SET_ACTIVITIES', activities: durable.activities });
     dispatch({ type: 'SET_PENDING_ACTIONS', pendingActions: durable.pendingActions });
+    dispatch({ type: 'SET_SPEND_RECOVERY', spendRecovery: durable.spendRecovery });
     dispatch({
       type: 'SET_RECENT_RECIPIENTS',
       recentRecipients: durable.recentPrivateRecipients ?? [],
@@ -1735,7 +1737,8 @@ export function PrivateBalanceProvider({
     return { status: response.status, hash: response.hash.toLowerCase() };
   }, [accountPublicKey, manifest.networkPassphrase, network]);
 
-  const cancelAction = useCallback(async (actionId: string) => {
+  const cancelAction = useCallback(async (actionId: string, assertAuthority?: () => void) => {
+    assertAuthority?.();
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(actionId)) {
       throw new Error('Private Balance action ID is invalid.');
     }
@@ -1744,6 +1747,7 @@ export function PrivateBalanceProvider({
     await mutexRef.current.runExclusive(() =>
       withPrivacySessionRoot(accountId, context, async (_sessionRoot, storageKey) => {
         const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
+        assertAuthority?.();
         const pending = current?.pendingActions.find(action => action.id === actionId);
         if (!current || !pending) return;
         if (hasExposedPrivateSpend(pending)) { reflectDurableState(current); return; }
@@ -1758,9 +1762,26 @@ export function PrivateBalanceProvider({
           { reason: 'pre-broadcast-rejection', updatedAt: Date.now() },
           driver,
         );
+        assertAuthority?.();
         reflectDurableState(released);
       }));
   }, [accountId, manifest, reflectDurableState, storageScope]);
+
+  const capturePrivateActionContext = useCallback(() => {
+    const assertWalletCurrent = captureSigningContext();
+    const worker = workerRef.current;
+    const identity = workerIdentityRef.current;
+    const rpcUrl = getRpcUrl(network);
+    return () => {
+      assertWalletCurrent();
+      // The shared scope identity also binds deployment, asset and storage.
+      if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' ||
+        stealthScopeRef.current !== stealthScope || !worker || worker.failed || workerRef.current !== worker ||
+        !identity || workerIdentityRef.current !== identity || getRpcUrl(network) !== rpcUrl) {
+        throw new DOMException('Private action cancelled after its wallet context changed.', 'AbortError');
+      }
+    };
+  }, [captureSigningContext, network, stealthScope]);
 
   const prepareActionInternal = useCallback(async (
     draft: PrivateActionDraft,
@@ -1772,6 +1793,7 @@ export function PrivateBalanceProvider({
     relayChainStep?: PrivateRelayChainPreparation,
     authorizeDisclosure?: AuthorizePrivateProofDisclosure,
     directChainApprovalId?: string,
+    recoveryActionId?: string,
   ): Promise<PreparedPrivateActionReview> => {
     if (!leaderRef.current) {
       throw new Error('Sync Private Balance in this tab before creating an action.');
@@ -1783,85 +1805,93 @@ export function PrivateBalanceProvider({
     if (!rpcUrl) throw new Error('Configure a Stellar RPC endpoint for Private Balance.');
     const context = deploymentContext(manifest);
     const driver = new IndexedDbEncryptedRecordDriver();
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        // Awaiting the mutex waits out any in-flight sync instead of failing
-        // on a transient non-current phase.
-        const result = await mutexRef.current.runExclusive(async () => {
-          const worker = workerRef.current;
-          const privateAddress = workerIdentityRef.current?.address ?? null;
-          if (!worker || !privateAddress) throw new Error('Private Balance worker is not ready.');
-          return withPrivacySessionRoot(
-            accountId,
-            context,
-            async (_sessionRoot, storageKey) => preparePrivateBalanceActionFlow({
-              manifest,
-              accountPublicKey: sourcePublicKey,
-              privateAddress,
-              storageContext: storageScope,
-              storageKey,
-              storageDriver: driver,
-              worker,
-              rpcUrl,
-              classicFeeStroops: BigInt(recommendedBaseFeeStroops),
-              depositSourceMinimumBalanceStroops,
-              assetContractId: asset.contractId,
-              assetIndex: asset.index,
-              registryAssets,
-              assetCode: asset.code,
-              assetDecimals: asset.decimals,
-              draft,
-              signal,
-              relayPreparation,
-              relayChainStep,
-              authorizeDisclosure,
-              directChainApprovalId,
-              assertContext: () => {
-                if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' || workerRef.current !== worker || worker.failed || workerIdentityRef.current?.address !== privateAddress) throw new DOMException('Private proof sharing cancelled after its wallet context changed.', 'AbortError');
-              },
-              onProgress,
-            }),
-          );
-        });
-        reflectDurableState(result.state);
-        return result.review;
-      } catch (error) {
-        // Even an unsigned failed preparation may have disclosed a spend proof.
-        // Reflect the durable reservation without requiring a transaction lookup.
-        await withPrivacySessionRoot(accountId, context, async (_root, key) => {
-          const current = await loadPrivateBalanceState(storageScope, key, driver);
-          if (current) reflectDurableState(current);
-        }).catch(() => undefined);
-        if (
-          signal?.aborted ||
-          (error instanceof DOMException && error.name === 'AbortError')
-        ) {
-          // Back during prepare: the flow already released its reservation
-          // and nothing was signed or broadcast, so the card must return
-          // instantly — no automatic foreground resync, no held busy flag.
-          throw error;
-        }
-        if (error instanceof PrivateStaleChainStateError && attempt === 0) {
-          // The chain view went stale between syncs; resync and retry the
-          // preparation once before surfacing anything.
+    const operation = createPrivateActionLifetime(capturePrivateActionContext(), signal);
+    try {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          // Awaiting the mutex waits out any in-flight sync instead of failing
+          // on a transient non-current phase.
+          const result = await mutexRef.current.runExclusive(async () => {
+            const worker = workerRef.current;
+            const privateAddress = workerIdentityRef.current?.address ?? null;
+            if (!worker || !privateAddress) throw new Error('Private Balance worker is not ready.');
+            return withPrivacySessionRoot(
+              accountId,
+              context,
+              async (_sessionRoot, storageKey) => preparePrivateBalanceActionFlow({
+                manifest,
+                accountPublicKey: sourcePublicKey,
+                privateAddress,
+                storageContext: storageScope,
+                storageKey,
+                storageDriver: driver,
+                worker,
+                rpcUrl,
+                classicFeeStroops: BigInt(recommendedBaseFeeStroops),
+                depositSourceMinimumBalanceStroops,
+                assetContractId: asset.contractId,
+                assetIndex: asset.index,
+                registryAssets,
+                assetCode: asset.code,
+                assetDecimals: asset.decimals,
+                draft,
+                signal: operation.signal,
+                relayPreparation,
+                relayChainStep,
+                authorizeDisclosure,
+                directChainApprovalId,
+                recoveryActionId,
+                assertContext: () => {
+                  operation.assertCurrent();
+                  if (!providerMountedRef.current || !leaderRef.current || walletPhaseRef.current !== 'unlocked' || workerRef.current !== worker || worker.failed || workerIdentityRef.current?.address !== privateAddress) throw new DOMException('Private proof sharing cancelled after its wallet context changed.', 'AbortError');
+                },
+                onProgress,
+              }),
+            );
+          });
+          operation.assertCurrent();
+          reflectDurableState(result.state);
+          return result.review;
+        } catch (error) {
+          operation.assertAuthority();
+          // Even an unsigned failed or cancelled preparation may have disclosed a spend proof.
+          // Reflect the durable reservation without requiring a transaction lookup.
+          await withPrivacySessionRoot(accountId, context, async (_root, key) => {
+            const current = await loadPrivateBalanceState(storageScope, key, driver);
+            operation.assertAuthority();
+            if (current) reflectDurableState(current);
+          }).catch(() => undefined);
+          if (
+            operation.signal.aborted ||
+            (error instanceof DOMException && error.name === 'AbortError')
+          ) {
+            // Back ends local work immediately. A pre-disclosure reservation is
+            // released, but a disclosed proof remains held in the durable state.
+            throw error;
+          }
+          if (error instanceof PrivateStaleChainStateError && attempt === 0) {
+            // The chain view went stale between syncs; resync and retry the
+            // preparation once before surfacing anything.
+            try {
+              await performSyncRef.current?.(false);
+            } catch {
+              // The retried preparation reports the live failure.
+            }
+            continue;
+          }
           try {
             await performSyncRef.current?.(false);
           } catch {
-            // The retried preparation reports the live failure.
+            // The action error is more useful; normal status surfaces the resync failure.
           }
-          continue;
+          throw error;
         }
-        try {
-          await performSyncRef.current?.(false);
-        } catch {
-          // The action error is more useful; normal status surfaces the resync failure.
-        }
-        throw error;
       }
-    }
+    } finally { operation.dispose(); }
   }, [
     accountId,
     accountPublicKey,
+    capturePrivateActionContext,
     asset.index,
     asset.status,
     asset.code,
@@ -1889,6 +1919,18 @@ export function PrivateBalanceProvider({
     } finally {
       actionBusyRef.current = false;
     }
+  }, [prepareActionInternal]);
+
+  const prepareSpendRecovery = useCallback(async (
+    actionId: string, onProgress?: (stage: PrivateActionProgressStage) => void,
+    signal?: AbortSignal, authorizeDisclosure?: AuthorizePrivateProofDisclosure,
+  ): Promise<PreparedPrivateActionReview> => {
+    if (actionBusyRef.current) throw new Error('Another Private Balance action is already open.');
+    actionBusyRef.current = true;
+    try {
+      return await prepareActionInternal({ kind: 'consolidate' }, onProgress, signal,
+        undefined, undefined, undefined, undefined, authorizeDisclosure, undefined, actionId);
+    } finally { actionBusyRef.current = false; }
   }, [prepareActionInternal]);
 
   const prepareStealthSweep = useCallback(async (
@@ -2023,9 +2065,11 @@ export function PrivateBalanceProvider({
     const allowHttp = endpoint.protocol === 'http:' &&
       ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
     const rpc = new SorobanRpc.Server(endpoint.toString(), { allowHttp });
+    const operation = createPrivateActionLifetime(capturePrivateActionContext());
     try {
       const status = await mutexRef.current.runExclusive(() =>
         withPrivacySessionRoot(accountId, context, async (sessionRoot, storageKey) => {
+          operation.assertCurrent();
           const current = await loadPrivateBalanceState(storageScope, storageKey, driver);
           if (!current) throw new Error('Private Balance state is unavailable.');
           const submissionMode = options.relay ? 'relay' : 'direct';
@@ -2035,6 +2079,7 @@ export function PrivateBalanceProvider({
           }
           if (privateOutgoingHistoryMode(pending.outgoingHistoryMode) !== privateOutgoingHistoryMode(preparedReview.outgoingHistoryMode)) throw new Error('Private outgoing-history policy differs from the prepared proof.');
           await options.beforeSign?.({ sessionRoot, storageKey });
+          operation.assertCurrent();
           const signed = await signReviewedPrivateBalanceAction({
             context: storageScope,
             storageKey,
@@ -2042,8 +2087,9 @@ export function PrivateBalanceProvider({
             actionId: preparedReview.id,
             review: preparedReview.transaction,
             networkPassphrase: manifest.networkPassphrase,
-            sign: request => options.relay
-              ? options.relay.requestSignature({
+            sign: async request => {
+              operation.assertCurrent();
+              const envelope = await (options.relay ? options.relay.requestSignature({
                   envelopeXdr: request.envelopeXdr,
                   transactionHash: request.transactionHash,
                   networkPassphrase: request.networkPassphrase,
@@ -2054,9 +2100,13 @@ export function PrivateBalanceProvider({
                   envelopeXdr: request.envelopeXdr,
                   expectedTransactionHash: request.transactionHash,
                   networkPassphrase: request.networkPassphrase,
-                }),
+                }, operation.assertCurrent));
+              operation.assertCurrent();
+              return envelope;
+            },
             storageDriver: driver,
           });
+          operation.assertCurrent();
           const broadcast = await broadcastPrivateBalanceAction({
             context: storageScope,
             storageKey,
@@ -2064,19 +2114,24 @@ export function PrivateBalanceProvider({
             actionId: preparedReview.id,
             networkPassphrase: manifest.networkPassphrase,
             submissionMode,
-            rpc: options.relay ? {
-              sendTransaction: transaction => options.relay!.requestSubmission({
+            rpc: {
+              sendTransaction: transaction => {
+                operation.assertCurrent();
+                return options.relay ? options.relay.requestSubmission({
                 signedEnvelopeXdr: transaction.toXdr(),
                 transactionHash: preparedReview.transaction.transactionHash,
-              }),
-            } : rpc,
+                }) : rpc.sendTransaction(transaction);
+              },
+            },
             storageDriver: driver,
           });
+          operation.assertCurrent();
           let latest = broadcast.state;
           if (
             broadcast.status === 'broadcast' &&
             privateOutgoingHistoryMode(preparedReview.outgoingHistoryMode) === 'recoverable' &&
             preparedReview.kind === 'transfer' &&
+            !preparedReview.recoveryOfActionId &&
             preparedReview.recipientAddress &&
             preparedReview.recipientFingerprint
           ) {
@@ -2097,6 +2152,7 @@ export function PrivateBalanceProvider({
               // Recents are a convenience; the durable journal already holds the send.
             }
           }
+          operation.assertCurrent();
           reflectDurableState(latest);
           return broadcast.status;
         }));
@@ -2105,6 +2161,7 @@ export function PrivateBalanceProvider({
       } catch {
         // Broadcast remains durably journaled and will reconcile on the next sync.
       }
+      operation.assertCurrent();
       if (options.watchOutcome !== false) {
         watchBroadcastOutcome(
           preparedReview.id,
@@ -2117,16 +2174,18 @@ export function PrivateBalanceProvider({
       }
       return status;
     } catch (error) {
+      operation.assertAuthority();
       try {
-        await cancelAction(preparedReview.id);
+        await cancelAction(preparedReview.id, operation.assertAuthority);
       } catch {
         // Never release a transaction that may have reached broadcast.
       }
       throw error;
-    }
+    } finally { operation.dispose(); }
   }, [
     accountId,
     cancelAction,
+    capturePrivateActionContext,
     manifest,
     network,
     reflectDurableState,
@@ -2752,6 +2811,7 @@ export function PrivateBalanceProvider({
     noteCount: selectedState.notes.filter(note => note.status === 'unspent').length,
     activities: selectedState.activities,
     pendingActions: selectedState.pendingActions,
+    spendRecovery: state.spendRecovery?.assetContractId === asset.contractId ? state.spendRecovery : null,
     recentPrivateRecipients: state.recentRecipients,
     outgoingHistoryMode,
     setOutgoingHistoryMode,
@@ -2774,6 +2834,7 @@ export function PrivateBalanceProvider({
     rotatePrivateAddress,
     validateRecipient,
     prepareAction,
+    prepareSpendRecovery,
     cancelAction,
     submitAction,
     derivePrivateRelayPayout,
@@ -2804,6 +2865,7 @@ export function PrivateBalanceProvider({
     optIn,
     outgoingHistoryMode,
     prepareAction,
+    prepareSpendRecovery,
     prepareChainedSend,
     prepareRelayChainedSend,
     prepareStealthSweep,
@@ -2821,6 +2883,7 @@ export function PrivateBalanceProvider({
     stealthSnapshot,
     selectedState.activities,
     state.checkpoint,
+    state.spendRecovery,
     selectedState.notes,
     selectedState.pendingActions,
     state.recentRecipients,

@@ -1,3 +1,4 @@
+import { reconcilePrivateSpendRecovery } from './spend-recovery';
 import {
   computeGenesisRecordHash,
   type ArchiveRecordModel,
@@ -541,6 +542,7 @@ async function syncPrivateBalanceOnce(
         updatedAt: checkpointTime,
       },
       pendingActions,
+      spendRecovery: reconcilePrivateSpendRecovery(state.spendRecovery, notes, activities),
       buildReservations: buildHolds.holds,
     };
     await commitPrivateBalanceState(
@@ -580,6 +582,7 @@ async function syncPrivateBalanceOnce(
   const completedAt = now();
   const currentState: PrivateBalanceDurableState = {
     ...state,
+    spendRecovery: reconcilePrivateSpendRecovery(state.spendRecovery, state.notes, state.activities),
     revision: state.revision + 1,
     lastValidatedManifestHash: input.manifestHash,
     account: {
