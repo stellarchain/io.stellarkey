@@ -1388,8 +1388,10 @@ async function encodePrivateContacts(
 async function writePrivateContacts(
   contacts: PrivateContactRecord[],
   masterKey: Uint8Array,
+  assertCurrent?: () => void,
 ): Promise<void> {
   const serialized = await encodePrivateContacts(contacts, masterKey);
+  assertCurrent?.();
   window.localStorage.setItem(CONTACTS_KEY, serialized);
   if (window.localStorage.getItem(CONTACTS_KEY) !== serialized) {
     throw new Error("Browser storage did not retain the encrypted contacts.");
@@ -1417,7 +1419,7 @@ export async function loadPrivateContactRecords(): Promise<PrivateContactRecord[
 export async function savePrivateContactRecords(
   contacts: PrivateContactRecord[],
 ): Promise<void> {
-  await writePrivateContacts(contacts, requireSessionMasterKey());
+  await writePrivateContacts(contacts, requireSessionMasterKey(), createSessionRevocationGuard());
 }
 
 interface TxNoteEnvelope {

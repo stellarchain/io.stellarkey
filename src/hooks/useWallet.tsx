@@ -2382,13 +2382,22 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [activeAccount, activityCursor, activityPaginationLane, commitActivityPageState, network, phase]);
 
   const addContact = useCallback(async (contact: Contact, previousAddress?: string) => {
-    setContacts(await saveContact(contact, previousAddress));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await saveContact(contact, previousAddress);
+    assertCurrent();
+    setContacts(next);
   }, []);
   const removeContact = useCallback(async (address: string) => {
-    setContacts(await deleteContact(address));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await deleteContact(address);
+    assertCurrent();
+    setContacts(next);
   }, []);
   const toggleContactFavorite = useCallback(async (address: string) => {
-    setContacts(await toggleFavoriteContact(address));
+    const assertCurrent = createSessionRevocationGuard();
+    const next = await toggleFavoriteContact(address);
+    assertCurrent();
+    setContacts(next);
   }, []);
 
   const send = useCallback(

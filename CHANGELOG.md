@@ -134,6 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound queued contact edits, encrypted storage writes, and contact-list updates to their originating unlock session, while preserving writes already committed before a lock.
 - Revoke pending merchant loads, queued edits, PIN actions, and UI publication on vault lock, reset, session replacement, or provider teardown while preserving completed encrypted commits for recovery.
 - Keep canonical refund recovery records until the authenticated merchant journal durably records a terminal result, including across lock, teardown, storage failure, and reload; erasing merchant records preserves unresolved transaction tracking.
 - Disable automatic wallet-test screenshots, traces, and video, use structural-only failure reports, and remove test output on normal completion. Block usable-wallet Testnet tests before funding or import while Playwright can still capture locator failure snapshots; browser fixtures remain synthetic.
