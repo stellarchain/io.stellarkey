@@ -8,6 +8,8 @@ declare global {
   }
 }
 
+test.skip(!process.env.PRIVATE_COMPONENT_FIXTURE_SHA256, 'Use the isolated synthetic component runner.');
+
 test.beforeEach(async ({ page, baseURL }) => {
   expect(Boolean(process.env.PRIVATE_COMPONENT_FIXTURE_SHA256)).toBe(true);
   const ownedOrigin = new URL(baseURL!).origin;

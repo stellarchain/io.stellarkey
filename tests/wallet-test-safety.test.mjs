@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -18,6 +18,19 @@ test('wallet browser configs disable automatic captures and retain no test outpu
     assert.equal(config.globalSetup, './scripts/testing/wallet-test-policy.mjs');
   }
   assert.equal(process.env.PLAYWRIGHT_NO_COPY_PROMPT, '1');
+});
+
+test('every configured isolated component spec requires runner intent before browser setup', async () => {
+  const { default: config } = await import('../playwright.private-components.config.ts');
+  assert.ok(Array.isArray(config.testMatch) && config.testMatch.length > 0, 'isolated component specs must be explicitly configured');
+  for (const file of config.testMatch) {
+    assert.equal(typeof file, 'string', 'isolated component specs must remain individually inspectable');
+    const source = readFileSync(new URL(`e2e/${file}`, root), 'utf8');
+    const guard = source.search(/^test\.skip\(\s*!process\.env\.PRIVATE_COMPONENT_FIXTURE_SHA256\s*,/m);
+    assert.ok(guard >= 0, `${file}: require isolated runner intent before executing browser checks`);
+    const setup = source.indexOf('test.beforeEach(');
+    assert.ok(setup < 0 || guard < setup, `${file}: runner intent must be checked before browser setup`);
+  }
 });
 
 test('wallet runner rejects capture overrides, unsafe reporters, and usable wallet imports', async () => {
