@@ -6,7 +6,10 @@ import { Button } from '@/components/ui';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { CustomersPage } from '@/components/merchant/CustomersPage';
 import { PaymentLinksPage } from '@/components/merchant/PaymentLinksPage';
-import { MerchantProvider, useMerchant } from '@/hooks/useMerchant';
+import {
+  MerchantProvider, useMerchant, useMerchantConfiguration, useMerchantRecords,
+  useMerchantReporting, useMerchantStaff, useMerchantStatus, useMerchantTill,
+} from '@/hooks/useMerchant';
 import { useWallet, useWalletSecurity } from '@/hooks/useWallet';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import { getMerchantRepository } from '@/lib/merchant/repository';
@@ -24,13 +27,54 @@ function LocalToastControl() {
   return <Button onClick={() => toast('Local supplementary message.')}>Local toast</Button>;
 }
 
+function MerchantContextEquivalenceProbe() {
+  const aggregate = useMerchant();
+  const status = useMerchantStatus();
+  const configuration = useMerchantConfiguration();
+  const staff = useMerchantStaff();
+  const till = useMerchantTill();
+  const records = useMerchantRecords();
+  const reporting = useMerchantReporting();
+  const marker = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = marker.current;
+    if (!node) return;
+    // Compare the real contexts in memory. Retain/output only structural counts
+    // and booleans, never field names, merchant values, or serialized records.
+    const entries = [status, configuration, staff, till, records, reporting].flatMap(Object.entries);
+    const expected = new Map(entries);
+    const actual = Object.entries(aggregate);
+    const mismatches = actual.filter(([key, value]) => !expected.has(key) || !Object.is(value, expected.get(key))).length
+      + Number(actual.length !== expected.size) + Number(entries.length !== expected.size);
+    Object.assign(node.dataset, {
+      fields: String(actual.length),
+      callbacks: String(actual.filter(([, value]) => typeof value === 'function').length),
+      references: String(actual.filter(([, value]) => value !== null && typeof value === 'object').length),
+      mismatches: String(Number(node.dataset.mismatches ?? 0) + mismatches),
+      snapshots: String(Number(node.dataset.snapshots ?? 0) + 1),
+      large: String(aggregate.tillTextSize === 'large'), lines: String(aggregate.ticket.lines.length),
+      orders: String(aggregate.orders.length), online: String(aggregate.online),
+      active: String(aggregate.activeStaff !== null), reports: String(aggregate.canSeeReports),
+    });
+  });
+  return <span ref={marker} data-testid="merchant-context-equivalence" hidden />;
+}
+
 function FeedbackPanels({ resetDone }: { resetDone(): void }) {
   const merchant = useMerchant();
   const wallet = useWallet();
   const [panel, setPanel] = useState('customers');
   const [authentication, setAuthentication] = useState('idle');
   const [contactsSettled, setContactsSettled] = useState(0);
+  const [contextSettled, setContextSettled] = useState(0);
+  const [contextFailure, setContextFailure] = useState(false);
+  function trackContext(operation: Promise<unknown>) {
+    void operation.then(() => setContextSettled(value => value + 1), () => setContextFailure(true));
+  }
   return <>
+    <MerchantContextEquivalenceProbe />
+    <p data-testid="feedback-context-settled">{contextSettled}</p>
+    <p data-testid="feedback-context-failure">{String(contextFailure)}</p>
     <p data-testid="feedback-ready">{String(merchant.ready)}</p>
     <p data-testid="feedback-staff">{merchant.activeStaff ? 'active' : 'none'}</p>
     <p data-testid="feedback-issue">{merchant.storageIssue ? 'issue' : 'none'}</p>
@@ -39,6 +83,11 @@ function FeedbackPanels({ resetDone }: { resetDone(): void }) {
     <p data-testid="feedback-customer-count">{merchant.customers.length}</p>
     <p data-testid="feedback-events">{merchant.customers.reduce((sum, customer) => sum + (customer.loyalty?.events.length ?? 0), 0)}</p>
     <Button onClick={() => { setAuthentication('waiting'); void merchant.switchStaff('fixture-owner', '2468').then(() => setAuthentication('done'), () => setAuthentication('refused')); }}>Authenticate merchant staff</Button>
+    <Button onClick={() => trackContext(merchant.setTillTextSize('large'))}>Update aggregate configuration</Button>
+    <Button onClick={() => merchant.addCustomAmount(100, 'Synthetic item')}>Add aggregate ticket line</Button>
+    <Button onClick={() => trackContext(merchant.openShift(0))}>Open aggregate shift</Button>
+    <Button onClick={() => trackContext(merchant.settleCash(100))}>Settle aggregate cash</Button>
+    <Button onClick={() => trackContext(merchant.lockStaffSession())}>Lock aggregate staff</Button>
     <Button onClick={() => setPanel('customers')}>Show customer actions</Button>
     <Button onClick={() => setPanel('codes')}>Show code actions</Button>
     <Button onClick={() => setPanel('hidden')}>Hide merchant actions</Button>

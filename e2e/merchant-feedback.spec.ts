@@ -72,6 +72,67 @@ async function settleClipboard(page: Page, result: 'resolve' | 'reject') {
   await page.evaluate(outcome => window.__merchantClipboard.pending.shift()?.[outcome](), result);
 }
 
+test('aggregate merchant context preserves every field and reference through real provider updates', async ({ page }) => {
+  await prepare(page);
+  const probe = page.getByTestId('merchant-context-equivalence');
+  await expect(probe).toHaveAttribute('data-fields', '125');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+  expect(Number(await probe.getAttribute('data-callbacks'))).toBeGreaterThan(0);
+  expect(Number(await probe.getAttribute('data-references'))).toBeGreaterThan(0);
+  const initialSnapshots = Number(await probe.getAttribute('data-snapshots'));
+  await control(page, 'Update aggregate configuration');
+  await expect(page.getByTestId('feedback-context-settled')).toHaveText('1');
+  await expect(probe).toHaveAttribute('data-large', 'true');
+  await control(page, 'Add aggregate ticket line');
+  await expect(probe).toHaveAttribute('data-lines', '1');
+  await control(page, 'Open aggregate shift');
+  await expect(page.getByTestId('feedback-context-settled')).toHaveText('2');
+  await control(page, 'Settle aggregate cash');
+  await expect(page.getByTestId('feedback-context-settled')).toHaveText('3');
+  await expect(probe).toHaveAttribute('data-orders', '1');
+  await expect(probe).toHaveAttribute('data-lines', '0');
+  await page.context().setOffline(true);
+  await expect(probe).toHaveAttribute('data-online', 'false');
+  await page.context().setOffline(false);
+  await expect(probe).toHaveAttribute('data-online', 'true');
+  await control(page, 'Lock aggregate staff');
+  await expect(page.getByTestId('feedback-context-settled')).toHaveText('4');
+  await expect(probe).toHaveAttribute('data-active', 'false');
+  await expect(probe).toHaveAttribute('data-reports', 'false');
+  await expect(probe).toHaveAttribute('data-fields', '125');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+  await expect(page.getByTestId('feedback-context-failure')).toHaveText('false');
+  expect(Number(await probe.getAttribute('data-snapshots'))).toBeGreaterThan(initialSnapshots);
+});
+
+test('aggregate merchant context stays equivalent through revocation and fresh provider lifetimes', async ({ page }) => {
+  await prepare(page);
+  const probe = page.getByTestId('merchant-context-equivalence');
+  await control(page, 'Fail feedback erase');
+  await control(page, 'Reset feedback merchant');
+  await expect(page.getByTestId('feedback-authorization')).toHaveText('waiting');
+  await control(page, 'Authorize feedback reset');
+  await expect(page.getByTestId('feedback-resets')).toHaveText('1');
+  await expect(probe).toHaveAttribute('data-fields', '125');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+  await control(page, 'Lock feedback wallet');
+  await expect(page.getByTestId('feedback-phase')).toHaveText('locked');
+  await expect(probe).toHaveAttribute('data-active', 'false');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+  await control(page, 'Unlock feedback wallet');
+  await expect(page.getByTestId('feedback-ready')).toHaveText('true');
+  await control(page, 'Authenticate merchant staff');
+  await expect(page.getByTestId('feedback-authentication')).toHaveText('done');
+  await expect(probe).toHaveAttribute('data-active', 'true');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+  await control(page, 'Toggle feedback provider');
+  await expect(probe).toHaveCount(0);
+  await control(page, 'Toggle feedback provider');
+  await expect(page.getByTestId('feedback-ready')).toHaveText('true');
+  await expect(probe).toHaveAttribute('data-fields', '125');
+  await expect(probe).toHaveAttribute('data-mismatches', '0');
+});
+
 for (const outcome of ['resolve', 'reject'] as const) {
   test(`changed code requests retain physical copy ownership and suppress stale ${outcome} feedback`, async ({ page }) => {
     await prepare(page, true);

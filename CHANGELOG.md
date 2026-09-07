@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
 - Redesigned Earn by relaying as a live, fee-first control panel with explicit Start/Stop, clearer approval and cost disclosures, and secondary connection and peer-discovery tools. Settings save in place, preserve unfinished edits, and incorporate untouched preferences changed in another tab.
 - Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
 - Restored user-controlled page zoom while preserving mobile input sizing, corrected the Send form's MAX control contrast, and allowed recipient and memo captions to wrap on narrow screens.
