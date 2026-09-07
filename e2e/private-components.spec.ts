@@ -103,6 +103,10 @@ for (const switchAccount of [true, false]) test(`signing context ${switchAccount
     await expect(send.locator('[data-tabs-root]')).toHaveAttribute('data-synthetic-identity', 'retained');
     await expect(send.getByText('Wallet context changed. Review the payment again before signing.', { exact: true })).toBeVisible();
     await stableShell(page);
+    // Cancellation re-enables these existing controls. Audit their settled
+    // enabled styles rather than sampling the disabled-opacity transition.
+    await expect(send.getByRole('button', { name: 'Back', exact: true })).toHaveCSS('opacity', '1');
+    await expect(send.getByRole('button', { name: 'Confirm Send', exact: true })).toHaveCSS('opacity', '1');
     const accessibility = await new AxeBuilder({ page }).include('[data-modal-shell]').analyze();
     expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, nodes: violation.nodes.length }))).toEqual([]);
     await expect(page.getByTestId('signing-signs')).toHaveText('0');
@@ -153,6 +157,22 @@ for (const switchAccount of [true, false]) test(`signing context ${switchAccount
   await expect(page.getByTestId('signing-signs')).toHaveText(switchAccount ? '0' : '1');
   await expect(page.getByTestId('signing-posts')).toHaveText(switchAccount ? '0' : '1');
 });
+});
+
+test('signing preparation gate belongs to the payment rather than a background account refresh', async ({ page }) => {
+  const { approval } = await openSigningApproval(page);
+  await page.getByText('Hold signing preparation', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+  const reads = Number(await page.getByTestId('signing-account-reads').textContent());
+  await page.getByText('Refresh provider signing balances', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect.poll(async () => Number(await page.getByTestId('signing-account-reads').textContent())).toBeGreaterThan(reads);
+  await expect(page.getByTestId('signing-stage')).toHaveText('armed');
+  await approval.getByLabel('Wallet Password').fill('synthetic signing correct horse battery staple');
+  await approval.getByRole('button', { name: 'Authorize', exact: true }).press('Enter');
+  await expect(page.getByTestId('signing-stage')).toHaveText('preparation');
+  await expect(page.getByTestId('signing-signs')).toHaveText('0');
+  await expect(page.getByTestId('signing-posts')).toHaveText('0');
+  await page.getByText('Deliver signing preparation', { exact: true }).evaluate(element => (element as HTMLButtonElement).click());
+  await expect(page.getByTestId('signing-posts')).toHaveText('1');
 });
 
 for (const intent of ['pointer', 'overlay']) test(`signing context completion respects newer ${intent} intent`, async ({ page }) => {
