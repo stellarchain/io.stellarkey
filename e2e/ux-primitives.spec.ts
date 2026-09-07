@@ -1,6 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
+declare global {
+  interface Window {
+    __syntheticTooltipListeners?: { count(): number; restore(): void };
+  }
+}
+
 test.skip(!process.env.PRIVATE_COMPONENT_FIXTURE_SHA256, 'Use the isolated synthetic component runner.');
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -118,6 +124,291 @@ test('named Toggle has a visible keyboard focus indicator and native switch acti
     return properties.includes('transform') && properties.every(value => ['transform', 'translate', 'scale', 'rotate'].includes(value));
   })).toBe(true);
 });
+
+for (const motion of ['no-preference', 'reduce'] as const) {
+  test.describe(`Tooltip ${motion} motion`, () => {
+    test.use({ contextOptions: { reducedMotion: motion } });
+    test.beforeEach(async ({ page }) => {
+      expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(motion === 'reduce');
+      await page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true }).evaluate(async node => {
+        await Promise.all([node, node.querySelector('[data-modal-shell]')!].flatMap(element => element.getAnimations())
+          .map(animation => animation.finished.catch(() => {})));
+      });
+    });
+
+    for (const placement of ['top', 'right', 'flipped']) {
+      test(`Tooltip keeps pointer transfer across its ${placement} gap in both directions`, async ({ page }) => {
+        if (placement === 'flipped') await page.setViewportSize({ width: 390, height: 844 });
+        const trigger = page.getByRole('button', { name: `Show synthetic ${placement} help`, exact: true });
+        const tooltip = page.getByRole('tooltip', { name: `Synthetic ${placement} guidance`, exact: true });
+        await trigger.hover();
+        await expect(tooltip).toBeVisible();
+        const anchor = (await trigger.boundingBox())!;
+        const content = (await tooltip.boundingBox())!;
+        const anchorPoint = { x: anchor.x + anchor.width / 2, y: anchor.y + anchor.height / 2 };
+        const contentPoint = { x: content.x + content.width / 2, y: content.y + content.height / 2 };
+        const gap = placement === 'top' ? anchor.y - content.y - content.height
+          : placement === 'right' ? content.x - anchor.x - anchor.width : anchor.x - content.x - content.width;
+        expect(gap).toBeGreaterThan(0);
+        expect(gap).toBeLessThanOrEqual(9);
+        const gapPoint = placement === 'top'
+          ? { x: anchorPoint.x, y: (anchor.y + content.y + content.height) / 2 }
+          : { x: placement === 'right' ? (anchor.x + anchor.width + content.x) / 2 : (content.x + content.width + anchor.x) / 2, y: anchorPoint.y };
+        await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+        await expect(tooltip).toBeVisible();
+        await page.mouse.move(contentPoint.x, contentPoint.y, { steps: 4 });
+        await expect(tooltip).toBeVisible();
+        expect(await tooltip.evaluate(node => node.matches(':hover'))).toBe(true);
+        await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+        await expect(tooltip).toBeVisible();
+        await page.mouse.move(anchorPoint.x, anchorPoint.y, { steps: 4 });
+        await expect(tooltip).toBeVisible();
+        await page.mouse.move(1, 1);
+        await expect(tooltip).toBeHidden();
+      });
+    }
+
+    test('Tooltip Escape dismisses only its help without moving focus or reopening on resize', async ({ page }) => {
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives' });
+      const trigger = page.getByRole('button', { name: 'Show synthetic top help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true });
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+      await expect(tooltip).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await expect(tooltip).toBeHidden();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    });
+
+    test('Tooltip retains help for either focus or pointer interest and merges existing descriptions', async ({ page }) => {
+      const trigger = page.getByRole('button', { name: 'Show synthetic top help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true });
+      await trigger.focus();
+      await trigger.hover();
+      await page.mouse.move(1, 1);
+      await expect(tooltip).toBeVisible();
+      await expect(trigger).toHaveAccessibleDescription('Existing synthetic help description Synthetic top guidance');
+      await trigger.hover();
+      await page.getByRole('button', { name: 'Open nested tooltip check', exact: true }).focus();
+      await expect(tooltip).toBeVisible();
+      await page.mouse.move(1, 1);
+      await expect(tooltip).toBeHidden();
+    });
+
+    test('Tooltip stays in its modal and a background tooltip cannot consume a nested modal Escape', async ({ page }) => {
+      const parent = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      await page.getByRole('button', { name: 'Show synthetic top help', exact: true }).hover();
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true });
+      await expect(tooltip).toBeVisible();
+      expect(await tooltip.evaluate(node => Boolean(node.closest('[data-modal-backdrop]')))).toBe(true);
+      await expect(tooltip.locator('button, a[href], input, [tabindex]')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Open nested tooltip check', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+      const nested = page.getByRole('dialog', { name: 'Synthetic nested tooltip check', exact: true });
+      await expect(nested).toBeVisible();
+      await expect.poll(() => parent.evaluate(node => (node as HTMLElement).inert)).toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(nested).toBeHidden();
+      await expect(parent).toBeVisible();
+      await expect.poll(() => parent.evaluate(node => (node as HTMLElement).inert)).toBe(false);
+      await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+    });
+
+    test('Tooltip opened by hover outside a modal is dismissed when the app becomes inert', async ({ page }) => {
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      const trigger = page.getByRole('button', { name: 'Open UX primitive checks', exact: true });
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+      await page.mouse.move(1, 1);
+      await trigger.hover();
+      await expect(trigger).not.toBeFocused();
+      await expect(page.getByRole('tooltip', { name: 'Synthetic outside guidance', exact: true })).toBeVisible();
+      await trigger.evaluate(node => (node as HTMLButtonElement).click());
+      await expect(dialog).toBeVisible();
+      await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    });
+
+    test('Tooltip at the viewport top does not intercept its own trigger and remains hoverable', async ({ page }) => {
+      await page.getByRole('button', { name: 'Show viewport-edge tooltip', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toBeHidden();
+      const trigger = page.getByRole('button', { name: 'Show synthetic edge help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic edge guidance', exact: true });
+      await trigger.hover();
+      await expect(tooltip).toBeVisible();
+      expect(await trigger.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        return node.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2));
+      })).toBe(true);
+      const anchor = (await trigger.boundingBox())!;
+      const content = (await tooltip.boundingBox())!;
+      expect(content.y - anchor.y - anchor.height).toBeGreaterThan(0);
+      const gapPoint = { x: anchor.x + anchor.width / 2, y: (anchor.y + anchor.height + content.y) / 2 };
+      await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+      await expect(tooltip).toBeVisible();
+      await page.mouse.move(content.x + content.width / 2, content.y + content.height / 2, { steps: 4 });
+      expect(await tooltip.evaluate(node => node.matches(':hover'))).toBe(true);
+      await page.mouse.move(gapPoint.x, gapPoint.y, { steps: 4 });
+      await trigger.click();
+      await expect(page.getByTestId('synthetic-edge-actions')).toHaveText('1');
+    });
+
+    test('Tooltip dismissal is latched until fresh pointer or keyboard intent', async ({ page }) => {
+      const trigger = page.getByRole('button', { name: 'Show synthetic top help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true });
+      await trigger.hover();
+      await expect(tooltip).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(tooltip).toBeHidden();
+      const bounds = (await trigger.boundingBox())!;
+      await page.mouse.move(bounds.x + bounds.width / 2 + 1, bounds.y + bounds.height / 2);
+      await expect(tooltip).toBeHidden();
+      await page.mouse.move(1, 1);
+      await trigger.hover();
+      await expect(tooltip).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(tooltip).toBeHidden();
+      await page.mouse.move(1, 1);
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(tooltip).toBeHidden();
+      await page.getByRole('button', { name: 'Toggle synthetic tooltip labels', exact: true }).focus();
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+    });
+
+    test('Tooltip with a removed label keeps the original description without stale help', async ({ page }) => {
+      const trigger = page.getByRole('button', { name: 'Show synthetic top help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true });
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+      const toggle = page.getByRole('button', { name: 'Toggle synthetic tooltip labels', exact: true });
+      await toggle.evaluate(node => (node as HTMLButtonElement).click());
+      await expect(tooltip).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-describedby', 'synthetic-tooltip-description');
+      await expect(trigger).toHaveAccessibleDescription('Existing synthetic help description');
+      await toggle.evaluate(node => (node as HTMLButtonElement).click());
+      await expect(tooltip).toHaveCount(0);
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+    });
+
+    test('Tooltip inside the nested modal consumes only its own first Escape', async ({ page }) => {
+      await page.getByRole('button', { name: 'Open nested tooltip check', exact: true }).click();
+      const nested = page.getByRole('dialog', { name: 'Synthetic nested tooltip check', exact: true });
+      await expect(nested.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      const trigger = nested.getByRole('button', { name: 'Show synthetic nested help', exact: true });
+      await trigger.focus();
+      await expect(nested.getByRole('tooltip', { name: 'Synthetic nested guidance', exact: true })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(nested).toHaveAttribute('data-overlay-state', 'open');
+      await expect(nested.getByRole('tooltip')).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(nested).toBeHidden();
+      await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toHaveAttribute('data-overlay-state', 'open');
+    });
+
+    test('Tooltip follows its modal containing block and viewport events without stealing focus', async ({ page }) => {
+      const trigger = page.getByRole('button', { name: 'Show synthetic right help', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic right guidance', exact: true });
+      await trigger.focus();
+      await expect(tooltip).toBeVisible();
+      await page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true }).evaluate(node => {
+        const style = (node as HTMLElement).style;
+        style.left = '12px'; style.right = '12px'; style.top = '24px';
+        window.dispatchEvent(new Event('resize'));
+        window.dispatchEvent(new Event('scroll'));
+        window.visualViewport?.dispatchEvent(new Event('resize'));
+        window.visualViewport?.dispatchEvent(new Event('scroll'));
+      });
+      await expect.poll(async () => {
+        const anchor = (await trigger.boundingBox())!;
+        const content = (await tooltip.boundingBox())!;
+        return Math.abs(content.x - anchor.x - anchor.width - 8) < 1
+          && Math.abs(content.y + content.height / 2 - anchor.y - anchor.height / 2) < 1;
+      }).toBe(true);
+      await expect(trigger).toBeFocused();
+    });
+
+    test('Tooltip unmount removes its portal and every registered viewport and Escape listener', async ({ page }) => {
+      let pageErrors = 0;
+      const onPageError = () => { pageErrors += 1; };
+      page.on('pageerror', onPageError);
+      await page.evaluate(() => {
+        const add = EventTarget.prototype.addEventListener;
+        const remove = EventTarget.prototype.removeEventListener;
+        const active: Array<{ target: EventTarget; type: string; callback: EventListenerOrEventListenerObject; capture: boolean }> = [];
+        const captureValue = (options?: boolean | EventListenerOptions) => typeof options === 'boolean' ? options : options?.capture ?? false;
+        EventTarget.prototype.addEventListener = function(type, callback, options) {
+          const capture = captureValue(options);
+          const watched = ((this === window || this === window.visualViewport) && ['resize', 'scroll'].includes(type))
+            || (this === document && type === 'keydown' && capture);
+          if (watched && callback && !active.some(item => item.target === this && item.type === type && item.callback === callback && item.capture === capture)) {
+            active.push({ target: this, type, callback, capture });
+          }
+          add.call(this, type, callback, options);
+        };
+        EventTarget.prototype.removeEventListener = function(type, callback, options) {
+          const capture = captureValue(options);
+          const index = active.findIndex(item => item.target === this && item.type === type && item.callback === callback && item.capture === capture);
+          if (index >= 0) active.splice(index, 1);
+          remove.call(this, type, callback, options);
+        };
+        window.__syntheticTooltipListeners = {
+          count: () => active.length,
+          restore: () => { EventTarget.prototype.addEventListener = add; EventTarget.prototype.removeEventListener = remove; },
+        };
+      });
+      try {
+        const toggle = page.getByRole('button', { name: 'Toggle synthetic tooltip controls', exact: true });
+        for (let iteration = 0; iteration < 2; iteration += 1) {
+          if (iteration) await toggle.evaluate(node => (node as HTMLButtonElement).click());
+          await page.getByRole('button', { name: 'Show synthetic top help', exact: true }).focus();
+          await expect(page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true })).toBeVisible();
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.count())).toBeGreaterThan(0);
+          await toggle.evaluate(node => (node as HTMLButtonElement).click());
+          await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.count())).toBe(0);
+          await page.evaluate(async () => {
+            window.dispatchEvent(new Event('resize'));
+            window.dispatchEvent(new Event('scroll'));
+            window.visualViewport?.dispatchEvent(new Event('resize'));
+            window.visualViewport?.dispatchEvent(new Event('scroll'));
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          });
+          await page.keyboard.press('Tab');
+          expect(await page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })
+            .evaluate(node => node.contains(document.activeElement))).toBe(true);
+        }
+        expect(pageErrors).toBe(0);
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toBeHidden();
+        await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
+        await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(false);
+      } finally {
+        page.off('pageerror', onPageError);
+        await page.evaluate(() => { window.__syntheticTooltipListeners?.restore(); delete window.__syntheticTooltipListeners; });
+      }
+    });
+
+    test('Tooltip visible in its owning dialog has no blocking axe violations', async ({ page, browserName }) => {
+      await page.getByRole('button', { name: 'Show synthetic top help', exact: true }).focus();
+      await expect(page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true })).toBeVisible();
+      const result = await new AxeBuilder({ page }).include('[role="dialog"]').include('[role="tooltip"]')
+        .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
+      expect(result.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? '')).length).toBe(0);
+    });
+  });
+}
 
 test('Select exposes real option focus, skips disabled options, and closes only itself', async ({ page }) => {
   const trigger = page.getByRole('button', { name: 'Synthetic asset', exact: true });
@@ -342,5 +633,5 @@ test('open primitives have accessible names and no blocking axe violations', asy
   await expect(page.getByRole('listbox')).toBeVisible();
   const result = await new AxeBuilder({ page }).include('[role="dialog"]').include('[role="listbox"]')
     .disableRules(browserName === 'webkit' ? ['color-contrast'] : []).analyze();
-  expect(result.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
+  expect(result.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? '')).length).toBe(0);
 });
