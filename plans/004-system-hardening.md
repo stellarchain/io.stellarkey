@@ -12,6 +12,8 @@ Repository convention: plans live under `plans/`; `tests/release-gate.test.mjs` 
 
 **Starting source commit:** `8397a3584f0aba37032f2146f130ba9484a494d8`. Workspace: `/Users/admin/Documents/codegen/0x/.worktrees/revoke-stealth-discovery`. Reuse this isolated branch; do not modify, merge into or restart the main checkout. Keep the audit report historical and append completion evidence separately.
 
+**Status — 2026-09-07:** Scoped implementation complete. F01–F12 and K02 are addressed, the signing-context lead has a regression-proven fix, and K01's safely resolvable installed high-severity paths are fixed. Clean-tree `release:verify` passed at `d4edc1d95036d7f5f81ae5f3bbe6b25fde03cea4`. [Final results](004-hardening-results-2026-09-07.md) map every item to its implementation and record prior failures, test skips and remaining upstream, circuit, human and physical-device gates. No release, merge, push, tag or deployment was performed.
+
 ## Design decision
 
 Use narrow shared contracts plus behavioral regressions. Per-screen patches would leave bypass paths; a broad state/library rewrite would enlarge the financial/security review surface without fixing a demonstrated requirement. The selected approach preserves retained UI and existing safe behavior, then removes redundant/contradictory policies. New abstractions require at least two real consumers. No visual rebrand, extra animation, fake delays, new backend, Mainnet transaction, live fixture deployment, automatic force-upgrade or weakened safety gate.
