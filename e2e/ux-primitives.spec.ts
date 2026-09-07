@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 declare global {
   interface Window {
-    __syntheticTooltipListeners?: { count(): number; restore(): void };
+    __syntheticTooltipListeners?: { count(): number; observerCount(): number; restore(): void };
     __syntheticSvgPointer?: { svg: boolean; bodyFocused: boolean };
   }
 }
@@ -283,6 +283,27 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await expect(dialog).toBeHidden();
     });
 
+    test('Tooltip content hover is suppressed when keyboard activation makes its source inert', async ({ page }) => {
+      const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
+      const trigger = page.getByRole('button', { name: 'Open UX primitive checks', exact: true });
+      const tooltip = page.getByRole('tooltip', { name: 'Synthetic outside guidance', exact: true });
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect(tooltip).toBeVisible();
+      await tooltip.hover();
+      expect(await tooltip.evaluate(node => node.matches(':hover') && !node.closest('[data-modal-backdrop]'))).toBe(true);
+      await expect(trigger).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      expect(await page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+      await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(trigger).toBeFocused();
+      await expect(tooltip).toBeVisible();
+    });
+
     test('Tooltip at the viewport top does not intercept its own trigger and remains hoverable', async ({ page }) => {
       await page.getByRole('button', { name: 'Show viewport-edge tooltip', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toBeHidden();
@@ -386,13 +407,16 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await expect(trigger).toBeFocused();
     });
 
-    test('Tooltip unmount removes its portal and every registered viewport and Escape listener', async ({ page }) => {
+    test('Tooltip unmount removes its portal, inert observer and every registered listener', async ({ page }) => {
       let pageErrors = 0;
       const onPageError = () => { pageErrors += 1; };
       page.on('pageerror', onPageError);
       await page.evaluate(() => {
         const add = EventTarget.prototype.addEventListener;
         const remove = EventTarget.prototype.removeEventListener;
+        const observe = MutationObserver.prototype.observe;
+        const disconnect = MutationObserver.prototype.disconnect;
+        const observers = new Set<MutationObserver>();
         const active: Array<{ target: EventTarget; type: string; callback: EventListenerOrEventListenerObject; capture: boolean }> = [];
         const captureValue = (options?: boolean | EventListenerOptions) => typeof options === 'boolean' ? options : options?.capture ?? false;
         EventTarget.prototype.addEventListener = function(type, callback, options) {
@@ -410,21 +434,48 @@ for (const motion of ['no-preference', 'reduce'] as const) {
           if (index >= 0) active.splice(index, 1);
           remove.call(this, type, callback, options);
         };
+        MutationObserver.prototype.observe = function(target, options) {
+          observe.call(this, target, options);
+          if (options?.attributes && options.attributeFilter?.includes('inert')) observers.add(this);
+        };
+        MutationObserver.prototype.disconnect = function() {
+          observers.delete(this);
+          disconnect.call(this);
+        };
         window.__syntheticTooltipListeners = {
           count: () => active.length,
-          restore: () => { EventTarget.prototype.addEventListener = add; EventTarget.prototype.removeEventListener = remove; },
+          observerCount: () => observers.size,
+          restore: () => {
+            EventTarget.prototype.addEventListener = add;
+            EventTarget.prototype.removeEventListener = remove;
+            MutationObserver.prototype.observe = observe;
+            MutationObserver.prototype.disconnect = disconnect;
+          },
         };
       });
       try {
         const toggle = page.getByRole('button', { name: 'Toggle synthetic tooltip controls', exact: true });
+        const trigger = page.getByRole('button', { name: 'Show synthetic top help', exact: true });
         for (let iteration = 0; iteration < 2; iteration += 1) {
           if (iteration) await toggle.evaluate(node => (node as HTMLButtonElement).click());
-          await page.getByRole('button', { name: 'Show synthetic top help', exact: true }).focus();
+          await trigger.focus();
           await expect(page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true })).toBeVisible();
           await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.count())).toBeGreaterThan(0);
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.observerCount())).toBeGreaterThan(0);
+          await page.keyboard.press('Escape');
+          await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.count())).toBe(0);
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.observerCount())).toBe(0);
+          await expect(trigger).toBeFocused();
+          await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toBeVisible();
+          await toggle.focus();
+          await trigger.focus();
+          await expect(page.getByRole('tooltip', { name: 'Synthetic top guidance', exact: true })).toBeVisible();
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.observerCount())).toBeGreaterThan(0);
           await toggle.evaluate(node => (node as HTMLButtonElement).click());
           await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
           await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.count())).toBe(0);
+          await expect.poll(() => page.evaluate(() => window.__syntheticTooltipListeners!.observerCount())).toBe(0);
           await page.evaluate(async () => {
             window.dispatchEvent(new Event('resize'));
             window.dispatchEvent(new Event('scroll'));
