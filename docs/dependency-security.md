@@ -120,5 +120,15 @@ files from existing deployment evidence; this follow-up did not deploy a
 contract, change a deployment identity or development flag, alter protocol or
 cryptographic source, modify proving artifacts or vectors, or create ceremony
 evidence. An independent field comparison confirmed only the lockfile digest
-and cascading pins changed. The complete clean-tree aggregate still needs to
-run against the refreshed provenance.
+and cascading pins changed.
+
+The subsequent clean-tree `release:verify` passed at
+`d4edc1d95036d7f5f81ae5f3bbe6b25fde03cea4`: 1,716 root Node tests, 58 nested
+protocol tests, both reporter probes, all 528 required browser checks, the
+production build and unchanged bundle budgets, and 114 active normal browser
+checks. The normal matrix also recorded 278 intentional skips; required suites
+had none. See [the final hardening results](../plans/004-hardening-results-2026-09-07.md)
+for the complete matrix, earlier failed attempts, separate Rust results and
+unverified circuit/human/device gates. This passing application command does not
+resolve the embedded-parser, remote-core, elliptic or distribution-authorization
+limits above and is not a tagged release certification.

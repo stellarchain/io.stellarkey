@@ -1,4 +1,10 @@
-# Private-protocol implementation
+# Implementation plans and evidence
+
+Current status — 2026-09-07: plans 001–003 and the scoped implementation of plan 004 are complete. The final clean-tree application verification passed at `d4edc1d`: 1,716 Node tests, 58 nested protocol tests, 528 required browser checks, production/build budgets, and 114 active normal browser checks. See [the final hardening results](004-hardening-results-2026-09-07.md) for exact counts, intentional skips, earlier failed attempts, independent reviews and remaining upstream/human/device limits. This is not release, Mainnet or deployment approval.
+
+## Historical completion — privacy plans 001–003, 2026-09-06
+
+The following records preserve their original scope and checkpoint results. Their dependency counts and references to future work are historical; the current result is linked above.
 
 Execution of the three approved privacy plans, started from `3e8dca7d021767138bc21c790f7ef59cc2fce309` on 2026-09-06. Original planning documents in the main checkout are preserved. Implementation is isolated on `advisor/001-revoke-stealth-discovery`; the user requested continuing through every plan without routine approval checkpoints. Separate logical commits and independent reviews retain the intended delivery boundaries without merging between temporary branches.
 
@@ -112,7 +118,7 @@ Considered and rejected for this follow-on audit: treating the fixed Public/Priv
 
 ### 004 — Approved system hardening
 
-The user subsequently requested “fix everything”. [Implementation plan 004](004-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **IN PROGRESS**. Execute scoped test-first tasks with independent spec and quality review, preserving the completed privacy plans and main checkout. Record genuine external/security blockers rather than weakening gates or broadening signing authority.
+The user subsequently requested “fix everything”. [Implementation plan 004](004-system-hardening.md) covers F01–F12, K02, safe resolution of K01 and the qualified signing-context investigation. Status: **DONE within the approved scope**, with [final verification and residual limits recorded separately](004-hardening-results-2026-09-07.md). The work used scoped test-first tasks and independent spec and quality review, preserving the completed privacy plans and main checkout. K01's installed high-severity paths are fixed; embedded/remote upstream code, the remaining elliptic advisory and independent release gates are not represented as resolved.
 
 | Task | Status / evidence |
 | --- | --- |
@@ -124,7 +130,11 @@ The user subsequently requested “fix everything”. [Implementation plan 004](
 | 6 — Bounded Nostr ingress and bookkeeping (F10) | DONE — `93f24d2`, independent spec and quality approvals. Actual installed-library tests reproduce upstream retention and verify the adapter's bounds, invalid-ID recovery and original-filter reconnect. Root independently passed 218 relay/submission tests, typecheck, scoped lint and fixture cleanup. Ten existing real-manager browser cases passed across Chromium and iPhone WebKit; coverage limits are recorded below. |
 | 7 — Incremental verified cache append (F11) | DONE — `662bdd6` has independent spec and quality approvals. Root independently passed all 1,644 Node tests and 16 actual IndexedDB browser checks; measured append reads now scale linearly. Compatibility, corruption and measurement limits are recorded below. |
 | 8 — Signing-context continuation | DONE — `8cb9ced`, `a9364ef`, `75ee135` and `bd15ee9` have independent spec and quality approvals. Root independently passed 1,703 Node tests, 468 affected browser cases, 16 required UI cases and the production/bundle gates. Scope and diagnostic limits are recorded below. |
-| 9 — Dependency blocker and factual docs | Pending; see the approved plan for the compatible-upgrade and security-decision boundaries. |
+| 9 — Dependency blocker and factual docs | DONE within the safe-resolution boundary — `bf407e2`, `b4f1802` and `6c50995`, with independent spec and quality approvals. Actual nested parser and Trezor compatibility tests support the scoped TOML 4.2.0 override. The installed production audit now passes with ten low package findings and no high/critical findings. Embedded SDK browser code, remote-core provenance, elliptic and hardware/licensing release limits remain explicit in [dependency evidence](../docs/dependency-security.md). |
+
+### Historical task checkpoints
+
+The paragraphs below retain each task's evidence at that time. References to later tasks or aggregate verification as pending describe those checkpoints, not the final state linked above.
 
 Task 1 disables traces, screenshots and video, uses structural-only failure reporting and makes the synthetic suites mandatory in shared CI/release verification. Playwright 1.62 still creates matcher ARIA snapshots without a supported suppression option: usable Testnet runner/import paths now refuse before build, funding or navigation. Ordinary cleanup is verified, but cannot guarantee cleanup after an uncatchable process kill; only non-usable synthetic fixtures are allowed. This is not live-wallet verification or final release certification.
 
