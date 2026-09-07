@@ -16,6 +16,7 @@ export function SigningContextFixture() {
   const [posts, setPosts] = useState(0);
   const [signs, setSigns] = useState(0);
   const [deliveries, setDeliveries] = useState(0);
+  const [accountReads, setAccountReads] = useState(0);
   const captured = useRef<(() => void) | null>(null);
   const [oldAuthority, setOldAuthority] = useState('unchecked');
   const [freshAuthority, setFreshAuthority] = useState('unchecked');
@@ -35,7 +36,10 @@ export function SigningContextFixture() {
       if (/^\/transactions\/[^/]+$/.test(url.pathname)) return state.confirmed
         ? json({ hash: url.pathname.split('/').at(-1), successful: true }) : json({}, 503);
       if (/^\/accounts\/[^/]+$/.test(url.pathname)) {
-        if (state.hold) {
+        setAccountReads(value => value + 1);
+        // Only the payment reads this fixed non-usable recipient. Background
+        // refresh and signer-info reads address the generated wallet accounts.
+        if (state.hold && url.pathname === '/accounts/GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF') {
           state.hold = false;
           setStage('preparation');
           await new Promise<void>(resolve => state.gates.push(resolve));
@@ -85,11 +89,13 @@ export function SigningContextFixture() {
       <p data-testid="signing-old-authority">{oldAuthority}</p>
       <p data-testid="signing-fresh-authority">{freshAuthority}</p>
       <Button onClick={() => { control.current.hold = true; setStage('armed'); }}>Hold signing preparation</Button>
+      <Button onClick={() => { void wallet.refresh(); }}>Refresh provider signing balances</Button>
       <Button onClick={() => { for (const resolve of control.current.gates.splice(0)) resolve(); }}>Deliver signing preparation</Button>
       <p data-testid="signing-stage">{stage}</p>
       <p data-testid="signing-posts">{posts}</p>
       <p data-testid="signing-signs">{signs}</p>
       <p data-testid="signing-deliveries">{deliveries}</p>
+      <p data-testid="signing-account-reads">{accountReads}</p>
       <p data-testid="signing-account">{wallet.activeAccount?.label}</p>
       <p data-testid="signing-network">{wallet.network}</p>
       <p data-testid="signing-ledger-ready">{String(!wallet.dataLoading && Boolean(wallet.balances?.length))}</p>
