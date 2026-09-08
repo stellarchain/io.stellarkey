@@ -148,7 +148,7 @@ export function PrivateAssetRegistryAdmin() {
             href={NETWORKS[network].explorerTxUrl(result)}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex min-h-11 items-center px-1 text-[12.5px] font-semibold text-[#0A84FF]"
+            className="inline-flex tap items-center px-1 text-[12.5px] font-semibold text-[#0A84FF]"
           >
             View registry transaction
           </a>

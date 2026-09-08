@@ -112,7 +112,7 @@ export function MerchantSettings({
     <>
       <div data-merchant-settings-root="true" className="pb-2">
         <h1 className="sr-only">Merchant settings</h1>
-        <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
           <div data-merchant-settings-column="business" className="space-y-6">
             <SettingsSection title="Business">
               <div className="list-group">

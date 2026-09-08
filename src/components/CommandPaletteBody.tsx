@@ -102,7 +102,7 @@ export function CommandPaletteBody({ actions, inputRef, onClose }: CommandPalett
             <button
               key={a.id}
               type="button"
-              className={`flex min-h-11 w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] transition-colors ${
+              className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-[14px] transition-colors ${
                 i === cursor
                   ? "bg-[#0A84FF] text-white font-medium shadow-sm"
                   : "text-neutral-300 hover:bg-white/[0.06] hover:text-white"

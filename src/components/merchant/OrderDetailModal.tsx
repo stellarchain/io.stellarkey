@@ -743,7 +743,7 @@ function OrderDetail({
                   <button
                     type="button"
                     onClick={() => setAmountText(minorToDecimal(remainingMinor))}
-                    className="chip min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+                    className="chip focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
                   >
                     Full · {fmtMinor(remainingMinor, currency)}
                   </button>

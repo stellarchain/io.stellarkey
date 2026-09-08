@@ -321,7 +321,7 @@ export function PrivateBalanceSetupBody({
               type="button"
               aria-expanded={learnMore}
               onClick={() => setLearnMore(value => !value)}
-              className="mt-1 flex min-h-11 items-center gap-1 text-[13px] font-semibold text-[#0A84FF]"
+              className="mt-1 flex items-center gap-1 text-[13px] font-semibold text-[#0A84FF]"
             >
               Learn more
               <IconChevronDown

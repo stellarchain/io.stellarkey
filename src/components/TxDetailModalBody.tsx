@@ -316,20 +316,20 @@ Explorer: ${explorerUrl}`;
           <CopyButton
             value={item.counterparty}
             label={incoming ? "Copy Sender" : "Copy Recipient"}
-            className="chip min-h-11 flex-1 justify-center"
+            className="chip tap flex-1 justify-center"
           />
         )}
-        <CopyButton value={item.hash} label="Copy Hash" className="chip min-h-11 flex-1 justify-center" />
+        <CopyButton value={item.hash} label="Copy Hash" className="chip tap flex-1 justify-center" />
         <button
           type="button"
           onClick={() => void handleShareReceipt()}
-          className="chip min-h-11 flex-1 justify-center text-white"
+          className="chip flex-1 justify-center text-white"
         >
           <IconShare size={12} />
           <span>{copiedReceipt ? "Copied Receipt!" : "Share Receipt"}</span>
         </button>
         <a
-          className="chip min-h-11 flex-1 justify-center"
+          className="chip tap flex-1 justify-center"
           href={explorerUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -337,7 +337,7 @@ Explorer: ${explorerUrl}`;
           Stellarchain <IconExternal size={11} />
         </a>
         <a
-          className="chip min-h-11 flex-1 justify-center text-neutral-400 hover:text-white"
+          className="chip tap flex-1 justify-center text-neutral-400 hover:text-white"
           href={labUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -348,9 +348,9 @@ Explorer: ${explorerUrl}`;
 
       {privateExplorerHash ? (
         <div className="flex flex-wrap gap-2">
-          <CopyButton value={privateExplorerHash} label="Copy Hash" className="chip min-h-11 flex-1 justify-center" />
+          <CopyButton value={privateExplorerHash} label="Copy Hash" className="chip tap flex-1 justify-center" />
           <a
-            className="chip min-h-11 flex-1 justify-center"
+            className="chip tap flex-1 justify-center"
             href={NETWORKS[network].explorerTxUrl(privateExplorerHash)}
             target="_blank"
             rel="noopener noreferrer"

@@ -108,7 +108,7 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Horizon Response
             </p>
-            <p className="mono text-[22px] font-bold text-white mt-1">{latencyMs === null ? "—" : `${latencyMs}ms`}</p>
+            <p className="mono text-[18px] font-bold sm:text-[22px] text-white mt-1">{latencyMs === null ? "—" : `${latencyMs}ms`}</p>
             <p className="text-[11px] text-neutral-400 mt-0.5">Measured from this browser</p>
           </div>
 
@@ -116,7 +116,7 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Accepted Base Fee
             </p>
-            <p className="mono text-[22px] font-bold text-[#30D158] mt-1">
+            <p className="mono text-[18px] font-bold sm:text-[22px] text-[#30D158] mt-1">
               {acceptedFeeXlm ?? "—"} XLM
             </p>
             {acceptedFeeXlm && (
@@ -129,7 +129,7 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Loaded Activity
             </p>
-            <p className="mono text-[22px] font-bold text-[#64D2FF] mt-1">{totalTxCount}</p>
+            <p className="mono text-[18px] font-bold sm:text-[22px] text-[#64D2FF] mt-1">{totalTxCount}</p>
             <p className="text-[11px] text-neutral-400 mt-0.5">Operations loaded in this session</p>
           </div>
 
@@ -137,7 +137,7 @@ export function NetworkStatsModalBody({ onClose, onHeaderChange }: NetworkStatsM
             <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Smart Contracts Engine
             </p>
-            <p className="mono text-[22px] font-bold text-purple-300 mt-1">Soroban</p>
+            <p className="mono text-[18px] font-bold sm:text-[22px] text-purple-300 mt-1">Soroban</p>
             <p className="text-[11px] text-purple-400 mt-0.5">Rust WASM Virtual Machine</p>
           </div>
         </div>

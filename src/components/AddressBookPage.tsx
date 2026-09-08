@@ -126,11 +126,12 @@ export function AddressBookPage({
         <button
           type="button"
           onClick={() => openEditor(null)}
-          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
+          className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white sm:w-auto sm:gap-1.5 sm:px-3.5 shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-all hover:bg-[#2492ff] active:scale-90"
           title="Add Contact"
           aria-label="Add Contact"
         >
           <IconPlus size={17} />
+          <span className="hidden text-[13px] font-semibold sm:inline">Add Contact</span>
         </button>
       </div>
 
@@ -271,7 +272,7 @@ function ContactRow({
           label={contact.name.trim()[0]?.toUpperCase()}
         />
         {contact.favorite && (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-[9px] font-bold text-black shadow ring-2 ring-black/60">
+          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#FFD60A] text-[10px] font-bold text-black shadow ring-2 ring-black/60">
             ★
           </span>
         )}

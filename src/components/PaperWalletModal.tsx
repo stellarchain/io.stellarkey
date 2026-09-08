@@ -293,7 +293,7 @@ function PaperWalletContent({
             type="button"
             data-encrypted-export-action="true"
             onClick={() => setShowEncryptedExport(true)}
-            className="group flex w-full min-w-0 min-h-11 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
+            className="group flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
           >
             <IconLock size={16} className="shrink-0 text-neutral-400" />
             <span className="min-w-0 flex-1">

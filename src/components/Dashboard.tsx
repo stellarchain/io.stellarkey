@@ -2111,7 +2111,7 @@ export function Dashboard() {
         <div className={`border-t border-white/[0.08] shrink-0 w-full ${sidebarCollapsed ? "p-2.5" : "p-4 space-y-2"}`}>
           {!sidebarCollapsed ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-y-2">
                 <div className="flex items-center gap-1">
                   <Tooltip label={privacyMode ? "Show balances" : "Hide balances"}>
                     <button
@@ -2196,7 +2196,7 @@ export function Dashboard() {
               </button>
               <div
                 aria-label="Build information"
-                className="pt-1 text-center text-[9px] text-neutral-400"
+                className="pt-1 text-center text-[10px] text-neutral-400"
               >
                 <p className="whitespace-nowrap">
                   © {COPYRIGHT_YEAR} {COPYRIGHT_OWNER}
@@ -2747,10 +2747,10 @@ export function Dashboard() {
                     data-mobile-asset-toolbar
                     className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1 pb-2.5"
                   >
-                    <h2 className="order-1 mr-auto text-[16px] font-bold tracking-tight text-white sm:order-none">
+                    <h2 className="mr-auto text-[16px] font-bold tracking-tight text-white">
                       Your Assets
                     </h2>
-                    <div className="order-3 flex w-full items-center justify-end gap-3 sm:order-none sm:w-auto">
+                    <div className="flex items-center justify-end gap-3">
                       {hiddenClaimableBalanceCount > 0 && (
                         <button
                           type="button"
@@ -2931,7 +2931,7 @@ export function Dashboard() {
                           aria-label="About testnet private asset values"
                           aria-haspopup="dialog"
                           onClick={() => setPrivateValueInfoOpen(true)}
-                          className="-my-2 -mr-1 flex min-h-11 min-w-11 items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
+                          className="-my-2 -mr-1 flex items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
                         >
                           ⓘ
                         </button>
@@ -3043,8 +3043,8 @@ export function Dashboard() {
           ) : view === "activity" ? (
             <section className="fade-up pt-2 max-w-[1000px] mx-auto">
               {/* Filter Pills & Export CSV */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pb-2.5 pt-1">
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2 pb-2.5 pt-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none sm:shrink-0 sm:bg-white/[0.04] sm:p-1 sm:rounded-2xl sm:border sm:border-white/10">
                   {(
                     [
                       { id: "all", label: "All" },
@@ -3095,7 +3095,7 @@ export function Dashboard() {
                     value={activityAssetFilter}
                     onChange={setActivityAssetFilter}
                     ariaLabel="Filter by asset"
-                    className="mono !h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
+                    className="!h-7 !py-0 !px-2 text-[11.5px] !bg-white/[0.04] !text-neutral-300"
                     preserveOptionLabels
                     panelMinWidth={240}
                     options={[
@@ -3932,7 +3932,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
+            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] sm:max-w-[260px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">

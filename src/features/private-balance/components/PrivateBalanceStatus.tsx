@@ -62,7 +62,7 @@ export function HumanizedErrorNotice({
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded(value => !value)}
-        className="mt-1 flex min-h-11 items-center gap-1 text-[12px] font-semibold text-neutral-500"
+        className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-neutral-500"
       >
         Technical details
         <IconChevronDown

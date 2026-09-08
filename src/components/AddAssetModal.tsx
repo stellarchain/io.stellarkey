@@ -274,7 +274,7 @@ export function AddAssetPublicPanel({
                 aria-pressed={isSelected}
                 disabled={alreadyAdded || !available || busy}
                 onClick={() => handleSelectPopular(asset)}
-                className={`flex min-h-11 items-center justify-between rounded-2xl border p-2.5 text-left transition-[background-color,border-color,color,opacity] ${
+                className={`flex items-center justify-between rounded-2xl border p-2.5 text-left transition-[background-color,border-color,color,opacity] ${
                   alreadyAdded
                     ? "cursor-not-allowed border-white/5 bg-white/[0.02] opacity-50"
                     : isSelected
@@ -353,7 +353,7 @@ export function AddAssetPublicPanel({
         />
         <Button
           variant="secondary"
-          className="btn-sm min-h-11 shrink-0"
+          className="btn-sm shrink-0"
           disabled={!canQueueCustom}
           onClick={queueCustom}
         >
@@ -363,7 +363,7 @@ export function AddAssetPublicPanel({
 
       {/* Queued trustlines */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
-        <div className="flex min-h-11 items-center justify-between">
+        <div className="flex tap items-center justify-between">
           <p className="text-[12px] font-semibold text-white">
             Queued Trustlines ({selected.length})
           </p>
@@ -371,7 +371,7 @@ export function AddAssetPublicPanel({
             <button
               type="button"
               onClick={() => setSelected([])}
-              className="min-h-11 rounded-lg px-2 text-[12px] font-medium text-neutral-300 hover:text-[#FF453A]"
+              className="rounded-lg px-2 text-[12px] font-medium text-neutral-300 hover:text-[#FF453A]"
             >
               Clear all
             </button>
@@ -403,7 +403,7 @@ export function AddAssetPublicPanel({
                       />
                     ) : (
                       <span
-                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                        className="mono flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
                         style={{ background: known?.color ?? "#5E5CE6" }}
                       >
                         {s.code.slice(0, 2)}
@@ -426,7 +426,7 @@ export function AddAssetPublicPanel({
                         ),
                       )
                     }
-                    className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
+                    className="flex shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
                   >
                     <IconClose size={13} aria-hidden="true" />
                   </button>

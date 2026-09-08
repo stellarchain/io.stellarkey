@@ -694,7 +694,7 @@ function ReceiptSheetInner({
             <DraftPreview body={body} />
             <ModalFooter
               primary={
-                <a href={smsHref} className="btn btn-primary min-h-11 w-full">
+                <a href={smsHref} className="btn btn-primary tap w-full">
                   Open the message
                 </a>
               }
@@ -729,7 +729,7 @@ function ReceiptSheetInner({
             <DraftPreview body={body} />
             <ModalFooter
               primary={
-                <a href={mailHref} className="btn btn-primary min-h-11 w-full">
+                <a href={mailHref} className="btn btn-primary tap w-full">
                   Open the draft
                 </a>
               }

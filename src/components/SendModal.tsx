@@ -853,7 +853,7 @@ function SendInner({
             </p>
             {hash && (
               <a
-                className="chip mt-4 min-h-11"
+                className="chip mt-4 tap"
                 href={NETWORKS[receiptNetwork].explorerTxUrl(hash)}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -897,7 +897,7 @@ function SendInner({
             <CopyButton
               value={cosignXdr ?? ""}
               label="Copy Envelope XDR"
-              className="chip mt-3 min-h-11 w-full justify-center"
+              className="chip mt-3 tap w-full justify-center"
             />
             <p className="mt-2.5 text-[11px] leading-relaxed text-neutral-500">
               Cosigners open Multi-Sig Studio → Approvals, paste the envelope, and sign — it
@@ -1206,7 +1206,7 @@ function SendInner({
                           setStealthReview(null);
                           setAmount(maxSendable);
                         }}
-                        className="min-h-11 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
+                        className="pointer-coarse:-my-3 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
                       >
                         Max: {fmtAmount(maxSendable)} {selectedAsset.code}
                       </button>
@@ -1253,7 +1253,7 @@ function SendInner({
                       setStealthReview(null);
                       setAmount(String(val));
                     }}
-                    className="min-h-11 rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-medium text-neutral-300 hover:bg-white/[0.12]"
+                    className="rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-medium text-neutral-300 hover:bg-white/[0.12]"
                   >
                     {val}
                   </button>
@@ -1265,7 +1265,7 @@ function SendInner({
                       setStealthReview(null);
                       setAmount(maxSendable);
                     }}
-                    className="min-h-11 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[12px] font-bold text-accent-2"
+                    className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[12px] font-bold text-accent-2"
                   >
                     MAX
                   </button>
@@ -1279,7 +1279,7 @@ function SendInner({
                     type="button"
                     aria-expanded={showScanner}
                     onClick={() => setShowScanner((s) => !s)}
-                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
+                    className="pointer-coarse:-my-3 flex items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
                   >
                     <IconQrScan size={13} />
                     <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
@@ -1345,7 +1345,7 @@ function SendInner({
                           key={acc.id}
                           type="button"
                           onClick={() => handleDestinationChange(acc.publicKey)}
-                          className="chip min-h-11 border border-[#0A84FF]/25 bg-[#0A84FF]/10 font-medium text-neutral-200 hover:text-white"
+                          className="chip border border-[#0A84FF]/25 bg-[#0A84FF]/10 font-medium text-neutral-200 hover:text-white"
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-[#0A84FF]" />
                           <span>{acc.label}</span>
@@ -1365,7 +1365,7 @@ function SendInner({
                           key={c.address}
                           type="button"
                           onClick={() => handleDestinationChange(c.address)}
-                          className={`chip min-h-11 transition-[background-color,color,border-color,box-shadow] ${
+                          className={`chip transition-[background-color,color,border-color,box-shadow] ${
                             c.favorite
                               ? "border border-[#FFD60A]/30 bg-[#FFD60A]/15 font-medium text-white"
                               : "text-neutral-300 hover:text-white"
@@ -1385,7 +1385,7 @@ function SendInner({
                         key={addr}
                         type="button"
                         onClick={() => handleDestinationChange(addr)}
-                        className="chip min-h-11 text-neutral-300 hover:text-white"
+                        className="chip text-neutral-300 hover:text-white"
                       >
                         {formatTrezorAddress(addr)}
                       </button>
@@ -1476,7 +1476,7 @@ function SendInner({
                         type="button"
                         aria-pressed={memoType === t}
                         onClick={() => setMemoType(t)}
-                        className={`min-h-11 rounded-lg px-2 text-[12px] capitalize ${
+                        className={`rounded-lg px-2 text-[12px] capitalize ${
                           memoType === t ? "font-semibold text-white" : "text-neutral-500"
                         }`}
                       >
@@ -1513,7 +1513,7 @@ function SendInner({
                         type="button"
                         aria-pressed={memo === preset}
                         onClick={() => setMemo(preset)}
-                        className={`min-h-11 rounded-lg px-3 text-[12px] font-medium transition-colors ${
+                        className={`rounded-lg px-3 text-[12px] font-medium transition-colors ${
                           memo === preset ? "bg-[#0A84FF] font-semibold text-white" : "bg-white/[0.06] text-neutral-400 hover:text-white"
                         }`}
                       >

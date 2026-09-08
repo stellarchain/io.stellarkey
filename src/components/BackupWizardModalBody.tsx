@@ -470,7 +470,7 @@ export function BackupWizardModalBody({
                   <span className="flex items-center gap-2">
                     <span className="text-[14px] font-semibold text-white">{m.title}</span>
                     {m.badge && (
-                      <span className="rounded-full bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
+                      <span className="rounded-full bg-[#30D158]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#30D158]">
                         {m.badge}
                       </span>
                     )}

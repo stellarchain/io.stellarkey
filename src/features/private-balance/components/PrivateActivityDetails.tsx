@@ -194,7 +194,7 @@ export function PrivateActivityDetails({
           href={NETWORKS[network].explorerTxUrl(explorerTransactionHash)}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-secondary flex min-h-11 w-full items-center justify-center gap-2"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
         >
           View Transaction <IconExternal size={14} />
         </a>
@@ -204,7 +204,7 @@ export function PrivateActivityDetails({
           href={NETWORKS[network].explorerAccountUrl(poolContractId)}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-secondary flex min-h-11 w-full items-center justify-center gap-2"
+          className="btn btn-secondary flex tap w-full items-center justify-center gap-2"
         >
           View Public Record <IconExternal size={14} />
         </a>

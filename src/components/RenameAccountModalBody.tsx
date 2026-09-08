@@ -84,7 +84,7 @@ export function RenameAccountModalBody({
                 key={preset.name}
                 type="button"
                 onClick={() => setLabel(`${preset.emoji} ${preset.name}`)}
-                className="chip min-h-11 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
+                className="chip text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
               >
                 <span aria-hidden="true">{preset.emoji}</span>
                 <span>{preset.name}</span>

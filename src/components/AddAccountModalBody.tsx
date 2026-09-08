@@ -232,7 +232,7 @@ export function AddAccountModalBody({
               type="button"
               disabled={busy}
               onClick={() => setLabel(`${preset.emoji} ${preset.name}`)}
-              className="chip min-h-11 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-50"
+              className="chip text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span aria-hidden="true">{preset.emoji}</span>
               <span>{preset.name}</span>
@@ -289,7 +289,7 @@ export function AddAccountModalBody({
               aria-pressed={secretVisible}
               disabled={busy}
               onClick={() => setSecretVisible((visible) => !visible)}
-              className="flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-[12px] font-medium text-neutral-400 transition-colors hover:text-white disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-xl px-2 text-[12px] font-medium text-neutral-400 transition-colors hover:text-white disabled:opacity-50"
             >
               {secretVisible ? <IconEyeOff size={14} /> : <IconEye size={14} />}
               {secretVisible ? "Hide secret key" : "Show secret key"}

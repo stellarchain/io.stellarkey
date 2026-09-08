@@ -69,7 +69,7 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(css, /\.app-safe-toast\s*\{[\s\S]*?calc\(1\.25rem \+ var\(--app-safe-area-top\)\)/);
   assert.match(
     css,
-    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-toast\s*\{[\s\S]*?calc\(1\.5rem \+ var\(--app-safe-area-top\)\)/,
+    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-toast\s*\{[\s\S]*?calc\(4\.75rem \+ var\(--app-safe-area-top\)\)/,
   );
   assert.match(css, /\.app-safe-sticky-top\s*\{[\s\S]*?top:\s*var\(--app-safe-area-top\);/);
   assert.match(css, /\.app-scroll-sticky-top\s*\{[\s\S]*?top:\s*0;/);

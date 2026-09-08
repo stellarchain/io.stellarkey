@@ -425,8 +425,9 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             findings, so the lead does not have to carry it twice.
           */}
           <StatStrip
-            columns="minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr)"
+            columns="minmax(136px,1.5fr) minmax(88px,1fr) minmax(104px,1fr) minmax(104px,1fr) minmax(128px,1.3fr)"
             className="md:col-span-2 lg:col-span-6"
+            scrollLabel="Today at a glance"
           >
             <Stat
               label={`Takings ${against.running ? `to ${against.through}` : "today"}`}

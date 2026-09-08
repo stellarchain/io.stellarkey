@@ -406,7 +406,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                         type="button"
                         aria-pressed={on}
                         onClick={() => setChosenKey(key)}
-                        className={`mono min-h-11 rounded-full px-3.5 text-[12px] font-semibold transition-colors ${
+                        className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${
                           on
                             ? "bg-[#0A84FF] text-white"
                             : "bg-white/[0.08] text-neutral-400 hover:text-white"
@@ -472,7 +472,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
                     value={uri}
                     label="Copy request"
                     iconSize={15}
-                    className="btn btn-secondary min-h-11 w-full"
+                    className="btn btn-secondary tap w-full"
                   />
                 ) : (
                   <Button variant="secondary" disabled>

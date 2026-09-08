@@ -216,7 +216,7 @@ export function PrivateReceiveContent({
           type="button"
           aria-expanded={showFullAddress}
           onClick={() => setShowFullAddress(value => !value)}
-          className="-mb-1 mt-1 flex min-h-11 items-center gap-1 text-[12.5px] font-semibold text-[#0A84FF]"
+          className="-mb-1 mt-1 flex items-center gap-1 text-[12.5px] font-semibold text-[#0A84FF]"
         >
           {showFullAddress ? 'Hide full address' : 'Show full address'}
           <IconChevronDown size={12} className={`transition-transform ${showFullAddress ? 'rotate-180' : ''}`} />

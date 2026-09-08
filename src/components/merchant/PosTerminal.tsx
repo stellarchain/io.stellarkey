@@ -809,7 +809,7 @@ export function PosTerminal({
           <button
             type="button"
             onClick={onOpenShift}
-            className="btn btn-secondary min-h-11 shrink-0"
+            className="btn btn-secondary shrink-0"
           >
             Open shift
           </button>
@@ -862,7 +862,7 @@ export function PosTerminal({
                     type="button"
                     aria-pressed={category === ""}
                     onClick={() => setCategory("")}
-                    className={`chip min-h-11 ${category === "" ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
+                    className={`chip ${category === "" ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                   >
                     All
                   </button>
@@ -872,7 +872,7 @@ export function PosTerminal({
                       type="button"
                       aria-pressed={category === name}
                       onClick={() => setCategory(name)}
-                      className={`chip min-h-11 ${category === name ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
+                      className={`chip ${category === name ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                     >
                       {name}
                     </button>
@@ -964,7 +964,7 @@ export function PosTerminal({
                 <button
                   type="button"
                   onClick={clearTicket}
-                  className="-mr-2 flex min-h-11 items-center rounded-lg px-2 text-[13px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/10"
+                  className="-mr-2 flex items-center rounded-lg px-2 text-[13px] font-semibold text-[#FF453A] transition-colors hover:bg-[#FF453A]/10"
                 >
                   Clear
                 </button>

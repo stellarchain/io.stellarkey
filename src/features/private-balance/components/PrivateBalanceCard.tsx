@@ -230,7 +230,7 @@ export function PrivateBalanceCard({
             <button
               type="button"
               onClick={() => takeoverLeadership()}
-              className="chip min-h-11 font-semibold text-[#0A84FF]"
+              className="chip font-semibold text-[#0A84FF]"
             >
               Use Here
             </button>
@@ -241,7 +241,7 @@ export function PrivateBalanceCard({
               <button
                 type="button"
                 onClick={() => openAction('details')}
-                className={`min-h-11 text-[12.5px] font-medium ${
+                className={`text-[12.5px] font-medium ${
                   statusLine.tone === 'caution' ? 'text-[#FFB340]' : 'text-neutral-400'
                 }`}
               >

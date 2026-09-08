@@ -890,7 +890,7 @@ function StepMoney({
                   can raise charges and watch them settle, and nothing else.
                 </p>
                 {!receivingWatchOnly && (
-                  <Button variant="secondary" className="mt-2.5 min-h-11" onClick={onWatchOnly}>
+                  <Button variant="secondary" className="mt-2.5" onClick={onWatchOnly}>
                     <IconPlus size={13} /> Add a watch-only account
                   </Button>
                 )}
@@ -961,7 +961,7 @@ function StepMoney({
           <Notice tone="warn">
             <div className="flex items-center justify-between gap-3">
               <span>The receiving account could not be checked.</span>
-              <Button variant="secondary" className="min-h-11 shrink-0" onClick={onRetryCheck}>
+              <Button variant="secondary" className="shrink-0" onClick={onRetryCheck}>
                 Retry
               </Button>
             </div>
@@ -1009,7 +1009,7 @@ function StepMoney({
                   {!native && !held && (
                     <Button
                       variant="secondary"
-                      className="min-h-11 shrink-0"
+                      className="shrink-0"
                       disabled={trustingKey !== null}
                       loading={trustingKey === assetKey(asset)}
                       loadingLabel="Adding trustline"

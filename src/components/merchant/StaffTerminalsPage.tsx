@@ -342,7 +342,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
               </h2>
               <Button
                 variant="ghost"
-                className="btn-sm min-h-11"
+                className="btn-sm"
                 disabled={activeStaff?.role !== "owner"}
                 onClick={() => setAdding(true)}
               >
@@ -725,7 +725,7 @@ function OperatorRosterSheet({
                 </span>
                 <Button
                   variant="danger"
-                  className="btn-sm min-h-11 shrink-0"
+                  className="btn-sm shrink-0"
                   disabled={!canEnd || Boolean(endingId)}
                   loading={endingId === member.id}
                   loadingLabel="Ending the session"

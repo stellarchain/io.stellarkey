@@ -653,7 +653,7 @@ export function MultiSigStudioModalBody({
                           className="text-[12.5px] text-neutral-200"
                         />
                         {s.key === ownKey && (
-                          <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
+                          <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#30D158]">
                             This device
                           </span>
                         )}
@@ -795,7 +795,7 @@ export function MultiSigStudioModalBody({
                         value={ownKey}
                         className="text-[12px] text-neutral-200"
                       />
-                      <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#30D158]">
+                      <span className="mt-1 block w-fit rounded-md bg-[#30D158]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#30D158]">
                         This device
                       </span>
                     </div>
@@ -870,7 +870,7 @@ export function MultiSigStudioModalBody({
                   <Button
                     type="button"
                     variant="secondary"
-                    className="min-h-11 shrink-0 !px-3.5 !py-0 text-[12.5px]"
+                    className="shrink-0 !px-3.5 !py-0 text-[12.5px]"
                     disabled={!hasAdditionalSignerCapacity(cosigners.length)}
                     onClick={() => addCosigner(newKey)}
                   >
@@ -886,7 +886,7 @@ export function MultiSigStudioModalBody({
                         type="button"
                         disabled={!hasAdditionalSignerCapacity(cosigners.length)}
                         onClick={() => addCosigner(c.address)}
-                        className="chip min-h-11 text-[12px] text-neutral-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        className="chip text-[12px] text-neutral-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {c.name}
                       </button>
@@ -925,7 +925,7 @@ export function MultiSigStudioModalBody({
                         triggerHaptic("selection");
                         setPreset(p.id);
                       }}
-                      className={`min-h-11 rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color,transform] active:scale-[0.98] ${
+                      className={`rounded-2xl border px-3 py-2.5 text-left transition-[background-color,border-color,transform] active:scale-[0.98] ${
                         preset === p.id
                           ? "border-[#0A84FF]/50 bg-[#0A84FF]/[0.08]"
                           : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16]"
@@ -1182,7 +1182,7 @@ export function MultiSigStudioModalBody({
                       </p>
                       {op.risk !== "none" && (
                         <span
-                          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide ${
+                          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                             op.risk === "danger"
                               ? "bg-[#FF453A]/15 text-[#FF453A]"
                               : "bg-[#FF9F0A]/15 text-[#FF9F0A]"

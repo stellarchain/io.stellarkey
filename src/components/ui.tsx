@@ -245,9 +245,9 @@ export function IOSBackButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 ${className}`}
+      className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 sm:h-9 sm:w-9 ${className}`}
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] sm:h-8 sm:w-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
         <IconChevronDown size={21} className="rotate-90" />
       </span>
     </button>
@@ -993,7 +993,7 @@ export function Modal({
           inert={!open || closing}
           tabIndex={-1}
           style={{ ...heightStyle, ...holdStyle }}
-          className={`${panelClass}${closing ? " closing" : ""}`}
+          className={`${panelClass} outline-none${closing ? " closing" : ""}`}
         >
           {isSheet && <div aria-hidden="true" data-sheet-handle className="modal-grabber" />}
           <span id={busyReasonId} className="sr-only">{busy ? busyReason : ""}</span>
@@ -1197,7 +1197,7 @@ export function ConfirmModal({
         message={message}
         actions={
           <ModalFooter
-            stack={stack}
+            stack={stack || confirmLabel.length + cancelLabel.length > 18}
             secondary={
               <Button type="button" variant="ghost" disabled={busy || !open} onClick={cancel}>
                 {cancelLabel}
@@ -2404,9 +2404,9 @@ export function Field({
     : children;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <label htmlFor={controlId} className="field-label !pb-0">{label}</label>
-        {hint && <span id={hintId} className="text-[11px] text-neutral-400">{hint}</span>}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <label htmlFor={controlId} className="field-label !pb-0 shrink-0">{label}</label>
+        {hint && <span id={hintId} className="ml-auto min-w-0 text-right text-[11px] text-neutral-400">{hint}</span>}
       </div>
       {control}
       {error && <p id={errorId} role="alert" className="text-[11.5px] text-[#FF453A]">{error}</p>}

@@ -296,7 +296,7 @@ export function ClaimableBalancesModalBody({
               type="button"
               onClick={toggleAllAvailable}
               disabled={availableIds.length === 0 || busy || pendingAirdropClaim || confirmed}
-              className="min-h-11 rounded-lg px-2 text-[12px] font-semibold text-[#0A84FF] disabled:text-neutral-600"
+              className="rounded-lg px-2 text-[12px] font-semibold text-[#0A84FF] disabled:text-neutral-600"
             >
               {allAvailableSelected ? "Clear selection" : "Select all available"}
             </button>
@@ -402,7 +402,7 @@ export function ClaimableBalancesModalBody({
                           </span>
                         )
                       ) : (
-                        <span className="shrink-0 rounded-md bg-[#FF9F0A]/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-[#FF9F0A]">
+                        <span className="shrink-0 rounded-md bg-[#FF9F0A]/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#FF9F0A]">
                           Trustline required
                         </span>
                       )}

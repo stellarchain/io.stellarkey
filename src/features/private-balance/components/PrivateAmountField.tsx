@@ -54,7 +54,7 @@ export function PrivateAmountField({
           <button
             type="button"
             onClick={applyMax}
-            className="-mr-2 flex min-h-11 items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
+            className="-mr-2 flex items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
           >
             Max: {fmtAmount(max)} {code}
           </button>
@@ -102,7 +102,7 @@ export function PrivateQuickAmounts({
           key={value}
           type="button"
           onClick={() => onAmount(String(value))}
-          className="flex min-h-11 shrink-0 items-center rounded-xl bg-white/[0.06] px-3.5 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] active:bg-white/[0.16]"
+          className="flex shrink-0 items-center rounded-xl bg-white/[0.06] px-3.5 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] active:bg-white/[0.16]"
         >
           {value}
         </button>
@@ -111,7 +111,7 @@ export function PrivateQuickAmounts({
         <button
           type="button"
           onClick={() => onAmount(max)}
-          className="flex min-h-11 shrink-0 items-center rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[13px] font-bold text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/22 active:bg-[#0A84FF]/28"
+          className="flex shrink-0 items-center rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[13px] font-bold text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/22 active:bg-[#0A84FF]/28"
         >
           MAX
         </button>

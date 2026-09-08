@@ -51,7 +51,7 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
 
   assert.match(
     settingsRoot,
-    /className="grid grid-cols-1 items-start gap-6 md:grid-cols-2"/,
+    /className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2"/,
   );
   assert.equal(
     settingsRoot.match(/data-merchant-settings-column=/g)?.length ?? 0,
