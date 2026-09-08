@@ -53,5 +53,7 @@ test("pending Send retains its action identity and prevents duplicate submission
   await expect.poll(() => submissionRequests).toBe(1);
 
   releaseSubmission();
-  await expect(send.getByText(/Payment Confirmed|Payment Accepted/).first()).toBeVisible();
+  // The dialog is renamed for its result stage; the shell stays the same element.
+  const result = page.getByRole("dialog", { name: "Payment Sent", exact: true });
+  await expect(result.getByText(/Payment Confirmed|Payment Accepted/).first()).toBeVisible();
 });

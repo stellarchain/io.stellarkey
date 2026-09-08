@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { IconAlert } from '@/components/icons';
-import { Button } from '@/components/ui';
+import { Button, ModalBody, ModalFooter } from '@/components/ui';
 import { triggerHaptic } from '@/lib/haptics';
 import { AMBIGUOUS_OUTCOME } from '../copy';
 import { PrivateSuccess } from './PrivateSuccess';
@@ -36,7 +36,7 @@ export function PrivateSubmissionStatus({
 
   if (status === 'broadcast') {
     return (
-      <div className="p-4 sm:p-6">
+      <ModalBody>
         <PrivateSuccess
           title={title}
           subtitle="Verifying on Stellar — your balance updates in a moment"
@@ -44,13 +44,13 @@ export function PrivateSubmissionStatus({
           celebrate={celebrate}
           onDone={onDone}
         />
-      </div>
+      </ModalBody>
     );
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6" aria-live="polite">
-      <div className="flex flex-col items-center gap-3 py-3 text-center">
+    <ModalBody>
+      <div aria-live="polite" className="flex flex-col items-center gap-3 py-3 text-center">
         <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-[#FF9F0A]">
           <IconAlert size={28} />
         </span>
@@ -59,9 +59,13 @@ export function PrivateSubmissionStatus({
           {AMBIGUOUS_OUTCOME.body}
         </p>
       </div>
-      <Button type="button" variant="ghost" className="w-full" onClick={onDone}>
-        Done
-      </Button>
-    </div>
+      <ModalFooter
+        primary={
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Done
+          </Button>
+        }
+      />
+    </ModalBody>
   );
 }

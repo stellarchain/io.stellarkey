@@ -6,6 +6,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('home keeps its compact gift row while the redesign stays inside Earn', () => {
   const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const body = read('src/features/private-balance/components/PrivateRelayEntryBody.tsx');
   const trigger = entry.slice(entry.indexOf('<button'), entry.indexOf('</button>') + '</button>'.length);
   assert.match(trigger, /<IconGift size=\{17\}/);
   assert.match(trigger, /mt-2 flex min-h-14/);
@@ -16,9 +17,13 @@ test('home keeps its compact gift row while the redesign stays inside Earn', () 
   assert.doesNotMatch(trigger, /RelayMark|bg-panel|border-white|sm:inline/);
   const modal = entry.slice(entry.indexOf('<Modal '));
   assert.match(modal, /open=\{open\} onClose=\{close\} wide/);
-  assert.match(modal, /Your relay status/);
-  assert.match(modal, /<PrivateRelaySettings helperOnly/);
-  assert.match(modal, /Explore other peers/);
+  // The status, settings and peer content is the lazily loaded body, mounted
+  // only while open so peer information leaves with the dialog.
+  assert.match(modal, /\{open \? \(\s*<PrivateRelayEntryBody/);
+  assert.doesNotMatch(body, /<Modal\b|<ModalHeader\b/);
+  assert.match(body, /Your relay status/);
+  assert.match(body, /<PrivateRelaySettings helperOnly/);
+  assert.match(body, /Explore other peers/);
 });
 
 test('advanced privacy keeps relay use and peer assistance as independent explicit opt-ins', () => {
@@ -43,6 +48,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
 
   assert.match(dashboard, /PrivateRelayEntry/);
   const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const body = read('src/features/private-balance/components/PrivateRelayEntryBody.tsx');
   const helperStatus = read('src/features/private-balance/relay/helper-status.ts');
   assert.match(entry, /Earn by relaying/);
   assert.match(entry, /PRIVATE_RELAY_PREFERENCES_EVENT/);
@@ -52,10 +58,11 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.match(entry, /Reconnecting/);
   assert.match(entry, /aria-haspopup="dialog"/);
   assert.match(entry, /<Modal/);
-  assert.match(entry, /<PrivateRelaySettings helperOnly/);
+  assert.match(body, /<PrivateRelaySettings helperOnly/);
   // Saving/starting is local feedback now, not an implicit close. The Earn
   // browser suite verifies shell/backdrop identity and focus across changes.
   assert.doesNotMatch(entry, /onSaved=\{\(\) => setOpen\(false\)\}/);
+  assert.doesNotMatch(body, /onSaved=|setOpen\(/);
   assert.match(entry, /<Modal open=\{open\}/);
   assert.match(settings, /Start relaying/);
   assert.match(settings, /Stop relaying/);
@@ -68,9 +75,12 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
 
 test('relay modal checks live peer availability only after explicit intent', () => {
   const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
+  const body = read('src/features/private-balance/components/PrivateRelayEntryBody.tsx');
   const availability = read('src/features/private-balance/components/PrivateRelayAvailability.tsx');
 
-  assert.match(entry, /PrivateRelayAvailability/);
+  // The peer check lives in the body, which the shell mounts only while open.
+  assert.doesNotMatch(entry, /PrivateRelayAvailability/);
+  assert.match(body, /PrivateRelayAvailability/);
   assert.match(availability, /Check available peers/);
   assert.match(availability, /onClick=\{\(\) => void check\(\)\}/);
   assert.match(availability, /checkPrivateRelayAvailability/);
@@ -91,8 +101,8 @@ test('relay modal checks live peer availability only after explicit intent', () 
   assert.match(availability, /quote\.feeAtomic/);
   assert.match(availability, /formatPrivateBalanceAmount/);
   assert.match(availability, /\{fee\} \{code\}/);
-  assert.match(entry, /code=\{asset\?\.code/);
-  assert.match(entry, /decimals=\{asset\?\.decimals/);
+  assert.match(body, /code=\{asset\?\.code/);
+  assert.match(body, /decimals=\{asset\?\.decimals/);
   assert.doesNotMatch(availability, /savePrivateRelayPreferences|localStorage/);
   assert.doesNotMatch(availability, /transition-all/);
 });
@@ -122,9 +132,14 @@ test('helper mode presents a manual approval only after strict local review', ()
 
   assert.match(boundary, /PrivateRelayHelperManager/);
   assert.match(manager, /reviewPrivateRelayJob/);
-  assert.match(manager, /Approve &amp; sign/);
+  assert.match(manager, /Approve and sign/);
   assert.match(manager, /Reject/);
   assert.match(manager, /<Modal/);
+  // The request is an interrupt: a centred alert whose content exists only
+  // while a request is pending, and which stays put while signing.
+  assert.match(manager, /presentation="alert"/);
+  assert.match(manager, /open=\{pending !== null\}/);
+  assert.match(manager, /busy=\{working\}/);
   assert.match(manager, /never signs transactions automatically/i);
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
   assert.match(manager, /requestExpiryTimers/);

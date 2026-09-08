@@ -137,6 +137,9 @@ test("merchant setup is mounted only after its runtime is requested", () => {
     dashboard,
     /if \(!merchantRuntimeIntent \|\| !merchantRuntimeMounted\) return;[\s\S]*merchantRuntimeIntent === "setup"[\s\S]*setSetupWizardOpen\(true\)/,
   );
-  assert.match(dashboard, /setupWizardOpen && \(/);
+  // The wizard chunk mounts on the first open and stays only through its exit.
+  assert.match(dashboard, /const setupWizardMounted = useMountedThroughExit\(setupWizardOpen\);/);
+  assert.match(dashboard, /setupWizardMounted && \(/);
+  assert.doesNotMatch(dashboard, /<SetupWizard\s+open\s/);
   assert.match(dashboard, /releaseRuntime/);
 });

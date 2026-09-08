@@ -212,19 +212,26 @@ for (const outcome of ['Deliver', 'Reject'] as const) {
   });
 }
 
-test('a late forgotten-customer completion cannot close another customer detail', async ({ page }) => {
+test('forgetting a customer keeps its detail open until the write settles', async ({ page }) => {
   await prepare(page);
-  let dialog = await openCustomer(page);
-  await dialog.getByRole('button', { name: 'Forget This Customer', exact: true }).click();
+  const dialog = await openCustomer(page);
+  await dialog.getByRole('button', { name: 'Forget this customer', exact: true }).click();
+  const confirm = page.getByRole('dialog', { name: 'Forget Fixture customer?', exact: true });
   await control(page, 'Hold after merchant write');
-  await dialog.getByRole('button', { name: 'Forget', exact: true }).click();
+  const forget = confirm.getByRole('button', { name: 'Forget', exact: true });
+  await forget.click();
   await expect(page.getByTestId('feedback-stage')).toHaveText('after-write');
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  dialog = await openCustomer(page, true);
+  // The shell is busy while the record is rewritten: no dismissal path closes
+  // either dialog, so a late completion can only ever close the detail it began in.
+  await expect(forget).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(confirm).toBeVisible();
+  await expect(dialog).toBeVisible();
   await control(page, 'Deliver feedback response');
   await expect(page.getByTestId('feedback-customer-count')).toHaveText('1');
-  await expect(dialog).toBeVisible();
-  await expect(page.locator('.app-safe-toast')).toBeEmpty();
+  await expect(confirm).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.app-safe-toast')).toContainText('Local customer record forgotten.');
 });
 
 test('unmounted code actions cannot publish a delayed copy into a remounted page', async ({ page }) => {
@@ -593,18 +600,20 @@ test('customer loyalty and forget failures are recoverable and a successful forg
   await expect(dialog.getByRole('heading', { name: 'Loyalty card', exact: true })).toBeVisible();
   await expect(dialog.getByRole('heading', { name: 'Loyalty card', exact: true })).toBeFocused();
   await expect(page.getByTestId('feedback-events')).toHaveText('1');
-  await dialog.getByRole('button', { name: 'Forget This Customer', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Forget this customer', exact: true }).click();
+  const confirm = page.getByRole('dialog', { name: 'Forget Fixture customer?', exact: true });
   await control(page, 'Hold before merchant write');
-  const forget = dialog.getByRole('button', { name: 'Forget', exact: true });
+  const forget = confirm.getByRole('button', { name: 'Forget', exact: true });
   await forget.focus();
   await forget.evaluate(node => { (node as HTMLButtonElement).click(); (node as HTMLButtonElement).click(); });
   await expect(page.getByTestId('feedback-stage')).toHaveText('before-write');
   await expect(forget).toBeDisabled();
   await expect(forget).toBeFocused();
   await control(page, 'Reject feedback response');
-  await expect(dialog.getByRole('alert')).toHaveText('The customer could not be forgotten. Try again.');
+  await expect(confirm.getByRole('alert')).toHaveText('The customer could not be forgotten. Try again.');
   await expect(forget).toBeFocused();
   await forget.click();
+  await expect(confirm).toHaveCount(0);
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('feedback-customer-count')).toHaveText('1');
   await expect(page.locator('.app-safe-toast')).not.toContainText('could not');
@@ -687,6 +696,9 @@ test('supplementary toasts announce only additions, retain nodes, wrap and expir
   await page.clock.fastForward(4199);
   await expect(region.locator(':scope > div')).toHaveCount(3);
   await page.clock.fastForward(1);
+  // Expired toasts fade out before leaving the region.
+  await expect(region.locator(':scope > div.toast-leave')).toHaveCount(3);
+  await page.clock.fastForward(180);
   await expect(region.locator(':scope > div')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Fourth toast', exact: true })).toBeFocused();
 });

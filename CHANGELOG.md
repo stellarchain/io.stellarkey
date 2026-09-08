@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Kept held-balance recovery available inside the new Private Payments settings flow, with its existing proof-sharing, signing and ledger-confirmation safeguards.
+- Redesigned every dialog for iOS conventions: on phones dialogs present as bottom sheets with a grabber and swipe-to-dismiss that rest above the keyboard, confirmations present as centred alerts that must be answered, and desktop keeps the centred card. Sheets, cards, alerts, menus and toasts now animate out as well as in, Reduce Motion crossfades instead of removing feedback, and the panel and dim finish together.
+- Unified dialog chrome: one busy policy that keeps the close control visible and explains why it is disabled, one footer order (Cancel leading, primary trailing, primary on top when stacked), a leading Back chevron for multi-step flows with stage-aware titles, one body rhythm, one destructive style, and "Discard changes?" before unsaved edits are lost.
+- Reduced haptic and sound feedback to documented meanings: no vibration or sound on opening, closing, Back, tab changes or chips; outcome feedback fires once; sounds are off until turned on.
+- Dialogs now receive keyboard focus themselves on open so assistive technology announces their name before any control; entry-first sheets focus their field.
+- Raised touch targets inside dialogs to 44 px, replaced text-glyph icons with real icons, and added keyboard hints and input modes to dialog fields.
+- Re-baselined the initial, unlocked-wallet and merchant JavaScript release budgets for the shared dialog shell and the static dialog shells that now ship with the wallet so a first open never waits for a chunk; dialog bodies stay lazily loaded and separately counted.
+
 - Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.
 - Made verified Private Payments commitment-cache appends read only new and overlapping records, with atomic checkpoint checks, full history validation during recovery, and compatible migration that preserves existing cache data.
 - Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
@@ -59,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed retired archive-page constants from Private Payments constructors, deployment bindings, manifests, runtime validation, and generated clients now that every archive record occupies its own persistent entry.
 
 ### Fixed
+
+- Preserved pinch zoom and nested-list scrolling in mobile sheets; cancelled or multi-touch drags reset without closing or replaying the entrance animation.
+- Cancelled abandoned sheet-handle presses when the mouse button is released outside, preventing later hover movement from dragging the sheet.
+- Corrected the relay-feedback lab measurement to include its first rendering opportunity without waiting for an unrelated later frame; the 100 ms limit and throttled five-sample check are unchanged.
+- Restored focus to the actual tapped opener after nested sheets close in WebKit, while keeping later keyboard openings independent of earlier pointer activity.
+- Kept tooltips and menus aligned inside both plain mobile sheets and transformed dialog containers.
+- Closing a dialog now preserves its shell and exit geometry until the dim finishes fading, without retaining sensitive content or switching the sheet variant mid-exit.
+- The wallet background is now inert behind dialogs on the lock, onboarding and recovery screens, and the command palette and customer display use the shared dialog shell (focus containment, inert background, Escape).
+- The point-of-sale tip prompt can no longer be closed from a header control while declaring itself undismissable, and destructive actions that previously ran without confirmation (cancelling a live charge, voiding an adjustment, deleting a contact, removing a trustline) now confirm first.
 
 - Corrected merchant contact browser tests to verify retained dialog and action identity and focus after saving changes the dialog's accessible name.
 - Made merchant browser tests wait for settled row feedback and switch enablement before retrying, with controlled checks that early activations cannot duplicate write attempts.
@@ -147,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Cleared imported keys, transaction drafts, account details and balance panels immediately on close while retaining only dialog exit geometry, and revoked cancelled confirmation actions during the exit animation.
 - Revalidated private proof preparation and transaction signing against the wallet session, account, network, RPC and private runtime, including changes while password approval is open. Cancelling local recovery does not release inputs exposed by an earlier proof.
 - Refreshed generated Private Payments development-manifest provenance and dependent pins after the dependency lockfile update, preserving deployment identity, development-only flags, and all proving artifacts.
 - Pinned TOML 4.2.0 for Trezor's nested Stellar SDK 14.2.0 resolvers to fix installed parser prototype pollution and unbounded recursion, with real adapter compatibility tests. Upstream browser prebundles and the remote Trezor popup are outside this override; the remaining elliptic advisory is documented.

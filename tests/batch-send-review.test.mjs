@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(
-  new URL("../src/components/BatchSendModal.tsx", import.meta.url),
+  new URL("../src/components/BatchSendModalBody.tsx", import.meta.url),
   "utf8",
 );
 

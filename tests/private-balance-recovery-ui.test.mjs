@@ -25,14 +25,31 @@ test('the activity check speaks plainly, is named honestly, and reports concrete
   assert.match(recovery, /Restored \$\{restorationProgress\.restoredCount\} of \$\{restorationProgress\.totalCount\} records/);
   assert.match(recovery, /AbortController/);
   assert.match(recovery, /operationRef\.current\?\.abort\(\)/);
-  assert.match(recovery, /<Modal open onClose=\{onClose\} dismissable=\{!working && !recoveryActivity\.signing\}>/);
+  // Recovery is one step of the Private Payments dialog: no shell of its own,
+  // no remount tricks, and a running check keeps that shell busy.
+  const details = read('src/features/private-balance/components/PrivatePaymentsDetails.tsx');
+  assert.match(recovery, /export function PrivateRecoveryContent\(/);
+  assert.doesNotMatch(recovery, /<Modal\b|<ModalHeader\b/);
+  assert.match(recovery, /useReportToOwner\(onBusyChange, working \|\| recoveryActivity\.signing, false\)/);
   assert.match(recovery, /disabled=\{recoveryActivity\.busy\}/);
-  assert.equal([...recovery.matchAll(/<Modal\b/g)].length, 1);
-  assert.equal([...recovery.matchAll(/<ModalHeader\b/g)].length, 1);
+  assert.match(recovery, /<PrivateHeldBalanceRecovery scanWorking=\{working\} onActivityChange=\{setRecoveryActivity\} \/>/);
+  assert.match(details, /<PrivateRecoveryContent onBusyChange=\{onBusyChange\} \/>/);
+  assert.equal([...details.matchAll(/<Modal\b/g)].length, 1);
+  assert.equal([...details.matchAll(/<ModalHeader\b/g)].length, 1);
+  assert.match(details, /busy=\{busy\}/);
   assert.doesNotMatch(recovery, /Suspense|dynamic\(|key=\{/);
   assert.match(recovery, /aria-live="polite"/);
   assert.match(recovery, /every confirmed group advances the saved resume point/i);
   // Vocabulary bans hold: identifiers only behind Technical details. (The
   // `checkpoint` runtime field may appear as code, never as displayed copy.)
   assert.doesNotMatch(recovery, /Merkle|canonical|Last verified page/);
+});
+
+test('held balance shortcut uses the shared settings shell directly at its recovery step', () => {
+  const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
+  const details = read('src/features/private-balance/components/PrivatePaymentsDetails.tsx');
+  assert.match(card, /Recover held balance/);
+  assert.match(card, /initialStep=\{action === 'recovery' \? 'recovery' : 'details'\}/);
+  assert.match(details, /useState<PrivateSettingsStep>\(initialStep\)/);
+  assert.match(details, /initialStep = 'details'/);
 });

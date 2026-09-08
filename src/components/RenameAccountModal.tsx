@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { useWalletIdentity } from "@/hooks/useWallet";
-import { useToast } from "./Toast";
+import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { formatTrezorAddress } from "@/lib/address-display";
-import { MAX_ACCOUNT_LABEL_CHARS } from "@/lib/backup-schema";
 import type { AccountMeta } from "@/lib/types";
-import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Field, Modal, ModalHeader } from "./ui";
+import { LoadingRegion, Modal, ModalHeader } from "./ui";
+
+const RenameAccountModalBody = dynamic(
+  () => import("./RenameAccountModalBody").then((m) => m.RenameAccountModalBody),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Loading" className="min-h-56" />,
+  },
+);
 
 export function RenameAccountModal({
   account,
@@ -16,99 +21,30 @@ export function RenameAccountModal({
   account: AccountMeta | null;
   onClose: () => void;
 }) {
-  if (!account) return null;
-  return <RenameAccountInner key={account.id} account={account} onClose={onClose} />;
-}
-
-function RenameAccountInner({
-  account,
-  onClose,
-}: {
-  account: AccountMeta;
-  onClose: () => void;
-}) {
-  const { renameAccount } = useWalletIdentity();
-  const { toast } = useToast();
-  const [label, setLabel] = useState(account.label);
-  const [error, setError] = useState<string | null>(null);
-
-  function handleSave() {
-    if (label.trim()) {
-      setError(null);
-      try {
-        renameAccount(account.id, label.trim());
-        triggerHaptic("success");
-        toast("Account renamed", "success");
-        onClose();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Account label could not be saved.");
-      }
-    }
-  }
+  const [dirty, setDirty] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <Modal open onClose={onClose}>
+    <Modal
+      open={account !== null}
+      onClose={onClose}
+      initialFocus={() => inputRef.current}
+      dirty={dirty}
+    >
       <ModalHeader
         title="Rename Account"
-        subtitle={`Custom label for ${formatTrezorAddress(account.publicKey)}`}
+        subtitle={account ? `Custom label for ${formatTrezorAddress(account.publicKey)}` : undefined}
         onClose={onClose}
       />
-      <div className="space-y-4 p-4 sm:p-6">
-        {/* Preset & Emoji Chips */}
-        <div>
-          <span className="block text-[11.5px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-            Preset &amp; Emoji
-          </span>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { emoji: "⚡", name: "Trading" },
-              { emoji: "💼", name: "Treasury" },
-              { emoji: "🏦", name: "Savings" },
-              { emoji: "☕", name: "Daily" },
-              { emoji: "🛡️", name: "Vault" },
-              { emoji: "🚀", name: "Moon" },
-            ].map((preset) => (
-              <button
-                key={preset.name}
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setLabel(`${preset.emoji} ${preset.name}`);
-                }}
-                className="chip !py-1 !px-2.5 text-[12px] flex items-center gap-1 shrink-0 hover:bg-white/[0.12]"
-              >
-                <span>{preset.emoji}</span>
-                <span>{preset.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Field label="Account Label">
-          <input
-            className="input text-base sm:text-[14px]"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. 💼 Treasury, ⚡ Trading"
-            maxLength={MAX_ACCOUNT_LABEL_CHARS}
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleSave();
-            }}
-          />
-        </Field>
-
-        {error && <ErrorText message={error} />}
-
-        <div className="grid grid-cols-2 gap-3 pt-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!label.trim()} onClick={handleSave}>
-            Save Label
-          </Button>
-        </div>
-      </div>
+      {account ? (
+        <RenameAccountModalBody
+          key={account.id}
+          account={account}
+          inputRef={inputRef}
+          onClose={onClose}
+          onDirtyChange={setDirty}
+        />
+      ) : null}
     </Modal>
   );
 }

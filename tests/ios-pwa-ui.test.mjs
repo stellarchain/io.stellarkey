@@ -153,7 +153,7 @@ test("iOS installation protects local wallet recovery across storage containers"
 
 test("asset favorites are managed from the asset detail modal, not the Home list", () => {
   const dashboard = read("src/components/Dashboard.tsx");
-  const assetDetail = read("src/components/AssetDetailModal.tsx");
+  const assetDetail = read("src/components/AssetDetailModalBody.tsx");
 
   assert.doesNotMatch(dashboard, /const isPinned = pinnedAssets\.includes\(asset\.key\)/);
   assert.doesNotMatch(dashboard, /aria-pressed=\{isPinned\}/);
@@ -172,10 +172,12 @@ test("asset favorites are managed from the asset detail modal, not the Home list
     /aria-label=\{\s*favorite\s*\?\s*`Remove \$\{asset\.code\} from favorites`\s*:\s*`Mark \$\{asset\.code\} as favorite`\s*\}/,
   );
   assert.match(assetDetail, /onToggleFavorite\(asset\.key\)/);
-  assert.match(assetDetail, /\{favorite \? "★" : "☆"\}/);
+  // The star and check are icons, never text glyphs.
+  assert.match(assetDetail, /<IconStar\s+filled=\{favorite\}/);
+  assert.doesNotMatch(assetDetail, /[★☆✓]/);
   assert.match(assetDetail, /min-h-11/);
   assert.match(assetDetail, />Favorite<\/span>/);
-  assert.match(assetDetail, /\{favorite && \([\s\S]*?✓[\s\S]*?\)\}/);
+  assert.match(assetDetail, /\{favorite && \([\s\S]*?<IconCheck[\s\S]*?\)\}/);
   assert.doesNotMatch(assetDetail, /Favorite asset/);
   assert.doesNotMatch(assetDetail, /Favorites appear first on Home/);
   assert.doesNotMatch(assetDetail, /\{favorite \? "On" : "Off"\}/);

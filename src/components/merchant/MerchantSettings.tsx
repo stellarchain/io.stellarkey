@@ -9,13 +9,12 @@ import {
 } from "@/hooks/useMerchant";
 import { useWalletIdentity } from "@/hooks/useWallet";
 import { formatTrezorAddress } from "@/lib/address-display";
-import { triggerHaptic } from "@/lib/haptics";
 import type {
   SettlementSwapIntent,
   SettlementSweepIntent,
 } from "@/lib/merchant/settlement";
 import type { SettingsSub } from "../SettingsPage";
-import { Button, Modal, ModalHeader } from "../ui";
+import { AlertContent, Button, Modal, ModalFooter, useRetainedForExit } from "../ui";
 import { useToast } from "../Toast";
 import {
   IconFileText,
@@ -62,6 +61,8 @@ export function MerchantSettings({
   const { accounts } = useWalletIdentity();
   const { toast } = useToast();
   const [activeSheet, setActiveSheet] = useState<MerchantSettingsSheet | null>(null);
+  // The sheet keeps rendering its content through the exit animation.
+  const shownSheet = useRetainedForExit(activeSheet);
   const [confirmTurnOff, setConfirmTurnOff] = useState(false);
   const [turningOff, setTurningOff] = useState(false);
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
@@ -90,7 +91,7 @@ export function MerchantSettings({
   }
 
   async function handleTurnOff() {
-    triggerHaptic("warning");
+    if (turningOff) return;
     setTurningOff(true);
     try {
       await setEnabled(false);
@@ -318,7 +319,7 @@ export function MerchantSettings({
           wide
         >
           <MerchantSettingsSheetContent
-            activeSheet={activeSheet}
+            activeSheet={shownSheet}
             onClose={() => setActiveSheet(null)}
             onNavigate={onNavigate}
             onOpenSwap={onOpenSwap}
@@ -328,49 +329,39 @@ export function MerchantSettings({
 
         <Modal
           open={confirmTurnOff}
-          dismissable={!turningOff}
-          onClose={() => {
-            if (!turningOff) setConfirmTurnOff(false);
-          }}
+          onClose={() => setConfirmTurnOff(false)}
+          presentation="alert"
+          busy={turningOff}
+          busyReason="Wait for Merchant Mode to finish turning off."
         >
-          <ModalHeader
+          <AlertContent
             title="Turn off Merchant Mode?"
-            subtitle="The counter disappears, but local records stay intact"
-            onClose={turningOff ? undefined : () => setConfirmTurnOff(false)}
+            message="The counter disappears, but local records stay intact. Payments still go to the same wallet account, and existing orders, catalogue items, reports and settings remain encrypted on this device."
+            actions={
+              <ModalFooter
+                stack
+                primary={
+                  <Button variant="danger" loading={turningOff} onClick={() => void handleTurnOff()}>
+                    Turn off Merchant Mode
+                  </Button>
+                }
+                secondary={
+                  <Button variant="ghost" disabled={turningOff} onClick={() => setConfirmTurnOff(false)}>
+                    Cancel
+                  </Button>
+                }
+              />
+            }
           />
-          <div className="space-y-4 p-4 sm:p-6">
-            <p className="text-[13px] leading-relaxed text-neutral-300">
-              Payments still go to the same wallet account. Existing orders, catalogue items,
-              reports, and settings remain encrypted on this device.
-            </p>
-            <Button
-              variant="danger"
-              className="w-full"
-              loading={turningOff}
-              onClick={() => void handleTurnOff()}
-            >
-              Turn Off Merchant Mode
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full"
-              disabled={turningOff}
-              onClick={() => setConfirmTurnOff(false)}
-            >
-              Cancel
-            </Button>
-          </div>
         </Modal>
       </div>
 
-      {receiptPreviewOpen && receiptPreviewOrder && (
-        <ReceiptSheet
-          open
-          onClose={() => setReceiptPreviewOpen(false)}
-          order={receiptPreviewOrder}
-          transactionHash={receiptPreviewHash}
-        />
-      )}
+      <ReceiptSheet
+        open={receiptPreviewOpen && receiptPreviewOrder !== null}
+        onClose={() => setReceiptPreviewOpen(false)}
+        order={receiptPreviewOrder}
+        transactionHash={receiptPreviewHash}
+      />
     </>
   );
 }

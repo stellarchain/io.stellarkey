@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { FiatValue } from '@/components/FiatValue';
 import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
-import { Button, HashValue } from '@/components/ui';
+import { Button, HashValue, ModalBody, ModalFooter } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
 import { triggerHaptic } from '@/lib/haptics';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
@@ -85,6 +85,7 @@ export function PrivateActionReview({
   confirmLabel,
   onConfirm,
   onBack,
+  backInHeader = false,
   onSelectRelayQuote,
 }: {
   draft: PrivateReviewDraft;
@@ -104,6 +105,8 @@ export function PrivateActionReview({
   confirmLabel: string;
   onConfirm(): void;
   onBack(): void;
+  /** The owning header shows the back control; the footer then carries only the primary. */
+  backInHeader?: boolean;
   onSelectRelayQuote?(quoteId: string): void;
 }) {
   const { asset, publicAddress } = usePrivateBalanceRuntimeData();
@@ -244,8 +247,22 @@ export function PrivateActionReview({
             : progressLabel(progress ?? 'checking-chain')
         : '';
 
+  // Cancelling a running relay chain is a footer action even when the header
+  // owns Back: it must stay reachable while the shell is not busy.
+  const cancellingChain = working && Boolean(chained?.relayApproval);
+  const secondaryAction = cancellingChain || !backInHeader ? (
+    <Button
+      type="button"
+      variant="ghost"
+      disabled={working && !chained?.relayApproval}
+      onClick={onBack}
+    >
+      {cancellingChain ? 'Cancel Chain' : 'Back'}
+    </Button>
+  ) : undefined;
+
   return (
-    <div className="space-y-3 p-4 sm:p-6">
+    <ModalBody gap={3}>
       <span aria-live="polite" className="sr-only">{liveStatus}</span>
       <div className="flex flex-col items-center pb-1 text-center">
         <p className="display-h text-[36px] text-white">{fmtAmount(draft.amount)}</p>
@@ -445,30 +462,19 @@ export function PrivateActionReview({
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 pt-1">
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={working && !chained?.relayApproval}
-          onClick={() => {
-            triggerHaptic('selection');
-            onBack();
-          }}
-        >
-          {working && chained?.relayApproval ? 'Cancel Chain' : 'Back'}
-        </Button>
-        <Button
-          type="button"
-          loading={working}
-          disabled={working || settling || !ready || (preparing && !chained)}
-          onClick={() => {
-            triggerHaptic('selection');
-            onConfirm();
-          }}
-        >
-          {disclosure ? 'Authorize Proof Sharing' : confirmLabel}
-        </Button>
-      </div>
-    </div>
+      <ModalFooter
+        secondary={secondaryAction}
+        primary={
+          <Button
+            type="button"
+            loading={working}
+            disabled={working || settling || !ready || (preparing && !chained)}
+            onClick={onConfirm}
+          >
+            {disclosure ? 'Authorize Proof Sharing' : confirmLabel}
+          </Button>
+        }
+      />
+    </ModalBody>
   );
 }

@@ -1174,7 +1174,7 @@ test("wallet submission tracking is shared, persistent, and preserves unknown st
 test("active transaction flows render status unknown without claiming success", () => {
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
   const batch = readFileSync(
-    new URL("../src/components/BatchSendModal.tsx", import.meta.url),
+    new URL("../src/components/BatchSendModalBody.tsx", import.meta.url),
     "utf8",
   );
   const swap = readFileSync(new URL("../src/components/SwapPage.tsx", import.meta.url), "utf8");
@@ -1183,7 +1183,7 @@ test("active transaction flows render status unknown without claiming success", 
     "utf8",
   );
   const multisig = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
 
@@ -1199,23 +1199,24 @@ test("active transaction flows render status unknown without claiming success", 
 
 test("the send dialog cannot be dismissed while signing or broadcasting", () => {
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
-  assert.match(send, /onBusyChange\(stage === "sending"\)/);
-  assert.match(send, /<Modal open onClose=\{requestClose\} wide dismissable=\{!surfaceBusy\}>/);
-  assert.match(send, /closeDisabled=\{surfaceBusy\}/);
+  assert.match(send, /onBusyChange\(stage === "sending" \|\| preparingReview\)/);
+  // One busy policy: the shell blocks Escape, backdrop, drag and the close control.
+  assert.match(send, /<Modal\s+open=\{open\}\s+onClose=\{requestClose\}\s+wide\s+busy=\{surfaceBusy\}/);
+  assert.doesNotMatch(send, /dismissable=|closeDisabled=|onClose=\{surfaceBusy \?/);
   assert.match(send, /if \(next === sendMode \|\| surfaceBusy\) return/);
   assert.equal((send.match(/<ModalHeader\b/g) ?? []).length, 1);
-  assert.match(send, /<ModalHeader\s+title="Send Payment"[\s\S]*?onClose=\{requestClose\}[\s\S]*?closeDisabled=\{surfaceBusy\}/);
+  assert.match(send, /<ModalHeader\s+title=\{header\?\.title \?\? "Send Payment"\}[\s\S]*?onClose=\{requestClose\}/);
 });
 
 test("every locked transaction flow consumes shared confirmed and failed resolutions", () => {
   const componentNames = [
     "SendModal.tsx",
-    "BatchSendModal.tsx",
+    "BatchSendModalBody.tsx",
     "SwapPage.tsx",
     "SettingsPage.tsx",
     "AddAssetModal.tsx",
-    "AssetDetailModal.tsx",
-    "MultiSigStudioModal.tsx",
+    "AssetDetailModalBody.tsx",
+    "MultiSigStudioModalBody.tsx",
   ];
   for (const name of componentNames) {
     const source = readFileSync(new URL(`../src/components/${name}`, import.meta.url), "utf8");
@@ -1225,7 +1226,7 @@ test("every locked transaction flow consumes shared confirmed and failed resolut
 
   const send = readFileSync(new URL("../src/components/SendModal.tsx", import.meta.url), "utf8");
   const batch = readFileSync(
-    new URL("../src/components/BatchSendModal.tsx", import.meta.url),
+    new URL("../src/components/BatchSendModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(send, /Payment Confirmed/);
@@ -1240,7 +1241,7 @@ test("the selective airdrop flow cannot immediately resubmit a pending claim", (
     "utf8",
   );
   const review = readFileSync(
-    new URL("../src/components/ClaimableBalancesModal.tsx", import.meta.url),
+    new URL("../src/components/ClaimableBalancesModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(dashboard, /disabled=\{pendingAirdropClaim\}/);
@@ -1357,7 +1358,7 @@ test("shared transaction tracking blocks an exact envelope across modal remounts
   );
 
   const component = readFileSync(
-    new URL("../src/components/MultiSigStudioModal.tsx", import.meta.url),
+    new URL("../src/components/MultiSigStudioModalBody.tsx", import.meta.url),
     "utf8",
   );
   assert.match(component, /envelopeSubmissionStatus\(xdrInput, network\)/);

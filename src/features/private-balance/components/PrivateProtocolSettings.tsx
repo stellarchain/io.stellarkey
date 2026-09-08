@@ -4,10 +4,11 @@ import { useState, type ReactNode } from 'react';
 import {
   IconCheck,
   IconChevronDown,
+  IconFileText,
   IconRefresh,
   IconTrash,
 } from '@/components/icons';
-import { Button, Field, Modal, ModalHeader, Notice, Toggle } from '@/components/ui';
+import { Button, Field, ModalBody, ModalFooter, Notice, Toggle } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -16,6 +17,7 @@ import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { PrivateAssetRegistryAdmin } from './PrivateAssetRegistryAdmin';
 import { PrivateRelaySettings } from './PrivateRelaySettings';
 import { PrivateOutgoingHistorySettings } from './PrivateOutgoingHistorySettings';
+import { useReportToOwner } from './useReportToOwner';
 
 function fingerprint(value: string | null): string {
   if (!value) return 'Not recorded';
@@ -87,12 +89,21 @@ function DisclosureButton({
   );
 }
 
-export function PrivateProtocolSettings({
+/**
+ * Advanced privacy renders as a step inside the Private Payments dialog. The
+ * owning shell shows its header, stays busy during verification or removal,
+ * and guards dismissal while relay settings hold unfinished edits.
+ */
+export function PrivateProtocolSettingsContent({
   onClose,
   onRemoved,
+  onBusyChange,
+  onDirtyChange,
 }: {
   onClose(): void;
   onRemoved?(): void;
+  onBusyChange?(busy: boolean): void;
+  onDirtyChange?(dirty: boolean): void;
 }) {
   const { retryRuntime } = usePrivateBalanceRuntime();
   const {
@@ -123,6 +134,7 @@ export function PrivateProtocolSettings({
   const [showTechnical, setShowTechnical] = useState(false);
   const [showRemoval, setShowRemoval] = useState(false);
   const [confirmation, setConfirmation] = useState('');
+  useReportToOwner(onBusyChange, working !== null, false);
 
   const verify = async () => {
     setWorking('verify');
@@ -157,16 +169,10 @@ export function PrivateProtocolSettings({
     : 'Not available';
 
   return (
-    <Modal open onClose={onClose} dismissable={!working} wide>
-      <ModalHeader
-        title="Advanced privacy"
-        subtitle="Verification and data stored on this device"
-        onClose={working ? undefined : onClose}
-      />
-      <div className="space-y-5 p-4 sm:p-6">
+    <ModalBody gap={5}>
         <PrivateAssetRegistryAdmin />
 
-        <PrivateRelaySettings />
+        <PrivateRelaySettings onDirtyChange={onDirtyChange} />
 
         <PrivateOutgoingHistorySettings
           scope={JSON.stringify([publicAddress, deployment.networkId, deployment.poolContractId, deployment.manifestHash])}
@@ -179,7 +185,7 @@ export function PrivateProtocolSettings({
           <h3 id="private-maintenance-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
             Maintenance
           </h3>
-          <div className="ios-group overflow-hidden">
+          <div className="list-group">
             <button
               type="button"
               disabled={working !== null}
@@ -195,7 +201,7 @@ export function PrivateProtocolSettings({
                   Check the on-chain registry for newly admitted assets and status changes.
                 </span>
               </span>
-              <span className="shrink-0 text-[12px] font-semibold text-[#0A84FF]">Refresh</span>
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">Refresh</span>
             </button>
             <button
               type="button"
@@ -212,7 +218,7 @@ export function PrivateProtocolSettings({
                   Recheck your private history against the network from scratch.
                 </span>
               </span>
-              <span className="shrink-0 text-[12px] font-semibold text-[#0A84FF]">
+              <span className="shrink-0 text-[13px] font-semibold text-[#0A84FF]">
                 {working === 'verify' ? 'Checking' : 'Run'}
               </span>
             </button>
@@ -233,7 +239,7 @@ export function PrivateProtocolSettings({
           <h3 id="private-local-state-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
             On this device
           </h3>
-          <dl className="ios-group overflow-hidden">
+          <dl className="list-group">
             <SettingsRow label="Encrypted local data" value={bytes(encryptedStorageBytes)} />
             <SettingsRow label="Primary RPC" value={selectedRpc ?? 'Not configured'} mono />
             <SettingsRow label="Witness RPC" value={witnessRpc ?? 'Not configured'} mono />
@@ -244,7 +250,7 @@ export function PrivateProtocolSettings({
           <h3 id="private-network-checks-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
             Network checks
           </h3>
-          <div className="ios-group overflow-hidden">
+          <div className="list-group">
             <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-[13.5px] font-semibold text-white">Use witness during routine checks</p>
@@ -264,9 +270,9 @@ export function PrivateProtocolSettings({
           </div>
         </section>
 
-        <section aria-label="Advanced controls" className="ios-group overflow-hidden">
+        <section aria-label="Advanced controls" className="list-group">
           <DisclosureButton
-            icon={<span className="font-mono text-[12px] font-bold">#</span>}
+            icon={<IconFileText size={16} />}
             title="Technical details"
             subtitle="Versions and cryptographic identifiers"
             expanded={showTechnical}
@@ -287,7 +293,7 @@ export function PrivateProtocolSettings({
           ) : null}
         </section>
 
-        <section className="ios-group overflow-hidden">
+        <section className="list-group">
           <DisclosureButton
             icon={<IconTrash size={16} />}
             title="Remove private data from this device"
@@ -311,36 +317,41 @@ export function PrivateProtocolSettings({
                 <input
                   className="input text-base sm:text-[14px]"
                   autoComplete="off"
+                  autoCapitalize="characters"
+                  enterKeyHint="done"
                   value={confirmation}
                   onChange={event => setConfirmation(event.target.value)}
                 />
               </Field>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={working !== null}
-                  onClick={() => {
-                    setShowRemoval(false);
-                    setConfirmation('');
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  loading={working === 'remove'}
-                  disabled={working !== null || confirmation !== 'REMOVE PRIVATE BALANCE'}
-                  onClick={() => void remove()}
-                >
-                  Remove from this device
-                </Button>
-              </div>
+              <ModalFooter
+                secondary={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={working !== null}
+                    onClick={() => {
+                      setShowRemoval(false);
+                      setConfirmation('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                }
+                primary={
+                  <Button
+                    type="button"
+                    variant="danger"
+                    loading={working === 'remove'}
+                    disabled={working !== null || confirmation !== 'REMOVE PRIVATE BALANCE'}
+                    onClick={() => void remove()}
+                  >
+                    Remove from this device
+                  </Button>
+                }
+              />
             </div>
           ) : null}
         </section>
-      </div>
-    </Modal>
+    </ModalBody>
   );
 }

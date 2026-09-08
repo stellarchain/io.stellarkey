@@ -18,7 +18,20 @@ import {
 } from "@/lib/merchant/routing";
 import type { Charge, ChargeQuote, MatchedPayment } from "@/lib/merchant/types";
 import { useToast } from "../Toast";
-import { CopyButton, HashValue, Modal, ModalHeader, Notice, SegmentedControl, Spinner } from "../ui";
+import {
+  Button,
+  ConfirmModal,
+  CopyButton,
+  HashValue,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  SegmentedControl,
+  Spinner,
+  useRetainedForExit,
+} from "../ui";
 import { IconAlert, IconCheck, IconRefresh } from "../icons";
 
 /** Seconds below which the countdown turns amber. */
@@ -53,11 +66,42 @@ function difference(
 }
 
 export function ChargeSheet({ charge, onClose }: { charge: Charge | null; onClose: () => void }) {
-  if (!charge) return null;
-  return <ChargeSheetInner charge={charge} onClose={onClose} />;
+  // The charge stays rendered through the exit; a live request keeps the shell
+  // busy so it is never dismissed by accident (see the note in the body).
+  const shown = useRetainedForExit(charge);
+  const [busyReason, setBusyReason] = useState<string | null>(null);
+  return (
+    <Modal
+      open={charge !== null}
+      onClose={onClose}
+      wide
+      busy={busyReason !== null}
+      busyReason={busyReason ?? undefined}
+    >
+      {shown && (
+        <ChargeSheetInner
+          key={shown.id}
+          charge={shown}
+          onClose={onClose}
+          onBusyChange={setBusyReason}
+        />
+      )}
+    </Modal>
+  );
 }
 
-function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => void }) {
+const LIVE_REQUEST_BUSY = "A live payment request is showing. Cancel it or wait for it to settle.";
+const VOIDING_BUSY = "Wait for the charge to be cancelled before closing.";
+
+function ChargeSheetInner({
+  charge,
+  onClose,
+  onBusyChange,
+}: {
+  charge: Charge;
+  onClose: () => void;
+  onBusyChange: (reason: string | null) => void;
+}) {
   const { payUriFor, voidCharge, orderFor } = useMerchantRecords();
   const { settings } = useMerchantConfiguration();
   const { watchedLedger, watchError, pollNow } = useMerchantStatus();
@@ -67,6 +111,8 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const [requestTransport, setRequestTransport] =
     useState<MerchantPaymentTransport>("muxed");
   const [qr, setQr] = useState<{ uri: string; dataUrl: string } | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const now = useLiveNow(LIVE_SECOND_MS);
 
   const quote =
@@ -84,6 +130,35 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
   const awaiting = charge.status === "awaiting";
   const requestAvailable = awaiting && !receivingAccountChanged && payUri !== null;
   const wakeLock = useWakeLock(requestAvailable);
+
+  /* A request in flight is never dismissed by accident: Escape, the backdrop and
+     the header cross are all held, because clearTicket() has already emptied the
+     till and the QR would be the only way back to a customer who is mid-payment.
+     Both ways out of an open charge are spelled out at the foot of the sheet. */
+  const busyReason = voiding ? VOIDING_BUSY : requestAvailable ? LIVE_REQUEST_BUSY : null;
+  useEffect(() => {
+    onBusyChange(busyReason);
+    return () => onBusyChange(null);
+  }, [busyReason, onBusyChange]);
+
+  async function cancelCharge() {
+    if (voiding) return;
+    setVoiding(true);
+    try {
+      await voidCharge(charge.id);
+      setConfirmingCancel(false);
+      triggerHaptic("success");
+      onClose();
+    } catch (error) {
+      setConfirmingCancel(false);
+      triggerHaptic("error");
+      toast(error instanceof Error ? error.message : "The charge could not be cancelled.", "error", {
+        silent: true,
+      });
+    } finally {
+      setVoiding(false);
+    }
+  }
   const seconds = secondsRemaining(charge, now);
   const urgent = seconds < URGENT_SECONDS;
   const gap = payment && paidQuote ? difference(payment, paidQuote) : null;
@@ -123,13 +198,15 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
     previousStatus.current = charge.status;
     if (charge.status === "paid") {
       triggerHaptic("success");
-      toast("Payment received", "success");
+      toast("Payment received", "success", { silent: true });
     } else if (charge.status === "expired") {
       triggerHaptic("warning");
-      toast("Charge expired", "error");
+      toast("Charge expired", "error", { silent: true });
     } else if (charge.status === "underpaid" || charge.status === "overpaid") {
       triggerHaptic("warning");
-      toast(charge.status === "underpaid" ? "Payment came up short" : "Payment came in over", "error");
+      toast(charge.status === "underpaid" ? "Payment came up short" : "Payment came in over", "error", {
+        silent: true,
+      });
     }
   }, [charge.status, toast]);
 
@@ -182,18 +259,14 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         : "#0A84FF";
 
   return (
-    /* A request in flight is never dismissed by accident: Escape, the backdrop and
-       the header cross all go, because clearTicket() has already emptied the till
-       and the QR would be the only way back to a customer who is mid-payment. Both
-       ways out of an open charge are spelled out at the foot of the sheet. */
-    <Modal open onClose={onClose} wide dismissable={!requestAvailable}>
+    <>
       <ModalHeader
         title={title}
         subtitle={order ? `Order ${order.number} · ${charge.reference}` : charge.reference}
-        onClose={requestAvailable ? undefined : onClose}
+        onClose={onClose}
       />
 
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         {/* ---------- what is owed ---------- */}
         <div className="text-center">
           <p className="mono text-[34px] font-semibold leading-none text-white">
@@ -271,13 +344,11 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
         </div>
 
         {requestAvailable && (wakeLock.state === "error" || wakeLock.state === "released") && (
-          <button
-            type="button"
-            onClick={wakeLock.retry}
-            className="mx-auto flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium text-neutral-500"
-          >
-            Screen may sleep <span className="text-[#0A84FF]">Retry</span>
-          </button>
+          <div className="flex justify-center">
+            <Button variant="ghost" className="btn-sm min-h-11" onClick={wakeLock.retry}>
+              Screen may sleep · Retry
+            </Button>
+          </div>
         )}
 
         {requestAvailable && watchError && (
@@ -293,16 +364,9 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
                   The charge is still valid. The customer can pay now, and the payment will be
                   picked up as soon as the connection comes back.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    void pollNow();
-                  }}
-                  className="btn btn-secondary btn-sm mt-2.5"
-                >
+                <Button variant="secondary" className="mt-2.5 min-h-11" onClick={() => void pollNow()}>
                   <IconRefresh size={13} /> Check again
-                </button>
+                </Button>
               </div>
             </div>
           </Notice>
@@ -371,46 +435,26 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
 
             {/* Leaving and cancelling must not read alike. One frees the till for
                 the next customer, the other kills the request the customer is
-                looking at, so each says what it does to the charge. */}
-            <div className="space-y-3 border-t border-white/[0.08] pt-4">
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("light");
-                    onClose();
-                  }}
-                  className="btn btn-ghost w-full"
-                >
-                  Leave it running
-                </button>
-                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-neutral-400">
-                  Still watching · find it in Orders. The till is free for the next customer, and
-                  the payment files itself against this order when it lands.
-                </p>
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    triggerHaptic("warning");
-                    try {
-                      await voidCharge(charge.id);
-                      onClose();
-                    } catch (error) {
-                      toast(error instanceof Error ? error.message : "The charge could not be cancelled.", "error");
-                    }
-                  }}
-                  className="btn btn-danger w-full"
-                >
-                  Cancel charge
-                </button>
-                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-neutral-500">
-                  Ends the request. Anything paid against this payment route afterwards arrives in
-                  the unmatched tray instead.
-                </p>
-              </div>
+                looking at, so the copy says what each does to the charge. */}
+            <div className="border-t border-white/[0.08]">
+              <ModalFooter
+                stack
+                primary={
+                  <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
+                    Cancel charge
+                  </Button>
+                }
+                secondary={
+                  <Button variant="ghost" onClick={onClose}>
+                    Leave it running
+                  </Button>
+                }
+              />
+              <p className="mt-3 text-center text-[12px] leading-relaxed text-neutral-400">
+                Leaving keeps it watching · find it in Orders. The till is free for the next
+                customer, and the payment files itself against this order when it lands.
+                Cancelling ends the request.
+              </p>
             </div>
           </div>
         )}
@@ -429,24 +473,13 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
                   : "The saved charge cannot produce a complete payment request. Cancel it and ring up a replacement before asking the customer to pay."}
               </p>
             </Notice>
-            <button
-              type="button"
-              onClick={async () => {
-                triggerHaptic("warning");
-                try {
-                  await voidCharge(charge.id);
-                  onClose();
-                } catch (error) {
-                  toast(
-                    error instanceof Error ? error.message : "The charge could not be cancelled.",
-                    "error",
-                  );
-                }
-              }}
-              className="btn btn-danger w-full"
-            >
-              Cancel charge
-            </button>
+            <ModalFooter
+              primary={
+                <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
+                  Cancel charge
+                </Button>
+              }
+            />
           </div>
         )}
 
@@ -551,14 +584,30 @@ function ChargeSheetInner({ charge, onClose }: { charge: Charge; onClose: () => 
 
         {/* One way out of every closed state, so the sheet never dead-ends. */}
         {!awaiting && (
-          <button type="button" onClick={onClose} className="btn btn-primary w-full">
-            {charge.status === "paid" || charge.status === "expired"
-              ? "New charge"
-              : "Back to the till"}
-          </button>
+          <ModalFooter
+            primary={
+              <Button onClick={onClose}>
+                {charge.status === "paid" || charge.status === "expired"
+                  ? "New charge"
+                  : "Back to the till"}
+              </Button>
+            }
+          />
         )}
-      </div>
-    </Modal>
+      </ModalBody>
+
+      <ConfirmModal
+        open={confirmingCancel}
+        title="Cancel this charge?"
+        message="Ends the request the customer is looking at. Anything paid against this payment route afterwards arrives in the unmatched tray instead."
+        confirmLabel="Cancel charge"
+        cancelLabel="Keep it"
+        destructive
+        busy={voiding}
+        onClose={() => setConfirmingCancel(false)}
+        onConfirm={() => void cancelCharge()}
+      />
+    </>
   );
 }
 

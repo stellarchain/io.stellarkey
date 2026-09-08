@@ -91,7 +91,10 @@ test('Add uses Public for trustlines and Private for deposits in one mode shell'
   assert.equal([...shell.matchAll(/<Modal\b/g)].length, 1);
   assert.equal([...publicSurface.matchAll(/<Modal\b/g)].length, 0);
   assert.match(publicAdd, /export function AddAssetPublicPanel/);
-  assert.match(publicAdd, /embedded\?: boolean/);
+  // The public panel is always embedded: it reports its header to the shell
+  // instead of rendering its own.
+  assert.match(publicAdd, /onHeaderChange\?\(header: AddAssetHeader \| null\): void;/);
+  assert.doesNotMatch(publicSurface, /<ModalHeader\b/);
   assert.match(privateAdd, /embedded\?: boolean/);
   assert.match(privateAdd, /PrivateAssetSelector/);
   assert.match(privateAdd, /onBeforeLeaveChange\?:/);
@@ -110,8 +113,8 @@ test('Add switches modes with the familiar tabs without replacing the modal', ()
   const add = read('src/components/AddAssetModalShell.tsx');
 
   assert.match(add, /<Tabs/);
-  assert.match(add, /<Modal open onClose=\{requestClose\} wide dismissable=\{!surfaceBusy\}>/);
-  assert.match(add, /closeDisabled=\{surfaceBusy\}/);
+  assert.match(add, /<Modal\s+open=\{open\}\s+onClose=\{requestClose\}\s+wide\s+busy=\{surfaceBusy\}/);
+  assert.doesNotMatch(add, /dismissable=|closeDisabled=/);
   assert.doesNotMatch(add, /SegmentedControl/);
   assert.doesNotMatch(add, /function AddModeSwitch/);
   assert.doesNotMatch(add, /modeTarget/);

@@ -56,8 +56,9 @@ import {
   getUnitPrice,
   type MarketSamples,
 } from "@/lib/prices";
+import { MOTION_FAST_DURATION_MS } from "@/lib/motion";
+import type { PrivateFlowHeader } from "@/features/private-balance/components/useReportToOwner";
 import { aggregatePortfolio, portfolioSnapshotKey } from "@/lib/portfolio";
-import { playTapSound } from "@/lib/sounds";
 import { activityAssetPresentation } from "@/lib/transaction-intent";
 import { pendingTransactionPresentation } from "@/lib/submission";
 import {
@@ -82,7 +83,35 @@ import type { NetworkKey } from "@/lib/stellar";
 import type { SettingsSub } from "./SettingsPage";
 import type { Contact } from "@/lib/contacts";
 import { FiatValue } from "./FiatValue";
-import { Button, CopyButton, Dropdown, Modal, ModalHeader, NetworkBadge, Select, Spinner, Tooltip } from "./ui";
+import {
+  Button,
+  CopyButton,
+  Dropdown,
+  ErrorText,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  NetworkBadge,
+  Select,
+  Spinner,
+  Tooltip,
+  useMountedThroughExit, useRetainedForExit,
+  LoadingRegion,
+} from "./ui";
+import { AddAccountModal } from "./AddAccountModal";
+import { BackupWizardModal } from "./BackupWizardModal";
+import { MultiSigStudioModal } from "./MultiSigStudioModal";
+import { ClaimableBalancesModal } from "./ClaimableBalancesModal";
+import { AssetDetailModal } from "./AssetDetailModal";
+import { BatchSendModal } from "./BatchSendModal";
+import { CommandPalette } from "./CommandPalette";
+import { TxDetailModal } from "./TxDetailModal";
+import { KeyboardShortcutsModal } from "./KeyboardShortcutsModal";
+import { CurrencyConverterModal } from "./CurrencyConverterModal";
+import { NetworkStatsModal } from "./NetworkStatsModal";
+import { RenameAccountModal } from "./RenameAccountModal";
+import { SetupWizard } from "./merchant/SetupWizard";
 import { AccountMark } from "./AccountMark";
 import { AssetAvatar } from "./AssetAvatar";
 import { PrivateShieldNotch } from "./PrivateShieldNotch";
@@ -144,23 +173,13 @@ import {
   decodeContactAddress,
 } from "@/lib/brand";
 
+/** Must match `--motion-duration-fast` in `globals.css`: the privacy shield's fade-out. */
+const PRIVACY_SHIELD_FADE_MS = MOTION_FAST_DURATION_MS;
+
 const SettingsPage = dynamic(() => import("./SettingsPage").then((m) => m.SettingsPage), { ssr: false });
-const AddAccountModal = dynamic(() => import("./AddAccountModal").then((m) => m.AddAccountModal), { ssr: false });
 const AddressBookPage = dynamic(() => import("./AddressBookPage").then((m) => m.AddressBookPage), { ssr: false });
-const BackupWizardModal = dynamic(() => import("./BackupWizardModal").then((m) => m.BackupWizardModal), { ssr: false });
-const MultiSigStudioModal = dynamic(() => import("./MultiSigStudioModal").then((m) => m.MultiSigStudioModal), { ssr: false });
-const ClaimableBalancesModal = dynamic(() => import("./ClaimableBalancesModal").then((m) => m.ClaimableBalancesModal), { ssr: false });
-const AssetDetailModal = dynamic(() => import("./AssetDetailModal").then((m) => m.AssetDetailModal), { ssr: false });
-const BatchSendModal = dynamic(() => import("./BatchSendModal").then((m) => m.BatchSendModal), { ssr: false });
-const CommandPalette = dynamic(() => import("./CommandPalette").then((m) => m.CommandPalette), { ssr: false });
 const SwapPage = dynamic(() => import("./SwapPage").then((m) => m.SwapPage), { ssr: false });
-const TxDetailModal = dynamic(() => import("./TxDetailModal").then((m) => m.TxDetailModal), { ssr: false });
-const KeyboardShortcutsModal = dynamic(() => import("./KeyboardShortcutsModal").then((m) => m.KeyboardShortcutsModal), { ssr: false });
-const CurrencyConverterModal = dynamic(() => import("./CurrencyConverterModal").then((m) => m.CurrencyConverterModal), { ssr: false });
-const NetworkStatsModal = dynamic(() => import("./NetworkStatsModal").then((m) => m.NetworkStatsModal), { ssr: false });
-const RenameAccountModal = dynamic(() => import("./RenameAccountModal").then((m) => m.RenameAccountModal), { ssr: false });
 const MerchantPage = dynamic(() => import("./merchant/MerchantPage").then((m) => m.MerchantPage), { ssr: false });
-const SetupWizard = dynamic(() => import("./merchant/SetupWizard").then((m) => m.SetupWizard), { ssr: false });
 const PrivateBalanceAssetRow = dynamic(
   () =>
     import("@/features/private-balance/components/PrivateBalanceAssetRow").then(
@@ -180,11 +199,11 @@ const PrivateAssetDetailModal = dynamic(
   ),
   { ssr: false },
 );
-const WithdrawPrivate = dynamic(
+const WithdrawPrivateFlow = dynamic(
   () => import("@/features/private-balance/components/WithdrawPrivate").then(
-    (module) => module.WithdrawPrivate,
+    (module) => module.WithdrawPrivateFlow,
   ),
-  { ssr: false },
+  { ssr: false, loading: () => <LoadingRegion label="Loading private withdrawal" /> },
 );
 const PrivateBalanceSetup = dynamic(
   () => import("@/features/private-balance/components/PrivateBalanceSetup").then(
@@ -437,6 +456,15 @@ export function Dashboard() {
   const [privateWithdrawDeploymentId, setPrivateWithdrawDeploymentId] = useState<string | null>(null);
   const [privateWithdrawAttempt, setPrivateWithdrawAttempt] = useState(0);
   const [privateWithdrawTimedOut, setPrivateWithdrawTimedOut] = useState(false);
+  // One dialog hosts the private withdrawal from preparation through submission.
+  const [privateWithdrawWorking, setPrivateWithdrawWorking] = useState(false);
+  const [privateWithdrawDirty, setPrivateWithdrawDirty] = useState(false);
+  const [privateWithdrawHeader, setPrivateWithdrawHeader] = useState<PrivateFlowHeader | null>(null);
+  const [privateWithdrawCloseHandler, setPrivateWithdrawCloseHandler] = useState<(() => void) | null>(null);
+  const reportPrivateWithdrawCloseHandler = useCallback((handler: (() => void) | null) => {
+    setPrivateWithdrawCloseHandler(() => handler);
+  }, []);
+  const closePrivateWithdraw = useCallback(() => setPrivateWithdrawDeploymentId(null), []);
   const [privateSetupOpen, setPrivateSetupOpen] = useState(false);
   const [batchSendOpen, setBatchSendOpen] = useState(false);
   const [sendPrefill, setSendPrefill] = useState<SendPrefill | null>(null);
@@ -579,11 +607,36 @@ export function Dashboard() {
   const [backupWizardOpen, setBackupWizardOpen] = useState(false);
   const [multisigOpen, setMultisigOpen] = useState(false);
   const [appHidden, setAppHidden] = useState(false);
+  // The shield appears instantly and leaves with a short fade.
+  const [shieldFading, setShieldFading] = useState(false);
+  const [prevAppHidden, setPrevAppHidden] = useState(appHidden);
+  if (appHidden !== prevAppHidden) {
+    setPrevAppHidden(appHidden);
+    setShieldFading(!appHidden);
+  }
+  useEffect(() => {
+    if (!shieldFading) return;
+    const timer = window.setTimeout(() => setShieldFading(false), PRIVACY_SHIELD_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [shieldFading]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Mounted on the shell, not inside Settings: turning Merchant Mode on
   // re-renders the toggle's own row, and a wizard owned by that row would be
   // torn down in the same pass that asked for it.
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  // Lazily loaded feature dialogs mount on first open and stay through their exit.
+  const setupWizardMounted = useMountedThroughExit(setupWizardOpen);
+  // The wizard's hooks need the merchant provider, so an abandoned setup
+  // releases the runtime only once the wizard has finished leaving.
+  const releaseRuntimeAfterWizardExitRef = useRef(false);
+  useEffect(() => {
+    if (setupWizardMounted || !releaseRuntimeAfterWizardExitRef.current) return;
+    releaseRuntimeAfterWizardExitRef.current = false;
+    releaseRuntime();
+  }, [releaseRuntime, setupWizardMounted]);
+  const privateSetupMounted = useMountedThroughExit(privateSetupOpen);
+  const privateAssetMounted = useMountedThroughExit(privateAssetOpen);
+  const installDialogShown = useRetainedForExit(installDialog);
   // The shift sheet lives in MerchantPage; the shell holds the flag so the
   // desktop sidebar and the command palette can open that same sheet.
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -903,6 +956,8 @@ export function Dashboard() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        // A dialog holds focus: app-level launchers stay quiet until it closes.
+        if (document.querySelector('[data-modal-backdrop][data-overlay-state="open"]:not([aria-label="Command palette"])')) return;
         setPaletteOpen((o) => !o);
       } else if ((e.metaKey || e.ctrlKey) && e.key === "1") {
         e.preventDefault();
@@ -1110,8 +1165,8 @@ export function Dashboard() {
     if (item.amount === null) return null;
     const amount = parseFloat(item.amount);
     if (!Number.isFinite(amount)) return null;
+    if (!item.assetCode) return null;
     const code = item.assetCode;
-    if (!code) return null;
     const unit = getUnitPrice(
       code,
       item.assetIssuer,
@@ -1521,10 +1576,13 @@ export function Dashboard() {
       className="app-safe-dashboard relative z-10 min-h-screen w-full min-w-0 md:flex md:h-screen md:overflow-hidden"
     >
       {/* Privacy Shield */}
-      {appHidden && typeof document !== "undefined" && createPortal(
+      {(appHidden || shieldFading) && typeof document !== "undefined" && createPortal(
         <div
           data-privacy-shield
-          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/95 backdrop-blur-2xl"
+          data-state={appHidden ? "on" : "leaving"}
+          className={`fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/95 backdrop-blur-2xl ${
+            appHidden ? "" : "pointer-events-none animate-[fadeOut_var(--motion-duration-fast)_linear_both]"
+          }`}
         >
           <div className="flex flex-col items-center gap-3 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/10 text-white shadow-2xl">
@@ -1554,7 +1612,7 @@ export function Dashboard() {
 
                                     {/* Apple Native iPadOS / macOS Desktop Sidebar (Hidden on Mobile) */}
       <aside
-        className={`app-safe-sticky-top hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky h-screen transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`app-safe-sticky-top hidden md:flex flex-col shrink-0 border-r border-white/10 bg-white/[0.02] backdrop-blur-3xl sticky h-screen transition-[width] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.32,0.72,0,1)] ${
           sidebarCollapsed ? "w-[72px]" : "w-[260px] lg:w-[280px]"
         }`}
       >
@@ -1637,7 +1695,7 @@ export function Dashboard() {
                   <button
                     type="button"
                     onClick={() => switchMode(mode === "merchant" ? "wallet" : "merchant")}
-                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-all hover:bg-white/[0.08] hover:text-white"
+                    className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-neutral-300 transition-colors hover:bg-white/[0.08] hover:text-white"
                     aria-label={mode === "merchant" ? "Switch to Wallet" : "Switch to Merchant"}
                   >
                     {mode === "merchant" ? (
@@ -1660,7 +1718,7 @@ export function Dashboard() {
                   triggerHaptic("selection");
                   setPaletteOpen(true);
                 }}
-                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-all mb-2 border border-white/5"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium text-neutral-400 bg-white/[0.04] hover:bg-white/[0.08] hover:text-white transition-colors mb-2 border border-white/5"
               >
                 <div className="flex items-center gap-2">
                   <IconSearch size={15} />
@@ -1679,7 +1737,7 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Point of Sale (⌘6)" : undefined}
                     onClick={() => switchTab("merchant")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "merchant"
@@ -1708,7 +1766,7 @@ export function Dashboard() {
                         : "Orders"
                       : undefined}
                     onClick={() => switchTab("orders")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "orders"
@@ -1745,7 +1803,7 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Catalogue" : undefined}
                     onClick={() => switchTab("catalogue")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "catalogue"
@@ -1764,7 +1822,7 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Invoices" : undefined}
                     onClick={() => switchTab("invoices")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "invoices" || view === "links"
@@ -1782,7 +1840,7 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Customers" : undefined}
                     onClick={() => switchTab("customers")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "customers"
@@ -1800,7 +1858,7 @@ export function Dashboard() {
                     type="button"
                     aria-label={sidebarCollapsed ? "Insights" : undefined}
                     onClick={() => switchTab("insights")}
-                    className={`group relative flex w-full items-center rounded-xl transition-all ${
+                    className={`group relative flex w-full items-center rounded-xl transition-colors ${
                       sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                     } text-[13.5px] font-semibold ${
                       view === "insights"
@@ -1821,7 +1879,7 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Home (⌘1)" : undefined}
                 onClick={() => switchTab("home")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "home"
@@ -1841,7 +1899,7 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Activity (⌘2)" : undefined}
                 onClick={() => switchTab("activity")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "activity"
@@ -1864,7 +1922,7 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "DEX Swap (⌘3)" : undefined}
                 onClick={() => switchTab("swap")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "swap"
@@ -1882,7 +1940,7 @@ export function Dashboard() {
                 type="button"
                 aria-label={sidebarCollapsed ? "Contacts (⌘4)" : undefined}
                 onClick={() => switchTab("contacts")}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "justify-between px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "contacts"
@@ -1918,7 +1976,7 @@ export function Dashboard() {
                     : "Settings (⌘5)"
                   : undefined}
                 onClick={openSettingsForMode}
-                className={`group relative flex w-full items-center rounded-xl transition-all ${
+                className={`group relative flex w-full items-center rounded-xl transition-colors ${
                   sidebarCollapsed ? "h-11 w-11 justify-center mx-auto" : "gap-2.5 px-3 py-2"
                 } text-[13.5px] font-semibold ${
                   view === "settings"
@@ -2023,7 +2081,7 @@ export function Dashboard() {
                           triggerHaptic("selection");
                           selectAccount(acct.id);
                         }}
-                        className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-all ${
+                        className={`relative flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
                           isActive
                             ? "ring-2 ring-[#0A84FF] bg-white/[0.12] scale-105 shadow-sm shadow-blue-500/25"
                             : "opacity-60 hover:opacity-100 hover:bg-white/[0.06]"
@@ -2248,7 +2306,7 @@ export function Dashboard() {
           </div>
         </header>
         {/* Mobile Sticky Nav bar (Hidden on Desktop) */}
-        <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-all ${scrolled ? "nav-blur" : ""}`}>
+        <div className={`app-mobile-sticky-header md:hidden sticky z-30 transition-colors ${scrolled ? "nav-blur" : ""}`}>
           <div className="mx-auto w-full max-w-[560px] px-4">
             <div className="flex h-[44px] min-w-0 items-center justify-between gap-1">
               <AccountMenu
@@ -2512,7 +2570,7 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         setPortfolioView(opt.id);
                       }}
-                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-all ${
+                      className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors ${
                         portfolioView === opt.id
                           ? "bg-[#0A84FF] text-white shadow-sm"
                           : "text-neutral-400 hover:text-white"
@@ -2597,7 +2655,7 @@ export function Dashboard() {
                           <div
                             key={s.code}
                             style={{ width: `${s.pct}%`, background: s.color }}
-                            className="h-full transition-all"
+                            className="h-full"
                             title={`${s.code}: ${s.pct.toFixed(1)}%`}
                           />
                         ))}
@@ -2873,7 +2931,7 @@ export function Dashboard() {
                           aria-label="About testnet private asset values"
                           aria-haspopup="dialog"
                           onClick={() => setPrivateValueInfoOpen(true)}
-                          className="-m-1 flex h-7 w-7 items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
+                          className="-my-2 -mr-1 flex min-h-11 min-w-11 items-center justify-center rounded-full text-[14px] text-neutral-500 transition-colors hover:bg-white/[0.08] hover:text-neutral-200 focus-visible:ring-2 focus-visible:ring-[#0A84FF]"
                         >
                           ⓘ
                         </button>
@@ -3003,7 +3061,7 @@ export function Dashboard() {
                         triggerHaptic("selection");
                         setActivityFilter(f.id);
                       }}
-                      className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-all shrink-0 ${
+                      className={`rounded-full sm:rounded-xl px-3.5 py-1 text-[12px] font-medium transition-colors shrink-0 ${
                         activityFilter === f.id
                           ? "bg-white text-black font-semibold shadow-sm"
                           : "bg-white/[0.08] sm:bg-transparent text-neutral-400 hover:text-white sm:hover:bg-white/[0.06]"
@@ -3212,20 +3270,19 @@ export function Dashboard() {
         </button>
       </nav>
 
-      {sendOpen && (
-        <SendModal
-          open
-          initialMode={sendInitialMode}
-          onClose={() => {
-            setSendOpen(false);
-            setSendInitialMode("public");
-            setSendPrefill(null);
-          }}
-          prefill={sendPrefill}
-        />
-      )}
-      {privateAssetOpen && (
+      <SendModal
+        open={sendOpen}
+        initialMode={sendInitialMode}
+        onClose={() => {
+          setSendOpen(false);
+          setSendInitialMode("public");
+          setSendPrefill(null);
+        }}
+        prefill={sendPrefill}
+      />
+      {privateAssetMounted && (
         <PrivateAssetDetailModal
+          open={privateAssetOpen}
           entry={privateAssetEntry}
           network={network}
           privacyMode={privacyMode}
@@ -3244,7 +3301,7 @@ export function Dashboard() {
           subtitle="Representative pricing only"
           onClose={() => setPrivateValueInfoOpen(false)}
         />
-        <div className="space-y-3 p-4 sm:p-6">
+        <ModalBody gap={3}>
           <p className="text-[13px] leading-relaxed text-neutral-300">
             Testnet assets have no real monetary value. StellarKey applies current mainnet XLM
             pricing and the USDC dollar reference so this test wallet behaves like the real app.
@@ -3253,141 +3310,159 @@ export function Dashboard() {
             These figures are for interface testing only and cannot be redeemed or traded for the
             displayed amount.
           </p>
-          <Button variant="ghost" className="w-full" onClick={() => setPrivateValueInfoOpen(false)}>
-            Close
-          </Button>
-        </div>
+          <ModalFooter
+            primary={
+              <Button type="button" variant="ghost" onClick={() => setPrivateValueInfoOpen(false)}>
+                Close
+              </Button>
+            }
+          />
+        </ModalBody>
       </Modal>
-      {privateWithdrawDeploymentId && (
-        privateWithdrawReady && privateWithdrawTarget ? (
-          <WithdrawPrivate
+      <Modal
+        open={privateWithdrawDeploymentId !== null}
+        onClose={privateWithdrawCloseHandler ?? closePrivateWithdraw}
+        busy={privateWithdrawWorking}
+        busyReason="Wait for the withdrawal to finish before closing."
+        dirty={privateWithdrawDirty}
+      >
+        <ModalHeader
+          title={privateWithdrawHeader?.title ?? "Withdraw Funds"}
+          subtitle={privateWithdrawHeader?.subtitle ?? (
+            privateWithdrawReady && privateWithdrawTarget
+              ? `Move ${privateWithdrawTarget.asset.code} to your public balance`
+              : privateWithdrawTarget
+                ? `Preparing private ${privateWithdrawTarget.asset.code}`
+                : "Preparing private balance"
+          )}
+          onBack={privateWithdrawHeader?.onBack}
+          onClose={privateWithdrawCloseHandler ?? closePrivateWithdraw}
+        />
+        {privateWithdrawDeploymentId === null ? null : privateWithdrawReady && privateWithdrawTarget ? (
+          <WithdrawPrivateFlow
             key={privateWithdrawTarget.deploymentId}
-            onClose={() => setPrivateWithdrawDeploymentId(null)}
+            onClose={closePrivateWithdraw}
+            onCloseHandlerChange={reportPrivateWithdrawCloseHandler}
+            onWorkingChange={setPrivateWithdrawWorking}
+            onHeaderChange={setPrivateWithdrawHeader}
+            onDirtyChange={setPrivateWithdrawDirty}
           />
         ) : (
-          <Modal open onClose={() => setPrivateWithdrawDeploymentId(null)}>
-            <ModalHeader
-              title="Withdraw Funds"
-              subtitle={privateWithdrawTarget
-                ? `Preparing private ${privateWithdrawTarget.asset.code}`
-                : "Preparing private balance"}
-              onClose={() => setPrivateWithdrawDeploymentId(null)}
-            />
-            <div className="flex min-h-40 flex-col items-center justify-center gap-3 p-6 text-center">
-              {privateBalanceRuntime.error ? (
-                <>
-                  <p className="text-[13px] leading-relaxed text-[#FF6961]">
-                    {privateBalanceRuntime.error}
-                  </p>
-                  <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
-                    Close
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="w-full max-w-72 space-y-3" aria-live="polite">
+          <ModalBody className="flex min-h-40 flex-col justify-center text-center">
+            {privateBalanceRuntime.error ? (
+              <>
+                <ErrorText message={privateBalanceRuntime.error} />
+                <ModalFooter
+                  primary={
+                    <Button type="button" variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                      Close
+                    </Button>
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <div className="mx-auto w-full max-w-72 space-y-3" aria-live="polite">
+                  <div
+                    role="progressbar"
+                    aria-label={privateWithdrawOpeningLabelText}
+                    aria-valuemin={privateWithdrawScanPercent === null ? undefined : 0}
+                    aria-valuemax={privateWithdrawScanPercent === null ? undefined : 100}
+                    aria-valuenow={privateWithdrawScanPercent ?? undefined}
+                    aria-valuetext={privateWithdrawOpeningLabelText}
+                    className="h-1.5 overflow-hidden rounded-full bg-white/10"
+                  >
                     <div
-                      role="progressbar"
-                      aria-label={privateWithdrawOpeningLabelText}
-                      aria-valuemin={privateWithdrawScanPercent === null ? undefined : 0}
-                      aria-valuemax={privateWithdrawScanPercent === null ? undefined : 100}
-                      aria-valuenow={privateWithdrawScanPercent ?? undefined}
-                      aria-valuetext={privateWithdrawOpeningLabelText}
-                      className="h-1.5 overflow-hidden rounded-full bg-white/10"
-                    >
-                      <div
-                        className={`h-full rounded-full bg-[#0A84FF] transition-[width] duration-[180ms] ease-out ${
-                          privateWithdrawScanPercent === null ? "w-2/5 motion-safe:animate-pulse" : ""
-                        }`}
-                        style={privateWithdrawScanPercent === null
-                          ? undefined
-                          : { width: `${privateWithdrawScanPercent}%` }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[13px] font-medium text-neutral-200">
-                        {privateWithdrawTimedOut ? "Still opening" : privateWithdrawOpeningLabelText}
-                      </p>
-                      <p className="text-[12px] leading-relaxed text-neutral-500">
-                        {privateWithdrawTimedOut
-                          ? "This is taking longer than expected. Nothing has been sent."
-                          : "You can close this window safely while StellarKey checks the latest private state."}
-                      </p>
-                    </div>
-                    {privateWithdrawTimedOut && (
-                      <div className="flex justify-center gap-2 pt-1">
-                        <Button variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            if (!privateWithdrawActiveDeploymentId) return;
-                            setPrivateWithdrawTimedOut(false);
-                            setPrivateWithdrawAttempt(current => current + 1);
-                            selectPrivateAsset(privateWithdrawActiveDeploymentId);
-                            retryPrivateRuntime();
-                          }}
-                        >
-                          Try again
-                        </Button>
-                      </div>
-                    )}
+                      className={`h-full w-full origin-left rounded-full bg-[#0A84FF] transition-transform duration-[var(--motion-duration-progress)] ease-out ${
+                        privateWithdrawScanPercent === null ? "motion-safe:animate-pulse" : ""
+                      }`}
+                      style={{
+                        transform: `scaleX(${privateWithdrawScanPercent === null ? 0.4 : privateWithdrawScanPercent / 100})`,
+                      }}
+                    />
                   </div>
-                </>
-              )}
-            </div>
-          </Modal>
-        )
-      )}
-      {privateSetupOpen && (
+                  <div className="space-y-1">
+                    <p className="text-[13px] font-medium text-neutral-200">
+                      {privateWithdrawTimedOut ? "Still opening" : privateWithdrawOpeningLabelText}
+                    </p>
+                    <p className="text-[12px] leading-relaxed text-neutral-500">
+                      {privateWithdrawTimedOut
+                        ? "This is taking longer than expected. Nothing has been sent."
+                        : "You can close this window safely while StellarKey checks the latest private state."}
+                    </p>
+                  </div>
+                </div>
+                {privateWithdrawTimedOut && (
+                  <ModalFooter
+                    secondary={
+                      <Button type="button" variant="ghost" onClick={() => setPrivateWithdrawDeploymentId(null)}>
+                        Cancel
+                      </Button>
+                    }
+                    primary={
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (!privateWithdrawActiveDeploymentId) return;
+                          setPrivateWithdrawTimedOut(false);
+                          setPrivateWithdrawAttempt(current => current + 1);
+                          selectPrivateAsset(privateWithdrawActiveDeploymentId);
+                          retryPrivateRuntime();
+                        }}
+                      >
+                        Try again
+                      </Button>
+                    }
+                  />
+                )}
+              </>
+            )}
+          </ModalBody>
+        )}
+      </Modal>
+      {privateSetupMounted && (
         <PrivateBalanceSetup
-          open
+          open={privateSetupOpen}
           onClose={() => setPrivateSetupOpen(false)}
         />
       )}
       <BatchSendModal open={batchSendOpen} onClose={() => setBatchSendOpen(false)} />
-      {receiveOpen && (
-        <ReceiveModal
-          open
-          initialMode={receiveInitialMode}
-          onClose={() => {
-            setReceiveOpen(false);
-            setReceiveInitialMode("public");
-          }}
-        />
-      )}
-      {addAssetOpen && (
-        <AddAssetModal
-          open
-          initialMode={addAssetInitialMode}
-          onClose={() => {
-            setAddAssetOpen(false);
-            setAddAssetInitialMode("public");
-          }}
-        />
-      )}
-      {claimableBalancesOpen && (
-        <ClaimableBalancesModal
-          open
-          dismissedBalanceIds={dismissedClaimableBalanceIds}
-          initialShowDismissed={showDismissedClaimableBalances}
-          onClose={() => setClaimableBalancesOpen(false)}
-          onDismiss={dismissClaimableBalanceLocally}
-          onRestore={restoreClaimableBalanceLocally}
-          onAddAsset={() => {
-            setClaimableBalancesOpen(false);
-            setAddAssetOpen(true);
-          }}
-        />
-      )}
+      <ReceiveModal
+        open={receiveOpen}
+        initialMode={receiveInitialMode}
+        onClose={() => {
+          setReceiveOpen(false);
+          setReceiveInitialMode("public");
+        }}
+      />
+      <AddAssetModal
+        open={addAssetOpen}
+        initialMode={addAssetInitialMode}
+        onClose={() => {
+          setAddAssetOpen(false);
+          setAddAssetInitialMode("public");
+        }}
+      />
+      <ClaimableBalancesModal
+        open={claimableBalancesOpen}
+        dismissedBalanceIds={dismissedClaimableBalanceIds}
+        initialShowDismissed={showDismissedClaimableBalances}
+        onClose={() => setClaimableBalancesOpen(false)}
+        onDismiss={dismissClaimableBalanceLocally}
+        onRestore={restoreClaimableBalanceLocally}
+        onAddAsset={() => {
+          setClaimableBalancesOpen(false);
+          setAddAssetOpen(true);
+        }}
+      />
       <AssetDetailModal
-        key={`${network}:${detailAsset?.key ?? "closed"}`}
+        key={network}
         asset={detailAsset}
         favorite={detailAsset ? pinnedAssets.includes(detailAsset.key) : false}
         onToggleFavorite={togglePinAsset}
         onClose={() => setDetailAsset(null)}
       />
-      <TxDetailModal key={txDetail?.hash ?? "closed"} item={txDetail} onClose={() => setTxDetail(null)} />
+      <TxDetailModal item={txDetail} onClose={() => setTxDetail(null)} />
       <KeyboardShortcutsModal
         open={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
@@ -3418,12 +3493,12 @@ export function Dashboard() {
       <BackupWizardModal open={backupWizardOpen} onClose={() => setBackupWizardOpen(false)} />
       <Modal open={installDialog !== null} onClose={() => setInstallDialog(null)}>
         <ModalHeader
-          title={installDialog === "backup-first" ? "Back up before installing" : "Add to Home Screen"}
+          title={installDialogShown === "backup-first" ? "Back up before installing" : "Add to Home Screen"}
           subtitle="Keep your self-custodial wallet recoverable"
           onClose={() => setInstallDialog(null)}
         />
-        {installDialog === "backup-first" ? (
-          <div className="space-y-4 p-4 sm:p-6">
+        {installDialogShown === "backup-first" ? (
+          <ModalBody>
             <div className="rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.08] p-4">
               <p className="text-[13px] font-semibold text-white">Export an encrypted backup first</p>
               <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-300">
@@ -3432,18 +3507,22 @@ export function Dashboard() {
                 handoff between them.
               </p>
             </div>
-            <Button
-              className="w-full"
-              onClick={() => {
-                setInstallDialog(null);
-                setBackupWizardOpen(true);
-              }}
-            >
-              Open Backup
-            </Button>
-          </div>
+            <ModalFooter
+              primary={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setInstallDialog(null);
+                    setBackupWizardOpen(true);
+                  }}
+                >
+                  Open backup
+                </Button>
+              }
+            />
+          </ModalBody>
         ) : (
-          <div className="space-y-4 p-4 sm:p-6">
+          <ModalBody>
             <ol className="space-y-3 text-[13px] leading-relaxed text-neutral-200">
               <li><span className="mr-2 font-semibold text-[#0A84FF]">1.</span>Tap the Share button in Safari.</li>
               <li><span className="mr-2 font-semibold text-[#0A84FF]">2.</span>Choose <strong className="text-white">Add to Home Screen</strong>.</li>
@@ -3452,19 +3531,23 @@ export function Dashboard() {
             <div className="rounded-2xl border border-[#30D158]/20 bg-[#30D158]/[0.07] p-3 text-[12px] leading-relaxed text-neutral-300">
               Backup ready. It remains encrypted by your wallet password and never leaves this device unless you move it.
             </div>
-            <Button variant="ghost" className="w-full" onClick={() => setInstallDialog(null)}>
-              Done
-            </Button>
-          </div>
+            <ModalFooter
+              primary={
+                <Button type="button" variant="ghost" onClick={() => setInstallDialog(null)}>
+                  Done
+                </Button>
+              }
+            />
+          </ModalBody>
         )}
       </Modal>
       <MultiSigStudioModal open={multisigOpen} onClose={() => setMultisigOpen(false)} />
-      {setupWizardOpen && (
+      {setupWizardMounted && (
         <SetupWizard
-          open
+          open={setupWizardOpen}
           onClose={() => {
             setSetupWizardOpen(false);
-            releaseRuntime();
+            releaseRuntimeAfterWizardExitRef.current = true;
           }}
           onComplete={() => switchTab("merchant")}
         />
@@ -3704,14 +3787,12 @@ function ActionButton({
       title={disabled ? "Watch-only accounts cannot sign transactions" : undefined}
       onClick={() => {
         if (disabled) return;
-        triggerHaptic("selection");
-        playTapSound();
         onClick();
       }}
       className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
       <span
-        className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-all duration-250 ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[90ms] ${
+        className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
           primary
             ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
             : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
@@ -3741,15 +3822,14 @@ function NetworkModal({
   network: NetworkKey;
   onSwitch: (n: NetworkKey) => void;
 }) {
-  if (!open) return null;
   return (
-    <Modal open onClose={onClose}>
+    <Modal open={open} onClose={onClose}>
       <ModalHeader
         title="Switch Network"
         subtitle="Select active Stellar blockchain environment"
         onClose={onClose}
       />
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         {(
           [
             {
@@ -3771,12 +3851,15 @@ function NetworkModal({
             <button
               key={n.id}
               type="button"
+              aria-pressed={isActive}
               onClick={() => {
-                triggerHaptic("selection");
-                onSwitch(n.id);
+                if (!isActive) {
+                  triggerHaptic("selection");
+                  onSwitch(n.id);
+                }
                 onClose();
               }}
-              className={`flex w-full items-start justify-between rounded-2xl border p-4 text-left transition-all ${
+              className={`flex w-full items-start justify-between rounded-2xl border p-4 text-left transition-colors ${
                 isActive
                   ? "border-[#0A84FF] bg-[#0A84FF]/10 text-white shadow-sm"
                   : "border-white/10 bg-white/[0.03] text-neutral-300 hover:bg-white/[0.06] hover:text-white"
@@ -3804,10 +3887,14 @@ function NetworkModal({
             </button>
           );
         })}
-        <Button variant="ghost" className="w-full" onClick={onClose}>
-          Done
-        </Button>
-      </div>
+        <ModalFooter
+          primary={
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Done
+            </Button>
+          }
+        />
+      </ModalBody>
     </Modal>
   );
 }
@@ -3832,7 +3919,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-all hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
+            className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] transition-[background-color,border-color,transform] hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-sm"
             title={`${activeAccount.label} (${formatTrezorAddress(activeAccount.publicKey)})`}
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
@@ -3845,7 +3932,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-all cursor-pointer"
+            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">

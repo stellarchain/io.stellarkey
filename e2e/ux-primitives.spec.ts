@@ -41,6 +41,160 @@ async function clipboardMode(page: Page, mode: 'resolve' | 'reject' | 'hold') {
   }, mode);
 }
 
+async function safetySheet(page: Page) {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.getByRole('button', { name: 'Open synthetic sheet safety', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Synthetic sheet safety', exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.evaluate(async node => {
+    await Promise.all([node, node.querySelector('[data-modal-shell]')!]
+      .flatMap(element => element.getAnimations().map(animation => animation.finished.catch(() => {}))));
+  });
+  return dialog;
+}
+
+test('integration safety: sheet surfaces permit pinch zoom', async ({ page }) => {
+  const dialog = await safetySheet(page);
+  const permitted = await dialog.evaluate(node => [...node.querySelectorAll('[data-modal-shell], [data-sheet-handle]')]
+    .map(element => getComputedStyle(element).touchAction.split(' ').includes('pinch-zoom')));
+  expect(permitted.length).toBeGreaterThan(1);
+  expect(permitted.every(Boolean)).toBe(true);
+});
+
+test('integration safety: a cancelled confirmation cannot invoke its retained action', async ({ page }) => {
+  await safetySheet(page);
+  await page.getByRole('button', { name: 'Open synthetic confirmation', exact: true }).click();
+  const alert = page.getByRole('dialog', { name: 'Synthetic confirmation', exact: true });
+  await expect(alert).toBeVisible();
+  const inert = await alert.getByRole('button', { name: 'Cancel', exact: true }).evaluate(async node => {
+    const dialog = node.closest('[data-modal-backdrop]')!;
+    const confirm = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Confirm synthetic action')!;
+    (node as HTMLButtonElement).click();
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    confirm.click(); // Even a queued programmatic activation must be revoked.
+    return dialog.querySelector<HTMLElement>('[data-modal-shell]')!.inert;
+  });
+  expect(inert).toBe(true);
+  await expect(page.getByTestId('synthetic-confirm-actions')).toHaveText('0');
+});
+
+test('integration safety: a scrolled nested list keeps downward touches', async ({ page }) => {
+  const dialog = await safetySheet(page);
+  const result = await dialog.evaluate(node => {
+    const list = node.querySelector<HTMLElement>('[data-testid="synthetic-nested-scroll"]')!;
+    const target = list.firstElementChild!;
+    const shell = node.querySelector<HTMLElement>('[data-modal-shell]')!;
+    list.scrollTop = 80;
+    const dispatch = (type: string, y: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    dispatch('touchstart', 100);
+    const prevented = dispatch('touchmove', 145);
+    const dragging = shell.dataset.dragging === 'true';
+    dispatch('touchcancel', 145);
+    return { prevented, dragging, listScrolled: list.scrollTop > 0 };
+  });
+  expect(result).toEqual({ prevented: false, dragging: false, listScrolled: true });
+  await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+});
+
+for (const motion of ['reduce', 'no-preference'] as const) for (const cancellation of ['touchcancel', 'multitouch-start', 'multitouch-move'] as const) {
+  test(`integration safety: ${motion} ${cancellation} resets a sheet drag without dismissal`, async ({ page }) => {
+    const dialog = await safetySheet(page);
+    await page.emulateMedia({ reducedMotion: motion });
+    const result = await dialog.evaluate((node, cancellation) => {
+      const shell = node.querySelector<HTMLElement>('[data-modal-shell]')!;
+      const handle = shell.querySelector('[data-sheet-handle]')!;
+      const dispatch = (type: string, touches: number[]) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'touches', { value: touches.map(clientY => ({ clientY })) });
+        handle.dispatchEvent(event);
+      };
+      dispatch('touchstart', [100]);
+      dispatch('touchmove', [260]);
+      const started = shell.dataset.dragging === 'true';
+      if (cancellation === 'touchcancel') dispatch('touchcancel', []);
+      else dispatch(cancellation === 'multitouch-start' ? 'touchstart' : 'touchmove', [260, 280]);
+      return { started, dragging: shell.dataset.dragging === 'true', transformReset: shell.style.transform === '',
+        opacityReset: (node as HTMLElement).style.opacity === '', entranceReplayed: getComputedStyle(shell).animationName === 'sheetIn' };
+    }, cancellation);
+    expect(result).toEqual({ started: true, dragging: false, transformReset: true, opacityReset: true, entranceReplayed: false });
+    await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+  });
+}
+
+test('integration safety: a completed downward sheet gesture still dismisses', async ({ page }) => {
+  const dialog = await safetySheet(page);
+  await dialog.evaluate(node => {
+    const handle = node.querySelector('[data-sheet-handle]')!;
+    for (const [type, y] of [['touchstart', 100], ['touchmove', 260], ['touchend', 260]] as const) {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+      handle.dispatchEvent(event);
+    }
+  });
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open synthetic sheet safety', exact: true })).toBeFocused();
+});
+
+for (const motion of ['reduce', 'no-preference'] as const) {
+  test(`integration safety: ${motion} an outside mouse release cannot become a hover drag`, async ({ page }) => {
+    // Leave room beside the sheet, including in the iPhone WebKit profile.
+    await page.setViewportSize({ width: 900, height: 900 });
+    const dialog = await safetySheet(page);
+    await page.emulateMedia({ reducedMotion: motion });
+    const shell = dialog.locator('[data-modal-shell]');
+    const handle = dialog.locator('[data-sheet-handle]').last();
+    const bounds = await handle.boundingBox();
+    if (!bounds) throw new Error('Synthetic sheet handle missing');
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + bounds.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    // No downward slop means the panel has not captured the pointer yet.
+    await page.mouse.move(1, y);
+    await page.mouse.up();
+    await page.mouse.move(x, y + 120);
+    await expect(shell).not.toHaveAttribute('data-dragging', 'true');
+    await expect.poll(() => shell.evaluate(node => node.style.transform)).toBe('');
+    await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+
+    // Cancelling the abandoned press must not disable the next real drag.
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 140, { steps: 5 });
+    await page.mouse.up();
+    await expect(dialog).toHaveCount(0);
+  });
+}
+
+test('integration safety: pointer cancellation snaps back without closing', async ({ page }) => {
+  const dialog = await safetySheet(page);
+  const handle = dialog.locator('[data-sheet-handle]').last();
+  const bounds = await handle.boundingBox();
+  if (!bounds) throw new Error('Synthetic sheet handle missing');
+  await handle.evaluate(node => node.addEventListener('pointerdown', event => {
+    (node as HTMLElement).dataset.syntheticPointer = String((event as PointerEvent).pointerId);
+  }, { once: true }));
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2 + 160, { steps: 4 });
+  await expect(dialog.locator('[data-modal-shell]')).toHaveAttribute('data-dragging', 'true');
+  await handle.evaluate(node => node.dispatchEvent(new PointerEvent('pointercancel', {
+    bubbles: true, pointerId: Number((node as HTMLElement).dataset.syntheticPointer), pointerType: 'mouse',
+  })));
+  await page.mouse.up();
+  await expect(dialog).toHaveAttribute('data-overlay-state', 'open');
+  expect(await dialog.locator('[data-modal-shell]').evaluate(node => {
+    const shell = node as HTMLElement;
+    return shell.dataset.dragging !== 'true' && shell.style.transform === '';
+  })).toBe(true);
+});
+
 async function finishClipboard(page: Page) {
   await page.evaluate(() => {
     (window as typeof window & { __syntheticClipboard: { finish: (() => void) | null } }).__syntheticClipboard.finish?.();
@@ -239,7 +393,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await icon.click();
       expect(await page.evaluate(() => window.__syntheticSvgPointer)).toEqual({ svg: true, bodyFocused: true });
       const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
@@ -250,7 +404,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await opener.focus();
       await page.keyboard.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(opener).toBeFocused();
@@ -260,7 +414,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       const { dialog, opener } = await openPausedInitialFocus(page);
       expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(false);
       await page.clock.runFor(17);
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await expect.poll(() => page.evaluate(() => ({ locked: document.body.style.overflow === 'hidden', inert: !!document.querySelector('[data-app-surface]')?.hasAttribute('inert') })))
         .toEqual({ locked: true, inert: true });
       await page.clock.resume();
@@ -273,7 +427,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       const opener = page.getByRole('button', { name: 'Open deferred initial focus checks', exact: true });
       await opener.press('Enter');
       const dialog = page.getByRole('dialog', { name: 'Synthetic initial focus', exact: true });
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
       await expect(opener).toBeFocused();
@@ -373,7 +527,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       expect(await page.evaluate(() => ({ scheduled: window.__syntheticInitialFocus?.scheduled, cancelled: window.__syntheticInitialFocus?.cancelled, pending: window.__syntheticInitialFocus?.pending.size })))
         .toEqual({ scheduled: 3, cancelled: 2, pending: 1 });
       await page.clock.runFor(17);
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       await page.clock.resume();
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
@@ -504,7 +658,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       expect(await tooltip.evaluate(node => node.matches(':hover') && !node.closest('[data-modal-backdrop]'))).toBe(true);
       await expect(trigger).toBeFocused();
       await page.keyboard.press('Enter');
-      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
       expect(await page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
       await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -581,7 +735,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     test('Tooltip inside the nested modal consumes only its own first Escape', async ({ page }) => {
       await page.getByRole('button', { name: 'Open nested tooltip check', exact: true }).click();
       const nested = page.getByRole('dialog', { name: 'Synthetic nested tooltip check', exact: true });
-      await expect(nested.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await expect(nested.locator('[data-modal-shell]')).toBeFocused();
       const trigger = nested.getByRole('button', { name: 'Show synthetic nested help', exact: true });
       await trigger.focus();
       await expect(nested.getByRole('tooltip', { name: 'Synthetic nested guidance', exact: true })).toBeVisible();
@@ -594,16 +748,18 @@ for (const motion of ['no-preference', 'reduce'] as const) {
       await expect(page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true })).toHaveAttribute('data-overlay-state', 'open');
     });
 
-    test('Tooltip follows its modal containing block and viewport events without stealing focus', async ({ page }) => {
+    for (const containingBlock of ['plain', 'transformed'] as const) test(`Tooltip follows its ${containingBlock} modal containing block and viewport events without stealing focus`, async ({ page }) => {
       const backdrop = page.getByRole('dialog', { name: 'Synthetic UX primitives', exact: true });
       const trigger = page.getByRole('button', { name: 'Show synthetic right help', exact: true });
       const tooltip = page.getByRole('tooltip', { name: 'Synthetic right guidance', exact: true });
       await trigger.focus();
       await expect(tooltip).toBeVisible();
-      await backdrop.evaluate(node => {
+      await backdrop.evaluate((node, containingBlock) => {
         const style = (node as HTMLElement).style;
         style.left = '12px'; style.right = '12px'; style.top = '24px';
-      });
+        style.backdropFilter = 'none'; style.filter = 'none';
+        style.transform = containingBlock === 'transformed' ? 'translateZ(0)' : 'none';
+      }, containingBlock);
       // Reduced motion still permits brief CSS transitions. Fire viewport
       // events only after the fixture's containing block has actually moved.
       await expect.poll(() => backdrop.evaluate(node => {
@@ -616,13 +772,16 @@ for (const motion of ['no-preference', 'reduce'] as const) {
         window.visualViewport?.dispatchEvent(new Event('resize'));
         window.visualViewport?.dispatchEvent(new Event('scroll'));
       });
+      const viewportHeight = page.viewportSize()!.height;
       await expect.poll(async () => {
         const container = (await backdrop.boundingBox())!;
         const anchor = (await trigger.boundingBox())!;
         const content = (await tooltip.boundingBox())!;
+        const centred = anchor.y + anchor.height / 2 - content.height / 2;
+        const expectedY = Math.min(Math.max(8, centred), viewportHeight - content.height - 8);
         return container.x === 12 && container.y === 24
           && Math.abs(content.x - anchor.x - anchor.width - 8) < 1
-          && Math.abs(content.y + content.height / 2 - anchor.y - anchor.height / 2) < 1;
+          && Math.abs(content.y - expectedY) < 1;
       }).toBe(true);
       await expect(trigger).toBeFocused();
     });

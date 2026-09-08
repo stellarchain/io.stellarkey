@@ -5,7 +5,7 @@ import test from 'node:test';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('private payments setup is one consent screen with an honest disclosure and Turn On', () => {
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
   const disclosure = read('src/features/private-balance/components/PrivacyDisclosure.tsx');
   const surface = `${setup}\n${disclosure}`;
 
@@ -30,7 +30,7 @@ test('private payments setup is one consent screen with an honest disclosure and
 });
 
 test('setup expands Learn more with download size and recovery without an unconfigured status card', () => {
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
 
   assert.match(setup, /Learn more/);
   assert.match(setup, /aria-expanded=\{learnMore\}/);
@@ -46,7 +46,7 @@ test('setup expands Learn more with download size and recovery without an unconf
 });
 
 test('one setup prepares every verified asset, finishes on the original selection, and dismisses itself', () => {
-  const setup = read('src/features/private-balance/components/PrivateBalanceSetup.tsx');
+  const setup = read('src/features/private-balance/components/PrivateBalanceSetupBody.tsx');
   const accessGate = read(
     'src/features/private-balance/components/PrivatePaymentAccessGate.tsx',
   );
@@ -84,7 +84,11 @@ test('one setup prepares every verified asset, finishes on the original selectio
   assert.match(setup, /SETUP_COMPLETION_HOLD_MS/);
   assert.match(setup, /if \(!open \|\| !setupReady\) return/);
   assert.match(setup, /triggerHaptic\('success'\)/);
-  assert.match(setup, /reset\(\);\s*onCloseRef\.current\(\)/);
+  assert.match(setup, /triggerHaptic\('success'\);\s*onCloseRef\.current\(\)/);
+  // The completed state stays on screen through the exit; a reopen resets.
+  assert.doesNotMatch(setup, /reset\(\);\s*onCloseRef\.current\(\)/);
+  assert.match(setup, /if \(open !== prevOpen\) \{\s*setPrevOpen\(open\);\s*if \(open\) reset\(\);/);
+  assert.match(setup, /Complete\s*<\/p>/);
   assert.doesNotMatch(setup, /PrivateSuccess|doneLabel="Done"/);
   // Errors surface humanized with collapsed technical details.
   assert.match(setup, /HumanizedErrorNotice/);

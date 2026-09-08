@@ -778,8 +778,8 @@ test(
       await page.getByRole("button", { name: "Done" }).click();
 
       await page.getByRole("button", { name: "Reset Wallet" }).click();
-      const reset = page.getByRole("dialog", { name: "Erase & Reset Wallet?" });
-      await reset.getByRole("button", { name: "Erase Everything" }).click();
+      const reset = page.getByRole("dialog", { name: "Erase this wallet?" });
+      await reset.getByRole("button", { name: "Erase everything" }).click();
       await page.getByRole("heading", { name: "Own your keys. Own your money." }).waitFor();
       assert.equal(await readIndexedMerchantArchive(page), null);
 

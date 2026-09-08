@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, HashValue, Modal, ModalHeader, Notice } from '@/components/ui';
+import { AlertContent, Button, ErrorText, HashValue, Modal, ModalFooter, Notice } from '@/components/ui';
 import {
   usePrivateBalanceRuntime,
   usePrivateBalanceRuntimeData,
@@ -496,48 +496,65 @@ export function PrivateRelayHelperManager() {
     }
   };
 
-  return pending ? (
-    <Modal open onClose={() => void reject()} dismissable={!working}>
-      <ModalHeader
-        title="Relay Private Payment?"
-        subtitle="A peer is asking this account to submit one transaction"
-        onClose={() => void reject()}
-        closeDisabled={working}
-      />
-      <div ref={approvalDetailsRef} tabIndex={-1} role="group" aria-label="Relay approval details" className="space-y-4 p-4 sm:p-6">
-        <dl className="panel-inset divide-y divide-white/[0.08] px-4 text-[13px]">
-          <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-            <dt className="text-neutral-400">Private reward</dt>
-            <dd className="font-semibold text-[#30D158]">{fee}</dd>
+  // The approval is an interrupt: a centred alert that a stray tap cannot
+  // dismiss. Its hashes and fees are sensitive, so the content renders only
+  // while a request is pending; the shell keeps its geometry through the exit.
+  return (
+    <Modal
+      open={pending !== null}
+      onClose={() => void reject()}
+      presentation="alert"
+      busy={working}
+      busyReason="Wait for signing and delivery to finish before dismissing."
+    >
+      {pending ? (
+        <AlertContent
+          title="Relay a private payment?"
+          message="A peer is asking this account to submit one transaction"
+          actions={
+            <ModalFooter
+              stack
+              secondary={
+                <Button type="button" variant="ghost" disabled={working} onClick={() => void reject()}>
+                  {signatureShared ? 'Dismiss' : 'Reject'}
+                </Button>
+              }
+              primary={
+                <Button type="button" loading={working} disabled={working || signatureShared} onClick={() => void approve()}>
+                  Approve and sign
+                </Button>
+              }
+            />
+          }
+        >
+          <div ref={approvalDetailsRef} tabIndex={-1} role="group" aria-label="Relay approval details" className="space-y-3 outline-none">
+            <dl className="panel-inset divide-y divide-white/[0.08] px-3.5 text-[13px]">
+              <div className="flex min-h-11 items-center justify-between gap-3 py-2.5">
+                <dt className="text-neutral-400">Private reward</dt>
+                <dd className="text-right font-semibold text-[#30D158]">{fee}</dd>
+              </div>
+              <div className="flex min-h-11 items-center justify-between gap-3 py-2.5">
+                <dt className="text-neutral-400">Your max network fee</dt>
+                <dd className="text-right font-semibold text-white">{networkFee} XLM</dd>
+              </div>
+              <div className="flex min-h-11 items-center justify-between gap-3 py-2.5">
+                <dt className="text-neutral-400">Pool action</dt>
+                <dd className="capitalize text-white">Private {pending.review.method}</dd>
+              </div>
+              <div className="flex min-h-11 items-center justify-between gap-3 py-2.5">
+                <dt className="text-neutral-400">Transaction</dt>
+                <dd className="min-w-0"><HashValue value={pending.review.transactionHash} className="justify-end text-[11px]" /></dd>
+              </div>
+            </dl>
+            <Notice>
+              The wallet parsed this exact transaction, confirmed it only invokes this private pool,
+              decrypted exactly one fee note addressed to you, capped its fees, and simulated its proof.
+              Helping never signs transactions automatically.
+            </Notice>
+            {error ? <ErrorText message={error} /> : null}
           </div>
-          <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-            <dt className="text-neutral-400">Your max network fee</dt>
-            <dd className="font-semibold text-white">{networkFee} XLM</dd>
-          </div>
-          <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-            <dt className="text-neutral-400">Pool action</dt>
-            <dd className="capitalize text-white">Private {pending.review.method}</dd>
-          </div>
-          <div className="flex min-h-11 items-center justify-between gap-4 py-2.5">
-            <dt className="text-neutral-400">Transaction</dt>
-            <dd><HashValue value={pending.review.transactionHash} className="text-[11px]" /></dd>
-          </div>
-        </dl>
-        <Notice>
-          The wallet parsed this exact transaction, confirmed it only invokes this private pool,
-          decrypted exactly one fee note addressed to you, capped its fees, and simulated its proof.
-          Helping never signs transactions automatically.
-        </Notice>
-        {error ? <p role="alert" className="text-[12px] text-[#FF6961]">{error}</p> : null}
-        <div className="grid grid-cols-2 gap-3">
-          <Button type="button" variant="ghost" disabled={working} onClick={() => void reject()}>
-            {signatureShared ? 'Dismiss' : 'Reject'}
-          </Button>
-          <Button type="button" loading={working} disabled={working || signatureShared} onClick={() => void approve()}>
-            Approve &amp; sign
-          </Button>
-        </div>
-      </div>
+        </AlertContent>
+      ) : null}
     </Modal>
-  ) : null;
+  );
 }

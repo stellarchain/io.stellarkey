@@ -63,7 +63,7 @@ function OutgoingHistoryPreference({ mode, disabled, onChange }: OutgoingHistory
       <h3 id="private-outgoing-history-title" className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
         Outgoing recovery
       </h3>
-      <div className="ios-group flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+      <div className="list-group flex min-h-16 items-center justify-between gap-4 px-4 py-3">
         <div className="min-w-0">
           <p className="text-[13.5px] font-semibold text-white">Recover outgoing payment details</p>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-400">

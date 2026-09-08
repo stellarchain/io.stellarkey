@@ -1,7 +1,7 @@
 'use client';
 
 import { StrictMode, useState } from 'react';
-import { Button, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
+import { Button, ConfirmModal, CopyButton, Dropdown, Field, HashValue, Modal, ModalHeader, Select, Tabs, Toggle, Tooltip } from '@/components/ui';
 
 // Only opaque synthetic strings. Clipboard behaviour is controlled at the
 // browser API boundary by tests; these are the real production primitives.
@@ -23,6 +23,9 @@ export function UxPrimitivesFixture() {
   const [tooltipEnabled, setTooltipEnabled] = useState(true);
   const [edgeHelp, setEdgeHelp] = useState(false);
   const [edgeActions, setEdgeActions] = useState(0);
+  const [safetyOpen, setSafetyOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmActions, setConfirmActions] = useState(0);
   const options = [
     { value: 'alpha', label: 'Alpha' }, { value: 'beta', label: 'Beta', disabled: true },
     ...(gammaState === 'removed' ? [] : [{ value: 'gamma', label: 'Gamma', disabled: gammaState === 'disabled' }]),
@@ -96,6 +99,7 @@ export function UxPrimitivesFixture() {
           </div>)}
         </div>}
         <Button onClick={() => setNestedOpen(true)}>Open nested tooltip check</Button>
+        <Button onClick={() => setSafetyOpen(true)}>Open synthetic sheet safety</Button>
         <Button onClick={() => setTooltipEnabled(value => !value)}>Toggle synthetic tooltip labels</Button>
         <Button onClick={() => setTooltipMounted(value => !value)}>Toggle synthetic tooltip controls</Button>
         <Button onClick={() => { setEdgeHelp(true); setOpen(false); }}>Show viewport-edge tooltip</Button>
@@ -108,6 +112,18 @@ export function UxPrimitivesFixture() {
       </div>
     </Modal>
     <StrictMode><ModalInitialFocusFixture /></StrictMode>
+    <Modal open={safetyOpen} onClose={() => setSafetyOpen(false)} presentation="sheet">
+      <ModalHeader title="Synthetic sheet safety" onClose={() => setSafetyOpen(false)} />
+      <div className="p-4">
+        <div data-testid="synthetic-nested-scroll" className="h-24 overflow-y-auto">
+          <div data-testid="synthetic-scroll-content" className="h-96">Synthetic scroll content</div>
+        </div>
+        <Button onClick={() => setConfirmOpen(true)}>Open synthetic confirmation</Button>
+        <p data-testid="synthetic-confirm-actions">{confirmActions}</p>
+      </div>
+    </Modal>
+    <ConfirmModal open={confirmOpen} title="Synthetic confirmation" confirmLabel="Confirm synthetic action"
+      onClose={() => setConfirmOpen(false)} onConfirm={() => setConfirmActions(value => value + 1)} />
   </>;
 }
 

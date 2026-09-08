@@ -10,7 +10,6 @@ import {
 } from '@/components/icons';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { formatTrezorAddress } from '@/lib/address-display';
-import { triggerHaptic } from '@/lib/haptics';
 import { humanizePrivateError, STATUS_LINE } from '../copy';
 
 const PHASE_LABELS = {
@@ -62,11 +61,8 @@ export function HumanizedErrorNotice({
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => {
-          triggerHaptic('selection');
-          setExpanded(value => !value);
-        }}
-        className="mt-1.5 flex min-h-8 items-center gap-1 text-[11px] font-semibold text-neutral-500"
+        onClick={() => setExpanded(value => !value)}
+        className="mt-1 flex min-h-11 items-center gap-1 text-[12px] font-semibold text-neutral-500"
       >
         Technical details
         <IconChevronDown

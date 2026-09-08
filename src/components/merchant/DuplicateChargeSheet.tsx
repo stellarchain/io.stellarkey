@@ -7,7 +7,18 @@ import { fmtMinor } from "@/lib/merchant/money";
 import type { MatchedPayment, Minor } from "@/lib/merchant/types";
 import type { FiatCurrency } from "@/lib/format";
 import { useToast } from "../Toast";
-import { Button, ErrorText, HashValue, Modal, ModalHeader, Notice } from "../ui";
+import {
+  AlertContent,
+  Button,
+  ErrorText,
+  HashValue,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+  useRetainedForExit,
+} from "../ui";
 import { IconAlert, IconCheck } from "../icons";
 import { IconInfo, IconRefund, IconXCircle } from "./icons";
 
@@ -50,6 +61,42 @@ export function DuplicateChargeSheet({
   onClose: () => void;
   paymentId: string | null;
 }) {
+  // The payment stays rendered through the exit; the choice state lives in the
+  // body, which unmounts after the animation so every opening starts clean.
+  const shownPaymentId = useRetainedForExit(paymentId);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal
+      open={open && paymentId !== null}
+      onClose={onClose}
+      wide
+      busy={busy}
+      busyReason="Wait for this payment to be resolved before closing."
+    >
+      {shownPaymentId && (
+        <DuplicateChargeBody
+          key={shownPaymentId}
+          paymentId={shownPaymentId}
+          onClose={onClose}
+          busy={busy}
+          onBusyChange={setBusy}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function DuplicateChargeBody({
+  paymentId,
+  onClose,
+  busy,
+  onBusyChange,
+}: {
+  paymentId: string;
+  onClose: () => void;
+  busy: boolean;
+  onBusyChange: (busy: boolean) => void;
+}) {
   const {
     charges,
     orders,
@@ -61,10 +108,7 @@ export function DuplicateChargeSheet({
   const { toast } = useToast();
   const [choice, setChoice] = useState<Choice>("none");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  if (!open || !paymentId) return null;
   const resolvedPaymentId = paymentId;
 
   const reconciliation = paymentReconciliations.find(
@@ -86,28 +130,15 @@ export function DuplicateChargeSheet({
     ? { payment: charge.payment, amountMinor: charge.amountMinor }
     : null;
 
-  function close(): void {
-    if (busy) return;
-    resetAndClose();
-  }
-
-  function resetAndClose(): void {
-    setChoice("none");
-    setNote("");
-    setError("");
-    onClose();
-  }
-
   async function refund(): Promise<void> {
     if (!duplicate || busy) return;
-    setBusy(true);
+    onBusyChange(true);
     setError("");
     try {
       const outcome = await submitPaymentRefund(resolvedPaymentId, note);
       if (outcome.kind === "requested") {
         toast(`Refund approval requested for ${fmtMinor(duplicate.amountMinor, settings.currency)}`);
-        triggerHaptic("light");
-        resetAndClose();
+        onClose();
         return;
       }
       if (outcome.refund.submissionStatus === "failed") {
@@ -124,59 +155,59 @@ export function DuplicateChargeSheet({
             : "Refund submitted and confirming on Stellar.",
         confirmed ? "success" : "info",
       );
-      triggerHaptic(confirmed ? "success" : "light");
-      resetAndClose();
+      onClose();
     } catch (cause) {
       setError(actionError(cause));
       triggerHaptic("error");
     } finally {
-      setBusy(false);
+      onBusyChange(false);
     }
   }
 
   async function dismiss(): Promise<void> {
     if (busy) return;
-    setBusy(true);
+    onBusyChange(true);
     setError("");
     try {
       await dismissUnmatched(resolvedPaymentId);
-      toast("Duplicate payment dismissed with a staff audit record");
-      triggerHaptic("warning");
-      resetAndClose();
+      toast("Duplicate payment dismissed with a staff audit record", "success");
+      onClose();
     } catch (cause) {
       setError(actionError(cause));
       triggerHaptic("error");
     } finally {
-      setBusy(false);
+      onBusyChange(false);
     }
   }
 
   if (!reconciliation || !charge || !order || !duplicate || !settled) {
     return (
-      <Modal open onClose={close}>
-        <ModalHeader title="Duplicate payment" onClose={close} />
-        <div className="space-y-4 p-4 sm:p-6">
-          <Notice tone="warn">
-            The original payment record is no longer complete enough to resolve safely. Keep this
-            item in review and check the Stellar transaction before taking action.
-          </Notice>
-          <Button variant="secondary" className="w-full" onClick={close}>
-            Close
-          </Button>
-        </div>
-      </Modal>
+      <AlertContent
+        title="Duplicate payment"
+        message="The original payment record is no longer complete enough to resolve safely. Keep this item in review and check the Stellar transaction before taking action."
+        actions={
+          <ModalFooter
+            primary={
+              <Button variant="secondary" onClick={onClose}>
+                Close
+              </Button>
+            }
+          />
+        }
+      />
     );
   }
 
   return (
-    <Modal open onClose={close} wide>
+    <>
       <ModalHeader
         title="Paid twice"
         subtitle={`Order #${order.number} · ${charge.reference}`}
-        onClose={close}
+        onBack={choice === "none" ? undefined : () => setChoice("none")}
+        onClose={onClose}
       />
 
-      <div className="space-y-4 p-4 sm:p-6">
+      <ModalBody>
         <Notice tone="warn">
           <div className="flex items-start gap-2.5">
             <span className="mt-0.5 shrink-0 text-[#FF9F0A]">
@@ -220,7 +251,6 @@ export function DuplicateChargeSheet({
                 action="Review refund"
                 icon={<IconRefund size={16} />}
                 onPick={() => {
-                  triggerHaptic("selection");
                   setError("");
                   setChoice("refund");
                 }}
@@ -231,7 +261,6 @@ export function DuplicateChargeSheet({
                 action="Review dismissal"
                 icon={<IconXCircle size={16} />}
                 onPick={() => {
-                  triggerHaptic("selection");
                   setError("");
                   setChoice("dismiss");
                 }}
@@ -273,6 +302,7 @@ export function DuplicateChargeSheet({
                 placeholder="Customer paid twice at the counter"
                 className="input text-base sm:text-[14px]"
                 autoComplete="off"
+                enterKeyHint="done"
               />
             </div>
 
@@ -281,14 +311,13 @@ export function DuplicateChargeSheet({
               exceeds the active staff member&rsquo;s ceiling, it goes to Refund requests first.
             </Notice>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button variant="ghost" disabled={busy} onClick={() => setChoice("none")}>
-                Back
-              </Button>
-              <Button loading={busy} onClick={() => void refund()}>
-                Sign or request approval
-              </Button>
-            </div>
+            <ModalFooter
+              primary={
+                <Button loading={busy} onClick={() => void refund()}>
+                  Sign or request approval
+                </Button>
+              }
+            />
           </div>
         )}
 
@@ -298,18 +327,22 @@ export function DuplicateChargeSheet({
               Dismissal does not return money and does not attach this payment to order #{order.number}.
               It removes the tray alert and records who made the decision.
             </Notice>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button variant="ghost" disabled={busy} onClick={() => setChoice("none")}>
-                Keep in tray
-              </Button>
-              <Button variant="danger" loading={busy} onClick={dismiss}>
-                Dismiss with audit
-              </Button>
-            </div>
+            <ModalFooter
+              secondary={
+                <Button variant="ghost" disabled={busy} onClick={() => setChoice("none")}>
+                  Keep in tray
+                </Button>
+              }
+              primary={
+                <Button variant="danger" loading={busy} onClick={dismiss}>
+                  Dismiss with audit
+                </Button>
+              }
+            />
           </div>
         )}
-      </div>
-    </Modal>
+      </ModalBody>
+    </>
   );
 }
 
