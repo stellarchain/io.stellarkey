@@ -345,7 +345,7 @@ function ChargeSheetInner({
 
         {requestAvailable && (wakeLock.state === "error" || wakeLock.state === "released") && (
           <div className="flex justify-center">
-            <Button variant="ghost" className="btn-sm min-h-11" onClick={wakeLock.retry}>
+            <Button variant="ghost" className="btn-sm" onClick={wakeLock.retry}>
               Screen may sleep · Retry
             </Button>
           </div>
@@ -364,7 +364,7 @@ function ChargeSheetInner({
                   The charge is still valid. The customer can pay now, and the payment will be
                   picked up as soon as the connection comes back.
                 </p>
-                <Button variant="secondary" className="mt-2.5 min-h-11" onClick={() => void pollNow()}>
+                <Button variant="secondary" className="mt-2.5" onClick={() => void pollNow()}>
                   <IconRefresh size={13} /> Check again
                 </Button>
               </div>

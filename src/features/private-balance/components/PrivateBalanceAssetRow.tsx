@@ -95,7 +95,7 @@ export function PrivateBalanceAssetRow({
       </span>
 
       <span className="min-w-0 max-w-[48%] text-right">
-        <span className="mono block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]">
+        <span className={`${paymentsEnabled && ready ? 'mono ' : ''}block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]`}>
           {!paymentsEnabled ? 'Turn on' : !ready ? 'Add funds' : privacyMode ? '••••••' : amount}
         </span>
         {fiat && (

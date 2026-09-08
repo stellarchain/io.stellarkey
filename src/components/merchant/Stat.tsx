@@ -88,16 +88,21 @@ export function Stat({
 export function StatStrip({
   columns,
   className = "",
+  scrollLabel,
   children,
 }: {
   columns?: string;
   className?: string;
+  /** Lets a wide strip scroll sideways on narrow screens; the label names the
+   *  region so keyboard users can reach and scroll it. */
+  scrollLabel?: string;
   children: ReactNode;
 }) {
   return (
     <div
-      className={`panel-inset grid ${className}`}
+      className={`panel-inset grid ${scrollLabel ? "overflow-x-auto scrollbar-none" : ""} ${className}`}
       style={columns ? { gridTemplateColumns: columns } : undefined}
+      {...(scrollLabel ? { role: "region", "aria-label": scrollLabel, tabIndex: 0 } : {})}
     >
       {children}
     </div>

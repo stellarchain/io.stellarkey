@@ -343,7 +343,7 @@ export function BatchSendModalBody({
             Nothing has been signed or sent. Confirm only after checking every recipient.
           </div>
 
-          <div className="max-h-[300px] space-y-2 overflow-y-auto pr-1">
+          <div className="space-y-2 sm:max-h-[300px] sm:overflow-y-auto sm:pr-1">
             {review.payments.map((payment, index) => (
               <div
                 key={`${payment.destination}:${index}`}
@@ -439,7 +439,7 @@ export function BatchSendModalBody({
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
-                className="btn-sm min-h-11"
+                className="btn-sm"
                 disabled={rows.length === 0 || compareStellarAmounts(maxSendable, "0") <= 0}
                 onClick={handleSplitEqually}
               >
@@ -447,7 +447,7 @@ export function BatchSendModalBody({
               </Button>
               <Button
                 variant="ghost"
-                className="btn-sm min-h-11"
+                className="btn-sm"
                 onClick={() => setShowCsvInput((s) => !s)}
               >
                 {showCsvInput ? "Switch to form" : "Paste CSV / TSV"}
@@ -477,7 +477,7 @@ export function BatchSendModalBody({
               </Button>
             </div>
           ) : (
-            <div className="max-h-[280px] space-y-2.5 overflow-y-auto pr-1">
+            <div className="space-y-2.5 sm:max-h-[280px] sm:overflow-y-auto sm:pr-1">
               {rows.map((row, idx) => (
                 <div
                   key={row.id}
@@ -512,7 +512,7 @@ export function BatchSendModalBody({
                         type="button"
                         onClick={() => handleRemoveRow(row.id)}
                         aria-label={`Remove recipient ${idx + 1}`}
-                        className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
+                        className="flex shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
                       >
                         <IconTrash size={15} aria-hidden="true" />
                       </button>
@@ -553,7 +553,7 @@ export function BatchSendModalBody({
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/20 text-[12.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04]"
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/20 text-[12.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04]"
               >
                 <IconPlus size={14} />
                 <span>Add Recipient</span>

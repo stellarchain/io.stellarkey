@@ -1033,7 +1033,7 @@ function SwapAmountCard({
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-neutral-400">
           {label}
-          <span className={`rounded-full px-1.5 py-0.5 text-[9px] tracking-normal ${
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] tracking-normal ${
             exact ? "bg-[#0A84FF]/15 text-[#64D2FF]" : "bg-white/[0.07] text-neutral-400"
           }`}>
             {exact ? "Exact" : "Quoted"}

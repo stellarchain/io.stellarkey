@@ -84,7 +84,7 @@
   }
 
   .app-safe-toast {
-    top: calc(1.5rem + var(--app-safe-area-top));
+    top: calc(4.75rem + var(--app-safe-area-top));
   }
 }
 
@@ -244,6 +244,16 @@ body::after {
   }
 
   :is(button, [role="button"], [role="menuitem"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Non-button controls (links, labels, custom rows) opt into the same finger
+     target. Pointer layouts keep their compact height. */
+  .tap {
+    min-height: 44px;
+  }
+  .tap-square {
     min-width: 44px;
     min-height: 44px;
   }
@@ -573,7 +583,8 @@ body::after {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
     font-size: 12px;
     color: var(--color-muted);
     border-radius: 999px;

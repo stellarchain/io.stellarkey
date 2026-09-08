@@ -181,7 +181,7 @@ function CustomerDisplayInner({
           >
             <IconRefresh size={17} />
           </button>
-          <Button variant="secondary" className="min-h-11" onClick={askForPin}>
+          <Button variant="secondary" onClick={askForPin}>
             <IconLock size={14} /> Exit display
           </Button>
         </div>

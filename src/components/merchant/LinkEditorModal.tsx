@@ -410,7 +410,7 @@ function CodeEditor({
                   {fmtMinor(minor, currency)}
                   <button
                     type="button"
-                    className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-white"
+                    className="flex items-center justify-center rounded-full text-neutral-400 transition-colors hover:text-white"
                     aria-label={`Remove ${fmtMinor(minor, currency)}`}
                     onClick={() => setSuggested((previous) => previous.filter((value) => value !== minor))}
                   >
@@ -562,7 +562,7 @@ function CodeEditor({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setPreviewKey(key)}
-                    className={`mono min-h-11 rounded-full px-3.5 text-[12px] font-semibold transition-colors ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.08] text-neutral-400 hover:text-white"}`}
+                    className={`mono rounded-full px-3.5 text-[12px] font-semibold transition-colors ${selected ? "bg-[#0A84FF] text-white" : "bg-white/[0.08] text-neutral-400 hover:text-white"}`}
                   >
                     {asset.code}
                   </button>

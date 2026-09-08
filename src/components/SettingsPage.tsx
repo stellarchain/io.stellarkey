@@ -861,7 +861,7 @@ export function SettingsPage({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
             {/* Column 1: Recovery, security, signing, and privacy */}
             <div className="space-y-6">
               <section aria-labelledby="settings-recovery-title">
@@ -876,7 +876,6 @@ export function SettingsPage({
                     icon={<IconLock size={16} />}
                     tint="#30D158"
                     label="Require Password to Sign"
-                    value={signingPasswordRequired ? "On" : "Off"}
                     sub={signingPasswordRequired
                       ? "Fresh local verification for every transaction"
                       : "The unlocked wallet can sign without another prompt"}
@@ -1885,7 +1884,7 @@ export function SettingsPage({
                       <p className="text-[11.5px] text-neutral-400">Safe 3 · Model T · Model One</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10.5px] font-semibold text-emerald-400 shrink-0 whitespace-nowrap">
                     Trezor Connect
                   </span>
                 </div>
@@ -1918,7 +1917,7 @@ export function SettingsPage({
                       <p className="text-[11.5px] text-neutral-400">Stax · Nano X · Nano S Plus</p>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10.5px] font-semibold text-neutral-400">
+                  <span className="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-[10.5px] font-semibold text-neutral-400 shrink-0 whitespace-nowrap">
                     Not Available
                   </span>
                 </div>
@@ -2619,7 +2618,7 @@ function RowButton({
           {label}
         </span>
         {sub && (
-          <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+          <span className="block truncate text-[12px] leading-tight text-neutral-400">
             {sub}
           </span>
         )}

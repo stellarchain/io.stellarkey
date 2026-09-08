@@ -304,9 +304,9 @@ export function AssetDetailModalBody({
                 {fmtAmount(balanceSummary.sellingLiabilities)} {asset.code}
               </span>
             </div>
-            <div className="flex flex-col gap-1 border-t border-white/10 pt-1.5 font-semibold text-white sm:flex-row sm:justify-between sm:gap-3">
+            <div className="flex items-start justify-between gap-3 border-t border-white/10 pt-1.5 font-semibold text-white">
               <span>Spendable Balance</span>
-              <span className="mono break-words text-right text-[#30D158]">
+              <span className="mono min-w-0 max-w-[60%] break-words text-right text-[#30D158]">
                 {fmtAmount(balanceSummary.spendable)} {asset.code}
               </span>
             </div>
@@ -345,12 +345,12 @@ export function AssetDetailModalBody({
                 href={`https://${issuerDomain}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-11 items-center justify-end gap-1.5 text-[13px] font-medium text-neutral-200 underline decoration-white/30 underline-offset-2 hover:decoration-white"
+                className="inline-flex tap items-center justify-end gap-1.5 text-[13px] font-medium text-neutral-200 underline decoration-white/30 underline-offset-2 hover:decoration-white"
               >
                 <span>{issuerDomain}</span>
                 {issuerDomainSignal && (
                   <span
-                    className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                    className={`rounded px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                       knownIssuerDomain
                         ? "bg-[#30D158]/15 text-[#30D158]"
                         : "bg-white/[0.08] text-neutral-400"
@@ -423,10 +423,10 @@ export function AssetDetailModalBody({
           <CopyButton
             value={sacContractId}
             label="Copy SAC ID"
-            className="chip min-h-11 flex-1 justify-center"
+            className="chip tap flex-1 justify-center"
           />
           <a
-            className="chip min-h-11 flex-1 justify-center"
+            className="chip tap flex-1 justify-center"
             href={
               NETWORKS[network].explorerAccountUrl(sacContractId)
             }

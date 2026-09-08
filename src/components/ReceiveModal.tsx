@@ -249,11 +249,11 @@ function ReceiveInner({
         />
 
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-          <CopyButton value={address} label="Copy Address" className="chip min-h-11" />
+          <CopyButton value={address} label="Copy Address" className="chip tap" />
           {activeAccount?.hardware === "trezor" && (
             <Button
               variant="secondary"
-              className="btn-sm min-h-11"
+              className="btn-sm"
               loading={trezorPending}
               loadingLabel="Checking Trezor"
               onClick={() => void handleVerifyTrezor()}
@@ -264,7 +264,7 @@ function ReceiveInner({
           {canShare && (
             <Button
               variant="secondary"
-              className="btn-sm min-h-11"
+              className="btn-sm"
               onClick={handleShare}
             >
               <IconShare size={12} /> Share
@@ -274,7 +274,7 @@ function ReceiveInner({
             <a
               href={qrDataUrl}
               download="stellarkey-receive-qr.png"
-              className="chip min-h-11"
+              className="chip tap"
             >
               <IconDownload size={13} /> Save QR
             </a>
@@ -282,7 +282,7 @@ function ReceiveInner({
           <button
             type="button"
             onClick={() => setShowCustomRequest((value) => !value)}
-            className="chip min-h-11"
+            className="chip"
           >
             {showCustomRequest ? "Hide Request Options" : "Set Amount / Memo"}
           </button>
@@ -367,7 +367,7 @@ function ReceiveInner({
               <CopyButton
                 value={payload}
                 label="Copy SEP-0007 Link"
-                className="chip min-h-11 w-full justify-center"
+                className="chip tap w-full justify-center"
               />
             )}
           </div>

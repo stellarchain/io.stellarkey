@@ -877,7 +877,7 @@ function InvoiceDocument({
                 open its own composer. The classes match `variant="secondary"`
                 so it sits level with the buttons beside it. */}
             {reminderHref && status !== "draft" && status !== "void" ? (
-              <a href={reminderHref} className="btn btn-secondary min-h-11 w-full">
+              <a href={reminderHref} className="btn btn-secondary tap w-full">
                 <IconSend size={14} /> Send a reminder
               </a>
             ) : (

@@ -441,7 +441,7 @@ function SendPrivateFlow({
                   <button
                     type="button"
                     onClick={() => void pasteAddress()}
-                    className="flex min-h-11 items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
+                    className="flex items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
                   >
                     Paste
                   </button>
@@ -449,7 +449,7 @@ function SendPrivateFlow({
                     type="button"
                     aria-expanded={showScanner}
                     onClick={() => setShowScanner(current => !current)}
-                    className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
+                    className="flex items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
                   >
                     <IconQrScan size={14} />
                     <span>{showScanner ? 'Hide QR Input' : 'Paste QR Payload'}</span>
@@ -513,7 +513,7 @@ function SendPrivateFlow({
                       key={recent.address}
                       type="button"
                       onClick={() => setRecipient(recent.address)}
-                      className="chip flex min-h-11 items-center gap-1.5 text-[12px] text-neutral-300 hover:text-white"
+                      className="chip flex items-center gap-1.5 text-[12px] text-neutral-300 hover:text-white"
                     >
                       <AccountMark publicKey={recent.fingerprint} size={14} />
                       <span className="mono">{recent.fingerprint}</span>
@@ -555,7 +555,7 @@ function SendPrivateFlow({
                   type="button"
                   aria-pressed={memo === preset}
                   onClick={() => setMemo(preset)}
-                  className={`flex min-h-11 items-center rounded-xl px-3 text-[12px] font-medium transition-colors ${
+                  className={`flex items-center rounded-xl px-3 text-[12px] font-medium transition-colors ${
                     memo === preset
                       ? 'bg-[#0A84FF] font-semibold text-white'
                       : 'bg-white/[0.06] text-neutral-400 hover:text-white'

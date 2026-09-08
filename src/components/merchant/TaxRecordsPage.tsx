@@ -767,7 +767,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                         key={record.id}
                         first={index === 0}
                         icon={
-                          <span className="mono text-[8px] font-semibold">
+                          <span className="mono text-[10px] font-semibold">
                             {FORMAT_BADGE[record.format]}
                           </span>
                         }

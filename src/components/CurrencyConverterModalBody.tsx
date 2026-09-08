@@ -192,7 +192,7 @@ export function CurrencyConverterModalBody({
             key={amt}
             type="button"
             onClick={() => setFromAmount(String(amt))}
-            className="chip min-h-11 flex-1 justify-center text-[12px] font-medium"
+            className="chip flex-1 justify-center text-[12px] font-medium"
           >
             {amt}
           </button>

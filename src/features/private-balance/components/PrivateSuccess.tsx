@@ -91,7 +91,7 @@ export function PrivateSuccess({
         <p className="mt-1 max-w-[340px] text-[13px] leading-relaxed text-neutral-400">{subtitle}</p>
       ) : null}
       {explorerHref ? (
-        <a className="chip mt-4 min-h-11" href={explorerHref} target="_blank" rel="noopener noreferrer">
+        <a className="chip mt-4 tap" href={explorerHref} target="_blank" rel="noopener noreferrer">
           View on Explorer <IconExternal size={11} />
         </a>
       ) : null}

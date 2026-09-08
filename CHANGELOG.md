@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduced haptic and sound feedback to documented meanings: no vibration or sound on opening, closing, Back, tab changes or chips; outcome feedback fires once; sounds are off until turned on.
 - Dialogs now receive keyboard focus themselves on open so assistive technology announces their name before any control; entry-first sheets focus their field.
 - Raised touch targets inside dialogs to 44 px, replaced text-glyph icons with real icons, and added keyboard hints and input modes to dialog fields.
+- Made 44 px touch targets pointer-adaptive: they apply on touch screens only, so buttons, chips and links keep their compact macOS height with a mouse or trackpad; links and rows opt in through `tap` utilities.
+- Aligned every screen with Apple platform conventions across macOS, iPadOS and iOS: UI labels, chips and settings subtitles use the system sans face with tabular figures while addresses, hashes and amounts stay monospace; no interface text renders below 10 px; dialogs no longer draw a focus ring around their panel; long alert actions stack instead of wrapping; toasts sit below the header.
+- Fixed layout regressions at iPad widths: single-column Settings until the window is wide enough for two, a wrapping Activity filter row, a wider account pill, an Add Contact toolbar button on pointer layouts, and Send form labels that no longer shift on touch screens.
+- Fixed iPhone details: the Assets header keeps its actions on one row, field hints wrap beneath long labels, the multi-send sheet scrolls as one surface, asset availability rows stay on one line, and merchant stat strips scroll instead of truncating.
 - Re-baselined the initial, unlocked-wallet and merchant JavaScript release budgets for the shared dialog shell and the static dialog shells that now ship with the wallet so a first open never waits for a chunk; dialog bodies stay lazily loaded and separately counted.
 
 - Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.

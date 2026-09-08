@@ -441,7 +441,7 @@ function ItemEditor({
                     aria-label={swatch.name}
                     aria-pressed={on}
                     onClick={() => setColour(swatch.hex)}
-                    className="flex min-h-11 min-w-11 items-center justify-center rounded-full transition-transform active:scale-90"
+                    className="flex items-center justify-center rounded-full transition-transform active:scale-90"
                   >
                     <span
                       aria-hidden="true"
