@@ -6,6 +6,7 @@ import {
   usePrivateBalanceRuntime,
 } from "@/hooks/usePrivateBalanceRuntime";
 import { LoadingRegion, Modal, ModalHeader, Tabs } from "./ui";
+import type { AddAssetHeader } from "./AddAssetModal";
 
 const AddAssetPublicPanel = dynamic(
   () => import("./AddAssetModal").then((module) => module.AddAssetPublicPanel),
@@ -42,30 +43,75 @@ export function AddAssetModal({
   initialMode?: "public" | "private";
   onClose: () => void;
 }) {
-  const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
-  const [addMode, setAddMode] = useState<"public" | "private">(initialMode);
-  const [, startRuntimeTransition] = useTransition();
   const [surfaceBusy, setSurfaceBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [header, setHeader] = useState<AddAssetHeader | null>(null);
   const privateCloseHandler = useRef<(() => void) | null>(null);
-  const privateLeaveHandler = useRef<(() => Promise<void>) | null>(null);
 
-  const close = useCallback(() => {
-    privateCloseHandler.current = null;
-    privateLeaveHandler.current = null;
-    setAddMode("public");
-    setSurfaceBusy(false);
+  const setPrivateCloseHandler = useCallback((handler: (() => void) | null) => {
+    privateCloseHandler.current = handler;
+  }, []);
+
+  const requestClose = useCallback(() => {
+    const closePrivate = privateCloseHandler.current;
+    if (closePrivate) {
+      closePrivate();
+      return;
+    }
     onClose();
   }, [onClose]);
 
-  const requestClose = useCallback(() => {
-    if (addMode === "private" && privateCloseHandler.current) {
-      privateCloseHandler.current();
-      return;
-    }
-    close();
-  }, [addMode, close]);
+  return (
+    <Modal
+      open={open}
+      onClose={requestClose}
+      wide
+      busy={surfaceBusy}
+      busyReason="Wait for the trustline transaction to finish before closing."
+      dirty={dirty}
+    >
+      <ModalHeader
+        title={header?.title ?? "Add Assets"}
+        subtitle={header ? header.subtitle : "Add public trustlines or fund a private balance"}
+        onBack={header?.onBack}
+        onClose={requestClose}
+      />
+      <AddAssetSurface
+        initialMode={initialMode}
+        surfaceBusy={surfaceBusy}
+        onClose={onClose}
+        onBusyChange={setSurfaceBusy}
+        onDirtyChange={setDirty}
+        onHeaderChange={setHeader}
+        onPrivateCloseHandlerChange={setPrivateCloseHandler}
+      />
+    </Modal>
+  );
+}
 
-  if (!open) return null;
+// Mounted with the shell and unmounted after its exit, so every opening starts
+// on the requested mode with an empty queue.
+function AddAssetSurface({
+  initialMode,
+  surfaceBusy,
+  onClose,
+  onBusyChange,
+  onDirtyChange,
+  onHeaderChange,
+  onPrivateCloseHandlerChange,
+}: {
+  initialMode: "public" | "private";
+  surfaceBusy: boolean;
+  onClose: () => void;
+  onBusyChange: (busy: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onHeaderChange: (header: AddAssetHeader | null) => void;
+  onPrivateCloseHandlerChange: (handler: (() => void) | null) => void;
+}) {
+  const { availableAssets, requestRuntime } = usePrivateBalanceRuntime();
+  const [addMode, setAddMode] = useState<"public" | "private">(initialMode);
+  const [, startRuntimeTransition] = useTransition();
+  const privateLeaveHandler = useRef<(() => Promise<void>) | null>(null);
 
   const changeMode = (next: "public" | "private") => {
     if (next === addMode || surfaceBusy) return;
@@ -77,49 +123,42 @@ export function AddAssetModal({
   const panel = addMode === "private" ? (
     <PrivatePaymentAccessGate action="add">
       <PrivateAddFunds
-        onClose={close}
+        onClose={onClose}
         showAssetSelector
         embedded
-        onCloseHandlerChange={(handler) => {
-          privateCloseHandler.current = handler;
-        }}
+        onCloseHandlerChange={onPrivateCloseHandlerChange}
         onBeforeLeaveChange={(handler) => {
           privateLeaveHandler.current = handler;
         }}
-        onWorkingChange={setSurfaceBusy}
+        onWorkingChange={onBusyChange}
+        onHeaderChange={onHeaderChange}
       />
     </PrivatePaymentAccessGate>
   ) : (
-    <AddAssetPublicPanel onClose={close} onBusyChange={setSurfaceBusy} embedded />
+    <AddAssetPublicPanel
+      onClose={onClose}
+      onBusyChange={onBusyChange}
+      onDirtyChange={onDirtyChange}
+      onHeaderChange={onHeaderChange}
+    />
   );
 
+  if (availableAssets.length === 0) return panel;
   return (
-    <Modal open onClose={requestClose} wide dismissable={!surfaceBusy}>
-      <ModalHeader
-        title="Add Assets"
-        subtitle="Add public trustlines or fund a private balance"
-        onClose={requestClose}
-        closeDisabled={surfaceBusy}
-      />
-      {availableAssets.length > 0 ? (
-        <Tabs
-          value={addMode}
-          options={[
-            { label: "Public", value: "public", disabled: surfaceBusy },
-            { label: "Private", value: "private", disabled: surfaceBusy },
-          ]}
-          onChange={changeMode}
-          ariaLabel="Where to add funds"
-          activationMode="manual"
-          panelBusy={surfaceBusy}
-          tabListClassName="mx-4 mt-4 sm:mx-6"
-          panelClassName="min-h-56"
-        >
-          {panel}
-        </Tabs>
-      ) : (
-        panel
-      )}
-    </Modal>
+    <Tabs
+      value={addMode}
+      options={[
+        { label: "Public", value: "public", disabled: surfaceBusy },
+        { label: "Private", value: "private", disabled: surfaceBusy },
+      ]}
+      onChange={changeMode}
+      ariaLabel="Where to add funds"
+      activationMode="manual"
+      panelBusy={surfaceBusy}
+      tabListClassName="mx-4 mt-4 sm:mx-6"
+      panelClassName="min-h-56"
+    >
+      {panel}
+    </Tabs>
   );
 }

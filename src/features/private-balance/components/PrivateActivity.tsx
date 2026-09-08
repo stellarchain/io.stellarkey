@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconArrowDownLeft, IconArrowUpRight, IconRefresh, IconShieldStellar } from '@/components/icons';
-import { Modal, ModalHeader } from '@/components/ui';
+import { Modal, ModalBody, ModalHeader } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
 import { activityKindLabel } from '../copy';
@@ -105,7 +105,7 @@ export function PrivateActivityList({
   }
 
   return (
-    <div className="ios-group overflow-hidden">
+    <div className="list-group">
       {visiblePending.map(action => {
         // A chained send's internal consolidation step is a self-transfer with
         // a zero protocol balance delta — never an outgoing spend, no amount.
@@ -162,24 +162,66 @@ export function PrivateActivityList({
   );
 }
 
+/**
+ * The activity dialog: a master list and one detail step under a single
+ * header whose back control returns to the list. Decrypted amounts are
+ * sensitive, so the content leaves as soon as the dialog closes while the
+ * shell keeps its geometry through the exit.
+ */
 export function PrivateActivity({
+  open = true,
   onClose,
   initialSelection = null,
   privacyMode = false,
 }: {
+  open?: boolean;
   onClose(): void;
   initialSelection?: PrivateActivitySelection | null;
   privacyMode?: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      busy={busy}
+      busyReason="Wait for the status check to finish before closing."
+    >
+      {open ? (
+        <PrivateActivitySheet
+          initialSelection={initialSelection}
+          privacyMode={privacyMode}
+          onClose={onClose}
+          onBusyChange={setBusy}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+function PrivateActivitySheet({
+  initialSelection,
+  privacyMode,
+  onClose,
+  onBusyChange,
+}: {
+  initialSelection: PrivateActivitySelection | null;
+  privacyMode: boolean;
+  onClose(): void;
+  onBusyChange(busy: boolean): void;
 }) {
   const { deployment } = usePrivateBalanceRuntimeData();
   const [selection, setSelection] = useState<PrivateActivitySelection | null>(initialSelection);
 
   return (
-    <Modal open onClose={onClose}>
+    <>
       <ModalHeader
         title={selection ? 'Payment details' : 'Private activity'}
         subtitle="Decrypted locally while StellarKey is unlocked"
         onClose={onClose}
+        onBack={selection ? () => setSelection(null) : undefined}
+        backLabel="Back to activity"
       />
       {selection ? (
         <PrivateActivityDetails
@@ -187,13 +229,13 @@ export function PrivateActivity({
           network={deployment.network ?? 'testnet'}
           poolContractId={deployment.poolContractId}
           privacyMode={privacyMode}
-          onBack={() => setSelection(null)}
+          onBusyChange={onBusyChange}
         />
       ) : (
-        <div className="p-4 sm:p-6">
+        <ModalBody>
           <PrivateActivityList privacyMode={privacyMode} onSelect={setSelection} />
-        </div>
+        </ModalBody>
       )}
-    </Modal>
+    </>
   );
 }

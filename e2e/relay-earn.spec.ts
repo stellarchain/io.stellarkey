@@ -18,7 +18,7 @@ async function openEarn(page: Page) {
   await page.getByRole('button', { name: /Earn by relaying/ }).click();
   const dialog = dialogFor(page);
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
   return dialog;
 }
 
@@ -249,7 +249,9 @@ test('Earn disclosure, keyboard focus, narrow layout and accessibility remain us
 
 test('Earn lab acknowledgement and structural layout budgets', async ({ page, browserName }) => {
   // Lab proxy only: synthetic state, owned local server, no private values in
-  // measurements. Two animation frames include a rendering opportunity.
+  // measurements. A task posted from rAF includes the acknowledgement's
+  // rendering opportunity without charging a later, unrelated frame interval.
+  // https://codelabs.developers.google.com/understanding-inp#13
   // Establish hydration with a real interaction before timing warm local
   // state changes. A synthetic click on pre-hydration HTML has no handler.
   const warmup = await openEarn(page);
@@ -267,19 +269,19 @@ test('Earn lab acknowledgement and structural layout budgets', async ({ page, br
       const observer = new MutationObserver(() => {
         if (!document.querySelector('[data-modal-shell]')) return;
         observer.disconnect();
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - started)));
+        requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - started), 0));
       });
       observer.observe(document.body, { childList: true, subtree: true });
       (document.querySelector('section[aria-label="Synthetic earn checks"] button[aria-haspopup="dialog"]') as HTMLButtonElement).click();
     })));
     const dialog = dialogFor(page);
-    await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+    await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
     acknowledgement.push(await dialog.getByRole('button', { name: 'Start relaying', exact: true }).evaluate(node => new Promise<number>(resolve => {
       const started = performance.now();
       const observer = new MutationObserver(() => {
         if (!node.textContent?.includes('Stop relaying')) return;
         observer.disconnect();
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now() - started)));
+        requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - started), 0));
       });
       observer.observe(node, { childList: true, subtree: true, characterData: true });
       (node as HTMLButtonElement).click();

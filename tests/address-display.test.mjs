@@ -22,7 +22,7 @@ test("Trezor-style addresses use consistent four-character verification groups",
 test("screens use the shared Trezor-style address presentation", () => {
   const files = [
     "src/components/AddAssetModal.tsx",
-    "src/components/BatchSendModal.tsx",
+    "src/components/BatchSendModalBody.tsx",
     "src/components/Dashboard.tsx",
     "src/components/RenameAccountModal.tsx",
     "src/components/SettingsPage.tsx",
@@ -30,9 +30,9 @@ test("screens use the shared Trezor-style address presentation", () => {
   ];
   const combined = files.map(read).join("\n");
   const send = read("src/components/SendModal.tsx");
-  const addAccount = read("src/components/AddAccountModal.tsx");
+  const addAccount = read("src/components/AddAccountModalBody.tsx");
   const addressBook = read("src/components/AddressBookPage.tsx");
-  const multisig = read("src/components/MultiSigStudioModal.tsx");
+  const multisig = read("src/components/MultiSigStudioModalBody.tsx");
   const settings = read("src/components/SettingsPage.tsx");
   const receive = read("src/components/ReceiveModal.tsx");
 

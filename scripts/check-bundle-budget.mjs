@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 export const INITIAL_JS_RAW_BUDGET = 1_350_000;
-export const INITIAL_JS_GZIP_BUDGET = 350_000;
+export const INITIAL_JS_GZIP_BUDGET = 360_000;
 export const PRIVATE_FEATURE_JS_RAW_BUDGET = 500_000;
 export const PRIVATE_FEATURE_JS_GZIP_BUDGET = 140_000;
 export const PRIVATE_WORKER_JS_RAW_BUDGET = 1_300_000;
@@ -33,8 +33,12 @@ export const JOURNEY_BUDGETS = Object.freeze({
   // v1.4 adds authenticated asset-registry discovery and explicit relay
   // controls to the unlocked shell. Proving, relay transport, full merchant,
   // and hardware code remain independently lazy and budgeted below.
-  unlocked: { rawBytes: 765_000, gzipBytes: 170_000 },
-  merchant: { rawBytes: 545_000, gzipBytes: 150_000 },
+  // Re-baselined 2026-09-07 for the shared dialog shell (sheet presentation,
+  // drag-to-dismiss, alerts, body/footer/confirm primitives) and the static
+  // dialog shells that now ship with the wallet so a first open never waits
+  // for a chunk. Dialog bodies remain lazily loaded and separately counted.
+  unlocked: { rawBytes: 785_000, gzipBytes: 175_000 },
+  merchant: { rawBytes: 555_000, gzipBytes: 153_000 },
   hardware: { rawBytes: 1_100_000, gzipBytes: 225_000 },
 });
 
@@ -206,7 +210,7 @@ export function measureJourneyJavaScript(outputDirectory = "out", buildDirectory
   const unlockedIncrement = new Set(without(unlocked, initial));
 
   const merchant = chunksForIds(
-    namedBoundaryIds(contents, ["MerchantPage", "SetupWizard"]),
+    namedBoundaryIds(contents, ["MerchantPage", "SetupWizard", "SetupWizardBody"]),
     mappings,
     "merchant",
   );

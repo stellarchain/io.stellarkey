@@ -3,7 +3,6 @@
 import { useId } from 'react';
 import { FiatValue } from '@/components/FiatValue';
 import { fmtAmount } from '@/lib/format';
-import { triggerHaptic } from '@/lib/haptics';
 
 const QUICK_AMOUNTS = [10, 25, 50, 100] as const;
 
@@ -26,6 +25,7 @@ export function PrivateAmountField({
   isNative,
   error,
   showQuickAmounts = true,
+  enterKeyHint = 'next',
 }: {
   amount: string;
   onAmount(next: string): void;
@@ -36,24 +36,25 @@ export function PrivateAmountField({
   isNative?: boolean;
   error?: string | null;
   showQuickAmounts?: boolean;
+  /** `next` when another field follows, `done` when the amount is the last entry. */
+  enterKeyHint?: 'next' | 'done';
 }) {
   const amountId = useId();
   const errorId = `${amountId}-error`;
   const applyMax = () => {
     if (max === null) return;
-    triggerHaptic('selection');
     onAmount(max);
   };
 
   return (
     <div>
-      <div className="flex items-center justify-between pb-1">
+      <div className="flex items-center justify-between">
         <label htmlFor={amountId} className="field-label !pb-0">Amount</label>
         {max !== null ? (
           <button
             type="button"
             onClick={applyMax}
-            className="text-[12px] font-medium text-[#0A84FF] hover:underline"
+            className="-mr-2 flex min-h-11 items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
           >
             Max: {fmtAmount(max)} {code}
           </button>
@@ -63,6 +64,7 @@ export function PrivateAmountField({
         id={amountId}
         type="text"
         inputMode="decimal"
+        enterKeyHint={enterKeyHint}
         autoComplete="off"
         placeholder="0.00"
         value={amount}
@@ -94,16 +96,13 @@ export function PrivateQuickAmounts({
   max: string | null;
 }) {
   return (
-    <div className="mt-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+    <div className="mt-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
       {QUICK_AMOUNTS.map(value => (
         <button
           key={value}
           type="button"
-          onClick={() => {
-            triggerHaptic('selection');
-            onAmount(String(value));
-          }}
-          className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-[11.5px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] active:bg-white/[0.16]"
+          onClick={() => onAmount(String(value))}
+          className="flex min-h-11 shrink-0 items-center rounded-xl bg-white/[0.06] px-3.5 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] active:bg-white/[0.16]"
         >
           {value}
         </button>
@@ -111,11 +110,8 @@ export function PrivateQuickAmounts({
       {max !== null ? (
         <button
           type="button"
-          onClick={() => {
-            triggerHaptic('selection');
-            onAmount(max);
-          }}
-          className="rounded-lg border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-2.5 py-1 text-[11.5px] font-bold text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/22 active:bg-[#0A84FF]/28"
+          onClick={() => onAmount(max)}
+          className="flex min-h-11 shrink-0 items-center rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[13px] font-bold text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/22 active:bg-[#0A84FF]/28"
         >
           MAX
         </button>

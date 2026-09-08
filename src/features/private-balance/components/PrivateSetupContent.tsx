@@ -2,7 +2,6 @@
 
 import { IconShieldStellar } from '@/components/icons';
 import { Button } from '@/components/ui';
-import { triggerHaptic } from '@/lib/haptics';
 
 export function PrivateSetupContent({
   action,
@@ -33,10 +32,7 @@ export function PrivateSetupContent({
         <Button
           type="button"
           className="mt-6 min-w-48"
-          onClick={() => {
-            triggerHaptic('selection');
-            onTurnOn();
-          }}
+          onClick={onTurnOn}
         >
           Turn On Private Payments
         </Button>

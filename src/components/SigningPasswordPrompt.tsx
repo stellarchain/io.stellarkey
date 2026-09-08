@@ -1,14 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useWalletSecurity } from "@/hooks/useWallet";
 import type { SigningAuthorizationRequest } from "@/lib/signing-authorization";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, ErrorText, Field, Modal, ModalHeader, Notice } from "./ui";
+import {
+  Button,
+  ErrorText,
+  Field,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Notice,
+} from "./ui";
 
 export function SigningPasswordPrompt() {
   const security = useWalletSecurity();
-  if (!security.signingAuthorizationRequest) return null;
 
   return (
     <SigningPasswordDialog
@@ -26,19 +34,29 @@ function SigningPasswordDialog({
   continueSigningAuthorization,
   cancelSigningAuthorization,
 }: {
-  request: SigningAuthorizationRequest;
+  request: SigningAuthorizationRequest | null;
   approveSigningAuthorization: (password: string) => Promise<"approved" | "continue">;
   continueSigningAuthorization: () => void;
   cancelSigningAuthorization: (message?: string) => void;
 }) {
-  const sensitiveSetting = request.purpose === "sensitive-setting";
+  const open = request !== null;
+  const sensitiveSetting = request?.purpose === "sensitive-setting";
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [passwordVerified, setPasswordVerified] = useState(false);
+  const [prevRequest, setPrevRequest] = useState(request);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Every request starts from an empty prompt, and nothing typed survives its close.
+  if (request !== prevRequest) {
+    setPrevRequest(request);
+    setPassword("");
+    setError(null);
+    setPasswordVerified(false);
+  }
 
   const cancel = () => {
-    if (busy) return;
     setPassword("");
     setError(null);
     cancelSigningAuthorization();
@@ -52,13 +70,11 @@ function SigningPasswordDialog({
       const result = await approveSigningAuthorization(password);
       setPassword("");
       triggerHaptic("success");
-      if (result === "continue") {
-        setPasswordVerified(true);
-        setBusy(false);
-      }
+      if (result === "continue") setPasswordVerified(true);
     } catch (cause) {
       triggerHaptic("error");
       setError(cause instanceof Error ? cause.message : "Password verification failed.");
+    } finally {
       setBusy(false);
     }
   };
@@ -66,7 +82,6 @@ function SigningPasswordDialog({
   const continueToHardware = () => {
     try {
       continueSigningAuthorization();
-      triggerHaptic("selection");
     } catch (cause) {
       triggerHaptic("error");
       setError(cause instanceof Error ? cause.message : "Could not continue to your Trezor.");
@@ -75,70 +90,87 @@ function SigningPasswordDialog({
 
   return (
     <Modal
-      open
+      open={open}
       onClose={cancel}
-      dismissable={!busy}
+      busy={busy}
+      busyReason="Wait for the password check to finish before closing."
+      initialFocus={passwordRef}
     >
-      <ModalHeader
-        title={sensitiveSetting ? "Confirm security change" : "Confirm transaction"}
-        subtitle={request.label}
-        onClose={busy ? undefined : cancel}
-      />
-      <form
-        className="space-y-4 p-4 sm:p-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void approve();
-        }}
-      >
-        {passwordVerified ? (
-          <>
-            <Notice tone="pos">
-              Password confirmed. Continue from this button so your browser can open Trezor’s
-              approval window securely.
-            </Notice>
-            <div className="grid grid-cols-2 gap-3">
-              <Button type="button" variant="ghost" onClick={cancel}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={continueToHardware}>
-                Continue on Trezor
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <Notice>
-              {sensitiveSetting
-                ? "Enter your wallet password to approve this sensitive change. The password is verified locally and is not stored after approval."
-                : "Enter your wallet password before StellarKey signs this transaction. The password is verified locally and is not stored after approval."}
-            </Notice>
-            <Field
-              label="Wallet Password"
-              hint={sensitiveSetting ? "Required for this change only" : "Required for this signature only"}
-            >
-              <input
-                className="input text-base sm:text-[14px]"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter password"
-                disabled={busy}
-              />
-            </Field>
-            <ErrorText message={error ?? ""} />
-            <div className="grid grid-cols-2 gap-3">
-              <Button type="button" variant="ghost" disabled={busy} onClick={cancel}>
-                Cancel
-              </Button>
-              <Button type="submit" loading={busy} disabled={!password || busy}>
-                Authorize
-              </Button>
-            </div>
-          </>
-        )}
-      </form>
+      {request && (
+        <>
+          <ModalHeader
+            title={sensitiveSetting ? "Confirm security change" : "Confirm transaction"}
+            subtitle={request.label}
+            onClose={cancel}
+          />
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void approve();
+            }}
+          >
+            <ModalBody>
+              {passwordVerified ? (
+                <>
+                  <Notice tone="pos">
+                    Password confirmed. Continue from this button so your browser can open Trezor’s
+                    approval window securely.
+                  </Notice>
+                  <ModalFooter
+                    secondary={
+                      <Button type="button" variant="ghost" onClick={cancel}>
+                        Cancel
+                      </Button>
+                    }
+                    primary={
+                      <Button type="button" onClick={continueToHardware}>
+                        Continue on Trezor
+                      </Button>
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <Notice>
+                    {sensitiveSetting
+                      ? "Enter your wallet password to approve this sensitive change. The password is verified locally and is not stored after approval."
+                      : "Enter your wallet password before StellarKey signs this transaction. The password is verified locally and is not stored after approval."}
+                  </Notice>
+                  <Field
+                    label="Wallet Password"
+                    hint={sensitiveSetting ? "Required for this change only" : "Required for this signature only"}
+                  >
+                    <input
+                      ref={passwordRef}
+                      className="input text-base sm:text-[14px]"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="Enter password"
+                      enterKeyHint="done"
+                      disabled={busy}
+                    />
+                  </Field>
+                  <ErrorText message={error ?? ""} />
+                  <ModalFooter
+                    secondary={
+                      <Button type="button" variant="ghost" disabled={busy} onClick={cancel}>
+                        Cancel
+                      </Button>
+                    }
+                    primary={
+                      <Button type="submit" loading={busy} loadingLabel="Verifying password" disabled={!password}>
+                        Authorize
+                      </Button>
+                    }
+                  />
+                </>
+              )}
+            </ModalBody>
+          </form>
+        </>
+      )}
     </Modal>
   );
 }

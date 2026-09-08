@@ -144,7 +144,9 @@ test("signing security requires the password to weaken policy and can rotate the
   await approval.getByLabel("Wallet Password").fill(replacement);
   await approval.getByRole("button", { name: "Authorize" }).click();
   await expect(approval).toBeHidden();
-  await expect(send.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
+  // The one Send dialog reports a stage-aware title once the payment lands.
+  const sent = page.getByRole("dialog", { name: "Payment Sent", exact: true });
+  await expect(sent.getByText("Payment Confirmed", { exact: true }).first()).toBeVisible();
 });
 
 test("unlock, send review, swap review, and watch-only safety stay operable", async ({ page }) => {
@@ -176,6 +178,10 @@ test("unlock, send review, swap review, and watch-only safety stay operable", as
   await expect(send.getByRole("button", { name: "Confirm Send", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("dialog", { name: "Send Payment" }).getByRole("button", { name: "Close" }).click();
+  // A typed recipient and amount are unsaved input: closing asks first.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(send).toBeHidden();
 
   await page.getByRole("button", { name: "DEX Swap", exact: true }).click();
   const payAmount = page.getByLabel("You pay amount");

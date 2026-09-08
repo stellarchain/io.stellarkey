@@ -21,6 +21,7 @@ function OpeningWalletFallback() {
 
   return (
     <div
+      data-app-surface
       role="status"
       aria-live="polite"
       aria-label={slow ? "Wallet is taking longer than expected to open" : "Opening wallet"}
@@ -73,7 +74,7 @@ export function WalletApp() {
 
   if (phase === "loading") {
     return (
-      <div className="app-safe-top flex min-h-screen flex-col items-center justify-center gap-4">
+      <div data-app-surface className="app-safe-top flex min-h-screen flex-col items-center justify-center gap-4">
         <LogoMark size={44} />
         <span className="spinner text-accent" />
         <BuildIdentity className="text-[10px] text-neutral-500" />

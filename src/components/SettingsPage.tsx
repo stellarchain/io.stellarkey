@@ -76,6 +76,7 @@ import { RenameAccountModal } from "./RenameAccountModal";
 import { ResetWalletModal } from "./ResetWalletModal";
 import { AddAccountModal } from "./AddAccountModal";
 import {
+  AlertContent,
   Button,
   CopyButton,
   ErrorText,
@@ -83,11 +84,14 @@ import {
   HashValue,
   IOSBackButton,
   Modal,
+  ModalBody,
+  ModalFooter,
   ModalHeader,
   NetworkBadge,
   SegmentedControl,
   Spinner,
   Toggle,
+  useRetainedForExit,
 } from "./ui";
 import { AccountMark } from "./AccountMark";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
@@ -268,6 +272,31 @@ export function SettingsPage({
   const [changePasswordBusy, setChangePasswordBusy] = useState(false);
   const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
   const newWalletPasswordStrength = estimatePasswordStrength(newWalletPassword);
+  // The passkey dialog keeps its variant through the exit animation.
+  const passkeyVariant = useRetainedForExit(passkeyDialog);
+  const disableSigningPasswordRef = useRef<HTMLInputElement>(null);
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const passkeyPasswordRef = useRef<HTMLInputElement>(null);
+
+  function closeDisableSigningDialog() {
+    setDisableSigningDialog(false);
+    setDisableSigningPassword("");
+    setDisableSigningError(null);
+  }
+
+  function closeChangePasswordDialog() {
+    setChangePasswordDialog(false);
+    setCurrentWalletPassword("");
+    setNewWalletPassword("");
+    setConfirmWalletPassword("");
+    setChangePasswordError(null);
+  }
+
+  function closePasskeyDialog() {
+    setPasskeyDialog(null);
+    setPasskeyPassword("");
+    setPasskeyError(null);
+  }
 
   useEffect(() => {
     const refresh = () => setBackupHealth(loadBackupHealth());
@@ -2233,255 +2262,266 @@ export function SettingsPage({
 
       <Modal
         open={disableSigningDialog}
-        onClose={() => {
-          if (signingPolicyBusy) return;
-          setDisableSigningDialog(false);
-          setDisableSigningPassword("");
-          setDisableSigningError(null);
-        }}
-        dismissable={!signingPolicyBusy}
+        onClose={closeDisableSigningDialog}
+        presentation="alert"
+        busy={signingPolicyBusy}
+        busyReason="Wait for the password check to finish before closing."
+        initialFocus={disableSigningPasswordRef}
       >
-        <ModalHeader
-          title="Turn Off Password Confirmation?"
-          subtitle="This weakens transaction signing protection"
-          onClose={signingPolicyBusy ? undefined : () => {
-            setDisableSigningDialog(false);
-            setDisableSigningPassword("");
-            setDisableSigningError(null);
-          }}
-        />
         <form
-          className="space-y-4 p-4 sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
             void handleDisableSigningPassword();
           }}
         >
-          <Notice tone="warn">
-            After this is off, anyone holding your unlocked device can approve software-wallet
-            transactions without entering the vault password again. Trezor still requires its own
-            device approval.
-          </Notice>
-          <Field label="Current Wallet Password" hint="Required to turn this protection off">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="current-password"
-              value={disableSigningPassword}
-              onChange={(event) => setDisableSigningPassword(event.target.value)}
-              placeholder="Enter password"
-              disabled={signingPolicyBusy}
-              autoFocus
-            />
-          </Field>
-          <ErrorText message={disableSigningError ?? ""} />
-          <div className="grid grid-cols-2 gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={signingPolicyBusy}
-              onClick={() => {
-                setDisableSigningDialog(false);
-                setDisableSigningPassword("");
-                setDisableSigningError(null);
-              }}
-            >
-              Keep On
-            </Button>
-            <Button
-              type="submit"
-              variant="danger"
-              loading={signingPolicyBusy}
-              disabled={!disableSigningPassword || signingPolicyBusy}
-            >
-              Turn Off
-            </Button>
-          </div>
+          <AlertContent
+            title="Turn Off Password Confirmation?"
+            message="After this is off, anyone holding your unlocked device can approve software-wallet transactions without entering the vault password again. Trezor still requires its own device approval."
+            actions={
+              <ModalFooter
+                secondary={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={signingPolicyBusy}
+                    onClick={closeDisableSigningDialog}
+                  >
+                    Keep on
+                  </Button>
+                }
+                primary={
+                  <Button
+                    type="submit"
+                    variant="danger"
+                    loading={signingPolicyBusy}
+                    loadingLabel="Verifying password"
+                    disabled={!disableSigningPassword}
+                  >
+                    Turn off
+                  </Button>
+                }
+              />
+            }
+          >
+            <div className="space-y-3">
+              <Field label="Current Wallet Password" hint="Required to turn this protection off">
+                <input
+                  ref={disableSigningPasswordRef}
+                  className="input text-base sm:text-[14px]"
+                  type="password"
+                  autoComplete="current-password"
+                  enterKeyHint="done"
+                  value={disableSigningPassword}
+                  onChange={(event) => setDisableSigningPassword(event.target.value)}
+                  placeholder="Enter password"
+                  disabled={signingPolicyBusy}
+                />
+              </Field>
+              <ErrorText message={disableSigningError ?? ""} />
+            </div>
+          </AlertContent>
         </form>
       </Modal>
 
       <Modal
         open={changePasswordDialog}
-        onClose={() => {
-          if (changePasswordBusy) return;
-          setChangePasswordDialog(false);
-          setCurrentWalletPassword("");
-          setNewWalletPassword("");
-          setConfirmWalletPassword("");
-          setChangePasswordError(null);
-        }}
-        dismissable={!changePasswordBusy}
+        onClose={closeChangePasswordDialog}
+        busy={changePasswordBusy}
+        busyReason="Wait for the password change to finish before closing."
+        initialFocus={currentPasswordRef}
       >
         <ModalHeader
           title="Change Wallet Password"
           subtitle="Re-wrap this encrypted vault locally"
-          onClose={changePasswordBusy ? undefined : () => {
-            setChangePasswordDialog(false);
-            setCurrentWalletPassword("");
-            setNewWalletPassword("");
-            setConfirmWalletPassword("");
-            setChangePasswordError(null);
-          }}
+          onClose={closeChangePasswordDialog}
         />
         <form
-          className="space-y-4 p-4 sm:p-6"
           onSubmit={(event) => {
             event.preventDefault();
             void handleChangeWalletPassword();
           }}
         >
-          <p className="text-[13.5px] leading-relaxed text-neutral-300">
-            Your accounts and encrypted records stay unchanged. Existing Face ID or Touch ID
-            unlock remains available because this operation keeps the same vault master key.
-          </p>
-          <Field label="Current Password">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="current-password"
-              value={currentWalletPassword}
-              onChange={(event) => setCurrentWalletPassword(event.target.value)}
-              placeholder="Enter current password"
-              disabled={changePasswordBusy}
-              autoFocus
+          <ModalBody>
+            <p className="text-[13.5px] leading-relaxed text-neutral-300">
+              Your accounts and encrypted records stay unchanged. Existing Face ID or Touch ID
+              unlock remains available because this operation keeps the same vault master key.
+            </p>
+            <Field label="Current Password">
+              <input
+                ref={currentPasswordRef}
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="current-password"
+                enterKeyHint="next"
+                value={currentWalletPassword}
+                onChange={(event) => setCurrentWalletPassword(event.target.value)}
+                placeholder="Enter current password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
+              <input
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="new-password"
+                enterKeyHint="next"
+                value={newWalletPassword}
+                onChange={(event) => setNewWalletPassword(event.target.value)}
+                placeholder="Enter new password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <PasswordStrengthMeter strength={newWalletPasswordStrength} />
+            <Field label="Confirm New Password">
+              <input
+                className="input text-base sm:text-[14px]"
+                type="password"
+                autoComplete="new-password"
+                enterKeyHint="done"
+                value={confirmWalletPassword}
+                onChange={(event) => setConfirmWalletPassword(event.target.value)}
+                placeholder="Repeat new password"
+                disabled={changePasswordBusy}
+              />
+            </Field>
+            <ErrorText message={changePasswordError ?? ""} />
+            <ModalFooter
+              primary={
+                <Button
+                  type="submit"
+                  loading={changePasswordBusy}
+                  loadingLabel="Changing password"
+                  disabled={
+                    !currentWalletPassword ||
+                    !newWalletPassword ||
+                    !confirmWalletPassword
+                  }
+                >
+                  Change password
+                </Button>
+              }
             />
-          </Field>
-          <Field label="New Password" hint="12+ characters; avoid common or predictable passwords">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="new-password"
-              value={newWalletPassword}
-              onChange={(event) => setNewWalletPassword(event.target.value)}
-              placeholder="Enter new password"
-              disabled={changePasswordBusy}
-            />
-          </Field>
-          <PasswordStrengthMeter strength={newWalletPasswordStrength} />
-          <Field label="Confirm New Password">
-            <input
-              className="input text-base sm:text-[14px]"
-              type="password"
-              autoComplete="new-password"
-              value={confirmWalletPassword}
-              onChange={(event) => setConfirmWalletPassword(event.target.value)}
-              placeholder="Repeat new password"
-              disabled={changePasswordBusy}
-            />
-          </Field>
-          <ErrorText message={changePasswordError ?? ""} />
-          <Button
-            className="w-full"
-            type="submit"
-            loading={changePasswordBusy}
-            disabled={
-              changePasswordBusy ||
-              !currentWalletPassword ||
-              !newWalletPassword ||
-              !confirmWalletPassword
-            }
-          >
-            Change Password
-          </Button>
+          </ModalBody>
         </form>
       </Modal>
 
       <Modal
         open={passkeyDialog !== null}
-        onClose={() => {
-          if (passkeyBusy) return;
-          setPasskeyDialog(null);
-          setPasskeyPassword("");
-          setPasskeyError(null);
-        }}
-        dismissable={!passkeyBusy}
+        onClose={closePasskeyDialog}
+        presentation={passkeyVariant === "remove" ? "alert" : "auto"}
+        busy={passkeyBusy}
+        busyReason="Wait for the passkey change to finish before closing."
+        initialFocus={passkeyPasswordRef}
       >
-        <ModalHeader
-          title={passkeyDialog === "remove" ? "Remove Passkey Unlock?" : "Enable Face ID / Touch ID"}
-          subtitle="Origin-bound with a wrapper stored by this app"
-          onClose={passkeyBusy ? undefined : () => {
-            setPasskeyDialog(null);
-            setPasskeyPassword("");
-            setPasskeyError(null);
-          }}
-        />
-        <div className="space-y-4 p-4 sm:p-6">
-          {passkeyDialog === "remove" ? (
-            <>
-              <p className="text-[13.5px] leading-relaxed text-neutral-300">
-                This removes the local wrapper that lets this device unlock your vault. It does not
-                delete a passkey entry from iCloud Keychain or change your wallet password.
-              </p>
-              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
-                Your password and encrypted backup remain the recovery path.
-              </p>
-              <Field label="Wallet Password" hint="Required before removing device unlock">
-                <input
-                  className="input text-base sm:text-[14px]"
-                  type="password"
-                  autoComplete="current-password"
-                  value={passkeyPassword}
-                  onChange={(event) => setPasskeyPassword(event.target.value)}
-                  placeholder="Enter password"
-                  disabled={passkeyBusy}
+        {passkeyVariant === "remove" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRemovePasskey();
+            }}
+          >
+            <AlertContent
+              title="Remove Passkey Unlock?"
+              message="This removes the local wrapper that lets this device unlock your vault. It does not delete a passkey entry from iCloud Keychain or change your wallet password."
+              actions={
+                <ModalFooter
+                  secondary={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={passkeyBusy}
+                      onClick={closePasskeyDialog}
+                    >
+                      Cancel
+                    </Button>
+                  }
+                  primary={
+                    <Button
+                      type="submit"
+                      variant="danger"
+                      loading={passkeyBusy}
+                      loadingLabel="Removing passkey"
+                      disabled={!passkeyPassword}
+                    >
+                      Remove passkey
+                    </Button>
+                  }
                 />
-              </Field>
-              <ErrorText message={passkeyError ?? ""} />
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="ghost"
-                  disabled={passkeyBusy}
-                  onClick={() => {
-                    setPasskeyDialog(null);
-                    setPasskeyPassword("");
-                    setPasskeyError(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  loading={passkeyBusy}
-                  disabled={!passkeyPassword || passkeyBusy}
-                  onClick={() => void handleRemovePasskey()}
-                >
-                  Remove
-                </Button>
+              }
+            >
+              <div className="space-y-3">
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                  Your password and encrypted backup remain the recovery path.
+                </p>
+                <Field label="Wallet Password" hint="Required before removing device unlock">
+                  <input
+                    ref={passkeyPasswordRef}
+                    className="input text-base sm:text-[14px]"
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="done"
+                    value={passkeyPassword}
+                    onChange={(event) => setPasskeyPassword(event.target.value)}
+                    placeholder="Enter password"
+                    disabled={passkeyBusy}
+                  />
+                </Field>
+                <ErrorText message={passkeyError ?? ""} />
               </div>
-            </>
-          ) : (
-            <>
-              <p className="text-[13.5px] leading-relaxed text-neutral-300">
-                Your device will create a passkey and use Face ID or Touch ID to derive a key that
-                unwraps this vault locally. No account, server, or cloud wallet service is required.
-              </p>
-              <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
-                Your password and encrypted backup remain the recovery path. Passkey unlock works
-                only from this exact app origin, so keep both.
-              </p>
-              <Field label="Wallet Password" hint="Confirms access before adding this device">
-                <input
-                  className="input text-base sm:text-[14px]"
-                  type="password"
-                  autoComplete="current-password"
-                  value={passkeyPassword}
-                  onChange={(event) => setPasskeyPassword(event.target.value)}
-                  placeholder="Enter password"
-                  disabled={passkeyBusy}
+            </AlertContent>
+          </form>
+        ) : (
+          <>
+            <ModalHeader
+              title="Enable Face ID / Touch ID"
+              subtitle="Origin-bound with a wrapper stored by this app"
+              onClose={closePasskeyDialog}
+            />
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleEnablePasskey();
+              }}
+            >
+              <ModalBody>
+                <p className="text-[13.5px] leading-relaxed text-neutral-300">
+                  Your device will create a passkey and use Face ID or Touch ID to derive a key that
+                  unwraps this vault locally. No account, server, or cloud wallet service is required.
+                </p>
+                <p className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 text-[12.5px] leading-relaxed text-neutral-400">
+                  Your password and encrypted backup remain the recovery path. Passkey unlock works
+                  only from this exact app origin, so keep both.
+                </p>
+                <Field label="Wallet Password" hint="Confirms access before adding this device">
+                  <input
+                    ref={passkeyPasswordRef}
+                    className="input text-base sm:text-[14px]"
+                    type="password"
+                    autoComplete="current-password"
+                    enterKeyHint="done"
+                    value={passkeyPassword}
+                    onChange={(event) => setPasskeyPassword(event.target.value)}
+                    placeholder="Enter password"
+                    disabled={passkeyBusy}
+                  />
+                </Field>
+                <ErrorText message={passkeyError ?? ""} />
+                <ModalFooter
+                  primary={
+                    <Button
+                      type="submit"
+                      loading={passkeyBusy}
+                      loadingLabel="Enabling passkey"
+                      disabled={!passkeyPassword}
+                    >
+                      Enable Face ID / Touch ID
+                    </Button>
+                  }
                 />
-              </Field>
-              <ErrorText message={passkeyError ?? ""} />
-              <Button
-                className="w-full !py-3 text-[14px] font-semibold"
-                loading={passkeyBusy}
-                disabled={!passkeyPassword || passkeyBusy}
-                onClick={() => void handleEnablePasskey()}
-              >
-                Enable Face ID / Touch ID
-              </Button>
-            </>
-          )}
-        </div>
+              </ModalBody>
+            </form>
+          </>
+        )}
       </Modal>
 
       {/* Reset Confirmation Modal */}

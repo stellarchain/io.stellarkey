@@ -34,6 +34,7 @@ async function expectAccessibleSurface(
     // layers. Chromium remains the authoritative automated contrast gate.
     disabledRules.push("color-contrast");
   }
+  await settleMotion(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .disableRules(disabledRules)
@@ -52,6 +53,11 @@ async function expectAccessibleSurface(
       overlapping: check.relatedNodes?.map(related => ({ tag: related.html.match(/^<([a-z]+)/)?.[1], classes: related.html.match(/class="([^"]*)"/)?.[1] })),
     })),
   })) })), `${label} has blocking accessibility violations`).toEqual([]);
+}
+
+/** Overlays crossfade in; scan the resting surface, not a translucent frame. */
+async function settleMotion(page: Page): Promise<void> {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))));
 }
 
 async function expectMobileContainment(page: Page, label: string): Promise<void> {
@@ -369,6 +375,11 @@ test("critical wallet screens remain operable and accessible", async ({ page, br
   await expectAccessibleSurface(page, "send review", browserName);
   await review.getByRole("button", { name: "Back", exact: true }).click();
   await send.getByRole("button", { name: "Close" }).click();
+  // Typed amount and recipient: closing asks before discarding them.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(send).toBeHidden();
 });
 
 test("wallet overlays reflow at 200-percent-equivalent and narrow widths without losing form state", async ({ page, browserName }) => {
@@ -391,6 +402,10 @@ test("wallet overlays reflow at 200-percent-equivalent and narrow widths without
   const touchAction = await page.evaluate(() => getComputedStyle(document.body).touchAction);
   expect(touchAction === "manipulation" || touchAction.split(" ").includes("pinch-zoom")).toBe(true);
   await dialog.getByRole("button", { name: "Close", exact: true }).press("Escape");
+  // The typed amount makes the form dirty, so Escape asks first.
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
   await expect(dialog).toBeHidden();
 });
 
@@ -442,10 +457,10 @@ test("critical wallet settings remain operable and accessible", async ({ page, b
   await page.getByRole("button", { name: "Back to Settings" }).click();
 
   await page.getByRole("button", { name: /Reset Wallet/ }).click();
-  const reset = page.getByRole("dialog", { name: /Erase & Reset Wallet/ });
+  const reset = page.getByRole("dialog", { name: "Erase this wallet?" });
   await expect(reset).toBeVisible();
-  await expectAccessibleSurface(page, "reset wallet sheet", browserName);
-  await reset.getByRole("button", { name: "Close" }).click();
+  await expectAccessibleSurface(page, "reset wallet alert", browserName);
+  await reset.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("critical merchant screens remain operable and accessible", async ({ page, browserName }) => {

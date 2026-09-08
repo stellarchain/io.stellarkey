@@ -107,7 +107,7 @@ export function PrivateRelayAvailability({
         </span>
       </div>
 
-      <div className="ios-group overflow-hidden">
+      <div className="list-group">
         <button
           type="button"
           disabled={checking}
@@ -167,7 +167,7 @@ export function PrivateRelayAvailability({
                     <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white">
                       Peer {index + 1}
                       {index === 0 ? (
-                        <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-[#30D158]">
+                        <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#30D158]">
                           Lowest fee
                         </span>
                       ) : null}

@@ -6,8 +6,12 @@ import ts from 'typescript';
 
 // Execute actual handlers; the browser suite separately exercises real wallet,
 // encryption, signing, HTTP delivery, tracking and Modal composition.
+// Dialogs split into a static shell and a lazily loaded body keep their
+// handlers in the body file.
+const bodyFiles = { AddAccountModal: 'AddAccountModalBody', ClaimableBalancesModal: 'ClaimableBalancesModalBody' };
 function handler(component, name, context) {
-  const source = readFileSync(new URL(`../src/components/${component}.tsx`, import.meta.url), 'utf8');
+  const file = bodyFiles[component] ?? component;
+  const source = readFileSync(new URL(`../src/components/${file}.tsx`, import.meta.url), 'utf8');
   const parsed = ts.createSourceFile(component, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression;
   function visit(node) {

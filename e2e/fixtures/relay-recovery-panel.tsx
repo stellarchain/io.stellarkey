@@ -5,7 +5,7 @@ import { Button } from '@/components/ui';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import type { PrivateBalanceManifest } from '@/lib/private-balance-manifest';
 import { PrivateActionReview } from '@/features/private-balance/components/PrivateActionReview';
-import { PrivateRecovery } from '@/features/private-balance/components/PrivateRecovery';
+import { PrivatePaymentsDetails } from '@/features/private-balance/components/PrivatePaymentsDetails';
 import { initialPrivateBalanceRuntimeData, PrivateBalanceRuntimeDataProvider } from '@/hooks/usePrivateBalanceRuntime';
 import { PrivateProofConsent, type PrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
 import { parsePrivateAmount } from '@/features/private-balance/runtime/coin-selection';
@@ -149,7 +149,7 @@ export function RelayRecoveryFixture() {
         chained={null} chainProgress={null} progress={null} preparing={false} working={false} error={null} errorCause={null}
         balanceBeforeStroops={deposits.split(',').reduce((sum, value) => sum + parsePrivateAmount(value, 7), 0n)} confirmLabel="Send privately"
         onConfirm={() => consent.current.approve(disclosure.actionId)} onBack={() => operation.current?.abort()} /> : null}
-      {recoveryOpen ? <PrivateRecovery onClose={() => setRecoveryOpen(false)} /> : null}
+      <PrivatePaymentsDetails open={recoveryOpen} initialStep="recovery" onClose={() => setRecoveryOpen(false)} />
     </main>
   </PrivateBalanceRuntimeDataProvider>;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, HashValue, Spinner } from '@/components/ui';
+import { Button, HashValue, ModalFooter, Spinner } from '@/components/ui';
 import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
 import { fmtAmount } from '@/lib/format';
 import {
@@ -13,12 +13,18 @@ import type { PrivateActionProgressStage } from '../runtime/action-flow';
 import type { StealthOwnedPayment } from '../runtime/stealth-cache';
 import { formatPrivateBalanceAmount, formatPrivateBalanceXlm } from '../runtime/selectors';
 import { PrivateActionError } from './PrivateActionError';
+import { useReportToOwner } from './useReportToOwner';
 
 /**
  * Cached reusable-address receipts are intentionally folded into the native
- * private asset sheet. Preparing and confirming never opens a second modal.
+ * private asset sheet. Preparing and confirming never opens a second modal;
+ * a sweep in flight reports busy so the owning sheet blocks dismissal.
  */
-export function StealthReceipts() {
+export function StealthReceipts({
+  onBusyChange,
+}: {
+  onBusyChange?(busy: boolean): void;
+} = {}) {
   const {
     asset,
     isLeader,
@@ -50,6 +56,7 @@ export function StealthReceipts() {
   useEffect(() => {
     cancelRef.current = cancelAction;
   }, [cancelAction]);
+  useReportToOwner(onBusyChange, working, false);
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -178,18 +185,24 @@ export function StealthReceipts() {
             their amount and recipient.
           </p>
           {error ? <div className="mt-3"><PrivateActionError cause={error} /></div> : null}
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Button variant="ghost" disabled={working} onClick={() => void discardReview()}>
-              Back
-            </Button>
-            <Button
-              loading={working}
-              disabled={preparing || !prepared || working}
-              onClick={() => void confirmMove()}
-            >
-              Confirm
-            </Button>
-          </div>
+          <ModalFooter
+            className="!mt-4"
+            secondary={
+              <Button type="button" variant="ghost" disabled={working} onClick={() => void discardReview()}>
+                Back
+              </Button>
+            }
+            primary={
+              <Button
+                type="button"
+                loading={working}
+                disabled={preparing || !prepared || working}
+                onClick={() => void confirmMove()}
+              >
+                Confirm
+              </Button>
+            }
+          />
         </div>
       </section>
     );
@@ -239,8 +252,9 @@ export function StealthReceipts() {
                   />
                 </div>
                 <Button
+                  type="button"
                   variant="secondary"
-                  className="shrink-0 !min-h-9 !px-3 !py-1.5 text-[11.5px]"
+                  className="shrink-0"
                   disabled={moving || !isLeader}
                   loading={moving}
                   onClick={() => void startReview(payment)}

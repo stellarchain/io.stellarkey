@@ -3,18 +3,18 @@
 import { useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { IconExternal } from '@/components/icons';
-import { Button, Notice } from '@/components/ui';
+import { Button, ModalBody, Notice } from '@/components/ui';
 import { NETWORKS, privateBalanceExplorerTxHash } from '@/lib/stellar';
 import type { NetworkKey } from '@/lib/types';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
-import { triggerHaptic } from '@/lib/haptics';
 import { activityKindLabel } from '../copy';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 import type { PrivatePendingAction, ShieldedActivityRecord } from '../runtime/types';
 import { hasExposedPrivateSpend } from '../runtime/proof-exposure';
 import { HumanizedErrorNotice } from './PrivateBalanceStatus';
 import { isInternalPendingAction } from './PrivateBalanceStatusLine';
+import { useReportToOwner } from './useReportToOwner';
 
 export type PrivateActivitySelection =
   | { type: 'verified'; activity: ShieldedActivityRecord }
@@ -44,17 +44,19 @@ export function PrivateActivityDetails({
   network,
   poolContractId,
   privacyMode = false,
-  onBack,
+  onBusyChange,
 }: {
   selection: PrivateActivitySelection;
   network: NetworkKey;
   poolContractId: string | null;
   privacyMode?: boolean;
-  onBack(): void;
+  /** A status check in flight keeps the owning dialog from closing. */
+  onBusyChange?(busy: boolean): void;
 }) {
   const { asset, refreshSync } = usePrivateBalanceRuntimeData();
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<unknown>(null);
+  useReportToOwner(onBusyChange, checking, false);
   const pending = selection.type === 'pending';
   const unsignedExposure = pending && hasExposedPrivateSpend(selection.action) && !selection.action.signedEnvelopeXdr;
   const activity = selection.type === 'verified' ? selection.activity : null;
@@ -99,7 +101,6 @@ export function PrivateActivityDetails({
   // "Check Status" uses common canonical history. An exposed proof can outlive
   // its original envelope; absence must not be presented as cancellation.
   const checkStatus = async () => {
-    triggerHaptic('light');
     setChecking(true);
     setCheckError(null);
     try {
@@ -112,12 +113,12 @@ export function PrivateActivityDetails({
   };
 
   return (
-    <div className="space-y-4 p-4 sm:p-6">
+    <ModalBody>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">Private activity</p>
         <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
       </div>
-      <dl className="ios-group overflow-hidden">
+      <dl className="list-group">
         {/* Canonical outflows include any helper fee, not just the recipient's payment. */}
         {internal && pending ? null : (
           <DetailRow name={activity?.direction === 'outflow' ? 'Net private balance change' : 'Amount'} value={amount} />
@@ -193,7 +194,7 @@ export function PrivateActivityDetails({
           href={NETWORKS[network].explorerTxUrl(explorerTransactionHash)}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-secondary flex w-full items-center justify-center gap-2"
+          className="btn btn-secondary flex min-h-11 w-full items-center justify-center gap-2"
         >
           View Transaction <IconExternal size={14} />
         </a>
@@ -203,12 +204,11 @@ export function PrivateActivityDetails({
           href={NETWORKS[network].explorerAccountUrl(poolContractId)}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-secondary flex w-full items-center justify-center gap-2"
+          className="btn btn-secondary flex min-h-11 w-full items-center justify-center gap-2"
         >
           View Public Record <IconExternal size={14} />
         </a>
       ) : null}
-      <Button type="button" variant="ghost" className="w-full" onClick={onBack}>Back to activity</Button>
-    </div>
+    </ModalBody>
   );
 }

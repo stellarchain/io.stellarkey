@@ -108,7 +108,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`held bal
     await expect.poll(() => backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
     await expect.poll(() => page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
-    const back = dialog.getByRole('button', { name: 'Back', exact: true });
+    const back = dialog.getByRole('region', { name: 'Recover held balance', exact: true }).getByRole('button', { name: 'Back', exact: true });
     if (attempt % 2) await back.click(); else await back.press('Enter');
     await expect(dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true })).toBeEnabled();
     await expect.poll(() => dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
@@ -125,6 +125,30 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`held bal
   await opener.click();
   await expect(dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true })).toBeEnabled();
   await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toHaveCount(0);
+});
+
+test('held balance recovery: settings navigation retains the shell and clears unshared consent', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await start(page, 'helper-reject'); await share(page);
+  await expect(page.getByTestId('relay-recovery-status')).toHaveText('exposed');
+  await page.getByRole('button', { name: 'Open held balance recovery', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const shell = await dialog.locator('[data-modal-shell]').elementHandle();
+  const backdrop = await dialog.elementHandle();
+  await dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toBeVisible();
+  // The shell's Back returns to settings; the section's Back cancels its review.
+  await dialog.getByRole('heading', { name: 'Recovery', exact: true }).locator('../..')
+    .getByRole('button', { name: 'Back', exact: true }).press('Enter');
+  await expect(dialog.getByRole('heading', { name: 'Private Payments details', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Recovery Restore or rescan safely', exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Recovery', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Authorize Proof Sharing', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Prepare Balance Recovery', exact: true })).toBeEnabled();
+  expect(await shell!.evaluate(node => node === document.querySelector('[data-modal-shell]'))).toBe(true);
+  expect(await backdrop!.evaluate(node => node === document.querySelector('[data-modal-backdrop]'))).toBe(true);
+  expect(await page.locator('[data-app-surface]').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
 });
 
 for (const winner of ['recovery', 'original'] as const) test(`held balance recovery: ${winner} outcome survives IndexedDB reload`, async ({ page }) => {

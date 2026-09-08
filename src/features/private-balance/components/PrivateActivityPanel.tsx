@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
-import { triggerHaptic } from '@/lib/haptics';
 import { PrivateActivity, PrivateActivityList } from './PrivateActivity';
 import type { PrivateActivitySelection } from './PrivateActivityDetails';
 import { ReceivePrivate } from './ReceivePrivate';
@@ -22,7 +21,6 @@ export function PrivateActivityPanel({
   const total = activities.length + pendingActions.length;
 
   const open = (selection: PrivateActivitySelection | null = null) => {
-    triggerHaptic('selection');
     setInitialSelection(selection);
     setModalOpen(true);
   };
@@ -51,19 +49,15 @@ export function PrivateActivityPanel({
         privacyMode={privacyMode}
         pulseToken={pulseToken}
         onSelect={selection => open(selection)}
-        onReceive={privateAddress !== null ? () => {
-          triggerHaptic('selection');
-          setReceiveOpen(true);
-        } : undefined}
+        onReceive={privateAddress !== null ? () => setReceiveOpen(true) : undefined}
       />
-      {modalOpen ? (
-        <PrivateActivity
-          initialSelection={initialSelection}
-          privacyMode={privacyMode}
-          onClose={() => setModalOpen(false)}
-        />
-      ) : null}
-      {receiveOpen ? <ReceivePrivate onClose={() => setReceiveOpen(false)} /> : null}
+      <PrivateActivity
+        open={modalOpen}
+        initialSelection={initialSelection}
+        privacyMode={privacyMode}
+        onClose={() => setModalOpen(false)}
+      />
+      <ReceivePrivate open={receiveOpen} onClose={() => setReceiveOpen(false)} />
     </section>
   );
 }

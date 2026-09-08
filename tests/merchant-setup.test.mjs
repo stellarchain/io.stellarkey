@@ -256,7 +256,7 @@ test("invalid setup is rejected before any store mutation", () => {
 
 test("the setup UI signs trustlines and commits real state without mock success paths", () => {
   const wizard = readFileSync(
-    new URL("../src/components/merchant/SetupWizard.tsx", import.meta.url),
+    new URL("../src/components/merchant/SetupWizardBody.tsx", import.meta.url),
     "utf8",
   );
   const settings = readFileSync(

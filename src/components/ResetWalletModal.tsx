@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useWalletLifecycleActions } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
-import { Button, Modal, ModalHeader } from "./ui";
+import { AlertContent, Button, ErrorText, Modal, ModalFooter } from "./ui";
 
 export function ResetWalletModal({
   open,
@@ -14,44 +14,65 @@ export function ResetWalletModal({
 }) {
   const { resetWallet } = useWalletLifecycleActions();
   const [error, setError] = useState<string | null>(null);
-  if (!open) return null;
+  const [busy, setBusy] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  // A fresh confirmation never shows the previous attempt's failure.
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setError(null);
+  }
+
+  async function handleErase() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resetWallet();
+      onClose();
+    } catch (caught) {
+      triggerHaptic("warning");
+      setError(caught instanceof Error ? caught.message : "Wallet data could not be erased.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <Modal open onClose={onClose}>
-      <ModalHeader
-        title="Erase & Reset Wallet?"
-        subtitle="Destructive action — irreversible"
-        onClose={onClose}
-      />
-      <div className="p-4 sm:p-6">
-        <p className="text-[13.5px] leading-relaxed text-neutral-300">
-          This permanently erases all encrypted private keys and recovery phrases in this browser.{" "}
-          <span className="text-[#FF453A] font-semibold">
-            Without a backup of your recovery phrase, all funds will be permanently lost.
-          </span>
-        </p>
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            onClick={async () => {
-              triggerHaptic("error");
-              setError(null);
-              try {
-                await resetWallet();
-                onClose();
-              } catch (caught) {
-                setError(caught instanceof Error ? caught.message : "Wallet data could not be erased.");
-              }
-            }}
-          >
-            Erase Everything
-          </Button>
-        </div>
-        {error && <p className="mt-3 text-[12.5px] text-[#FF453A]">{error}</p>}
-      </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      presentation="alert"
+      busy={busy}
+      busyReason="Wait for the wallet to finish erasing."
+    >
+      <AlertContent
+        title="Erase this wallet?"
+        message="This permanently erases every encrypted private key and recovery phrase in this browser. It cannot be undone — without a backup of your recovery phrase, all funds will be lost."
+        actions={
+          <ModalFooter
+            stack
+            primary={
+              <Button
+                type="button"
+                variant="danger"
+                loading={busy}
+                loadingLabel="Erasing wallet"
+                onClick={() => void handleErase()}
+              >
+                Erase everything
+              </Button>
+            }
+            secondary={
+              <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
+                Cancel
+              </Button>
+            }
+          />
+        }
+      >
+        {error && <ErrorText message={error} />}
+      </AlertContent>
     </Modal>
   );
 }

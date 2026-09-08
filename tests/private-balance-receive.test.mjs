@@ -129,9 +129,9 @@ test('receive is embeddable and available whenever the durable address exists', 
   const card = read('src/features/private-balance/components/PrivateBalanceCard.tsx');
 
   // Named body export for embedding without the Modal wrapper.
-  assert.match(receive, /export function PrivateReceiveContent\(\)/);
+  assert.match(receive, /export function PrivateReceiveContent\(/);
   assert.match(receive, /export function ReceivePrivate\(/);
-  assert.match(receive, /<PrivateReceiveContent \/>/);
+  assert.match(receive, /<PrivateReceiveContent onBusyChange=\{setBusy\} \/>/);
   // The card gates Receive only on the durable private address — no sync and
   // no current phase required.
   assert.match(card, /label="Receive" disabled=\{privateAddress === null\}/);

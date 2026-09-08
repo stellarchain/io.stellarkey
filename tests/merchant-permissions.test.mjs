@@ -425,7 +425,8 @@ test("staff and refund production surfaces use persisted merchant actions", () =
   assert.doesNotMatch(staffPage, /merchant\/mock|MOCK_STAFF|would be saved/);
   assert.doesNotMatch(requests, /merchant\/mock|MOCK_REFUND|Queued as an outbound/);
   assert.match(staffPage, /await switchStaff\(/);
-  assert.match(staffPage, /dismissable=\{!operatorPending\}/);
+  // A pending operator switch keeps the sheet up: the shell's one busy policy holds every exit.
+  assert.match(staffPage, /busy=\{operatorPending\}/);
   assert.match(staffPage, /onBusyChange=\{setOperatorPending\}/);
   assert.match(staffPage, /On this shift/);
   assert.match(staffPage, /Current operator/);

@@ -102,7 +102,7 @@ test("idle elapsed time survives suspend and ignores backward clock movement", a
 test("every user-controlled JSON file is bounded before file.text", () => {
   for (const path of [
     "src/components/Onboarding.tsx",
-    "src/components/BackupWizardModal.tsx",
+    "src/components/BackupWizardModalBody.tsx",
     "src/components/AddressBookPage.tsx",
     "src/components/SettingsPage.tsx",
   ]) {

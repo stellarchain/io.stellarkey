@@ -1,24 +1,35 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { AssetAvatar } from '@/components/AssetAvatar';
-import { Button, HashValue, Modal, ModalHeader } from '@/components/ui';
-import { lookupKnownAsset } from '@/lib/assets';
-import { fmtFiat, type FiatCurrency } from '@/lib/format';
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
+import { LoadingRegion, Modal, ModalHeader, useRetainedForExit } from '@/components/ui';
+import type { FiatCurrency } from '@/lib/format';
 import type { NetworkKey } from '@/lib/stellar';
 import type { PrivatePortfolioEntry } from '../runtime/portfolio';
-import { privatePortfolioRepresentativeUsd } from '../runtime/portfolio';
-import { formatPrivateBalanceAmount } from '../runtime/selectors';
-import { StealthReceipts } from './StealthReceipts';
-import { PrivatePaymentsDetails } from './PrivatePaymentsDetails';
+import type { PrivateFlowHeader } from './useReportToOwner';
+
+// The balance, receipts and settings steps pull the private runtime; they
+// load on the first open while the dialog shell and its header are always
+// ready.
+const PrivateAssetDetailModalBody = dynamic(
+  () => import('./PrivateAssetDetailModalBody').then((module) => module.PrivateAssetDetailModalBody),
+  {
+    ssr: false,
+    loading: () => <LoadingRegion label="Loading" className="min-h-56" />,
+  },
+);
+
+/** Mirrors PRIVATE_SETTINGS_BUSY_REASON without loading the settings steps into the shell. */
+const PRIVATE_ASSET_BUSY_REASON = 'Wait for the current check to finish before closing.';
 
 /**
- * A private asset uses the same information hierarchy as the public asset
- * sheet: identity, balance, value, then durable asset facts. Transaction
- * actions deliberately stay in the wallet's shared Send / Receive / Add /
- * Withdraw surfaces so opening an asset never reveals a second dashboard.
+ * The private asset sheet: identity, balance, value and durable asset facts,
+ * with Private Payments settings, recovery and advanced privacy as further
+ * steps of the same dialog. The body reports the step header, busy and dirty
+ * state; until it does, the header names the asset over "Private balance".
  */
 export function PrivateAssetDetailModal({
+  open = true,
   entry,
   network,
   privacyMode,
@@ -27,6 +38,7 @@ export function PrivateAssetDetailModal({
   fiatRates,
   onClose,
 }: {
+  open?: boolean;
   entry: PrivatePortfolioEntry | null;
   network: NetworkKey;
   privacyMode: boolean;
@@ -35,131 +47,45 @@ export function PrivateAssetDetailModal({
   fiatRates: Partial<Record<FiatCurrency, number>> | null;
   onClose(): void;
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  if (!entry) return null;
-  if (settingsOpen) {
-    return (
-      <PrivatePaymentsDetails
-        onClose={() => setSettingsOpen(false)}
-        onRemoved={onClose}
-      />
-    );
-  }
-
-  const amount = formatPrivateBalanceAmount(
-    BigInt(entry.verifiedBalanceAtomicUnits),
-    entry.asset.decimals,
-  );
-  const displayBalance = privacyMode ? '••••••' : amount;
-  const balanceDensity = displayBalance.length >= 18
-    ? 'long'
-    : displayBalance.length >= 13
-      ? 'medium'
-      : 'compact';
-  const unitPriceUsd = entry.asset.kind === 'native'
-    ? xlmPriceUsd
-    : entry.asset.code === 'USDC'
-      ? 1
-      : null;
-  const totalUsd = privatePortfolioRepresentativeUsd([entry], xlmPriceUsd);
-  const known = lookupKnownAsset(entry.asset.code, entry.asset.issuer, network);
-  const checked = entry.lastVerifiedLedger === null
-    ? 'Saved locally; waiting for the first ledger check'
-    : `Checked through ledger ${entry.lastVerifiedLedger.toLocaleString('en-US')}`;
-
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [header, setHeader] = useState<PrivateFlowHeader | null>(null);
+  const shown = open && entry !== null;
+  // The asset code is a label, not a balance: it stays on the header through
+  // the exit so the title does not change while the sheet leaves.
+  const assetCode = useRetainedForExit(entry?.asset.code) ?? 'Private asset';
+  // Balances are sensitive: the content leaves the moment the sheet closes
+  // while the shell keeps its geometry through the exit.
   return (
-    <Modal open onClose={onClose} wide>
+    <Modal
+      open={shown}
+      onClose={onClose}
+      wide
+      busy={busy}
+      busyReason={PRIVATE_ASSET_BUSY_REASON}
+      dirty={dirty}
+    >
       <ModalHeader
-        title={entry.asset.code}
-        subtitle="Private balance"
+        title={header?.title ?? assetCode}
+        subtitle={header ? header.subtitle : 'Private balance'}
         onClose={onClose}
+        onBack={header?.onBack}
       />
-      <div className="p-4 sm:p-6">
-        <div className="flex flex-col items-center pb-2 pt-1 text-center">
-          <AssetAvatar
-            code={entry.asset.code}
-            isNative={entry.asset.kind === 'native'}
-            logoUrl={known?.iconUrl}
-            background={known?.color}
-            size={56}
-            privatePayment
-          />
-          <p className="balance-display mt-4 text-white" data-density={balanceDensity}>
-            <span className="balance-display-value">{displayBalance}</span>
-            <span className="balance-display-unit">{entry.asset.code}</span>
-          </p>
-          <p className="mt-1.5 max-w-xs text-[12px] text-neutral-400">
-            {entry.asset.name} held in your encrypted private balance
-          </p>
-          {!privacyMode && unitPriceUsd !== null && totalUsd !== null ? (
-            <div className="mt-3 flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
-              <span className="mono text-[14px] font-semibold text-[#30D158]">
-                {fmtFiat(unitPriceUsd, fiatCurrency, fiatRates ?? undefined)}
-              </span>
-              <span className="text-[11px] text-neutral-500">per {entry.asset.code}</span>
-              <span className="text-neutral-600">·</span>
-              <span className="mono text-[12px] font-medium text-neutral-300">
-                {fmtFiat(totalUsd, fiatCurrency, fiatRates ?? undefined)} total
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-[#0A84FF]/20 bg-[#0A84FF]/[0.07] px-4 py-3">
-          <p className="text-[12px] leading-relaxed text-neutral-300">
-            Private transfers hide their amount and recipient. Deposits and withdrawals remain
-            visible on Stellar because they cross between public and private balances.
-          </p>
-        </div>
-
-        {entry.asset.kind === 'native' ? <StealthReceipts /> : null}
-
-        <div className="panel-inset mt-5 divide-y divide-white/[0.08]">
-          <Row label="Type">
-            <span className="text-[13px] font-medium text-white">Private asset</span>
-          </Row>
-          <Row label="Network">
-            <span className="text-[13px] capitalize text-white">{network}</span>
-          </Row>
-          <Row label="Last checked">
-            <span className="text-[12px] leading-snug text-neutral-300">{checked}</span>
-          </Row>
-          {entry.asset.issuer ? (
-            <Row label="Issuer">
-              <HashValue
-                value={entry.asset.issuer}
-                className="justify-end text-[12px] text-neutral-300"
-              />
-            </Row>
-          ) : null}
-          <Row label="Asset contract">
-            <HashValue
-              value={entry.asset.contractId}
-              className="justify-end text-[11px] text-neutral-400"
-            />
-          </Row>
-        </div>
-
-        <Button
-          variant="secondary"
-          className="mt-4 w-full"
-          onClick={() => setSettingsOpen(true)}
-        >
-          Private Payments settings
-        </Button>
-        <Button variant="ghost" className="mt-2 w-full" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+      {shown && entry ? (
+        <PrivateAssetDetailModalBody
+          key={entry.asset.contractId}
+          entry={entry}
+          network={network}
+          privacyMode={privacyMode}
+          xlmPriceUsd={xlmPriceUsd}
+          fiatCurrency={fiatCurrency}
+          fiatRates={fiatRates}
+          onClose={onClose}
+          onBusyChange={setBusy}
+          onDirtyChange={setDirty}
+          onHeaderChange={setHeader}
+        />
+      ) : null}
     </Modal>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <span className="shrink-0 pt-0.5 text-[13px] font-medium text-neutral-400">{label}</span>
-      <span className="min-w-0 max-w-[65%] text-right">{children}</span>
-    </div>
   );
 }

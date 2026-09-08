@@ -1,26 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { triggerHaptic } from "@/lib/haptics";
 import { exportKeystoreWithPassword, exportVaultBackup } from "@/lib/vault";
 import { closePaperWalletPrints, openPaperWalletPrint } from "@/lib/paperwallet";
 import { markBackupExported } from "@/lib/backup-health";
 import { useToast } from "./Toast";
-import { Button, Modal, ModalHeader } from "./ui";
+import { Button, ErrorText, Modal, ModalBody, ModalFooter, ModalHeader } from "./ui";
 import { IconAlert, IconCheck, IconLock } from "./icons";
 
-export function PaperWalletModal({
-  open,
-  onClose,
-  accountLabel,
-  publicKey,
-  secretOrPhrase,
-  kind,
-  path,
-  accountId,
-  networkLabel,
-}: {
+interface PaperWalletProps {
   open: boolean;
   onClose: () => void;
   accountLabel: string;
@@ -31,15 +21,58 @@ export function PaperWalletModal({
   /** Enables the encrypted keystore export for secret-key certificates. */
   accountId?: string;
   networkLabel?: string;
+}
+
+export function PaperWalletModal(props: PaperWalletProps) {
+  const { open, onClose } = props;
+  const [exportBusy, setExportBusy] = useState(false);
+
+  // The certificate is secret material: it unmounts the moment the dialog
+  // closes while the shell holds its size through the exit.
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      busy={exportBusy}
+      busyReason="Wait for the encrypted export to finish before closing."
+    >
+      {open ? (
+        <PaperWalletContent {...props} exportBusy={exportBusy} onExportBusyChange={setExportBusy} />
+      ) : null}
+    </Modal>
+  );
+}
+
+function PaperWalletContent({
+  onClose,
+  accountLabel,
+  publicKey,
+  secretOrPhrase,
+  kind,
+  path,
+  accountId,
+  networkLabel,
+  exportBusy,
+  onExportBusyChange,
+}: PaperWalletProps & {
+  exportBusy: boolean;
+  onExportBusyChange: (busy: boolean) => void;
 }) {
   const [pubQr, setPubQr] = useState<string | null>(null);
   const [secQr, setSecQr] = useState<string | null>(null);
   const [showEncryptedExport, setShowEncryptedExport] = useState(false);
   const [exportPassword, setExportPassword] = useState("");
-  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => () => closePaperWalletPrints(), []);
+
+  // The password field appears on request; focus follows that choice.
+  useEffect(() => {
+    if (showEncryptedExport) passwordRef.current?.focus();
+  }, [showEncryptedExport]);
 
   useEffect(() => {
     let alive = true;
@@ -74,7 +107,6 @@ export function PaperWalletModal({
 
   function handleExportPdf() {
     if (!pubQr || !secQr) return;
-    triggerHaptic("selection");
     openPaperWalletPrint({
       accountLabel,
       publicKey,
@@ -89,8 +121,8 @@ export function PaperWalletModal({
 
   async function handleEncryptedExport() {
     if (!exportPassword || exportBusy) return;
-    triggerHaptic("selection");
-    setExportBusy(true);
+    onExportBusyChange(true);
+    setExportError(null);
     try {
       let json: string;
       let filename: string;
@@ -99,7 +131,7 @@ export function PaperWalletModal({
         const keystore = await exportKeystoreWithPassword(accountId, exportPassword);
         if (!keystore) {
           triggerHaptic("error");
-          toast("Encrypted export unavailable for this account type", "error");
+          setExportError("Encrypted export is unavailable for this account type.");
           return;
         }
         json = keystore;
@@ -122,40 +154,33 @@ export function PaperWalletModal({
           ? "Encrypted keystore downloaded — unlocks with your wallet password"
           : "Encrypted vault backup downloaded — unlocks with your wallet password",
         "success",
+        { silent: true },
       );
     } catch (e) {
       triggerHaptic("error");
-      toast(e instanceof Error ? e.message : "Encrypted export failed.", "error");
+      setExportError(e instanceof Error ? e.message : "Encrypted export failed.");
     } finally {
       setExportPassword("");
-      setExportBusy(false);
+      onExportBusyChange(false);
     }
   }
 
-  function handleClose() {
-    setExportPassword("");
-    setShowEncryptedExport(false);
-    onClose();
-  }
-
-  if (!open) return null;
-
   return (
-    <Modal open onClose={handleClose} wide>
+    <>
       <ModalHeader
         title="Cold Storage Paper Wallet"
         subtitle="Printable physical backup certificate"
-        onClose={handleClose}
+        onClose={onClose}
       />
-      <div className="p-4 sm:p-6">
+      <ModalBody>
         {/* Certificate Container formatted for print and screen */}
         <div className="rounded-3xl border-2 border-dashed border-white/20 bg-white p-6 text-black shadow-2xl print:border-black print:p-8">
           {/* Header */}
           <div className="flex items-center justify-between border-b-2 border-black/15 pb-4">
             <div>
-              <h2 className="text-[20px] font-black tracking-tight text-black uppercase">
+              <h3 className="text-[20px] font-black tracking-tight text-black uppercase">
                 Wallet Certificate
-              </h2>
+              </h3>
               <p className="text-[12px] font-medium text-neutral-600">
                 Stellar Network Cold Storage Backup
               </p>
@@ -182,7 +207,7 @@ export function PaperWalletModal({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={pubQr} alt="Public Address QR" width={112} height={112} />
                 ) : (
-                  <div className="h-full w-full bg-neutral-200 animate-pulse rounded" />
+                  <div aria-hidden="true" className="skeleton h-full w-full bg-neutral-200" />
                 )}
               </div>
               <p className="mono mt-3 select-all break-all text-[10px] leading-relaxed text-black font-semibold">
@@ -201,7 +226,7 @@ export function PaperWalletModal({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={secQr} alt="Secret QR" width={112} height={112} />
                 ) : (
-                  <div className="h-full w-full bg-neutral-200 animate-pulse rounded" />
+                  <div aria-hidden="true" className="skeleton h-full w-full bg-neutral-200" />
                 )}
               </div>
               <p className="mono mt-3 select-all break-all text-[10px] leading-relaxed text-black font-bold">
@@ -227,18 +252,9 @@ export function PaperWalletModal({
           </div>
         </div>
 
-        {/* Export Actions */}
-        <div className="mt-6 grid grid-cols-2 gap-3 print:hidden">
-          <Button variant="ghost" onClick={handleClose}>
-            Close
-          </Button>
-          <Button onClick={handleExportPdf} disabled={!pubQr || !secQr}>
-            Export PDF Certificate
-          </Button>
-        </div>
         {showEncryptedExport ? (
           <form
-            className="mt-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] p-3.5 print:hidden"
+            className="rounded-2xl border border-white/[0.1] bg-white/[0.04] p-3.5 print:hidden"
             onSubmit={(event) => {
               event.preventDefault();
               void handleEncryptedExport();
@@ -249,28 +265,35 @@ export function PaperWalletModal({
             </label>
             <div className="mt-2 flex gap-2">
               <input
+                ref={passwordRef}
                 id="paper-wallet-export-password"
                 type="password"
                 autoComplete="current-password"
+                enterKeyHint="done"
                 value={exportPassword}
                 onChange={(event) => setExportPassword(event.target.value)}
-                className="input min-w-0 flex-1"
-                autoFocus
+                className="input min-w-0 flex-1 text-base sm:text-[14px]"
+                disabled={exportBusy}
               />
-              <Button type="submit" loading={exportBusy} disabled={!exportPassword || exportBusy}>
+              <Button type="submit" loading={exportBusy} loadingLabel="Preparing encrypted export" disabled={!exportPassword}>
                 Download
               </Button>
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
               Re-enter it only for this encrypted export. It is cleared immediately afterward.
             </p>
+            {exportError && (
+              <div className="mt-3">
+                <ErrorText message={exportError} />
+              </div>
+            )}
           </form>
         ) : (
           <button
             type="button"
             data-encrypted-export-action="true"
             onClick={() => setShowEncryptedExport(true)}
-            className="group mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
+            className="group flex w-full min-w-0 min-h-11 items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:border-[#0A84FF]/40 print:hidden"
           >
             <IconLock size={16} className="shrink-0 text-neutral-400" />
             <span className="min-w-0 flex-1">
@@ -283,7 +306,22 @@ export function PaperWalletModal({
             </span>
           </button>
         )}
-      </div>
-    </Modal>
+
+        {/* Export Actions */}
+        <ModalFooter
+          className="print:hidden"
+          secondary={
+            <Button type="button" variant="ghost" disabled={exportBusy} onClick={onClose}>
+              Close
+            </Button>
+          }
+          primary={
+            <Button type="button" onClick={handleExportPdf} disabled={!pubQr || !secQr}>
+              Export PDF certificate
+            </Button>
+          }
+        />
+      </ModalBody>
+    </>
   );
 }

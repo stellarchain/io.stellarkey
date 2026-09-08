@@ -191,7 +191,7 @@ test("persisted merchant record identifiers use Web Crypto randomness", () => {
 });
 
 test("merchant PIN disclosures match the encrypted unlocked-storage boundary", () => {
-  const setup = source("src/components/merchant/SetupWizard.tsx");
+  const setup = source("src/components/merchant/SetupWizardBody.tsx");
   const staff = source("src/components/merchant/StaffTerminalsPage.tsx");
   for (const disclosure of [setup, staff]) {
     assert.match(disclosure, /encrypted merchant storage/i);

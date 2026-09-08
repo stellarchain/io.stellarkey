@@ -104,7 +104,7 @@ test("range switches keep the visible series labelled correctly and share the la
 });
 
 test("retained converter rates disclose their observation rather than claiming to be current", () => {
-  const converter = read("src/components/CurrencyConverterModal.tsx");
+  const converter = read("src/components/CurrencyConverterModalBody.tsx");
   assert.match(converter, /marketDataLabel/);
   assert.match(converter, /xlmPriceSample/);
   assert.match(converter, /fiatRateSamples/);
