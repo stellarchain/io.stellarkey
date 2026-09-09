@@ -928,7 +928,7 @@ export function Modal({
         resolvedWide ? "max-w-2xl" : "max-w-xl"
       }`
     : isAlert
-      ? "modal-alert relative w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
+      ? "modal-alert relative max-h-full w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
       : isFullscreen
         ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[#0A0A0B]"
         : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
@@ -942,7 +942,9 @@ export function Modal({
     : undefined;
   const viewportReduced = visualViewport !== null
     && (visualViewport.offsetTop !== 0 || Math.abs(visualViewport.height - window.innerHeight) > 1);
-  const heightStyle: React.CSSProperties | undefined = viewportReduced && visualViewport && !isFullscreen
+  // Alerts always use their overlay's padded content height, including when
+  // the visual viewport shrinks; do not override their percentage cap.
+  const heightStyle: React.CSSProperties | undefined = viewportReduced && visualViewport && !isFullscreen && !isAlert
     ? {
         maxHeight: isSheet
           ? `calc(${visualViewport.height}px - 1.5rem - var(--app-safe-area-top))`
