@@ -76,6 +76,7 @@ assets or set them `Active`/`ExitOnly`; entries cannot be deleted or reindexed.
 | Different-origin witness RPC | Corroborates network identity, any retained deployment-checkpoint ledger, a current overlapping ledger hash, and the complete contract head during mandatory initial/full-history checks and, by default, routine checks. |
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
 | Public Nostr relays | Optionally carry bounded peer discovery and encrypted selected-peer messages. They are not operated by StellarKey and see connection metadata. |
+| Public Waku network (experimental) | The alternative carrier ("Message transport" in Relay connections). A browser light client publishes with Light Push and receives with Filter on one shared content topic; the same signed, padded, encrypted events travel, and the peers it connects to see connection metadata instead of relay operators. Public service nodes enforce RLN rate limits on messages published without a membership, so the eight-message relay exchange can stall mid-way. Relay connections therefore accept up to four websocket multiaddrs of self-hosted or trusted service nodes plus their cluster id (auto-sharding, eight shards); with those the exchange bypasses public rate limits. Such nodes must run nwaku with relay, light push and filter on a cluster other than 1 (nwaku refuses cluster 1 without RLN), with at least two relay peers so light push can forward, and expose secure websockets; the light client offers both yamux and mplex. Nostr stays the default. |
 
 Transfer and withdrawal need no user Soroban authorization: the proof authorizes
 the state transition. Direct mode still signs an inner transaction from the
@@ -500,8 +501,10 @@ explicitly selects one peer before any fee-address negotiation,
 proof construction, signing, or submission. Deposits are not relayable because
 their public source must authorize the asset transfer.
 
-Negotiation protocol v2 uses the `stellarkey-private-relay-v2` topic; v1 peers
-are not compatible. Every offered Stellar source account must sign a canonical,
+Negotiation protocol v3 uses the `stellarkey-private-relay-v3` topic; v1 and v2
+peers are not compatible. A relayed action is six messages: the clear discovery
+request, encrypted quote, selection, payout, one job and one outcome (or a
+rejection). Every offered Stellar source account must sign a canonical,
 domain-separated statement binding the request, network, pool, both peers,
 quoted account, fee, nonces and expiry. The sender verifies this proof before
 displaying/ranking an offer and again before revealing selection metadata.
@@ -509,8 +512,9 @@ This proves account-key possession, not effective ledger signing thresholds.
 Helper opt-in permits these encrypted offer signatures while unlocked; it never
 permits automatic transaction signatures. Every encrypted message is padded
 inside NIP-44 to the same 24 KiB plaintext size, including quotes and rejections.
-Padding costs bandwidth and does not hide the Nostr peer graph, timing, message
-count, IP addresses, or the clear discovery request.
+Padding costs bandwidth and does not hide the carrier's peer graph, timing,
+message count, IP addresses, or the clear discovery request, whichever carrier
+(Nostr relays or the experimental Waku network) moves the events.
 
 The public discovery request carries neither an asset nor a transfer/withdrawal
 kind. The selected helper receives the kind only in the authenticated encrypted
@@ -594,10 +598,17 @@ footprint, resource estimates or account sequence: a dishonest helper can affect
 liveness or public metadata within those limits. The simulation ledger is not
 chain evidence. There is no sender-RPC preparation fallback.
 
-The helper only accepts its retained prepared envelope for signing, simulates it
-again before manual review, and checks that its account sequence is still current
-at signing. Only then can the user approve a signature. The peer rechecks the
-signed XDR, submits through its RPC, and reports the exact transaction hash. One
+After the payout the sender delivers one job carrying the exact operation, time
+bound, classic fee and resource-fee cap. The helper simulates and prepares the
+envelope itself, reviews it locally, and asks its user for a single approval
+that signs and submits through the helper's RPC in one step. It answers with one
+outcome carrying the prepared and signed envelopes, the transaction hash, the
+account sequence, the simulation ledger and the RPC status. The sender verifies
+the prepared envelope against its retained operation and checks that the signed
+envelope hashes to the reported transaction before recording the submission.
+No signed-but-unsubmitted state exists on the wire: a helper cannot hold a
+signature the sender never learns about, and a lost outcome acknowledgement
+keeps the helper's submission record and refuses replacement approvals. One
 bounded preparation lease is released on rejection, expiry or session cleanup;
 late results cannot revive a rejected job.
 

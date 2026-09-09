@@ -13,8 +13,8 @@ import { encodePrivateAddress } from '@stellarkey/private-balance';
 import { boundedPrivateRelayWebSocket } from '@/features/private-balance/relay/nostr';
 
 const draft = { kind: 'withdraw' as const, amount: '1', publicRecipient: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF' };
-const request: PrivateRelayRequest = { version: 2, type: 'request', requestId: '11'.repeat(32), networkId: '22'.repeat(32), poolContractId: 'synthetic', replyPubkey: '33'.repeat(32), nonce: '44'.repeat(32), expiresAt: 4_000_000_000 };
-const offer: PrivateRelayQuote = { version: 2, type: 'quote', requestId: request.requestId, quoteId: '55'.repeat(32), peerPubkey: '66'.repeat(32), peerAccount: draft.publicRecipient, feeAtomic: '100', accountSignature: 'synthetic', nonce: '77'.repeat(32), expiresAt: request.expiresAt };
+const request: PrivateRelayRequest = { version: 3, type: 'request', requestId: '11'.repeat(32), networkId: '22'.repeat(32), poolContractId: 'synthetic', replyPubkey: '33'.repeat(32), nonce: '44'.repeat(32), expiresAt: 4_000_000_000 };
+const offer: PrivateRelayQuote = { version: 3, type: 'quote', requestId: request.requestId, quoteId: '55'.repeat(32), peerPubkey: '66'.repeat(32), peerAccount: draft.publicRecipient, feeAtomic: '100', accountSignature: 'synthetic', nonce: '77'.repeat(32), expiresAt: request.expiresAt };
 const cheaperOffer = { ...offer, quoteId: '88'.repeat(32), peerAccount: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', feeAtomic: '50' };
 const syntheticAddress = encodePrivateAddress({ deploymentTag: new Uint8Array(16).fill(1), diversifier: Uint8Array.of(1, 2, 3, 4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2) }, 'tskpay_');
 const defaultAddress = encodePrivateAddress({ deploymentTag: new Uint8Array(16).fill(1), diversifier: new Uint8Array(4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2) }, 'tskpay_');
@@ -63,7 +63,7 @@ function Panel({ onSwitchAccount }: { onSwitchAccount(): void }) {
           setClosedAtSelection(sessionClosed);
           setSelections(value => value + 1);
           return new Promise<PrivateRelayPayout>(resolve => {
-            finishPayout.current = () => resolve({ version: 2, type: 'payout', requestId: input.request.requestId,
+            finishPayout.current = () => resolve({ version: 3, type: 'payout', requestId: input.request.requestId,
               quoteId: input.quote.quoteId, peerAccount: input.quote.peerAccount, feeAtomic: input.quote.feeAtomic,
               privateFeeAddress: syntheticAddress, nonce: 'aa'.repeat(32), expiresAt: request.expiresAt });
           });

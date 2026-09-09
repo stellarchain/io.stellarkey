@@ -1,6 +1,6 @@
 import { StrKey } from '@stellar/stellar-sdk';
 
-export const PRIVATE_RELAY_PROTOCOL_VERSION = 2 as const;
+export const PRIVATE_RELAY_PROTOCOL_VERSION = 3 as const;
 export const PRIVATE_RELAY_MAX_PLAINTEXT_BYTES = 24 * 1024;
 export const PRIVATE_RELAY_MAX_ENCRYPTED_BYTES = 40 * 1024;
 export const PRIVATE_RELAY_MAX_CLOCK_SKEW_SECONDS = 30;
@@ -14,7 +14,7 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/u;
 export type PrivateRelayActionKind = 'transfer' | 'withdraw';
 
 export interface PrivateRelayRequest {
-  version: 2;
+  version: 3;
   type: 'request';
   requestId: string;
   networkId: string;
@@ -25,7 +25,7 @@ export interface PrivateRelayRequest {
 }
 
 export interface PrivateRelayQuote {
-  version: 2;
+  version: 3;
   type: 'quote';
   requestId: string;
   quoteId: string;
@@ -41,7 +41,7 @@ export interface PrivateRelayQuote {
 export type PrivateRelayUnsignedQuote = Omit<PrivateRelayQuote, 'accountSignature'>;
 
 export interface PrivateRelaySelection {
-  version: 2;
+  version: 3;
   type: 'selection';
   requestId: string;
   quoteId: string;
@@ -53,7 +53,7 @@ export interface PrivateRelaySelection {
 }
 
 export interface PrivateRelayPayout {
-  version: 2;
+  version: 3;
   type: 'payout';
   requestId: string;
   quoteId: string;
@@ -64,20 +64,12 @@ export interface PrivateRelayPayout {
   expiresAt: number;
 }
 
-export interface PrivateRelaySignJob {
-  version: 2;
-  type: 'sign-job';
-  requestId: string;
-  quoteId: string;
-  transactionHash: string;
-  unsignedEnvelopeXdr: string;
-  nonce: string;
-  expiresAt: number;
-}
-
-export interface PrivateRelayPrepareJob {
-  version: 2;
-  type: 'prepare-job';
+/** The sender's single job: the helper simulates, reviews, approves, signs and
+ * submits it, then answers with one outcome. Replaces the v2 prepare, sign and
+ * submit round trips. */
+export interface PrivateRelayJob {
+  version: 3;
+  type: 'job';
   requestId: string;
   quoteId: string;
   prepareId: string;
@@ -89,54 +81,26 @@ export interface PrivateRelayPrepareJob {
   expiresAt: number;
 }
 
-export interface PrivateRelayPreparedJob {
-  version: 2;
-  type: 'prepared-job';
+export interface PrivateRelayOutcome {
+  version: 3;
+  type: 'outcome';
   requestId: string;
   quoteId: string;
   prepareId: string;
+  /** The unsigned envelope the helper simulated; the sender reviews this one. */
   preparedEnvelopeXdr: string;
+  /** The same envelope carrying the helper account's signature. */
+  signedEnvelopeXdr: string;
+  transactionHash: string;
   accountSequence: string;
   simulationLedger: number;
-  nonce: string;
-  expiresAt: number;
-}
-
-export interface PrivateRelaySignedJob {
-  version: 2;
-  type: 'signed-job';
-  requestId: string;
-  quoteId: string;
-  transactionHash: string;
-  signedEnvelopeXdr: string;
-  nonce: string;
-  expiresAt: number;
-}
-
-export interface PrivateRelaySubmitJob {
-  version: 2;
-  type: 'submit-job';
-  requestId: string;
-  quoteId: string;
-  transactionHash: string;
-  signedEnvelopeXdr: string;
-  nonce: string;
-  expiresAt: number;
-}
-
-export interface PrivateRelaySubmitted {
-  version: 2;
-  type: 'submitted';
-  requestId: string;
-  quoteId: string;
-  transactionHash: string;
   rpcStatus: 'PENDING' | 'DUPLICATE' | 'TRY_AGAIN_LATER' | 'ERROR';
   nonce: string;
   expiresAt: number;
 }
 
 export interface PrivateRelayRejected {
-  version: 2;
+  version: 3;
   type: 'rejected';
   requestId: string;
   quoteId: string;
@@ -150,12 +114,8 @@ export type PrivateRelayMessage =
   | PrivateRelayQuote
   | PrivateRelaySelection
   | PrivateRelayPayout
-  | PrivateRelayPrepareJob
-  | PrivateRelayPreparedJob
-  | PrivateRelaySignJob
-  | PrivateRelaySignedJob
-  | PrivateRelaySubmitJob
-  | PrivateRelaySubmitted
+  | PrivateRelayJob
+  | PrivateRelayOutcome
   | PrivateRelayRejected;
 
 function object(value: unknown): Record<string, unknown> {
@@ -258,7 +218,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
       const poolContractId = text(source.poolContractId, 'pool contract', 56);
       if (!StrKey.isValidContract(poolContractId)) throw new Error('Private relay pool contract is invalid');
       return {
-        version: 2,
+        version: 3,
         type: 'request',
         requestId: common.requestId,
         networkId: hex32(source.networkId, 'network ID'),
@@ -271,7 +231,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
     case 'quote':
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'peerPubkey', 'peerAccount', 'feeAtomic', 'accountSignature', 'nonce', 'expiresAt']);
       return {
-        version: 2,
+        version: 3,
         type: 'quote',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -295,7 +255,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay action diversifier is invalid');
       }
       return {
-        version: 2,
+        version: 3,
         type: 'selection',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -309,7 +269,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
     case 'payout':
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'peerAccount', 'feeAtomic', 'privateFeeAddress', 'nonce', 'expiresAt']);
       return {
-        version: 2,
+        version: 3,
         type: 'payout',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),
@@ -319,24 +279,12 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         nonce: common.nonce,
         expiresAt: common.expiresAt,
       };
-    case 'sign-job':
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'transactionHash', 'unsignedEnvelopeXdr', 'nonce', 'expiresAt']);
-      return {
-        version: 2,
-        type: 'sign-job',
-        requestId: common.requestId,
-        quoteId: quoteId(source.quoteId),
-        transactionHash: hex32(source.transactionHash, 'transaction hash'),
-        unsignedEnvelopeXdr: xdr(source.unsignedEnvelopeXdr, 'unsigned envelope'),
-        nonce: common.nonce,
-        expiresAt: common.expiresAt,
-      };
-    case 'prepare-job': {
+    case 'job': {
       exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'prepareId', 'operationXdr', 'maxTime', 'classicFeeStroops', 'maximumResourceFeeStroops', 'nonce', 'expiresAt']);
       const maxTime = expiry(source.maxTime, nowSeconds);
       if (maxTime <= nowSeconds || maxTime > common.expiresAt) throw new Error('Private relay preparation time window is invalid');
       return {
-        version: 2, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
+        version: 3, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
         prepareId: hex32(source.prepareId, 'preparation ID'),
         operationXdr: xdr(source.operationXdr, 'operation'), maxTime,
         classicFeeStroops: decimal(source.classicFeeStroops, 'classic fee'),
@@ -344,52 +292,26 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         nonce: common.nonce, expiresAt: common.expiresAt,
       };
     }
-    case 'prepared-job': {
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'prepareId', 'preparedEnvelopeXdr', 'accountSequence', 'simulationLedger', 'nonce', 'expiresAt']);
+    case 'outcome': {
+      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'prepareId', 'preparedEnvelopeXdr', 'signedEnvelopeXdr', 'transactionHash', 'accountSequence', 'simulationLedger', 'rpcStatus', 'nonce', 'expiresAt']);
       if (!Number.isSafeInteger(source.simulationLedger) || (source.simulationLedger as number) < 1 || (source.simulationLedger as number) > 0xffff_ffff) {
         throw new Error('Private relay simulation ledger is invalid');
       }
       const accountSequence = decimal(source.accountSequence, 'account sequence', true);
       if (BigInt(accountSequence) >= 0x7fff_ffff_ffff_ffffn) throw new Error('Private relay account sequence is invalid');
-      return {
-        version: 2, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
-        prepareId: hex32(source.prepareId, 'preparation ID'),
-        preparedEnvelopeXdr: xdr(source.preparedEnvelopeXdr, 'prepared envelope'),
-        accountSequence, simulationLedger: source.simulationLedger as number,
-        nonce: common.nonce, expiresAt: common.expiresAt,
-      };
-    }
-    case 'signed-job':
-    case 'submit-job': {
-      const xdrKey = type === 'signed-job' ? 'signedEnvelopeXdr' : 'signedEnvelopeXdr';
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'transactionHash', xdrKey, 'nonce', 'expiresAt']);
-      const result = {
-        version: 2 as const,
-        type,
-        requestId: common.requestId,
-        quoteId: quoteId(source.quoteId),
-        transactionHash: hex32(source.transactionHash, 'transaction hash'),
-        signedEnvelopeXdr: xdr(source.signedEnvelopeXdr, 'signed envelope'),
-        nonce: common.nonce,
-        expiresAt: common.expiresAt,
-      };
-      return result as PrivateRelaySignedJob | PrivateRelaySubmitJob;
-    }
-    case 'submitted': {
-      exactKeys(source, ['version', 'type', 'requestId', 'quoteId', 'transactionHash', 'rpcStatus', 'nonce', 'expiresAt']);
       const statuses = ['PENDING', 'DUPLICATE', 'TRY_AGAIN_LATER', 'ERROR'];
       if (typeof source.rpcStatus !== 'string' || !statuses.includes(source.rpcStatus)) {
         throw new Error('Private relay RPC status is invalid');
       }
       return {
-        version: 2,
-        type: 'submitted',
-        requestId: common.requestId,
-        quoteId: quoteId(source.quoteId),
+        version: 3, type, requestId: common.requestId, quoteId: quoteId(source.quoteId),
+        prepareId: hex32(source.prepareId, 'preparation ID'),
+        preparedEnvelopeXdr: xdr(source.preparedEnvelopeXdr, 'prepared envelope'),
+        signedEnvelopeXdr: xdr(source.signedEnvelopeXdr, 'signed envelope'),
         transactionHash: hex32(source.transactionHash, 'transaction hash'),
-        rpcStatus: source.rpcStatus as PrivateRelaySubmitted['rpcStatus'],
-        nonce: common.nonce,
-        expiresAt: common.expiresAt,
+        accountSequence, simulationLedger: source.simulationLedger as number,
+        rpcStatus: source.rpcStatus as PrivateRelayOutcome['rpcStatus'],
+        nonce: common.nonce, expiresAt: common.expiresAt,
       };
     }
     case 'rejected': {
@@ -399,7 +321,7 @@ function canonicalMessage(value: unknown, nowSeconds: number): PrivateRelayMessa
         throw new Error('Private relay rejection reason is invalid');
       }
       return {
-        version: 2,
+        version: 3,
         type: 'rejected',
         requestId: common.requestId,
         quoteId: quoteId(source.quoteId),

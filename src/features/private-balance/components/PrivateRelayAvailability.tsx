@@ -8,6 +8,7 @@ import {
   checkPrivateRelayAvailability,
   type PrivateRelayAvailability as AvailabilityResult,
 } from '../relay/availability';
+import { privateRelayNetwork } from '../relay/network';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
 
@@ -46,7 +47,7 @@ export function PrivateRelayAvailability({
       }
       const preferences = loadPrivateRelayPreferences();
       const next = await checkPrivateRelayAvailability({
-        relayUrls: preferences.relayUrls,
+        network: privateRelayNetwork(preferences),
         networkId,
         poolContractId,
         quoteWindowMs: AVAILABILITY_WINDOW_MS,

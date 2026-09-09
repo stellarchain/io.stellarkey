@@ -136,7 +136,7 @@ test('helper account sequence must still match at manual signing', () => {
 
 function helperInput(overrides = {}) {
   const job = {
-    version: 2, type: 'prepare-job', requestId: '11'.repeat(32), quoteId: '22'.repeat(32), prepareId: '33'.repeat(32),
+    version: 3, type: 'job', requestId: '11'.repeat(32), quoteId: '22'.repeat(32), prepareId: '33'.repeat(32),
     operationXdr: operation().toXDR('base64'), maxTime: NOW + 240, classicFeeStroops: '100',
     maximumResourceFeeStroops: '1000', nonce: '44'.repeat(32), expiresAt: NOW + 240,
   };
