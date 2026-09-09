@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Re-pinned development proof generation to the PSE degree-14 Perpetual Powers of Tau transcript after its hash and complete contribution/beacon chain verified and the prior endpoint stopped serving its authenticated artifact.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 - Updated the Next.js ESLint configuration to 16.3.4 and React DOM type declarations to 19.2.7.
+- Updated Next.js to 16.3.4 and refreshed its locked image-processing and build dependencies.
 
 ### Removed
 
