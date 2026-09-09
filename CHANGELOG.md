@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 - Updated the Next.js ESLint configuration to 16.3.4 and React DOM type declarations to 19.2.7.
 - Updated Next.js to 16.3.4 and refreshed its locked image-processing and build dependencies.
+- Refreshed development Private Payments provenance and authenticated manifest hashes after source-history and dependency updates; deployment bindings and contract, circuit, and proof artifacts are unchanged.
 
 ### Removed
 
