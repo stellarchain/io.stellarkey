@@ -84,6 +84,12 @@ export function UxPrimitivesFixture() {
           </Field>
         </div>)}
         <Button variant="secondary" onClick={() => setFieldError(value => !value)}>Toggle synthetic field error</Button>
+        {(['input', 'textarea'] as const).map(kind => <div key={kind} data-testid={`native-field-${kind}`}>
+          <Field label={`Synthetic native ${kind}`} hint="A synthetic hint that wraps over several lines in a narrow dialog."
+            error={fieldError ? 'A synthetic validation message that stays beneath the control when space is limited.' : undefined}>
+            {kind === 'input' ? <input className="input" /> : <textarea className="input" />}
+          </Field>
+        </div>)}
         <div data-testid="named-switch"><Toggle label="Synthetic privacy setting" checked={switchOn} onChange={value => setSwitchOn(Boolean(value))} /></div>
         <FocusableActionFixture />
         {tooltipMounted && <div data-testid="tooltip-checks" className="space-y-10">
