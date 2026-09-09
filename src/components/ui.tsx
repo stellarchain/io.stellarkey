@@ -2408,15 +2408,15 @@ export function Field({
       })())
     : children;
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5">
-      <label htmlFor={controlId} className="field-label col-span-2 !pb-0 sm:col-span-1">{label}</label>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 [&>*]:col-span-2 sm:[&>.field-hint]:col-span-1 sm:[&>label]:col-span-1">
+      <label htmlFor={controlId} className="field-label !pb-0">{label}</label>
       {hint && (
-        <span id={hintId} className="order-3 col-span-2 text-[11px] text-neutral-400 sm:order-none sm:col-span-1 sm:self-baseline sm:text-right">
+        <span id={hintId} className="field-hint order-3 text-[11px] text-neutral-400 sm:order-none sm:self-baseline sm:text-right">
           {hint}
         </span>
       )}
-      <div className="col-span-2">{control}</div>
-      {error && <p id={errorId} role="alert" className="order-4 col-span-2 text-[11.5px] text-[#FF453A]">{error}</p>}
+      {control}
+      {error && <p id={errorId} role="alert" className="order-4 text-[11.5px] text-[#FF453A]">{error}</p>}
     </div>
   );
 }

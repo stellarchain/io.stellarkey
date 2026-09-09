@@ -278,6 +278,11 @@ for (const size of ['md', 'sm']) {
   test(`Field reaches the actual ${size} Select trigger and retains its descriptions when errors clear`, async ({ page }) => {
     const field = page.getByTestId(`select-field-${size}`);
     const trigger = field.getByRole('button', { name: `Synthetic ${size} field`, exact: true });
+    await page.setViewportSize({ width: 320, height: 568 });
+    expect(await field.evaluate(node => {
+      const bounds = node.getBoundingClientRect();
+      return node.scrollWidth <= node.clientWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth;
+    })).toBe(true);
     expect(await trigger.evaluate(node => {
       const label = node.parentElement?.querySelector('label');
       return Boolean(node.id && label?.htmlFor === node.id && label.control === node);
@@ -299,6 +304,38 @@ for (const size of ['md', 'sm']) {
     await expect(field.getByRole('alert')).toHaveCount(0);
   });
 }
+
+for (const kind of ['input', 'textarea']) test(`Field native ${kind} retains focus and content through narrow and 200-percent-equivalent reflow`, async ({ page }) => {
+  const field = page.getByTestId(`native-field-${kind}`);
+  const control = field.getByLabel(`Synthetic native ${kind}`, { exact: true });
+  await control.fill('Synthetic non-private draft');
+  await control.focus();
+  await expect(field.getByRole('alert')).toHaveCount(1);
+  for (const [index, width] of [640, 320].entries()) {
+    // Halving CSS viewport width models 200% reflow; this is not physical pinch evidence.
+    await page.setViewportSize({ width, height: 740 });
+    await expect(control).toBeFocused();
+    await expect.poll(() => field.evaluate(node => {
+      const control = node.querySelector('input, textarea')!;
+      const bounds = node.getBoundingClientRect();
+      const input = control.getBoundingClientRect();
+      return node.scrollWidth <= node.clientWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth &&
+        Math.abs(input.left - bounds.left) <= 1 && Math.abs(input.right - bounds.right) <= 1;
+    })).toBe(true);
+    await page.getByRole('button', { name: 'Toggle synthetic field error', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
+    await expect(field.getByRole('alert')).toHaveCount(index === 0 ? 0 : 1);
+    await expect(control).toBeFocused();
+    await expect(control).toHaveValue('Synthetic non-private draft');
+    await expect.poll(() => field.evaluate(node => {
+      const control = node.querySelector('input, textarea')!;
+      const label = node.querySelector('label')!;
+      const alert = node.querySelector('[role="alert"]');
+      const described = (control.getAttribute('aria-describedby') ?? '').split(' ').map(id => document.getElementById(id));
+      return label.control === control && described.every(Boolean) &&
+        (!alert || alert.getBoundingClientRect().top >= control.getBoundingClientRect().bottom);
+    })).toBe(true);
+  }
+});
 
 test('named Toggle has a visible keyboard focus indicator and native switch activation', async ({ page }) => {
   const toggle = page.getByRole('switch', { name: 'Synthetic privacy setting', exact: true });
