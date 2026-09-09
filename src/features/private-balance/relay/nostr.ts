@@ -7,7 +7,7 @@ import type {
 } from './transport';
 
 export const PRIVATE_RELAY_EVENT_KIND = 24_333;
-export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v2';
+export const PRIVATE_RELAY_TOPIC = 'stellarkey-private-relay-v3';
 export const PRIVATE_RELAY_KNOWN_EVENT_CAPACITY = 512;
 export const PRIVATE_RELAY_MAX_FRAME_BYTES = 64 * 1024;
 export const PRIVATE_RELAY_RECONNECT_BACKOFF_MS: readonly number[] = Object.freeze([
@@ -224,6 +224,35 @@ function boundedFrameStructure(raw: string): boolean {
   return true;
 }
 
+/** Accepts only a fully formed signed event with bounded fields and rebuilds it
+ * with signed fields alone, in the order the SDK's fast scanner expects. */
+export function boundedPrivateRelayEvent(payload: unknown): Event | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const event = payload as Record<string, unknown>;
+  if (typeof event.id !== 'string' || !hexId.test(event.id) ||
+    typeof event.pubkey !== 'string' || !hexId.test(event.pubkey) ||
+    typeof event.sig !== 'string' || !/^[0-9a-f]{128}$/u.test(event.sig) ||
+    !Number.isSafeInteger(event.kind) || (event.kind as number) < 0 || (event.kind as number) > 65_535 ||
+    !Number.isSafeInteger(event.created_at) || (event.created_at as number) < 0 ||
+    typeof event.content !== 'string' || frameEncoder.encode(event.content).byteLength > PRIVATE_RELAY_MAX_ENCRYPTED_BYTES ||
+    !Array.isArray(event.tags) || event.tags.length > 64 ||
+    event.tags.some(tag => !Array.isArray(tag) || tag.length > 8 || tag.some(value => typeof value !== 'string' || value.length > 1_024))) return null;
+  return {
+    id: event.id, pubkey: event.pubkey, sig: event.sig, kind: event.kind as number,
+    created_at: event.created_at as number, tags: event.tags as string[][], content: event.content,
+  };
+}
+
+/** One bounded event serialized on its own (the Waku payload form): the same
+ * size, structure and field limits as a relay frame, without the frame array. */
+export function parseBoundedPrivateRelayEvent(raw: unknown): Event | null {
+  if (typeof raw !== 'string' || raw.length > PRIVATE_RELAY_MAX_FRAME_BYTES ||
+    frameEncoder.encode(raw).byteLength > PRIVATE_RELAY_MAX_FRAME_BYTES || !boundedFrameStructure(raw)) return null;
+  let data: unknown;
+  try { data = JSON.parse(raw); } catch { return null; }
+  return boundedPrivateRelayEvent(data);
+}
+
 function canonicalPrivateRelayFrame(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length > PRIVATE_RELAY_MAX_FRAME_BYTES ||
     frameEncoder.encode(raw).byteLength > PRIVATE_RELAY_MAX_FRAME_BYTES || !boundedFrameStructure(raw)) return null;
@@ -242,23 +271,13 @@ function canonicalPrivateRelayFrame(raw: unknown): string | null {
   }
   // NOTICE would log arbitrary text in the SDK. This adapter does not use
   // relay AUTH, COUNT or extensions; do not retain their arbitrary peer data.
-  if (type !== 'EVENT' || data.length !== 3 || !payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const event = payload as Record<string, unknown>;
-  if (typeof event.id !== 'string' || !hexId.test(event.id) ||
-    typeof event.pubkey !== 'string' || !hexId.test(event.pubkey) ||
-    typeof event.sig !== 'string' || !/^[0-9a-f]{128}$/u.test(event.sig) ||
-    !Number.isSafeInteger(event.kind) || (event.kind as number) < 0 || (event.kind as number) > 65_535 ||
-    !Number.isSafeInteger(event.created_at) || (event.created_at as number) < 0 ||
-    typeof event.content !== 'string' || frameEncoder.encode(event.content).byteLength > PRIVATE_RELAY_MAX_ENCRYPTED_BYTES ||
-    !Array.isArray(event.tags) || event.tags.length > 64 ||
-    event.tags.some(tag => !Array.isArray(tag) || tag.length > 8 || tag.some(value => typeof value !== 'string' || value.length > 1_024))) return null;
+  if (type !== 'EVENT' || data.length !== 3) return null;
+  const event = boundedPrivateRelayEvent(payload);
+  if (!event) return null;
   // The SDK's fast scanner assumes EVENT is first and a short unescaped
   // subscription ID, then finds the first raw "id" field. Rebuild only signed
   // event fields in that order; whitespace/property ordering remain compatible.
-  return JSON.stringify(['EVENT', id, {
-    id: event.id, pubkey: event.pubkey, sig: event.sig, kind: event.kind,
-    created_at: event.created_at, tags: event.tags, content: event.content,
-  }]);
+  return JSON.stringify(['EVENT', id, event]);
 }
 
 /** A physical setup deadline belongs to one socket, never to a subscription

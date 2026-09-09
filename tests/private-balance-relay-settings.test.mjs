@@ -42,6 +42,24 @@ test('advanced privacy keeps relay use and peer assistance as independent explic
   assert.doesNotMatch(settings, /Helping never signs\s+automatically/);
 });
 
+test('relay connections offer the Waku network as a second carrier behind the same messenger', () => {
+  const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
+  const session = read('src/features/private-balance/relay/session.ts');
+  const waku = read('src/features/private-balance/relay/waku.ts');
+  assert.match(settings, /Message transport/);
+  assert.match(settings, /label: 'Nostr relays', value: 'nostr'/);
+  assert.match(settings, /label: 'Waku network \(beta\)', value: 'waku'/);
+  assert.match(settings, /rate-limit publishing without an RLN membership/);
+  assert.match(settings, /Waku peer \$\{index \+ 1\} \(optional\)/);
+  assert.match(settings, /label="Waku cluster"/);
+  assert.match(settings, /draft\.transport === 'nostr' \? <div/);
+  assert.match(session, /createPrivateRelayTransport/);
+  assert.match(session, /WakuPrivateRelayAdapter/);
+  // The SDK loads only for wallets that chose Waku: never a static import.
+  assert.match(waku, /import\('@waku\/sdk'\)/);
+  assert.doesNotMatch(waku, /^import .* from '@waku\/sdk'/mu);
+});
+
 test('home exposes a focused earn-by-relaying entry with live helper status', () => {
   const dashboard = read('src/components/Dashboard.tsx');
   const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
@@ -132,7 +150,7 @@ test('helper mode presents a manual approval only after strict local review', ()
 
   assert.match(boundary, /PrivateRelayHelperManager/);
   assert.match(manager, /reviewPrivateRelayJob/);
-  assert.match(manager, /Approve and sign/);
+  assert.match(manager, /Approve and submit/);
   assert.match(manager, /Reject/);
   assert.match(manager, /<Modal/);
   // The request is an interrupt: a centred alert whose content exists only
@@ -140,7 +158,7 @@ test('helper mode presents a manual approval only after strict local review', ()
   assert.match(manager, /presentation="alert"/);
   assert.match(manager, /open=\{pending !== null\}/);
   assert.match(manager, /busy=\{working\}/);
-  assert.match(manager, /never signs transactions automatically/i);
+  assert.match(manager, /never does either automatically/i);
   assert.doesNotMatch(manager, /signPrivateRelayJob\([^)]*\)[\s\S]{0,120}offerQuote/);
   assert.match(manager, /requestExpiryTimers/);
   assert.match(manager, /waitUntilConnected/);

@@ -1,3 +1,4 @@
+import { privateRelayNetwork, type PrivateRelayNetwork } from './network';
 import type {
   PrivateRelayQuote,
   PrivateRelayRequest,
@@ -22,7 +23,7 @@ interface AvailabilitySession {
 }
 
 type AvailabilitySessionFactory = (
-  relayUrls: readonly string[],
+  network: PrivateRelayNetwork,
 ) => Promise<AvailabilitySession>;
 
 export interface PrivateRelayAvailability {
@@ -56,7 +57,9 @@ export function rankPrivateRelayQuotes(
 
 export async function checkPrivateRelayAvailability(
   input: {
-    relayUrls: readonly string[];
+    /** Preferred over relayUrls; a URL list alone means Nostr. */
+    network?: PrivateRelayNetwork;
+    relayUrls?: readonly string[];
     networkId: string;
     poolContractId: string;
     quoteWindowMs?: number;
@@ -67,11 +70,11 @@ export async function checkPrivateRelayAvailability(
   signal?: AbortSignal,
   createSession?: AvailabilitySessionFactory,
 ): Promise<PrivateRelayAvailability> {
-  const factory = createSession ?? (async relayUrls => {
+  const factory = createSession ?? (async network => {
     const { PrivateRelaySenderSession } = await import('./session');
-    return PrivateRelaySenderSession.create(relayUrls);
+    return PrivateRelaySenderSession.create(network);
   });
-  const session = await factory(input.relayUrls);
+  const session = await factory(input.network ?? privateRelayNetwork(input.relayUrls ?? []));
   try {
     let latestQuotes: PrivateRelayQuote[] = [];
     let ineligiblePeerAccounts = 0;

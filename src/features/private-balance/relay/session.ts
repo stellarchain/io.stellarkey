@@ -14,29 +14,31 @@ import {
   PRIVATE_RELAY_MAX_PLAINTEXT_BYTES,
   PRIVATE_RELAY_MAX_TTL_SECONDS,
   PrivateRelayReplayGuard,
+  type PrivateRelayJob,
   type PrivateRelayMessage,
+  type PrivateRelayOutcome,
   type PrivateRelayPayout,
-  type PrivateRelayPrepareJob,
-  type PrivateRelayPreparedJob,
   type PrivateRelayQuote,
   type PrivateRelayUnsignedQuote,
   type PrivateRelayRejected,
   type PrivateRelayRequest,
   type PrivateRelaySelection,
-  type PrivateRelaySignJob,
-  type PrivateRelaySignedJob,
-  type PrivateRelaySubmitJob,
-  type PrivateRelaySubmitted,
 } from './protocol';
 import {
   PRIVATE_RELAY_EVENT_KIND,
   PRIVATE_RELAY_TOPIC,
   NostrPrivateRelayAdapter,
 } from './nostr';
+import { privateRelayNetwork, type PrivateRelayNetwork } from './network';
 import {
   BoundedPrivateRelayTransport,
   type PrivateRelaySubscription,
 } from './transport';
+import {
+  WAKU_PRIVATE_RELAY_ENDPOINTS,
+  WakuPrivateRelayAdapter,
+  validateWakuPrivateRelayEndpoints,
+} from './waku';
 import { rankPrivateRelayQuotes } from './availability';
 import { verifyPrivateRelayQuoteAuthorization } from './account-authorization';
 
@@ -54,12 +56,41 @@ function abortError(): DOMException {
   return new DOMException('Private relay cancelled.', 'AbortError');
 }
 
+/** The network a session uses: explicit, from preferences, or a legacy URL list (Nostr). */
+export type PrivateRelayNetworkInput = PrivateRelayNetwork | readonly string[];
+
+export function createPrivateRelayTransport(input: PrivateRelayNetworkInput): BoundedPrivateRelayTransport {
+  const network = privateRelayNetwork(input);
+  if (network.transport === 'waku') {
+    return new BoundedPrivateRelayTransport(
+      [...WAKU_PRIVATE_RELAY_ENDPOINTS],
+      new WakuPrivateRelayAdapter({ bootstrapPeers: network.peers, clusterId: network.clusterId }),
+      validateWakuPrivateRelayEndpoints,
+    );
+  }
+  return new BoundedPrivateRelayTransport(network.relayUrls, new NostrPrivateRelayAdapter());
+}
+
 function topic(event: Event): boolean {
   return event.tags.some(tag => tag[0] === 't' && tag[1] === PRIVATE_RELAY_TOPIC);
 }
 
 function recipient(event: Event): string | null {
   return event.tags.find(tag => tag[0] === 'p')?.[1] ?? null;
+}
+
+/** What the wallet needs from the helper's outcome to sign and record its journal. */
+export interface PrivateRelaySignedEnvelope {
+  requestId: string;
+  quoteId: string;
+  transactionHash: string;
+  signedEnvelopeXdr: string;
+  expiresAt: number;
+}
+
+export interface PrivateRelaySubmissionReceipt {
+  transactionHash: string;
+  rpcStatus: PrivateRelayOutcome['rpcStatus'];
 }
 
 export interface ReceivedPrivateRelayMessage {
@@ -85,14 +116,11 @@ export class PrivateRelayMessenger {
   }
 
   static async create(
-    relayUrls: readonly string[],
+    network: PrivateRelayNetworkInput,
     transport?: BoundedPrivateRelayTransport,
   ): Promise<PrivateRelayMessenger> {
     const identity = await createPrivateRelayEphemeralIdentity();
-    return new PrivateRelayMessenger(
-      identity,
-      transport ?? new BoundedPrivateRelayTransport(relayUrls, new NostrPrivateRelayAdapter()),
-    );
+    return new PrivateRelayMessenger(identity, transport ?? createPrivateRelayTransport(network));
   }
 
   private assertOpen(): void {
@@ -251,7 +279,7 @@ export class PrivateRelayMessenger {
               message.requestId !== input.requestId ||
               !('quoteId' in message) ||
               message.quoteId !== input.quoteId ||
-              (message.type === 'prepared-job' && message.prepareId !== input.prepareId) ||
+              (message.type === 'outcome' && message.prepareId !== input.prepareId) ||
               !input.types.includes(message.type)
             ) return;
             cleanup();
@@ -278,12 +306,13 @@ export class PrivateRelayMessenger {
 export class PrivateRelaySenderSession {
   private readonly messenger: PrivateRelayMessenger;
 
+  private readonly outcomes = new Map<string, PrivateRelayOutcome>();
   private constructor(messenger: PrivateRelayMessenger) {
     this.messenger = messenger;
   }
 
-  static async create(relayUrls: readonly string[]): Promise<PrivateRelaySenderSession> {
-    return new PrivateRelaySenderSession(await PrivateRelayMessenger.create(relayUrls));
+  static async create(network: PrivateRelayNetworkInput): Promise<PrivateRelaySenderSession> {
+    return new PrivateRelaySenderSession(await PrivateRelayMessenger.create(network));
   }
 
   get publicKey(): string {
@@ -317,7 +346,7 @@ export class PrivateRelaySenderSession {
       throw new Error('Private relay quote settle window is invalid');
     }
     const request: PrivateRelayRequest = {
-      version: 2,
+      version: 3,
       type: 'request',
       requestId: createPrivateRelayId(),
       networkId: input.networkId,
@@ -436,7 +465,7 @@ export class PrivateRelaySenderSession {
     };
     assertAuthenticated();
     const selection: PrivateRelaySelection = {
-      version: 2,
+      version: 3,
       type: 'selection',
       requestId: request.requestId,
       quoteId: quote.quoteId,
@@ -464,6 +493,12 @@ export class PrivateRelaySenderSession {
     return response;
   }
 
+  /**
+   * Sends the single job and waits for the helper's outcome: the helper
+   * simulates, shows the exact transaction for approval, signs and submits,
+   * then answers once. The wait therefore runs to the quote/payout deadline,
+   * the same window a human approval had in the older three-step exchange.
+   */
   async requestPreparation(input: {
     quote: PrivateRelayQuote;
     payout: PrivateRelayPayout;
@@ -471,98 +506,70 @@ export class PrivateRelaySenderSession {
     maxTime: number;
     classicFeeStroops: string;
     maximumResourceFeeStroops: string;
-  }, signal?: AbortSignal): Promise<PrivateRelayPreparedJob> {
-    if (input.quote.requestId !== input.payout.requestId || input.quote.quoteId !== input.payout.quoteId ||
-      input.quote.peerAccount !== input.payout.peerAccount || input.quote.feeAtomic !== input.payout.feeAtomic ||
-      input.maxTime > Math.min(input.quote.expiresAt, input.payout.expiresAt)) {
-      throw new Error('Private relay preparation context changed');
-    }
-    const job: PrivateRelayPrepareJob = {
-      version: 2, type: 'prepare-job', requestId: input.quote.requestId, quoteId: input.quote.quoteId,
-      prepareId: createPrivateRelayId(), operationXdr: input.operationXdr, maxTime: input.maxTime,
-      classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: input.maximumResourceFeeStroops,
-      nonce: createPrivateRelayId(), expiresAt: input.maxTime,
-    };
-    const response = await this.messenger.waitFor({
-      peerPublicKey: input.quote.peerPubkey, requestId: job.requestId, quoteId: job.quoteId,
-      prepareId: job.prepareId, types: ['prepared-job', 'rejected'], timeoutMs: 60_000,
-      publish: () => this.messenger.publish(job, input.quote.peerPubkey, signal),
-    }, signal);
-    if (response.type === 'rejected') throw new Error(`Privacy relay preparation rejected: ${response.reason}`);
-    if (response.type !== 'prepared-job' || response.prepareId !== job.prepareId) {
-      throw new Error('Private relay preparation response does not match');
-    }
-    return response;
-  }
-
-  async requestSignature(input: {
-    quote: PrivateRelayQuote;
-    payout: PrivateRelayPayout;
-    unsignedEnvelopeXdr: string;
-    transactionHash: string;
-  }, signal?: AbortSignal): Promise<PrivateRelaySignedJob> {
+  }, signal?: AbortSignal): Promise<PrivateRelayOutcome> {
     const quote = { ...input.quote };
     const payout = { ...input.payout };
     if (quote.requestId !== payout.requestId || quote.quoteId !== payout.quoteId ||
-      quote.peerAccount !== payout.peerAccount || quote.feeAtomic !== payout.feeAtomic) {
-      throw new Error('Private relay signature context changed');
+      quote.peerAccount !== payout.peerAccount || quote.feeAtomic !== payout.feeAtomic ||
+      input.maxTime > Math.min(quote.expiresAt, payout.expiresAt)) {
+      throw new Error('Private relay preparation context changed');
     }
     if ([quote.expiresAt, payout.expiresAt].some(expiry => !Number.isSafeInteger(expiry) ||
       expiry <= nowSeconds() || expiry > nowSeconds() + PRIVATE_RELAY_MAX_TTL_SECONDS)) {
       throw new Error('Private relay approval deadline is invalid or expired');
     }
-    const job: PrivateRelaySignJob = {
-      version: 2,
-      type: 'sign-job',
-      requestId: payout.requestId,
-      quoteId: payout.quoteId,
-      unsignedEnvelopeXdr: input.unsignedEnvelopeXdr,
-      transactionHash: input.transactionHash,
-      nonce: createPrivateRelayId(),
-      expiresAt: Math.min(quote.expiresAt, payout.expiresAt),
+    const job: PrivateRelayJob = {
+      version: 3, type: 'job', requestId: quote.requestId, quoteId: quote.quoteId,
+      prepareId: createPrivateRelayId(), operationXdr: input.operationXdr, maxTime: input.maxTime,
+      classicFeeStroops: input.classicFeeStroops, maximumResourceFeeStroops: input.maximumResourceFeeStroops,
+      nonce: createPrivateRelayId(), expiresAt: Math.min(quote.expiresAt, payout.expiresAt),
     };
     const response = await this.messenger.waitFor({
-      peerPublicKey: quote.peerPubkey,
-      requestId: job.requestId,
-      quoteId: job.quoteId,
-      types: ['signed-job', 'rejected'],
+      peerPublicKey: quote.peerPubkey, requestId: job.requestId, quoteId: job.quoteId,
+      prepareId: job.prepareId, types: ['outcome', 'rejected'],
       deadlineSeconds: job.expiresAt,
       publish: () => this.messenger.publish(job, quote.peerPubkey, signal),
     }, signal);
-    if (response.type === 'rejected') throw new Error(`Privacy relay rejected signing: ${response.reason}`);
-    if (response.type !== 'signed-job' || response.transactionHash !== job.transactionHash ||
+    if (response.type === 'rejected') throw new Error(`Privacy relay rejected the job: ${response.reason}`);
+    if (response.type !== 'outcome' || response.prepareId !== job.prepareId ||
       !Number.isSafeInteger(response.expiresAt) || response.expiresAt <= nowSeconds() || response.expiresAt > job.expiresAt) {
-      throw new Error('Privacy relay signed response does not match the reviewed transaction');
+      throw new Error('Private relay outcome does not match the job');
     }
+    this.outcomes.set(quote.quoteId, response);
     return response;
   }
 
+  /** The signature already arrived with the outcome; this binds it to the envelope the wallet reviewed. */
+  async requestSignature(input: {
+    quote: PrivateRelayQuote;
+    payout: PrivateRelayPayout;
+    unsignedEnvelopeXdr: string;
+    transactionHash: string;
+  }): Promise<PrivateRelaySignedEnvelope> {
+    const outcome = this.outcomes.get(input.quote.quoteId);
+    if (!outcome || outcome.requestId !== input.quote.requestId || outcome.quoteId !== input.payout.quoteId) {
+      throw new Error('Privacy relay has not answered this job');
+    }
+    if (outcome.preparedEnvelopeXdr !== input.unsignedEnvelopeXdr || outcome.transactionHash !== input.transactionHash) {
+      throw new Error('Privacy relay signed response does not match the reviewed transaction');
+    }
+    return {
+      requestId: outcome.requestId, quoteId: outcome.quoteId, transactionHash: outcome.transactionHash,
+      signedEnvelopeXdr: outcome.signedEnvelopeXdr, expiresAt: outcome.expiresAt,
+    };
+  }
+
+  /** The helper submitted before answering; this reports its RPC status for the journal. */
   async requestSubmission(input: {
     quote: PrivateRelayQuote;
-    signed: PrivateRelaySignedJob;
-  }, signal?: AbortSignal): Promise<PrivateRelaySubmitted> {
-    const job: PrivateRelaySubmitJob = {
-      version: 2,
-      type: 'submit-job',
-      requestId: input.signed.requestId,
-      quoteId: input.signed.quoteId,
-      transactionHash: input.signed.transactionHash,
-      signedEnvelopeXdr: input.signed.signedEnvelopeXdr,
-      nonce: createPrivateRelayId(),
-      expiresAt: Math.min(input.signed.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
-    };
-    const response = await this.messenger.waitFor({
-      peerPublicKey: input.quote.peerPubkey,
-      requestId: input.signed.requestId,
-      quoteId: input.signed.quoteId,
-      types: ['submitted', 'rejected'],
-      publish: () => this.messenger.publish(job, input.quote.peerPubkey, signal),
-    }, signal);
-    if (response.type === 'rejected') throw new Error(`Privacy relay rejected submission: ${response.reason}`);
-    if (response.type !== 'submitted' || response.transactionHash !== input.signed.transactionHash) {
+    signed: PrivateRelaySignedEnvelope;
+  }): Promise<PrivateRelaySubmissionReceipt> {
+    const outcome = this.outcomes.get(input.quote.quoteId);
+    if (!outcome || outcome.transactionHash !== input.signed.transactionHash ||
+      outcome.signedEnvelopeXdr !== input.signed.signedEnvelopeXdr) {
       throw new Error('Privacy relay submission response does not match the reviewed transaction');
     }
-    return response;
+    return { transactionHash: outcome.transactionHash, rpcStatus: outcome.rpcStatus };
   }
 
   close(): void {
@@ -581,8 +588,8 @@ export class PrivateRelayHelperSession {
     this.messenger = messenger;
   }
 
-  static async create(relayUrls: readonly string[]): Promise<PrivateRelayHelperSession> {
-    return new PrivateRelayHelperSession(await PrivateRelayMessenger.create(relayUrls));
+  static async create(network: PrivateRelayNetworkInput): Promise<PrivateRelayHelperSession> {
+    return new PrivateRelayHelperSession(await PrivateRelayMessenger.create(network));
   }
 
   get publicKey(): string {
@@ -631,7 +638,7 @@ export class PrivateRelayHelperSession {
 
   listenForPrivateMessages(
     onMessage: (
-      message: PrivateRelaySelection | PrivateRelayPrepareJob | PrivateRelaySignJob | PrivateRelaySubmitJob,
+      message: PrivateRelaySelection | PrivateRelayJob,
       quote: PrivateRelayQuote,
     ) => void,
     signal?: AbortSignal,
@@ -639,12 +646,7 @@ export class PrivateRelayHelperSession {
     return this.messenger.subscribe({
       encrypted: true,
       onMessage: ({ event, message }) => {
-        if (
-          message.type !== 'selection' &&
-          message.type !== 'prepare-job' &&
-          message.type !== 'sign-job' &&
-          message.type !== 'submit-job'
-        ) return;
+        if (message.type !== 'selection' && message.type !== 'job') return;
         const quote = this.quotes.get(message.quoteId);
         const senderPublicKey = this.senderByQuote.get(message.quoteId);
         if (this.closed || !quote || quote.requestId !== message.requestId || event.pubkey !== senderPublicKey ||
@@ -663,7 +665,7 @@ export class PrivateRelayHelperSession {
     if (this.closed || this.quotes.size >= MAX_RELAY_QUOTES) throw new Error('Private relay helper is unavailable');
     const request = { ...input.request };
     const unsignedQuote: PrivateRelayUnsignedQuote = {
-      version: 2,
+      version: 3,
       type: 'quote',
       requestId: request.requestId,
       quoteId: createPrivateRelayId(),
@@ -699,7 +701,7 @@ export class PrivateRelayHelperSession {
     privateFeeAddress: string;
   }, signal?: AbortSignal): Promise<PrivateRelayPayout> {
     const payout: PrivateRelayPayout = {
-      version: 2,
+      version: 3,
       type: 'payout',
       requestId: input.selection.requestId,
       quoteId: input.selection.quoteId,
@@ -715,70 +717,34 @@ export class PrivateRelayHelperSession {
     return payout;
   }
 
-  async sendPrepared(input: {
-    job: PrivateRelayPrepareJob;
+  /** One answer for the whole job: the simulated envelope, its signature and the submission status. */
+  async sendOutcome(input: {
+    job: PrivateRelayJob;
+    quote: PrivateRelayQuote;
     preparedEnvelopeXdr: string;
     accountSequence: string;
     simulationLedger: number;
-  }, signal?: AbortSignal): Promise<PrivateRelayPreparedJob> {
-    const senderPublicKey = this.senderByQuote.get(input.job.quoteId);
-    if (!senderPublicKey) throw new Error('Private relay sender key is unavailable');
-    const response: PrivateRelayPreparedJob = {
-      version: 2, type: 'prepared-job', requestId: input.job.requestId, quoteId: input.job.quoteId,
-      prepareId: input.job.prepareId, preparedEnvelopeXdr: input.preparedEnvelopeXdr,
-      accountSequence: input.accountSequence, simulationLedger: input.simulationLedger,
-      nonce: createPrivateRelayId(), expiresAt: input.job.expiresAt,
-    };
-    await this.messenger.publish(response, senderPublicKey, signal);
-    return response;
-  }
-
-  async sendSigned(input: {
-    job: PrivateRelaySignJob;
-    quote: PrivateRelayQuote;
     signedEnvelopeXdr: string;
+    transactionHash: string;
+    rpcStatus: PrivateRelayOutcome['rpcStatus'];
     /** Register exact authorization synchronously: delivery can precede the relay's publication acknowledgement. */
-    onBeforePublish?(response: Readonly<PrivateRelaySignedJob>): void;
-  }, signal?: AbortSignal): Promise<PrivateRelaySignedJob> {
+    onBeforePublish?(response: Readonly<PrivateRelayOutcome>): void;
+  }, signal?: AbortSignal): Promise<PrivateRelayOutcome> {
     if (this.closed || signal?.aborted) throw abortError();
     if (input.job.requestId !== input.quote.requestId || input.job.quoteId !== input.quote.quoteId ||
       input.job.expiresAt <= nowSeconds() || input.job.expiresAt > input.quote.expiresAt) {
-      throw new Error('Private relay signed job context changed or expired');
+      throw new Error('Private relay job context changed or expired');
     }
-    const response: PrivateRelaySignedJob = Object.freeze({
-      version: 2,
-      type: 'signed-job',
-      requestId: input.job.requestId,
-      quoteId: input.job.quoteId,
-      transactionHash: input.job.transactionHash,
-      signedEnvelopeXdr: input.signedEnvelopeXdr,
-      nonce: createPrivateRelayId(),
-      expiresAt: Math.min(input.job.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
+    const response: PrivateRelayOutcome = Object.freeze({
+      version: 3, type: 'outcome', requestId: input.job.requestId, quoteId: input.job.quoteId,
+      prepareId: input.job.prepareId, preparedEnvelopeXdr: input.preparedEnvelopeXdr,
+      signedEnvelopeXdr: input.signedEnvelopeXdr, transactionHash: input.transactionHash,
+      accountSequence: input.accountSequence, simulationLedger: input.simulationLedger, rpcStatus: input.rpcStatus,
+      nonce: createPrivateRelayId(), expiresAt: Math.min(input.job.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
     });
     const senderPublicKey = this.senderByQuote.get(input.quote.quoteId);
     if (!senderPublicKey) throw new Error('Private relay sender key is unavailable');
     input.onBeforePublish?.(response);
-    await this.messenger.publish(response, senderPublicKey, signal);
-    return response;
-  }
-
-  async sendSubmitted(input: {
-    job: PrivateRelaySubmitJob;
-    quote: PrivateRelayQuote;
-    rpcStatus: PrivateRelaySubmitted['rpcStatus'];
-  }, signal?: AbortSignal): Promise<PrivateRelaySubmitted> {
-    const response: PrivateRelaySubmitted = {
-      version: 2,
-      type: 'submitted',
-      requestId: input.job.requestId,
-      quoteId: input.job.quoteId,
-      transactionHash: input.job.transactionHash,
-      rpcStatus: input.rpcStatus,
-      nonce: createPrivateRelayId(),
-      expiresAt: Math.min(input.job.expiresAt, nowSeconds() + DEFAULT_MESSAGE_TTL_SECONDS),
-    };
-    const senderPublicKey = this.senderByQuote.get(input.quote.quoteId);
-    if (!senderPublicKey) throw new Error('Private relay sender key is unavailable');
     await this.messenger.publish(response, senderPublicKey, signal);
     return response;
   }
@@ -791,7 +757,7 @@ export class PrivateRelayHelperSession {
     expiresAt: number;
   }, signal?: AbortSignal): Promise<void> {
     await this.messenger.publish({
-      version: 2,
+      version: 3,
       type: 'rejected',
       requestId: input.requestId,
       quoteId: input.quoteId,

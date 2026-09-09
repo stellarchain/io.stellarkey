@@ -56,8 +56,14 @@ export class BoundedPrivateRelayTransport {
   private readonly subscriptions = new Set<PrivateRelaySubscription>();
   private closed = false;
 
-  constructor(urls: readonly string[], adapter: PrivateRelayTransportAdapter) {
-    this.urls = validatePrivateRelayUrls(urls);
+  /** `validateEndpoints` names the carriers an adapter accepts: public Nostr
+   * relay URLs by default, or a transport's fixed logical endpoints. */
+  constructor(
+    urls: readonly string[],
+    adapter: PrivateRelayTransportAdapter,
+    validateEndpoints: (urls: readonly string[]) => string[] = validatePrivateRelayUrls,
+  ) {
+    this.urls = validateEndpoints(urls);
     this.adapter = adapter;
   }
 

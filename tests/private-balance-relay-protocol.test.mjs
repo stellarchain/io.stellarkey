@@ -20,7 +20,7 @@ const NOSTR_KEY = '55'.repeat(32);
 
 function request(overrides = {}) {
   return {
-    version: 2,
+    version: 3,
     type: 'request',
     requestId: REQUEST_ID,
     networkId: NETWORK_ID,
@@ -53,14 +53,17 @@ test('relay protocol rejects unknown fields, stale messages, and oversized jobs'
   );
   assert.throws(
     () => encodePrivateRelayMessage({
-      version: 2,
-      type: 'sign-job',
+      version: 3,
+      type: 'job',
       requestId: REQUEST_ID,
       quoteId: QUOTE_ID,
       nonce: NONCE,
       expiresAt: NOW + 60,
-      transactionHash: '66'.repeat(32),
-      unsignedEnvelopeXdr: 'A'.repeat(PRIVATE_RELAY_MAX_PLAINTEXT_BYTES),
+      prepareId: '66'.repeat(32),
+      operationXdr: 'A'.repeat(PRIVATE_RELAY_MAX_PLAINTEXT_BYTES),
+      maxTime: NOW + 60,
+      classicFeeStroops: '100',
+      maximumResourceFeeStroops: '1000',
     }, NOW),
     /large/iu,
   );

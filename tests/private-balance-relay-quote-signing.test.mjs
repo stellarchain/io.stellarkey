@@ -31,14 +31,14 @@ function consent(storage, helpRelay = true, feeAtomic = '10000') {
 
 function quoteInput(account, overrides = {}) {
   const request = {
-    version: 2, type: 'request', requestId: '11'.repeat(32), networkId: NETWORK_ID,
+    version: 3, type: 'request', requestId: '11'.repeat(32), networkId: NETWORK_ID,
     poolContractId: POOL, replyPubkey: '22'.repeat(32),
     nonce: '33'.repeat(32), expiresAt: Math.floor(Date.now() / 1_000) + 60,
   };
   return {
     request,
     quote: {
-      version: 2, type: 'quote', requestId: request.requestId, quoteId: '44'.repeat(32),
+      version: 3, type: 'quote', requestId: request.requestId, quoteId: '44'.repeat(32),
       peerAccount: account.publicKey(), peerPubkey: '55'.repeat(32), feeAtomic: '10000',
       nonce: '66'.repeat(32), expiresAt: request.expiresAt,
     },

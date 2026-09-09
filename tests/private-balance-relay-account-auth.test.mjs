@@ -173,15 +173,15 @@ test('selection rejects modified account, fee, keys, context and stale offers be
   }
 });
 
-test('account authorization uses canonical, bounded, domain-separated protocol v2 statements', () => {
+test('account authorization uses canonical, bounded, domain-separated protocol v3 statements', () => {
   const signer = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 7));
   const current = request();
   const reference = signedQuote(current, signer);
   const { accountSignature, ...unsigned } = reference;
   assert.equal(signPrivateRelayQuoteAuthorization(current, unsigned, signer), accountSignature);
   assert.equal(verifyPrivateRelayQuoteAuthorization(current, reference), true);
-  assert.equal(PRIVATE_RELAY_PROTOCOL_VERSION, 2);
-  assert.equal(PRIVATE_RELAY_TOPIC, 'stellarkey-private-relay-v2');
+  assert.equal(PRIVATE_RELAY_PROTOCOL_VERSION, 3);
+  assert.equal(PRIVATE_RELAY_TOPIC, 'stellarkey-private-relay-v3');
   assert.deepEqual(decodePrivateRelayMessage(encodePrivateRelayMessage(reference)), reference);
   assert.throws(() => signPrivateRelayQuoteAuthorization(current, unsigned, Keypair.random()), /key/iu);
   assert.throws(() => signPrivateRelayQuoteAuthorization(current, {
@@ -310,10 +310,12 @@ test('real encrypted helper negotiation authenticates the account before selecti
       }));
     });
     helper.listenForPrivateMessages((selection, quote) => {
-      if (selection.type === 'prepare-job') {
-        const result = { preparedEnvelopeXdr: 'AQIDBA==', accountSequence: '7', simulationLedger: 123 };
-        operations.push(helper.sendPrepared({ job: { ...selection, prepareId: '99'.repeat(32) }, ...result })
-          .then(() => helper.sendPrepared({ job: selection, ...result })));
+      if (selection.type === 'job') {
+        const result = { quote, preparedEnvelopeXdr: 'AQIDBA==', accountSequence: '7', simulationLedger: 123,
+          signedEnvelopeXdr: 'AQIDBAU=', transactionHash: '44'.repeat(32), rpcStatus: 'PENDING' };
+        // A stale outcome for another preparation id is ignored; the matching one completes the job.
+        operations.push(helper.sendOutcome({ job: { ...selection, prepareId: '99'.repeat(32) }, ...result })
+          .then(() => helper.sendOutcome({ job: selection, ...result })));
         return;
       }
       assert.equal(selection.type, 'selection');
@@ -340,6 +342,12 @@ test('real encrypted helper negotiation authenticates the account before selecti
     });
     assert.equal(prepared.accountSequence, '7');
     assert.notEqual(prepared.prepareId, '99'.repeat(32));
+    assert.equal(prepared.rpcStatus, 'PENDING');
+    // The signature and receipt arrived with the outcome; no further wire round trips.
+    const signed = await sender.requestSignature({ quote: discovery.quotes[0], payout, unsignedEnvelopeXdr: 'AQIDBA==', transactionHash: '44'.repeat(32) });
+    assert.equal(signed.signedEnvelopeXdr, 'AQIDBAU=');
+    assert.deepEqual(await sender.requestSubmission({ quote: discovery.quotes[0], signed }), { transactionHash: '44'.repeat(32), rpcStatus: 'PENDING' });
+    await assert.rejects(sender.requestSignature({ quote: discovery.quotes[0], payout, unsignedEnvelopeXdr: 'BBBB', transactionHash: '44'.repeat(32) }), /does not match/u);
     await Promise.all(operations);
     assert.equal(events.length, 7);
     const publicEvents = events.filter(event => !event.tags.some(tag => tag[0] === 'p'));
@@ -368,7 +376,7 @@ test('helper retains negotiation before publish acknowledgement and rolls back a
     async publish(quote) {
       publishedQuote = quote;
       receive({ event: { pubkey: current.replyPubkey }, message: {
-        version: 2, type: 'selection', requestId: current.requestId, quoteId: quote.quoteId,
+        version: 3, type: 'selection', requestId: current.requestId, quoteId: quote.quoteId,
         actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304', nonce: '77'.repeat(32), expiresAt: quote.expiresAt,
       } });
       assert.equal(received, 1, 'selection was dropped before quote publication acknowledged');
@@ -383,7 +391,7 @@ test('helper retains negotiation before publish acknowledgement and rolls back a
       async signAccountQuote(request, quote) { return signPrivateRelayQuoteAuthorization(request, quote, signer); },
     }), /acknowledgement failed/iu);
     receive({ event: { pubkey: current.replyPubkey }, message: {
-      version: 2, type: 'selection', requestId: current.requestId, quoteId: publishedQuote.quoteId,
+      version: 3, type: 'selection', requestId: current.requestId, quoteId: publishedQuote.quoteId,
       actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304', nonce: '88'.repeat(32), expiresAt: publishedQuote.expiresAt,
     } });
     assert.equal(received, 1);
