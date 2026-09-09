@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Kept confirmation alerts within the available viewport so long warnings and wrapped approval details scroll without pushing actions off-screen, including when the on-screen keyboard reduces the viewport.
 - Preserved pinch zoom and nested-list scrolling in mobile sheets; cancelled or multi-touch drags reset without closing or replaying the entrance animation.
 - Cancelled abandoned sheet-handle presses when the mouse button is released outside, preventing later hover movement from dragging the sheet.
 - Corrected the relay-feedback lab measurement to include its first rendering opportunity without waiting for an unrelated later frame; the 100 ms limit and throttled five-sample check are unchanged.

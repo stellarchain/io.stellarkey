@@ -840,10 +840,37 @@ async function openHelperApproval(page: Page) {
   await markShell(page);
 }
 
-test('helper approval details reflow at narrow width without obscuring labels or values', async ({ page }) => {
+for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`helper approval details reflow at narrow width without obscuring labels or values (${reducedMotion})`, async ({ page }) => {
+  await page.emulateMedia({ reducedMotion });
   await page.setViewportSize({ width: 320, height: 568 });
   await openHelperApproval(page);
   const approval = page.getByRole('dialog', { name: 'Relay a private payment?' });
+  for (const reducedViewport of [false, true, false]) {
+    await page.evaluate(reduced => {
+      const viewport = window.visualViewport!;
+      if (reduced) {
+        Object.defineProperty(viewport, 'height', { configurable: true, value: 360 });
+        Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: 40 });
+      } else {
+        Reflect.deleteProperty(viewport, 'height');
+        Reflect.deleteProperty(viewport, 'offsetTop');
+      }
+      viewport.dispatchEvent(new Event('resize'));
+      viewport.dispatchEvent(new Event('scroll'));
+    }, reducedViewport);
+    await expect.poll(() => approval.evaluate((node, reduced) => {
+      const overlay = node.getBoundingClientRect();
+      const shell = node.querySelector<HTMLElement>('[data-modal-shell]')!.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      const viewportMatches = reduced
+        ? Math.abs(overlay.top - 40) <= 1 && Math.abs(overlay.height - 360) <= 1
+        : Math.abs(overlay.top) <= 1 && Math.abs(overlay.height - innerHeight) <= 1;
+      return viewportMatches && shell.top >= overlay.top + parseFloat(style.paddingTop) - 1 &&
+        shell.bottom <= overlay.bottom - parseFloat(style.paddingBottom) + 1;
+    }, reducedViewport)).toBe(true);
+    await page.keyboard.press('Tab');
+    await stableShell(page);
+  }
   await expect.poll(() => approval.locator('dl').evaluate(node => {
     const bounds = node.getBoundingClientRect();
     return node.scrollWidth <= node.clientWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth &&
@@ -855,6 +882,11 @@ test('helper approval details reflow at narrow width without obscuring labels or
   })).toBe(true);
   const accessibility = await new AxeBuilder({ page }).include('[data-modal-shell]').analyze();
   expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, nodes: violation.nodes.length }))).toEqual([]);
+  await approval.getByRole('button', { name: 'Reject', exact: true }).focus();
+  await approval.getByRole('button', { name: 'Reject', exact: true }).press('Enter');
+  await expect(approval).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow !== 'hidden' &&
+    !document.querySelector('main')?.closest('[inert]'))).toBe(true);
 });
 
 test('helper accepts exact submit before signature acknowledgement and prevents duplicate submission', async ({ page }) => {
