@@ -64,7 +64,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.doesNotMatch(entry, /onSaved=\{\(\) => setOpen\(false\)\}/);
   assert.doesNotMatch(body, /onSaved=|setOpen\(/);
   assert.match(entry, /<Modal open=\{open\}/);
-  assert.match(settings, /Start relaying/);
+  assert.match(settings, /Start Relaying/);
   assert.match(settings, /Stop Relaying/);
   assert.match(settings, /helperOnly/);
   assert.match(settings, /onSaved/);

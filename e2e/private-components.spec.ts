@@ -805,6 +805,23 @@ async function openHelperApproval(page: Page) {
   await markShell(page);
 }
 
+test('helper approval details reflow at narrow width without obscuring labels or values', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await openHelperApproval(page);
+  const approval = page.getByRole('dialog', { name: 'Relay a private payment?' });
+  await expect.poll(() => approval.locator('dl').evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    return node.scrollWidth <= node.clientWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth &&
+      [...node.children].every(row => {
+        const term = row.querySelector('dt')!.getBoundingClientRect();
+        const value = row.querySelector('dd')!.getBoundingClientRect();
+        return term.right <= value.left + 1 || term.bottom <= value.top + 1;
+      });
+  })).toBe(true);
+  const accessibility = await new AxeBuilder({ page }).include('[data-modal-shell]').analyze();
+  expect(accessibility.violations.map(violation => ({ id: violation.id, impact: violation.impact, nodes: violation.nodes.length }))).toEqual([]);
+});
+
 test('helper accepts exact submit before signature acknowledgement and prevents duplicate submission', async ({ page }) => {
   await openHelperApproval(page);
   await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
