@@ -227,7 +227,8 @@ function SendSurface({
     setSendMode("private");
     startRuntimeTransition(requestRuntime);
   };
-  // The mode switch belongs to the form step; review and result screens hide it.
+  // Unsigned form/review can change mode (resetting the public draft).
+  // Busy preparation/signing blocks activation; result screens hide the switch.
   const [publicStage, setPublicStage] = useState<Stage>("form");
   const panel = sendMode === "private" ? (
     <PrivatePaymentAccessGate action="send">
@@ -267,7 +268,7 @@ function SendSurface({
         { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
       ]}
       panelBusy={surfaceBusy}
-      tabListClassName={(availableAssets.length > 0 || sendMode === "private") && (sendMode === "private" || publicStage === "form") ? "mx-4 mt-4 sm:mx-6" : "hidden"}
+      tabListClassName={(availableAssets.length > 0 || sendMode === "private") && (sendMode === "private" || publicStage === "form" || publicStage === "review") ? "mx-4 mt-4 sm:mx-6" : "hidden"}
       panelClassName="min-h-56"
     >
       {panel}
