@@ -10,7 +10,7 @@ import { PrivateBalanceWorkerClient } from '../src/features/private-balance/work
 const DEPLOYMENT_BINDING = new Uint8Array(32).fill(0x05);
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
   deploymentTag: derivePrivateAddressDeploymentTag(DEPLOYMENT_BINDING),
-  diversifier: new Uint8Array(4),
+  diversifier: Uint8Array.of(0, 0, 0, 1),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
 }, 'tskpay_');

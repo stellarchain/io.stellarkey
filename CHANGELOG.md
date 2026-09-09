@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Generated relay-compatible shielded receive addresses from first setup, replaced legacy default receive addresses when the recipient's private session initializes, and excluded the default diversifier from address rotation. Existing diversified addresses stay stable, older addresses remain recoverable, and delayed migration results cannot restore an address after session or tab ownership changes.
 - Kept confirmation alerts within the available viewport so long warnings and wrapped approval details scroll without pushing actions off-screen, including when the on-screen keyboard reduces the viewport.
 - Preserved pinch zoom and nested-list scrolling in mobile sheets; cancelled or multi-touch drags reset without closing or replaying the entrance animation.
 - Cancelled abandoned sheet-handle presses when the mouse button is released outside, preventing later hover movement from dragging the sheet.

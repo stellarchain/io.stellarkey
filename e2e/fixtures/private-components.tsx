@@ -40,7 +40,7 @@ import { privateBalanceSensitivePrefix } from '@/lib/private-balance-bootstrap';
 import { forceClaimPrivateBalanceLease, privateBalanceLeaseKey } from '@/features/private-balance/runtime/coordination';
 import { stealthDiscoveryRecordKey } from '@/features/private-balance/runtime/stealth-cache';
 import { lockVault, unlockVault, withPrivacySessionRoot } from '@/lib/vault';
-import { commitPrivateBalanceState, createEmptyPrivateBalanceState } from '@/features/private-balance/runtime/storage';
+import { commitPrivateBalanceState, createEmptyPrivateBalanceState, loadPrivateBalanceState } from '@/features/private-balance/runtime/storage';
 import developmentManifest from '../../../protocol/private-balance/manifests/development.json';
 
 const discoveryPassword = 'synthetic discovery correct horse battery staple';
@@ -55,6 +55,12 @@ function DiscoveryProviderControls() {
   const [removal, setRemoval] = useState('idle');
   const [settled, setSettled] = useState(0);
   const [shieldedSettled, setShieldedSettled] = useState(0);
+  const addressPublications = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    // Observe committed publications without storing or rendering their values.
+    const counter = addressPublications.current;
+    if (runtime.privateAddress && counter) counter.textContent = String(Number(counter.textContent) + 1);
+  }, [runtime.privateAddress]);
   return <>
     <Button onClick={() => { void runtime.refreshSync().catch(() => {}).finally(() => setShieldedSettled(value => value + 1)); }}>Start synthetic shielded sync</Button>
     <Button onClick={() => { void runtime.refreshStealth().catch(() => {}).finally(() => setSettled(value => value + 1)); }}>Start discovery scan</Button>
@@ -70,6 +76,9 @@ function DiscoveryProviderControls() {
     <p data-testid="discovery-settled">{settled}</p>
     <p data-testid="discovery-removal">{removal}</p>
     <p data-testid="discovery-shielded-settled">{shieldedSettled}</p>
+    <p data-testid="discovery-shielded-address">{runtime.privateAddress ? 'present' : 'cleared'}</p>
+    <p data-testid="discovery-shielded-error">{runtime.error ? 'error' : 'none'}</p>
+    <p ref={addressPublications} data-testid="discovery-address-publications">0</p>
   </>;
 }
 
@@ -85,7 +94,8 @@ function DiscoveryProviderChecks() {
   const [seeded, setSeeded] = useState('idle');
   const [directVault, setDirectVault] = useState('idle');
   const [shieldedStage, setShieldedStage] = useState('idle');
-  const shieldedGate = useRef<{ mode: 'off' | 'init' | 'prefix'; armed: boolean; release: (() => void) | null }>({ mode: 'off', armed: false, release: null });
+  const [addressStored, setAddressStored] = useState('unchecked');
+  const shieldedGate = useRef<{ mode: 'off' | 'init' | 'prefix' | 'address-cas'; armed: boolean; release: (() => void) | null }>({ mode: 'off', armed: false, release: null });
   const pending = useRef<Array<{ resolve(page: StealthAnnouncementPage): void; reject(error: Error): void }>>([]);
   useEffect(() => {
     const original = HorizonStealthAnnouncementReader.prototype.readPage;
@@ -117,11 +127,12 @@ function DiscoveryProviderChecks() {
       readLedgerIdentity: archive.readLedgerIdentity, readHead: archive.readHead };
     const originalInit = PrivateBalanceWorkerClient.prototype.initSession;
     const originalPrefix = IndexedDbEncryptedRecordDriver.prototype.readPrefix;
+    const originalCompare = IndexedDbEncryptedRecordDriver.prototype.compareAndSet;
     const originalFetch = window.fetch;
     const decode = (value: string) => Uint8Array.from(value.match(/../g)!, byte => Number.parseInt(byte, 16));
     const marker = () => new Uint8Array(32).fill(1);
     const contextHash = computeContextHash(1, decode(developmentManifest.networkId), decode(developmentManifest.realmId), new Uint8Array(StrKey.decodeContract(developmentManifest.poolContractId)));
-    const pause = async (stage: 'init' | 'prefix') => {
+    const pause = async (stage: 'init' | 'prefix' | 'address-cas') => {
       if (!gate.armed || gate.mode !== stage) return;
       gate.armed = false;
       setShieldedStage(stage);
@@ -164,11 +175,17 @@ function DiscoveryProviderChecks() {
       if (prefix.startsWith('private:sensitive:v1:')) await pause('prefix');
       return result;
     };
+    IndexedDbEncryptedRecordDriver.prototype.compareAndSet = async function (...args) {
+      const result = await originalCompare.apply(this, args);
+      if (result.ok && args[0].startsWith('private:sensitive:v1:')) await pause('address-cas');
+      return result;
+    };
     return () => {
       gate.release?.();
       Object.assign(archive, originals);
       PrivateBalanceWorkerClient.prototype.initSession = originalInit;
       IndexedDbEncryptedRecordDriver.prototype.readPrefix = originalPrefix;
+      IndexedDbEncryptedRecordDriver.prototype.compareAndSet = originalCompare;
       window.fetch = originalFetch;
     };
   }, []);
@@ -185,7 +202,7 @@ function DiscoveryProviderChecks() {
     <Button onClick={() => { void wallet.unlock(discoveryPassword); }}>Unlock discovery wallet</Button>
     <Button onClick={() => { lockVault(); setDirectVault('locked'); }}>Revoke vault without phase update</Button>
     <Button onClick={() => { void unlockVault(discoveryPassword).then(() => setDirectVault('unlocked')); }}>Replace vault session without phase update</Button>
-    {(['init', 'prefix'] as const).map(stage => <Button key={stage} onClick={() => {
+    {(['init', 'prefix', 'address-cas'] as const).map(stage => <Button key={stage} onClick={() => {
       shieldedGate.current.mode = stage; shieldedGate.current.armed = true; setShieldedStage('armed');
     }}>Pause synthetic shielded {stage}</Button>)}
     <Button onClick={() => { shieldedGate.current.release?.(); shieldedGate.current.release = null; }}>Release old shielded response</Button>
@@ -199,12 +216,16 @@ function DiscoveryProviderChecks() {
     }}>Take discovery lease elsewhere</Button>
     <Button onClick={() => forceClaimPrivateBalanceLease(localStorage, privateBalanceLeaseKey(scope), 'synthetic-other-owner', Date.now(), 60_000)}>
       Take discovery lease silently</Button>
-    {(['proof', 'build', 'empty'] as const).map(kind => <Button key={kind} onClick={() => {
+    {(['proof', 'build', 'empty', 'legacy'] as const).map(kind => <Button key={kind} onClick={() => {
       if (!account) return;
       setSeeded('waiting');
       void withPrivacySessionRoot(account.id, manifest, async (_root, storageKey) => {
         const state = createEmptyPrivateBalanceState('01'.repeat(32));
-        if (kind === 'build') state.buildReservations.push({ id: 'synthetic-build', kind: 'deposit', proofExposure: 'local',
+        if (kind === 'legacy') state.privateAddress = encodePrivateAddress({
+          deploymentTag: derivePrivateAddressDeploymentTag(Uint8Array.from(binding.match(/../g)!, byte => Number.parseInt(byte, 16))),
+          diversifier: new Uint8Array(4), ownerCommitment: new Uint8Array(32).fill(1), hpkePublicKey: new Uint8Array(32).fill(2),
+        }, 'tskpay_');
+        else if (kind === 'build') state.buildReservations.push({ id: 'synthetic-build', kind: 'deposit', proofExposure: 'local',
           assetContractId: discoveryAsset.contractId, reservedNoteIds: [], createdAt: 1, updatedAt: 1 });
         else if (kind === 'proof') {
           state.notes.push({ id: '09'.repeat(32), commitment: '09'.repeat(32), value: '1', assetIndex: 0,
@@ -228,6 +249,14 @@ function DiscoveryProviderChecks() {
       void Promise.all([driver.read(stealthDiscoveryRecordKey(scope)), driver.readPrefix(privateBalanceSensitivePrefix(scope))])
         .then(([cache, state]) => setStored(cache === null && state.size === 0 ? 'absent' : 'present'));
     }}>Inspect synthetic discovery storage</Button>
+    <Button onClick={() => {
+      if (!account) return;
+      void withPrivacySessionRoot(account.id, manifest, async (_root, storageKey) => {
+        const state = await loadPrivateBalanceState(scope, storageKey, new IndexedDbEncryptedRecordDriver());
+        setAddressStored(state?.privateAddress && state.issuedAddressDiversifiers?.includes('00000000') &&
+          state.issuedAddressDiversifiers.includes('00000001') ? 'recorded' : 'missing');
+      }).catch(() => setAddressStored('unavailable'));
+    }}>Inspect synthetic address migration</Button>
     <p data-testid="discovery-reads">{reads}</p>
     <p data-testid="discovery-aborts">{aborts}</p>
     <p data-testid="discovery-stored">{stored}</p>
@@ -235,6 +264,7 @@ function DiscoveryProviderChecks() {
     <p data-testid="discovery-wallet-phase">{wallet.phase}</p>
     <p data-testid="discovery-direct-vault">{directVault}</p>
     <p data-testid="discovery-shielded-stage">{shieldedStage}</p>
+    <p data-testid="discovery-address-stored">{addressStored}</p>
     {account && mounted ? <PrivateBalanceProvider accountId={account.id} accountPublicKey={account.publicKey}
       accountCreatedAt={0} network={network} manifest={manifest} manifestHash={'01'.repeat(32)} storageScope={scope}
       encryptedStateExists={false} deployment={discoveryDeployment} asset={discoveryAsset} registryAssets={discoveryRegistry}
