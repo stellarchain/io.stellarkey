@@ -685,16 +685,39 @@ test('live discovery rejects a stale removal closure after scope replacement', a
   await expect(page.getByTestId('discovery-removal')).toHaveText('refused');
 });
 
-async function pauseShieldedSync(page: Page, stage: 'init' | 'prefix') {
+async function pauseShieldedSync(page: Page, stage: 'init' | 'prefix' | 'address-cas') {
   await openDiscovery(page);
   await page.getByRole('button', { name: 'Finish oldest discovery page', exact: true }).click();
   await expect(page.getByTestId('discovery-settled')).toHaveText('1');
-  await page.getByRole('button', { name: 'Seed synthetic empty reservation', exact: true }).click();
+  await page.getByRole('button', { name: `Seed synthetic ${stage === 'address-cas' ? 'legacy' : 'empty'} reservation`, exact: true }).click();
   await expect(page.getByTestId('discovery-seeded')).toHaveText('ready');
   await page.getByRole('button', { name: `Pause synthetic shielded ${stage}`, exact: true }).click();
   await page.getByRole('button', { name: 'Start synthetic shielded sync', exact: true }).click();
   await expect(page.getByTestId('discovery-shielded-stage')).toHaveText(stage);
 }
+
+for (const revoke of ['none', 'lease', 'vault']) test(`receive address migration publishes only to its active session (${revoke})`, async ({ page }) => {
+  await pauseShieldedSync(page, 'address-cas');
+  await expect(page.getByTestId('discovery-shielded-address')).toHaveText('cleared');
+  await expect(page.getByTestId('discovery-address-publications')).toHaveText('0');
+  if (revoke === 'lease') {
+    await page.getByRole('button', { name: 'Take discovery lease elsewhere', exact: true }).click();
+    await expect(page.getByTestId('discovery-leader')).toHaveText('false');
+  } else if (revoke === 'vault') {
+    await page.getByRole('button', { name: 'Revoke vault without phase update', exact: true }).click();
+    await page.getByRole('button', { name: 'Replace vault session without phase update', exact: true }).click();
+    await expect(page.getByTestId('discovery-direct-vault')).toHaveText('unlocked');
+  }
+  await page.getByRole('button', { name: 'Release old shielded response', exact: true }).click();
+  await expect(page.getByTestId('discovery-shielded-stage')).toHaveText('released');
+  await expect(page.getByTestId('discovery-address-publications')).toHaveText(revoke === 'none' ? '1' : '0');
+  await expect(page.getByTestId('discovery-shielded-settled')).toHaveText('1');
+  await expect(page.getByTestId('discovery-shielded-address')).toHaveText(revoke === 'none' ? 'present' : 'cleared');
+  await expect(page.getByTestId('discovery-shielded-error')).toHaveText('none');
+  // Revocation suppresses publication, not an already authorized durable commit.
+  await page.getByRole('button', { name: 'Inspect synthetic address migration', exact: true }).click();
+  await expect(page.getByTestId('discovery-address-stored')).toHaveText('recorded');
+});
 
 test('live discovery replacement survives an old shielded worker response', async ({ page }) => {
   await pauseShieldedSync(page, 'init');

@@ -915,6 +915,9 @@ export function PrivateBalanceProvider({
               );
               progress.durable = durable;
             }
+            // A committed address remains issued, but a delayed storage reply
+            // must not republish it after this session or lease was revoked.
+            try { discovery.assertActive(); } catch { return; }
             showDurableState(durable, identity.address, identity.ownerCommitmentHex);
             dispatch({ type: 'SET_SYNCING', syncing: true });
             if (!quiet) {

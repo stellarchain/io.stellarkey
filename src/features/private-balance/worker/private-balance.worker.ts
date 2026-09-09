@@ -81,6 +81,28 @@ function activeSession(req: WorkerRequest): {
   return { esk: currentEsk, keyContext: currentKeyContext };
 }
 
+function freshAddressDiversifier(): Uint8Array {
+  // Zero is the legacy default, which cannot be used for a relay payout.
+  // Bound rejection sampling so unavailable/broken entropy cannot wedge a worker.
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const entropy = randomBytes32();
+    let diversifier: Uint8Array;
+    try {
+      diversifier = entropy.slice(0, 4);
+    } finally {
+      entropy.fill(0);
+    }
+    if (
+      diversifier.some(byte => byte !== 0) &&
+      !currentAddressDiversifier?.every((byte, index) => byte === diversifier[index])
+    ) {
+      return diversifier;
+    }
+    diversifier.fill(0);
+  }
+  throw new Error('Could not create a fresh private address. Try again.');
+}
+
 async function selectAddressIdentity(
   esk: ExpandedSpendingKey,
   keyContext: PrivateBalanceKeyContext,
@@ -137,11 +159,13 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
           currentSessionId = req.sessionId;
           currentKeyContext = context;
 
-          const identity = await selectAddressIdentity(
-            currentEsk,
-            context,
-            req.addressDiversifier ?? new Uint8Array(4),
-          );
+          const diversifier = req.addressDiversifier?.slice() ?? freshAddressDiversifier();
+          let identity: { ownerCommitmentHex: string; address: string };
+          try {
+            identity = await selectAddressIdentity(currentEsk, context, diversifier);
+          } finally {
+            diversifier.fill(0);
+          }
 
           const resp: WorkerResponse = {
             messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
@@ -160,18 +184,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       case 'GENERATE_ADDRESS': {
         const { esk, keyContext } = activeSession(req);
-        let entropy: Uint8Array | null = null;
-        let diversifier: Uint8Array | null = null;
+        const diversifier = freshAddressDiversifier();
         try {
-          do {
-            entropy?.fill(0);
-            diversifier?.fill(0);
-            entropy = randomBytes32();
-            diversifier = entropy.slice(0, 4);
-          } while (
-            currentAddressDiversifier &&
-            diversifier.every((byte, index) => byte === currentAddressDiversifier?.[index])
-          );
           const identity = await selectAddressIdentity(esk, keyContext, diversifier);
           self.postMessage({
             messageVersion: PRIVATE_BALANCE_WORKER_MESSAGE_VERSION,
@@ -182,8 +196,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
             address: identity.address,
           } satisfies WorkerResponse);
         } finally {
-          entropy?.fill(0);
-          diversifier?.fill(0);
+          diversifier.fill(0);
         }
         break;
       }

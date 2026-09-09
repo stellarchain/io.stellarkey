@@ -75,7 +75,7 @@ const hex = (value) => Uint8Array.from(
 );
 const TEST_PRIVATE_ADDRESS = encodePrivateAddress({
   deploymentTag: derivePrivateAddressDeploymentTag(hex(manifest.deploymentBindingHash)),
-  diversifier: new Uint8Array(4),
+  diversifier: Uint8Array.of(0, 0, 0, 1),
   ownerCommitment: Uint8Array.from([1, ...new Uint8Array(31)]),
   hpkePublicKey: new Uint8Array(32).fill(2),
 }, 'tskpay_');

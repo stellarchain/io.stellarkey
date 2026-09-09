@@ -91,6 +91,13 @@ export class PrivateBalanceWorkerClient {
     }
   }
 
+  private assertFreshReceiveDiversifier(diversifier: Uint8Array): void {
+    if (diversifier.every(byte => byte === 0)) {
+      this.failWith('Private Balance worker did not return a fresh private address.');
+      this.assertNotFailed();
+    }
+  }
+
   private failWith(message: string, failure: Error = new Error(message)): void {
     if (this.dead) return;
     this.dead = true;
@@ -302,8 +309,14 @@ export class PrivateBalanceWorkerClient {
       ? 'skpay_'
       : 'tskpay_';
     const deploymentBindingHash = hex32(parsedManifest.deploymentBindingHash);
-    const addressDiversifier = currentAddress
+    const storedDiversifier = currentAddress
       ? (await decodePrivateAddress(currentAddress, addressPrefix, deploymentBindingHash)).diversifier
+      : undefined;
+    // Upgrade a legacy default in the recipient's own session. The provider
+    // records the replacement (and the old diversifier) before publishing it.
+    // Already diversified receive addresses keep their exact identity.
+    const addressDiversifier = storedDiversifier?.some(byte => byte !== 0)
+      ? storedDiversifier
       : undefined;
     const transferredRoot = sessionRoot.buffer;
     const sessionId = this.createId('session');
@@ -337,6 +350,7 @@ export class PrivateBalanceWorkerClient {
         [transferredRoot],
       );
       const decoded = await decodePrivateAddress(response.address, addressPrefix, deploymentBindingHash);
+      this.assertFreshReceiveDiversifier(decoded.diversifier);
       if (
         addressDiversifier &&
         decoded.diversifier.some((byte, index) => byte !== addressDiversifier[index])
@@ -372,7 +386,8 @@ export class PrivateBalanceWorkerClient {
     const response = await this.request<Extract<WorkerResponse, { type: 'ADDRESS_OK' }>>(req);
     const binding = this.deploymentBindingHash;
     if (!binding) throw new Error('Private Balance worker deployment is unavailable.');
-    await decodePrivateAddress(response.address, this.addressPrefix, binding);
+    const decoded = await decodePrivateAddress(response.address, this.addressPrefix, binding);
+    this.assertFreshReceiveDiversifier(decoded.diversifier);
     if (response.address === this.currentAddress) {
       throw new Error('Private Balance worker returned the current receive address.');
     }
