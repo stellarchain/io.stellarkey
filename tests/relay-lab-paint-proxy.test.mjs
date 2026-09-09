@@ -31,7 +31,7 @@ function measurement(callback) {
   let disconnected = false;
   const frames = [];
   const tasks = [];
-  const button = { textContent: 'Start relaying', click() {} };
+  const button = { textContent: 'Start Relaying', click() {} };
   const context = vm.createContext({
     performance: { now: () => now },
     document: {

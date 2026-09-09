@@ -22,7 +22,7 @@ async function openEarn(page: Page) {
 }
 async function start(page: Page) {
   const dialog = await openEarn(page);
-  await dialog.getByRole('button', { name: 'Start relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Start Relaying', exact: true }).click();
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
   return dialog;
 }
@@ -41,7 +41,7 @@ test('fresh unlock Start prepares the real runtime before connecting and preserv
   await expect(page.getByTestId('startup-requested')).toHaveText('false');
   await expect(page.getByTestId('startup-creates')).toHaveText('0');
   await dialog.evaluate(node => { node.setAttribute('data-startup-identity', 'original'); });
-  await dialog.getByRole('button', { name: 'Start relaying', exact: true }).press('Enter');
+  await dialog.getByRole('button', { name: 'Start Relaying', exact: true }).press('Enter');
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
   await expect(dialog.getByText('Preparing wallet', { exact: true })).toBeVisible();
   await expect(page.getByTestId('startup-creates')).toHaveText('0');
@@ -68,7 +68,7 @@ test('saved participation is Paused after a fresh unlock and keyboard Resume ret
   await dialog.getByRole('button', { name: 'Save connections', exact: true }).click();
   await expect(page.getByTestId('startup-requested')).toHaveText('false');
   await dialog.getByLabel('Your fee per payment').fill('unfinished');
-  const resume = dialog.getByRole('button', { name: 'Resume relaying', exact: true });
+  const resume = dialog.getByRole('button', { name: 'Resume Relaying', exact: true });
   await resume.focus();
   await resume.press('Enter');
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
@@ -83,7 +83,7 @@ test('pointer Resume keeps focus in the modal without removing the active contro
   await fixtureAction(page, 'Fresh unlock or account');
   const dialog = await openEarn(page);
   await dialog.getByLabel('Your fee per payment').focus();
-  await dialog.getByRole('button', { name: 'Resume relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Resume Relaying', exact: true }).click();
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
   // WebKit touch keeps the input focused; Chromium focuses the button. Both
   // must retain a connected, in-dialog control, not fall back to the page.
@@ -97,7 +97,7 @@ test('an external stop moves only a disappearing paused Stop focus to the stable
   const dialog = await openEarn(page);
   await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).focus();
   await fixtureAction(page, 'Stop relay elsewhere');
-  await expect(dialog.getByRole('button', { name: 'Start relaying', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Start Relaying', exact: true })).toBeFocused();
 });
 
 test('a connected helper survives unrelated storage and sender-only preference changes', async ({ page }) => {
@@ -126,7 +126,7 @@ test('editing saved settings while paused does not supply relay startup intent',
   const stop = dialog.getByRole('button', { name: 'Stop Relaying', exact: true });
   await stop.focus();
   await stop.press('Enter');
-  await expect(dialog.getByRole('button', { name: 'Start relaying', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Start Relaying', exact: true })).toBeFocused();
   await expect(page.getByTestId('startup-requested')).toHaveText('false');
 });
 
@@ -150,13 +150,13 @@ test('a failed save never starts private work and retry keeps the fee edit', asy
     Object.defineProperty(window, '__restoreStartupStorage', { value: () => { Storage.prototype.setItem = original; } });
     Storage.prototype.setItem = () => { throw new Error('Synthetic storage unavailable'); };
   });
-  await dialog.getByRole('button', { name: 'Start relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Start Relaying', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Could not save');
   await expect(page.getByTestId('startup-requested')).toHaveText('false');
   await expect(page.getByTestId('startup-creates')).toHaveText('0');
   await expect(dialog.getByLabel('Your fee per payment')).toHaveValue('0.004');
   await page.evaluate(() => (window as typeof window & { __restoreStartupStorage(): void }).__restoreStartupStorage());
-  await dialog.getByRole('button', { name: 'Start relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Start Relaying', exact: true }).click();
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
 });
 
@@ -181,7 +181,7 @@ test('paused controls remain accessible at narrow width without reduced-motion d
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.setViewportSize({ width: 320, height: 740 });
   const dialog = await openEarn(page);
-  await expect(dialog.getByRole('button', { name: 'Resume relaying', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Resume Relaying', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Stop Relaying', exact: true })).toBeVisible();
   const scan = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
   expect(scan.violations.map(({ id, impact }) => ({ id, impact }))).toEqual([]);

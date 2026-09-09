@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
-import { Button, Field, Notice, Toggle } from '@/components/ui';
-import { IconChevronDown, IconShield } from '@/components/icons';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Button, Field, FieldLabelRow, Notice, QuickAmountChips, Toggle } from '@/components/ui';
+import { IconChevronDown, IconEye, IconLock, IconShield, IconWallet } from '@/components/icons';
 import { usePrivateBalanceRuntime } from '@/hooks/usePrivateBalanceRuntime';
 import {
   loadPrivateRelayPreferences,
@@ -14,6 +14,36 @@ import { validatePrivateRelayUrls } from '../relay/transport';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceXlm } from '../runtime/selectors';
 import { useReportToOwner } from './useReportToOwner';
+
+/** Common fee levels in display units; the field accepts anything with up to 7 decimals. */
+const FEE_PRESETS = [0.001, 0.005, 0.01, 0.05] as const;
+
+/** One row of the "what to expect" list: an icon tile, a plain statement and its consequence. */
+function ExpectRow({
+  icon,
+  tint,
+  title,
+  sub,
+  sep = false,
+}: {
+  icon: ReactNode;
+  tint: string;
+  title: string;
+  sub: string;
+  sep?: boolean;
+}) {
+  return (
+    <div className={`flex items-start gap-3.5 px-4 py-3 ${sep ? 'ios-sep' : ''}`}>
+      <span aria-hidden="true" className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm" style={{ background: tint }}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13.5px] font-semibold leading-tight text-white">{title}</span>
+        <span className="mt-0.5 block text-[12px] leading-relaxed text-neutral-400">{sub}</span>
+      </span>
+    </div>
+  );
+}
 
 function feeForInput(feeAtomic: string): string {
   return formatPrivateBalanceXlm(BigInt(feeAtomic)).replace(/(?:\.0+|(\.\d*?)0+)$/u, '$1');
@@ -47,9 +77,12 @@ export function PrivateRelaySettings({
   helperOnly = false,
   onSaved,
   onDirtyChange,
+  extras,
 }: {
   helperOnly?: boolean;
   onSaved?(): void;
+  /** Helper-only: extra disclosure sections rendered above the pinned action row. */
+  extras?: ReactNode;
   /** Reports unfinished fee or relay-address edits so the owning dialog can guard its dismissal. */
   onDirtyChange?(dirty: boolean): void;
 } = {}) {
@@ -181,61 +214,69 @@ export function PrivateRelaySettings({
     : feedback.state === 'started' ? 'Relaying enabled. Every transaction still needs your approval.'
       : feedback.state === 'stopped' ? 'Relaying stopped. Already shared signatures cannot be revoked.' : '';
 
-  if (helperOnly) return <section aria-label="Relay controls">
-    <div className="rounded-[20px] border border-white/10 bg-panel px-4 pb-3 pt-4 sm:px-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <label htmlFor={`${id}-fee`} className="text-[13px] font-medium text-ink">Your fee per payment</label>
-        <span className="text-[11px] font-medium text-muted">Paid privately</span>
-      </div>
-      <div className="mt-2 flex items-baseline gap-2">
-        <input id={`${id}-fee`} className="min-w-0 flex-1 rounded-lg bg-transparent py-1 text-[38px]! font-semibold leading-tight tracking-[-0.04em] text-ink tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-accent sm:text-[44px]!"
+  if (helperOnly) return <section aria-label="Relay controls" className="space-y-4">
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <FieldLabelRow htmlFor={`${id}-fee`} label="Your fee per payment" meta="Paid privately" />
+      <div>
+        <input id={`${id}-fee`} className="input mono text-[22px]! font-semibold tabular-nums sm:text-[22px]!"
           inputMode="decimal" enterKeyHint="done" autoComplete="off" spellCheck={false} value={feeAmount}
           aria-describedby={`${id}-fee-hint${error?.field === 'fee' ? ` ${id}-error` : ''}`}
           aria-invalid={error?.field === 'fee' || undefined}
           onChange={event => { edited.current.add('feeAtomic'); setFeeAmount(event.target.value); setFeedback({ state: 'idle' }); }} />
-        <span className="shrink-0 text-[12px] text-muted">asset units</span>
       </div>
-      <p id={`${id}-fee-hint`} className="mt-1 text-[12px] leading-relaxed text-muted">Paid in the payment’s asset: XLM for XLM, USDC for USDC.</p>
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/[0.08] pt-2">
-        <span className="text-[11px] text-muted">Applies to new offers</span>
-        <Button type="button" variant="ghost" aria-disabled={!dirty}
-          className={`min-h-11 shrink-0 ${!dirty ? 'text-muted' : ''}`}
+      <QuickAmountChips className="mt-2.5" values={FEE_PRESETS}
+        onPick={value => { edited.current.add('feeAtomic'); setFeeAmount(value); setFeedback({ state: 'idle' }); }} />
+      <p id={`${id}-fee-hint`} className="mt-2.5 text-[12px] leading-relaxed text-neutral-400">
+        Paid in the payment’s asset: XLM for XLM, USDC for USDC. Changes apply to new offers.
+      </p>
+      <div className="mt-3 flex justify-end">
+        <Button type="button" variant="secondary" aria-disabled={!dirty}
           onClick={() => { if (dirty) save(); }}>Save Changes</Button>
       </div>
     </div>
 
-    <div className="flex items-start gap-2.5 px-1 py-4">
-      <span aria-hidden="true" className="mt-0.5 shrink-0 text-accent"><IconShield size={16} /></span>
-      <p className="text-[12px] leading-relaxed text-muted"><span className="font-medium text-ink">You approve every transaction.</span>{' '}
-        You pay network fees in XLM; review the maximum before signing. Your account is public as the transaction source. A fee is not guaranteed profit.</p>
+    <div>
+      <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">What to expect</p>
+      <div className="list-group">
+        <ExpectRow icon={<IconShield size={15} />} tint="#30D158" title="You approve every transaction"
+          sub="No transaction is signed without your approval. The maximum network fee is shown before you sign." />
+        <ExpectRow icon={<IconWallet size={15} />} tint="#0A84FF" title="Network fees are yours" sep
+          sub="You pay network fees in XLM, and your account is public as the transaction source. A fee is not guaranteed profit." />
+        <ExpectRow icon={<IconEye size={15} />} tint="#FF9F0A" title="Public relays see your connection" sep
+          sub="Two public Nostr relays carry encrypted messages and can observe your IP address and timing." />
+        <ExpectRow icon={<IconLock size={15} />} tint="#5E5CE6" title="Keep StellarKey open and unlocked" sep
+          sub="Starting automatically signs encrypted account-possession offers, not transactions. Requests arrive only while unlocked." />
+      </div>
     </div>
-    <p className="px-1 text-[11px] leading-relaxed text-muted">
-      Starting automatically signs encrypted account-possession offers, not transactions. Public Nostr relays can see your IP address and connection timing.
-      Keep StellarKey open and unlocked to receive requests.
-    </p>
-    {error ? <p id={`${id}-error`} role="alert" className="mt-3 rounded-xl border border-neg/30 bg-neg/10 p-3 text-[12px] leading-relaxed text-[#FF6961]">{error.message}</p> : null}
-    <div role="status" aria-atomic="true" className="min-h-9 px-1 py-2 text-[11px] leading-relaxed text-muted">{message}</div>
-    <Button id={`${id}-participation`} type="button" variant={saved.helpRelay && requested ? 'secondary' : 'primary'} className="min-h-12 w-full"
-      onClick={() => { if (!saved.helpRelay) save(true); else if (!requested) resume(); else stop(); }}>
-      {!saved.helpRelay ? 'Start relaying' : requested ? 'Stop relaying' : 'Resume relaying'}
-    </Button>
-    {saved.helpRelay && !requested ? <Button id={`${id}-stop-paused`} type="button" variant="secondary" className="mt-2 min-h-12 w-full" onClick={stop}>
-      Stop Relaying
-    </Button> : null}
-    <p className="px-1 pb-3 pt-2 text-center text-[11px] leading-relaxed text-muted">Stopping cannot revoke a signature already shared.</p>
 
-    <details className="group/connections border-t border-white/[0.08]" open={connectionsOpen}
+    <details className="group/connections rounded-2xl border border-white/10 bg-white/[0.03]" open={connectionsOpen}
       onToggle={event => setConnectionsOpen(event.currentTarget.open)}>
-      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-1 text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-        Relay connections<IconChevronDown size={14} className="shrink-0 group-open/connections:rotate-180" />
+      <summary className="tap flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 py-3 text-[13.5px] font-semibold text-white hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] [&::-webkit-details-marker]:hidden">
+        Relay connections
+        <IconChevronDown size={14} className="shrink-0 text-neutral-400 transition-transform group-open/connections:rotate-180" />
       </summary>
-      <div className="space-y-3 pb-4">
-        <p className="px-1 text-[12px] leading-relaxed text-muted">No StellarKey backend. Two public Nostr relays carry encrypted messages. Saving settings restarts your offer session; already shared signatures remain valid.</p>
+      <div className="space-y-3 border-t border-white/[0.08] px-4 pb-4 pt-3">
+        <p className="text-[12px] leading-relaxed text-neutral-400">No StellarKey backend. Two public Nostr relays carry encrypted messages. Saving settings restarts your offer session; already shared signatures remain valid.</p>
         {relayFields}
-        <p className="px-1 text-[11px] leading-relaxed text-muted">An offer proves control of the account key, not that the account meets its transaction signing threshold. Every exact transaction still requires your approval.</p>
+        <p className="text-[11px] leading-relaxed text-neutral-400">An offer proves control of the account key, not that the account meets its transaction signing threshold. Every exact transaction still requires your approval.</p>
         <Button type="button" variant="secondary" className="w-full" onClick={() => save()}>Save connections</Button>
       </div>
     </details>
+    {extras}
+
+    <div className="modal-footer-pinned -mb-4 mt-1 grid grid-cols-1 gap-2 pb-4 pt-3 sm:-mb-6 sm:pb-6">
+      {error ? <Notice id={`${id}-error`} tone="danger" compact role="alert">{error.message}</Notice> : null}
+      <div role="status" aria-atomic="true" className="min-h-5 px-1 text-[12px] leading-relaxed text-neutral-400">{message}</div>
+      <Button id={`${id}-participation`} type="button" variant={saved.helpRelay && requested ? 'secondary' : 'primary'} className="w-full"
+        onClick={() => { if (!saved.helpRelay) save(true); else if (!requested) resume(); else stop(); }}>
+        {!saved.helpRelay ? 'Start Relaying' : requested ? 'Stop Relaying' : 'Resume Relaying'}
+      </Button>
+      {saved.helpRelay && !requested ? <Button id={`${id}-stop-paused`} type="button" variant="secondary" className="w-full" onClick={stop}>
+        Stop Relaying
+      </Button> : null}
+      <p className="text-center text-[11px] leading-relaxed text-neutral-400">Stopping cannot revoke a signature already shared.</p>
+    </div>
+
   </section>;
 
   return (

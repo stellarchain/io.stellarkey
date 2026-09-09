@@ -2555,9 +2555,11 @@ export function Notice({
   icon,
   compact = false,
   role,
+  id,
   className = "",
 }: {
   children: React.ReactNode;
+  id?: string;
   /** info: neutral · accent: guidance · warn: caution · pos: success · danger: blocked. */
   tone?: "info" | "accent" | "warn" | "pos" | "danger";
   /** A leading glyph that takes the tone's colour. */
@@ -2582,6 +2584,7 @@ export function Notice({
 
   return (
     <div
+      id={id}
       role={role}
       className={`rounded-2xl border leading-relaxed ${compact ? "p-3.5 text-[12.5px]" : "p-4 text-[13px]"} ${icon ? "flex items-start gap-2.5" : ""} ${styles} ${className}`}
     >

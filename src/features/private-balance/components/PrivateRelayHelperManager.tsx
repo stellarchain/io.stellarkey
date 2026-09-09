@@ -529,21 +529,21 @@ export function PrivateRelayHelperManager() {
         >
           <div ref={approvalDetailsRef} tabIndex={-1} role="group" aria-label="Relay approval details" className="space-y-3 outline-none">
             <dl className="panel-inset divide-y divide-white/[0.08] px-3.5 text-[13px]">
-              <div className="flex tap items-center justify-between gap-3 py-2.5">
-                <dt className="text-neutral-400">Private reward</dt>
+              <div className="flex tap flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2.5">
+                <dt className="shrink-0 text-neutral-400">Private reward</dt>
                 <dd className="text-right font-semibold text-[#30D158]">{fee}</dd>
               </div>
-              <div className="flex tap items-center justify-between gap-3 py-2.5">
-                <dt className="text-neutral-400">Your max network fee</dt>
+              <div className="flex tap flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2.5">
+                <dt className="shrink-0 text-neutral-400">Your max network fee</dt>
                 <dd className="text-right font-semibold text-white">{networkFee} XLM</dd>
               </div>
-              <div className="flex tap items-center justify-between gap-3 py-2.5">
-                <dt className="text-neutral-400">Pool action</dt>
+              <div className="flex tap flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2.5">
+                <dt className="shrink-0 text-neutral-400">Pool action</dt>
                 <dd className="capitalize text-white">Private {pending.review.method}</dd>
               </div>
-              <div className="flex tap items-center justify-between gap-3 py-2.5">
-                <dt className="text-neutral-400">Transaction</dt>
-                <dd className="min-w-0"><HashValue value={pending.review.transactionHash} className="justify-end text-[11px]" /></dd>
+              <div className="flex tap flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2.5">
+                <dt className="shrink-0 text-neutral-400">Transaction</dt>
+                <dd className="min-w-0 flex-1 text-right"><HashValue value={pending.review.transactionHash} className="justify-end text-[11px]" /></dd>
               </div>
             </dl>
             <Notice>

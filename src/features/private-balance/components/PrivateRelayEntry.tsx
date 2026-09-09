@@ -89,23 +89,29 @@ export function PrivateRelayEntry() {
               : 'Connecting to the public relay network';
   const helperIsConnected = preferences.helpRelay && helperPhase === 'connected';
   const headline = !preferences.helpRelay
-    ? 'Relay on your terms.'
+    ? 'Relaying is off'
     : helperIsConnected
-      ? 'You’re available.'
+      ? 'Relaying'
       : helperPhase === 'paused'
-        ? 'Ready when you are.'
+        ? 'Ready to relay'
         : helperPhase === 'unavailable'
-          ? runtimeUnavailable ? 'Your wallet needs attention.' : 'Connection interrupted.'
+          ? runtimeUnavailable ? 'Wallet needs attention' : 'Connection interrupted'
           : helperPhase === 'reconnecting'
-            ? 'Getting you back online.'
+            ? 'Reconnecting…'
             : helperPhase === 'preparing'
-              ? 'Waiting for your wallet.'
-              : 'Getting connected.';
-  const statusTone = helperIsConnected ? 'text-pos' : preferences.helpRelay ? 'text-warn' : 'text-muted';
+              ? 'Getting ready…'
+              : 'Connecting…';
+  const tone: PrivateRelayEntryPresentation['tone'] = !preferences.helpRelay
+    ? 'off'
+    : helperIsConnected
+      ? 'live'
+      : helperPhase === 'unavailable'
+        ? 'trouble'
+        : 'waiting';
   const presentation: PrivateRelayEntryPresentation = {
     helpRelay: preferences.helpRelay,
     status,
-    statusTone,
+    tone,
     headline,
     helperDescription,
   };
@@ -128,7 +134,7 @@ export function PrivateRelayEntry() {
           <IconGift size={17} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-semibold text-white">Earn by relaying</span>
+          <span className="block text-[13.5px] font-semibold text-white">Earn by Relaying</span>
           <span className="mt-0.5 block truncate text-[11.5px] text-neutral-500">
             {helperDescription}
           </span>
