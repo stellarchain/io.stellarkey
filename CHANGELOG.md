@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the Waku network as an experimental second carrier for privacy relay messages. Relay connections now offer "Message transport": Nostr relays (default, unchanged) or the public Waku network, where the wallet runs a light client that discovers light-push and filter peers itself, so no relay address is needed. Messages keep the same signing, padding and end-to-end encryption on both carriers; the Waku SDK loads only for wallets that choose it. Public Waku service nodes rate-limit publishing without an RLN membership, so a full relay exchange can stall on the public network; the setting explains this, accepts up to four self-hosted or trusted Waku service node addresses with their cluster for reliable relaying (the light client offers yamux and mplex, and dials plain websockets only on this device), and Nostr remains the default.
+- Added a multi-wallet Private Payments test network: three synthetic wallets exercise deposits, direct and relayed payments, withdrawals, consolidation, helper and submission failures, held-proof self-recovery and reinstall-from-seed through the real runtime, asserting after every scenario that no value is lost and that durable state matches a fresh archive scan.
 - Added explicit held-balance recovery for disclosed private payment proofs: self-transfer the held inputs through the selected RPC with no private helper fee, while keeping them reserved until canonical confirmation and reporting if the original payment confirms first.
 - Added an account- and deployment-scoped outgoing-recovery preference with separate consent to omit future sender-recoverable recipient and memo details. Recovery remains enabled by default, and earlier records and backups are unchanged.
 - Added relayed preparation of fragmented private balances with fresh helper selection for every step, fixed input plans, separately bounded private and network fees, and canonical owned-output checks before continuing.
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reshaped privacy relay negotiation as protocol v3 on the `stellarkey-private-relay-v3` topic; v2 peers are not compatible. After the fee-address payout the sender delivers one job and the helper answers with one outcome once its user approves, so the exchange drops from ten messages to six. Helper approval now signs and submits in a single step through the helper's RPC ("Approve and submit"), a helper can no longer hold a signature the sender has not seen, and a lost outcome acknowledgement keeps the submission record and refuses replacement approvals.
 - Refined Earn by Relaying with live status cards, fee presets, grouped disclosures, collapsible connection and peer tools, and pinned participation controls. Saving keeps keyboard focus, action feedback stays visible, and approval details wrap on narrow screens.
 - Aligned shared native fields and asset selectors with their labels, hints, and validation messages across dialog sizes.
 - Kept Public/Private tabs available during unsigned payment review. Switching types clears the public draft; preparation, signing, and submission still block switching.

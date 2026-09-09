@@ -17,12 +17,12 @@ import {
   type PrivateRelayPreferences,
 } from '../relay/preferences';
 import type {
+  PrivateRelayJob,
+  PrivateRelayOutcome,
   PrivateRelayQuote,
   PrivateRelaySelection,
-  PrivateRelaySignJob,
-  PrivateRelaySignedJob,
-  PrivateRelaySubmitJob,
 } from '../relay/protocol';
+import type { PrivateRelayPreparedEnvelope } from '../relay/prepared-envelope';
 import type { PrivateRelayJobReview } from '../relay/review';
 import { PrivateRelayPreparationLease, PrivateRelayQuoteExpiries, releasePrivateRelayHelperQuote } from '../relay/preparation';
 import {
@@ -30,7 +30,9 @@ import {
   resetPrivateRelayHelperStatus,
   retryPrivateRelayHelperReadiness,
 } from '../relay/helper-status';
+import { privateRelayNetwork } from '../relay/network';
 import { PrivateRelayHelperSession } from '../relay/session';
+import { WAKU_PRIVATE_RELAY_ENDPOINTS } from '../relay/waku';
 
 const MAX_OPEN_QUOTES = 16;
 
@@ -40,7 +42,8 @@ interface RelayNegotiation {
 }
 
 interface PendingRelayApproval extends RelayNegotiation {
-  job: PrivateRelaySignJob;
+  job: PrivateRelayJob;
+  prepared: PrivateRelayPreparedEnvelope & { transactionHash: string };
   review: PrivateRelayJobReview;
 }
 
@@ -59,14 +62,15 @@ export function PrivateRelayHelperManager() {
   const [preferences, setPreferences] = useState<PrivateRelayPreferences>(loadPrivateRelayPreferences);
   const [pending, setPending] = useState<PendingRelayApproval | null>(null);
   const [working, setWorking] = useState(false);
-  const [signatureShared, setSignatureShared] = useState(false);
+  /** True once this account signed and submitted: the decision cannot be taken back. */
+  const [committed, setCommitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<PrivateRelayHelperSession | null>(null);
   const pendingRef = useRef<PendingRelayApproval | null>(null);
   const decisionRef = useRef<PendingRelayApproval | null>(null);
   const approvalDetailsRef = useRef<HTMLDivElement | null>(null);
   const negotiationsRef = useRef(new Map<string, RelayNegotiation>());
-  const signedRef = useRef(new Map<string, PrivateRelaySignedJob>());
+  const outcomesRef = useRef(new Map<string, PrivateRelayOutcome>());
   const submissionAttemptsRef = useRef(new Set<string>());
   const preparationLeaseRef = useRef(new PrivateRelayPreparationLease());
   const quoteExpiriesRef = useRef(new PrivateRelayQuoteExpiries());
@@ -77,12 +81,12 @@ export function PrivateRelayHelperManager() {
     if (reviewingRef.current?.quoteId === quoteId) reviewingRef.current = null;
     if (decisionRef.current?.quote.quoteId === quoteId) decisionRef.current = null;
     releasePrivateRelayHelperQuote(quoteId, {
-      negotiations: negotiationsRef.current, signed: signedRef.current,
+      negotiations: negotiationsRef.current, signed: outcomesRef.current,
       preparationLease: preparationLeaseRef.current, pending: pendingRef,
       onPendingReleased: released => {
         setPending(current => current === released ? null : current);
         setWorking(false);
-        setSignatureShared(false);
+        setCommitted(false);
         setError(null);
       },
     });
@@ -108,7 +112,8 @@ export function PrivateRelayHelperManager() {
       resetPrivateRelayHelperStatus();
       return;
     }
-    const totalRelays = preferences.relayUrls.length;
+    const network = privateRelayNetwork({ transport: preferences.transport, relayUrls: preferences.relayUrls, wakuPeers: preferences.wakuPeers, wakuClusterId: preferences.wakuClusterId });
+    const totalRelays = network.transport === 'waku' ? WAKU_PRIVATE_RELAY_ENDPOINTS.length : preferences.relayUrls.length;
     if (phase !== 'current' || !publicAddress || !networkId || !poolContractId) {
       publishPrivateRelayHelperStatus({
         phase: 'waiting',
@@ -122,7 +127,7 @@ export function PrivateRelayHelperManager() {
     let visibilityChange: (() => void) | null = null;
     const controller = new AbortController();
     const negotiations = negotiationsRef.current;
-    const signed = signedRef.current;
+    const outcomes = outcomesRef.current;
     const preparationLease = preparationLeaseRef.current;
     const quoteExpiries = quoteExpiriesRef.current;
     const selectingQuotes = new Set<string>();
@@ -135,7 +140,7 @@ export function PrivateRelayHelperManager() {
       totalRelays,
     });
 
-    void PrivateRelayHelperSession.create(preferences.relayUrls).then(session => {
+    void PrivateRelayHelperSession.create(network).then(session => {
       if (!active) {
         session.close();
         return;
@@ -207,117 +212,55 @@ export function PrivateRelayHelperManager() {
           }).finally(() => { selectingQuotes.delete(message.quoteId); });
           return;
         }
-        if (message.type === 'prepare-job') {
-          const negotiation = negotiations.get(message.quoteId);
-          if (!negotiation) return;
-          const preparationToken = pendingRef.current || reviewingRef.current || signed.size > 0 ? null : preparationLease.begin(message.quoteId);
-          if (!preparationToken) {
-            void session.rejectForQuote({ ...message, reason: 'busy' }, controller.signal).catch(() => undefined);
-            return;
-          }
-          void preparePrivateRelayJob({
-            job: message, sourceAccount: quote.peerAccount,
-            assetIndex: negotiation.selection.assetIndex, actionDiversifier: negotiation.selection.actionDiversifier,
-            feeAtomic: quote.feeAtomic, expectedMethod: negotiation.selection.actionKind, quoteExpiresAt: quote.expiresAt,
-          }, controller.signal).then(prepared => {
-            if (!active || controller.signal.aborted || quote.expiresAt * 1_000 <= Date.now() ||
-              negotiations.get(message.quoteId) !== negotiation) {
-              preparationLease.cancel(preparationToken);
-              return;
-            }
-            if (!preparationLease.complete(preparationToken, prepared)) return;
-            return session.sendPrepared({ job: message, ...prepared }, controller.signal);
-          }).catch(() => {
+        if (message.type !== 'job') return;
+        const negotiation = negotiations.get(message.quoteId);
+        if (!negotiation) return;
+        const busy = pendingRef.current || reviewingRef.current || outcomes.size > 0 || submissionAttempts.size > 0;
+        const preparationToken = busy ? null : preparationLease.begin(message.quoteId);
+        if (!preparationToken) {
+          void session.rejectForQuote({ ...message, reason: 'busy' }, controller.signal).catch(() => undefined);
+          return;
+        }
+        const reviewToken = { quoteId: message.quoteId };
+        reviewingRef.current = reviewToken;
+        void preparePrivateRelayJob({
+          job: message, sourceAccount: quote.peerAccount,
+          assetIndex: negotiation.selection.assetIndex, actionDiversifier: negotiation.selection.actionDiversifier,
+          feeAtomic: quote.feeAtomic, expectedMethod: negotiation.selection.actionKind, quoteExpiresAt: quote.expiresAt,
+        }, controller.signal).then(async prepared => {
+          if (!active || controller.signal.aborted || quote.expiresAt * 1_000 <= Date.now() ||
+            negotiations.get(message.quoteId) !== negotiation || reviewingRef.current !== reviewToken) {
             preparationLease.cancel(preparationToken);
-            void session.rejectForQuote({ ...message, reason: 'simulation' }, controller.signal).catch(() => undefined);
-          });
-          return;
-        }
-        if (message.type === 'sign-job') {
-          const negotiation = negotiations.get(message.quoteId);
-          if (!negotiation) return;
-          const prepared = preparationLease.get(message.quoteId);
-          if (!prepared || prepared.preparedEnvelopeXdr !== message.unsignedEnvelopeXdr) {
-            void session.rejectForQuote({ ...message, reason: 'invalid' }, controller.signal).catch(() => undefined);
             return;
           }
-          if (pendingRef.current || reviewingRef.current || signed.size > 0) {
-            void session.rejectForQuote({
-              requestId: message.requestId,
-              quoteId: message.quoteId,
-              reason: 'busy',
-              expiresAt: message.expiresAt,
-            }, controller.signal).catch(() => undefined);
-            return;
+          if (!prepared.transactionHash || !preparationLease.complete(preparationToken, prepared)) {
+            preparationLease.cancel(preparationToken);
+            throw new Error('Private relay preparation is incomplete');
           }
-          const reviewToken = { quoteId: message.quoteId };
-          reviewingRef.current = reviewToken;
-          void reviewPrivateRelayJob({
-            unsignedEnvelopeXdr: message.unsignedEnvelopeXdr,
-            transactionHash: message.transactionHash,
-            sourceAccount: quote.peerAccount,
-            assetIndex: negotiation.selection.assetIndex,
-            actionDiversifier: negotiation.selection.actionDiversifier,
-            feeAtomic: quote.feeAtomic,
-          }).then(review => {
-            if (!active || reviewingRef.current !== reviewToken || pendingRef.current || quote.expiresAt * 1_000 <= Date.now() ||
-              negotiations.get(message.quoteId) !== negotiation || preparationLease.get(message.quoteId) !== prepared) return;
-            const approval = { ...negotiation, job: message, review };
-            pendingRef.current = approval;
-            setPending(approval);
-            setSignatureShared(false);
-            setError(null);
-          }).catch(() => {
-            if (negotiations.get(message.quoteId) === negotiation) forgetNegotiation(message.quoteId);
-            void session.rejectForQuote({
-              requestId: message.requestId,
-              quoteId: message.quoteId,
-              reason: 'simulation',
-              expiresAt: message.expiresAt,
-            }, controller.signal).catch(() => undefined);
-          }).finally(() => {
-            if (reviewingRef.current === reviewToken) reviewingRef.current = null;
+          const leased = preparationLease.get(message.quoteId);
+          if (!leased) throw new Error('Private relay preparation lease was lost');
+          // This account reviews the envelope it simulated itself; the sender never signs.
+          const review = await reviewPrivateRelayJob({
+            unsignedEnvelopeXdr: leased.preparedEnvelopeXdr, transactionHash: prepared.transactionHash,
+            sourceAccount: quote.peerAccount, assetIndex: negotiation.selection.assetIndex,
+            actionDiversifier: negotiation.selection.actionDiversifier, feeAtomic: quote.feeAtomic,
           });
-          return;
-        }
-        const submittedJob = message as PrivateRelaySubmitJob;
-        const accepted = signed.get(submittedJob.quoteId);
-        if (
-          !accepted ||
-          accepted.requestId !== submittedJob.requestId ||
-          accepted.expiresAt * 1_000 <= Date.now() ||
-          accepted.transactionHash !== submittedJob.transactionHash ||
-          accepted.signedEnvelopeXdr !== submittedJob.signedEnvelopeXdr
-        ) {
-          void session.rejectForQuote({
-            requestId: submittedJob.requestId,
-            quoteId: submittedJob.quoteId,
-            reason: 'invalid',
-            expiresAt: submittedJob.expiresAt,
-          }, controller.signal).catch(() => undefined);
-          return;
-        }
-        // Claim once until expiry/cleanup, including uncertain RPC or reply delivery.
-        // A fresh nonce is not renewed user intent to submit again.
-        if (submissionAttempts.has(submittedJob.quoteId)) return;
-        submissionAttempts.add(submittedJob.quoteId);
-        void submitPrivateRelayJob({
-          signedEnvelopeXdr: submittedJob.signedEnvelopeXdr,
-          transactionHash: submittedJob.transactionHash,
-        }).then(response => session.sendSubmitted({
-          job: submittedJob,
-          quote,
-          rpcStatus: response.status,
-        }, controller.signal)).then(() => {
-          forgetNegotiation(submittedJob.quoteId);
+          if (!active || reviewingRef.current !== reviewToken || pendingRef.current || quote.expiresAt * 1_000 <= Date.now() ||
+            negotiations.get(message.quoteId) !== negotiation || preparationLease.get(message.quoteId) !== leased) return;
+          const approval: PendingRelayApproval = {
+            ...negotiation, job: message, review,
+            prepared: { ...leased, transactionHash: prepared.transactionHash },
+          };
+          pendingRef.current = approval;
+          setPending(approval);
+          setCommitted(false);
+          setError(null);
         }).catch(() => {
-          if (!active) return;
-          void session.rejectForQuote({
-            requestId: submittedJob.requestId,
-            quoteId: submittedJob.quoteId,
-            reason: 'submission',
-            expiresAt: submittedJob.expiresAt,
-          }, controller.signal).catch(() => undefined);
+          preparationLease.release(message.quoteId);
+          if (negotiations.get(message.quoteId) === negotiation) forgetNegotiation(message.quoteId);
+          void session.rejectForQuote({ ...message, reason: 'simulation' }, controller.signal).catch(() => undefined);
+        }).finally(() => {
+          if (reviewingRef.current === reviewToken) reviewingRef.current = null;
         });
       }, controller.signal);
       const refreshConnectionStatus = async () => {
@@ -382,7 +325,7 @@ export function PrivateRelayHelperManager() {
       sessionRef.current?.close();
       sessionRef.current = null;
       negotiations.clear();
-      signed.clear();
+      outcomes.clear();
       submissionAttempts.clear();
       preparationLease.clear();
       quoteExpiries.clear();
@@ -395,7 +338,7 @@ export function PrivateRelayHelperManager() {
       pendingRef.current = null;
       setPending(null);
       setWorking(false);
-      setSignatureShared(false);
+      setCommitted(false);
       setError(null);
       resetPrivateRelayHelperStatus();
     };
@@ -403,6 +346,9 @@ export function PrivateRelayHelperManager() {
     preferences.feeAtomic,
     preferences.helpRelay,
     preferences.relayUrls,
+    preferences.transport,
+    preferences.wakuPeers,
+    preferences.wakuClusterId,
     derivePrivateRelayPayout,
     forgetNegotiation,
     networkId,
@@ -430,15 +376,15 @@ export function PrivateRelayHelperManager() {
     pendingRef.current = null;
     setPending(null);
     setWorking(false);
-    setSignatureShared(false);
+    setCommitted(false);
     setError(null);
   };
 
   const reject = async () => {
     if (!pending || pendingRef.current !== pending || !sessionRef.current || decisionRef.current) return;
-    // Dismissing an uncertain delivery cannot revoke a signature already shared.
-    // Keep exact authorization and its sequence lease until submission or expiry.
-    if (signedRef.current.has(pending.job.quoteId)) { clearPending(); return; }
+    // Dismissing an uncertain delivery cannot undo a submitted transaction.
+    // Keep the exact outcome and its sequence lease until the quote expires.
+    if (outcomesRef.current.has(pending.job.quoteId) || submissionAttemptsRef.current.has(pending.job.quoteId)) { clearPending(); return; }
     decisionRef.current = pending;
     approvalDetailsRef.current?.focus({ preventScroll: true });
     setWorking(true);
@@ -457,38 +403,50 @@ export function PrivateRelayHelperManager() {
   };
 
   const approve = async () => {
-    if (!pending || pendingRef.current !== pending || !sessionRef.current || decisionRef.current || signedRef.current.has(pending.job.quoteId)) return;
+    if (!pending || pendingRef.current !== pending || !sessionRef.current || decisionRef.current ||
+      outcomesRef.current.has(pending.job.quoteId) || submissionAttemptsRef.current.has(pending.job.quoteId)) return;
     const approval = pending;
     const session = sessionRef.current;
     decisionRef.current = approval;
-    let shared = false;
+    let submitted = false;
     // Native disabled buttons can drop focus to the inert page. The reviewed
     // details remain mounted and own focus throughout signing and delivery.
     approvalDetailsRef.current?.focus({ preventScroll: true });
     setWorking(true);
     setError(null);
     try {
-      const signedEnvelopeXdr = await signPrivateRelayJob(pending.review);
+      const signedEnvelopeXdr = await signPrivateRelayJob(approval.review);
       if (pendingRef.current !== approval || sessionRef.current !== session || approval.quote.expiresAt * 1_000 <= Date.now()) return;
-      await session.sendSigned({
-        job: pending.job,
-        quote: pending.quote,
-        signedEnvelopeXdr,
-        onBeforePublish: signed => {
-          if (pendingRef.current !== approval || sessionRef.current !== session || signed.expiresAt * 1_000 <= Date.now()) {
-            throw new Error('Private relay approval expired or changed.');
-          }
-          signedRef.current.set(approval.job.quoteId, signed);
-          shared = true;
-          setSignatureShared(true);
+      // Approval is the submission decision: submit from this account at once,
+      // exactly once per quote, then report. An uncertain RPC answer is reported
+      // as ERROR and never retried here; the sender reconciles from the ledger.
+      submissionAttemptsRef.current.add(approval.job.quoteId);
+      let rpcStatus: PrivateRelayOutcome['rpcStatus'];
+      try {
+        rpcStatus = (await submitPrivateRelayJob({ signedEnvelopeXdr, transactionHash: approval.review.transactionHash })).status;
+      } catch {
+        rpcStatus = 'ERROR';
+      }
+      submitted = true;
+      setCommitted(true);
+      if (pendingRef.current !== approval || sessionRef.current !== session) return;
+      await session.sendOutcome({
+        job: approval.job, quote: approval.quote,
+        preparedEnvelopeXdr: approval.prepared.preparedEnvelopeXdr, accountSequence: approval.prepared.accountSequence,
+        simulationLedger: approval.prepared.simulationLedger, signedEnvelopeXdr,
+        transactionHash: approval.review.transactionHash, rpcStatus,
+        onBeforePublish: outcome => {
+          if (sessionRef.current !== session) throw new Error('Private relay session changed.');
+          outcomesRef.current.set(approval.job.quoteId, outcome);
         },
       });
       if (pendingRef.current !== approval || sessionRef.current !== session) return;
       clearPending();
+      forgetNegotiation(approval.job.quoteId);
     } catch {
       if (pendingRef.current !== approval) return;
-      setError(shared
-        ? 'This transaction was signed, but delivery to the sender is unconfirmed. It may still be submitted. Do not approve a replacement. Dismissing this notice cannot revoke the signature.'
+      setError(submitted
+        ? 'This transaction was signed and submitted, but the receipt did not reach the sender. It may still confirm on the network. Do not approve a replacement; dismissing this notice cannot undo the submission.'
         : 'No signed response was shared by this helper. Reject this request or try approval again before it expires.');
       setWorking(false);
     } finally {
@@ -505,7 +463,7 @@ export function PrivateRelayHelperManager() {
       onClose={() => void reject()}
       presentation="alert"
       busy={working}
-      busyReason="Wait for signing and delivery to finish before dismissing."
+      busyReason="Wait for signing, submission and delivery to finish before dismissing."
     >
       {pending ? (
         <AlertContent
@@ -516,12 +474,12 @@ export function PrivateRelayHelperManager() {
               stack
               secondary={
                 <Button type="button" variant="ghost" disabled={working} onClick={() => void reject()}>
-                  {signatureShared ? 'Dismiss' : 'Reject'}
+                  {committed ? 'Dismiss' : 'Reject'}
                 </Button>
               }
               primary={
-                <Button type="button" loading={working} disabled={working || signatureShared} onClick={() => void approve()}>
-                  Approve and sign
+                <Button type="button" loading={working} disabled={working || committed} onClick={() => void approve()}>
+                  Approve and submit
                 </Button>
               }
             />
@@ -547,9 +505,9 @@ export function PrivateRelayHelperManager() {
               </div>
             </dl>
             <Notice>
-              The wallet parsed this exact transaction, confirmed it only invokes this private pool,
-              decrypted exactly one fee note addressed to you, capped its fees, and simulated its proof.
-              Helping never signs transactions automatically.
+              The wallet built and simulated this exact transaction from your account, confirmed it only
+              invokes this private pool, decrypted exactly one fee note addressed to you and capped its fees.
+              Approving signs and submits it once; helping never does either automatically.
             </Notice>
             {error ? <ErrorText message={error} /> : null}
           </div>

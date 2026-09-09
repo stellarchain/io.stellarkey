@@ -1,7 +1,7 @@
 import { xdr, type Account, type Transaction } from '@stellar/stellar-sdk';
 import { prepareReviewedPrivateBalanceTransaction } from '../runtime/action-transaction';
 import type { PrivateBalanceTransactionManifest } from '../runtime/transaction-review';
-import { encodePrivateRelayMessage, type PrivateRelayPrepareJob } from './protocol';
+import { encodePrivateRelayMessage, type PrivateRelayJob } from './protocol';
 import { reviewPrivateRelayOperation, type PrivateRelayOperationReview } from './review';
 import type { PrivateRelayPreparedEnvelope } from './prepared-envelope';
 
@@ -92,7 +92,7 @@ export function releasePrivateRelayHelperQuote<Pending extends { quote: { quoteI
 }
 
 export interface PrivateRelayPreparationContext {
-  job: PrivateRelayPrepareJob;
+  job: PrivateRelayJob;
   sourceAccount: string;
   assetIndex: number;
   actionDiversifier: string;
@@ -102,7 +102,7 @@ export interface PrivateRelayPreparationContext {
 }
 
 export async function preparePrivateRelayJob(input: {
-  job: PrivateRelayPrepareJob;
+  job: PrivateRelayJob;
   manifest: PrivateBalanceTransactionManifest;
   source: string;
   assetIndex: number;
@@ -157,5 +157,8 @@ export async function preparePrivateRelayJob(input: {
   });
   assertCurrent();
   if (accountSequence === null) throw new Error('Private relay account sequence is unavailable');
-  return { preparedEnvelopeXdr: prepared.review.envelopeXdr, accountSequence, simulationLedger: prepared.simulationLedger };
+  return {
+    preparedEnvelopeXdr: prepared.review.envelopeXdr, accountSequence, simulationLedger: prepared.simulationLedger,
+    transactionHash: prepared.review.transactionHash,
+  };
 }

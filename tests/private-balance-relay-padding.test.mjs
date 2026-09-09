@@ -17,10 +17,9 @@ test('all encrypted relay message classes have the same bounded wire size', asyn
   const messages = [
     { ...common, type: 'rejected', reason: 'busy' },
     { ...common, type: 'selection', actionKind: 'transfer', assetIndex: 0, actionDiversifier: '01020304' },
-    { ...common, type: 'submitted', transactionHash: '44'.repeat(32), rpcStatus: 'PENDING' },
-    { ...common, type: 'sign-job', transactionHash: '44'.repeat(32), unsignedEnvelopeXdr: 'AAAA'.repeat(4_000) },
-    { ...common, type: 'prepare-job', prepareId: '55'.repeat(32), operationXdr: 'AAAA'.repeat(1_000), maxTime: common.expiresAt, classicFeeStroops: '100', maximumResourceFeeStroops: '1000' },
-    { ...common, type: 'prepared-job', prepareId: '55'.repeat(32), preparedEnvelopeXdr: 'AAAA'.repeat(1_500), accountSequence: '7', simulationLedger: 123 },
+    { ...common, type: 'job', prepareId: '55'.repeat(32), operationXdr: 'AAAA'.repeat(1_000), maxTime: common.expiresAt, classicFeeStroops: '100', maximumResourceFeeStroops: '1000' },
+    { ...common, type: 'outcome', prepareId: '55'.repeat(32), preparedEnvelopeXdr: 'AAAA'.repeat(1_500), signedEnvelopeXdr: 'AAAA'.repeat(1_600),
+      transactionHash: '44'.repeat(32), accountSequence: '7', simulationLedger: 123, rpcStatus: 'PENDING' },
   ];
   try {
     for (const message of messages) await messenger.publish(message, peer.publicKey);

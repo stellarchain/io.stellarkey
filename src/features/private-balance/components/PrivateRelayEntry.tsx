@@ -15,6 +15,7 @@ import {
   getPrivateRelayHelperStatus,
   subscribePrivateRelayHelperStatus,
 } from '../relay/helper-status';
+import { describePrivateRelayNetwork, privateRelayNetwork } from '../relay/network';
 import type { PrivateRelayEntryPresentation } from './PrivateRelayEntryBody';
 
 // The status, settings and peer availability content pulls the relay settings
@@ -72,6 +73,8 @@ export function PrivateRelayEntry() {
             : helperPhase === 'unavailable'
               ? 'Unavailable'
               : 'Connecting';
+  const networkCopy = describePrivateRelayNetwork(privateRelayNetwork(preferences));
+  const networkName = preferences.transport === 'waku' ? 'the Waku network' : 'the public relay network';
   const helperDescription = !preferences.helpRelay
     ? 'Help submit private payments for a private reward'
     : helperPhase === 'paused'
@@ -79,14 +82,16 @@ export function PrivateRelayEntry() {
       : helperPhase === 'preparing'
         ? 'Preparing Private Payments before connecting'
         : helperPhase === 'connected'
-          ? `Connected to ${helperStatus.connectedRelays} of ${helperStatus.totalRelays} public relays`
+          ? networkCopy.connection(helperStatus.connectedRelays, helperStatus.totalRelays)
           : helperPhase === 'reconnecting'
-            ? 'Reconnecting to the public relay network'
+            ? `Reconnecting to ${networkName}`
             : helperPhase === 'unavailable'
               ? runtimeUnavailable
                 ? 'Private Payments needs attention. Open its details before relaying.'
-                : 'Public relay connection unavailable; retrying automatically'
-              : 'Connecting to the public relay network';
+                : preferences.transport === 'waku'
+                  ? 'Waku peer connection unavailable; retrying automatically'
+                  : 'Public relay connection unavailable; retrying automatically'
+              : `Connecting to ${networkName}`;
   const helperIsConnected = preferences.helpRelay && helperPhase === 'connected';
   const headline = !preferences.helpRelay
     ? 'Relaying is off'

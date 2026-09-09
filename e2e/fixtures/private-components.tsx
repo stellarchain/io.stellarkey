@@ -577,7 +577,7 @@ const approval: PrivateRelayChainApproval = {
     inputNotes: [], merges: [], finalInputs: [] },
 };
 const quote: PrivateRelayQuote = {
-  version: 2, type: 'quote', requestId: '11'.repeat(32), quoteId: '22'.repeat(32), peerPubkey: '33'.repeat(32),
+  version: 3, type: 'quote', requestId: '11'.repeat(32), quoteId: '22'.repeat(32), peerPubkey: '33'.repeat(32),
   peerAccount: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', feeAtomic: '100',
   accountSignature: 'synthetic-not-a-signed-offer', nonce: '44'.repeat(32), expiresAt: 4_000_000_000,
 };

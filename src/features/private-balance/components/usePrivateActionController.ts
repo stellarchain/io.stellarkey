@@ -15,9 +15,10 @@ import type {
   PrivateChainedSendProgress,
 } from '../runtime/chained-send';
 import { PrivateActionReviewExpiredError } from '../runtime/submission';
+import { privateRelayNetwork } from '../relay/network';
 import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { privateRelayRecipientDiversifier } from '../relay/recipient';
-import { PrivateRelaySenderSession } from '../relay/session';
+import { PrivateRelaySenderSession, type PrivateRelaySignedEnvelope } from '../relay/session';
 import { discoverPrivateRelayChainQuote, PrivateRelayChainChoice } from '../relay/chain-choice';
 import type { PrivateRelayChainApproval } from '../runtime/relay-chain-policy';
 import type { SelectPrivateRelayChainPeer } from '../runtime/relay-chained-send';
@@ -28,7 +29,6 @@ import type {
   PrivateRelayPayout,
   PrivateRelayQuote,
   PrivateRelayRequest,
-  PrivateRelaySignedJob,
 } from '../relay/protocol';
 
 export type PrivateSubmissionMode = 'relay' | 'direct';
@@ -91,7 +91,7 @@ export function usePrivateActionController(
     session: PrivateRelaySenderSession;
     quote: PrivateRelayQuote;
     payout: PrivateRelayPayout;
-    signed: PrivateRelaySignedJob | null;
+    signed: PrivateRelaySignedEnvelope | null;
   } | null>(null);
   const relayDiscoveryRef = useRef<PrivateRelayDiscovery | null>(null);
   const relaySelectionRef = useRef<AbortController | null>(null);
@@ -158,7 +158,7 @@ export function usePrivateActionController(
     setPreparing(true);
     setRelayProgress('finding-peer');
     setRelayQuotes([]);
-    const session = await PrivateRelaySenderSession.create(loadPrivateRelayPreferences().relayUrls);
+    const session = await PrivateRelaySenderSession.create(privateRelayNetwork(loadPrivateRelayPreferences()));
     const closeOnAbort = () => session.close();
     signal.addEventListener('abort', closeOnAbort, { once: true });
     try {
@@ -182,18 +182,18 @@ export function usePrivateActionController(
       const payout = await session.selectQuote({ request, quote, actionKind: 'transfer', assetIndex: asset.index,
         actionDiversifier }, signal);
       check();
-      let signed: PrivateRelaySignedJob | null = null;
+      let signed: PrivateRelaySignedEnvelope | null = null;
       setRelayProgress(null);
       return {
         binding: { feeAtomic: payout.feeAtomic, privateFeeAddress: payout.privateFeeAddress, sourceAccount: payout.peerAccount,
           requestId: payout.requestId, quoteId: payout.quoteId, peerPublicKey: quote.peerPubkey },
         preparation: { expiresAt: Math.min(quote.expiresAt, payout.expiresAt), prepare: (request, activeSignal) => session.requestPreparation({ ...request, quote, payout }, activeSignal) },
         submission: {
-          requestSignature: async request => { check(); signed = await session.requestSignature({ quote, payout, unsignedEnvelopeXdr: request.envelopeXdr, transactionHash: request.transactionHash }, signal); check(); return signed.signedEnvelopeXdr; },
+          requestSignature: async request => { check(); signed = await session.requestSignature({ quote, payout, unsignedEnvelopeXdr: request.envelopeXdr, transactionHash: request.transactionHash }); check(); return signed.signedEnvelopeXdr; },
           requestSubmission: async request => {
             check();
             if (!signed || signed.transactionHash !== request.transactionHash || signed.signedEnvelopeXdr !== request.signedEnvelopeXdr) throw new Error('Private relay signed step changed.');
-            const submitted = await session.requestSubmission({ quote, signed }, signal);
+            const submitted = await session.requestSubmission({ quote, signed });
             return { status: submitted.rpcStatus, hash: submitted.transactionHash };
           },
         },
@@ -244,7 +244,7 @@ export function usePrivateActionController(
           if (controller.signal.aborted || abortRef.current !== controller) return;
         }
         const preferences = loadPrivateRelayPreferences();
-        const session = await PrivateRelaySenderSession.create(preferences.relayUrls);
+        const session = await PrivateRelaySenderSession.create(privateRelayNetwork(preferences));
         pendingRelaySession = session;
         if (controller.signal.aborted || abortRef.current !== controller) return;
         let hasEligibleQuote = false;
