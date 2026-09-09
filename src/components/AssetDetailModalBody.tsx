@@ -314,7 +314,7 @@ export function AssetDetailModalBody({
         </div>
 
         {!asset.isNative && asset.isAuthorized !== true && (
-          <div className="rounded-2xl border border-[#FF9F0A]/35 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FFD18A]">
+          <Notice tone="warn" compact>
             <p className="font-semibold text-white">
               {asset.isAuthorizedToMaintainLiabilities
                 ? "Maintain liabilities only"
@@ -323,14 +323,14 @@ export function AssetDetailModalBody({
             <p className="mt-1">
               This balance cannot be sent until the issuer grants full authorization.
             </p>
-          </div>
+          </Notice>
         )}
 
         {!asset.isNative && asset.isClawbackEnabled && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3.5 text-[12px] leading-relaxed text-neutral-300">
+          <Notice compact>
             <p className="font-semibold text-white">Clawback enabled</p>
             <p className="mt-1">The issuer can remove and burn some or all of this balance.</p>
-          </div>
+          </Notice>
         )}
 
         <div className="panel-inset divide-y divide-white/[0.08]">
@@ -360,14 +360,14 @@ export function AssetDetailModalBody({
                   </span>
                 )}
               </a>
-              {issuerDomainSignal && (
-                <span className="mt-0.5 block text-[10.5px] leading-snug text-neutral-500">
-                  {knownIssuerDomain
-                    ? "Matched StellarKey's bundled asset registry."
-                    : "Self-published by the issuer; this is not independent verification."}
-                </span>
-              )}
             </Row>
+          )}
+          {issuerDomain && issuerDomainSignal && (
+            <p className="-mt-1 px-4 pb-3 text-[11px] leading-snug text-neutral-500">
+              {knownIssuerDomain
+                ? "Matched StellarKey's bundled asset registry."
+                : "Self-published by the issuer; this is not independent verification."}
+            </p>
           )}
           {issuerInfo?.assetDeclared && issuerInfo.orgName && (
             <Row label="Organization">
@@ -474,7 +474,7 @@ export function AssetDetailModalBody({
         open={confirmingRemoval}
         title={`Remove ${asset.code} trustline?`}
         message={`The ${asset.code} trustline is removed from this account and its base reserve returns to your spendable XLM. Add the trustline again before receiving ${asset.code}.`}
-        confirmLabel="Remove trustline"
+        confirmLabel="Remove Trustline"
         destructive
         onConfirm={() => {
           setConfirmingRemoval(false);
@@ -488,8 +488,8 @@ export function AssetDetailModalBody({
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <span className="shrink-0 pt-0.5 text-[13px] font-medium text-neutral-400">
+    <div className="flex items-baseline justify-between gap-4 px-4 py-3">
+      <span className="shrink-0 text-[13px] font-medium text-neutral-400">
         {label}
       </span>
       <span className="min-w-0 text-right">{children}</span>

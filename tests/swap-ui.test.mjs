@@ -46,8 +46,8 @@ test("confirmed swaps become an immutable receipt instead of resetting the form"
   assert.match(swap, /setStage\("success"\)/);
   assert.match(swap, /Swap complete/);
   assert.match(swap, /Transaction hash/);
-  assert.match(swap, /View activity/);
-  assert.match(swap, /Swap again/);
+  assert.match(swap, /View Activity/);
+  assert.match(swap, /Swap Again/);
   assert.match(swap, /onDone/);
   assert.match(swap, /onViewActivity/);
   assert.match(swap, /Pay asset issuer/);

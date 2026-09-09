@@ -159,7 +159,7 @@ function Keypad({
   return (
     <div>
       <div className="flex flex-col items-center py-4">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
           {label}
         </span>
         <span className="mono mt-1.5 text-[34px] font-semibold leading-none text-white">
@@ -445,7 +445,7 @@ function TicketMenu({
               onTender();
             }}
           >
-            <IconWallet size={15} /> <span>Other tender</span>
+            <IconWallet size={15} /> <span>Other Tender</span>
           </button>
           <button
             type="button"
@@ -456,7 +456,7 @@ function TicketMenu({
               onCustomerView();
             }}
           >
-            <IconEye size={15} /> <span>Customer view</span>
+            <IconEye size={15} /> <span>Customer View</span>
           </button>
           <button
             type="button"
@@ -467,7 +467,7 @@ function TicketMenu({
               onAdjust();
             }}
           >
-            <IconPercent size={15} /> <span>Discount, comp or void</span>
+            <IconPercent size={15} /> <span>Discount, Comp or Void</span>
           </button>
         </div>
       )}
@@ -811,11 +811,11 @@ export function PosTerminal({
             onClick={onOpenShift}
             className="btn btn-secondary shrink-0"
           >
-            Open shift
+            Open Shift
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] md:items-start md:gap-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
         {/* ---------- catalogue and keypad ---------- */}
         <div className="min-w-0 space-y-3">
           <div className="w-full">
@@ -851,7 +851,7 @@ export function PosTerminal({
                 }}
                 className="btn btn-secondary mt-3 w-full"
               >
-                Add to ticket
+                Add to Ticket
               </button>
             </div>
           ) : (
@@ -1097,7 +1097,7 @@ export function PosTerminal({
             )}
             <div className="flex items-center gap-3 py-2.5 pl-4 pr-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Total · {itemCount} {itemCount === 1 ? "item" : "items"}
                 </p>
                 <p className="till-total mono truncate text-[17px] font-semibold leading-tight text-white">

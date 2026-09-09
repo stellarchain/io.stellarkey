@@ -13,7 +13,7 @@ test("multi-send requires an explicit review stage before signing", () => {
   assert.match(source, /setStage\("review"\)/);
   assert.match(source, /stage === "review"/);
   assert.match(source, /Review .*Recipient/);
-  assert.match(source, /Confirm and Send/);
+  assert.match(source, /Confirm Send/);
 });
 
 test("the reviewed payment snapshot is used at the signing boundary", () => {

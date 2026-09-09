@@ -165,7 +165,7 @@ test("merchant blockers offer direct recovery actions", () => {
   assert.match(page, />\s*Choose staff\s*<\/button>/);
   assert.match(page, /<PosTerminal onOpenShift=\{\(\) => setShiftShowing\(true\)\} \/>/);
   assert.match(till, /onOpenShift: \(\) => void;/);
-  assert.match(till, /\{!activeShift && \([\s\S]*?>\s*Open shift\s*<\/button>[\s\S]*?\)\}/);
+  assert.match(till, /\{!activeShift && \([\s\S]*?>\s*Open Shift\s*<\/button>[\s\S]*?\)\}/);
   assert.match(till, /min-h-11/);
 });
 
@@ -235,7 +235,7 @@ test("merchant pricing is refreshed and expires before it can quote Mainnet sale
   assert.match(quoteInputs, /rateFor\(asset\)/);
   const merchantPage = source("src/components/merchant/MerchantPage.tsx");
   assert.match(merchantPage, /retryMarketPrices/);
-  assert.match(merchantPage, /Retry prices/);
+  assert.match(merchantPage, /Retry Prices/);
   assert.match(hook, /Promise\.all\(\[refreshPrices\(\), refreshMarketData\(\)\]\)/);
 });
 

@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { IconCheck, IconQrScan } from '@/components/icons';
-import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, QrScannerBox } from '@/components/ui';
+import { Button, Field, FieldAction, FieldLabelRow, Modal, ModalBody, ModalFooter, ModalHeader, QrScannerBox } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
 import { requestPublicSend } from '@/lib/private-address';
@@ -433,29 +433,19 @@ function SendPrivateFlow({
               onChange={setSubmissionMode}
             />
             <div>
-              <div className="flex items-center justify-between">
-                <label htmlFor="private-recipient" className="field-label !pb-0">
-                  Private recipient
-                </label>
-                <div className="-mr-2 flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => void pasteAddress()}
-                    className="flex items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
-                  >
-                    Paste
-                  </button>
-                  <button
-                    type="button"
-                    aria-expanded={showScanner}
-                    onClick={() => setShowScanner(current => !current)}
-                    className="flex items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
-                  >
-                    <IconQrScan size={14} />
-                    <span>{showScanner ? 'Hide QR Input' : 'Paste QR Payload'}</span>
-                  </button>
-                </div>
-              </div>
+              <FieldLabelRow
+                htmlFor="private-recipient"
+                label="Private Recipient"
+                action={
+                  <>
+                    <FieldAction onClick={() => void pasteAddress()}>Paste</FieldAction>
+                    <FieldAction aria-expanded={showScanner} onClick={() => setShowScanner(current => !current)}>
+                      <IconQrScan size={14} />
+                      <span>{showScanner ? 'Hide QR Input' : 'Paste QR Payload'}</span>
+                    </FieldAction>
+                  </>
+                }
+              />
               <input
                 id="private-recipient"
                 ref={recipientFieldRef}
@@ -534,7 +524,7 @@ function SendPrivateFlow({
             ) : null}
 
             <Field
-              label="Private memo (optional)"
+              label="Private Memo (Optional)"
               hint={`${memoBytes}/32 bytes`}
               error={memoOk ? undefined : 'Private memos can hold up to 32 bytes.'}
             >

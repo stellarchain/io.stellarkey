@@ -96,7 +96,7 @@ export function PrivateRelayAvailability({
       <div className="flex items-center justify-between gap-4 px-1">
         <h3
           id="private-relay-availability-title"
-          className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500"
+          className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400"
         >
           Relay network
         </h3>
@@ -167,7 +167,7 @@ export function PrivateRelayAvailability({
                     <span className="flex items-center gap-2 text-[12.5px] font-semibold text-white">
                       Peer {index + 1}
                       {index === 0 ? (
-                        <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#30D158]">
+                        <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#30D158]">
                           Lowest fee
                         </span>
                       ) : null}

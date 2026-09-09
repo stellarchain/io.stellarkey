@@ -506,7 +506,7 @@ export function SetupWizardBody({
   // dismissal there too.
   const header = useMemo<SetupWizardHeader>(
     () => ({
-      title: "Set up Merchant Mode",
+      title: "Set Up Merchant Mode",
       subtitle: `Step ${step} of 4 · ${current.title}`,
       onBack: step > 1 ? goBack : undefined,
     }),
@@ -629,7 +629,7 @@ export function SetupWizardBody({
           secondary={
             step === 1 ? (
               <Button variant="ghost" disabled={saving} onClick={onClose}>
-                Not now
+                Not Now
               </Button>
             ) : undefined
           }
@@ -640,7 +640,7 @@ export function SetupWizardBody({
               </Button>
             ) : (
               <Button loading={saving} onClick={() => void finish()}>
-                Open the till
+                Open the Till
               </Button>
             )
           }
@@ -679,7 +679,7 @@ function StepShop({
       <Block icon={<IconStorefront size={15} />} tint="#30D158" title="What the customer sees">
         <div className="space-y-3.5">
           <div>
-            <StepLabel>Shop name</StepLabel>
+            <StepLabel>Shop Name</StepLabel>
             <input
               ref={nameRef}
               type="text"
@@ -732,7 +732,7 @@ function StepShop({
           </div>
 
           <div>
-            <StepLabel>Display currency</StepLabel>
+            <StepLabel>Display Currency</StepLabel>
             <Select
               value={draft.currency}
               ariaLabel="Display currency"
@@ -757,7 +757,7 @@ function StepShop({
       <Block icon={<IconReceipt size={15} />} tint="#0A84FF" title="Receipt header">
         <div className="panel-inset px-4 py-4">
           <div className="mx-auto max-w-[260px] text-center">
-            <p className="mono truncate text-[15px] font-semibold uppercase tracking-[0.14em] text-white">
+            <p className="mono truncate text-[15px] font-semibold uppercase tracking-wider text-white">
               {draft.profile.name.trim() || "Your shop"}
             </p>
             {draft.profile.addressLines
@@ -853,7 +853,7 @@ function StepMoney({
   return (
     <>
       <Block icon={<IconKey size={15} />} tint="#0A84FF" title="Where payments land">
-        <StepLabel>Receiving account</StepLabel>
+        <StepLabel>Receiving Account</StepLabel>
         {accountOptions.length === 0 ? (
           <Notice tone="warn">
             This wallet has no account yet. Add one first — a charge has to be addressed somewhere.
@@ -891,7 +891,7 @@ function StepMoney({
                 </p>
                 {!receivingWatchOnly && (
                   <Button variant="secondary" className="mt-2.5" onClick={onWatchOnly}>
-                    <IconPlus size={13} /> Add a watch-only account
+                    <IconPlus size={13} /> Add a Watch-Only Account
                   </Button>
                 )}
               </div>
@@ -901,7 +901,7 @@ function StepMoney({
       </Block>
 
       <Block icon={<IconStorefront size={15} />} tint="#30D158" title="What you take">
-        <StepLabel>Accepted assets</StepLabel>
+        <StepLabel>Accepted Assets</StepLabel>
         <div className="panel-inset">
           {assetChoices.map((asset, index) => {
             const key = assetKey(asset);
@@ -932,7 +932,7 @@ function StepMoney({
         </div>
 
         <div className="mt-3.5">
-          <StepLabel>Settlement asset</StepLabel>
+          <StepLabel>Settlement Asset</StepLabel>
           <Select
             value={draft.settlementKey}
             ariaLabel="Settlement asset"
@@ -1025,7 +1025,7 @@ function StepMoney({
         )}
 
         <div className="panel-inset mt-3 px-3.5 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Reserve impact
           </p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-300">
@@ -1065,7 +1065,7 @@ function StepSelling({
   return (
     <>
       <Block icon={<IconPercent size={15} />} tint="#BF5AF2" title="Tax">
-        <StepLabel>Tax mode</StepLabel>
+        <StepLabel>Tax Mode</StepLabel>
         <SegmentedControl<TaxMode>
           ariaLabel="How tax is applied"
           value={draft.taxMode}
@@ -1143,7 +1143,7 @@ function StepSelling({
       </Block>
 
       <Block icon={<IconStorefront size={15} />} tint="#30D158" title="Tips">
-        <StepLabel>Tip prompt</StepLabel>
+        <StepLabel>Tip Prompt</StepLabel>
         <SegmentedControl<TipMode>
           ariaLabel="How tips are offered"
           value={draft.tipMode}
@@ -1156,7 +1156,7 @@ function StepSelling({
         />
         {draft.tipMode === "percent" && (
           <div className="mt-3">
-            <StepLabel>Percentage presets</StepLabel>
+            <StepLabel>Percentage Presets</StepLabel>
             <input
               type="text"
               inputMode="decimal"
@@ -1205,7 +1205,7 @@ function StepSelling({
         </Hint>
 
         <div className="mt-3.5">
-          <StepLabel>Receipt footer</StepLabel>
+          <StepLabel>Receipt Footer</StepLabel>
           <input
             type="text"
             value={draft.profile.receiptFooter}
@@ -1249,7 +1249,7 @@ function StepTill({
   return (
     <>
       <Block icon={<IconTerminal size={15} />} tint="#5E5CE6" title="This device">
-        <StepLabel>Terminal name</StepLabel>
+        <StepLabel>Terminal Name</StepLabel>
         <input
           type="text"
           value={draft.terminalName}
@@ -1321,7 +1321,7 @@ function StepTill({
           onChange={(textSize) => patch({ textSize })}
         />
         <div className="panel-inset mt-3 px-4 py-4 text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Total
           </p>
           <p

@@ -78,7 +78,7 @@ export function PrivateAssetRegistryAdmin() {
 
   return (
     <section aria-labelledby="private-asset-admin-title">
-      <h3 id="private-asset-admin-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+      <h3 id="private-asset-admin-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
         Asset administrator
       </h3>
       <div className="list-group">
@@ -89,9 +89,9 @@ export function PrivateAssetRegistryAdmin() {
               Added contracts receive a permanent index. Exit only stops new deposits while preserving withdrawals; registry entries are never deleted.
             </p>
           </div>
-          <Field label="Stellar Asset Contract address">
+          <Field label="Stellar Asset Contract Address">
             <input
-              className="input font-mono text-base sm:text-[13px]"
+              className="input mono text-base sm:text-[13px]"
               autoCapitalize="characters"
               autoComplete="off"
               spellCheck={false}

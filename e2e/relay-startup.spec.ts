@@ -13,11 +13,11 @@ test.beforeEach(async ({ page, baseURL }) => {
   await page.getByRole('button', { name: 'Test relay startup', exact: true }).click();
 });
 
-const dialogFor = (page: Page) => page.getByRole('dialog', { name: 'Earn by relaying', exact: true });
+const dialogFor = (page: Page) => page.getByRole('dialog', { name: 'Earn by Relaying', exact: true });
 const fixtureAction = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
   .evaluate(node => (node as HTMLButtonElement).click());
 async function openEarn(page: Page) {
-  await page.getByRole('button', { name: /Earn by relaying/ }).click();
+  await page.getByRole('button', { name: /Earn by Relaying/ }).click();
   return dialogFor(page);
 }
 async function start(page: Page) {
@@ -47,12 +47,12 @@ test('fresh unlock Start prepares the real runtime before connecting and preserv
   await expect(page.getByTestId('startup-creates')).toHaveText('0');
   await connect(page);
   await expect(dialog).toHaveAttribute('data-startup-identity', 'original');
-  await expect(dialog.getByRole('button', { name: 'Stop relaying', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Stop Relaying', exact: true })).toBeFocused();
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
   await expect(dialog.getByText('Connected to 1 of 2 public relays', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Earn by relaying/ })).toBeFocused();
+  await expect(page.getByRole('button', { name: /Earn by Relaying/ })).toBeFocused();
 });
 
 test('saved participation is Paused after a fresh unlock and keyboard Resume retains focus', async ({ page }) => {
@@ -73,7 +73,7 @@ test('saved participation is Paused after a fresh unlock and keyboard Resume ret
   await resume.press('Enter');
   await expect(page.getByTestId('startup-requested')).toHaveText('true');
   await expect(dialog.getByLabel('Your fee per payment')).toHaveValue('unfinished');
-  await expect(dialog.getByRole('button', { name: 'Stop relaying', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Stop Relaying', exact: true })).toBeFocused();
   await connect(page);
 });
 
@@ -95,7 +95,7 @@ test('an external stop moves only a disappearing paused Stop focus to the stable
   await page.keyboard.press('Escape');
   await fixtureAction(page, 'Fresh unlock or account');
   const dialog = await openEarn(page);
-  await dialog.getByRole('button', { name: 'Stop relaying', exact: true }).focus();
+  await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).focus();
   await fixtureAction(page, 'Stop relay elsewhere');
   await expect(dialog.getByRole('button', { name: 'Start relaying', exact: true })).toBeFocused();
 });
@@ -119,11 +119,11 @@ test('editing saved settings while paused does not supply relay startup intent',
   await fixtureAction(page, 'Fresh unlock or account');
   const dialog = await openEarn(page);
   await dialog.getByLabel('Your fee per payment').fill('0.003');
-  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
   await expect(dialog.getByRole('status').filter({ hasText: 'Changes saved' })).toBeVisible();
   await expect(page.getByTestId('startup-requested')).toHaveText('false');
   await expect(dialog.getByText('Paused', { exact: true })).toBeVisible();
-  const stop = dialog.getByRole('button', { name: 'Stop relaying', exact: true });
+  const stop = dialog.getByRole('button', { name: 'Stop Relaying', exact: true });
   await stop.focus();
   await stop.press('Enter');
   await expect(dialog.getByRole('button', { name: 'Start relaying', exact: true })).toBeFocused();
@@ -167,7 +167,7 @@ test('runtime failure is not Connecting and Stop cancels an in-flight connection
   await expect(dialog.getByText('Connecting', { exact: true })).toHaveCount(0);
   await fixtureAction(page, 'Finish wallet preparation');
   await expect(dialog.getByText('Connecting', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Stop relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).click();
   await expect(dialog.getByText('Not relaying', { exact: true })).toBeVisible();
   await expect(page.getByTestId('startup-closes')).toHaveText('1');
   await fixtureAction(page, 'Connect relay transport');
@@ -182,7 +182,7 @@ test('paused controls remain accessible at narrow width without reduced-motion d
   await page.setViewportSize({ width: 320, height: 740 });
   const dialog = await openEarn(page);
   await expect(dialog.getByRole('button', { name: 'Resume relaying', exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Stop relaying', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Stop Relaying', exact: true })).toBeVisible();
   const scan = await new AxeBuilder({ page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
   expect(scan.violations.map(({ id, impact }) => ({ id, impact }))).toEqual([]);
   expect(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);

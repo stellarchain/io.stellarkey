@@ -604,7 +604,7 @@ function ReceiptSheetInner({
 
               {/* The hash is the receipt. Everything above it is bookkeeping. */}
               <div className="border-t border-white/[0.08] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Paid by {tenderLabel(order).toLowerCase()}
                 </p>
                 {transactionHash ? (
@@ -688,7 +688,7 @@ function ReceiptSheetInner({
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+351 000 000 000"
                 enterKeyHint="done"
-                className="input input-mono text-base sm:text-[15px]"
+                className="input mono text-base sm:text-[15px]"
               />
             </div>
             <DraftPreview body={body} />
@@ -842,7 +842,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function DraftPreview({ body }: { body: string }) {
   return (
     <div className="panel-inset max-h-[180px] overflow-y-auto px-3.5 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         What it carries
       </p>
       <pre className="mono mt-1.5 whitespace-pre-wrap break-words text-[11.5px] leading-relaxed text-neutral-300">

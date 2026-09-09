@@ -292,7 +292,7 @@ function ItemEditor({
   return (
     <>
       <ModalHeader
-        title={isEdit ? "Edit item" : "New item"}
+        title={isEdit ? "Edit Item" : "New Item"}
         subtitle={
           isEdit
             ? `Item id ${item.id} · position ${item.sortIndex + 1}`
@@ -403,7 +403,7 @@ function ItemEditor({
             </p>
           </div>
 
-          <Field label="Tax rate">
+          <Field label="Tax Rate">
             <Select
               value={taxRateId}
               ariaLabel="Tax rate"
@@ -445,7 +445,7 @@ function ItemEditor({
                   >
                     <span
                       aria-hidden="true"
-                      className="flex h-8 w-8 items-center justify-center rounded-full"
+                      className="flex h-8 w-8 items-center justify-center rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
                       style={{
                         background: swatch.hex,
                         boxShadow: on
@@ -529,7 +529,7 @@ function ItemEditor({
           </div>
           {trackStock && (
             <div className="grid gap-3 border-t border-white/[0.08] px-3.5 py-3 sm:grid-cols-2">
-              <Field label="Stock on hand">
+              <Field label="Stock on Hand">
                 <input
                   className="input mono text-base sm:text-[14px]"
                   value={stockText}
@@ -540,7 +540,7 @@ function ItemEditor({
                   autoComplete="off"
                 />
               </Field>
-              <Field label="Low stock at" hint="optional">
+              <Field label="Low Stock At" hint="optional">
                 <input
                   className="input mono text-base sm:text-[14px]"
                   value={lowStockText}
@@ -583,7 +583,7 @@ function ItemEditor({
           }
           primary={
             <Button type="button" loading={pending} onClick={handleSave}>
-              {isEdit ? "Save changes" : "Add item"}
+              {isEdit ? "Save Changes" : "Add Item"}
             </Button>
           }
         />
@@ -606,7 +606,7 @@ function ItemEditor({
           open={confirmingDelete}
           title={`Delete ${item.name}?`}
           message="Orders already rung up keep their lines, so the takings stay intact. The item simply stops being sellable."
-          confirmLabel="Delete item"
+          confirmLabel="Delete Item"
           cancelLabel="Keep item"
           destructive
           busy={pending}

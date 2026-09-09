@@ -398,7 +398,7 @@ function AdjustmentSheetInner({
                   })}
                 </div>
                 <Field
-                  label="Discount percentage"
+                  label="Discount Percentage"
                   hint="0 – 100 %"
                   error={
                     percentValid
@@ -412,13 +412,13 @@ function AdjustmentSheetInner({
                     enterKeyHint="done"
                     value={percentRaw}
                     onChange={(e) => setPercentRaw(e.target.value)}
-                    className="input input-mono text-base sm:text-[15px]"
+                    className="input mono text-base sm:text-[15px]"
                   />
                 </Field>
               </div>
             ) : (
               <Field
-                label="Discount amount"
+                label="Discount Amount"
                 error={
                   amountRaw.trim() !== "" && typedAmount === null
                     ? "Enter an amount such as 2.50."
@@ -434,7 +434,7 @@ function AdjustmentSheetInner({
                   value={amountRaw}
                   onChange={(e) => setAmountRaw(e.target.value)}
                   placeholder="0.00"
-                  className="input input-mono text-base sm:text-[15px]"
+                  className="input mono text-base sm:text-[15px]"
                 />
               </Field>
             )}

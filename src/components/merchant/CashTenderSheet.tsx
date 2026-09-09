@@ -101,7 +101,7 @@ function TenderKeypad({
 
   return (
     <div>
-      <p className="pb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+      <p className="pb-2 text-center text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         Received · {fmtMinor(minor, currency)}
       </p>
       <div className="mx-auto grid w-full max-w-[420px] grid-cols-3 gap-2">
@@ -296,7 +296,7 @@ function CashTenderSheetInner({
   }
 
   const cardReferenceField = (
-    <Field label="Terminal receipt number" hint="Optional — ties the two records together">
+    <Field label="Terminal Receipt Number" hint="Optional — ties the two records together">
       <input
         type="text"
         value={cardReference}
@@ -304,7 +304,7 @@ function CashTenderSheetInner({
         placeholder="e.g. 004913"
         enterKeyHint="done"
         autoCapitalize="characters"
-        className="input input-mono text-base sm:text-[13px]"
+        className="input mono text-base sm:text-[13px]"
       />
     </Field>
   );
@@ -322,14 +322,14 @@ function CashTenderSheetInner({
       </Button>
     ) : (
       <Button type="button" disabled={!splitReady} loading={pending} onClick={takeSplit}>
-        Record split
+        Record Split
       </Button>
     );
 
   return (
     <>
       <ModalHeader
-        title="Other tender"
+        title="Other Tender"
         subtitle={`${fmtMinor(totalMinor, currency)} to settle`}
         onClose={onClose}
       />
@@ -350,7 +350,7 @@ function CashTenderSheetInner({
         {choice === "cash" && (
           <div className="space-y-4">
             <div className="panel-inset px-4 py-3.5 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 {cashShort ? "Still owed" : "Change due"}
               </p>
               <p
@@ -386,7 +386,7 @@ function CashTenderSheetInner({
                     : "bg-white/[0.08] text-white hover:bg-white/[0.13]"
                 }`}
               >
-                <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-neutral-400">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Exact
                 </span>
                 <span className="mono">{minorToDecimal(totalMinor)}</span>
@@ -448,7 +448,7 @@ function CashTenderSheetInner({
         {choice === "split" && (
           <div className="space-y-4">
             <div className="panel-inset px-4 py-3.5 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 Still to cover
               </p>
               <p className="mono mt-1 text-[34px] font-semibold leading-none text-white">
@@ -489,7 +489,7 @@ function CashTenderSheetInner({
                     placeholder={minorToDecimal(Math.floor(totalMinor / 2))}
                     aria-label="First part amount"
                     aria-invalid={firstRaw.trim() !== "" && !firstValid}
-                    className="input input-mono text-base sm:text-[15px]"
+                    className="input mono text-base sm:text-[15px]"
                   />
                   <Button
                     type="button"
@@ -548,7 +548,7 @@ function CashTenderSheetInner({
             {splitError.startsWith("No live price") && (
               <div className="space-y-2">
                 <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
-                <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+                <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry Prices</Button>
               </div>
             )}
           </div>

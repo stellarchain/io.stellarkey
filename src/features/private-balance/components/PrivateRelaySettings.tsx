@@ -169,7 +169,7 @@ export function PrivateRelaySettings({
 
   const relayFields = <div className="space-y-3">
     {[0, 1].map(index => <Field key={index} label={`Public relay ${index + 1}`}>
-      <input className="input font-mono text-base sm:text-[13px]" inputMode="url" autoCapitalize="none"
+      <input className="input mono text-base sm:text-[13px]" inputMode="url" autoCapitalize="none"
         enterKeyHint={index === 0 ? 'next' : 'done'}
         autoCorrect="off" spellCheck={false} value={draft.relayUrls[index] ?? ''}
         aria-invalid={error?.field === 'connections' || undefined}
@@ -200,7 +200,7 @@ export function PrivateRelaySettings({
         <span className="text-[11px] text-muted">Applies to new offers</span>
         <Button type="button" variant="ghost" aria-disabled={!dirty}
           className={`min-h-11 shrink-0 ${!dirty ? 'text-muted' : ''}`}
-          onClick={() => { if (dirty) save(); }}>Save changes</Button>
+          onClick={() => { if (dirty) save(); }}>Save Changes</Button>
       </div>
     </div>
 
@@ -220,7 +220,7 @@ export function PrivateRelaySettings({
       {!saved.helpRelay ? 'Start relaying' : requested ? 'Stop relaying' : 'Resume relaying'}
     </Button>
     {saved.helpRelay && !requested ? <Button id={`${id}-stop-paused`} type="button" variant="secondary" className="mt-2 min-h-12 w-full" onClick={stop}>
-      Stop relaying
+      Stop Relaying
     </Button> : null}
     <p className="px-1 pb-3 pt-2 text-center text-[11px] leading-relaxed text-muted">Stopping cannot revoke a signature already shared.</p>
 
@@ -240,7 +240,7 @@ export function PrivateRelaySettings({
 
   return (
     <section aria-labelledby={`${id}-title`} className="space-y-2">
-      <h3 id={`${id}-title`} className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+      <h3 id={`${id}-title`} className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
         Peer relay
       </h3>
       <div className="list-group">
@@ -263,11 +263,11 @@ export function PrivateRelaySettings({
         <div className="space-y-3 border-t border-white/[0.07] px-4 py-4">
           {relayFields}
           <Field
-            label="Private fee"
+            label="Private Fee"
             hint="0.001 means 0.001 XLM for XLM, or 0.001 USDC for USDC."
           >
             <input
-              className="input font-mono text-base sm:text-[13px]"
+              className="input mono text-base sm:text-[13px]"
               inputMode="decimal"
               enterKeyHint="done"
               value={feeAmount}

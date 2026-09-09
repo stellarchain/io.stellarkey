@@ -20,7 +20,7 @@ import { networkFeeXlm } from "@/lib/api";
 import { triggerHaptic } from "@/lib/haptics";
 import { spendableAssetBalance } from "@/lib/transaction-intent";
 import type { SubmissionResult } from "@/lib/submission";
-import { Button, ErrorText, HashValue, ModalBody, ModalFooter, Select } from "./ui";
+import { Button, ErrorText, HashValue, ModalBody, ModalFooter, Notice, Select } from "./ui";
 import { FiatValue } from "./FiatValue";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import { useToast } from "./Toast";
@@ -339,9 +339,9 @@ export function BatchSendModalBody({
         </>
       ) : stage === "review" && review ? (
         <>
-          <div className="rounded-xl border border-[#0A84FF]/25 bg-[#0A84FF]/10 p-3 text-[12px] leading-relaxed text-[#A7D4FF]">
+          <Notice tone="accent" compact>
             Nothing has been signed or sent. Confirm only after checking every recipient.
-          </div>
+          </Notice>
 
           <div className="space-y-2 sm:max-h-[300px] sm:overflow-y-auto sm:pr-1">
             {review.payments.map((payment, index) => (
@@ -388,7 +388,7 @@ export function BatchSendModalBody({
           </div>
 
           {activeAccount?.hardware && (
-            <div className="flex items-center gap-2 rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 text-[12px] text-[#0A84FF]">
+            <Notice tone="accent" compact className="flex items-center gap-2">
               {activeAccount.hardware === "ledger" ? (
                 <IconLedger size={15} className="text-[#64D2FF]" />
               ) : (
@@ -397,7 +397,7 @@ export function BatchSendModalBody({
               <span className="font-semibold">
                 Final approval happens on your {activeAccount.hardware === "ledger" ? "Ledger" : "Trezor"} device.
               </span>
-            </div>
+            </Notice>
           )}
 
           {error && <ErrorText message={error} />}
@@ -409,7 +409,7 @@ export function BatchSendModalBody({
                 loadingLabel="Broadcasting batch"
                 onClick={() => void handleBatchSend()}
               >
-                Confirm and Send
+                Confirm Send
               </Button>
             }
           />
@@ -443,7 +443,7 @@ export function BatchSendModalBody({
                 disabled={rows.length === 0 || compareStellarAmounts(maxSendable, "0") <= 0}
                 onClick={handleSplitEqually}
               >
-                Split equally
+                Split Equally
               </Button>
               <Button
                 variant="ghost"
@@ -473,11 +473,12 @@ export function BatchSendModalBody({
                 className="input mono text-base resize-none sm:text-[13px]"
               />
               <Button variant="secondary" className="w-full" onClick={handleParseCsv}>
-                Parse and populate rows
+                Parse and Populate Rows
               </Button>
             </div>
           ) : (
-            <div className="space-y-2.5 sm:max-h-[280px] sm:overflow-y-auto sm:pr-1">
+            <div className="space-y-2.5">
+              <div className="space-y-2.5 sm:-mr-1 sm:max-h-[280px] sm:overflow-y-auto sm:pr-1">
               {rows.map((row, idx) => (
                 <div
                   key={row.id}
@@ -512,7 +513,7 @@ export function BatchSendModalBody({
                         type="button"
                         onClick={() => handleRemoveRow(row.id)}
                         aria-label={`Remove recipient ${idx + 1}`}
-                        className="flex shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:text-[#FF453A]"
+                        className="icon-btn !h-8 !w-8 shrink-0 text-neutral-400 hover:text-[#FF453A] pointer-coarse:!h-11 pointer-coarse:!w-11"
                       >
                         <IconTrash size={15} aria-hidden="true" />
                       </button>
@@ -549,11 +550,12 @@ export function BatchSendModalBody({
                   </div>
                 </div>
               ))}
+              </div>
 
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/20 text-[12.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04]"
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 border-white/20 text-[12.5px] font-semibold text-[#0A84FF] hover:bg-white/[0.04]"
               >
                 <IconPlus size={14} />
                 <span>Add Recipient</span>
@@ -580,7 +582,7 @@ export function BatchSendModalBody({
 
           {/* Hardware Device Indicator */}
           {activeAccount?.hardware && (
-            <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+            <Notice tone="accent" compact className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {activeAccount.hardware === "ledger" ? (
                   <IconLedger size={15} className="text-[#64D2FF]" />
@@ -592,7 +594,7 @@ export function BatchSendModalBody({
                 </span>
               </div>
               <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
-            </div>
+            </Notice>
           )}
 
           {/* Summary calculation */}

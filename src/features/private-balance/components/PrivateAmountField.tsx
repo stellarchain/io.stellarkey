@@ -2,6 +2,7 @@
 
 import { useId } from 'react';
 import { FiatValue } from '@/components/FiatValue';
+import { FieldAction, FieldLabelRow, QuickAmountChips } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
 
 const QUICK_AMOUNTS = [10, 25, 50, 100] as const;
@@ -48,18 +49,11 @@ export function PrivateAmountField({
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <label htmlFor={amountId} className="field-label !pb-0">Amount</label>
-        {max !== null ? (
-          <button
-            type="button"
-            onClick={applyMax}
-            className="-mr-2 flex items-center rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors active:bg-white/[0.06]"
-          >
-            Max: {fmtAmount(max)} {code}
-          </button>
-        ) : null}
-      </div>
+      <FieldLabelRow
+        htmlFor={amountId}
+        label="Amount"
+        action={max !== null ? <FieldAction onClick={applyMax}>Max: {fmtAmount(max)} {code}</FieldAction> : null}
+      />
       <input
         id={amountId}
         type="text"
@@ -96,26 +90,12 @@ export function PrivateQuickAmounts({
   max: string | null;
 }) {
   return (
-    <div className="mt-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
-      {QUICK_AMOUNTS.map(value => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => onAmount(String(value))}
-          className="flex shrink-0 items-center rounded-xl bg-white/[0.06] px-3.5 text-[13px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] active:bg-white/[0.16]"
-        >
-          {value}
-        </button>
-      ))}
-      {max !== null ? (
-        <button
-          type="button"
-          onClick={() => onAmount(max)}
-          className="flex shrink-0 items-center rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[13px] font-bold text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/22 active:bg-[#0A84FF]/28"
-        >
-          MAX
-        </button>
-      ) : null}
-    </div>
+    <QuickAmountChips
+      className="mt-2"
+      values={QUICK_AMOUNTS}
+      onPick={onAmount}
+      max={max}
+      onMax={max !== null ? () => onAmount(max) : undefined}
+    />
   );
 }

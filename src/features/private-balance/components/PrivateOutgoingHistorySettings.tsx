@@ -60,7 +60,7 @@ function OutgoingHistoryPreference({ mode, disabled, onChange }: OutgoingHistory
 
   return (
     <section ref={sectionRef} aria-labelledby="private-outgoing-history-title" className="space-y-3">
-      <h3 id="private-outgoing-history-title" className="px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+      <h3 id="private-outgoing-history-title" className="px-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         Outgoing recovery
       </h3>
       <div className="list-group flex min-h-16 items-center justify-between gap-4 px-4 py-3">

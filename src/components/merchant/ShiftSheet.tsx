@@ -310,7 +310,7 @@ function ShiftBody({
     const amount = parseAmount(draft);
     return (
       <>
-        <ModalHeader title="Open shift" subtitle={`${settings.terminalName} · next Z-report starts here`} onClose={onClose} />
+        <ModalHeader title="Open Shift" subtitle={`${settings.terminalName} · next Z-report starts here`} onClose={onClose} />
         <ModalBody>
           <Notice>
             <p className="font-semibold text-white">A clean operating boundary</p>
@@ -356,7 +356,7 @@ function ShiftBody({
                 loading={pending}
                 onClick={submitOpen}
               >
-                Open shift
+                Open Shift
               </Button>
             }
           />
@@ -524,7 +524,7 @@ function ShiftBody({
             <ModalFooter
               primary={
                 <Button disabled={parseAmount(draft) === null} loading={pending} onClick={submitClose}>
-                  Commit count & issue Z
+                  Commit Count & Issue Z
                 </Button>
               }
             />
@@ -806,7 +806,7 @@ function Cell({
 }) {
   return (
     <div className="bg-white/[0.02] px-3.5 py-3">
-      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         {label}
       </p>
       <p

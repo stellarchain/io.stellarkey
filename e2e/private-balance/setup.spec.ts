@@ -46,12 +46,12 @@ test("offers helper relay participation directly from Home", async ({ context, p
   const region = await setupPrivateBalance(page);
   await region.evaluate(node => node.setAttribute("data-e2e-overlay-owner", "private-assets"));
 
-  const entry = region.getByRole("button", { name: /Earn by relaying/ });
+  const entry = region.getByRole("button", { name: /Earn by Relaying/ });
   await expect(entry).toBeVisible();
   await expect(entry).toContainText("Set up");
   await entry.click();
 
-  const dialog = page.getByRole("dialog", { name: "Earn by relaying", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Earn by Relaying", exact: true });
   await expect(dialog).toBeVisible();
   await dialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "relay-settings"));
   await expect(dialog.getByText("Prefer privacy relay", { exact: true })).toHaveCount(0);
@@ -64,7 +64,7 @@ test("offers helper relay participation directly from Home", async ({ context, p
   });
   await helping.click();
   await expect(helping).toHaveAttribute("aria-checked", "true");
-  const fee = dialog.getByRole("textbox", { name: "Private fee" });
+  const fee = dialog.getByRole("textbox", { name: "Private Fee" });
   await fee.fill("0.001");
   await dialog.getByRole("button", { name: "Save relay settings", exact: true }).click();
   await expect(dialog).toBeHidden();
@@ -73,8 +73,8 @@ test("offers helper relay participation directly from Home", async ({ context, p
   await expect(entry).toContainText(/Connecting|Connected|Reconnecting|Unavailable/);
 
   await entry.click();
-  await expect(page.getByRole("dialog", { name: "Earn by relaying", exact: true })
-    .getByRole("textbox", { name: "Private fee" })).toHaveValue("0.001");
+  await expect(page.getByRole("dialog", { name: "Earn by Relaying", exact: true })
+    .getByRole("textbox", { name: "Private Fee" })).toHaveValue("0.001");
 });
 
 test("keeps Send mounted when its nested setup auto-dismisses after completion", async ({
@@ -110,7 +110,7 @@ test("keeps Send mounted when its nested setup auto-dismisses after completion",
   await expect(sendDialog).toHaveAttribute("data-e2e-overlay-identity", "send");
   await expect(setupDialog).toBeHidden();
   await expect(sendDialog.getByText(/Preparing private/)).toHaveCount(0);
-  await expect(sendDialog.getByLabel("Private recipient", { exact: true })).toBeVisible({
+  await expect(sendDialog.getByLabel("Private Recipient", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
 });

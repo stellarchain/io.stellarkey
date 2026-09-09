@@ -258,7 +258,7 @@ function FactRow({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+    <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
       {children}
     </h3>
   );
@@ -734,7 +734,7 @@ function OrderDetail({
               </p>
             ) : !confirming ? (
               <Button variant="secondary" className="w-full" onClick={openConfirm}>
-                Issue a refund
+                Issue a Refund
               </Button>
             ) : (
               <div className="panel-inset space-y-3 p-4">
@@ -755,7 +755,7 @@ function OrderDetail({
                   error={amountError ?? undefined}
                 >
                   <input
-                    className="input input-mono text-base sm:text-[15px]"
+                    className="input mono text-base sm:text-[15px]"
                     inputMode="decimal"
                     enterKeyHint="next"
                     autoComplete="off"

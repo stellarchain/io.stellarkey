@@ -73,7 +73,7 @@ export function LockScreen() {
             <>
               <Button
                 type="button"
-                className="w-full !py-3 text-[15px] font-semibold"
+                className="w-full"
                 loading={busy === "passkey"}
                 disabled={busy !== null}
                 onClick={() => void handlePasskeyUnlock()}
@@ -120,7 +120,7 @@ export function LockScreen() {
 
             <Button
               type="submit"
-              className="w-full !py-3 text-[15px] font-semibold"
+              className="w-full"
               loading={busy === "password"}
               disabled={!password || busy !== null}
             >
@@ -147,7 +147,7 @@ export function LockScreen() {
           }}
           className="mt-6 block w-full text-center text-[13px] text-neutral-500 hover:text-neutral-300 transition-colors"
         >
-          Forgot password? Reset wallet
+          Forgot password? <span className="text-[#0A84FF]">Reset wallet</span>
         </button>
       </div>
 

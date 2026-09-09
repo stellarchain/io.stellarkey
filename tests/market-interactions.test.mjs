@@ -110,7 +110,7 @@ for (const file of ["LinkEditorModal", "InvoiceDetailModal", "CashTenderSheet"])
     const source = readFileSync(new URL(`../src/components/merchant/${file}.tsx`, import.meta.url), "utf8");
     assert.match(source, /onClick=\{retryPrices\}/);
     assert.match(source, /disabled=\{pricesRefreshing\}/);
-    assert.match(source, /Retry prices/);
+    assert.match(source, /Retry Prices/);
   });
 }
 

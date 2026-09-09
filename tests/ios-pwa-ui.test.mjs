@@ -14,7 +14,7 @@ test("hierarchical screens share one accessible iOS back control", () => {
 
   assert.match(ui, /export function IOSBackButton\(/);
   assert.match(ui, /aria-label=\{label\}/);
-  assert.match(ui, /h-11 w-11/);
+  assert.match(ui, /pointer-coarse:h-11 pointer-coarse:w-11/);
   assert.match(ui, /IconChevronDown[^>]*rotate-90/);
   assert.match(settings, /<IOSBackButton[\s\S]*?onClick=/);
   assert.match(onboarding, /<IOSBackButton[\s\S]*?onClick=\{onBack\}/);
@@ -66,10 +66,10 @@ test("standalone screens and overlays consume the iOS top safe area", () => {
   assert.match(css, /\.app-safe-top-pad-14\s*\{[\s\S]*?calc\(3\.5rem \+ var\(--app-safe-area-top\)\)/);
   assert.match(css, /\.app-safe-top-pad-12\s*\{[\s\S]*?calc\(3rem \+ var\(--app-safe-area-top\)\)/);
   assert.match(css, /\.app-safe-overlay\s*\{[\s\S]*?calc\(1rem \+ var\(--app-safe-area-top\)\)/);
-  assert.match(css, /\.app-safe-toast\s*\{[\s\S]*?calc\(1\.25rem \+ var\(--app-safe-area-top\)\)/);
+  assert.match(css, /\.app-safe-toast\s*\{[\s\S]*?calc\(4\.5rem \+ var\(--app-safe-area-top\)\)/);
   assert.match(
     css,
-    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-toast\s*\{[\s\S]*?calc\(4\.75rem \+ var\(--app-safe-area-top\)\)/,
+    /@media\s*\(display-mode:\s*standalone\)\s*and\s*\(min-width:\s*768px\)[\s\S]*?\.app-safe-toast\s*\{[\s\S]*?calc\(1\.5rem \+ env\(safe-area-inset-bottom, 0px\)\)/,
   );
   assert.match(css, /\.app-safe-sticky-top\s*\{[\s\S]*?top:\s*var\(--app-safe-area-top\);/);
   assert.match(css, /\.app-scroll-sticky-top\s*\{[\s\S]*?top:\s*0;/);

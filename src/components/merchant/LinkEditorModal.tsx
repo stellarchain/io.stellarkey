@@ -27,6 +27,7 @@ import {
   CopyButton,
   ErrorText,
   Field,
+  FieldLabelRow,
   Modal,
   ModalBody,
   ModalFooter,
@@ -334,7 +335,7 @@ function CodeEditor({
   return (
     <>
       <ModalHeader
-        title={isEdit ? "Edit counter code" : "New counter code"}
+        title={isEdit ? "Edit counter code" : "New Counter Code"}
         subtitle={
           code
             ? `${CODE_KIND_META[code.kind].label} · ${code.payments} payments`
@@ -358,7 +359,7 @@ function CodeEditor({
             className="input text-base sm:text-[14px]"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Tip jar"
+            placeholder="What this code is for"
             maxLength={48}
             enterKeyHint="next"
             autoCapitalize="words"
@@ -382,7 +383,7 @@ function CodeEditor({
         </div>
 
         {kind === "fixed" ? (
-          <Field label="Shop price" hint={isEdit ? "publication value" : "quoted when saved"}>
+          <Field label="Shop Price" hint={isEdit ? "publication value" : "quoted when saved"}>
             <div className="input flex items-center gap-2">
               <span className="mono text-[13px] text-neutral-500">{symbol}</span>
               <input
@@ -400,10 +401,7 @@ function CodeEditor({
           </Field>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="field-label !pb-0">Suggested amounts</span>
-              <span className="text-[11px] text-neutral-400">{suggested.length || "none"}</span>
-            </div>
+            <FieldLabelRow label="Suggested Amounts" meta={suggested.length || "none"} className="!pb-0" />
             <div className="flex flex-wrap gap-2">
               {suggested.map((minor) => (
                 <span key={minor} className="chip !cursor-default gap-1 !py-0 !pr-0">
@@ -487,7 +485,7 @@ function CodeEditor({
         </div>
 
         <Field
-          label="Reference suffix"
+          label="Reference Suffix"
           hint={effectiveMemo ? `${effectiveMemo} · ${memoBytes} of 28 bytes` : "Use uppercase letters or numbers"}
         >
           <input
@@ -506,7 +504,7 @@ function CodeEditor({
         </Field>
 
         {kind === "tip" && (
-          <Field label="Attributed to" hint="optional">
+          <Field label="Attributed To" hint="optional">
             <Select
               value={staffId}
               ariaLabel="Staff member this tip code is attributed to"
@@ -523,7 +521,7 @@ function CodeEditor({
           </Field>
         )}
 
-        <Field label="Stops reconciling after" hint="optional · end of local day">
+        <Field label="Stops Reconciling After" hint="optional · end of local day">
           <input
             className="input text-base sm:text-[14px]"
             type="date"
@@ -598,7 +596,7 @@ function CodeEditor({
         {!isEdit && kind === "fixed" && (quotableAssets.length === 0 || error.startsWith("No live price")) && (
           <div className="space-y-2">
             <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
-            <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+            <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry Prices</Button>
           </div>
         )}
         <ModalFooter
@@ -621,7 +619,7 @@ function CodeEditor({
               loading={pending}
               onClick={handleSave}
             >
-              {isEdit ? "Save changes" : "Publish code"}
+              {isEdit ? "Save Changes" : "Publish Code"}
             </Button>
           }
         />

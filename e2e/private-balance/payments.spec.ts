@@ -113,9 +113,9 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     // Sending more than any single deposit folds the old consolidation rescue
     // into the send review itself: one approval covering every step.
     const send = await openPrivateSend(senderPage);
-    await send.getByLabel("Private recipient").fill(recipientAddress);
+    await send.getByLabel("Private Recipient").fill(recipientAddress);
     await send.getByLabel("Amount", { exact: true }).fill("2.5");
-    await send.getByLabel("Private memo (optional)").fill("lifecycle");
+    await send.getByLabel("Private Memo (Optional)").fill("lifecycle");
     await send.getByRole("button", { name: "Review Private Send" }).click();
     await confirmPreparedAction(send, { confirm: "Confirm Send", success: "Sent Privately" });
     await expectPrivateBalance(senderRegion, "0.5");
@@ -225,7 +225,7 @@ test("completes payments, encrypted-backup restore, and seed-only recovery", asy
     const protocol = senderPage.getByRole("dialog", { name: "Advanced privacy", exact: true });
     await expect(protocol.getByRole("heading", { name: "Advanced privacy" })).toBeVisible();
     await protocol.getByRole("button", { name: "Remove private data from this device" }).click();
-    await protocol.getByLabel("Type REMOVE PRIVATE BALANCE to confirm").fill("REMOVE PRIVATE BALANCE");
+    await protocol.getByLabel("Type REMOVE PRIVATE BALANCE to Confirm").fill("REMOVE PRIVATE BALANCE");
     await protocol.getByRole("button", { name: "Remove from this device" }).click();
     await expect(protocol).toBeHidden();
     const asset = senderPage.getByRole("dialog", { name: "XLM", exact: true });

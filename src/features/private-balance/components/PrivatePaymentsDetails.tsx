@@ -96,14 +96,14 @@ export function PrivatePaymentsDetailsContent({
   return (
     <ModalBody gap={5}>
       <section aria-labelledby="private-details-status">
-        <h3 id="private-details-status" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+        <h3 id="private-details-status" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
           Current status
         </h3>
         <PrivateBalanceStatus detailed />
       </section>
 
       <section aria-labelledby="private-details-privacy">
-        <h3 id="private-details-privacy" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+        <h3 id="private-details-privacy" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
           What stays public
         </h3>
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
@@ -112,7 +112,7 @@ export function PrivatePaymentsDetailsContent({
       </section>
 
       <section aria-labelledby="private-details-tools">
-        <h3 id="private-details-tools" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+        <h3 id="private-details-tools" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
           Manage
         </h3>
         <div className="list-group">

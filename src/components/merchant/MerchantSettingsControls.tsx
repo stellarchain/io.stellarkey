@@ -107,7 +107,7 @@ export function SettingsRow({
           label
         )}
         {sub && (
-          <span className="mono block truncate text-[12px] leading-tight text-neutral-400">
+          <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">
             {sub}
           </span>
         )}
@@ -275,7 +275,7 @@ export function ChoiceRow({
           {label}
         </span>
         {sub && (
-          <span className="mono block truncate pb-1.5 text-[12px] leading-tight text-neutral-400 sm:pb-0">
+          <span className="line-clamp-2 pb-1.5 text-[12px] leading-tight text-neutral-400 sm:pb-0">
             {sub}
           </span>
         )}

@@ -63,35 +63,35 @@ test("merchant settings use an iOS-style summary hierarchy with focused edit she
   );
 
   for (const label of [
-    "Business details",
-    "Payment setup",
-    "Accepted assets",
+    "Business Details",
+    "Payment Setup",
+    "Accepted Assets",
     "Tax",
-    "Tax rates",
+    "Tax Rates",
     "Tips",
-    "Settlement rules",
-    "This device",
+    "Settlement Rules",
+    "This Device",
   ]) {
     assert.match(settingsRoot, new RegExp(`label="${label}"`));
   }
 
-  for (const label of ["Tax records", "Staff & terminals", "Peripherals"]) {
+  for (const label of ["Tax Records", "Staff & Terminals", "Peripherals"]) {
     assert.match(settingsRoot, new RegExp(`label="${label}"`));
   }
 
   assert.match(completeSettings, /type MerchantSettingsSheet\s*=/);
   assert.match(merchantSettings, /const \[activeSheet, setActiveSheet\]/);
   assert.match(merchantSheets, /activeSheet === "rates"/);
-  assert.match(merchantSheets, /title="Tax rates"/);
+  assert.match(merchantSheets, /title="Tax Rates"/);
   assert.match(merchantSheets, /sheet="rates"[\s\S]*settings\.taxRates\.map/);
   assert.match(
     merchantSheets,
     /Changing this account requires your wallet password\. Existing unpaid requests stop\s+accepting automatic settlement until they are replaced or the original account is\s+restored\./,
   );
-  assert.match(merchantSettings, /title="Turn off Merchant Mode\?"/);
+  assert.match(merchantSettings, /title="Turn Off Merchant Mode\?"/);
   assert.match(
     merchantSettings,
-    /title="Turn off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
+    /title="Turn Off Merchant Mode\?"[\s\S]*onClick=\{\(\) => void handleTurnOff\(\)\}/,
   );
 
   const controls = read("src/components/merchant/MerchantSettingsControls.tsx");
@@ -123,13 +123,13 @@ test("tax records use a summary-first iOS hub with focused task sheets", () => {
   assert.doesNotMatch(hub, /<(?:Select|input)\b/);
 
   for (const label of [
-    "Reporting period",
-    "Tax rates",
-    "Export report",
-    "Encrypted archive",
+    "Reporting Period",
+    "Tax Rates",
+    "Export Report",
+    "Encrypted Archive",
     "Retention",
-    "Export history",
-    "About tax records",
+    "Export History",
+    "About Tax Records",
   ]) {
     assert.match(hub, new RegExp(`label="${label}"`));
   }

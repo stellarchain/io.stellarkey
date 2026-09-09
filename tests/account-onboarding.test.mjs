@@ -20,7 +20,7 @@ test("the dashboard uses Add Account as its only account-onboarding entry", () =
   assert.match(accountSidebar, /\+ Add/);
   assert.match(
     dashboard,
-    /id: "add-account", label: "Add account", run: \(\) => setAddAccountOpen\(true\)/,
+    /id: "add-account", label: "Add Account", run: \(\) => setAddAccountOpen\(true\)/,
   );
   assert.match(dashboard, /function AccountMenu\(\{[\s\S]*?onAddAccount/);
   assert.match(dashboard, /onAddAccount\(\)[\s\S]*?<span>Add Account<\/span>/);

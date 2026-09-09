@@ -420,7 +420,7 @@ export function MerchantPage({
                     <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={async () => {
                       setPricesRefreshing(true);
                       try { await retryMarketPrices(); } finally { setPricesRefreshing(false); }
-                    }}>Retry prices</Button>
+                    }}>Retry Prices</Button>
                   )}
                 </span>
               </Notice>
@@ -469,9 +469,9 @@ export function MerchantPage({
         <div className="flex items-center gap-2">
           <nav
             aria-label="Merchant sections"
-            className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4"
+            className="scrollbar-none -ml-4 min-w-0 flex-1 overflow-x-auto pl-4 [mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)]"
           >
-            <div className="flex w-max items-center gap-1.5 pr-2">
+            <div className="flex w-max items-center gap-1.5 pr-10">
               {NAV.filter(
                 (item) =>
                   (item.value !== "insights" && item.value !== "customers") || canSeeReports,

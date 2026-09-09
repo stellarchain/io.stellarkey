@@ -290,7 +290,7 @@ test("a current store decodes every operational collection", () => {
         openedBy: "staff-1",
         closedById: null,
         closedBy: null,
-        terminalName: "This device",
+        terminalName: "This Device",
         network: "mainnet",
         floatMinor: 5000,
         grossMinor: 0,

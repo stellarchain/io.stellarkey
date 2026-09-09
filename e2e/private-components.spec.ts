@@ -739,7 +739,7 @@ test('relay preflight preserves the direct form and distinguishes the earlier-pa
   await page.getByRole('button', { name: 'Open synthetic private send' }).click();
   await markShell(page);
   const amount = page.getByLabel('Amount', { exact: true });
-  const memo = page.getByLabel('Private memo (optional)');
+  const memo = page.getByLabel('Private Memo (Optional)');
   await amount.fill('1'); await memo.fill('Synthetic memo');
   const review = page.getByRole('button', { name: 'Review Private Send', exact: true });
   await expect(review).toBeEnabled();
@@ -764,7 +764,7 @@ test('relay preflight preserves the direct form and distinguishes the earlier-pa
   const discard = page.getByRole('dialog', { name: 'Discard changes?', exact: true });
   await expect(discard).toBeVisible();
   await discard.getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(page.getByLabel('Private recipient', { exact: true })).toBeHidden();
+  await expect(page.getByLabel('Private Recipient', { exact: true })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Open synthetic private send' })).toBeFocused();
 });
 

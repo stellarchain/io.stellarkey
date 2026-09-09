@@ -182,7 +182,7 @@ export function PrivateProtocolSettingsContent({
         />
 
         <section aria-labelledby="private-maintenance-title">
-          <h3 id="private-maintenance-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+          <h3 id="private-maintenance-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             Maintenance
           </h3>
           <div className="list-group">
@@ -236,7 +236,7 @@ export function PrivateProtocolSettingsContent({
         </div>
 
         <section aria-labelledby="private-local-state-title">
-          <h3 id="private-local-state-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+          <h3 id="private-local-state-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             On this device
           </h3>
           <dl className="list-group">
@@ -247,7 +247,7 @@ export function PrivateProtocolSettingsContent({
         </section>
 
         <section aria-labelledby="private-network-checks-title">
-          <h3 id="private-network-checks-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+          <h3 id="private-network-checks-title" className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             Network checks
           </h3>
           <div className="list-group">
@@ -313,7 +313,7 @@ export function PrivateProtocolSettingsContent({
                   Your private balance is spendable from this device. Continue only after checking that recovery works.
                 </Notice>
               ) : null}
-              <Field label="Type REMOVE PRIVATE BALANCE to confirm">
+              <Field label="Type REMOVE PRIVATE BALANCE to Confirm">
                 <input
                   className="input text-base sm:text-[14px]"
                   autoComplete="off"

@@ -137,7 +137,7 @@ export function PanelKeypad() {
           <span>7</span><span>8</span><span>9</span>
           <span>00</span><span>0</span><span>⌫</span>
         </div>
-        <div className="mockbtn">Add to ticket</div>
+        <div className="mockbtn">Add to Ticket</div>
       </div>
     </Pane>
   );

@@ -317,7 +317,7 @@ function PaperWalletContent({
           }
           primary={
             <Button type="button" onClick={handleExportPdf} disabled={!pubQr || !secQr}>
-              Export PDF certificate
+              Export PDF Certificate
             </Button>
           }
         />

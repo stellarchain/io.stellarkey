@@ -116,7 +116,7 @@ export function RenameAccountModalBody({
           }
           primary={
             <Button type="submit" disabled={!trimmed}>
-              Save label
+              Save Label
             </Button>
           }
         />

@@ -56,13 +56,17 @@ import {
   Button,
   CopyButton,
   ErrorText,
+  FieldAction,
+  FieldLabelRow,
   HashValue,
   LoadingRegion,
   Modal,
   ModalBody,
   ModalFooter,
   ModalHeader,
+  Notice,
   QrScannerBox,
+  QuickAmountChips,
   SegmentedControl,
   Select,
   Spinner,
@@ -116,6 +120,8 @@ export type SendPrefill = PayUriPayload & {
 
 /** Header override an embedded flow reports so the shell shows stage-aware titles. */
 export type SendHeader = { title: string; subtitle?: string; onBack?: () => void };
+
+const MEMO_TYPE_LABELS = { text: "Text", id: "ID", hash: "Hash", return: "Return" } as const;
 
 export function SendModal({
   open,
@@ -221,6 +227,8 @@ function SendSurface({
     setSendMode("private");
     startRuntimeTransition(requestRuntime);
   };
+  // The mode switch belongs to the form step; review and result screens hide it.
+  const [publicStage, setPublicStage] = useState<Stage>("form");
   const panel = sendMode === "private" ? (
     <PrivatePaymentAccessGate action="send">
       <PrivateSend
@@ -244,6 +252,7 @@ function SendSurface({
       onBusyChange={onBusyChange}
       onDirtyChange={onDirtyChange}
       onHeaderChange={onHeaderChange}
+      onStageChange={setPublicStage}
     />
   );
 
@@ -258,7 +267,7 @@ function SendSurface({
         { value: "private", label: "Private", disabled: surfaceBusy || availableAssets.length === 0 },
       ]}
       panelBusy={surfaceBusy}
-      tabListClassName={availableAssets.length > 0 || sendMode === "private" ? "mx-4 mt-4 sm:mx-6" : "hidden"}
+      tabListClassName={(availableAssets.length > 0 || sendMode === "private") && (sendMode === "private" || publicStage === "form") ? "mx-4 mt-4 sm:mx-6" : "hidden"}
       panelClassName="min-h-56"
     >
       {panel}
@@ -273,6 +282,7 @@ function SendInner({
   onBusyChange,
   onDirtyChange,
   onHeaderChange,
+  onStageChange,
 }: {
   onClose: () => void;
   prefill?: SendPrefill | null;
@@ -280,6 +290,7 @@ function SendInner({
   onBusyChange(busy: boolean): void;
   onDirtyChange?(dirty: boolean): void;
   onHeaderChange?(header: SendHeader | null): void;
+  onStageChange?(stage: Stage): void;
 }) {
   const { network, activeAccount, accounts } = useWalletIdentity();
   const { balances, minimumBalanceXlm, recommendedBaseFeeStroops } = useWalletLedger();
@@ -308,6 +319,9 @@ function SendInner({
       ? { assetKey: null, error: null }
     : { assetKey: "native", error: null };
   const [stage, setStage] = useState<Stage>("form");
+  useEffect(() => {
+    onStageChange?.(stage);
+  }, [stage, onStageChange]);
   const publicReviewAuthorization = useRef<(() => void) | null>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const resultFocus = useRef(false);
@@ -917,9 +931,7 @@ function SendInner({
                   style={
                     knownSelected
                       ? { background: knownSelected.color, color: "#fff" }
-                      : reviewedAsset?.isNative
-                        ? { background: "#fdda24", color: "#0d0d0d" }
-                        : { background: "rgba(255,255,255,0.08)", color: "#fff" }
+                      : { background: "rgba(255,255,255,0.08)", color: "#fff" }
                   }
                 >
                   {reviewedAsset?.code}
@@ -1018,16 +1030,16 @@ function SendInner({
 
             {/* Pre-Flight Balance Delta Simulator */}
             <div className="panel-inset mt-3 p-3.5 space-y-1.5 text-[12px]">
-              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 Pre-Flight Balance Simulation
               </p>
               <div className="flex justify-between text-neutral-300">
                 <span>Balance Before</span>
                 <span className="mono">{fmtAmount(reviewedBalance)} {reviewedAsset?.code}</span>
               </div>
-              <div className="flex justify-between text-[#FF453A]">
+              <div className="flex justify-between text-neutral-300">
                 <span>Transfer Amount</span>
-                <span className="mono">−{fmtAmount(reviewedAmount)} {reviewedAsset?.code}</span>
+                <span className="mono text-[#FF6961]">−{fmtAmount(reviewedAmount)} {reviewedAsset?.code}</span>
               </div>
               {reviewedAsset?.isNative && (
                 <div className="flex justify-between text-neutral-400">
@@ -1089,14 +1101,11 @@ function SendInner({
 
             {/* Multi-sig cosigner requirement warning */}
             {reviewNeedsCosigners && (
-              <div className="mt-3 flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12px] leading-relaxed text-[#FF9F0A]">
-                <IconUsers size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span>
+              <Notice tone="warn" compact className="mt-3" icon={<IconUsers size={16} />}>
                   <strong>Multi-signature account.</strong> Your signature weight ({myWeight}) is
                   below the required threshold ({signerInfo?.thresholds.med_threshold}). Additional
                   signatures are needed before this transaction reaches the ledger.
-                </span>
-              </div>
+              </Notice>
             )}
 
             {/* Hardware Security Badge */}
@@ -1120,13 +1129,10 @@ function SendInner({
 
             {/* Hardware signing pending hint */}
             {stage === "sending" && reviewedAccount?.hardware && (
-              <div className="mt-3 flex items-center gap-2.5 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3 text-[12px] leading-relaxed text-[#FF9F0A]">
-                <Spinner size={13} />
-                <span>
+              <Notice tone="warn" compact className="mt-3" icon={<Spinner size={13} />}>
                   Waiting for your {reviewedAccount.hardware === "ledger" ? "Ledger" : "Trezor"}{" "}
                   — review and confirm the transaction on the device.
-                </span>
-              </div>
+              </Notice>
             )}
 
             {/* Transaction Safety Shield Verification */}
@@ -1165,13 +1171,13 @@ function SendInner({
         ) : (
           <div className="space-y-4">
             {settlementIntent && (
-              <div className="rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-3.5">
+              <Notice tone="accent" compact>
                 <p className="text-[12.5px] font-semibold text-white">Merchant settlement handoff</p>
                 <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-300">
                   Rule context {settlementIntent.contextId}. Destination, asset, and exact amount
                   were carried here for review; no transaction has been signed.
                 </p>
-              </div>
+              </Notice>
             )}
                             {/* Asset picker and Amount Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1197,21 +1203,20 @@ function SendInner({
 
                 {/* Amount */}
                 <div>
-                  <div className="flex items-center justify-between pb-1">
-                    <label htmlFor={amountInputId} className="field-label !pb-0">Amount</label>
-                    {selectedAsset && (
-                      <button
-                        type="button"
+                  <FieldLabelRow
+                    htmlFor={amountInputId}
+                    label="Amount"
+                    action={selectedAsset && (
+                      <FieldAction
                         onClick={() => {
                           setStealthReview(null);
                           setAmount(maxSendable);
                         }}
-                        className="pointer-coarse:-my-3 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
                       >
                         Max: {fmtAmount(maxSendable)} {selectedAsset.code}
-                      </button>
+                      </FieldAction>
                     )}
-                  </div>
+                  />
                   <input
                     id={amountInputId}
                     type="text"
@@ -1244,47 +1249,29 @@ function SendInner({
               </div>
 
               {/* Quick Amount Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                {[10, 25, 50, 100].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => {
-                      setStealthReview(null);
-                      setAmount(String(val));
-                    }}
-                    className="rounded-xl bg-white/[0.06] px-3.5 text-[12px] font-medium text-neutral-300 hover:bg-white/[0.12]"
-                  >
-                    {val}
-                  </button>
-                ))}
-                {selectedAsset && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStealthReview(null);
-                      setAmount(maxSendable);
-                    }}
-                    className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/15 px-3.5 text-[12px] font-bold text-accent-2"
-                  >
-                    MAX
-                  </button>
-                )}
-              </div>
+              <QuickAmountChips
+                onPick={(value) => {
+                  setStealthReview(null);
+                  setAmount(value);
+                }}
+                max={selectedAsset ? maxSendable : null}
+                onMax={() => {
+                  setStealthReview(null);
+                  setAmount(maxSendable);
+                }}
+              />
               {/* Destination */}
               <div>
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pb-1">
-                  <label htmlFor={destinationInputId} className="field-label !pb-0">Recipient Address or Federation</label>
-                  <button
-                    type="button"
-                    aria-expanded={showScanner}
-                    onClick={() => setShowScanner((s) => !s)}
-                    className="pointer-coarse:-my-3 flex items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-[#0A84FF]"
-                  >
-                    <IconQrScan size={13} />
-                    <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
-                  </button>
-                </div>
+                <FieldLabelRow
+                  htmlFor={destinationInputId}
+                  label="Recipient Address or Federation"
+                  action={
+                    <FieldAction aria-expanded={showScanner} onClick={() => setShowScanner((s) => !s)}>
+                      <IconQrScan size={13} />
+                      <span>{showScanner ? "Hide QR Input" : "Paste QR Payload"}</span>
+                    </FieldAction>
+                  }
+                />
                 <input
                   id={destinationInputId}
                   type="text"
@@ -1300,7 +1287,7 @@ function SendInner({
 
                 {/* Private-address handoff card */}
                 {privateDestination && (
-                  <div className="fade-up mt-2 rounded-2xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-3.5">
+                  <Notice tone="accent" compact className="fade-up mt-2">
                     <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-white">
                       <IconShieldStellar size={16} className="shrink-0 text-[#0A84FF]" />
                       <span>This is a private address</span>
@@ -1315,7 +1302,7 @@ function SendInner({
                     >
                       Send Privately
                     </Button>
-                  </div>
+                  </Notice>
                 )}
 
                 {stealthDestination && (
@@ -1469,18 +1456,18 @@ function SendInner({
                       </span>
                     )}
                   </div>
-                  <div role="group" aria-label="Memo type" className="flex gap-1">
+                  <div role="group" aria-label="Memo type" className="pointer-coarse:-my-2 flex items-center rounded-lg bg-white/[0.08] p-0.5">
                     {(["text", "id", "hash", "return"] as const).map((t) => (
                       <button
                         key={t}
                         type="button"
                         aria-pressed={memoType === t}
                         onClick={() => setMemoType(t)}
-                        className={`rounded-lg px-2 text-[12px] capitalize ${
-                          memoType === t ? "font-semibold text-white" : "text-neutral-500"
+                        className={`tap-reset rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                          memoType === t ? "bg-white/[0.16] text-white" : "text-neutral-400 hover:text-white"
                         }`}
                       >
-                        {t}
+                        {MEMO_TYPE_LABELS[t]}
                       </button>
                     ))}
                   </div>
@@ -1513,9 +1500,7 @@ function SendInner({
                         type="button"
                         aria-pressed={memo === preset}
                         onClick={() => setMemo(preset)}
-                        className={`rounded-lg px-3 text-[12px] font-medium transition-colors ${
-                          memo === preset ? "bg-[#0A84FF] font-semibold text-white" : "bg-white/[0.06] text-neutral-400 hover:text-white"
-                        }`}
+                        className={`chip ${memo === preset ? "!bg-[#0A84FF]/20 !text-[#0A84FF]" : ""}`}
                       >
                         {preset}
                       </button>
@@ -1574,8 +1559,8 @@ function sendStageHeader(stage: Stage, backToForm: () => void): SendHeader | nul
 /** Favourite marker on contact chips; `./icons` has no star glyph yet. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 text-[13px]">
-      <span className="shrink-0 pt-px text-neutral-400">{label}</span>
+    <div className="flex items-baseline justify-between gap-4 py-2.5 text-[13px]">
+      <span className="shrink-0 text-neutral-400">{label}</span>
       <span className="min-w-0 text-right">{children}</span>
     </div>
   );

@@ -13,7 +13,7 @@ import { fmtAmount } from "@/lib/format";
 import { triggerHaptic } from "@/lib/haptics";
 import type { AssetBalance } from "@/lib/types";
 import type { SubmissionResult } from "@/lib/submission";
-import { Button, ErrorText, ModalBody, ModalFooter } from "./ui";
+import { Button, ErrorText, ModalBody, ModalFooter, Notice } from "./ui";
 import { IconAlert, IconCheck, IconEyeOff, IconGift, IconPlus } from "./icons";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 
@@ -267,8 +267,7 @@ export function ClaimableBalancesModalBody({
 
   return (
     <ModalBody>
-      <div className="flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3 text-[12px] leading-relaxed text-neutral-300">
-        <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
+      <Notice tone="warn" compact icon={<IconAlert size={15} />}>
         {showDismissed ? (
           <p>
             Dismissing a balance only hides it for this account on this browser. It does not
@@ -280,7 +279,7 @@ export function ClaimableBalancesModalBody({
             on the public ledger. Use the crossed-eye button to hide an unwanted balance locally.
           </p>
         )}
-      </div>
+      </Notice>
 
       <div className="flex items-center justify-between gap-3 px-1">
         {showDismissed ? (
@@ -457,10 +456,7 @@ export function ClaimableBalancesModalBody({
       )}
       {error && <ErrorText message={error} />}
       {!showDismissed && (confirmed || pendingSubmission || pendingAirdropClaim) && !error && (
-        <div
-          role="status"
-          className="rounded-2xl border border-[#0A84FF]/25 bg-[#0A84FF]/10 p-3 text-[12px] leading-relaxed text-[#64D2FF]"
-        >
+        <Notice role="status" tone="accent" compact>
           {confirmed
             ? "Claim confirmed. Refreshing balances."
             : busy
@@ -468,7 +464,7 @@ export function ClaimableBalancesModalBody({
               : pendingSubmission?.status === "status_unknown" || pendingClaimStatus === "status_unknown"
                 ? "Claim status is unknown. Checking for ledger confirmation before another claim can be sent."
                 : "Claim submitted. Waiting for ledger confirmation before another claim can be sent."}
-        </div>
+        </Notice>
       )}
 
       {showDismissed ? (

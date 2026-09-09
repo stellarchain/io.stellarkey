@@ -48,7 +48,8 @@ test('add-funds mirrors Send with asset context, public balance, and quick amoun
   assert.match(selector, /presentation\?: 'pill' \| 'field'/);
   assert.match(selector, /Balance:/);
   assert.match(amount, /\[10, 25, 50, 100\]/);
-  assert.match(amount, />\s*MAX\s*</);
+  assert.match(amount, /<QuickAmountChips[\s\S]*?onMax=/);
+  assert.match(read('src/components/ui.tsx'), />\s*MAX\s*</);
 });
 
 test('issued-asset trustline and clawback facts stay visible, never collapsed', () => {
