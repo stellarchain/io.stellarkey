@@ -39,7 +39,7 @@ function quote({
   expiresAt = NOW_SECONDS + 30,
 }) {
   return {
-    version: 2,
+    version: 3,
     type: 'quote',
     requestId,
     quoteId,

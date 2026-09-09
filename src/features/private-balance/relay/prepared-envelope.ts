@@ -10,6 +10,8 @@ export interface PrivateRelayPreparedEnvelope {
   accountSequence: string;
   /** Helper-reported simulation height; never canonical chain evidence. */
   simulationLedger: number;
+  /** Set by the helper's own preparation; the sender recomputes it from the envelope. */
+  transactionHash?: string;
 }
 
 /**

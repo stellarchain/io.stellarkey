@@ -854,9 +854,8 @@ async function openHelperApproval(page: Page) {
   await syntheticDelivery(page, 'Deliver helper request');
   await syntheticDelivery(page, 'Deliver helper selection');
   await expect(page.getByTestId('helper-phase')).toHaveText('payout');
-  await syntheticDelivery(page, 'Deliver helper preparation');
-  await expect(page.getByTestId('helper-phase')).toHaveText('prepared');
-  await syntheticDelivery(page, 'Deliver helper sign request');
+  // One job: the helper simulates and reviews it before asking for approval.
+  await syntheticDelivery(page, 'Deliver helper job');
   await expect(page.getByRole('dialog', { name: 'Relay a private payment?' })).toBeVisible();
   // An alert has no close control; the shell focuses the dialog itself.
   await expect(page.getByRole('dialog', { name: 'Relay a private payment?' }).locator('[data-modal-shell]')).toBeFocused();
@@ -912,59 +911,58 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) test(`helper a
     !document.querySelector('main')?.closest('[inert]'))).toBe(true);
 });
 
-test('helper accepts exact submit before signature acknowledgement and prevents duplicate submission', async ({ page }) => {
+test('helper signs, submits once and reports the outcome after approval', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
   await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
-  await syntheticDelivery(page, 'Deliver changed helper submit');
-  await expect(page.getByTestId('helper-rejects')).toHaveText('1');
-  await expect(page.getByTestId('helper-submits')).toHaveText('0');
-  await syntheticDelivery(page, 'Deliver duplicate helper submits');
   await expect(page.getByTestId('helper-submits')).toHaveText('1');
   await stableShell(page);
   await syntheticDelivery(page, 'Finish synthetic submission');
+  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
+  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
   await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Acknowledge synthetic signature');
-  await expect(page.getByRole('dialog')).toBeHidden();
+  // A second job for the same quote is refused while the outcome is fresh.
+  await syntheticDelivery(page, 'Deliver second helper job');
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
 });
 
 test('helper duplicate approval clicks sign only once', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and sign', exact: true }).evaluate(element => {
+  await page.getByRole('button', { name: 'Approve and submit', exact: true }).evaluate(element => {
     (element as HTMLButtonElement).click(); (element as HTMLButtonElement).click();
   });
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
 });
 
-test('helper does not automatically resubmit after an uncertain RPC outcome', async ({ page }) => {
+test('helper reports an uncertain RPC outcome as an error and never resubmits', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
   await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
-  await syntheticDelivery(page, 'Deliver duplicate helper submits');
   await expect(page.getByTestId('helper-submits')).toHaveText('1');
   await syntheticDelivery(page, 'Fail synthetic submission');
-  await expect(page.getByTestId('helper-rejects')).toHaveText('1');
-  await syntheticDelivery(page, 'Deliver duplicate helper submits');
-  await expect(page.getByTestId('helper-submits')).toHaveText('1');
-  await syntheticDelivery(page, 'Acknowledge synthetic signature');
+  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-error');
+  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
   await expect(page.getByRole('dialog')).toBeHidden();
+  await syntheticDelivery(page, 'Deliver second helper job');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
 });
 
-test('lost signature acknowledgement preserves exact authorization and never invites another signature', async ({ page, browserName }) => {
+test('lost outcome acknowledgement preserves the submission and never invites another approval', async ({ page, browserName }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openHelperApproval(page);
-  const approve = page.getByRole('button', { name: 'Approve and sign', exact: true });
+  const approve = page.getByRole('button', { name: 'Approve and submit', exact: true });
   await approve.focus(); await page.keyboard.press('Enter');
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
   await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
-  await syntheticDelivery(page, 'Lose signature acknowledgement');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
+  await syntheticDelivery(page, 'Finish synthetic submission');
+  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
+  await syntheticDelivery(page, 'Lose outcome acknowledgement');
   const alert = page.getByRole('dialog').getByRole('alert');
-  await expect(alert).toContainText('was signed');
-  await expect(alert).toContainText('may still be submitted');
+  await expect(alert).toContainText('signed and submitted');
+  await expect(alert).toContainText('may still confirm');
   await expect(alert).not.toContainText('not signed');
   await expect(approve).toBeDisabled();
   await stableShell(page);
@@ -975,22 +973,23 @@ test('lost signature acknowledgement preserves exact authorization and never inv
   expect(axe.violations.filter(item => ['critical', 'serious'].includes(item.impact ?? ''))).toEqual([]);
   await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Deliver duplicate helper submits');
+  await syntheticDelivery(page, 'Deliver second helper job');
   await expect(page.getByTestId('helper-submits')).toHaveText('1');
   await expect(page.getByTestId('helper-signs')).toHaveText('1');
 });
 
-test('helper account replacement cannot be undone by a late signature acknowledgement', async ({ page }) => {
+test('helper account replacement cannot be undone by a late outcome acknowledgement', async ({ page }) => {
   await openHelperApproval(page);
-  await page.getByRole('button', { name: 'Approve and sign', exact: true }).click();
+  await page.getByRole('button', { name: 'Approve and submit', exact: true }).click();
   await syntheticDelivery(page, 'Finish synthetic signing');
-  await expect(page.getByTestId('helper-phase')).toHaveText('signature-delivered');
+  await syntheticDelivery(page, 'Finish synthetic submission');
+  await expect(page.getByTestId('helper-phase')).toHaveText('outcome-pending');
   await syntheticDelivery(page, 'Replace synthetic helper account');
   await expect(page.getByRole('dialog')).toBeHidden();
-  await syntheticDelivery(page, 'Acknowledge synthetic signature');
-  await syntheticDelivery(page, 'Deliver duplicate helper submits');
-  await expect(page.getByTestId('helper-rejects')).toHaveText('2');
-  await expect(page.getByTestId('helper-submits')).toHaveText('0');
+  await syntheticDelivery(page, 'Acknowledge synthetic outcome');
+  await syntheticDelivery(page, 'Deliver second helper job');
+  await expect(page.getByTestId('helper-signs')).toHaveText('1');
+  await expect(page.getByTestId('helper-submits')).toHaveText('1');
 });
 
 test('live Nostr selection skips comparison without closing the selected session', async ({ page, browserName }) => {
