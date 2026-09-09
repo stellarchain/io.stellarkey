@@ -48,7 +48,7 @@ async function syntheticDelivery(page: Page, name: string) {
   await page.getByRole('button', { name, exact: true }).evaluate(element => (element as HTMLButtonElement).click());
 }
 
-async function openSigningApproval(page: Page, pauseInitialFocus = false) {
+async function openSigningReview(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Test signing context', exact: true }).click();
@@ -67,6 +67,11 @@ async function openSigningApproval(page: Page, pauseInitialFocus = false) {
   // Keyboard activation intentionally does not dispatch an outside mousedown.
   await expect(send.getByRole('button', { name: 'Review Transfer', exact: true })).toBeEnabled();
   await send.getByRole('button', { name: 'Review Transfer', exact: true }).press('Enter');
+  return send;
+}
+
+async function openSigningApproval(page: Page, pauseInitialFocus = false) {
+  const send = await openSigningReview(page);
   if (pauseInitialFocus) {
     await page.clock.install();
     await page.clock.pauseAt(new Date(Date.now() + 1000));
@@ -74,12 +79,42 @@ async function openSigningApproval(page: Page, pauseInitialFocus = false) {
   await send.getByRole('button', { name: 'Confirm Send', exact: true }).press('Enter');
   const approval = page.getByRole('dialog', { name: 'Confirm transaction', exact: true });
   await expect(approval).toBeVisible();
+  await expect(send.getByRole('tab', { name: 'Public', exact: true, includeHidden: true })).toBeDisabled();
+  await expect(send.getByRole('tab', { name: 'Private', exact: true, includeHidden: true })).toBeDisabled();
   if (pauseInitialFocus) return { send, approval };
   await expect.poll(() => approval.evaluate(element => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Tab');
   await expect.poll(() => approval.evaluate(element => element.contains(document.activeElement))).toBe(true);
   return { send, approval };
 }
+
+test('Send review mode switch requires activation and resets the unsigned public draft', async ({ page }) => {
+  await openSigningReview(page);
+  const send = page.locator('[data-modal-backdrop][data-synthetic-identity="retained"]');
+  const publicTab = send.getByRole('tab', { name: 'Public', exact: true });
+  const privateTab = send.getByRole('tab', { name: 'Private', exact: true });
+  await expect(privateTab).toBeVisible();
+  await publicTab.focus();
+  await publicTab.press('ArrowRight');
+  await expect(privateTab).toBeFocused();
+  await expect(publicTab).toHaveAttribute('aria-selected', 'true');
+  await expect(send.getByText(/Turn on Private Payments/i)).toHaveCount(0);
+  await privateTab.press('Enter');
+  await expect(privateTab).toHaveAttribute('aria-selected', 'true');
+  await expect(privateTab).toBeFocused();
+  await expect(send.getByText(/Turn on Private Payments/i).first()).toBeVisible();
+  await expect(send.locator('[data-tabs-root]')).toHaveAttribute('data-synthetic-identity', 'retained');
+  await stableShell(page);
+  await privateTab.press('ArrowLeft');
+  await publicTab.press('Space');
+  await expect(publicTab).toHaveAttribute('aria-selected', 'true');
+  await expect(publicTab).toBeFocused();
+  await expect(send.getByPlaceholder('G…, user*domain.com, or tsm…')).toHaveValue('');
+  await expect(send.getByPlaceholder('0.00', { exact: true })).toHaveValue('');
+  await expect(page.getByTestId('signing-signs')).toHaveText('0');
+  await expect(page.getByTestId('signing-posts')).toHaveText('0');
+  await stableShell(page);
+});
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) test.describe(`signing context motion ${reducedMotion}`, () => {
 test.use({ contextOptions: { reducedMotion } });
