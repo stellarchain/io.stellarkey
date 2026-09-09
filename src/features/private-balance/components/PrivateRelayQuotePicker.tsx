@@ -79,7 +79,7 @@ export function PrivateRelayQuotePicker({
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-white">
                   Peer {index + 1}
                   {available && BigInt(quote.feeAtomic) === lowestFee ? (
-                    <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#30D158]">
+                    <span className="rounded-full bg-[#30D158]/12 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#30D158]">
                       Lowest fee
                     </span>
                   ) : null}

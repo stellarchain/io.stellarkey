@@ -127,7 +127,7 @@ test('the shell integrates private payments through the palette and an asset det
   // Palette actions share the runtime's exact gating.
   assert.match(
     dashboard,
-    /privateBalanceAvailable \|\| showPrivatePayments[\s\S]{0,600}?Send Privately[\s\S]{0,600}?Receive Privately[\s\S]{0,300}?Open private asset/,
+    /privateBalanceAvailable \|\| showPrivatePayments[\s\S]{0,600}?Send Privately[\s\S]{0,600}?Receive Privately[\s\S]{0,300}?Open Private Asset/,
   );
   assert.match(dashboard, /setSendInitialMode\("private"\)[\s\S]{0,100}?setSendOpen\(true\)/);
   assert.match(dashboard, /<SendModal[\s\S]{0,200}?initialMode=\{sendInitialMode\}/);

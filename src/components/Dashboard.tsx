@@ -87,17 +87,20 @@ import {
   Button,
   CopyButton,
   Dropdown,
+  EmptyState,
   ErrorText,
+  LoadingRegion,
   Modal,
   ModalBody,
   ModalFooter,
   ModalHeader,
   NetworkBadge,
+  Notice,
   Select,
   Spinner,
   Tooltip,
-  useMountedThroughExit, useRetainedForExit,
-  LoadingRegion,
+  useMountedThroughExit,
+  useRetainedForExit,
 } from "./ui";
 import { AddAccountModal } from "./AddAccountModal";
 import { BackupWizardModal } from "./BackupWizardModal";
@@ -1426,7 +1429,7 @@ export function Dashboard() {
     () => [
       {
         id: "send",
-        label: "Send payment",
+        label: "Send Payment",
         run: () => {
           setSendPrefill(null);
           setSendOpen(true);
@@ -1434,10 +1437,10 @@ export function Dashboard() {
       },
       {
         id: "batch-send",
-        label: "Batch payment disperse (Multi-Send)",
+        label: "Batch Payment Disperse (Multi-Send)",
         run: () => setBatchSendOpen(true),
       },
-      { id: "receive", label: "Receive funds", run: () => setReceiveOpen(true) },
+      { id: "receive", label: "Receive Funds", run: () => setReceiveOpen(true) },
       // Private actions appear only when the runtime is available or configured.
       ...(privateBalanceAvailable || showPrivatePayments
         ? [
@@ -1460,19 +1463,19 @@ export function Dashboard() {
                 setReceiveOpen(true);
               },
             },
-            { id: "private-open", label: "Open private asset", run: openPrivatePayments },
+            { id: "private-open", label: "Open Private Asset", run: openPrivatePayments },
           ]
         : []),
-      { id: "swap", label: "Swap assets", run: () => switchTab("swap") },
+      { id: "swap", label: "Swap Assets", run: () => switchTab("swap") },
       { id: "converter", label: "Currency Converter / Calculator", run: () => setConverterOpen(true) },
       { id: "stats", label: "Live Network Status", run: () => setNetworkStatsOpen(true) },
-      { id: "add-account", label: "Add account", run: () => setAddAccountOpen(true) },
+      { id: "add-account", label: "Add Account", run: () => setAddAccountOpen(true) },
       { id: "shortcuts", label: "Keyboard Shortcuts", run: () => setShortcutsOpen(true) },
       { id: "rename-account", label: "Rename Active Account", hint: activeAccount?.label, run: () => setRenamingAccount(activeAccount) },
-      { id: "add-asset", label: "Add asset trustline", run: () => setAddAssetOpen(true) },
+      { id: "add-asset", label: "Add Asset Trustline", run: () => setAddAssetOpen(true) },
       {
         id: "copy",
-        label: "Copy your address",
+        label: "Copy Your Address",
         hint: formatTrezorAddress(activeAccount?.publicKey ?? ""),
         run: () => {
           if (activeAccount) void navigator.clipboard.writeText(activeAccount.publicKey);
@@ -1513,28 +1516,28 @@ export function Dashboard() {
         label: "Backup & recovery wizard",
         run: () => setBackupWizardOpen(true),
       },
-      { id: "phrase", label: "Reveal recovery phrase or secret key", run: () => setBackupWizardOpen(true) },
-      { id: "settings", label: "Wallet settings", run: () => openSettings("root") },
-      { id: "accounts", label: "Manage accounts", run: () => openSettings("accounts") },
+      { id: "phrase", label: "Reveal Recovery Phrase or Secret Key", run: () => setBackupWizardOpen(true) },
+      { id: "settings", label: "Wallet Settings", run: () => openSettings("root") },
+      { id: "accounts", label: "Manage Accounts", run: () => openSettings("accounts") },
       { id: "multisig", label: "Multi-Sig Studio (signers & co-signing)", run: () => setMultisigOpen(true) },
       { id: "contacts", label: "Open Contacts", run: () => switchTab("contacts") },
       ...(merchantEnabled
         ? [
             {
               id: "merchant-charge",
-              label: "New charge",
+              label: "New Charge",
               hint: "Point of Sale",
               run: () => switchTab("merchant"),
             },
-            { id: "merchant-orders", label: "Merchant orders", run: () => switchTab("orders") },
+            { id: "merchant-orders", label: "Merchant Orders", run: () => switchTab("orders") },
             { id: "merchant-catalogue", label: "Catalogue", run: () => switchTab("catalogue") },
             {
               id: "merchant-invoice",
-              label: "New invoice",
+              label: "New Invoice",
               hint: "Invoices",
               run: () => switchTab("invoices"),
             },
-            { id: "merchant-links", label: "Counter codes", run: () => switchTab("links") },
+            { id: "merchant-links", label: "Counter Codes", run: () => switchTab("links") },
             { id: "merchant-customers", label: "Customers", run: () => switchTab("customers") },
             {
               id: "merchant-shift",
@@ -1544,10 +1547,10 @@ export function Dashboard() {
                 : "Required before taking tender",
               run: openShift,
             },
-            { id: "merchant-insights", label: "Merchant insights", run: () => switchTab("insights") },
+            { id: "merchant-insights", label: "Merchant Insights", run: () => switchTab("insights") },
           ]
         : []),
-      { id: "lock", label: "Lock wallet", run: lock },
+      { id: "lock", label: "Lock Wallet", run: lock },
     ],
     [
       accounts,
@@ -2354,7 +2357,7 @@ export function Dashboard() {
                   {mobileViewTitle(view)}
                 </span>
               </div>
-            ) : (
+            ) : view === "settings" && settingsSub !== "root" ? null : (
               <div className="flex items-end justify-between pb-2">
                 <h1 className="display-h text-[34px] leading-tight text-white font-bold">
                   {mobileViewTitle(view)}
@@ -2408,6 +2411,7 @@ export function Dashboard() {
             <SettingsPage
               key={settingsKey}
               initialSub={settingsSub}
+              onSubChange={setSettingsSub}
               merchantOnly={mode === "merchant"}
               installAvailable={installHandoff.available}
               installDescription={
@@ -2773,7 +2777,7 @@ export function Dashboard() {
                           setHideDust((d) => !d);
                         }}
                         className={`text-[12px] font-medium transition-colors ${
-                          hideDust ? "text-[#0A84FF] font-semibold" : "text-neutral-400 hover:text-white"
+                          hideDust ? "font-semibold text-white" : "text-[#0A84FF] hover:text-accent-2"
                         }`}
                       >
                         {hideDust ? "Dust Hidden" : "Hide Dust"}
@@ -2784,7 +2788,7 @@ export function Dashboard() {
                           triggerHaptic("selection");
                           setBatchSendOpen(true);
                         }}
-                        className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                        className="text-[12px] font-medium text-[#0A84FF] transition-colors hover:text-accent-2"
                       >
                         Multi-Send
                       </button>
@@ -3005,16 +3009,18 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={() => switchTab("activity")}
-                      className="text-[12px] font-medium text-neutral-400 hover:text-white"
+                      className="text-[12px] font-medium text-[#0A84FF] transition-colors hover:text-accent-2"
                     >
                       View All
                     </button>
                   </div>
                   <div className="list-group">
                     {mergedActivity.length === 0 ? (
-                      <p className="px-4 py-10 text-center text-[13px] text-neutral-500">
-                        No recent activity
-                      </p>
+                      <EmptyState
+                        icon={<IconList size={20} />}
+                        title="No activity yet"
+                        description="Payments, swaps and trustline changes for this account will appear here."
+                      />
                     ) : (
                       mergedActivity.slice(0, 5).map((item, index) => (
                         <ActivityLedgerRow
@@ -3082,8 +3088,8 @@ export function Dashboard() {
                     title="Hide payments below 0.1 (spam dust)"
                     className={`shrink-0 text-[12px] font-medium transition-colors ${
                       hideActivityDust
-                        ? "text-[#0A84FF] font-semibold"
-                        : "text-neutral-400 hover:text-white"
+                        ? "font-semibold text-white"
+                        : "text-[#0A84FF] hover:text-accent-2"
                     }`}
                   >
                     {hideActivityDust ? "Dust Hidden" : "Hide Dust"}
@@ -3139,9 +3145,11 @@ export function Dashboard() {
 
               {filteredActivity.length === 0 ? (
                 <div className="list-group mt-2">
-                  <p className="px-4 py-12 text-center text-[14px] text-neutral-500">
-                    No activity found
-                  </p>
+                  <EmptyState
+                    icon={<IconList size={22} />}
+                    title="No activity found"
+                    description="Payments, swaps and trustline changes for this account will appear here."
+                  />
                 </div>
               ) : (
                 <div className="space-y-4 mt-2">
@@ -3297,7 +3305,7 @@ export function Dashboard() {
       )}
       <Modal open={privateValueInfoOpen} onClose={() => setPrivateValueInfoOpen(false)}>
         <ModalHeader
-          title="Testnet values"
+          title="Testnet Values"
           subtitle="Representative pricing only"
           onClose={() => setPrivateValueInfoOpen(false)}
         />
@@ -3499,14 +3507,14 @@ export function Dashboard() {
         />
         {installDialogShown === "backup-first" ? (
           <ModalBody>
-            <div className="rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.08] p-4">
+            <Notice tone="warn">
               <p className="text-[13px] font-semibold text-white">Export an encrypted backup first</p>
               <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-300">
                 iOS can give a Home Screen app its own local storage. Your browser wallet may
                 therefore look empty after installation. A current encrypted backup is the safe
                 handoff between them.
               </p>
-            </div>
+            </Notice>
             <ModalFooter
               primary={
                 <Button
@@ -3528,9 +3536,9 @@ export function Dashboard() {
               <li><span className="mr-2 font-semibold text-[#0A84FF]">2.</span>Choose <strong className="text-white">Add to Home Screen</strong>.</li>
               <li><span className="mr-2 font-semibold text-[#0A84FF]">3.</span>Open StellarKey from its new icon. If it starts empty, restore the encrypted backup you just exported.</li>
             </ol>
-            <div className="rounded-2xl border border-[#30D158]/20 bg-[#30D158]/[0.07] p-3 text-[12px] leading-relaxed text-neutral-300">
+            <Notice tone="pos" compact>
               Backup ready. It remains encrypted by your wallet password and never leaves this device unless you move it.
-            </div>
+            </Notice>
             <ModalFooter
               primary={
                 <Button type="button" variant="ghost" onClick={() => setInstallDialog(null)}>
@@ -3792,7 +3800,7 @@ function ActionButton({
       className="group flex w-full min-w-0 flex-col items-center gap-2 outline-none disabled:cursor-not-allowed"
     >
       <span
-        className={`flex h-[clamp(48px,16vw,60px)] w-[clamp(48px,16vw,60px)] items-center justify-center rounded-full transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
+        className={`flex h-12 w-12 items-center justify-center rounded-full pointer-coarse:h-[clamp(48px,16vw,60px)] pointer-coarse:w-[clamp(48px,16vw,60px)] transition-[background-color,border-color,transform,filter] duration-[var(--motion-duration-emphasized)] ease-[cubic-bezier(0.34,1.4,0.64,1)] group-focus-visible:ring-2 group-focus-visible:ring-white/60 group-active:scale-[0.84] group-active:duration-[var(--motion-duration-fast)] ${
           primary
             ? "bg-gradient-to-b from-[#2f94ff] to-[#0a7aff] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-1px_1px_rgba(0,0,0,0.15),0_10px_26px_-8px_rgba(10,132,255,0.6)] group-hover:brightness-110"
             : "border border-white/[0.1] bg-white/[0.07] text-neutral-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_22px_-12px_rgba(0,0,0,0.7)] backdrop-blur-xl group-hover:border-white/[0.16] group-hover:bg-white/[0.12]"
@@ -3932,7 +3940,7 @@ function AccountMenu({
           <button
             {...triggerProps}
             aria-label={`Open account menu for ${activeAccount.label}`}
-            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[180px] sm:max-w-[260px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
+            className="flex min-h-11 min-w-0 flex-1 w-full max-w-[240px] sm:max-w-[260px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] hover:bg-white/[0.12] active:scale-95 py-1 pl-1.5 pr-3 shadow-sm transition-[background-color,transform] cursor-pointer"
           >
             <AccountMark publicKey={activeAccount.publicKey} size={28} />
             <span className="text-left min-w-0 max-w-[110px]">

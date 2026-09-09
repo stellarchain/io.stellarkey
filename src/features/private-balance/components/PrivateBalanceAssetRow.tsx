@@ -74,7 +74,7 @@ export function PrivateBalanceAssetRow({
     <button
       type="button"
       onClick={onOpen}
-      aria-label={`Open private ${assetCode}. ${detail}. ${!paymentsEnabled ? 'Turn on' : !ready ? 'Add funds' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
+      aria-label={`Open private ${assetCode}. ${detail}. ${!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? 'Balance hidden' : `${amount} ${assetCode}`}`}
       className={`row-hover flex w-full min-w-0 items-center gap-3.5 px-4 py-3.5 text-left ${separated ? 'ios-sep' : ''}`}
     >
       <AssetAvatar
@@ -96,7 +96,7 @@ export function PrivateBalanceAssetRow({
 
       <span className="min-w-0 max-w-[48%] text-right">
         <span className={`${paymentsEnabled && ready ? 'mono ' : ''}block break-words text-[13px] font-medium leading-tight text-white sm:text-[15.5px]`}>
-          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add funds' : privacyMode ? '••••••' : amount}
+          {!paymentsEnabled ? 'Turn on' : !ready ? 'Add Funds' : privacyMode ? '••••••' : amount}
         </span>
         {fiat && (
           <span className="block break-words text-[11px] leading-tight text-neutral-400 sm:text-[12px]">

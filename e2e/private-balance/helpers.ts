@@ -139,7 +139,7 @@ export async function openPrivateSend(page: Page): Promise<Locator> {
   await expect(dialog.getByRole("heading", { name: "Send Payment", exact: true })).toBeVisible();
   await dialog.getByRole("tablist", { name: "Send type" })
     .getByRole("tab", { name: "Private", exact: true }).click();
-  await expect(dialog.getByLabel("Private recipient", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Private Recipient", { exact: true })).toBeVisible();
   return dialog;
 }
 

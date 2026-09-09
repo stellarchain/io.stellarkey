@@ -201,7 +201,7 @@ function DuplicateChargeBody({
   return (
     <>
       <ModalHeader
-        title="Paid twice"
+        title="Paid Twice"
         subtitle={`Order #${order.number} · ${charge.reference}`}
         onBack={choice === "none" ? undefined : () => setChoice("none")}
         onClose={onClose}
@@ -335,7 +335,7 @@ function DuplicateChargeBody({
               }
               primary={
                 <Button variant="danger" loading={busy} onClick={dismiss}>
-                  Dismiss with audit
+                  Dismiss with Audit
                 </Button>
               }
             />

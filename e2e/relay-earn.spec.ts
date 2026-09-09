@@ -13,9 +13,9 @@ test.beforeEach(async ({ page, baseURL }) => {
   await page.goto('/private-component-fixture');
 });
 
-const dialogFor = (page: Page) => page.getByRole('dialog', { name: 'Earn by relaying', exact: true });
+const dialogFor = (page: Page) => page.getByRole('dialog', { name: 'Earn by Relaying', exact: true });
 async function openEarn(page: Page) {
-  await page.getByRole('button', { name: /Earn by relaying/ }).click();
+  await page.getByRole('button', { name: /Earn by Relaying/ }).click();
   const dialog = dialogFor(page);
   await expect(dialog).toBeVisible();
   await expect(dialog.locator('[data-modal-shell]')).toBeFocused();
@@ -73,7 +73,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
       // This UI-only fixture has no manager/socket: an inactive status must
       // not claim a network connection attempt. Startup has its own suite.
       await expect(dialog.getByText('Preparing wallet', { exact: true })).toBeVisible();
-      const stop = dialog.getByRole('button', { name: 'Stop relaying', exact: true });
+      const stop = dialog.getByRole('button', { name: 'Stop Relaying', exact: true });
       await expect(stop).toBeFocused();
       await stop.press('Enter');
       await expect.poll(() => preference(page, 'helpRelay')).toBe(false);
@@ -87,7 +87,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
     })).toEqual([0, 0, 0, 0]);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Earn by relaying/ })).toBeFocused();
+    await expect(page.getByRole('button', { name: /Earn by Relaying/ })).toBeFocused();
     await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
     await expect(page.getByLabel('Your fee per payment')).toHaveCount(0);
   });
@@ -107,7 +107,7 @@ test('Earn keeps invalid fee edits recoverable and Stop independent of unfinishe
   await fee.fill('unfinished');
   await dialog.getByText('Relay connections', { exact: true }).click();
   await dialog.getByLabel('Public relay 1', { exact: true }).fill('unfinished');
-  await dialog.getByRole('button', { name: 'Stop relaying', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).click();
   await expect.poll(() => preference(page, 'helpRelay')).toBe(false);
   await expect(fee).toHaveValue('unfinished');
   await expect(dialog.getByRole('alert')).toHaveCount(0);
@@ -124,7 +124,7 @@ test('Earn distinguishes actual connection state, saves in place, and preserves 
     await expect(dialog.getByText(/Waiting for the network connection/)).toHaveCount(0);
   }
   await dialog.getByLabel('Your fee per payment').fill('0.003');
-  await dialog.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
   await expect(dialog.getByRole('status').filter({ hasText: 'Changes saved' })).toBeVisible();
   await expect(dialog).toBeVisible();
   await page.getByRole('button', { name: 'Stop helper elsewhere', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
@@ -154,11 +154,11 @@ test('advanced relay settings preserve independent opt-ins, validation and local
   await page.getByRole('button', { name: 'Enable independent sender preference', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
   await expect(dialog.getByRole('switch', { name: /Prefer privacy relay/ })).toHaveAttribute('aria-checked', 'true');
   await dialog.getByRole('switch', { name: /Help relay private payments/ }).click();
-  await dialog.getByLabel('Private fee', { exact: true }).fill('invalid');
+  await dialog.getByLabel('Private Fee', { exact: true }).fill('invalid');
   await dialog.getByRole('button', { name: 'Save relay settings', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('Enter a fee');
   await expect(page.getByTestId('earn-runtime-requested')).toHaveText('false');
-  await dialog.getByLabel('Private fee', { exact: true }).fill('0.006');
+  await dialog.getByLabel('Private Fee', { exact: true }).fill('0.006');
   await dialog.getByRole('button', { name: 'Save relay settings', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('Changes saved');
   await expect.poll(() => preference(page, 'useRelay')).toBe(true);
@@ -279,14 +279,14 @@ test('Earn lab acknowledgement and structural layout budgets', async ({ page, br
     acknowledgement.push(await dialog.getByRole('button', { name: 'Start relaying', exact: true }).evaluate(node => new Promise<number>(resolve => {
       const started = performance.now();
       const observer = new MutationObserver(() => {
-        if (!node.textContent?.includes('Stop relaying')) return;
+        if (!node.textContent?.includes('Stop Relaying')) return;
         observer.disconnect();
         requestAnimationFrame(() => setTimeout(() => resolve(performance.now() - started), 0));
       });
       observer.observe(node, { childList: true, subtree: true, characterData: true });
       (node as HTMLButtonElement).click();
     })));
-    await dialog.getByRole('button', { name: 'Stop relaying', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).click();
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(dialog).toHaveCount(0);
   }

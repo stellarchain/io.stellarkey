@@ -296,7 +296,7 @@ test("an over-ceiling duplicate-payment refund requests approval without reservi
       id: "request-duplicate",
       paymentId: reconciliation.id,
       requestedById: "server",
-      note: "Paid twice",
+      note: "Paid Twice",
       now: 10,
     },
   );
@@ -428,9 +428,9 @@ test("staff and refund production surfaces use persisted merchant actions", () =
   // A pending operator switch keeps the sheet up: the shell's one busy policy holds every exit.
   assert.match(staffPage, /busy=\{operatorPending\}/);
   assert.match(staffPage, /onBusyChange=\{setOperatorPending\}/);
-  assert.match(staffPage, /On this shift/);
+  assert.match(staffPage, /On This Shift/);
   assert.match(staffPage, /Current operator/);
-  assert.match(staffPage, /Add operator/);
+  assert.match(staffPage, /Add Operator/);
   assert.match(staffPage, /Lock after every sale/);
   assert.match(staffPage, /After inactivity/);
   assert.match(staffPage, /await lockStaffSession\(/);

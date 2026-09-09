@@ -109,9 +109,9 @@ export function AddressBookPage({
   }
 
   return (
-    <section className="fade-up mx-auto w-full max-w-[720px] pt-2">
+    <section className="fade-up mx-auto w-full max-w-[1000px] pt-2">
       {/* Header: search + add (app chrome already carries the view title) */}
-      <div className="flex items-center gap-2.5 pb-5">
+      <div className="flex items-center gap-2.5 pb-5 empty:hidden">
         {contacts.length > 0 && (
           <div className="search-field flex-1">
             <IconSearch size={14} className="shrink-0 text-neutral-400" />
@@ -123,6 +123,7 @@ export function AddressBookPage({
             />
           </div>
         )}
+        {contacts.length > 0 && (
         <button
           type="button"
           onClick={() => openEditor(null)}
@@ -133,6 +134,7 @@ export function AddressBookPage({
           <IconPlus size={17} />
           <span className="hidden text-[13px] font-semibold sm:inline">Add Contact</span>
         </button>
+        )}
       </div>
 
       {contacts.length === 0 ? (
@@ -158,7 +160,7 @@ export function AddressBookPage({
           {/* Favorites rail (iOS Phone-style pinned section) */}
           {favorites.length > 0 && (
             <div>
-              <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#FFD60A]">
+              <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-[#FFD60A]">
                 ★ Favorites
               </p>
               <div className="list-group">
@@ -179,7 +181,7 @@ export function AddressBookPage({
           {/* Alphabetical sections */}
           {sections.map(([letter, list]) => (
             <div key={letter} className="pt-5 first:pt-0">
-              <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                 {letter}
               </p>
               <div className="list-group">
@@ -213,7 +215,7 @@ export function AddressBookPage({
             <span className="h-3 w-px bg-white/10" />
           </>
         )}
-        <label className="cursor-pointer transition-colors hover:text-[#0A84FF]">
+        <label className="cursor-pointer text-[#0A84FF] transition-colors hover:text-accent-2">
           Import JSON
           <input
             type="file"

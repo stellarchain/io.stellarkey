@@ -265,7 +265,7 @@ export function WithdrawPrivateFlow({
               onChange={setSubmissionMode}
             />
             <Field
-              label="Public recipient"
+              label="Public Recipient"
               hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}
               error={
                 trimmedRecipient && !recipientShapeOk

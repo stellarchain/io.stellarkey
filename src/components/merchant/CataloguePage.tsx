@@ -152,8 +152,8 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
               type="button"
               onClick={() => openEditor(null)}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
-              title="New item"
-              aria-label="New item"
+              title="New Item"
+              aria-label="New Item"
             >
               <IconPlus size={17} />
             </button>
@@ -234,7 +234,7 @@ export function CataloguePage({ onBack }: { onBack?: () => void }) {
             <div className="mt-4 space-y-5">
               {sections.map(([name, items]) => (
                 <div key={name}>
-                  <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                  <p className="px-2 pb-1.5 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                     {name}
                   </p>
                   {view === "rows" ? (

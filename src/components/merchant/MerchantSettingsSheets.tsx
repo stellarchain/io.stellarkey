@@ -197,7 +197,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Business details"
+          title="Business Details"
           subtitle="Shown on receipts and payment references"
           onClose={onClose}
         />
@@ -272,7 +272,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Payment setup"
+          title="Payment Setup"
           subtitle="Where payments arrive and how charges behave"
           onClose={onClose}
         />
@@ -402,7 +402,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Accepted assets"
+          title="Accepted Assets"
           subtitle="Choose the exact assets this till can quote"
           onClose={onClose}
         />
@@ -489,7 +489,7 @@ export function MerchantSettingsSheetContent({
             <SettingsRow
               icon={<IconFileText size={16} />}
               tint="#BF5AF2"
-              label="Tax records"
+              label="Tax Records"
               sub="Filing periods, exports and adjustments"
               chevron={Boolean(onNavigate)}
               onClick={onNavigate ? () => navigateFromSheet("tax") : undefined}
@@ -509,7 +509,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Tax rates"
+          title="Tax Rates"
           subtitle="Names and percentages used by catalogue items"
           onClose={onClose}
         />
@@ -686,7 +686,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="Settlement rules"
+          title="Settlement Rules"
           subtitle="Prompts only. Every movement still requires a signature."
           onClose={onClose}
         />
@@ -901,7 +901,7 @@ export function MerchantSettingsSheetContent({
     return (
       <>
         <ModalHeader
-          title="This device"
+          title="This Device"
           subtitle="Terminal identity and local storage"
           onClose={onClose}
         />

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { AssetAvatar } from '@/components/AssetAvatar';
-import { Button, HashValue, ModalBody, ModalFooter } from '@/components/ui';
+import { Button, HashValue, ModalBody, ModalFooter, Notice } from '@/components/ui';
 import { lookupKnownAsset } from '@/lib/assets';
 import { fmtFiat, type FiatCurrency } from '@/lib/format';
 import type { NetworkKey } from '@/lib/stellar';
@@ -141,12 +141,12 @@ export function PrivateAssetDetailModalBody({
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-[#0A84FF]/20 bg-[#0A84FF]/[0.07] px-4 py-3">
+      <Notice tone="accent" compact>
         <p className="text-[12px] leading-relaxed text-neutral-300">
           Private transfers hide their amount and recipient. Deposits and withdrawals remain
           visible on Stellar because they cross between public and private balances.
         </p>
-      </div>
+      </Notice>
 
       {entry.asset.kind === 'native' ? <StealthReceipts onBusyChange={setBusy} /> : null}
 

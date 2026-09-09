@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccountMark } from '@/components/AccountMark';
 import { FiatValue } from '@/components/FiatValue';
 import { XlmFeeFiatValue } from '@/components/XlmFeeFiatValue';
-import { Button, HashValue, ModalBody, ModalFooter } from '@/components/ui';
+import { Button, HashValue, ModalBody, ModalFooter, Notice } from '@/components/ui';
 import { fmtAmount } from '@/lib/format';
 import { triggerHaptic } from '@/lib/haptics';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
@@ -365,7 +365,7 @@ export function PrivateActionReview({
 
       {simulation !== null && simulation.afterStroops >= 0n ? (
         <div className="panel-inset space-y-1.5 p-3.5 text-[12px]">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-400">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Private balance after
           </p>
           <div className="flex justify-between text-neutral-300">
@@ -426,17 +426,14 @@ export function PrivateActionReview({
       </details>
 
       {working && chainProgress ? (
-        <div
-          aria-live="polite"
-          className="rounded-2xl border border-[#0A84FF]/20 bg-[#0A84FF]/[0.08] p-3.5 text-center"
-        >
+        <Notice tone="accent" compact role="status" className="text-center">
           <p className="text-[13px] font-semibold text-white">
             Step {chainProgress.step} of {chainProgress.totalSteps} · {chainStageLabel(chainProgress.stage)}
           </p>
           <p className="mt-1 text-[11.5px] leading-relaxed text-neutral-400">
             Each step can take a little while. Keep this open — your draft is safe.
           </p>
-        </div>
+        </Notice>
       ) : null}
 
       {relayQuotes.length > 0 && onSelectRelayQuote ? (

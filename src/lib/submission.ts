@@ -291,7 +291,7 @@ export function pendingTransactionPresentation(
     title: `${transaction.label} confirming`,
     detail: manualCheck
       ? `Accepted by Horizon on ${networkLabel}, but final status is not indexed. Use Check Status for a bounded canonical-hash lookup.`
-      : `Accepted by Horizon on ${networkLabel}. Tracking canonical hash ${transaction.hash}.`,
+      : `Accepted by Horizon on ${networkLabel}. Tracking ${transaction.hash.slice(0, 6)}…${transaction.hash.slice(-6)}.`,
     caution: false,
     manualCheck,
   };

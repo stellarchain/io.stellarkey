@@ -33,7 +33,7 @@ import { playSwapSound } from "@/lib/sounds";
 import type { SubmissionLifecycleStatus, SubmissionResult } from "@/lib/submission";
 import { assetKey as merchantAssetKey } from "@/lib/merchant/charge";
 import type { SettlementSwapIntent } from "@/lib/merchant/settlement";
-import { Button, ErrorText, HashValue, NetworkBadge, Select, Spinner } from "./ui";
+import { Button, ErrorText, HashValue, NetworkBadge, Notice, Select, Spinner } from "./ui";
 import { XlmFeeFiatValue } from "./XlmFeeFiatValue";
 import {
   IconAlert,
@@ -446,7 +446,7 @@ export function SwapPage({
                   setSlippage(val);
                   invalidateQuoteForEdit();
                 }}
-                className={`rounded-xl py-2 text-[12.5px] font-semibold transition-all ${
+                className={`rounded-xl py-[5px] text-[12px] font-medium transition-all ${
                   slippage === val
                     ? "bg-[#0A84FF] text-white shadow-sm"
                     : "bg-white/[0.08] text-neutral-300 hover:text-white"
@@ -464,6 +464,7 @@ export function SwapPage({
               <input
                 id="swap-custom-slippage"
                 type="number"
+                inputMode="decimal"
                 aria-label="Custom slippage percentage"
                 step="0.1"
                 min="0.05"
@@ -477,7 +478,7 @@ export function SwapPage({
                     invalidateQuoteForEdit();
                   }
                 }}
-                className="input mono !h-11 !w-20 text-center text-base md:!h-7 sm:text-[12px]"
+                className="input mono !w-24 text-center text-base sm:text-[13px]"
               />
               <span className="text-[12px] font-bold text-neutral-400">%</span>
             </div>
@@ -534,7 +535,7 @@ export function SwapPage({
                         fractionOfStellarAmount(sendAvailable, Math.round(pct * 100), 100),
                       );
                     }}
-                    className="min-h-9 rounded-xl bg-white/[0.06] px-1.5 py-1 text-[11px] font-semibold text-neutral-300 transition-colors hover:bg-white/[0.12] hover:text-white"
+                    className="rounded-xl bg-white/[0.06] px-2 py-[5px] text-[12px] font-medium text-neutral-300 transition-colors hover:bg-white/[0.12] hover:text-white"
                   >
                     {pct === 1.0 ? "MAX" : `${pct * 100}%`}
                   </button>
@@ -573,12 +574,9 @@ export function SwapPage({
           />
 
           {quoteExceedsBalance && quotedSpendLimit && sendAsset && (
-            <div className="flex items-start gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FFB340]">
-              <IconAlert size={16} className="mt-0.5 shrink-0" />
-              <span className="min-w-0 break-words">
-                This quote can spend up to {fmtAmount(quotedSpendLimit)} {sendAsset.code}, but only {fmtAmount(sendAvailable)} is available.
-              </span>
-            </div>
+            <Notice tone="warn" compact icon={<IconAlert size={16} />}>
+              This quote can spend up to {fmtAmount(quotedSpendLimit)} {sendAsset.code}, but only {fmtAmount(sendAvailable)} is available.
+            </Notice>
           )}
 
           {error && <ErrorText message={error} />}
@@ -649,16 +647,15 @@ export function SwapPage({
           )}
 
           {noRoute && (
-            <div className="flex items-center gap-2 rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-3.5 text-[12.5px] text-[#FF9F0A]">
-              <IconAlert size={16} className="shrink-0" />
-              <span>No DEX liquidity pool path found for this asset pair on {network}.</span>
-            </div>
+            <Notice tone="warn" compact icon={<IconAlert size={16} />}>
+              No DEX liquidity pool path found for this asset pair on {network}.
+            </Notice>
           )}
 
           {stage === "review" && currentQuote && sendAsset && destAsset ? (
             <div className="space-y-3">
               {activeAccount?.hardware && (
-                <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+                <Notice tone="accent" compact className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {activeAccount.hardware === "ledger" ? (
                       <IconLedger size={15} className="text-[#64D2FF]" />
@@ -670,7 +667,7 @@ export function SwapPage({
                     </span>
                   </div>
                   <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
-                </div>
+                </Notice>
               )}
               <div className="panel-inset p-4 space-y-2.5 text-[13px]">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
@@ -857,7 +854,7 @@ function SwapResultView({
         </div>
 
         <Button variant="secondary" className="mt-5 w-full" onClick={onViewActivity}>
-          View activity
+          View Activity
         </Button>
       </section>
     );
@@ -965,8 +962,8 @@ function SwapResultView({
           Done
         </Button>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <Button variant="secondary" onClick={onViewActivity}>View activity</Button>
-          <Button variant="ghost" onClick={onSwapAgain}>Swap again</Button>
+          <Button variant="secondary" onClick={onViewActivity}>View Activity</Button>
+          <Button variant="ghost" onClick={onSwapAgain}>Swap Again</Button>
         </div>
       </div>
     </section>

@@ -124,7 +124,7 @@ export function CommandPaletteBody({ actions, inputRef, onClose }: CommandPalett
               </div>
               {a.hint && (
                 <span
-                  className={`mono text-[12px] shrink-0 ${
+                  className={`text-[12px] shrink-0 ${
                     i === cursor ? "text-white/80" : "text-neutral-400"
                   }`}
                 >

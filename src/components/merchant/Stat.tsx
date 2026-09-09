@@ -63,7 +63,7 @@ export function Stat({
 }) {
   return (
     <div className={`min-w-0 px-3 py-2.5 ${divider ? DIVIDER[divider] : ""}`}>
-      <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
+      <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         {label}
       </p>
       {children ?? (

@@ -74,7 +74,7 @@
   }
 
   .app-safe-toast {
-    top: calc(1.25rem + var(--app-safe-area-top));
+    top: calc(4.5rem + var(--app-safe-area-top));
   }
 }
 
@@ -84,7 +84,8 @@
   }
 
   .app-safe-toast {
-    top: calc(4.75rem + var(--app-safe-area-top));
+    top: auto;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -243,9 +244,15 @@ body::after {
     display: none;
   }
 
-  :is(button, [role="button"], [role="menuitem"]) {
+  :is(button, [role="button"], [role="menuitem"]):not([role="switch"]):not(.tap-reset) {
     min-width: 44px;
     min-height: 44px;
+  }
+  /* Inline text targets (copyable values, label-row links) sit inside rows that
+     already meet the 44 pt target, so they keep their text height. */
+  .tap-reset {
+    min-width: 0;
+    min-height: 0;
   }
 
   /* Non-button controls (links, labels, custom rows) opt into the same finger
@@ -391,7 +398,8 @@ body::after {
     font-size: 16px;
     font-weight: 590;
     letter-spacing: -0.01em;
-    padding: 13px 20px;
+    min-height: 44px;
+    padding: 10px 20px;
     cursor: pointer;
     transition:
       transform 0.25s cubic-bezier(0.32, 0.72, 0, 1),
@@ -563,6 +571,7 @@ body::after {
     gap: 10px;
     width: 100%;
     text-align: left;
+    white-space: nowrap;
     padding: 12px 16px;
     font-size: 15px;
     font-weight: 480;
@@ -588,7 +597,7 @@ body::after {
     font-size: 12px;
     color: var(--color-muted);
     border-radius: 999px;
-    padding: 7px 14px;
+    padding: 5px 12px;
     cursor: pointer;
     white-space: nowrap;
     transition:
@@ -817,6 +826,9 @@ body::after {
     height: 0.5px;
     background: rgba(84, 84, 88, 0.65);
   }
+  .ios-sep-flush::before {
+    left: 16px;
+  }
 
   .row-icon {
     display: inline-flex;
@@ -966,13 +978,13 @@ body::after {
 @keyframes toastIn {
   from {
     opacity: 0;
-    transform: translateY(-12px) scale(0.96);
+    transform: scale(0.94);
   }
 }
 @keyframes toastOut {
   to {
     opacity: 0;
-    transform: translateY(-8px) scale(0.97);
+    transform: scale(0.97);
   }
 }
 @keyframes fadeIn {
@@ -1118,4 +1130,93 @@ body::after {
   pointer-events: none;
   z-index: 90;
   animation: confetti-fall var(--confetti-duration, 2.2s) ease-in forwards;
+}
+
+/* Pointer layouts use the compact macOS control height. */
+@media (hover: hover) and (pointer: fine) {
+  .btn {
+    min-height: 40px;
+    padding: 8px 18px;
+    font-size: 15px;
+  }
+}
+
+/* One keyboard focus ring for every control; fields keep their glow. */
+:where(button, a, [role="button"], [role="tab"], [role="menuitem"], [role="switch"], summary):focus-visible {
+  outline: 2px solid #0A84FF;
+  outline-offset: 2px;
+}
+
+/* Native date and number fields take the app's dark chrome; no spinners. */
+.input[type="date"],
+.input[type="datetime-local"],
+.input[type="time"] {
+  color-scheme: dark;
+}
+.input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.input::-webkit-outer-spin-button,
+.input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Dialog action rows stay reachable: they pin to the scrolling panel's bottom
+   edge above the safe area, fading the content that scrolls beneath them. */
+.modal-footer-pinned {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 5;
+  background: linear-gradient(to bottom, rgba(18, 18, 20, 0) 0, rgba(18, 18, 20, 0.98) 14px);
+  /* Cover the body gutters with ink, not layout: shadows never add scrollable overflow. */
+  box-shadow: -16px 0 0 0 rgba(18, 18, 20, 0.98), 16px 0 0 0 rgba(18, 18, 20, 0.98);
+}
+@media (min-width: 640px) {
+  .modal-footer-pinned {
+    box-shadow: -24px 0 0 0 rgba(18, 18, 20, 0.98), 24px 0 0 0 rgba(18, 18, 20, 0.98);
+  }
+}
+
+/* One checkbox: a rounded square that fills with the accent when checked. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard), border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+input[type="checkbox"]::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  color: #ffffff;
+  transform: scale(0);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2 6.5l2.6 2.6L10 3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M2 6.5l2.6 2.6L10 3.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+input[type="checkbox"]:checked {
+  background: #0A84FF;
+  border-color: #0A84FF;
+}
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid #0A84FF;
+  outline-offset: 2px;
 }

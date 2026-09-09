@@ -1130,7 +1130,7 @@ export function updateAccountLabel(accountId: string, newLabel: string): VaultFi
 
 
 /**
- * Add a watch-only account: tracks an existing public key with no secret.
+ * Add a Watch-Only Account: tracks an existing public key with no secret.
  * Balances and activity are visible; signing is impossible by design.
  */
 

@@ -143,7 +143,7 @@ export function PrivateRelayEntry() {
 
       <Modal open={open} onClose={close} wide dirty={dirty}>
         <ModalHeader
-          title="Earn by relaying"
+          title="Earn by Relaying"
           subtitle="Help a payment. Receive a private fee."
           onClose={close}
         />

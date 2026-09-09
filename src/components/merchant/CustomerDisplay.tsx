@@ -151,7 +151,7 @@ function CustomerDisplayInner({
           <IconReceiptStellar size={18} />
           <span className="text-[15px] font-semibold tracking-tight text-white">{shopName}</span>
         </div>
-        <p className="mt-10 text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+        <p className="mt-10 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
           Amount due
         </p>
         <p className="mono mt-2 text-center text-[52px] font-semibold leading-none text-white sm:text-[76px]">
@@ -212,7 +212,7 @@ function CustomerDisplayInner({
               }
               secondary={
                 <Button variant="ghost" disabled={checking} onClick={backToDisplay}>
-                  Back to the display
+                  Back to the Display
                 </Button>
               }
             />

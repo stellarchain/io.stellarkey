@@ -162,7 +162,7 @@ export function EditContactModal({
             }
             primary={
               <Button type="submit" loading={busy} loadingLabel="Saving contact">
-                {isEdit ? "Save changes" : "Save contact"}
+                {isEdit ? "Save Changes" : "Save Contact"}
               </Button>
             }
           />
@@ -184,7 +184,7 @@ export function EditContactModal({
           open={confirmDelete}
           title="Delete contact?"
           message={`${contact.name} will be removed from your address book.`}
-          confirmLabel="Delete contact"
+          confirmLabel="Delete Contact"
           destructive
           busy={busy}
           onConfirm={() => void handleDelete()}

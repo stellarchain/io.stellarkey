@@ -182,13 +182,13 @@ async function enterKeypadAmount(page: Page, keys: string[]) {
   for (const key of keys) {
     await page.getByRole("button", { name: key, exact: true }).first().click();
   }
-  await page.getByRole("button", { name: "Add to ticket" }).click();
+  await page.getByRole("button", { name: "Add to Ticket" }).click();
 }
 
 async function openOtherTender(page: Page) {
   await page.getByRole("button", { name: "More ticket actions" }).click();
-  await page.getByRole("menuitem", { name: /Other tender/ }).click();
-  return page.getByRole("dialog", { name: /Other tender/ });
+  await page.getByRole("menuitem", { name: /Other Tender/ }).click();
+  return page.getByRole("dialog", { name: /Other Tender/ });
 }
 
 async function readVisibleChargeRequest(chargeDialog: Locator) {
@@ -249,8 +249,8 @@ function incomingPayment(
 
 async function openStaffSettings(page: Page) {
   await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-  await page.getByText("Staff & terminals", { exact: true }).click();
-  await page.getByRole("heading", { name: "Staff & this device" }).waitFor();
+  await page.getByText("Staff & Terminals", { exact: true }).click();
+  await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
 }
 
 async function openMerchantMode(page: Page) {
@@ -262,7 +262,7 @@ async function openMerchantMode(page: Page) {
   }
 
   const settingsTab = tabs.getByRole("button", { name: "Settings" });
-  const openTill = page.getByRole("button", { name: /^Open till/ });
+  const openTill = page.getByRole("button", { name: /^Open Till/ });
   const merchantDestination = merchantTab.or(openTill).first();
 
   // After restoring a backup, the server-rendered tab shell can become visible
@@ -431,8 +431,8 @@ test(
 
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
       await page.getByRole("switch", { name: "Merchant Mode" }).click();
-      const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-      await setup.getByLabel("Shop name").fill("North Star Coffee");
+      const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+      await setup.getByLabel("Shop Name").fill("North Star Coffee");
       await setup.getByRole("button", { name: "Continue" }).click();
       await setup.getByText("Trustline held", { exact: true }).waitFor();
       await setup.getByRole("button", { name: "Continue" }).click();
@@ -440,7 +440,7 @@ test(
       await setup.getByRole("button", { name: "Continue" }).click();
       await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
       await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-      await setup.getByRole("button", { name: "Open the till" }).click();
+      await setup.getByRole("button", { name: "Open the Till" }).click();
       await setup.waitFor({ state: "hidden" });
       await page.getByText("Till locked · no open shift", { exact: true }).waitFor();
       await assertMobileSurface(page, "first merchant till");
@@ -455,30 +455,30 @@ test(
       // Merchant Settings is a summary hierarchy. Scoped edits open one mobile-safe sheet,
       // and the destructive Merchant Mode action requires a separate confirmation.
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-      await page.getByRole("button", { name: /Tax rates/ }).click();
-      const ratesSettings = page.getByRole("dialog", { name: /Tax rates/ });
+      await page.getByRole("button", { name: /Tax Rates/ }).click();
+      const ratesSettings = page.getByRole("dialog", { name: /Tax Rates/ });
       await ratesSettings.waitFor();
       await assertMobileSurface(page, "tax rate settings sheet");
       await ratesSettings.getByRole("button", { name: "Close" }).click();
       await ratesSettings.waitFor({ state: "hidden" });
 
-      await page.getByRole("button", { name: /Payment setup/ }).click();
-      const paymentSettings = page.getByRole("dialog", { name: /Payment setup/ });
+      await page.getByRole("button", { name: /Payment Setup/ }).click();
+      const paymentSettings = page.getByRole("dialog", { name: /Payment Setup/ });
       await paymentSettings.waitFor();
       await paymentSettings.getByRole("button", { name: "Close" }).click();
       await paymentSettings.waitFor({ state: "hidden" });
 
-      await page.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
-      const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+      await page.getByRole("button", { name: "Turn Off Merchant Mode", exact: true }).click();
+      const turnOff = page.getByRole("dialog", { name: /Turn Off Merchant Mode/ });
       await turnOff.waitFor();
       await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
       await turnOff.waitFor({ state: "hidden" });
       await openMerchantMode(page);
 
-      await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
-      const opening = page.getByRole("dialog", { name: /Open shift/ });
+      await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+      const opening = page.getByRole("dialog", { name: /Open Shift/ });
       await opening.getByLabel("Opening float").fill("100");
-      await opening.getByRole("button", { name: "Open shift", exact: true }).click();
+      await opening.getByRole("button", { name: "Open Shift", exact: true }).click();
       await page.getByText(/Shift 1 · Front counter/).waitFor();
       await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
 
@@ -509,7 +509,7 @@ test(
       // Staff is a local till role. Add a server and switch with its real PIN.
       await openStaffSettings(page);
       await page.getByRole("button", { name: "Lock", exact: true }).click();
-      const addStaffButton = page.getByRole("button", { name: "Add staff" });
+      const addStaffButton = page.getByRole("button", { name: "Add Staff" });
       assert.equal(
         await addStaffButton.isDisabled(),
         true,
@@ -523,24 +523,24 @@ test(
       // Shared devices default to locking after every sale; this long journey
       // selects the equally supported inactivity policy so later tasks stay under
       // the explicitly selected operator until the test leaves the page.
-      await page.getByRole("button", { name: /Operator locking/ }).click();
-      const locking = page.getByRole("dialog", { name: "Operator locking" });
+      await page.getByRole("button", { name: /Operator Locking/ }).click();
+      const locking = page.getByRole("dialog", { name: "Operator Locking" });
       await locking.getByRole("button", { name: "Inactivity", exact: true }).click();
       await locking.getByRole("button", { name: "Done", exact: true }).click();
       await addStaffButton.click();
-      const addStaff = page.getByRole("dialog", { name: /Add staff/ });
+      const addStaff = page.getByRole("dialog", { name: /Add Staff/ });
       await addStaff.getByLabel("Staff name").fill("Counter Server");
       await addStaff.getByLabel("New staff PIN", { exact: true }).fill("1357");
       await addStaff.getByLabel("Confirm new staff PIN").fill("1357");
-      await addStaff.getByRole("button", { name: "Add staff", exact: true }).click();
+      await addStaff.getByRole("button", { name: "Add Staff", exact: true }).click();
       await addStaff.waitFor({ state: "hidden" });
       await page.getByRole("button", { name: "Edit Counter Server" }).click();
       const editServer = page.getByRole("dialog", { name: "Counter Server" });
       await editServer.getByRole("switch", { name: "See reports" }).click();
       await editServer.getByRole("button", { name: "Save", exact: true }).click();
       await editServer.waitFor({ state: "hidden" });
-      await page.getByRole("button", { name: "Add operator" }).click();
-      const operatorPicker = page.getByRole("dialog", { name: "Add operator" });
+      await page.getByRole("button", { name: "Add Operator" }).click();
+      const operatorPicker = page.getByRole("dialog", { name: "Add Operator" });
       await operatorPicker.getByRole("button", { name: /Counter Server/ }).click();
       const serverPin = page.getByRole("dialog", { name: "Counter Server" });
       await serverPin.getByLabel("PIN for Counter Server").fill("1357");
@@ -559,11 +559,11 @@ test(
       await page.getByRole("button", { name: "Open the card for Unnamed customer" }).click();
       const customer = page.getByRole("dialog", { name: "Unnamed customer" });
       await customer.getByLabel("Contact name").fill("Ada Customer");
-      await customer.getByRole("button", { name: "Save contact" }).click();
+      await customer.getByRole("button", { name: "Save Contact" }).click();
       const namedCustomer = page.getByRole("dialog", { name: "Ada Customer" });
-      await namedCustomer.getByRole("button", { name: "Start a card" }).click();
+      await namedCustomer.getByRole("button", { name: "Start a Card" }).click();
       await namedCustomer.getByLabel("Note").fill("Prefers the quiet table.");
-      await namedCustomer.getByRole("button", { name: "Save note" }).click();
+      await namedCustomer.getByRole("button", { name: "Save Note" }).click();
       await namedCustomer.getByText("Loyalty card", { exact: true }).waitFor();
       await namedCustomer.getByRole("button", { name: "Close", exact: true }).click();
 
@@ -571,7 +571,7 @@ test(
       await page.getByRole("button", { name: "Orders", exact: true }).click();
       await page.getByRole("button", { name: "Open the receipt for order #1002" }).click();
       const order = page.getByRole("dialog", { name: /Order #1002/ });
-      await order.getByRole("button", { name: "Issue a refund" }).click();
+      await order.getByRole("button", { name: "Issue a Refund" }).click();
       await order.getByRole("button", { name: "Refund € 30.00" }).click();
       await page.getByText("Sent € 30.00 for approval", { exact: true }).waitFor();
       await order.getByRole("button", { name: "Close", exact: true }).click();
@@ -594,7 +594,7 @@ test(
       const split = await openOtherTender(page);
       await split.getByRole("button", { name: "Split", exact: true }).click();
       await split.getByLabel("First part amount").fill("2.00");
-      await split.getByRole("button", { name: "Record split" }).click();
+      await split.getByRole("button", { name: "Record Split" }).click();
       const splitCharge = page.getByRole("dialog", { name: /^Charge/ });
       await splitCharge.getByText("Watching for payment", { exact: true }).waitFor();
       const splitState = await readVisibleChargeRequest(splitCharge);
@@ -607,44 +607,44 @@ test(
 
       // Invoice: draft, issue, and external payment are all real persisted transitions.
       await page.getByRole("button", { name: "Invoices", exact: true }).click();
-      await page.getByRole("button", { name: "New invoice" }).first().click();
-      const composer = page.getByRole("dialog", { name: /New invoice/ });
+      await page.getByRole("button", { name: "New Invoice" }).first().click();
+      const composer = page.getByRole("dialog", { name: /New Invoice/ });
       await composer.getByLabel("Customer").fill("Praça Hotel");
-      await composer.getByRole("button", { name: /Free-text line/ }).click();
+      await composer.getByRole("button", { name: /Free-Text Line/ }).click();
       await composer.getByLabel("Line description").fill("Wholesale beans");
       await composer.getByLabel("Unit price").fill("42.00");
-      await composer.getByRole("button", { name: "Save draft" }).click();
+      await composer.getByRole("button", { name: "Save Draft" }).click();
       const invoiceRow = page.getByRole("button", { name: /INV-.*Praça Hotel/ });
       await invoiceRow.click();
       const invoice = page.getByRole("dialog", { name: /INV-/ });
       await invoice.getByRole("button", { name: "Issue invoice" }).click();
-      await invoice.getByRole("button", { name: "Record payment" }).click();
+      await invoice.getByRole("button", { name: "Record Payment" }).click();
       await invoice.getByLabel(/Amount · EUR/).fill("42.00");
-      await invoice.getByLabel("Evidence note").fill("Bank transfer checked");
-      await invoice.getByRole("button", { name: "Record payment", exact: true }).last().click();
+      await invoice.getByLabel("Evidence Note").fill("Bank transfer checked");
+      await invoice.getByRole("button", { name: "Record Payment", exact: true }).last().click();
       await invoice.getByText("Paid", { exact: true }).first().waitFor();
       await invoice.getByRole("button", { name: "Close", exact: true }).click();
 
       // Counter code publishes an immutable, exact reusable request.
       await page.getByRole("button", { name: "Counter codes", exact: true }).click();
-      await page.getByRole("button", { name: "New code" }).first().click();
-      const code = page.getByRole("dialog", { name: /New counter code/ });
+      await page.getByRole("button", { name: "New Code" }).first().click();
+      const code = page.getByRole("dialog", { name: /New Counter Code/ });
       await code.getByLabel("Title").fill("Retail shelf");
-      await code.getByLabel("Shop price").fill("5.00");
-      await code.getByRole("button", { name: "Publish code" }).click();
+      await code.getByLabel("Shop Price").fill("5.00");
+      await code.getByRole("button", { name: "Publish Code" }).click();
       await page.getByText("Retail shelf", { exact: true }).waitFor();
 
-      // Tax records is a summary-first mobile hub. Export configuration lives in one focused
+      // Tax Records is a summary-first mobile hub. Export configuration lives in one focused
       // sheet, the real browser download remains truthful, and closing restores the hub action.
       await page.getByRole("navigation", { name: "Tabs" }).getByRole("button", { name: "Settings" }).click();
-      await page.getByText("Tax records", { exact: true }).click();
-      await page.getByRole("heading", { name: "Tax records" }).waitFor();
-      await assertMobileSurface(page, "Tax records hub");
-      const exportReport = page.getByRole("button", { name: /Export report/ });
+      await page.getByText("Tax Records", { exact: true }).click();
+      await page.getByRole("heading", { name: "Tax Records" }).waitFor();
+      await assertMobileSurface(page, "Tax Records hub");
+      const exportReport = page.getByRole("button", { name: /Export Report/ });
       await exportReport.click();
-      const exportSheet = page.getByRole("dialog", { name: /Export report/ });
+      const exportSheet = page.getByRole("dialog", { name: /Export Report/ });
       await exportSheet.waitFor();
-      await assertMobileSurface(page, "Tax records export sheet");
+      await assertMobileSurface(page, "Tax Records export sheet");
       await exportSheet.getByLabel("Export format").waitFor();
       await exportSheet.getByLabel("From").waitFor();
       await exportSheet.getByLabel("To").waitFor();
@@ -663,7 +663,7 @@ test(
       assert.equal(
         await exportReport.evaluate((element) => document.activeElement === element),
         true,
-        "closing the export sheet must restore the Tax records action",
+        "closing the export sheet must restore the Tax Records action",
       );
 
       // The install handoff appears only after the browser says installation is available.
@@ -753,7 +753,7 @@ test(
       await shift.getByRole("button", { name: "Count drawer & close" }).click();
       const blindCount = page.getByRole("dialog", { name: "Blind cash count" });
       await blindCount.getByLabel("What is in the drawer").fill("103.00");
-      await blindCount.getByRole("button", { name: "Commit count & issue Z" }).click();
+      await blindCount.getByRole("button", { name: "Commit Count & Issue Z" }).click();
       await page.getByRole("dialog", { name: "Z-report 1" }).getByText(/Z-1 issued · shift closed/).waitFor();
       await assertMobileSurface(page, "closed shift report");
 
@@ -799,7 +799,7 @@ test(
       assert.equal(restoredArchive, archiveBeforeBackup);
       await openMerchantMode(page);
       await page.getByRole("button", { name: "Choose staff" }).click();
-      await page.getByRole("heading", { name: "Staff & this device" }).waitFor();
+      await page.getByRole("heading", { name: "Staff & This Device" }).waitFor();
       await page.getByRole("button", { name: "Switch to Imported Account" }).click();
       const restoredArchiveOwnerPin = page.getByRole("dialog", { name: "Imported Account" });
       await restoredArchiveOwnerPin.getByLabel("PIN for Imported Account").fill("2468");

@@ -567,7 +567,7 @@ function InvoiceDocument({
         {/* ---------- who to who ---------- */}
         <div className="panel-inset grid gap-4 p-4 sm:grid-cols-2">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               From
             </p>
             <p className="mt-1 text-[13.5px] font-semibold text-white">
@@ -590,7 +590,7 @@ function InvoiceDocument({
           </div>
 
           <div className="min-w-0 border-t border-white/[0.08] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Billed to
             </p>
             <p className="mt-1 text-[13.5px] font-semibold text-white">{invoice.customerName}</p>
@@ -632,7 +632,7 @@ function InvoiceDocument({
 
         {/* ---------- the lines ---------- */}
         <div className="list-group">
-          <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             <span>Item</span>
             <span>Amount</span>
           </div>
@@ -729,7 +729,7 @@ function InvoiceDocument({
 
         {invoice.note && (
           <div className="panel-inset px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
               Note
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-neutral-300">{invoice.note}</p>
@@ -738,7 +738,7 @@ function InvoiceDocument({
 
         {/* ---------- how it gets paid ---------- */}
         <div className="panel-inset space-y-3.5 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Payment
           </p>
 
@@ -933,7 +933,7 @@ function InvoiceDocument({
           {status === "draft" && (invoiceBlockedReason?.startsWith("No live price") || actionError.startsWith("No live price")) && (
             <div className="space-y-2">
               <p className="text-xs text-neutral-400">{marketPriceStatus}</p>
-              <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry prices</Button>
+              <Button variant="secondary" loading={pricesRefreshing} disabled={pricesRefreshing} onClick={retryPrices}>Retry Prices</Button>
             </div>
           )}
 
@@ -955,7 +955,7 @@ function InvoiceDocument({
                     className="input mono text-base sm:text-[15px]"
                   />
                 </Field>
-                <Field label="Evidence note" hint="Optional">
+                <Field label="Evidence Note" hint="Optional">
                   <input
                     type="text"
                     value={manualNote}
@@ -978,7 +978,7 @@ function InvoiceDocument({
                 }
                 primary={
                   <Button loading={pending === "manual"} onClick={handleManualPayment}>
-                    Record payment
+                    Record Payment
                   </Button>
                 }
               />
@@ -996,7 +996,7 @@ function InvoiceDocument({
 
         {/* ---------- how it got here ---------- */}
         <div className="panel-inset p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             Timeline
           </p>
           <ol className="mt-3">
@@ -1047,14 +1047,14 @@ function InvoiceDocument({
         open={confirmingVoid}
         title="Void this invoice?"
         message={`${invoice.number} stays on record with the reason you give, and its payment request must no longer be shared.`}
-        confirmLabel="Void invoice"
+        confirmLabel="Void Invoice"
         cancelLabel="Keep it"
         destructive
         busy={pending === "void"}
         onClose={() => setConfirmingVoid(false)}
         onConfirm={() => void handleVoid()}
       >
-        <Field label="Audit reason">
+        <Field label="Audit Reason">
           <input
             type="text"
             value={voidReason}

@@ -18,6 +18,7 @@ import {
   HashValue,
   ModalBody,
   ModalFooter,
+  Notice,
   SegmentedControl,
 } from "./ui";
 
@@ -356,7 +357,7 @@ export function AddAccountModalBody({
           </div>
 
           {connectedInfo ? (
-            <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-3.5 text-[12px] space-y-2">
+            <Notice tone="pos" compact className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-semibold text-[#30D158]">Address received</p>
                 <span className="mono text-[10.5px] text-neutral-400">{connectedInfo.path}</span>
@@ -371,7 +372,7 @@ export function AddAccountModalBody({
               <p className="text-[11.5px] leading-relaxed text-neutral-300">
                 Confirm this address on your device before adding the account.
               </p>
-            </div>
+            </Notice>
           ) : (
             <Button
               type="button"

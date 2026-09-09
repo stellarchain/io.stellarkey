@@ -91,7 +91,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {/* iOS banner: top on phones, top-trailing on desktop. Tap or swipe up to dismiss. */}
-      <div aria-live="polite" aria-atomic="false" aria-relevant="additions" className="app-safe-toast pointer-events-none fixed top-5 left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-[4.75rem] md:right-6 md:left-auto md:translate-x-0 md:items-end">
+      <div aria-live="polite" aria-atomic="false" aria-relevant="additions" className="app-safe-toast pointer-events-none fixed top-[4.5rem] left-1/2 z-[80] flex w-full max-w-sm -translate-x-1/2 flex-col items-center gap-2 px-4 md:top-auto md:bottom-6">
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
         ))}

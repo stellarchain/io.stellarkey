@@ -470,7 +470,7 @@ test('home keeps wallet consent separate from each private asset readiness state
   assert.match(row, /prepared:\s*boolean/);
   assert.match(row, /prepared && entry/);
   assert.match(row, /Available/);
-  assert.match(row, /Add funds/);
+  assert.match(row, /Add Funds/);
   assert.match(row, /Not enabled/);
   assert.match(row, /Turn on/);
 });

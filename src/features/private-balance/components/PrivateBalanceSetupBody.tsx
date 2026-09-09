@@ -381,12 +381,12 @@ export function PrivateBalanceSetupBody({
             <div className="flex items-end justify-between gap-6">
               <div className="min-w-0">
                 {setupReady ? (
-                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#30D158]">
+                  <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#30D158]">
                     <IconCheck size={12} aria-hidden="true" />
                     Complete
                   </p>
                 ) : (
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#64D2FF]">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#64D2FF]">
                     On-device setup
                   </p>
                 )}

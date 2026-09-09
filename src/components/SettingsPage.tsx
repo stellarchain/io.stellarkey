@@ -87,7 +87,7 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
-  NetworkBadge,
+  Notice,
   SegmentedControl,
   Spinner,
   Toggle,
@@ -107,7 +107,7 @@ import {
   IconPlus,
   IconRefresh,
   IconShield,
-  IconTrash,
+  IconCompass, IconTrash,
   IconWallet,
   IconTrezor,
   IconLedger,
@@ -163,6 +163,7 @@ function ownsItsHeader(sub: Sub): boolean {
 
 export function SettingsPage({
   initialSub = "root",
+  onSubChange,
   merchantOnly = false,
   installAvailable = false,
   installDescription = "Add StellarKey to this device",
@@ -175,6 +176,8 @@ export function SettingsPage({
   onOpenSend,
 }: {
   initialSub?: Sub;
+  /** Lets the shell follow sub-page navigation (compact headers step aside). */
+  onSubChange?: (sub: Sub) => void;
   /** Opened from Merchant Mode: Merchant settings is the root, so no back header. */
   merchantOnly?: boolean;
   installAvailable?: boolean;
@@ -230,6 +233,9 @@ export function SettingsPage({
   } = useWalletSecurity();
 
   const [sub, setSub] = useState<Sub>(initialSub);
+  useEffect(() => {
+    onSubChange?.(sub);
+  }, [sub, onSubChange]);
   const settingsRoot = useRef<HTMLDivElement>(null);
   const navigationTarget = useRef<Sub | null>(initialSub);
 
@@ -789,17 +795,14 @@ export function SettingsPage({
       {/* Subpage Navigation — suppressed for sub-pages that draw their own. */}
       {sub !== "root" && !ownsItsHeader(sub) && !(merchantOnly && sub === "merchant") && (
         <>
-          <div className="flex items-center justify-between pb-1 pt-2">
+          <div className="flex items-center gap-1 pb-1 pt-2">
             <IOSBackButton
               label="Back to Settings"
               onClick={() => {
                 navigateToSub(backTarget ?? "root");
               }}
             />
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-              Settings
-            </span>
-            <span className="w-11" aria-hidden />
+            <span aria-hidden="true" className="text-[15px] font-medium text-[#0A84FF]">Settings</span>
           </div>
 
           <h1 data-settings-heading tabIndex={-1} className="display-h mb-5 text-[28px] font-bold text-white">
@@ -1109,7 +1112,7 @@ export function SettingsPage({
                       <RowButton
                         icon={<IconStorefront size={16} />}
                         tint="#30D158"
-                        label="Open till"
+                        label="Open Till"
                         value={merchantProfileName || "Unnamed shop"}
                         chevron
                         sep
@@ -1139,7 +1142,8 @@ export function SettingsPage({
                 </p>
                 <div className="list-group">
                   <RowButton
-                    icon={<NetworkBadge network={network} />}
+                    icon={<IconCompass size={16} />}
+                    tint={network === "testnet" ? "#FF9F0A" : "#30D158"}
                     label="Network"
                     value={NETWORKS[network].label}
                     chevron
@@ -1187,6 +1191,7 @@ export function SettingsPage({
                 <div className="list-group">
                   <RowButton
                     icon={<IconTrash size={16} />}
+                    tint="#FF453A"
                     label="Reset Wallet"
                     danger
                     onClick={() => {
@@ -1252,7 +1257,7 @@ export function SettingsPage({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
-                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                    <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">{item.sub}</span>
                   </span>
                   <IconExternal size={15} className="shrink-0 text-neutral-500" />
                 </a>
@@ -1299,7 +1304,7 @@ export function SettingsPage({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15.5px] leading-tight text-white">{item.label}</span>
-                    <span className="block truncate text-[12px] leading-tight text-neutral-400">{item.sub}</span>
+                    <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">{item.sub}</span>
                   </span>
                   <IconExternal size={15} className="shrink-0 text-neutral-500" />
                 </a>
@@ -1307,7 +1312,7 @@ export function SettingsPage({
             </div>
           </section>
 
-          <Notice tone="warn">
+          <Notice tone="warn" className="mt-4">
             Passkeys and browser storage belong to this exact web origin. Keep your password and an
             encrypted backup before moving to {BRAND_ORIGIN}; enrol a new passkey after migration.
           </Notice>
@@ -1335,7 +1340,7 @@ export function SettingsPage({
                 key={opt.ms}
                 type="button"
                 className={`flex w-full items-center justify-between px-4 py-3.5 text-left ${
-                  i > 0 ? "ios-sep" : ""
+                  i > 0 ? "ios-sep ios-sep-flush" : ""
                 }`}
                 onClick={() => {
                   triggerHaptic("selection");
@@ -1358,7 +1363,7 @@ export function SettingsPage({
       {sub === "accounts" && (
         <>
           {activeMergeReconciliation && activeMergePresentation && (
-            <Notice tone="warn">
+            <Notice tone="warn" className="mt-4">
               {activeMergePresentation.message}
               <span className="mt-1 block break-all font-mono text-[10px] text-neutral-400">
                 {activeMergeReconciliation.network} · {activeMergeReconciliation.hash}
@@ -1589,7 +1594,7 @@ export function SettingsPage({
       {/* ---------- MERGE ACCOUNT ---------- */}
       {sub === "merge" && (
         <div className="space-y-4">
-          <Notice tone="pos">
+          <Notice tone="pos" className="mt-4">
             Account merge transfers all remaining lumens (including the 1.0 XLM base reserve) to the destination account and permanently closes this account on the network.
           </Notice>
           <div className="px-1 text-[12px] text-neutral-400">
@@ -1648,7 +1653,7 @@ export function SettingsPage({
           <ErrorText message={mergeError ?? ""} />
 
           {mergePending && (
-            <Notice tone={trackedMergeStatus === "status_unknown" ? "warn" : "pos"}>
+            <Notice tone={trackedMergeStatus === "status_unknown" ? "warn" : "pos"} className="mt-4">
               {trackedMergeStatus === "status_unknown"
                 ? "Account-merge status is unknown."
                 : trackedMergeStatus === "confirmed"
@@ -1661,7 +1666,7 @@ export function SettingsPage({
 
           <Button
             variant="danger"
-            className="w-full !py-3.5 text-[15px] font-semibold"
+            className="w-full"
             loading={merging}
             disabled={!mergeDest || merging || mergeFlowLocked}
             onClick={() => void handleMergeAccount()}
@@ -1696,7 +1701,7 @@ export function SettingsPage({
                 setAirPw("");
                 setAirError(null);
               }}
-              className="input mono text-base resize-none sm:text-[12px]"
+              className="input mono text-base resize-none sm:text-[13px]"
             />
           </Field>
 
@@ -1781,17 +1786,17 @@ export function SettingsPage({
               ))}
 
               {!airReview.signable && (
-                <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                <Notice tone="danger" compact>
                   Signing blocked: {airReview.blockingReasons.join(" ")}
-                </div>
+                </Notice>
               )}
 
               {activeAccount && !airSignerReady && airReview.signable && airError && (
                 <div className="space-y-2">
-                  <div className="rounded-2xl border border-[#FF453A]/30 bg-[#FF453A]/[0.07] p-3 text-[12px] leading-relaxed text-[#FF6961]">
+                  <Notice tone="danger" compact>
                     Signing blocked: current on-chain signer authorization could not be proven for
                     the active account.
-                  </div>
+                  </Notice>
                   <Button
                     variant="secondary"
                     className="w-full"
@@ -1827,7 +1832,7 @@ export function SettingsPage({
                         placeholder="Enter password"
                         value={airPw}
                         onChange={(e) => setAirPw(e.target.value)}
-                        className="input text-base sm:text-[13.5px]"
+                        className="input text-base sm:text-[13px]"
                       />
                     </Field>
 
@@ -1893,7 +1898,7 @@ export function SettingsPage({
                 </p>
               </div>
               <Button
-                className="w-full !py-2.5 text-[13.5px] font-semibold"
+                className="w-full"
                 onClick={() => {
                   triggerHaptic("selection");
                   setAddAccountMode("hardware");
@@ -1925,7 +1930,7 @@ export function SettingsPage({
                   Ledger signing is intentionally disabled until a real Stellar transport and on-device verification flow are implemented.
                 </p>
               </div>
-              <Button className="w-full !py-2.5 text-[13.5px] font-semibold" disabled>
+              <Button className="w-full" disabled>
                 Ledger Integration Unavailable
               </Button>
             </div>
@@ -2093,7 +2098,7 @@ export function SettingsPage({
             </div>
             <div className="flex justify-between text-neutral-300">
               <span>Horizon Endpoint</span>
-              <span className="mono max-w-[200px] truncate text-[11px] text-neutral-400">
+              <span className="mono min-w-0 flex-1 truncate text-right text-[11px] text-neutral-400">
                 {getHorizonUrl(network)}
               </span>
             </div>
@@ -2127,7 +2132,7 @@ export function SettingsPage({
                 )}
               </div>
               <input
-                className="input mono text-base sm:text-[12.5px]"
+                className="input mono text-base sm:text-[13px]"
                 type="url"
                 inputMode="url"
                 autoCapitalize="none"
@@ -2172,7 +2177,7 @@ export function SettingsPage({
                 )}
               </div>
               <input
-                className="input mono text-base sm:text-[12.5px]"
+                className="input mono text-base sm:text-[13px]"
                 type="url"
                 inputMode="url"
                 autoCapitalize="none"
@@ -2232,11 +2237,11 @@ export function SettingsPage({
           )}
 
           {network === "mainnet" ? (
-            <Notice tone="pos">
+            <Notice tone="pos" className="mt-4">
               You are connected to Stellar Mainnet. Transactions involve real assets and fees.
             </Notice>
           ) : (
-            <Notice>
+            <Notice className="mt-4">
               Testnet lumens are free and funded by SDF Friendbot for development and testing.
             </Notice>
           )}
@@ -2285,7 +2290,7 @@ export function SettingsPage({
                     disabled={signingPolicyBusy}
                     onClick={closeDisableSigningDialog}
                   >
-                    Keep on
+                    Keep On
                   </Button>
                 }
                 primary={
@@ -2296,7 +2301,7 @@ export function SettingsPage({
                     loadingLabel="Verifying password"
                     disabled={!disableSigningPassword}
                   >
-                    Turn off
+                    Turn Off
                   </Button>
                 }
               />
@@ -2396,7 +2401,7 @@ export function SettingsPage({
                     !confirmWalletPassword
                   }
                 >
-                  Change password
+                  Change Password
                 </Button>
               }
             />
@@ -2442,7 +2447,7 @@ export function SettingsPage({
                       loadingLabel="Removing passkey"
                       disabled={!passkeyPassword}
                     >
-                      Remove passkey
+                      Remove Passkey
                     </Button>
                   }
                 />
@@ -2618,7 +2623,7 @@ function RowButton({
           {label}
         </span>
         {sub && (
-          <span className="block truncate text-[12px] leading-tight text-neutral-400">
+          <span className="line-clamp-2 text-[12px] leading-tight text-neutral-400">
             {sub}
           </span>
         )}
@@ -2644,25 +2649,3 @@ function RowButton({
   );
 }
 
-function Notice({ tone, children }: { tone?: "pos" | "warn"; children: React.ReactNode }) {
-  return (
-    <div
-      className="mt-4 rounded-2xl px-4 py-3 text-[13px] leading-relaxed border"
-      style={{
-        background: tone === "pos"
-          ? "rgba(48,209,88,0.08)"
-          : tone === "warn"
-            ? "rgba(255,159,10,0.08)"
-            : "rgba(255,255,255,0.04)",
-        borderColor: tone === "pos"
-          ? "rgba(48,209,88,0.2)"
-          : tone === "warn"
-            ? "rgba(255,159,10,0.25)"
-            : "rgba(255,255,255,0.08)",
-        color: tone === "pos" ? "#30D158" : tone === "warn" ? "#FF9F0A" : "var(--color-muted)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}

@@ -425,7 +425,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             findings, so the lead does not have to carry it twice.
           */}
           <StatStrip
-            columns="minmax(136px,1.5fr) minmax(88px,1fr) minmax(104px,1fr) minmax(104px,1fr) minmax(128px,1.3fr)"
+            columns="minmax(136px,1.5fr) minmax(88px,1fr) minmax(112px,1fr) minmax(136px,1fr) minmax(128px,1.3fr)"
             className="md:col-span-2 lg:col-span-6"
             scrollLabel="Today at a glance"
           >
@@ -521,7 +521,7 @@ export function InsightsPage({ onBack }: { onBack?: () => void }) {
             */}
             {against.base && (
               <div className="mt-4 border-t border-white/[0.08] pt-3.5">
-                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                   Measured against
                 </p>
                 <p className="mt-1 text-[13px] text-neutral-300">

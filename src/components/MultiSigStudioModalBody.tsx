@@ -33,10 +33,10 @@ import {
 import {
   Avatar,
   Button,
+  ConfirmModal,
   CopyButton,
   ErrorText,
   HashValue,
-  ConfirmModal,
   LoadingRegion,
   ModalBody,
   ModalFooter,
@@ -584,7 +584,7 @@ export function MultiSigStudioModalBody({
                 verified. Configuration remains disabled until valid on-chain state is loaded.
               </Notice>
               <Button type="button" className="w-full" disabled>
-                Configuration unavailable
+                Configuration Unavailable
               </Button>
             </div>
           ) : (
@@ -633,7 +633,7 @@ export function MultiSigStudioModalBody({
 
               {/* Signers */}
               <div>
-                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                   Authorized Signers ({info?.signers.length ?? 1})
                 </p>
                 <div className="list-group">
@@ -681,7 +681,7 @@ export function MultiSigStudioModalBody({
               )}
 
               <Button type="button" className="w-full" disabled={configLocked} onClick={openConfigure}>
-                {isMultisig ? "Edit configuration" : "Set up multi-sig"}
+                {isMultisig ? "Edit configuration" : "Set Up Multi-Sig"}
               </Button>
               {isMultisig && (
                 <Button
@@ -740,13 +740,13 @@ export function MultiSigStudioModalBody({
               </div>
               {signerChanges.length > 0 && (
                 <div>
-                  <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                  <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                     Exact signer changes
                   </p>
                   <div className="list-group divide-y divide-white/[0.08]">
                     {signerChanges.map((change) => (
                       <div className="px-4 py-3" key={`${change.kind}:${change.key}`}>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                           {change.kind === "add"
                             ? `Add at weight ${change.toWeight}`
                             : change.kind === "remove"
@@ -783,7 +783,7 @@ export function MultiSigStudioModalBody({
             <>
               {/* Signers editor */}
               <div>
-                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                   Signers & Weights
                 </p>
                 <div className="list-group">
@@ -850,7 +850,7 @@ export function MultiSigStudioModalBody({
                 {/* Add signer */}
                 <div className="mt-2.5 flex gap-2">
                   <input
-                    className="input mono flex-1 text-base sm:text-[12.5px]"
+                    className="input mono flex-1 text-base sm:text-[13px]"
                     placeholder="Cosigner address (G...)"
                     value={newKey}
                     disabled={!hasAdditionalSignerCapacity(cosigners.length)}
@@ -902,7 +902,7 @@ export function MultiSigStudioModalBody({
 
               {/* Threshold presets */}
               <div>
-                <p className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                <p className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                   Approval Threshold
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -992,7 +992,7 @@ export function MultiSigStudioModalBody({
                 disabled={!configValid || busy || configLocked}
                 onClick={() => setReviewing(true)}
               >
-                Review configuration
+                Review Configuration
               </Button>
               {cosigners.length === 0 && (
                 <p className="-mt-2 text-center text-[11.5px] text-neutral-500">
@@ -1041,7 +1041,7 @@ export function MultiSigStudioModalBody({
                     setNetworkConfirmed(false);
                     setError(null);
                   }}
-                  className="input mono resize-none text-base sm:text-[12px]"
+                  className="input mono resize-none text-base sm:text-[13px]"
                   spellCheck={false}
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -1321,7 +1321,7 @@ export function MultiSigStudioModalBody({
       )}
 
       {configOutcome && (
-        <div className="mt-5 space-y-3 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/[0.06] p-4">
+        <Notice tone="warn" className="mt-5 space-y-3">
           <p className="text-[13px] font-semibold text-[#FF9F0A]">
             Additional approval required
           </p>
@@ -1335,7 +1335,7 @@ export function MultiSigStudioModalBody({
             label="Copy Configuration Envelope"
             className="chip w-full justify-center"
           />
-        </div>
+        </Notice>
       )}
 
       {configSubmission && (
@@ -1385,7 +1385,7 @@ export function MultiSigStudioModalBody({
             )}
           </>
         }
-        confirmLabel="Disable multi-sig"
+        confirmLabel="Disable Multi-Sig"
         destructive
         busy={busy}
         onConfirm={() => void handleDisable()}

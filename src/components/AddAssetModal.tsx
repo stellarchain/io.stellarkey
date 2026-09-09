@@ -238,7 +238,7 @@ export function AddAssetPublicPanel({
   return (
     <ModalBody>
       {/* Search */}
-      <div className="search-field flex items-center gap-2">
+      <div className="search-field min-h-11 flex items-center gap-2">
         <IconSearch size={15} className="text-neutral-400 shrink-0" />
         <label htmlFor={searchInputId} className="sr-only">Search verified assets</label>
         <input
@@ -363,7 +363,7 @@ export function AddAssetPublicPanel({
 
       {/* Queued trustlines */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
-        <div className="flex tap items-center justify-between">
+        <div className="flex min-h-8 items-center justify-between">
           <p className="text-[12px] font-semibold text-white">
             Queued Trustlines ({selected.length})
           </p>
@@ -445,7 +445,7 @@ export function AddAssetPublicPanel({
 
       {/* Hardware Device Indicator */}
       {activeAccount?.hardware && (
-        <div className="rounded-xl border border-[#0A84FF]/30 bg-[#0A84FF]/10 p-2.5 flex items-center justify-between text-[12px] text-[#0A84FF]">
+        <Notice tone="accent" compact className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {activeAccount.hardware === "ledger" ? (
               <IconLedger size={15} className="text-[#64D2FF]" />
@@ -457,7 +457,7 @@ export function AddAssetPublicPanel({
             </span>
           </div>
           <span className="mono text-[11px] text-neutral-400">{activeAccount.path ?? "m/44'/148'/0'"}</span>
-        </div>
+        </Notice>
       )}
 
       {pendingSubmission && (

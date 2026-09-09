@@ -4,7 +4,7 @@ import { useId, useLayoutEffect, useMemo, useState } from "react";
 import { useWalletMarket } from "@/hooks/useWallet";
 import { triggerHaptic } from "@/lib/haptics";
 import { marketDataLabel } from "@/lib/prices";
-import { Button, ModalBody, ModalFooter, Notice, Select } from "./ui";
+import { Button, ModalBody, ModalFooter, Notice, QuickAmountChips, Select } from "./ui";
 import { IconSwap } from "./icons";
 
 interface UnitPriceOption {
@@ -186,18 +186,7 @@ export function CurrencyConverterModalBody({
       )}
 
       {/* Quick Amount Presets */}
-      <div className="flex items-center gap-2">
-        {[10, 50, 100, 500, 1000].map((amt) => (
-          <button
-            key={amt}
-            type="button"
-            onClick={() => setFromAmount(String(amt))}
-            className="chip flex-1 justify-center text-[12px] font-medium"
-          >
-            {amt}
-          </button>
-        ))}
-      </div>
+      <QuickAmountChips fill values={[10, 50, 100, 500, 1000]} onPick={setFromAmount} />
 
       {/* DEX Swap Action if both are Stellar assets */}
       <ModalFooter

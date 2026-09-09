@@ -115,7 +115,7 @@ export function PrivateActivityDetails({
   return (
     <ModalBody>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">Private activity</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Private activity</p>
         <h3 className="mt-1 text-[20px] font-bold text-white">{title}</h3>
       </div>
       <dl className="list-group">

@@ -305,21 +305,13 @@ export function Onboarding() {
     });
     const restorePath = (
       <>
-      <Button variant="secondary" loading={readingBackup} loadingLabel="Reading encrypted backup"
+      <OnboardPath
+        icon={<IconRefresh size={17} />}
+        tint="#30D158"
+        title="Restore From Backup"
+        sub={readingBackup ? "Reading encrypted backup…" : "Encrypted wallet-backup .json file"}
         onClick={() => restoreInput.current?.click()}
-        className="group w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5 transition-[background-color,border-color,transform] hover:border-[#30D158]/40 hover:bg-[#30D158]/[0.06] active:scale-[0.99]">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#30D158]/12 text-[#30D158]">
-          <IconRefresh size={16} />
-        </span>
-        <span className="min-w-0 flex-1 text-left">
-          <span className="block text-[14px] font-semibold text-white">
-            Restore From Backup
-          </span>
-          <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
-            Encrypted wallet-backup .json file
-          </span>
-        </span>
-      </Button>
+      />
         <input
           ref={restoreInput}
           type="file"
@@ -336,7 +328,7 @@ export function Onboarding() {
     return (
       <div data-app-surface className="relative z-10 min-h-screen w-full overflow-hidden">
         <Ambient />
-        <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-14 lg:grid-cols-2 lg:gap-16">
+        <div className="app-safe-top app-safe-top-pad-14 fade-up relative mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-start gap-12 px-6 py-14 lg:grid-cols-2 lg:items-center-safe lg:gap-16">
           {/* Brand / pitch column */}
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <LogoMark size={56} />
@@ -475,7 +467,7 @@ export function Onboarding() {
           </>
         ) : (
           <>
-            <div className="rounded-2xl border border-[#30D158]/25 bg-[#30D158]/[0.07] p-4">
+            <Notice tone="pos">
               <p className="flex items-center gap-2 text-[12px] font-semibold text-[#30D158]">
                 <IconCheck size={13} /> Address read from device
               </p>
@@ -485,7 +477,7 @@ export function Onboarding() {
                 className="mt-2.5 justify-center text-center text-[12.5px] leading-loose text-white"
               />
               <p className="mono mt-2 text-center text-[11px] text-neutral-500">{hwInfo.path}</p>
-            </div>
+            </Notice>
             <p className="text-center text-[11.5px] text-neutral-500">
               Does it match the address shown on your Trezor screen?
             </p>
@@ -604,7 +596,7 @@ export function Onboarding() {
               <span className="block text-[14px] font-semibold text-white">
                 Require password to sign
               </span>
-              <span className="mt-1 block truncate text-[12px] leading-relaxed text-neutral-400">
+              <span className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-neutral-400">
                 Recommended · Password required to disable
               </span>
             </span>
@@ -658,13 +650,10 @@ export function Onboarding() {
         }}
         backLabel="Start Over"
       >
-        <div className="flex items-start gap-2.5 rounded-2xl border border-[#FF9F0A]/25 bg-[#FF9F0A]/10 px-3.5 py-3">
-          <IconAlert size={15} className="mt-0.5 shrink-0 text-[#FF9F0A]" />
-          <p className="text-[11.5px] leading-relaxed text-[#FF9F0A]">
-            Anyone with these words controls your funds. Never share them — not even with
-            support.
-          </p>
-        </div>
+        <Notice tone="warn" compact icon={<IconAlert size={15} />}>
+          Anyone with these words controls your funds. Never share them — not even with
+          support.
+        </Notice>
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -778,7 +767,7 @@ export function Onboarding() {
       </div>
 
       <div>
-        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+        <p className="mb-2 px-1 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
           Word Bank
         </p>
         <div className="flex flex-wrap gap-2">

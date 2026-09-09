@@ -414,7 +414,7 @@ export function BackupWizardModalBody({
           <div className="space-y-3">
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-500">
+                <span className="text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
                   Local backup health
                 </span>
                 <span className={`text-[12px] font-semibold ${backupHealth?.lastExportedAt ? "text-[#30D158]" : "text-[#FF9F0A]"}`}>
@@ -802,7 +802,7 @@ export function BackupWizardModalBody({
                   loadingLabel="Decrypting backup"
                   disabled={!restorePw}
                 >
-                  Decrypt & review
+                  Decrypt & Review
                 </Button>
               }
             />

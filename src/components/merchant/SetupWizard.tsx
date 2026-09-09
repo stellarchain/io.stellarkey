@@ -47,7 +47,7 @@ export function SetupWizard({
       initialFocus={nameRef}
     >
       <ModalHeader
-        title={header?.title ?? "Set up Merchant Mode"}
+        title={header?.title ?? "Set Up Merchant Mode"}
         subtitle={header ? header.subtitle : "Step 1 of 4 · The shop"}
         onBack={header?.onBack}
         onClose={onClose}

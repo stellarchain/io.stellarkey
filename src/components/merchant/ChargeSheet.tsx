@@ -346,7 +346,7 @@ function ChargeSheetInner({
         {requestAvailable && (wakeLock.state === "error" || wakeLock.state === "released") && (
           <div className="flex justify-center">
             <Button variant="ghost" className="btn-sm" onClick={wakeLock.retry}>
-              Screen may sleep · Retry
+              Screen May Sleep · Retry
             </Button>
           </div>
         )}
@@ -393,7 +393,7 @@ function ChargeSheetInner({
             </div>
 
             <div className="panel-inset px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 Payment route
               </p>
               <div className="mt-1.5 flex items-center justify-between gap-3">
@@ -446,7 +446,7 @@ function ChargeSheetInner({
                 }
                 secondary={
                   <Button variant="ghost" onClick={onClose}>
-                    Leave it running
+                    Leave It Running
                   </Button>
                 }
               />
@@ -486,7 +486,7 @@ function ChargeSheetInner({
         {/* ---------- settled ---------- */}
         {settled && payment && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#30D158]/30 bg-[#30D158]/10 p-4 text-center">
+            <Notice tone="pos" className="text-center">
               <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#30D158]/20 text-[#30D158]">
                 <IconCheck size={22} />
               </span>
@@ -496,7 +496,7 @@ function ChargeSheetInner({
               <p className="mt-1 text-[13px] text-neutral-300">
                 received in full, {fmtMinor(charge.amountMinor, charge.currency)} on the books.
               </p>
-            </div>
+            </Notice>
             <PaymentFacts payment={payment} />
           </div>
         )}
@@ -504,7 +504,7 @@ function ChargeSheetInner({
         {/* ---------- short ---------- */}
         {charge.status === "underpaid" && payment && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-4">
+            <Notice tone="warn">
               <p className="text-[13.5px] font-semibold text-white">
                 {gap
                   ? `Short by ${gap.amount} ${payment.asset.code}`
@@ -524,7 +524,7 @@ function ChargeSheetInner({
                 payment lands in the unmatched tray, where you can attach it to this order — or take
                 the rest in cash. The order stays open until you do one of them.
               </p>
-            </div>
+            </Notice>
             <PaymentFacts payment={payment} />
           </div>
         )}
@@ -532,7 +532,7 @@ function ChargeSheetInner({
         {/* ---------- over ---------- */}
         {charge.status === "overpaid" && payment && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#FF9F0A]/30 bg-[#FF9F0A]/10 p-4">
+            <Notice tone="warn">
               <p className="text-[13.5px] font-semibold text-white">
                 {gap
                   ? `Over by ${gap.amount} ${payment.asset.code}`
@@ -552,7 +552,7 @@ function ChargeSheetInner({
                 or refund it to the payer from this order. Refunding sends an ordinary payment from
                 the till account.
               </p>
-            </div>
+            </Notice>
             <PaymentFacts payment={payment} />
           </div>
         )}
@@ -600,7 +600,7 @@ function ChargeSheetInner({
         open={confirmingCancel}
         title="Cancel this charge?"
         message="Ends the request the customer is looking at. Anything paid against this payment route afterwards arrives in the unmatched tray instead."
-        confirmLabel="Cancel charge"
+        confirmLabel="Cancel Charge"
         cancelLabel="Keep it"
         destructive
         busy={voiding}

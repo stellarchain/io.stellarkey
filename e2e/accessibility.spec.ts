@@ -231,10 +231,10 @@ async function openWalletSettings(page: Page): Promise<void> {
 async function enableMerchantMode(page: Page): Promise<void> {
   await openWalletSettings(page);
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
-  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-  await setup.getByLabel("Shop name").fill("Accessibility Coffee");
+  const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+  await setup.getByLabel("Shop Name").fill("Accessibility Coffee");
   await setup.getByRole("button", { name: "Continue" }).click();
-  await setup.getByRole("button", { name: "Settlement asset" }).click();
+  await setup.getByRole("button", { name: "Settlement Asset" }).click();
   await page.getByRole("option", { name: /XLM/ }).click();
   await setup.getByRole("switch", { name: "Accept USDC" }).click();
   await expect(setup.getByText("Native — no trustline, no reserve", { exact: true })).toBeVisible();
@@ -243,7 +243,7 @@ async function enableMerchantMode(page: Page): Promise<void> {
   await setup.getByRole("button", { name: "Continue" }).click();
   await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
   await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("button", { name: "Open the till" }).click();
+  await setup.getByRole("button", { name: "Open the Till" }).click();
   await expect(setup).toBeHidden();
   await expect(page.getByText("Till locked · no open shift", { exact: true })).toBeVisible();
 }
@@ -484,29 +484,29 @@ test("critical merchant screens remain operable and accessible", async ({ page, 
   await expectAccessibleSurface(page, "merchant counter codes", browserName);
 
   await clickMerchantSection(page, "Till");
-  await page.getByRole("button", { name: "Open shift", exact: true }).first().click();
-  const shift = page.getByRole("dialog", { name: /Open shift/ });
+  await page.getByRole("button", { name: "Open Shift", exact: true }).first().click();
+  const shift = page.getByRole("dialog", { name: /Open Shift/ });
   await expect(shift).toBeVisible();
   await expectAccessibleSurface(page, "open shift sheet", browserName);
   await shift.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Catalogue");
-  await page.getByRole("button", { name: "New item", exact: true }).click();
-  const item = page.getByRole("dialog", { name: "New item" });
+  await page.getByRole("button", { name: "New Item", exact: true }).click();
+  const item = page.getByRole("dialog", { name: "New Item" });
   await expect(item).toBeVisible();
   await expectAccessibleSurface(page, "new catalogue item sheet", browserName);
   await item.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Invoices");
-  await page.getByRole("button", { name: "New invoice", exact: true }).first().click();
-  const invoice = page.getByRole("dialog", { name: "New invoice" });
+  await page.getByRole("button", { name: "New Invoice", exact: true }).first().click();
+  const invoice = page.getByRole("dialog", { name: "New Invoice" });
   await expect(invoice).toBeVisible();
   await expectAccessibleSurface(page, "new invoice sheet", browserName);
   await invoice.getByRole("button", { name: "Close", exact: true }).click();
 
   await clickMerchantSection(page, "Counter codes");
-  await page.getByRole("button", { name: "New code", exact: true }).first().click();
-  const counterCode = page.getByRole("dialog", { name: "New counter code" });
+  await page.getByRole("button", { name: "New Code", exact: true }).first().click();
+  const counterCode = page.getByRole("dialog", { name: "New Counter Code" });
   await expect(counterCode).toBeVisible();
   await expectAccessibleSurface(page, "new counter code sheet", browserName);
   await counterCode.getByRole("button", { name: "Close", exact: true }).click();
@@ -519,14 +519,14 @@ test("critical merchant settings remain operable and accessible", async ({ page,
   await expectAccessibleSurface(page, "merchant settings", browserName);
 
   for (const [row, title] of [
-    [/^Business details/, "Business details"],
-    [/^Payment setup/, "Payment setup"],
-    [/^Accepted assets/, "Accepted assets"],
-    [/^Settlement rules/, "Settlement rules"],
+    [/^Business Details/, "Business Details"],
+    [/^Payment Setup/, "Payment Setup"],
+    [/^Accepted Assets/, "Accepted Assets"],
+    [/^Settlement Rules/, "Settlement Rules"],
     [/^Tax Calculation/, "Tax"],
-    [/^Tax rates/, "Tax rates"],
+    [/^Tax Rates/, "Tax Rates"],
     [/^Tips/, "Tips"],
-    [/^This device/, "This device"],
+    [/^This Device/, "This Device"],
   ] as const) {
     await page.getByRole("button", { name: row }).click();
     const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -536,20 +536,20 @@ test("critical merchant settings remain operable and accessible", async ({ page,
   }
 
   for (const [row, heading] of [
-    [/^Staff & terminals/, "Staff & this device"],
-    [/^Tax records/, "Tax records"],
+    [/^Staff & Terminals/, "Staff & This Device"],
+    [/^Tax Records/, "Tax Records"],
     [/^Peripherals/, "Peripherals"],
   ] as const) {
     await page.getByRole("button", { name: row }).click();
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expectAccessibleSurface(page, `${heading} merchant settings`, browserName);
 
-    if (heading === "Staff & this device") {
+    if (heading === "Staff & This Device") {
       for (const [action, title, close] of [
-        [/^Operator locking/, "Operator locking", "Done"],
-        [/Add operator/, "Add operator", "Done"],
-        [/^Manage$/, "On this shift", "Done"],
-        [/^Add staff$/, "Add staff", "Close"],
+        [/^Operator Locking/, "Operator Locking", "Done"],
+        [/Add Operator/, "Add Operator", "Done"],
+        [/^Manage$/, "On This Shift", "Done"],
+        [/^Add Staff$/, "Add Staff", "Close"],
       ] as const) {
         await page.getByRole("button", { name: action }).click();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -559,15 +559,15 @@ test("critical merchant settings remain operable and accessible", async ({ page,
       }
     }
 
-    if (heading === "Tax records") {
+    if (heading === "Tax Records") {
       for (const [action, title] of [
-        [/^Reporting period/, "Reporting period"],
-        [/^Tax rates/, "Tax rates"],
-        [/^Export report/, "Export report"],
-        [/^Encrypted archive/, "Encrypted archive"],
+        [/^Reporting Period/, "Reporting Period"],
+        [/^Tax Rates/, "Tax Rates"],
+        [/^Export Report/, "Export Report"],
+        [/^Encrypted Archive/, "Encrypted Archive"],
         [/^Retention/, "Retention"],
-        [/^Export history/, "Export history"],
-        [/^About tax records/, "About tax records"],
+        [/^Export History/, "Export History"],
+        [/^About Tax Records/, "About Tax Records"],
       ] as const) {
         await page.getByRole("button", { name: action }).click();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -580,8 +580,8 @@ test("critical merchant settings remain operable and accessible", async ({ page,
     await page.getByRole("button", { name: "Back to Merchant settings" }).click();
   }
 
-  await page.getByRole("button", { name: /^Turn off Merchant Mode/ }).click();
-  const turnOff = page.getByRole("dialog", { name: /Turn off Merchant Mode/ });
+  await page.getByRole("button", { name: /^Turn Off Merchant Mode/ }).click();
+  const turnOff = page.getByRole("dialog", { name: /Turn Off Merchant Mode/ });
   await expect(turnOff).toBeVisible();
   await expectAccessibleSurface(page, "turn off Merchant Mode sheet", browserName);
   await turnOff.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -631,6 +631,6 @@ test("the completed swap receipt remains usable at the narrowest iPhone width", 
   await expect(page.getByRole("heading", { name: "Swap complete" })).toBeVisible();
   await expectAccessibleSurface(page, "completed swap receipt", browserName);
   await expect(page.getByRole("button", { name: "Done", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "View activity", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Swap again", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap Again", exact: true })).toBeVisible();
 });

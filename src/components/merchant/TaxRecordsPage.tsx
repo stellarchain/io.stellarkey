@@ -265,7 +265,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
         </span>
         <span className="w-11" aria-hidden />
       </div>
-      <h1 className="display-h text-[32px] font-bold tracking-tight text-white">Tax records</h1>
+      <h1 className="display-h text-[32px] font-bold tracking-tight text-white">Tax Records</h1>
       <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-neutral-400">
         Review the current period, prepare evidence files, and manage the records kept on this
         device.
@@ -280,7 +280,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconReceipt size={16} />}
                   tint="#0A84FF"
-                  label="Reporting period"
+                  label="Reporting Period"
                   sub={
                     period
                       ? `${period.orderCount} ${period.orderCount === 1 ? "order" : "orders"}`
@@ -318,7 +318,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 )}
 
                 <div className="border-t border-white/[0.08]">
-                  <p className="px-4 pb-1.5 pt-3.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                  <p className="px-4 pb-1.5 pt-3.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                     Tax by rate
                   </p>
                   {taxRows.map((row, index) => {
@@ -363,7 +363,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconPercent size={16} />}
                   tint="#BF5AF2"
-                  label="Tax rates"
+                  label="Tax Rates"
                   sub="Rates and catalogue mappings"
                   value={`${settings.taxRates.length}`}
                   chevron
@@ -373,7 +373,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   icon={<IconDownload size={16} />}
                   tint="#30D158"
-                  label="Export report"
+                  label="Export Report"
                   sub={canExportRecords
                     ? (period?.label ?? "Choose a date range")
                     : "Owner or export permission required"}
@@ -385,7 +385,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   icon={<IconLock size={16} />}
                   tint="#5E5CE6"
-                  label="Encrypted archive"
+                  label="Encrypted Archive"
                   sub="Complete retained merchant record"
                   chevron
                   opensDialog
@@ -404,7 +404,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <SettingsRow
                   icon={<IconBars size={16} />}
                   tint="#64D2FF"
-                  label="Export history"
+                  label="Export History"
                   sub="Files prepared on this device"
                   value={`${exportRecords.length}`}
                   chevron
@@ -423,7 +423,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                   first
                   icon={<IconInfo size={16} />}
                   tint="#8E8E93"
-                  label="About tax records"
+                  label="About Tax Records"
                   sub="Calculations, ledger evidence, and limitations"
                   chevron
                   opensDialog
@@ -446,8 +446,8 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "period" && (
             <>
               <ModalHeader
-                title="Reporting period"
-                subtitle="Choose the period shown in Tax records"
+                title="Reporting Period"
+                subtitle="Choose the period shown in Tax Records"
                 onClose={() => setActiveSheet(null)}
               />
               <SheetBody sheet="period">
@@ -489,7 +489,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "rates" && (
             <>
               <ModalHeader
-                title="Tax rates"
+                title="Tax Rates"
                 subtitle="Read-only rates and catalogue mappings"
                 onClose={() => setActiveSheet(null)}
               />
@@ -534,7 +534,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "export" && (
             <>
               <ModalHeader
-                title="Export report"
+                title="Export Report"
                 subtitle="Prepare a local evidence file"
                 onClose={() => setActiveSheet(null)}
               />
@@ -575,7 +575,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setPreview(null);
                           }}
                           enterKeyHint="next"
-                          className="input input-mono text-base sm:text-[14px]"
+                          className="input mono text-base sm:text-[14px]"
                         />
                       </div>
                       <div>
@@ -591,7 +591,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                             setPreview(null);
                           }}
                           enterKeyHint="done"
-                          className="input input-mono text-base sm:text-[14px]"
+                          className="input mono text-base sm:text-[14px]"
                         />
                       </div>
                     </div>
@@ -627,7 +627,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                 <ModalFooter
                   secondary={
                     <Button variant="ghost" onClick={handlePreview}>
-                      Preview rows
+                      Preview Rows
                     </Button>
                   }
                   primary={
@@ -653,7 +653,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "archive" && (
             <>
               <ModalHeader
-                title="Encrypted archive"
+                title="Encrypted Archive"
                 subtitle="A portable encrypted merchant record set"
                 onClose={() => setActiveSheet(null)}
               />
@@ -673,13 +673,13 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
                       first
                       icon={<IconReceipt size={16} />}
                       tint="#0A84FF"
-                      label="Operational records"
+                      label="Operational Records"
                       sub="Orders, receipts, staff audit, customers, and settings"
                     />
                     <SettingsRow
                       icon={<IconLock size={16} />}
                       tint="#5E5CE6"
-                      label="Encrypted locally"
+                      label="Encrypted Locally"
                       sub="Restorable only alongside the matching encrypted wallet backup"
                     />
                   </div>
@@ -755,7 +755,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "history" && (
             <>
               <ModalHeader
-                title="Export history"
+                title="Export History"
                 subtitle="Reports prepared on this device"
                 onClose={() => setActiveSheet(null)}
               />
@@ -789,7 +789,7 @@ export function TaxRecordsPage({ onBack }: { onBack: () => void }) {
           {shownSheet === "compliance" && (
             <>
               <ModalHeader
-                title="About tax records"
+                title="About Tax Records"
                 subtitle="What these figures can and cannot prove"
                 onClose={() => setActiveSheet(null)}
               />
@@ -837,7 +837,7 @@ function Figure({
 }) {
   return (
     <div className="min-w-0 bg-[#1c1c1e] px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{label}</p>
       <p
         className={`mono mt-0.5 truncate text-[16px] font-semibold ${
           tone === "neg" ? "text-[#FF453A]" : "text-white"

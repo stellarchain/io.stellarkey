@@ -11,6 +11,7 @@ import {
   Avatar,
   Button,
   ErrorText,
+  FieldLabelRow,
   HashValue,
   Modal,
   ModalBody,
@@ -297,7 +298,7 @@ function CustomerDetail({
             onClick={() => void saveToContacts()}
           >
             <IconUserPlus size={13} />
-            {customer.name ? "Update" : "Save contact"}
+            {customer.name ? "Update" : "Save Contact"}
           </Button>
         </div>
         <ErrorText message={contactAction.error} />
@@ -322,7 +323,7 @@ function CustomerDetail({
               No loyalty card. Open one and the till stamps it as this address pays.
             </p>
             <Button ref={startButtonRef} variant="secondary" focusableWhenDisabled loading={cardAction.pending} loadingLabel="Opening loyalty card" onClick={startCard}>
-              Start a card
+              Start a Card
             </Button>
           </div>
         ) : (
@@ -460,12 +461,7 @@ function CustomerDetail({
 
         {/* Note */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label htmlFor="customer-note" className="field-label !pb-0">
-              Note
-            </label>
-            <span className="text-[11px] text-neutral-400">{note.trim().length}/140</span>
-          </div>
+          <FieldLabelRow htmlFor="customer-note" label="Note" meta={`${note.trim().length}/140`} className="!pb-0" />
           <textarea
             id="customer-note"
             className="input min-h-[76px] resize-y text-base sm:text-[14px]"
@@ -476,7 +472,7 @@ function CustomerDetail({
           <div className="flex items-center justify-between gap-3">
             <p className="text-[11.5px] text-neutral-500">Kept on this device.</p>
             <Button variant="secondary" focusableWhenDisabled disabled={!noteDirty} loading={noteAction.pending} loadingLabel="Saving note" onClick={saveNote}>
-              Save note
+              Save Note
             </Button>
           </div>
           <ErrorText message={noteAction.error} />
@@ -555,7 +551,7 @@ function Figure({
 }) {
   return (
     <div className={`min-w-0 px-3 py-0.5 ${divider ? "border-l border-white/[0.08]" : ""}`}>
-      <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-neutral-500">
+      <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
         {label}
       </p>
       <p

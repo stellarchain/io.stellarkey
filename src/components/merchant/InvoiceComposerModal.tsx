@@ -339,7 +339,7 @@ function Composer({
   return (
     <>
       <ModalHeader
-        title={isEdit ? "Edit invoice" : "New invoice"}
+        title={isEdit ? "Edit invoice" : "New Invoice"}
         subtitle={`${identity.number} · reference ${identity.reference}`}
         onClose={onClose}
       />
@@ -352,7 +352,7 @@ function Composer({
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Praça Hotel"
+              placeholder="Customer name"
               enterKeyHint="next"
               autoCapitalize="words"
               className="input text-base sm:text-[14px]"
@@ -364,7 +364,7 @@ function Composer({
               inputMode="email"
               value={customerEmail}
               onChange={(e) => setCustomerEmail(e.target.value)}
-              placeholder="contas@example.pt"
+              placeholder="name@example.com"
               autoComplete="off"
               autoCapitalize="none"
               enterKeyHint="next"
@@ -485,7 +485,7 @@ function Composer({
               />
             </div>
             <Button type="button" variant="ghost" className="shrink-0 sm:w-auto" onClick={addFreeLine}>
-              <IconPlus size={14} /> Free-text line
+              <IconPlus size={14} /> Free-Text Line
             </Button>
           </div>
         </div>
@@ -540,7 +540,7 @@ function Composer({
               ariaLabel="Payment terms"
             />
           </div>
-          <Field label="Due date">
+          <Field label="Due Date">
             <input
               type="date"
               value={dueDate}
@@ -560,7 +560,7 @@ function Composer({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            placeholder="Monthly wholesale order."
+            placeholder="Shown on the invoice"
             className="input resize-none text-base sm:text-[14px]"
           />
         </Field>
@@ -583,7 +583,7 @@ function Composer({
           }
           primary={
             <Button type="button" onClick={handleSave}>
-              Save draft
+              Save Draft
             </Button>
           }
         />

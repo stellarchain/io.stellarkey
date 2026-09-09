@@ -361,7 +361,7 @@ function CounterPoster({ code, onClose }: { code: CounterCode; onClose: () => vo
   return (
     <>
       <ModalHeader
-        title="Counter poster"
+        title="Counter Poster"
         subtitle={`${code.title} · A6 card, ${A6_WIDTH_MM} × ${A6_HEIGHT_MM} mm`}
         onClose={onClose}
       />

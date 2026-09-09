@@ -20,8 +20,8 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await importTestWallet(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("switch", { name: "Merchant Mode" }).click();
-  const setup = page.getByRole("dialog", { name: /Set up Merchant Mode/ });
-  await setup.getByLabel("Shop name").fill("Two Tab Coffee");
+  const setup = page.getByRole("dialog", { name: /Set Up Merchant Mode/ });
+  await setup.getByLabel("Shop Name").fill("Two Tab Coffee");
   await setup.getByRole("button", { name: "Continue" }).click();
   await setup.getByText("Trustline held", { exact: true }).waitFor();
   await setup.getByRole("button", { name: "Continue" }).click();
@@ -29,7 +29,7 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await setup.getByRole("button", { name: "Continue" }).click();
   await setup.getByRole("textbox", { name: "Staff PIN", exact: true }).fill("2468");
   await setup.getByRole("textbox", { name: "Confirm staff PIN", exact: true }).fill("2468");
-  await setup.getByRole("button", { name: "Open the till" }).click();
+  await setup.getByRole("button", { name: "Open the Till" }).click();
   await setup.waitFor({ state: "hidden" });
 
   const second = await context.newPage();
@@ -37,7 +37,7 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await second.getByPlaceholder("Enter password").fill(testPassword);
   await second.getByRole("button", { name: "Unlock Vault" }).click();
   await second.getByRole("button", { name: "Settings", exact: true }).click();
-  await second.getByText("Staff & terminals", { exact: true }).click();
+  await second.getByText("Staff & Terminals", { exact: true }).click();
   await second.getByRole("button", { name: "Switch to Imported Account" }).click();
   const ownerPin = second.getByRole("dialog", { name: "Imported Account" });
   await ownerPin.getByLabel("PIN for Imported Account").fill("2468");
@@ -60,8 +60,8 @@ test("only the Web Locks owner writes merchant data and another tab takes over",
   await ownerPin.getByRole("button", { name: "Select", exact: true }).click();
   await expect(ownerPin).toBeHidden();
   await second.getByRole("button", { name: "Settings", exact: true }).click();
-  await second.getByRole("button", { name: "Turn off Merchant Mode", exact: true }).click();
-  const turnOff = second.getByRole("dialog", { name: "Turn off Merchant Mode?" });
+  await second.getByRole("button", { name: "Turn Off Merchant Mode", exact: true }).click();
+  const turnOff = second.getByRole("dialog", { name: "Turn Off Merchant Mode?" });
   const confirmTurnOff = turnOff.getByRole("button", { name: "Turn Off Merchant Mode" });
   await confirmTurnOff.click();
   const authorization = second.getByRole("dialog", { name: "Confirm security change" });

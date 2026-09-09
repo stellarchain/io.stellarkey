@@ -893,7 +893,7 @@ test("multisig review renders every changed signer key in full", () => {
     ?.split("<Notice tone=\"warn\">")[0];
   const disableReview = source
     .split("This removes every cosigner")[1]
-    ?.split("Disable multi-sig")[0];
+    ?.split("Disable Multi-Sig")[0];
 
   assert.ok(changeReview, "expected the changed-signer review section");
   assert.match(changeReview, /break-all/);

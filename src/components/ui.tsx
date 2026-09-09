@@ -245,9 +245,9 @@ export function IOSBackButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={`group flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 sm:h-9 sm:w-9 ${className}`}
+      className={`group flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-opacity active:opacity-60 disabled:pointer-events-none disabled:opacity-35 pointer-coarse:h-11 pointer-coarse:w-11 ${className}`}
     >
-      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] sm:h-8 sm:w-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.14] bg-white/[0.09] text-[#0A84FF] pointer-coarse:h-11 pointer-coarse:w-11 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_5px_18px_-8px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-colors group-hover:bg-white/[0.14]">
         <IconChevronDown size={21} className="rotate-90" />
       </span>
     </button>
@@ -928,10 +928,10 @@ export function Modal({
         resolvedWide ? "max-w-2xl" : "max-w-xl"
       }`
     : isAlert
-      ? "modal-alert relative w-full min-w-0 max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
+      ? "modal-alert relative w-full min-w-0 max-w-[270px] sm:max-w-[300px] overflow-y-auto scrollbar-none overscroll-contain rounded-[26px] border border-white/[0.12] bg-[#1c1c1e]/98 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
       : isFullscreen
         ? "modal-fullscreen relative h-full w-full min-w-0 max-w-none overflow-y-auto scrollbar-none overscroll-contain bg-[#0A0A0B]"
-        : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
+        : `modal-dialog relative max-h-[90dvh] w-full min-w-0 overflow-y-auto md:max-h-[calc(100dvh-10rem)] scrollbar-none overscroll-contain ${MODAL_PANEL_CLASS} ${
             resolvedWide ? "max-w-xl" : "max-w-md"
           }`;
   const holdStyle: React.CSSProperties | undefined = closing && exitGeometry && !isFullscreen
@@ -1058,7 +1058,7 @@ export function ModalHeader({
   return (
     <div
       data-sheet-handle={modal?.presentation === "sheet" ? "true" : undefined}
-      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[#121214]/80 px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
+      className={`sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.08] bg-[#121214]/94 px-4 py-4 backdrop-blur-xl sm:px-6 ${className}`}
     >
       {onBack && (
         <IOSBackButton
@@ -1092,7 +1092,7 @@ export function ModalHeader({
             if (modal) modal.requestClose("close", onClose);
             else onClose();
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 sm:h-9 sm:w-9 shrink-0"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-neutral-400 transition-colors hover:bg-white/15 hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-white/10 aria-disabled:hover:text-neutral-400 pointer-coarse:h-11 pointer-coarse:w-11"
           aria-label="Close"
         >
           <IconClose size={14} />
@@ -1129,18 +1129,22 @@ export function ModalFooter({
   primary,
   secondary,
   stack = false,
+  pinned = true,
   className = "",
 }: {
   primary: React.ReactNode;
   secondary?: React.ReactNode;
   stack?: boolean;
+  /** Stay visible at the panel's bottom edge while a long body scrolls. */
+  pinned?: boolean;
   className?: string;
 }) {
+  const pin = pinned ? "modal-footer-pinned -mb-4 mt-3 pb-4 pt-3 sm:-mb-6 sm:pb-6" : "mt-6";
   if (!secondary) {
-    return <div className={`mt-6 grid grid-cols-1 gap-3 ${className}`}>{primary}</div>;
+    return <div className={`${pin} grid grid-cols-1 gap-3 ${className}`}>{primary}</div>;
   }
   return (
-    <div className={`mt-6 ${stack ? "flex flex-col-reverse gap-2" : "grid grid-cols-2 gap-3"} ${className}`}>
+    <div className={`${pin} ${stack ? "flex flex-col-reverse gap-2" : "grid grid-cols-2 gap-3"} ${className}`}>
       {secondary}
       {primary}
     </div>
@@ -1197,6 +1201,7 @@ export function ConfirmModal({
         message={message}
         actions={
           <ModalFooter
+            pinned={false}
             stack={stack || confirmLabel.length + cancelLabel.length > 18}
             secondary={
               <Button type="button" variant="ghost" disabled={busy || !open} onClick={cancel}>
@@ -1775,7 +1780,7 @@ export function Dropdown({
     anchorRef,
     align,
     matchAnchorWidth: false,
-    minWidth: 220,
+    minWidth: 248,
   });
 
   // Run before newly opened dialogs capture their return target. A menu action
@@ -2046,7 +2051,7 @@ export function HashValue({
         aria-busy={pending || undefined}
         onClick={(event) => void write(event)}
         title={`${value}\nClick to copy`}
-        className={`mono inline-block max-w-full cursor-pointer text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
+        className={`tap-reset mono inline-block max-w-full cursor-pointer text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
           copied ? "!text-[#30D158]" : ""
         } ${className}`}
       >
@@ -2066,7 +2071,7 @@ export function HashValue({
       onClick={(event) => void write(event)}
       data-mobile-truncate={truncate ? "true" : undefined}
       title={`${value}\nClick to copy`}
-      className={`mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
+      className={`tap-reset mono inline-flex max-w-full cursor-pointer items-baseline gap-x-[0.45em] gap-y-0.5 text-left transition-colors aria-disabled:cursor-wait aria-disabled:opacity-60 ${
         truncate ? "flex-nowrap whitespace-nowrap" : "flex-wrap"
       } ${copied ? "!text-[#30D158]" : ""} ${className}`}
     >
@@ -2141,7 +2146,7 @@ export function SegmentedControl<T extends string>({
                 onChange(opt.value);
               }
             }}
-            className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 sm:min-h-0 ${
+            className={`relative flex-1 rounded-[9px] py-1.5 text-center text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 pointer-coarse:min-h-11 ${
               opt.disabled
                 ? "cursor-not-allowed text-neutral-400"
                 : active
@@ -2245,7 +2250,7 @@ export function Tabs<T extends string>({
               onKeyDown={(event) => move(event, index)}
               onFocus={() => setFocusedValue(option.value)}
               onClick={() => activate(index)}
-              className={`relative min-h-11 flex-1 rounded-[9px] py-1 text-center text-[12px] font-medium transition-[background-color,color,box-shadow] duration-150 sm:min-h-0 ${
+              className={`relative flex-1 rounded-[9px] py-1.5 text-center text-[13px] font-medium transition-[background-color,color,box-shadow] duration-150 pointer-coarse:min-h-11 ${
                 option.disabled
                   ? "cursor-not-allowed text-neutral-400"
                   : active
@@ -2403,13 +2408,134 @@ export function Field({
       })())
     : children;
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <label htmlFor={controlId} className="field-label !pb-0 shrink-0">{label}</label>
-        {hint && <span id={hintId} className="ml-auto min-w-0 text-right text-[11px] text-neutral-400">{hint}</span>}
-      </div>
-      {control}
-      {error && <p id={errorId} role="alert" className="text-[11.5px] text-[#FF453A]">{error}</p>}
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5">
+      <label htmlFor={controlId} className="field-label col-span-2 !pb-0 sm:col-span-1">{label}</label>
+      {hint && (
+        <span id={hintId} className="order-3 col-span-2 text-[11px] text-neutral-400 sm:order-none sm:col-span-1 sm:self-baseline sm:text-right">
+          {hint}
+        </span>
+      )}
+      <div className="col-span-2">{control}</div>
+      {error && <p id={errorId} role="alert" className="order-4 col-span-2 text-[11.5px] text-[#FF453A]">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The label line above a field. `action` holds trailing text buttons (Max,
+ * Paste) that keep their 44 pt target on touch without growing the line, and
+ * `meta` holds a plain trailing note (a counter), so side-by-side fields keep
+ * their controls on one baseline.
+ */
+export function FieldLabelRow({
+  label,
+  htmlFor,
+  id,
+  action,
+  meta,
+  className = "",
+}: {
+  label: React.ReactNode;
+  htmlFor?: string;
+  id?: string;
+  action?: React.ReactNode;
+  meta?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-1.5 ${className}`}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} id={id} className="field-label min-w-0 !pb-0">{label}</label>
+      ) : (
+        <span id={id} className="field-label min-w-0 !pb-0">{label}</span>
+      )}
+      {action ? <div className="ml-auto flex shrink-0 items-center gap-1">{action}</div> : null}
+      {meta ? <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{meta}</span> : null}
+    </div>
+  );
+}
+
+/** A tinted text button that lives in a field's label line. */
+export function FieldAction({ className = "", children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`pointer-coarse:-my-3 flex items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-[#0A84FF] transition-colors hover:bg-white/[0.06] active:bg-white/[0.08] disabled:opacity-40 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Preset amounts beneath an amount field, with an optional MAX chip. */
+export function QuickAmountChips({
+  values = [10, 25, 50, 100],
+  onPick,
+  max,
+  onMax,
+  fill = false,
+  className = "",
+}: {
+  values?: readonly number[];
+  onPick: (value: string) => void;
+  /** The largest spendable amount; null hides the MAX chip. */
+  max?: string | null;
+  onMax?: () => void;
+  /** Stretch the chips across the row instead of scrolling. */
+  fill?: boolean;
+  className?: string;
+}) {
+  const chip = `flex shrink-0 items-center justify-center rounded-xl px-3.5 py-1 text-[13px] transition-colors ${fill ? "flex-1" : ""}`;
+  return (
+    <div role="group" aria-label="Quick amounts" className={`flex items-center gap-2 overflow-x-auto scrollbar-none ${className}`}>
+      {values.map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onPick(String(value))}
+          className={`${chip} bg-white/[0.06] font-medium text-neutral-300 hover:bg-white/[0.12] active:bg-white/[0.16]`}
+        >
+          {value}
+        </button>
+      ))}
+      {max != null && onMax ? (
+        <button
+          type="button"
+          onClick={onMax}
+          className={`${chip} border border-[#0A84FF]/30 bg-[#0A84FF]/15 font-bold text-accent-2 hover:bg-[#0A84FF]/25`}
+        >
+          MAX
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** An empty list explains what will appear and, when useful, offers the first step. */
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  className = "",
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  description?: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center px-6 py-10 text-center ${className}`}>
+      {icon ? (
+        <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.06] text-neutral-400">
+          {icon}
+        </span>
+      ) : null}
+      <p className="text-[15px] font-semibold text-white">{title}</p>
+      {description ? <p className="mt-1 max-w-[32ch] text-[13px] leading-relaxed text-neutral-400">{description}</p> : null}
+      {action ? <div className="mt-4">{action}</div> : null}
     </div>
   );
 }
@@ -2426,20 +2552,41 @@ export function ErrorText({ message }: { message: string }) {
 export function Notice({
   children,
   tone = "info",
+  icon,
+  compact = false,
+  role,
+  className = "",
 }: {
   children: React.ReactNode;
-  tone?: "info" | "warn" | "pos";
+  /** info: neutral · accent: guidance · warn: caution · pos: success · danger: blocked. */
+  tone?: "info" | "accent" | "warn" | "pos" | "danger";
+  /** A leading glyph that takes the tone's colour. */
+  icon?: React.ReactNode;
+  /** Field-level size for notes that sit inside a form. */
+  compact?: boolean;
+  role?: React.AriaRole;
+  className?: string;
 }) {
   const styles =
     tone === "pos"
       ? "border-[#30D158]/30 bg-[#30D158]/10 text-neutral-200"
       : tone === "warn"
         ? "border-[#FF9F0A]/30 bg-[#FF9F0A]/10 text-neutral-200"
-        : "border-white/10 bg-white/[0.04] text-neutral-300";
+        : tone === "danger"
+          ? "border-[#FF453A]/30 bg-[#FF453A]/10 text-[#FF6961]"
+          : tone === "accent"
+            ? "border-[#0A84FF]/30 bg-[#0A84FF]/10 text-[#A7D4FF]"
+            : "border-white/10 bg-white/[0.04] text-neutral-300";
+  const iconTone =
+    tone === "pos" ? "text-[#30D158]" : tone === "warn" ? "text-[#FF9F0A]" : tone === "danger" ? "text-[#FF6961]" : tone === "accent" ? "text-[#64D2FF]" : "text-neutral-400";
 
   return (
-    <div className={`rounded-2xl border p-4 text-[13px] leading-relaxed ${styles}`}>
-      {children}
+    <div
+      role={role}
+      className={`rounded-2xl border leading-relaxed ${compact ? "p-3.5 text-[12.5px]" : "p-4 text-[13px]"} ${icon ? "flex items-start gap-2.5" : ""} ${styles} ${className}`}
+    >
+      {icon ? <span aria-hidden="true" className={`mt-0.5 shrink-0 ${iconTone}`}>{icon}</span> : null}
+      {icon ? <div className="min-w-0 flex-1">{children}</div> : children}
     </div>
   );
 }
@@ -2476,13 +2623,13 @@ export function Toggle({
         triggerHaptic("selection");
         onChange(!isChecked);
       }}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent pointer-coarse:h-[31px] pointer-coarse:w-[51px] transition-colors duration-200 ease-in-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
         isChecked ? "bg-[#30D158]" : "bg-neutral-700"
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       <span className="sr-only">{label}</span>
       <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out ${
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 pointer-coarse:h-[27px] pointer-coarse:w-[27px] transition-transform duration-200 ease-in-out ${
           isChecked ? "translate-x-5" : "translate-x-0"
         }`}
       />
@@ -2553,7 +2700,7 @@ export function QrScannerBox({
           placeholder="Paste scanned address or URI..."
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
-          className="input mono flex-1 !h-11 text-base md:!h-8 sm:text-[12px]"
+          className="input mono flex-1 !h-11 text-base md:!h-8 sm:text-[13px]"
         />
         <Button
           variant="secondary"

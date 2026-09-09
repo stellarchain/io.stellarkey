@@ -50,7 +50,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   const entry = read('src/features/private-balance/components/PrivateRelayEntry.tsx');
   const body = read('src/features/private-balance/components/PrivateRelayEntryBody.tsx');
   const helperStatus = read('src/features/private-balance/relay/helper-status.ts');
-  assert.match(entry, /Earn by relaying/);
+  assert.match(entry, /Earn by Relaying/);
   assert.match(entry, /PRIVATE_RELAY_PREFERENCES_EVENT/);
   assert.match(entry, /preferences\.helpRelay/);
   assert.match(entry, /useSyncExternalStore/);
@@ -65,7 +65,7 @@ test('home exposes a focused earn-by-relaying entry with live helper status', ()
   assert.doesNotMatch(body, /onSaved=|setOpen\(/);
   assert.match(entry, /<Modal open=\{open\}/);
   assert.match(settings, /Start relaying/);
-  assert.match(settings, /Stop relaying/);
+  assert.match(settings, /Stop Relaying/);
   assert.match(settings, /helperOnly/);
   assert.match(settings, /onSaved/);
   assert.doesNotMatch(settings, /Relay settings saved on this device/);

@@ -248,7 +248,7 @@ function ReceiveInner({
           className="mt-4 justify-center text-center text-[12.5px] leading-relaxed text-neutral-300"
         />
 
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center">
           <CopyButton value={address} label="Copy Address" className="chip tap" />
           {activeAccount?.hardware === "trezor" && (
             <Button
@@ -262,13 +262,9 @@ function ReceiveInner({
             </Button>
           )}
           {canShare && (
-            <Button
-              variant="secondary"
-              className="btn-sm"
-              onClick={handleShare}
-            >
+            <button type="button" className="chip" onClick={handleShare}>
               <IconShare size={12} /> Share
-            </Button>
+            </button>
           )}
           {qrDataUrl && (
             <a

@@ -39,7 +39,7 @@ test("modal sheets follow the visual viewport and preserve focus", () => {
     ui,
     /function unregisterModal\(modal: HTMLElement\)[\s\S]*modal\.inert = false;[\s\S]*syncModalInertness\(\)/,
   );
-  assert.match(ui, /className="flex h-11 w-11 items-center justify-center rounded-full/);
+  assert.match(ui, /className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full/);
 });
 
 test("customer display restores the till control that opened it", () => {

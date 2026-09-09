@@ -15,7 +15,7 @@ function visit(node) {
     const callback = node.arguments[0];
     const text = callback?.getText(parsed) ?? '';
     if (text.includes('const started = performance.now()') && text.includes('new MutationObserver')) {
-      measurements.push({ label: text.includes('Stop relaying') ? 'feedback' : 'opening', text });
+      measurements.push({ label: text.includes('Stop Relaying') ? 'feedback' : 'opening', text });
     }
   }
   ts.forEachChild(node, visit);
@@ -56,7 +56,7 @@ function measurement(callback) {
     get disconnected() { return disconnected; },
     mutate(time, expected = false) {
       now = time;
-      if (expected) { ready = true; button.textContent = 'Stop relaying'; }
+      if (expected) { ready = true; button.textContent = 'Stop Relaying'; }
       if (!disconnected) observer();
     },
     frame(time) {

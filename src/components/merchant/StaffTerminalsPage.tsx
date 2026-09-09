@@ -173,7 +173,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
         <span className="w-11" aria-hidden />
       </div>
 
-      <h1 className="display-h text-[28px] font-bold text-white">Staff &amp; this device</h1>
+      <h1 className="display-h text-[28px] font-bold text-white">Staff &amp; This Device</h1>
       <p className="mt-1.5 max-w-[60ch] text-[13px] leading-relaxed text-neutral-400">
         Staff are roles on this device, not accounts. Switching staff attributes the orders rung up
         next and gates what the till will allow — locally, in this app, and nowhere else.
@@ -230,7 +230,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   </span>
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                     Current operator
                   </span>
                   <span className="mt-0.5 block truncate text-[16px] font-semibold text-white">
@@ -304,7 +304,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                     <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-white/[0.08] text-[22px] font-light text-[#0A84FF]">
                       +
                     </span>
-                    <span className="text-[11.5px] font-semibold">Add operator</span>
+                    <span className="text-[11.5px] font-semibold">Add Operator</span>
                   </button>
                 </div>
               </div>
@@ -318,7 +318,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                   <IconLock size={14} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14.5px] text-white">Operator locking</span>
+                  <span className="block text-[14.5px] text-white">Operator Locking</span>
                   <span className="block truncate text-[11.5px] text-neutral-400">
                     {settings.operatorLockMode === "after_sale"
                       ? "After every sale"
@@ -346,7 +346,7 @@ export function StaffTerminalsPage({ onBack }: { onBack: () => void }) {
                 disabled={activeStaff?.role !== "owner"}
                 onClick={() => setAdding(true)}
               >
-                Add staff
+                Add Staff
               </Button>
             </div>
             <div className="list-group">
@@ -524,7 +524,7 @@ function OperatorPickerSheet({
   return (
     <>
       <ModalHeader
-        title="Add operator"
+        title="Add Operator"
         subtitle="Join this device's on-shift roster"
         onClose={onCancel}
       />
@@ -700,7 +700,7 @@ function OperatorRosterSheet({
 
   return (
     <>
-      <ModalHeader title="On this shift" subtitle={`${members.length} operator${members.length === 1 ? "" : "s"} on this device`} onClose={onCancel} />
+      <ModalHeader title="On This Shift" subtitle={`${members.length} operator${members.length === 1 ? "" : "s"} on this device`} onClose={onCancel} />
       <ModalBody gap={3}>
         <div className="list-group">
           {members.map((member, index) => {
@@ -778,7 +778,7 @@ function OperatorLockSheet({
 }) {
   return (
     <>
-      <ModalHeader title="Operator locking" subtitle="Keep attribution accurate on a shared till" onClose={onClose} />
+      <ModalHeader title="Operator Locking" subtitle="Keep attribution accurate on a shared till" onClose={onClose} />
       <ModalBody gap={5}>
         <section>
           <h3 className="field-label">When to lock</h3>
@@ -1045,7 +1045,7 @@ function StaffEditor({
         </div>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             On the till
           </h3>
           <div className="list-group">
@@ -1077,7 +1077,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             Refund ceiling
           </h3>
           <div className="panel p-4">
@@ -1103,7 +1103,7 @@ function StaffEditor({
         </section>
 
         <section>
-          <h3 className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+          <h3 className="px-1 pb-2 text-[12px] font-semibold uppercase tracking-wider text-neutral-400">
             PIN
           </h3>
           <div className="panel space-y-3 p-4">
@@ -1216,7 +1216,7 @@ function AddStaffForm({
 
   return (
     <>
-      <ModalHeader title="Add staff" subtitle="A local till role, never a wallet signer" onClose={onCancel} />
+      <ModalHeader title="Add Staff" subtitle="A local till role, never a wallet signer" onClose={onCancel} />
       <ModalBody>
         <div>
           <span className="field-label">Name</span>
@@ -1291,7 +1291,7 @@ function AddStaffForm({
                   .finally(() => setBusy(false));
               }}
             >
-              Add staff
+              Add Staff
             </Button>
           }
         />

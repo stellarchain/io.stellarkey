@@ -162,8 +162,8 @@ export function PaymentLinksPage() {
           type="button"
           onClick={() => openEditor(null)}
           className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0A84FF] text-white shadow-[0_8px_20px_-6px_rgba(10,132,255,0.55)] transition-[background-color,transform] hover:bg-[#2492ff] active:scale-90"
-          title="New code"
-          aria-label="New code"
+          title="New Code"
+          aria-label="New Code"
         >
           <IconPlus size={17} />
         </button>
@@ -187,7 +187,7 @@ export function PaymentLinksPage() {
               variant="secondary"
               onClick={() => (codes.length === 0 ? openEditor(null) : setFilter("all"))}
             >
-              {codes.length === 0 ? "New code" : "Show all codes"}
+              {codes.length === 0 ? "New Code" : "Show all codes"}
             </Button>
           </div>
         </div>

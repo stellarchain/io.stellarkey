@@ -190,13 +190,13 @@ for (const outcome of ['Deliver', 'Reject'] as const) {
     let dialog = await openCustomer(page);
     await dialog.getByLabel('Note', { exact: true }).fill('Earlier synthetic draft');
     await control(page, outcome === 'Deliver' ? 'Hold after merchant write' : 'Hold before merchant write');
-    await dialog.getByRole('button', { name: 'Save note', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save Note', exact: true }).click();
     await expect(page.getByTestId('feedback-stage')).toHaveText(outcome === 'Deliver' ? 'after-write' : 'before-write');
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     dialog = await openCustomer(page);
     await dialog.getByLabel('Note', { exact: true }).fill('Current synthetic draft');
     await control(page, 'Hold before merchant write');
-    const save = dialog.getByRole('button', { name: 'Save note', exact: true });
+    const save = dialog.getByRole('button', { name: 'Save Note', exact: true });
     await save.click();
     await control(page, `${outcome} feedback response`);
     await expect(page.getByTestId('feedback-stage')).toHaveText('before-write');
@@ -276,7 +276,7 @@ test('failed same-session reset suppresses the old note error and leaves a fresh
   const dialog = await openCustomer(page);
   await dialog.getByLabel('Note', { exact: true }).fill('Synthetic retry draft');
   await control(page, 'Hold before merchant write');
-  const save = dialog.getByRole('button', { name: 'Save note', exact: true });
+  const save = dialog.getByRole('button', { name: 'Save Note', exact: true });
   await save.click();
   await expect(page.getByTestId('feedback-stage')).toHaveText('before-write');
   await control(page, 'Fail feedback erase');
@@ -314,7 +314,7 @@ for (const motion of ['reduce', 'no-preference'] as const) {
       await page.setViewportSize({ width: 320, height: 900 });
       await dialog.getByLabel('Note', { exact: true }).fill('Synthetic local feedback');
       await control(page, 'Hold before merchant write');
-      const save = dialog.getByRole('button', { name: 'Save note', exact: true });
+      const save = dialog.getByRole('button', { name: 'Save Note', exact: true });
       await save.focus();
       await expect(save).toBeFocused();
       await page.keyboard.press('Enter');
@@ -526,11 +526,11 @@ test('customer note failures persist beside retained drafts and retry once while
   await dialog.getByLabel('Note', { exact: true }).fill('Synthetic draft');
   await control(page, 'Hold before merchant write');
   const writes = Number(await page.getByTestId('feedback-writes').textContent());
-  const save = dialog.getByRole('button', { name: 'Save note', exact: true });
+  const save = dialog.getByRole('button', { name: 'Save Note', exact: true });
   await save.evaluate(node => { (node as HTMLButtonElement).click(); (node as HTMLButtonElement).click(); });
   await expect(page.getByTestId('feedback-stage')).toHaveText('before-write');
   await expect(save).toBeDisabled();
-  await expect(dialog.getByRole('button', { name: 'Start a card', exact: true })).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Start a Card', exact: true })).toBeEnabled();
   await expect(dialog.getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
   await control(page, 'Reject feedback response');
   await expect(dialog.getByRole('alert')).toHaveText('The note could not be saved. Try again.');
@@ -588,7 +588,7 @@ test('customer loyalty and forget failures are recoverable and a successful forg
   await prepare(page);
   const dialog = await openCustomer(page);
   await control(page, 'Hold before merchant write');
-  const start = dialog.getByRole('button', { name: 'Start a card', exact: true });
+  const start = dialog.getByRole('button', { name: 'Start a Card', exact: true });
   await start.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('feedback-stage')).toHaveText('before-write');
@@ -624,7 +624,7 @@ for (const departure of ['moved focus', 'closed detail', 'revoked reset'] as con
     await prepare(page);
     let dialog = await openCustomer(page);
     await control(page, 'Hold after merchant write');
-    await dialog.getByRole('button', { name: 'Start a card', exact: true }).focus();
+    await dialog.getByRole('button', { name: 'Start a Card', exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('feedback-stage')).toHaveText('after-write');
     if (departure === 'closed detail') {

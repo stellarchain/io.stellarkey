@@ -312,11 +312,11 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
 
                       {peripheral.kind === "display" && displayPreview && (
                         <div className="mt-3 rounded-[14px] border border-white/[0.08] px-4 py-4">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                             Facing the customer
                           </p>
                           <div className="mt-2 rotate-180 text-center">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                               Total
                             </p>
                             <p className="mono mt-1 text-[28px] font-semibold leading-none text-white">
@@ -388,7 +388,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
           {/* The preview is a surface, not a settings row, so it sits on its own. */}
           <div className="panel">
             <div className="px-4 py-3.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                 Preview
               </p>
               <div className="mt-2 rounded-[14px] border border-white/[0.08] px-4 py-3.5">
@@ -403,7 +403,7 @@ export function PeripheralsPage({ onBack }: { onBack: () => void }) {
                   <span className="shrink-0">{fmtMinor(160, currency)}</span>
                 </div>
                 <div className="mt-3 border-t border-white/[0.08] pt-3 text-center">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
                     Total
                   </p>
                   <p

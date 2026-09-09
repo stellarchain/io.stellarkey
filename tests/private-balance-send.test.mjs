@@ -33,7 +33,7 @@ test('private send mirrors the public form: max, quick chips, fiat, memo presets
 
   assert.match(source, /PrivateAmountField/);
   assert.match(amountField, /\[10, 25, 50, 100\]/);
-  assert.match(amountField, /MAX/);
+  assert.match(amountField, /<QuickAmountChips[\s\S]*?onMax=/);
   assert.match(amountField, /FiatValue/);
   assert.match(source, /QrScannerBox/);
   assert.match(source, /Paste QR Payload/);
