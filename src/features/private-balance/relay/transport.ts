@@ -72,7 +72,7 @@ export class BoundedPrivateRelayTransport {
     if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
     const outcomes = await this.adapter.publish(this.urls, event, signal);
     if (![...outcomes.values()].some(Boolean)) {
-      throw new Error('No configured privacy relay accepted the message');
+      throw new Error('No Waku service node accepted the message. Add a reachable Waku service node under Relay connections, and check that it is running.');
     }
   }
 
@@ -114,7 +114,7 @@ export class BoundedPrivateRelayTransport {
     if (signal?.aborted) throw new DOMException('Private relay cancelled.', 'AbortError');
     const outcomes = await this.adapter.waitUntilConnected(this.urls, signal);
     const status = this.summarizeConnectionStatus(outcomes);
-    if (status.connected === 0) throw new Error('No configured privacy relay is reachable');
+    if (status.connected === 0) throw new Error('No Waku service node is reachable. Add one under Relay connections, or check that your node is running.');
     return status;
   }
 
