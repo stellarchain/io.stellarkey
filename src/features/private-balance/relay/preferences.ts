@@ -44,8 +44,10 @@ export function retainPrivateRelayHelperPreferences(
 export const DEFAULT_PRIVATE_RELAY_PREFERENCES: PrivateRelayPreferences = {
   useRelay: false,
   helpRelay: false,
-  transport: 'nostr',
-  relayUrls: [...DEFAULT_PRIVATE_RELAY_URLS],
+  // The wallet relays exclusively over Waku; Nostr is no longer offered. The
+  // relayUrls field is retained only so older stored preferences still load.
+  transport: 'waku',
+  relayUrls: [],
   wakuPeers: [],
   wakuClusterId: WAKU_DEFAULT_CLUSTER_ID,
   feeAtomic: '10000',
@@ -53,13 +55,13 @@ export const DEFAULT_PRIVATE_RELAY_PREFERENCES: PrivateRelayPreferences = {
 
 function validate(raw: unknown): PrivateRelayPreferences {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { ...DEFAULT_PRIVATE_RELAY_PREFERENCES, relayUrls: [...DEFAULT_PRIVATE_RELAY_URLS], wakuPeers: [] };
+    return { ...DEFAULT_PRIVATE_RELAY_PREFERENCES, relayUrls: [], wakuPeers: [] };
   }
   const value = raw as Record<string, unknown>;
   const feeAtomic = typeof value.feeAtomic === 'string' && /^(?:[1-9][0-9]{0,20})$/u.test(value.feeAtomic)
     ? value.feeAtomic
     : DEFAULT_PRIVATE_RELAY_PREFERENCES.feeAtomic;
-  let relayUrls: string[] = [...DEFAULT_PRIVATE_RELAY_URLS];
+  let relayUrls: string[] = [];
   if (Array.isArray(value.relayUrls) && value.relayUrls.every(url => typeof url === 'string')) {
     try {
       relayUrls = validatePrivateRelayUrls(value.relayUrls);
@@ -74,7 +76,8 @@ function validate(raw: unknown): PrivateRelayPreferences {
   return {
     useRelay: value.useRelay === true,
     helpRelay: value.helpRelay === true,
-    transport: isPrivateRelayTransportKind(value.transport) ? value.transport : 'nostr',
+    // Only Waku is supported now; a stored 'nostr' preference loads as Waku.
+    transport: value.transport === 'nostr' || !isPrivateRelayTransportKind(value.transport) ? 'waku' : value.transport,
     relayUrls,
     wakuPeers,
     wakuClusterId,
@@ -98,13 +101,14 @@ export function savePrivateRelayPreferences(input: PrivateRelayPreferences): Pri
   if (!/^(?:[1-9][0-9]{0,20})$/u.test(input.feeAtomic)) {
     throw new Error('Private relay fee must be a positive whole number of atomic units.');
   }
-  const relayUrls = validatePrivateRelayUrls(input.relayUrls);
   if (!isPrivateRelayTransportKind(input.transport)) throw new Error('Private relay transport is not supported.');
   const validated: PrivateRelayPreferences = {
     useRelay: input.useRelay === true,
     helpRelay: input.helpRelay === true,
-    transport: input.transport,
-    relayUrls,
+    // The wallet relays only over Waku; persist that regardless of the input.
+    transport: 'waku',
+    // relayUrls is vestigial under Waku-exclusive relaying and no longer stored.
+    relayUrls: [],
     wakuPeers: validateWakuPeerAddresses(input.wakuPeers ?? []),
     wakuClusterId: validateWakuClusterId(input.wakuClusterId ?? WAKU_DEFAULT_CLUSTER_ID),
     feeAtomic: input.feeAtomic,

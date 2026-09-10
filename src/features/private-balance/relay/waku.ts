@@ -26,6 +26,13 @@ export const WAKU_PRIVATE_RELAY_SHARDS = 8;
 export const WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS = 5_000;
 export const WAKU_PRIVATE_RELAY_PUBLISH_ATTEMPTS = 3;
 export const WAKU_PRIVATE_RELAY_PUBLISH_RETRY_MS = 1_000;
+/** Filter is best-effort with no store-and-forward: a message pushed while the
+ * light client's subscription is briefly renewing is lost. A Store query over
+ * the retained history recovers it. The nodes are self-hosted or trusted, so
+ * retaining the padded, encrypted events on them is within the same trust. */
+export const WAKU_PRIVATE_RELAY_BACKFILL_INTERVAL_MS = 2_500;
+export const WAKU_PRIVATE_RELAY_BACKFILL_LOOKBACK_MS = 300_000;
+export const WAKU_PRIVATE_RELAY_BACKFILL_OVERLAP_MS = 4_000;
 
 export function validateWakuPrivateRelayEndpoints(urls: readonly string[]): string[] {
   if (urls.length !== WAKU_PRIVATE_RELAY_ENDPOINTS.length ||
@@ -56,6 +63,15 @@ export interface WakuLightNode {
     multicodec?: readonly string[] | string;
     subscribe(decoder: unknown, callback: (message: WakuDecodedMessage) => void | Promise<void>): Promise<boolean>;
     unsubscribe(decoder: unknown): Promise<boolean>;
+  };
+  /** Optional: a light node with a Store-capable peer can re-fetch retained
+   * history to recover messages Filter missed. Absent on a store-less node. */
+  store?: {
+    queryWithOrderedCallback(
+      decoders: unknown[],
+      callback: (message: WakuDecodedMessage) => void | Promise<void>,
+      options?: { timeStart?: Date; timeEnd?: Date; includeData?: boolean; paginationForward?: boolean },
+    ): Promise<void>;
   };
 }
 /** Stream muxer factories the light node offers; loaded next to the SDK. */
@@ -119,6 +135,11 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private subscribed = false;
   private subscribing: Promise<void> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private storeDecoder: unknown = null;
+  private backfillTimer: ReturnType<typeof setTimeout> | null = null;
+  private backfilling = false;
+  /** Watermark (epoch ms) for the next Store query; 0 until the first backfill. */
+  private backfillSince = 0;
   private closed = false;
   /** Services a peer has already served; identify data can lag behind a successful wait. */
   private readonly served = new Set<'lightpush' | 'filter'>();
@@ -149,26 +170,25 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private node(): Promise<WakuLightNode> {
     if (this.closed) return Promise.reject(new Error('Private relay transport is closed'));
     this.nodePromise ??= Promise.all([this.loadSdk(), this.loadMuxers()]).then(async ([sdk, streamMuxers]) => {
-      // Configured self-hosted peers are a known, reliable set: use as many as
-      // given (up to two) and do not renew a peer on a single missed ping, or
-      // the SDK tears the one filter subscription down and up on every ping gap
-      // and drops the exchange messages that land in the reconnect window.
-      // Public bootstrap keeps aggressive renewal to shed dead or banned peers.
-      const configured = this.bootstrapPeers.length > 0;
-      const peersToUse = configured ? Math.min(this.bootstrapPeers.length, 2) : 2;
-      const pingsBeforePeerRenewed = configured ? 3 : 1;
+      // Self-hosted or trusted nodes only: the public Waku Network is never
+      // dialled (it rate-limits proof-less publishing under RLN). With no peer
+      // configured the node connects to nothing and relaying is simply
+      // unavailable. Configured peers are a known, reliable set, so use as many
+      // as given (up to two) and do not renew a peer on a single missed ping,
+      // which would tear the one filter subscription down and up on every gap.
+      const peersToUse = Math.max(1, Math.min(this.bootstrapPeers.length, 2));
       const node = await sdk.createLightNode({
-        defaultBootstrap: !configured,
-        ...(configured ? { bootstrapPeers: [...this.bootstrapPeers] } : {}),
+        defaultBootstrap: false,
+        ...(this.bootstrapPeers.length ? { bootstrapPeers: [...this.bootstrapPeers] } : {}),
         // The SDK dials only wss by default; a plain-ws peer is accepted solely
         // on this device (the address validator enforces loopback for ws).
         libp2p: { streamMuxers, ...(this.bootstrapPeers.some(peer => /\/ws\/p2p\//u.test(peer)) ? { filterMultiaddrs: false } : {}) },
         networkConfig: { clusterId: this.clusterId, numShardsInCluster: WAKU_PRIVATE_RELAY_SHARDS },
         numPeersToUse: peersToUse,
-        // A relay exchange lasts seconds. The SDK's defaults (one ping a minute,
-        // three misses before a peer is replaced) would leave a dead filter
-        // subscription undetected for minutes; keep the ping interval short.
-        filter: { keepAliveIntervalMs: WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS, pingsBeforePeerRenewed, numPeersToUse: peersToUse },
+        // A relay exchange lasts seconds, so keep the ping interval short, but
+        // renew a peer only after several misses so a healthy self-hosted node
+        // is not torn down needlessly (Filter has no store-and-forward).
+        filter: { keepAliveIntervalMs: WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS, pingsBeforePeerRenewed: 3, numPeersToUse: peersToUse },
         lightPush: { numPeersToUse: peersToUse },
       });
       await node.start();
@@ -198,7 +218,10 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     }));
     if (payload.byteLength > PRIVATE_RELAY_MAX_FRAME_BYTES) return rejected();
     const node = await raceAbort(this.node(), signal);
-    const wakuEncoder = node.createEncoder({ contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC, ephemeral: true });
+    // Not ephemeral: the Store-capable node must retain the event so a peer that
+    // missed the Filter push can recover it. Retention is bounded and the nodes
+    // are the user's own or trusted; the event stays padded and encrypted.
+    const wakuEncoder = node.createEncoder({ contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC, ephemeral: false });
     try {
       // A light-push peer can drop between two messages of one exchange. Wait
       // for a serving peer again and retry a few times before giving up.
@@ -252,6 +275,37 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     }).finally(() => { this.subscribing = null; });
   }
 
+  /** Best-effort recovery: re-fetch retained events since the last watermark and
+   * feed them through the same dedupe path, catching anything Filter dropped. */
+  private async backfill(): Promise<void> {
+    if (this.closed || this.backfilling || this.listeners.size === 0) return;
+    this.backfilling = true;
+    try {
+      const node = await this.node();
+      if (this.closed || this.listeners.size === 0 || !node.store) return;
+      if (this.backfillSince === 0) this.backfillSince = Date.now() - WAKU_PRIVATE_RELAY_BACKFILL_LOOKBACK_MS;
+      const runStart = Date.now();
+      this.storeDecoder ??= node.createDecoder({ contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC });
+      await node.store.queryWithOrderedCallback([this.storeDecoder], message => { this.deliver(message); },
+        { timeStart: new Date(this.backfillSince), includeData: true, paginationForward: true });
+      // Advance only after a query returned; keep a margin so a message still in
+      // flight at query time is re-scanned rather than skipped next run.
+      this.backfillSince = runStart - WAKU_PRIVATE_RELAY_BACKFILL_OVERLAP_MS;
+    } catch { /* No Store peer yet, or a transient query failure; the next tick retries. */ }
+    finally {
+      this.backfilling = false;
+      this.scheduleBackfill();
+    }
+  }
+
+  private scheduleBackfill(delay = WAKU_PRIVATE_RELAY_BACKFILL_INTERVAL_MS): void {
+    if (this.closed || this.backfillTimer || this.backfilling || this.listeners.size === 0) return;
+    this.backfillTimer = setTimeout(() => {
+      this.backfillTimer = null;
+      void this.backfill();
+    }, delay);
+  }
+
   subscribe(
     _urls: readonly string[],
     filters: readonly PrivateRelayFilter[],
@@ -260,6 +314,7 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     const listener: Listener = { filters, onEvent };
     this.listeners.add(listener);
     this.ensureSubscribed();
+    this.scheduleBackfill(0);
     let closed = false;
     return {
       close: () => {
@@ -306,6 +361,8 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     this.closed = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    if (this.backfillTimer) clearTimeout(this.backfillTimer);
+    this.backfillTimer = null;
     this.listeners.clear();
     this.knownIds.clear();
     const pending = this.nodePromise;

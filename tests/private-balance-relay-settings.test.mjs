@@ -42,20 +42,25 @@ test('advanced privacy keeps relay use and peer assistance as independent explic
   assert.doesNotMatch(settings, /Helping never signs\s+automatically/);
 });
 
-test('relay connections offer the Waku network as a second carrier behind the same messenger', () => {
+test('relay connections carry every message over Waku with a required self-hosted service node', () => {
   const settings = read('src/features/private-balance/components/PrivateRelaySettings.tsx');
   const session = read('src/features/private-balance/relay/session.ts');
   const waku = read('src/features/private-balance/relay/waku.ts');
-  assert.match(settings, /Message transport/);
-  assert.match(settings, /label: 'Nostr relays', value: 'nostr'/);
-  assert.match(settings, /label: 'Waku network \(beta\)', value: 'waku'/);
-  assert.match(settings, /rate-limit publishing without an RLN membership/);
-  assert.match(settings, /Waku peer \$\{index \+ 1\} \(optional\)/);
+  // Waku is the only carrier: no transport toggle and no Nostr relay fields.
+  assert.doesNotMatch(settings, /Message transport/);
+  assert.doesNotMatch(settings, /Nostr relays/);
+  assert.doesNotMatch(settings, /Public relay/);
+  assert.doesNotMatch(settings, /draft\.transport/);
+  // A service node is required; the public network is called out as unusable.
+  assert.match(settings, /requires a service node you run or trust/);
+  assert.match(settings, /rate-limits\s+publishing without an RLN membership/);
+  assert.match(settings, /Waku service node/);
   assert.match(settings, /label="Waku cluster"/);
-  assert.match(settings, /draft\.transport === 'nostr' \? <div/);
   assert.match(session, /createPrivateRelayTransport/);
   assert.match(session, /WakuPrivateRelayAdapter/);
-  // The SDK loads only for wallets that chose Waku: never a static import.
+  // No public bootstrap: the light node is only ever pointed at configured peers.
+  assert.match(waku, /defaultBootstrap: false/);
+  // The SDK loads only when relaying begins: never a static import.
   assert.match(waku, /import\('@waku\/sdk'\)/);
   assert.doesNotMatch(waku, /^import .* from '@waku\/sdk'/mu);
 });

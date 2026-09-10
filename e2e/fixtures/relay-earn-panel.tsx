@@ -31,7 +31,7 @@ function RelayEarnPanel() {
     <Button variant="secondary" onClick={() => publishPrivateRelayHelperStatus({ phase: 'unavailable', connectedRelays: 0, totalRelays: 2 })}>Disconnect synthetic helper</Button>
     <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), useRelay: true })}>Enable independent sender preference</Button>
     <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), helpRelay: false })}>Stop helper elsewhere</Button>
-    <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), relayUrls: ['wss://relay-one.example/', 'wss://relay-two.example/'], feeAtomic: '20000' })}>Change external relay settings</Button>
+    <Button variant="secondary" onClick={() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), wakuPeers: ['/dns4/node-one.example/tcp/8000/wss/p2p/16Uiu2HAkykgaECHswi3YKJ5dMLbq2kPVCo89fcyTd38UcQD6ej5W'], feeAtomic: '20000' })}>Change external relay settings</Button>
     <Button variant="secondary" onClick={() => setAdvanced(true)}>Open advanced relay settings</Button>
     <Modal open={advanced} onClose={() => setAdvanced(false)}>
       <ModalHeader title="Synthetic advanced relay settings" onClose={() => setAdvanced(false)} />

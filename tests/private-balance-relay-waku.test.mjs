@@ -28,7 +28,8 @@ function signedEvent(overrides = {}) {
 
 /** A fake light node: records calls, lets tests deliver payloads to the filter callback. */
 function fakeSdk(options = {}) {
-  const calls = { created: [], started: 0, stopped: 0, sent: [], subscribed: 0, unsubscribed: 0, waited: [] };
+  const calls = { created: [], started: 0, stopped: 0, sent: [], subscribed: 0, unsubscribed: 0, waited: [], storeQueries: [] };
+  const storeMessages = [];
   let filterCallback = null;
   const node = {
     async start() { calls.started += 1; },
@@ -60,13 +61,22 @@ function fakeSdk(options = {}) {
       },
       async unsubscribe() { calls.unsubscribed += 1; return true; },
     },
+    ...(options.store === false ? {} : { store: {
+      async queryWithOrderedCallback(_decoders, callback, queryOptions) {
+        calls.storeQueries.push(queryOptions);
+        if (options.storeThrows) throw new Error('no store peer');
+        for (const payload of [...storeMessages]) {
+          await callback({ payload: typeof payload === 'string' ? encoder.encode(payload) : payload });
+        }
+      },
+    } }),
   };
   const sdk = {
     Protocols: { LightPush: 'lightpush', Filter: 'filter' },
     async createLightNode(createOptions) { calls.created.push(createOptions); return node; },
   };
   return {
-    sdk, calls, node,
+    sdk, calls, node, storeMessages,
     deliver(payload) { assert.ok(filterCallback, 'the adapter subscribed to the filter'); return filterCallback({ payload: typeof payload === 'string' ? encoder.encode(payload) : payload }); },
     get subscribedCallback() { return filterCallback; },
   };
@@ -81,7 +91,7 @@ test('the fixed Waku endpoints are the only accepted carriers for that transport
   assert.match(WAKU_PRIVATE_RELAY_CONTENT_TOPIC, /^\/stellarkey\/1\/private-relay-v3\/json$/u);
 });
 
-test('publishing sends one ephemeral message on the shared content topic and reports light-push acceptance', async () => {
+test('publishing sends one retained message on the shared content topic and reports light-push acceptance', async () => {
   const fake = fakeSdk();
   const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => ['yamux', 'mplex'] });
   const event = signedEvent();
@@ -89,11 +99,11 @@ test('publishing sends one ephemeral message on the shared content topic and rep
   assert.deepEqual([...outcome.values()], [true, true]);
   assert.equal(fake.calls.started, 1);
   assert.deepEqual(fake.calls.created, [{
-    defaultBootstrap: true, libp2p: { streamMuxers: ['yamux', 'mplex'] }, networkConfig: { clusterId: 1, numShardsInCluster: 8 }, numPeersToUse: 2,
-    filter: { keepAliveIntervalMs: 5_000, pingsBeforePeerRenewed: 1, numPeersToUse: 2 }, lightPush: { numPeersToUse: 2 },
-  }]);
+    defaultBootstrap: false, libp2p: { streamMuxers: ['yamux', 'mplex'] }, networkConfig: { clusterId: 1, numShardsInCluster: 8 }, numPeersToUse: 1,
+    filter: { keepAliveIntervalMs: 5_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 }, lightPush: { numPeersToUse: 1 },
+  }], 'no public bootstrap; a store-less default node connects to nothing until a service node is configured');
   assert.equal(fake.calls.sent.length, 1);
-  assert.deepEqual(fake.calls.sent[0].encoder.params, { contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC, ephemeral: true });
+  assert.deepEqual(fake.calls.sent[0].encoder.params, { contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC, ephemeral: false });
   assert.deepEqual(fake.calls.sent[0].sendOptions, { autoRetry: true });
   const wire = JSON.parse(decoder.decode(fake.calls.sent[0].message.payload));
   assert.deepEqual(Object.keys(wire), ['id', 'pubkey', 'sig', 'kind', 'created_at', 'tags', 'content']);
@@ -172,6 +182,39 @@ test('subscribers receive only bounded signed events matching their Nostr filter
   assert.deepEqual(broadcast, [open.id, addressed.id]);
   assert.deepEqual(direct, [addressed.id]);
   adapter.close();
+});
+
+test('Store backfill recovers an event that Filter never delivered and never double-delivers', async () => {
+  const fake = fakeSdk();
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  const seen = [];
+  adapter.subscribe([...WAKU_PRIVATE_RELAY_ENDPOINTS], [{ kinds: [PRIVATE_RELAY_EVENT_KIND], '#t': [PRIVATE_RELAY_TOPIC] }], event => seen.push(event.id));
+  // A message the light client missed on Filter, sitting in the node's store.
+  const missed = signedEvent();
+  fake.storeMessages.push(JSON.stringify(missed));
+  await flush();
+  assert.ok(fake.calls.storeQueries.length >= 1, 'the adapter queried the store after subscribing');
+  assert.ok(fake.calls.storeQueries[0].timeStart instanceof Date, 'the query is bounded to a recent window');
+  assert.deepEqual(seen, [missed.id], 'the missed event is recovered from the store');
+  // The same event later arriving on Filter, and another backfill, do not repeat it.
+  await fake.deliver(JSON.stringify(missed));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(seen, [missed.id], 'dedupe spans both carriers');
+  adapter.close();
+});
+
+test('a store-less node and a failing store query leave live delivery working', async () => {
+  for (const options of [{ store: false }, { storeThrows: true }]) {
+    const fake = fakeSdk(options);
+    const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+    const seen = [];
+    adapter.subscribe([...WAKU_PRIVATE_RELAY_ENDPOINTS], [{}], event => seen.push(event.id));
+    await flush();
+    const event = signedEvent();
+    await fake.deliver(JSON.stringify(event));
+    assert.deepEqual(seen, [event.id], 'filter delivery is unaffected when the store is absent or failing');
+    adapter.close();
+  }
 });
 
 test('a consumer exception never blocks delivery to other listeners', async () => {
@@ -281,14 +324,15 @@ test('Waku peer addresses must be browser-dialable multiaddrs and clusters whole
   assert.throws(() => validateWakuClusterId('one'), /cluster/u);
 });
 
-test('the network descriptor maps preferences and legacy URL lists to a transport', () => {
-  assert.deepEqual(privateRelayNetwork(['wss://a.example', 'wss://b.example']), { transport: 'nostr', relayUrls: ['wss://a.example', 'wss://b.example'] });
-  assert.deepEqual(privateRelayNetwork({ transport: 'waku', relayUrls: ['wss://a.example', 'wss://b.example'] }), { transport: 'waku', peers: [], clusterId: 1 });
+test('the network descriptor resolves every input to a Waku network', () => {
+  // A legacy relay-URL list or an explicit Nostr network yields a peerless Waku
+  // network: the wallet relays exclusively over Waku.
+  assert.deepEqual(privateRelayNetwork(['wss://a.example', 'wss://b.example']), { transport: 'waku', peers: [], clusterId: 1 });
+  assert.deepEqual(privateRelayNetwork({ transport: 'waku', relayUrls: ['wss://a.example'] }), { transport: 'waku', peers: [], clusterId: 1 });
   assert.deepEqual(privateRelayNetwork({ transport: 'waku', relayUrls: [], wakuPeers: [PEER], wakuClusterId: 3 }), { transport: 'waku', peers: [PEER], clusterId: 3 });
+  assert.deepEqual(privateRelayNetwork({ relayUrls: ['wss://a.example'] }), { transport: 'waku', peers: [], clusterId: 1 });
   assert.match(describePrivateRelayNetwork({ transport: 'waku', peers: [PEER], clusterId: 3 }).observers, /you configured/u);
-  assert.deepEqual(privateRelayNetwork({ relayUrls: ['wss://a.example'] }), { transport: 'nostr', relayUrls: ['wss://a.example'] });
   assert.equal(describePrivateRelayNetwork('waku').connection(2, 2), 'Connected to 2 of 2 Waku services');
-  assert.equal(describePrivateRelayNetwork('nostr').connection(1, 2), 'Connected to 1 of 2 public relays');
   assert.match(describePrivateRelayNetwork('waku').observers, /IP address and timing/u);
 });
 
@@ -297,9 +341,10 @@ test('the session factory builds a Waku transport without touching the SDK until
   assert.deepEqual(transport.urls, ['waku:lightpush', 'waku:filter']);
   assert.deepEqual(await transport.connectionStatus(), { connected: 0, total: 2 });
   transport.close();
-  const nostr = createPrivateRelayTransport(['wss://relay.one', 'wss://relay.two']);
-  assert.deepEqual(nostr.urls, ['wss://relay.one/', 'wss://relay.two/']);
-  nostr.close();
+  // A legacy relay-URL list also builds a Waku transport now.
+  const legacy = createPrivateRelayTransport(['wss://relay.one', 'wss://relay.two']);
+  assert.deepEqual(legacy.urls, ['waku:lightpush', 'waku:filter']);
+  legacy.close();
 });
 
 test('two messengers exchange an encrypted reply over a shared fake Waku node', async () => {
@@ -323,17 +368,17 @@ test('two messengers exchange an encrypted reply over a shared fake Waku node', 
   helper.close();
 });
 
-test('preferences persist the transport and default to Nostr for older or invalid values', () => {
+test('preferences persist Waku settings and load older or invalid transports as Waku', () => {
   const store = new Map();
   globalThis.window = {
     localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
     dispatchEvent() { return true; },
   };
   try {
-    assert.equal(DEFAULT_PRIVATE_RELAY_PREFERENCES.transport, 'nostr');
-    assert.equal(loadPrivateRelayPreferences().transport, 'nostr');
+    assert.equal(DEFAULT_PRIVATE_RELAY_PREFERENCES.transport, 'waku');
+    assert.equal(loadPrivateRelayPreferences().transport, 'waku');
     store.set('stellarkey.private-relay.preferences.v1', JSON.stringify({ useRelay: true, transport: 'carrier-pigeon', relayUrls: ['wss://a.example', 'wss://b.example'], feeAtomic: '10000' }));
-    assert.equal(loadPrivateRelayPreferences().transport, 'nostr');
+    assert.equal(loadPrivateRelayPreferences().transport, 'waku');
     const saved = savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), transport: 'waku' });
     assert.equal(saved.transport, 'waku');
     assert.deepEqual([saved.wakuPeers, saved.wakuClusterId], [[], 1]);
@@ -344,7 +389,10 @@ test('preferences persist the transport and default to Nostr for older or invali
     store.set('stellarkey.private-relay.preferences.v1', JSON.stringify({ transport: 'waku', wakuPeers: ['nonsense'], wakuClusterId: 'x', relayUrls: ['wss://a.example', 'wss://b.example'], feeAtomic: '10000' }));
     assert.deepEqual([loadPrivateRelayPreferences().wakuPeers, loadPrivateRelayPreferences().wakuClusterId], [[], 1], 'invalid persisted peers never dial');
     assert.throws(() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), wakuPeers: ['nonsense'] }), /multiaddr/u);
-    assert.throws(() => savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), transport: 'smoke-signals' }), /transport/u);
+    // A stored 'nostr' transport loads as Waku; save coerces any transport to Waku.
+    store.set('stellarkey.private-relay.preferences.v1', JSON.stringify({ transport: 'nostr', wakuPeers: [PEER], wakuClusterId: 7 }));
+    assert.equal(loadPrivateRelayPreferences().transport, 'waku');
+    assert.equal(savePrivateRelayPreferences({ ...loadPrivateRelayPreferences(), transport: 'nostr' }).transport, 'waku');
   } finally {
     delete globalThis.window;
   }

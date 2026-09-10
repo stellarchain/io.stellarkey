@@ -75,8 +75,7 @@ assets or set them `Active`/`ExitOnly`; entries cannot be deleted or reindexed.
 | Primary Stellar RPC | Supplies ledger state, simulation, submission, confirmation, and archive restoration. |
 | Different-origin witness RPC | Corroborates network identity, any retained deployment-checkpoint ledger, a current overlapping ledger hash, and the complete contract head during mandatory initial/full-history checks and, by default, routine checks. |
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
-| Public Nostr relays | Optionally carry bounded peer discovery and encrypted selected-peer messages. They are not operated by StellarKey and see connection metadata. |
-| Public Waku network (experimental) | The alternative carrier ("Message transport" in Relay connections). A browser light client publishes with Light Push and receives with Filter on one shared content topic; the same signed, padded, encrypted events travel, and the peers it connects to see connection metadata instead of relay operators. Public service nodes enforce RLN rate limits on messages published without a membership, so the six-message relay exchange can stall mid-way. Relay connections therefore accept up to four websocket multiaddrs of self-hosted or trusted service nodes plus their cluster id (auto-sharding, eight shards); with those the exchange bypasses public rate limits. Such nodes must run nwaku with relay, light push and filter on a cluster other than 1 (nwaku refuses cluster 1 without RLN), peered with at least one other relay node (a lone node answers light push with "no peers for topic" even though its own filter subscribers still receive the message), and expose secure websockets; the light client offers both yamux and mplex. Nostr stays the default. |
+| Waku service node (self-hosted or trusted) | The only relay carrier. A browser light client publishes with Light Push and receives with Filter on one shared content topic, and re-fetches recent retained history with Store to recover any message Filter dropped. The same signed, padded, encrypted events travel; the node sees connection metadata, not payment content. The public Waku Network is never dialled (it rate-limits proof-less publishing under RLN), so relaying requires at least one service node you run or trust, configured in Relay connections with its cluster id (auto-sharding, eight shards). Such a node runs nwaku with relay, light push, filter and store on a cluster other than 1 (nwaku refuses cluster 1 without RLN), peered with at least one other relay node (a lone node answers light push with "no peers for topic" even though its own filter subscribers still receive the message), and exposes secure websockets; the light client offers both yamux and mplex. With no node configured, relaying is simply unavailable. |
 
 Transfer and withdrawal need no user Soroban authorization: the proof authorizes
 the state transition. Direct mode still signs an inner transaction from the
@@ -85,12 +84,12 @@ A fee-bump sponsor changes the outer fee source but leaves the inner source
 public.
 
 Optional privacy-relay mode discovers another opted-in browser wallet through
-at least two configured public Nostr relay origins. The selected helper supplies
+a Waku service node you run or trust (the wallet relays exclusively over Waku). The selected helper supplies
 the Stellar transaction source, pays the public network fee, manually approves
 the exact reviewed transaction, and earns a proof-bound encrypted note in the
 same asset. No public relayer address or fee exists in the contract action or
 archive. StellarKey runs no relay backend and never silently falls back from
-relay to direct mode. Public Nostr operators still observe connection IPs,
+relay to direct mode. The Waku service node still observes connection IPs,
 timing, and discovery messages; the selected peer sees the action asset, fee,
 proof, and exact transaction.
 
@@ -481,11 +480,10 @@ or removed pending record alone is not a success receipt.
 
 For each private transfer or withdrawal, the review UI requires an explicit
 choice between **Privacy relay** and **My account**. Relay mode first publishes a
-short-lived quote request through at least two user-configurable public Nostr
-relay origins. The client starts every configured publish attempt but proceeds
-as soon as the first relay accepts the message instead of waiting for the
-slowest relay. Sender and helper use ephemeral Nostr identities; messages after
-discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
+short-lived quote request through the configured Waku service node with Light
+Push, and receives replies with Filter on one shared content topic, backfilling
+any missed reply from the node's Store. Sender and helper use ephemeral
+identities; messages after discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
 only in memory and displays the first valid offer immediately. Each new unique
 or lower-fee offer restarts a 700 ms quiet window so nearby offers can still be
 compared by fee. The user may choose any authenticated, live offer immediately,
@@ -513,8 +511,8 @@ Helper opt-in permits these encrypted offer signatures while unlocked; it never
 permits automatic transaction signatures. Every encrypted message is padded
 inside NIP-44 to the same 24 KiB plaintext size, including quotes and rejections.
 Padding costs bandwidth and does not hide the carrier's peer graph, timing,
-message count, IP addresses, or the clear discovery request, whichever carrier
-(Nostr relays or the experimental Waku network) moves the events.
+message count, IP addresses, or the clear discovery request as the Waku
+service node moves the events.
 
 The public discovery request carries neither an asset nor a transfer/withdrawal
 kind. The selected helper receives the kind only in the authenticated encrypted
@@ -542,22 +540,23 @@ Available when checked is not a guarantee that a peer will remain available;
 transaction submission obtains fresh short-lived offers and requires a new
 explicit choice.
 
-Relay requests use Nostr kind `24333`, in NIP-01's ephemeral event range. Relays
-are therefore not expected to retain a request for a helper that connects later.
-An opted-in helper creates its ephemeral subscription before publish can occur,
-reports **Connected** only after at least one configured relay WebSocket is
-connected, and reports connecting, reconnecting, or unavailable separately.
-Connected does not claim that a relay has accepted every subscription. A
-rejected or initially failed subscription is retried independently. The Nostr
-pool reconnects its WebSocket and resubscribes after interruption, starting with
-a one-second retry and using bounded exponential backoff. A total startup outage
+Relay events carry kind `24333`, in NIP-01's ephemeral event range, wrapped in a
+Waku message on a shared content topic. Because Filter has no store-and-forward,
+the light client also queries the node's Store over a recent window and feeds any
+recovered event through the same dedupe path, so a message missed during a
+subscription renewal is not lost. Retention is bounded and the node is the user's
+own or trusted; events stay padded and encrypted. An opted-in helper creates its
+subscription before publish can occur, reports **Connected** only after a Waku
+service peer is connected, and reports connecting, reconnecting, or unavailable
+separately. A rejected or initially failed subscription is retried independently,
+starting with a one-second retry and using bounded exponential backoff. A total startup outage
 is also retried while helping remains enabled. Connection attempts use a
 client-owned deadline and are cancelled with their socket and timer when the
 session closes, the wallet locks, or the runtime changes. These states and relay
 counts are memory-only; the saved opt-in alone is never presented as proof that
 the helper is online.
 
-A controlled two-client measurement through the configured public Nostr relays
+A controlled two-client measurement through a configured Waku service node
 recorded a 5,196 ms one-peer result before adaptive collection. After the
 change, three cold sender sessions rendered their first offer in 378-431 ms and
 settled the selectable fee snapshot in 1,079-1,132 ms. This small desktop sample
@@ -612,9 +611,10 @@ keeps the helper's submission record and refuses replacement approvals. One
 bounded preparation lease is released on rejection, expiry or session cleanup;
 late results cannot revive a rejected job.
 
-StellarKey operates no relay or signaling server and stores no relay jobs.
-Public Nostr infrastructure is still server infrastructure: its operators see
-connections, IP addresses, timing, and the public discovery request. The
+StellarKey operates no relay or signaling server and stores no relay jobs. A
+Waku service node is still server infrastructure: its operator sees
+connections, IP addresses, timing, the discovery request, and the padded
+encrypted events it retains for Store. The
 selected helper learns the asset, fee, proof, and transaction. NIP-44 does not
 provide forward secrecy or post-quantum confidentiality. A helper can refuse or
 delay service. Relay mode never silently falls back to direct submission;
@@ -711,8 +711,8 @@ private receive address still links whole actions through the clear diversifier.
 
 The RPC operator and a network observer can see the user's IP address, request
 timing, selected pool, queried ledger ranges, simulations, restoration attempts,
-and submitted transactions. Optional public Nostr relays additionally see peer
-discovery metadata, and the selected helper sees the asset, fee, proof, and job.
+and submitted transactions. The configured Waku service node additionally sees peer
+discovery metadata and the retained encrypted events, and the selected helper sees the asset, fee, proof, and job.
 Timing and pool activity remain public. Pool size,
 deposits, withdrawals, repeated public endpoints, private-address reuse,
 voluntary disclosure, or browser compromise may correlate otherwise hidden
