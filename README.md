@@ -84,8 +84,8 @@ Private Payments has one published development pool for XLM and USDC on Testnet;
 Mainnet is refused independently. Internal transfers hide their asset, amount,
 recipient, optional peer fee, and memo; deposits, withdrawals, the submitting
 Stellar account, and timing remain public. Direct mode uses the user's source;
-optional peer mode uses an explicitly selected helper discovered through public
-Nostr infrastructure or the public Waku network, with no StellarKey relay backend. Its privacy limits,
+optional peer mode uses an explicitly selected helper discovered over Waku
+through a service node the user runs or trusts, with no StellarKey relay backend. Its privacy limits,
 local storage, direct RPC metadata, and recovery model are documented in the
 [Private Balance whitepaper](docs/private-balance.md). The single-party
 development key passes circuit/Powers-of-Tau compatibility verification, but

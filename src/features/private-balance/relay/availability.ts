@@ -57,7 +57,7 @@ export function rankPrivateRelayQuotes(
 
 export async function checkPrivateRelayAvailability(
   input: {
-    /** Preferred over relayUrls; a URL list alone means Nostr. */
+    /** Preferred over relayUrls; every input resolves to a Waku network. */
     network?: PrivateRelayNetwork;
     relayUrls?: readonly string[];
     networkId: string;
