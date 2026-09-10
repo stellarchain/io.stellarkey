@@ -250,6 +250,11 @@ test('self-hosted Waku peers replace the public bootstrap and select the cluster
   assert.deepEqual(fake.calls.created[0].defaultBootstrap, false);
   assert.deepEqual(fake.calls.created[0].bootstrapPeers, [PEER]);
   assert.deepEqual(fake.calls.created[0].networkConfig, { clusterId: 3, numShardsInCluster: 8 });
+  // One configured peer: use just it, and do not renew the filter subscription
+  // on a single missed ping (that churn drops in-flight exchange messages).
+  assert.equal(fake.calls.created[0].numPeersToUse, 1);
+  assert.deepEqual(fake.calls.created[0].filter, { keepAliveIntervalMs: 5_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 });
+  assert.deepEqual(fake.calls.created[0].lightPush, { numPeersToUse: 1 });
   assert.equal(fake.calls.created[0].libp2p.filterMultiaddrs, undefined, 'secure peers keep the SDK default wss-only dialling');
   assert.equal(fake.calls.created[0].libp2p.streamMuxers.length, 2, 'yamux and mplex are both offered');
   adapter.close();
