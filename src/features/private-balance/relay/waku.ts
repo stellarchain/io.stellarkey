@@ -23,7 +23,10 @@ export const WAKU_PRIVATE_RELAY_PEER_TIMEOUT_MS = 20_000;
 export const WAKU_PRIVATE_RELAY_DEFAULT_CLUSTER_ID = 1;
 /** Auto-sharding with the network's shard count; self-hosted nodes must match. */
 export const WAKU_PRIVATE_RELAY_SHARDS = 8;
-export const WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS = 5_000;
+// Self-hosted nodes are reliable and Store backfill recovers any gap, so ping
+// gently: a short interval renews the one filter peer needlessly and makes the
+// connection status flap between connected and reconnecting.
+export const WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS = 30_000;
 export const WAKU_PRIVATE_RELAY_PUBLISH_ATTEMPTS = 3;
 export const WAKU_PRIVATE_RELAY_PUBLISH_RETRY_MS = 1_000;
 /** Filter is best-effort with no store-and-forward: a message pushed while the
