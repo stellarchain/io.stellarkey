@@ -31,6 +31,7 @@ import {
   retryPrivateRelayHelperReadiness,
 } from '../relay/helper-status';
 import { privateRelayNetwork } from '../relay/network';
+import { PrivateRelayConfigurationError } from '../relay/connection-error';
 import { PrivateRelayHelperSession } from '../relay/session';
 import { WAKU_PRIVATE_RELAY_ENDPOINTS } from '../relay/waku';
 
@@ -125,7 +126,22 @@ export function PrivateRelayHelperManager() {
     let active = true;
     let statusTimer: ReturnType<typeof setInterval> | null = null;
     let visibilityChange: (() => void) | null = null;
+    let connectionProblem = false;
+    let refreshingStatus = false;
     const controller = new AbortController();
+    const reportConnectionFailure = (cause: unknown) => {
+      if (!active || controller.signal.aborted || connectionProblem) return;
+      if (cause instanceof PrivateRelayConfigurationError) {
+        connectionProblem = true;
+        if (statusTimer) clearInterval(statusTimer);
+        statusTimer = null;
+        publishPrivateRelayHelperStatus({
+          phase: 'configuration-error', connectedRelays: 0, totalRelays, configurationProblem: cause.problem,
+        });
+      } else {
+        publishPrivateRelayHelperStatus({ phase: 'unavailable', connectedRelays: 0, totalRelays });
+      }
+    };
     const negotiations = negotiationsRef.current;
     const outcomes = outcomesRef.current;
     const preparationLease = preparationLeaseRef.current;
@@ -264,17 +280,26 @@ export function PrivateRelayHelperManager() {
         });
       }, controller.signal);
       const refreshConnectionStatus = async () => {
-        const status = await session.connectionStatus();
-        if (!active) return;
-        publishPrivateRelayHelperStatus({
-          phase: status.connected > 0 ? 'connected' : 'reconnecting',
-          connectedRelays: status.connected,
-          totalRelays: status.total,
-        });
+        if (!active || connectionProblem || refreshingStatus) return;
+        refreshingStatus = true;
+        try {
+          const status = await session.connectionStatus();
+          if (!active || connectionProblem) return;
+          publishPrivateRelayHelperStatus({
+            phase: status.connected > 0 ? 'connected' : 'reconnecting',
+            connectedRelays: status.connected,
+            totalRelays: status.total,
+          });
+        } catch (cause) {
+          reportConnectionFailure(cause);
+        } finally {
+          refreshingStatus = false;
+        }
       };
       return retryPrivateRelayHelperReadiness({
         signal: controller.signal,
         connect: signal => session.waitUntilConnected(signal),
+        shouldRetry: cause => !(cause instanceof PrivateRelayConfigurationError),
         onUnavailable: () => {
           if (!active) return;
           publishPrivateRelayHelperStatus({
@@ -292,7 +317,7 @@ export function PrivateRelayHelperManager() {
           });
         },
       }).then(status => {
-        if (!active) return;
+        if (!active || connectionProblem) return;
         publishPrivateRelayHelperStatus({
           phase: 'connected',
           connectedRelays: status.connected,
@@ -308,14 +333,7 @@ export function PrivateRelayHelperManager() {
         };
         document.addEventListener('visibilitychange', visibilityChange);
       });
-    }).catch(() => {
-      if (!active || controller.signal.aborted) return;
-      publishPrivateRelayHelperStatus({
-        phase: 'unavailable',
-        connectedRelays: 0,
-        totalRelays,
-      });
-    });
+    }).catch(reportConnectionFailure);
 
     return () => {
       active = false;

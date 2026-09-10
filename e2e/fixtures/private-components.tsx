@@ -20,6 +20,7 @@ import { RelayHelperFixture } from '../../../e2e/fixtures/relay-helper-panel';
 import { RelayRecipientFixture } from '../../../e2e/fixtures/relay-recipient-panel';
 import { RelayEarnFixture } from '../../../e2e/fixtures/relay-earn-panel';
 import { RelayStartupFixture } from '../../../e2e/fixtures/relay-startup-panel';
+import { RelayWakuFixture } from '../../../e2e/fixtures/relay-waku-panel';
 import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime-panel';
 import { ModalOwnershipFixture } from '../../../e2e/fixtures/modal-ownership-panel';
 import { MerchantFeedbackFixture } from '../../../e2e/fixtures/merchant-feedback-panel';
@@ -630,6 +631,7 @@ function Fixture() {
   const [merchantLifetime, setMerchantLifetime] = useState(false);
   const [discovery, setDiscovery] = useState(false);
   const [relayStartup, setRelayStartup] = useState(false);
+  const [relayWaku, setRelayWaku] = useState(false);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('recovery');
   const [scope, setScope] = useState('account-a');
@@ -646,6 +648,7 @@ function Fixture() {
   if (modalOwnership) return <ModalOwnershipFixture onExit={() => setModalOwnership(false)} />;
   if (merchantLifetime) return <MerchantLifetimeFixture />;
   if (relayStartup) return <RelayStartupFixture />;
+  if (relayWaku) return <RelayWakuFixture />;
   if (discovery) return <DiscoveryProviderChecks />;
   return (
     <PrivateBalanceRuntimeDataProvider value={{ ...initialPrivateBalanceRuntimeData, asset: {
@@ -659,6 +662,7 @@ function Fixture() {
         <Button onClick={() => setMerchantLifetime(true)}>Test merchant lifetime</Button>
         <Button onClick={() => setModalOwnership(true)}>Test modal ownership</Button>
         <Button onClick={() => setRelayStartup(true)}>Test relay startup</Button>
+        <Button onClick={() => setRelayWaku(true)}>Test Waku connection</Button>
         <Button onClick={() => setDiscovery(true)}>Test discovery lifecycle</Button>
         <DiscoveryStorageChecks />
         <UxPrimitivesFixture />

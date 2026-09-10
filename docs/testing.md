@@ -29,6 +29,30 @@ The ignored 100,000-action deterministic recovery model is Gate B. GitHub runs i
 also be started manually through the `Private Balance Gate B` workflow; it remains separate from the
 bounded pull-request suite.
 
+## Local Waku connection check
+
+The required synthetic `relay-waku.spec.ts` exercises the actual settings, runtime
+intent gate, helper manager, session and transport factory, replacing only the
+adapter's SDK I/O loader. It covers cluster correction, fresh unlock, another-tab
+rebasing, dropped connections, stale handshakes, cancellation and accessible
+controls in desktop Chromium and iPhone WebKit.
+
+With the development nwaku pair on loopback ports 8010/8011, cluster 3 and eight
+shards, run the separate opt-in connection check:
+
+```sh
+E2E_PORT=3196 E2E_WAKU_LOCAL_NODES=1 npm run test:e2e:private-components
+```
+
+Its explicit peer identities are in `e2e/relay-waku-live.spec.ts`; it does not
+start or reconfigure servers. It runs the installed SDK through the production
+factory, checks cluster 1 rejection followed by Save connections to cluster 3,
+observes 70 seconds of connected Filter/Store service, and verifies Stop. Each
+run uses a unique unused topic, forbids publishing, imports no wallet, blocks
+non-loopback network traffic, and reports only fixed labels/counts. This is
+connection evidence, not payment, funded Testnet, or human accessibility evidence.
+The opt-in run does not replace the required synthetic suite.
+
 ## Isolated Private Balance testnet fixture
 
 The authenticated catalogue currently publishes one Testnet development pool with

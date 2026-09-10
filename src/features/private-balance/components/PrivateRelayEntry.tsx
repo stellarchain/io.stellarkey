@@ -16,6 +16,7 @@ import {
   subscribePrivateRelayHelperStatus,
 } from '../relay/helper-status';
 import { describePrivateRelayNetwork, privateRelayNetwork } from '../relay/network';
+import { describePrivateRelayConfigurationProblem } from '../relay/connection-error';
 import type { PrivateRelayEntryPresentation } from './PrivateRelayEntryBody';
 
 // The status, settings and peer availability content pulls the relay settings
@@ -70,9 +71,11 @@ export function PrivateRelayEntry() {
           ? 'Connected'
           : helperPhase === 'reconnecting'
             ? 'Reconnecting'
-            : helperPhase === 'unavailable'
-              ? 'Unavailable'
-              : 'Connecting';
+            : helperPhase === 'configuration-error'
+              ? 'Check connections'
+              : helperPhase === 'unavailable'
+                ? 'Unavailable'
+                : 'Connecting';
   const networkCopy = describePrivateRelayNetwork(privateRelayNetwork(preferences));
   const networkName = 'the Waku network';
   const helperDescription = !preferences.helpRelay
@@ -85,11 +88,13 @@ export function PrivateRelayEntry() {
           ? networkCopy.connection(helperStatus.connectedRelays, helperStatus.totalRelays)
           : helperPhase === 'reconnecting'
             ? `Reconnecting to ${networkName}`
-            : helperPhase === 'unavailable'
-              ? runtimeUnavailable
-                ? 'Private Payments needs attention. Open its details before relaying.'
-                : 'Waku service node connection unavailable; retrying automatically'
-              : `Connecting to ${networkName}`;
+            : helperPhase === 'configuration-error' && helperStatus.configurationProblem
+              ? describePrivateRelayConfigurationProblem(helperStatus.configurationProblem)
+              : helperPhase === 'unavailable'
+                ? runtimeUnavailable
+                  ? 'Private Payments needs attention. Open its details before relaying.'
+                  : 'Waku service node connection unavailable; retrying automatically'
+                : `Connecting to ${networkName}`;
   const helperIsConnected = preferences.helpRelay && helperPhase === 'connected';
   const headline = !preferences.helpRelay
     ? 'Relaying is off'
@@ -97,18 +102,20 @@ export function PrivateRelayEntry() {
       ? 'Relaying'
       : helperPhase === 'paused'
         ? 'Ready to relay'
-        : helperPhase === 'unavailable'
-          ? runtimeUnavailable ? 'Wallet needs attention' : 'Connection interrupted'
-          : helperPhase === 'reconnecting'
-            ? 'Reconnecting…'
-            : helperPhase === 'preparing'
-              ? 'Getting ready…'
-              : 'Connecting…';
+        : helperPhase === 'configuration-error'
+          ? 'Connection settings need attention'
+          : helperPhase === 'unavailable'
+            ? runtimeUnavailable ? 'Wallet needs attention' : 'Connection interrupted'
+            : helperPhase === 'reconnecting'
+              ? 'Reconnecting…'
+              : helperPhase === 'preparing'
+                ? 'Getting ready…'
+                : 'Connecting…';
   const tone: PrivateRelayEntryPresentation['tone'] = !preferences.helpRelay
     ? 'off'
     : helperIsConnected
       ? 'live'
-      : helperPhase === 'unavailable'
+      : helperPhase === 'unavailable' || helperPhase === 'configuration-error'
         ? 'trouble'
         : 'waiting';
   const presentation: PrivateRelayEntryPresentation = {

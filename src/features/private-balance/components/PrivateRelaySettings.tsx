@@ -173,6 +173,9 @@ export function PrivateRelaySettings({
       setWakuPeersDraft([next.wakuPeers[0] ?? '', next.wakuPeers[1] ?? '']);
       setWakuClusterDraft(String(next.wakuClusterId));
       setFeedback({ state: helpRelay === true ? 'started' : 'saved' });
+      // Commit the owner's close guard with the successful save, before a
+      // keyboard dismissal can race the passive dirty-state report.
+      onDirtyChange?.(false);
       // A persisted preference does not mount the private runtime. Only this
       // successful, explicit action supplies intent for the current scope.
       if (startRequested) requestRuntime();

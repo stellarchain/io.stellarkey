@@ -66,3 +66,25 @@
 3. Run `npm run check:fixture-clean`, `npm run build`, and `npm run check:fixture-clean` again. Do not waive pre-existing failures; distinguish and investigate them.
 4. Request independent review under `requesting-code-review`, fix important findings and re-run their tests.
 5. Commit the single logical fix with its tests and changelog. Use `finishing-a-development-branch` for integration/handoff; do not claim the user’s original Chrome session was exercised unless it actually was.
+
+## Verification — 2026-09-10
+
+- Focused relay regressions: 54 passed, including an independent review rerun.
+- Application unit tests: 1,875 passed; browser protocol package: 58 passed.
+- Real local-node SDK E2E: 2 passed, desktop Chromium and iPhone WebKit. Each
+  exercised cluster 1 rejection, Save connections to cluster 3, 70 seconds of
+  stable Filter/Store connectivity, and Stop. No payment was published.
+- Relay settings, startup and Waku UI E2E: 66 passed with no retries or skips.
+  An earlier run had one Chromium fixture-navigation failure; that case passed
+  three isolated repeats and the final complete selected suite passed.
+- Required private continuity, overlay and manifest checks: 16 passed.
+- Type checking, production build, fixture cleanup before/after build, all five
+  bundle assertions, and every bundle-size budget passed.
+- Lint: no errors, three existing marketing-image warnings.
+- Review findings were reproduced with failing tests before correction. The
+  scoped final review reported no remaining Important findings.
+
+The generated-artifact check exposed stale toolchain provenance from the existing
+dependency lock; its metadata-only refresh is tracked separately from the Waku
+behavior fix. No full release approval, funded-wallet E2E, physical-device, or
+human VoiceOver/NVDA verification is claimed.
