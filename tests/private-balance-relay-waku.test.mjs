@@ -100,7 +100,7 @@ test('publishing sends one retained message on the shared content topic and repo
   assert.equal(fake.calls.started, 1);
   assert.deepEqual(fake.calls.created, [{
     defaultBootstrap: false, libp2p: { streamMuxers: ['yamux', 'mplex'] }, networkConfig: { clusterId: 1, numShardsInCluster: 8 }, numPeersToUse: 1,
-    filter: { keepAliveIntervalMs: 5_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 }, lightPush: { numPeersToUse: 1 },
+    filter: { keepAliveIntervalMs: 30_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 }, lightPush: { numPeersToUse: 1 },
   }], 'no public bootstrap; a store-less default node connects to nothing until a service node is configured');
   assert.equal(fake.calls.sent.length, 1);
   assert.deepEqual(fake.calls.sent[0].encoder.params, { contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC, ephemeral: false });
@@ -296,7 +296,7 @@ test('self-hosted Waku peers replace the public bootstrap and select the cluster
   // One configured peer: use just it, and do not renew the filter subscription
   // on a single missed ping (that churn drops in-flight exchange messages).
   assert.equal(fake.calls.created[0].numPeersToUse, 1);
-  assert.deepEqual(fake.calls.created[0].filter, { keepAliveIntervalMs: 5_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 });
+  assert.deepEqual(fake.calls.created[0].filter, { keepAliveIntervalMs: 30_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 });
   assert.deepEqual(fake.calls.created[0].lightPush, { numPeersToUse: 1 });
   assert.equal(fake.calls.created[0].libp2p.filterMultiaddrs, undefined, 'secure peers keep the SDK default wss-only dialling');
   assert.equal(fake.calls.created[0].libp2p.streamMuxers.length, 2, 'yamux and mplex are both offered');
