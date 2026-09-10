@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Expose backup-file reading as a busy Restore control with a separate accessible progress announcement; clear the feedback on completion, failure, or workflow changes without allowing obsolete reads to replace newer feedback.
 - Keep focus inside private dialogs when opening review and on confirmation controls during proof preparation and submission, publish submission busy state to dialog shells before paint, and ignore duplicate direct or chained confirmations without losing the first result.
 - Maintain readable contrast for private-send outflow amounts during animated review updates.
 - Generate diversified private receive addresses from first setup, replace legacy default receive addresses when the private session initializes, and exclude the default diversifier from rotation. Existing diversified addresses stay stable, older addresses remain recoverable, and delayed migration results cannot restore an address after session ownership changes.

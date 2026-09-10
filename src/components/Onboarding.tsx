@@ -305,13 +305,23 @@ export function Onboarding() {
     });
     const restorePath = (
       <>
-      <OnboardPath
-        icon={<IconRefresh size={17} />}
-        tint="#30D158"
-        title="Restore From Backup"
-        sub={readingBackup ? "Reading encrypted backup…" : "Encrypted wallet-backup .json file"}
-        onClick={() => restoreInput.current?.click()}
-      />
+        <OnboardPath
+          icon={<IconRefresh size={17} />}
+          tint="#30D158"
+          title="Restore From Backup"
+          sub={readingBackup ? "Reading encrypted backup…" : "Encrypted wallet-backup .json file"}
+          busy={readingBackup}
+          onClick={() => restoreInput.current?.click()}
+        />
+        <span
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-label={readingBackup ? "Reading encrypted backup" : undefined}
+          className="sr-only"
+        >
+          {readingBackup ? "Reading encrypted backup…" : ""}
+        </span>
         <input
           ref={restoreInput}
           type="file"
@@ -843,6 +853,7 @@ function OnboardPath({
   sub,
   onClick,
   primary = false,
+  busy = false,
 }: {
   icon: React.ReactNode;
   tint: string;
@@ -850,12 +861,14 @@ function OnboardPath({
   sub: string;
   onClick: () => void;
   primary?: boolean;
+  busy?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-all active:scale-[0.99] ${
+      aria-busy={busy}
+      className={`group flex w-full items-center gap-3.5 rounded-2xl border px-4 py-3.5 text-left transition-[background-color,border-color,transform,scale] active:scale-[0.99] ${
         primary
           ? "border-[#0A84FF]/40 bg-[#0A84FF]/[0.10] hover:bg-[#0A84FF]/[0.16]"
           : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16] hover:bg-white/[0.06]"
