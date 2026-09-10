@@ -1,5 +1,6 @@
 import type { Event, VerifiedEvent } from 'nostr-tools/pure';
 import { matchFilters } from 'nostr-tools/filter';
+import { PrivateRelayConfigurationError } from './connection-error';
 import {
   parseBoundedPrivateRelayEvent,
   PRIVATE_RELAY_KNOWN_EVENT_CAPACITY,
@@ -47,6 +48,11 @@ export function validateWakuPrivateRelayEndpoints(urls: readonly string[]): stri
 
 /** The SDK surface this adapter touches, kept structural so tests can supply a fake. */
 export interface WakuDecodedMessage { payload: Uint8Array }
+export interface WakuPeerInfo {
+  id: { toString(): string };
+  protocols?: readonly string[];
+  metadata?: ReadonlyMap<string, Uint8Array>;
+}
 export interface WakuLightNode {
   start(): Promise<void>;
   stop(): Promise<void>;
@@ -54,7 +60,13 @@ export interface WakuLightNode {
   createEncoder(params: { contentTopic: string; ephemeral?: boolean }): unknown;
   createDecoder(params: { contentTopic: string }): unknown;
   isConnected(): boolean;
-  getConnectedPeers(): Promise<Array<{ protocols?: readonly string[] }>>;
+  getConnectedPeers(): Promise<WakuPeerInfo[]>;
+  libp2p: { stop(): Promise<void>; peerStore: { all(): Promise<WakuPeerInfo[]> } };
+  /** Pinned SDK selection boundary shared by Filter, Store and LightPush retries. */
+  peerManager: {
+    getPeers(params: { protocol: string; pubsubTopic: string }): Promise<WakuPeerInfo['id'][]>;
+    isPeerOnPubsub(id: WakuPeerInfo['id'], pubsubTopic: string): Promise<boolean>;
+  };
   lightPush: {
     multicodec?: readonly string[] | string;
     send(encoder: unknown, message: { payload: Uint8Array }, options?: { autoRetry?: boolean }): Promise<{
@@ -66,6 +78,7 @@ export interface WakuLightNode {
     multicodec?: readonly string[] | string;
     subscribe(decoder: unknown, callback: (message: WakuDecodedMessage) => void | Promise<void>): Promise<boolean>;
     unsubscribe(decoder: unknown): Promise<boolean>;
+    unsubscribeAll?(): void;
   };
   /** Optional: a light node with a Store-capable peer can re-fetch retained
    * history to recover messages Filter missed. Absent on a store-less node. */
@@ -81,11 +94,13 @@ export interface WakuLightNode {
 export type WakuMuxerLoader = () => Promise<unknown[]>;
 
 export interface WakuSdk {
+  utils: { decodeRelayShard(bytes: Uint8Array): { clusterId: number; shards: number[] } };
   createLightNode(options: {
+    autoStart?: boolean;
     defaultBootstrap?: boolean;
     bootstrapPeers?: string[];
     networkConfig?: { clusterId: number; numShardsInCluster: number };
-    libp2p?: { filterMultiaddrs?: boolean; streamMuxers?: unknown[] };
+    libp2p?: { start?: boolean; filterMultiaddrs?: boolean; streamMuxers?: unknown[] };
     numPeersToUse?: number;
     filter?: { keepAliveIntervalMs?: number; pingsBeforePeerRenewed?: number; numPeersToUse?: number };
     lightPush?: { numPeersToUse?: number };
@@ -129,6 +144,7 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private readonly loadMuxers: WakuMuxerLoader;
   private readonly bootstrapPeers: readonly string[];
   private readonly clusterId: number;
+  private readonly configuredPeerIds: ReadonlySet<string>;
   private readonly peerTimeoutMs: number;
   private readonly retryBackoffMs: readonly number[];
   private nodePromise: Promise<WakuLightNode> | null = null;
@@ -144,8 +160,8 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   /** Watermark (epoch ms) for the next Store query; 0 until the first backfill. */
   private backfillSince = 0;
   private closed = false;
-  /** Services a peer has already served; identify data can lag behind a successful wait. */
-  private readonly served = new Set<'lightpush' | 'filter'>();
+  private readonly lifetime = new AbortController();
+  private configurationError: PrivateRelayConfigurationError | null = null;
 
   constructor(options: {
     loadSdk?: () => Promise<WakuSdk>;
@@ -164,15 +180,101 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
       const [{ yamux }, { mplex }] = await Promise.all([import('@chainsafe/libp2p-yamux'), import('@libp2p/mplex')]);
       return [yamux(), mplex()];
     });
-    this.bootstrapPeers = options.bootstrapPeers ?? [];
+    this.bootstrapPeers = [...(options.bootstrapPeers ?? [])];
+    this.configuredPeerIds = new Set(this.bootstrapPeers.map(peer => peer.slice(peer.lastIndexOf('/p2p/') + 5)));
     this.clusterId = options.clusterId ?? WAKU_PRIVATE_RELAY_DEFAULT_CLUSTER_ID;
     this.peerTimeoutMs = options.peerTimeoutMs ?? WAKU_PRIVATE_RELAY_PEER_TIMEOUT_MS;
     this.retryBackoffMs = options.retryBackoffMs ?? PRIVATE_RELAY_RECONNECT_BACKOFF_MS;
   }
 
+  /** Bound reads independently of SDK progress and revoke them when closed. */
+  private bounded<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Waku service readiness timed out')), this.peerTimeoutMs);
+      promise.then(resolve, reject);
+    });
+    return raceAbort(raceAbort(deadline, this.lifetime.signal), signal).finally(() => clearTimeout(timer));
+  }
+
+  private peerCluster(peer: WakuPeerInfo, sdk: WakuSdk): number | null {
+    if (this.configuredPeerIds.size && !this.configuredPeerIds.has(peer.id.toString())) return null;
+    const bytes = peer.metadata?.get('shardInfo');
+    if (!bytes || bytes.byteLength > 4096) return null;
+    try {
+      const { clusterId } = sdk.utils.decodeRelayShard(bytes);
+      return Number.isSafeInteger(clusterId) && clusterId >= 0 && clusterId <= 65_535 ? clusterId : null;
+    } catch { return null; }
+  }
+
+  /** SDK 0.0.36 admits unknown metadata during recipient selection, including
+   * its background renewals/retries. Gate the shared instance before start;
+   * keep its sharding, protocol, locking and reconnect policies intact. */
+  private guardPeerSelection(node: WakuLightNode, sdk: WakuSdk): void {
+    const manager = node.peerManager;
+    const onTopic = manager.isPeerOnPubsub.bind(manager);
+    const select = manager.getPeers.bind(manager);
+    manager.isPeerOnPubsub = async (id, topic) => {
+      if (this.closed || this.configurationError) return false;
+      try {
+        const known = await this.bounded(node.libp2p.peerStore.all());
+        const peer = known.find(peer => peer.id.toString() === id.toString());
+        if (!peer || this.peerCluster(peer, sdk) !== this.clusterId) return false;
+        // Do not require a live connection here: Filter also asks this during
+        // disconnect cleanup. Final selection below checks live ownership.
+        const matches = await this.bounded(onTopic(id, topic));
+        return !this.closed && !this.configurationError && matches;
+      } catch { return false; }
+    };
+    manager.getPeers = async params => {
+      if (this.closed || this.configurationError) return [];
+      try {
+        const selected = await this.bounded(select(params));
+        const allowed = new Set((await this.compatiblePeers(node)).map(peer => peer.id.toString()));
+        return this.closed || this.configurationError ? [] : selected.filter(id => allowed.has(id.toString()));
+      } catch {
+        // Background SDK retry callers do not all catch selector rejection.
+        // Missing/invalid metadata and revoked work simply select no target.
+        return [];
+      }
+    };
+  }
+
+  /** The SDK's wait can resolve for a peer on another cluster. Authenticate
+   * readiness using the metadata retained by its completed Waku handshake.
+   * Read the peer store as well as live connections: nwaku can disconnect an
+   * incompatible peer before the first status poll sees it. */
+  private async compatiblePeers(node: WakuLightNode, signal?: AbortSignal): Promise<WakuPeerInfo[]> {
+    if (this.closed) throw abortError();
+    if (this.configurationError) throw this.configurationError;
+    const [sdk, known, connected] = await this.bounded(Promise.all([
+      this.loadSdk(),
+      node.libp2p?.peerStore.all().catch(() => []) ?? Promise.resolve([]),
+      node.getConnectedPeers().catch(() => []),
+    ]), signal);
+    if (this.closed || signal?.aborted) throw abortError();
+    if (this.configurationError) throw this.configurationError;
+    const clusters = new Map<string, number>();
+    for (const peer of known) {
+      const cluster = this.peerCluster(peer, sdk);
+      if (cluster !== null) clusters.set(peer.id.toString(), cluster);
+    }
+    // One incompatible peer must not prevent another configured peer from
+    // completing its handshake or recovering from a temporary outage.
+    if (this.configuredPeerIds.size && [...this.configuredPeerIds].every(id => (
+      clusters.has(id) && clusters.get(id) !== this.clusterId
+    ))) {
+      this.configurationError = new PrivateRelayConfigurationError(this.clusterId, [...clusters.values()]);
+      throw this.configurationError;
+    }
+    if (!node.isConnected()) return [];
+    return connected.filter(peer => clusters.get(peer.id.toString()) === this.clusterId);
+  }
+
   private node(): Promise<WakuLightNode> {
     if (this.closed) return Promise.reject(new Error('Private relay transport is closed'));
     this.nodePromise ??= Promise.all([this.loadSdk(), this.loadMuxers()]).then(async ([sdk, streamMuxers]) => {
+      if (this.closed) throw abortError();
       // Self-hosted or trusted nodes only: the public Waku Network is never
       // dialled (it rate-limits proof-less publishing under RLN). With no peer
       // configured the node connects to nothing and relaying is simply
@@ -181,11 +283,12 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
       // which would tear the one filter subscription down and up on every gap.
       const peersToUse = Math.max(1, Math.min(this.bootstrapPeers.length, 2));
       const node = await sdk.createLightNode({
+        autoStart: false,
         defaultBootstrap: false,
         ...(this.bootstrapPeers.length ? { bootstrapPeers: [...this.bootstrapPeers] } : {}),
         // The SDK dials only wss by default; a plain-ws peer is accepted solely
         // on this device (the address validator enforces loopback for ws).
-        libp2p: { streamMuxers, ...(this.bootstrapPeers.some(peer => /\/ws\/p2p\//u.test(peer)) ? { filterMultiaddrs: false } : {}) },
+        libp2p: { start: false, streamMuxers, ...(this.bootstrapPeers.some(peer => /\/ws\/p2p\//u.test(peer)) ? { filterMultiaddrs: false } : {}) },
         networkConfig: { clusterId: this.clusterId, numShardsInCluster: WAKU_PRIVATE_RELAY_SHARDS },
         numPeersToUse: peersToUse,
         // A relay exchange lasts seconds, so keep the ping interval short, but
@@ -194,19 +297,39 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
         filter: { keepAliveIntervalMs: WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS, pingsBeforePeerRenewed: 3, numPeersToUse: peersToUse },
         lightPush: { numPeersToUse: peersToUse },
       });
-      await node.start();
-      return node;
+      try {
+        if (this.closed) throw abortError();
+        this.guardPeerSelection(node, sdk);
+        await node.start();
+        if (this.closed) throw abortError();
+        return node;
+      } catch (cause) {
+        await this.stopNode(node);
+        throw cause;
+      }
     });
     return this.nodePromise;
+  }
+
+  private async stopNode(node: WakuLightNode): Promise<void> {
+    node.filter.unsubscribeAll?.();
+    // WakuNode.stop can return early after a partially failed start; physical
+    // cleanup must not depend on its startup lock or a remote Filter response.
+    await Promise.allSettled([node.stop(), node.libp2p.stop()]);
   }
 
   /** Peers are discovered after start; like a relay socket, a send or a
    * subscription waits for a serving peer instead of failing on a cold node. */
   private async ready(node: WakuLightNode, which: 'lightpush' | 'filter', signal?: AbortSignal): Promise<void> {
+    if (this.configurationError) throw this.configurationError;
     const sdk = await this.loadSdk().catch(() => null);
     const protocol = which === 'lightpush' ? sdk?.Protocols?.LightPush ?? 'lightpush' : sdk?.Protocols?.Filter ?? 'filter';
-    await raceAbort(node.waitForPeers([protocol], this.peerTimeoutMs), signal);
-    this.served.add(which);
+    await this.bounded(node.waitForPeers([protocol], this.peerTimeoutMs), signal);
+    const peers = await this.compatiblePeers(node, signal);
+    const wanted = codecs(which === 'lightpush' ? node.lightPush.multicodec : node.filter.multicodec);
+    if (!peers.some(peer => peer.protocols?.some(codec => wanted.includes(codec)))) {
+      throw new Error('No compatible Waku service is ready');
+    }
   }
 
   async publish(
@@ -232,11 +355,11 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
         await this.ready(node, 'lightpush', signal);
         const result = await raceAbort(node.lightPush.send(wakuEncoder, { payload }, { autoRetry: true }), signal);
         if ((result.successes?.length ?? 0) > 0) return new Map(urls.map(url => [url, true]));
-        this.served.delete('lightpush');
         await raceAbort(new Promise(resolve => setTimeout(resolve, WAKU_PRIVATE_RELAY_PUBLISH_RETRY_MS)), signal);
       }
       return rejected();
     } catch (cause) {
+      if (cause instanceof PrivateRelayConfigurationError) throw cause;
       if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
       return rejected();
     }
@@ -266,10 +389,19 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
       if (this.closed || this.listeners.size === 0) return;
       this.wakuDecoder ??= node.createDecoder({ contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC });
       const ok = await node.filter.subscribe(this.wakuDecoder, message => this.deliver(message));
+      if (this.closed) {
+        void node.filter.unsubscribe(this.wakuDecoder).catch(() => undefined);
+        node.filter.unsubscribeAll?.();
+        return;
+      }
       if (!ok) throw new Error('Waku filter subscription was not accepted');
+      // The network subscription belongs to this adapter, not an individual
+      // listener. Keep a completed handshake available to later listeners,
+      // just as removing a listener after a completed handshake does.
       this.subscribed = true;
-    })().catch(() => {
+    })().catch(cause => {
       if (this.closed) return;
+      if (cause instanceof PrivateRelayConfigurationError) return;
       const delay = this.retryBackoffMs[Math.min(attempt, this.retryBackoffMs.length - 1)]!;
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null;
@@ -286,6 +418,8 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     try {
       const node = await this.node();
       if (this.closed || this.listeners.size === 0 || !node.store) return;
+      if ((await this.compatiblePeers(node)).length === 0) return;
+      if (this.closed || this.listeners.size === 0) return;
       if (this.backfillSince === 0) this.backfillSince = Date.now() - WAKU_PRIVATE_RELAY_BACKFILL_LOOKBACK_MS;
       const runStart = Date.now();
       this.storeDecoder ??= node.createDecoder({ contentTopic: WAKU_PRIVATE_RELAY_CONTENT_TOPIC });
@@ -302,7 +436,7 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   }
 
   private scheduleBackfill(delay = WAKU_PRIVATE_RELAY_BACKFILL_INTERVAL_MS): void {
-    if (this.closed || this.backfillTimer || this.backfilling || this.listeners.size === 0) return;
+    if (this.closed || this.configurationError || this.backfillTimer || this.backfilling || this.listeners.size === 0) return;
     this.backfillTimer = setTimeout(() => {
       this.backfillTimer = null;
       void this.backfill();
@@ -337,24 +471,22 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     try {
       await Promise.all([this.ready(node, 'lightpush', signal), this.ready(node, 'filter', signal)]);
     } catch (cause) {
+      if (cause instanceof PrivateRelayConfigurationError) throw cause;
       if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
     }
-    return this.connectionStatus(urls);
+    return this.connectionStatus(urls, signal);
   }
 
-  async connectionStatus(urls: readonly string[]): Promise<Map<string, boolean>> {
+  async connectionStatus(urls: readonly string[], signal?: AbortSignal): Promise<Map<string, boolean>> {
     if (this.closed || !this.nodePromise) return new Map(urls.map(url => [url, false]));
     const node = await this.nodePromise;
-    const peers = await node.getConnectedPeers().catch(() => []);
-    const connected = node.isConnected();
-    // A service counts as connected once a peer served it and the node still
-    // holds connections, or when a connected peer advertises its codec.
-    const supports = (which: 'lightpush' | 'filter', wanted: string[]) => (connected && this.served.has(which)) ||
-      peers.some(peer => (peer.protocols ?? []).some(protocol => wanted.includes(protocol)));
+    if (this.closed) return new Map(urls.map(url => [url, false]));
+    const peers = await this.compatiblePeers(node, signal);
+    const supports = (wanted: string[]) => peers.some(peer => (peer.protocols ?? []).some(protocol => wanted.includes(protocol)));
     const status = new Map<string, boolean>();
     for (const url of urls) {
-      status.set(url, url === WAKU_PRIVATE_RELAY_ENDPOINTS[0] ? supports('lightpush', codecs(node.lightPush.multicodec))
-        : url === WAKU_PRIVATE_RELAY_ENDPOINTS[1] ? supports('filter', codecs(node.filter.multicodec)) : false);
+      status.set(url, url === WAKU_PRIVATE_RELAY_ENDPOINTS[0] ? supports(codecs(node.lightPush.multicodec))
+        : url === WAKU_PRIVATE_RELAY_ENDPOINTS[1] ? supports(codecs(node.filter.multicodec)) : false);
     }
     return status;
   }
@@ -362,6 +494,7 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.lifetime.abort();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
     if (this.backfillTimer) clearTimeout(this.backfillTimer);
@@ -370,9 +503,11 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
     this.knownIds.clear();
     const pending = this.nodePromise;
     this.nodePromise = null;
+    const wasSubscribed = this.subscribed;
+    this.subscribed = false;
     void pending?.then(async node => {
-      if (this.subscribed && this.wakuDecoder) await node.filter.unsubscribe(this.wakuDecoder).catch(() => undefined);
-      await node.stop();
+      if (wasSubscribed && this.wakuDecoder) void node.filter.unsubscribe(this.wakuDecoder).catch(() => undefined);
+      await this.stopNode(node);
     }).catch(() => undefined);
   }
 }

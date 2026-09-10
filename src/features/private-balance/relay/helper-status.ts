@@ -1,15 +1,19 @@
+import { PrivateRelayConfigurationError, type PrivateRelayConfigurationProblem } from './connection-error';
+
 export type PrivateRelayHelperPhase =
   | 'off'
   | 'waiting'
   | 'connecting'
   | 'connected'
   | 'reconnecting'
+  | 'configuration-error'
   | 'unavailable';
 
 export interface PrivateRelayHelperStatus {
   phase: PrivateRelayHelperPhase;
   connectedRelays: number;
   totalRelays: number;
+  configurationProblem?: PrivateRelayConfigurationProblem;
 }
 
 const OFF_STATUS: PrivateRelayHelperStatus = Object.freeze({
@@ -43,12 +47,23 @@ export function publishPrivateRelayHelperStatus(status: PrivateRelayHelperStatus
   ) {
     throw new Error('Private relay helper status is invalid');
   }
+  if ((status.phase === 'configuration-error') !== Boolean(status.configurationProblem) ||
+    (status.configurationProblem && (status.connectedRelays !== 0 || status.configurationProblem.code !== 'waku-cluster-mismatch'))) {
+    throw new Error('Private relay helper configuration status is invalid');
+  }
+  const configurationProblem = status.configurationProblem ? new PrivateRelayConfigurationError(
+    status.configurationProblem.configuredClusterId, status.configurationProblem.peerClusterIds,
+  ).problem : undefined;
   if (
     currentStatus.phase === status.phase &&
     currentStatus.connectedRelays === status.connectedRelays &&
-    currentStatus.totalRelays === status.totalRelays
+    currentStatus.totalRelays === status.totalRelays &&
+    currentStatus.configurationProblem?.configuredClusterId === configurationProblem?.configuredClusterId &&
+    currentStatus.configurationProblem?.peerClusterIds.join(',') === configurationProblem?.peerClusterIds.join(',')
   ) return;
-  currentStatus = Object.freeze({ ...status });
+  currentStatus = Object.freeze({ phase: status.phase, connectedRelays: status.connectedRelays, totalRelays: status.totalRelays,
+    ...(configurationProblem ? { configurationProblem } : {}),
+  });
   for (const listener of listeners) listener();
 }
 
@@ -83,6 +98,7 @@ export async function retryPrivateRelayHelperReadiness<T>(input: {
   connect(signal: AbortSignal): Promise<T>;
   onUnavailable(): void;
   onRetry(): void;
+  shouldRetry?(cause: unknown): boolean;
   retryDelayMs?: number;
 }): Promise<T> {
   const retryDelayMs = input.retryDelayMs ?? 1_000;
@@ -92,8 +108,9 @@ export async function retryPrivateRelayHelperReadiness<T>(input: {
   while (!input.signal.aborted) {
     try {
       return await input.connect(input.signal);
-    } catch {
+    } catch (cause) {
       if (input.signal.aborted) throw helperAbortError();
+      if (input.shouldRetry?.(cause) === false) throw cause;
       input.onUnavailable();
       await waitForHelperRetry(retryDelayMs, input.signal);
       input.onRetry();

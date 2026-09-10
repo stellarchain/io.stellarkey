@@ -49,7 +49,7 @@ test('fresh unlock Start prepares the real runtime before connecting and preserv
   await expect(dialog).toHaveAttribute('data-startup-identity', 'original');
   await expect(dialog.getByRole('button', { name: 'Stop Relaying', exact: true })).toBeFocused();
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
-  await expect(dialog.getByText('Connected to 1 of 2 public relays', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Connected to 1 of 2 Waku services', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Earn by Relaying/ })).toBeFocused();

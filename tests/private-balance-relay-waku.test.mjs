@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
+import { utils as wakuUtils } from '@waku/sdk';
+import { PeerManager } from '../node_modules/@waku/sdk/dist/peer_manager/peer_manager.js';
 import {
   WAKU_PRIVATE_RELAY_CONTENT_TOPIC,
   WAKU_PRIVATE_RELAY_ENDPOINTS,
@@ -15,6 +17,8 @@ import { DEFAULT_PRIVATE_RELAY_PREFERENCES, loadPrivateRelayPreferences, savePri
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const FIXTURE_PEER_ID = '16Uiu2HAkykgaECHswi3YKJ5dMLbq2kPVCo89fcyTd38UcQD6ej5W';
+const SERVICE_CODECS = ['/vac/waku/lightpush/3.0.0', '/vac/waku/filter-subscribe/2.0.0-beta1'];
 
 function signedEvent(overrides = {}) {
   return finalizeEvent({
@@ -28,9 +32,18 @@ function signedEvent(overrides = {}) {
 
 /** A fake light node: records calls, lets tests deliver payloads to the filter callback. */
 function fakeSdk(options = {}) {
-  const calls = { created: [], started: 0, stopped: 0, sent: [], subscribed: 0, unsubscribed: 0, waited: [], storeQueries: [] };
+  const calls = { created: [], started: 0, stopped: 0, physicalStops: 0, localCleanup: 0, sent: [], subscribed: 0, unsubscribed: 0, waited: [], storeQueries: [] };
   const storeMessages = [];
   let filterCallback = null;
+  let configuredCluster = 1;
+  const peerInfo = (peer, index) => ({
+    ...peer,
+    id: { toString: () => peer.id ?? (index === 0 ? FIXTURE_PEER_ID : `${FIXTURE_PEER_ID}a`) },
+    metadata: options.missingMetadata ? new Map() : peer.metadata ?? new Map([
+      ['shardInfo', wakuUtils.encodeRelayShard({ clusterId: peer.clusterId ?? options.peerClusterId ?? configuredCluster, shards: [0, 1, 2, 3, 4, 5, 6, 7] })],
+    ]),
+  });
+  const connectedPeers = () => (options.peers ?? [{ protocols: SERVICE_CODECS }]).map(peerInfo);
   const node = {
     async start() { calls.started += 1; },
     async stop() { calls.stopped += 1; },
@@ -42,7 +55,9 @@ function fakeSdk(options = {}) {
     createEncoder(params) { return { params }; },
     createDecoder(params) { return { params }; },
     isConnected() { return options.connected ?? true; },
-    async getConnectedPeers() { return options.peers ?? [{ protocols: ['/vac/waku/lightpush/3.0.0', '/vac/waku/filter-subscribe/2.0.0-beta1'] }]; },
+    async getConnectedPeers() { return connectedPeers(); },
+    libp2p: { async stop() { calls.physicalStops += 1; }, peerStore: { async all() { return options.knownPeers ? options.knownPeers.map(peerInfo) : connectedPeers(); } } },
+    peerManager: { async getPeers() { return []; }, async isPeerOnPubsub() { return true; } },
     lightPush: {
       multicodec: ['/vac/waku/lightpush/3.0.0'],
       async send(wakuEncoder, message, sendOptions) {
@@ -60,6 +75,7 @@ function fakeSdk(options = {}) {
         return true;
       },
       async unsubscribe() { calls.unsubscribed += 1; return true; },
+      unsubscribeAll() { calls.localCleanup += 1; },
     },
     ...(options.store === false ? {} : { store: {
       async queryWithOrderedCallback(_decoders, callback, queryOptions) {
@@ -73,7 +89,8 @@ function fakeSdk(options = {}) {
   };
   const sdk = {
     Protocols: { LightPush: 'lightpush', Filter: 'filter' },
-    async createLightNode(createOptions) { calls.created.push(createOptions); return node; },
+    utils: { decodeRelayShard: wakuUtils.decodeRelayShard },
+    async createLightNode(createOptions) { configuredCluster = createOptions.networkConfig.clusterId; calls.created.push(createOptions); return node; },
   };
   return {
     sdk, calls, node, storeMessages,
@@ -99,7 +116,7 @@ test('publishing sends one retained message on the shared content topic and repo
   assert.deepEqual([...outcome.values()], [true, true]);
   assert.equal(fake.calls.started, 1);
   assert.deepEqual(fake.calls.created, [{
-    defaultBootstrap: false, libp2p: { streamMuxers: ['yamux', 'mplex'] }, networkConfig: { clusterId: 1, numShardsInCluster: 8 }, numPeersToUse: 1,
+    autoStart: false, defaultBootstrap: false, libp2p: { start: false, streamMuxers: ['yamux', 'mplex'] }, networkConfig: { clusterId: 1, numShardsInCluster: 8 }, numPeersToUse: 1,
     filter: { keepAliveIntervalMs: 30_000, pingsBeforePeerRenewed: 3, numPeersToUse: 1 }, lightPush: { numPeersToUse: 1 },
   }], 'no public bootstrap; a store-less default node connects to nothing until a service node is configured');
   assert.equal(fake.calls.sent.length, 1);
@@ -255,7 +272,7 @@ test('readiness waits for light-push and filter peers and reports each service s
   assert.deepEqual(fake.calls.waited, [{ protocols: ['lightpush'], timeoutMs: 1234 }, { protocols: ['filter'], timeoutMs: 1234 }]);
   await adapter.publish([...WAKU_PRIVATE_RELAY_ENDPOINTS], signedEvent());
   assert.deepEqual(fake.calls.waited.at(-1), { protocols: ['lightpush'], timeoutMs: 1234 }, 'a send waits for a light-push peer first');
-  assert.deepEqual([...status.entries()], [['waku:lightpush', true], ['waku:filter', true]], 'a served protocol counts even before identify data lists its codec');
+  assert.deepEqual([...status.entries()], [['waku:lightpush', true], ['waku:filter', false]], 'SDK readiness cannot substitute for an advertised compatible service');
   adapter.close();
   assert.deepEqual([...(await adapter.connectionStatus([...WAKU_PRIVATE_RELAY_ENDPOINTS])).values()], [false, false], 'closed adapters report nothing connected');
 });
@@ -271,8 +288,76 @@ test('no peers within the deadline reports every service unavailable instead of 
   adapter.close();
 });
 
+test('a successful SDK wait cannot report incompatible configured nodes as connected', async () => {
+  const fake = fakeSdk({ peerClusterId: 3 });
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], bootstrapPeers: [PEER], clusterId: 1 });
+  try {
+    await assert.rejects(adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS), error => {
+      assert.equal(error.name, 'PrivateRelayConfigurationError');
+      assert.equal(error.code, 'waku-cluster-mismatch');
+      assert.equal(error.configuredClusterId, 1);
+      assert.deepEqual(error.peerClusterIds, [3]);
+      assert.doesNotMatch(error.message, /16Uiu|node\.example/);
+      return true;
+    });
+    await assert.rejects(adapter.connectionStatus(WAKU_PRIVATE_RELAY_ENDPOINTS), { code: 'waku-cluster-mismatch' });
+  } finally { adapter.close(); }
+});
+
+test('the cluster rejection remains actionable after the incompatible peers disconnect', async () => {
+  const fake = fakeSdk({ peers: [], connected: false, knownPeers: [{ protocols: SERVICE_CODECS, clusterId: 3 }] });
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], bootstrapPeers: [PEER], clusterId: 1 });
+  try {
+    await assert.rejects(adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS), { code: 'waku-cluster-mismatch' });
+  } finally { adapter.close(); }
+});
+
+test('missing or malformed peer metadata never counts as service readiness', async () => {
+  for (const options of [{ missingMetadata: true }, { peers: [{ protocols: SERVICE_CODECS, metadata: new Map([['shardInfo', Uint8Array.of(255)]]) }] }]) {
+    const fake = fakeSdk(options);
+    const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+    try {
+      assert.deepEqual([...(await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [false, false]);
+      assert.deepEqual([...(await adapter.publish(WAKU_PRIVATE_RELAY_ENDPOINTS, signedEvent())).values()], [false, false]);
+      assert.equal(fake.calls.sent.length, 0);
+    } finally { adapter.close(); }
+  }
+});
+
+test('an incompatible filter peer cannot lend readiness to a compatible light-push peer', async () => {
+  const fake = fakeSdk({ peers: [
+    { protocols: ['/vac/waku/lightpush/3.0.0'], clusterId: 1 },
+    { protocols: ['/vac/waku/filter-subscribe/2.0.0-beta1'], clusterId: 3 },
+  ] });
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], clusterId: 1 });
+  try {
+    assert.deepEqual([...(await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [true, false]);
+  } finally { adapter.close(); }
+});
+
+test('advertised codecs do not make a disconnected node ready', async () => {
+  const fake = fakeSdk({ connected: false });
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  try {
+    assert.deepEqual([...(await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [false, false]);
+  } finally { adapter.close(); }
+});
+
+test('a mismatch does not subscribe, query retained history or publish messages', async () => {
+  const fake = fakeSdk({ peerClusterId: 3 });
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], bootstrapPeers: [PEER], clusterId: 1, retryBackoffMs: [5] });
+  const subscription = adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [], () => assert.fail('no delivery before compatibility'));
+  try {
+    await assert.rejects(adapter.publish(WAKU_PRIVATE_RELAY_ENDPOINTS, signedEvent()), { code: 'waku-cluster-mismatch' });
+    await flush();
+    assert.equal(fake.calls.subscribed, 0);
+    assert.equal(fake.calls.storeQueries.length, 0);
+    assert.equal(fake.calls.sent.length, 0);
+  } finally { subscription.close(); adapter.close(); }
+});
+
 test('the bounded transport accepts the Waku services and keeps at-least-one readiness semantics', async () => {
-  const fake = fakeSdk({ peers: [{ protocols: ['/vac/waku/filter-subscribe/2.0.0-beta1'] }], connected: false });
+  const fake = fakeSdk({ peers: [{ protocols: ['/vac/waku/lightpush/3.0.0'] }], connected: true });
   const transport = new BoundedPrivateRelayTransport(
     [...WAKU_PRIVATE_RELAY_ENDPOINTS],
     new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] }),
@@ -282,6 +367,243 @@ test('the bounded transport accepts the Waku services and keeps at-least-one rea
   await transport.publish(signedEvent());
   transport.close();
   assert.throws(() => new BoundedPrivateRelayTransport(['wss://relay.one', 'wss://relay.two'], new WakuPrivateRelayAdapter(), validateWakuPrivateRelayEndpoints), /Waku/u);
+});
+
+test('abort cancels the final readiness metadata read without waiting for adapter close', async () => {
+  const fake = fakeSdk();
+  const readPeers = fake.node.libp2p.peerStore.all;
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  let reads = 0;
+  fake.node.libp2p.peerStore.all = async () => {
+    if (++reads <= 2) return readPeers();
+    entered.resolve();
+    return pending.promise;
+  };
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], peerTimeoutMs: 1000 });
+  const controller = new AbortController();
+  const outcome = adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS, controller.signal).then(() => 'connected', cause => cause.name);
+  try {
+    await entered.promise;
+    controller.abort();
+    assert.equal(await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve('still-pending'), 50))]), 'AbortError');
+  } finally { adapter.close(); pending.resolve([]); await outcome; }
+});
+
+test('closing cancels pending compatibility reads and their late metadata cannot restore readiness', async () => {
+  const fake = fakeSdk();
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  const latePeers = await fake.node.libp2p.peerStore.all();
+  fake.node.libp2p.peerStore.all = () => { entered.resolve(); return pending.promise; };
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], peerTimeoutMs: 1000 });
+  const outcome = adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS).then(() => 'connected', cause => cause.name);
+  await entered.promise;
+  adapter.close();
+  assert.equal(await outcome, 'AbortError');
+  pending.resolve(latePeers);
+  await flush();
+  assert.deepEqual([...(await adapter.connectionStatus(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [false, false]);
+  assert.equal(fake.calls.stopped, 1);
+});
+
+test('a missing second configured handshake stays transient and can recover', async () => {
+  const options = { peerClusterId: 3 };
+  const fake = fakeSdk(options);
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], bootstrapPeers: [PEER, `${PEER}a`], clusterId: 1 });
+  try {
+    assert.deepEqual([...(await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [false, false]);
+    options.peers = [{ protocols: SERVICE_CODECS, clusterId: 3 }, { protocols: SERVICE_CODECS, clusterId: 1 }];
+    assert.deepEqual([...(await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS)).values()], [true, true]);
+  } finally { adapter.close(); }
+});
+
+test('the production transport factory forwards saved clusters including zero to the actual SDK boundary', async () => {
+  for (const clusterId of [0, 3]) {
+    const fake = fakeSdk();
+    const transport = createPrivateRelayTransport({ transport: 'waku', peers: [PEER], clusterId });
+    // Replace I/O only, after production constructs the adapter with its real
+    // options. A hardcoded/fallback cluster in the factory fails this test.
+    transport.adapter.loadSdk = async () => fake.sdk;
+    transport.adapter.loadMuxers = async () => [];
+    try {
+      assert.deepEqual(await transport.waitUntilConnected(), { connected: 2, total: 2 });
+      assert.equal(fake.calls.created[0].networkConfig.clusterId, clusterId);
+      assert.deepEqual(fake.calls.created[0].bootstrapPeers, [PEER]);
+    } finally { transport.close(); }
+  }
+});
+
+test('a late Filter subscription after close is removed and never restores subscribed state', async () => {
+  const fake = fakeSdk();
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  fake.node.filter.subscribe = () => { entered.resolve(); return pending.promise; };
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [{}], () => assert.fail('closed session cannot deliver'));
+  await entered.promise;
+  adapter.close();
+  await flush();
+  pending.resolve(true);
+  await flush();
+  assert.equal(fake.calls.stopped, 1);
+  assert.equal(fake.calls.unsubscribed, 1);
+  assert.equal(adapter.subscribed, false);
+});
+
+test('the installed SDK selector cannot send Filter, Store, LightPush or retries to an unconfirmed peer', async () => {
+  const storeCodec = '/vac/waku/store-query/3.0.0';
+  const fake = fakeSdk({ peers: [
+    { protocols: [...SERVICE_CODECS, storeCodec], metadata: new Map() },
+    { protocols: [...SERVICE_CODECS, storeCodec], clusterId: 3 },
+  ] });
+  const peerManager = new PeerManager({
+    config: { numPeersToUse: 1 },
+    libp2p: { getConnections: () => [], peerStore: fake.node.libp2p.peerStore },
+    connectionManager: {
+      getConnectedPeers: () => fake.node.getConnectedPeers(),
+      hasShardInfo: async id => (await fake.node.getConnectedPeers()).find(peer => peer.id.toString() === id.toString()).metadata.has('shardInfo'),
+      isPeerOnTopic: async () => true,
+    },
+  });
+  fake.node.peerManager = peerManager;
+  const selected = { lightpush: [], filter: [], store: [] };
+  const select = async protocol => {
+    const ids = await peerManager.getPeers({ protocol, pubsubTopic: '/waku/2/rs/3/0' });
+    selected[protocol].push(...ids.map(id => id.toString()));
+    return ids;
+  };
+  fake.node.lightPush.send = async () => ({ successes: await select('lightpush') });
+  fake.node.filter.subscribe = async () => (await select('filter')).length > 0;
+  fake.node.store.queryWithOrderedCallback = async () => { await select('store'); };
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [],
+    bootstrapPeers: [PEER, `${PEER}a`], clusterId: 3 });
+  adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [{}], () => {});
+  try {
+    await adapter.publish(WAKU_PRIVATE_RELAY_ENDPOINTS, signedEvent());
+    await flush();
+    for (const protocol of ['filter', 'store', 'lightpush']) assert.deepEqual(selected[protocol], [`${FIXTURE_PEER_ID}a`], protocol);
+    // SDK renewal/retry work uses the same selector after the adapter's direct
+    // call has returned, so it must remain guarded independently of ready().
+    assert.deepEqual((await peerManager.getPeers({ protocol: 'lightpush', pubsubTopic: '/waku/2/rs/3/0' })).map(id => id.toString()), [`${FIXTURE_PEER_ID}a`]);
+    adapter.close();
+    assert.deepEqual(await peerManager.getPeers({ protocol: 'lightpush', pubsubTopic: '/waku/2/rs/3/0' }), []);
+  } finally { adapter.close(); }
+});
+
+test('closing while the SDK loader is pending never creates or starts a late node', async () => {
+  const fake = fakeSdk();
+  const loading = Promise.withResolvers();
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: () => loading.promise, loadMuxers: async () => [] });
+  const outcome = adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS).then(() => 'connected', cause => cause.name);
+  adapter.close();
+  loading.resolve(fake.sdk);
+  await outcome;
+  await flush();
+  assert.equal(fake.calls.created.length, 0);
+  assert.equal(fake.calls.started, 0);
+});
+
+test('SDK creation suppresses nested auto-start and cleans an allocated node returned after close', async () => {
+  const fake = fakeSdk();
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  let options;
+  fake.sdk.createLightNode = async input => { options = input; entered.resolve(); return pending.promise; };
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  const outcome = adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS).catch(cause => cause.name);
+  await entered.promise;
+  adapter.close();
+  pending.resolve(fake.node);
+  await outcome;
+  await flush();
+  assert.equal(options.autoStart, false);
+  assert.equal(options.libp2p.start, false);
+  assert.equal(fake.calls.started, 0);
+  assert.equal(fake.calls.physicalStops, 1);
+});
+
+test('a partial SDK start failure still stops the allocated physical node', async () => {
+  const fake = fakeSdk();
+  fake.node.start = async () => { throw new Error('synthetic start failure'); };
+  // The real WakuNode stop can return early if start left its state lock set.
+  fake.node.stop = async () => {};
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  try {
+    await assert.rejects(adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS), /synthetic start failure/);
+    assert.equal(fake.calls.physicalStops, 1);
+  } finally { adapter.close(); }
+});
+
+for (const late of [false, true]) test(`closing ${late ? 'a late' : 'an active'} Filter subscription never waits for remote unsubscribe`, async () => {
+  const fake = fakeSdk();
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  if (late) fake.node.filter.subscribe = () => { entered.resolve(); return pending.promise; };
+  fake.node.filter.unsubscribe = () => new Promise(() => {});
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [{}], () => {});
+  if (late) await entered.promise;
+  else await flush();
+  adapter.close();
+  if (late) pending.resolve(true);
+  await flush();
+  assert.equal(fake.calls.stopped, 1);
+  assert.ok(fake.calls.localCleanup >= (late ? 2 : 1));
+  assert.equal(adapter.subscribed, false);
+});
+
+test('a late compatible read cannot select a peer after another read proves a terminal mismatch', async () => {
+  const options = { peerClusterId: 3 };
+  const fake = fakeSdk(options);
+  const initialPeers = await fake.node.getConnectedPeers();
+  fake.node.peerManager.getPeers = async () => initialPeers.map(peer => peer.id);
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [], bootstrapPeers: [PEER], clusterId: 3 });
+  await adapter.waitUntilConnected(WAKU_PRIVATE_RELAY_ENDPOINTS);
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  const read = fake.node.libp2p.peerStore.all;
+  let first = true;
+  fake.node.libp2p.peerStore.all = () => {
+    if (!first) return read();
+    first = false;
+    entered.resolve();
+    return pending.promise;
+  };
+  const selection = fake.node.peerManager.getPeers({ protocol: 'lightpush', pubsubTopic: '/waku/2/rs/3/0' });
+  try {
+    await entered.promise;
+    options.peerClusterId = 1;
+    await assert.rejects(adapter.connectionStatus(WAKU_PRIVATE_RELAY_ENDPOINTS), { code: 'waku-cluster-mismatch' });
+    pending.resolve(initialPeers);
+    assert.deepEqual(await selection, []);
+  } finally { pending.resolve(initialPeers); adapter.close(); await selection; }
+});
+
+test('listeners arriving after the last listener leaves a pending Filter handshake still receive events', async () => {
+  const fake = fakeSdk();
+  const subscribe = fake.node.filter.subscribe;
+  const entered = Promise.withResolvers();
+  const pending = Promise.withResolvers();
+  const cleanup = Promise.withResolvers();
+  fake.node.filter.subscribe = async (...args) => { entered.resolve(); await pending.promise; return subscribe(...args); };
+  fake.node.filter.unsubscribe = () => cleanup.promise;
+  const adapter = new WakuPrivateRelayAdapter({ loadSdk: async () => fake.sdk, loadMuxers: async () => [] });
+  const first = adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [{}], () => assert.fail('removed listener received an event'));
+  await entered.promise;
+  first.close();
+  pending.resolve(true);
+  await flush();
+  const seen = [];
+  adapter.subscribe(WAKU_PRIVATE_RELAY_ENDPOINTS, [{}], event => seen.push(event.id));
+  cleanup.resolve(true);
+  await flush();
+  try {
+    assert.equal(adapter.subscribed, true);
+    const event = signedEvent();
+    await fake.deliver(JSON.stringify(event));
+    assert.deepEqual(seen, [event.id]);
+  } finally { adapter.close(); }
 });
 
 const PEER = '/dns4/node.example/tcp/8000/wss/p2p/16Uiu2HAkykgaECHswi3YKJ5dMLbq2kPVCo89fcyTd38UcQD6ej5W';

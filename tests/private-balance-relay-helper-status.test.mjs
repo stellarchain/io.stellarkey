@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { PrivateRelayConfigurationError } from '../src/features/private-balance/relay/connection-error.ts';
 
 import {
   getPrivateRelayHelperStatus,
@@ -62,4 +63,33 @@ test('helper readiness cleanup cancels a pending retry', async () => {
     error => error instanceof DOMException && error.name === 'AbortError',
   );
   assert.equal(attempts, 1);
+});
+
+test('a terminal connection problem is returned to the owner without retrying', async () => {
+  const terminal = new Error('Synthetic terminal configuration problem');
+  let attempts = 0;
+  const pending = retryPrivateRelayHelperReadiness({
+    signal: new AbortController().signal,
+    retryDelayMs: 1,
+    connect: async () => {
+      attempts += 1;
+      if (attempts === 1) throw terminal;
+      return { connected: 1, total: 2 };
+    },
+    shouldRetry: cause => cause !== terminal,
+    onUnavailable() {},
+    onRetry() {},
+  });
+  await assert.rejects(pending, error => error === terminal);
+  assert.equal(attempts, 1);
+});
+
+test('changing cluster diagnostics updates an otherwise unchanged helper status', () => {
+  const first = new PrivateRelayConfigurationError(1, [3]).problem;
+  const second = new PrivateRelayConfigurationError(0, [3]).problem;
+  publishPrivateRelayHelperStatus({ phase: 'configuration-error', connectedRelays: 0, totalRelays: 2, configurationProblem: first });
+  publishPrivateRelayHelperStatus({ phase: 'configuration-error', connectedRelays: 0, totalRelays: 2, configurationProblem: second });
+  assert.deepEqual(getPrivateRelayHelperStatus().configurationProblem, second);
+  publishPrivateRelayHelperStatus({ phase: 'off', connectedRelays: 0, totalRelays: 0 });
+  assert.equal(getPrivateRelayHelperStatus().configurationProblem, undefined);
 });
