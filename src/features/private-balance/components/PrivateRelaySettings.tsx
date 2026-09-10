@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Button, Field, FieldLabelRow, Notice, QuickAmountChips, SegmentedControl, Toggle } from '@/components/ui';
+import { Button, Field, FieldLabelRow, Notice, QuickAmountChips, Toggle } from '@/components/ui';
 import { IconChevronDown, IconEye, IconLock, IconShield, IconWallet } from '@/components/icons';
 import { usePrivateBalanceRuntime } from '@/hooks/usePrivateBalanceRuntime';
 import {
@@ -10,8 +10,7 @@ import {
   PRIVATE_RELAY_PREFERENCES_EVENT,
   type PrivateRelayPreferences,
 } from '../relay/preferences';
-import { describePrivateRelayNetwork, privateRelayNetwork, validateWakuClusterId, validateWakuPeerAddresses, type PrivateRelayTransportKind } from '../relay/network';
-import { validatePrivateRelayUrls } from '../relay/transport';
+import { describePrivateRelayNetwork, privateRelayNetwork, validateWakuClusterId, validateWakuPeerAddresses } from '../relay/network';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceXlm } from '../runtime/selectors';
 import { useReportToOwner } from './useReportToOwner';
@@ -96,14 +95,12 @@ export function PrivateRelaySettings({
     { state: 'error'; field: 'fee' | 'connections' | 'storage'; message: string }
   >({ state: 'idle' });
   const [connectionsOpen, setConnectionsOpen] = useState(false);
-  const edited = useRef(new Set<'useRelay' | 'helpRelay' | 'feeAtomic' | 'transport' | 'wakuPeers' | 'wakuClusterId' | number>());
+  const edited = useRef(new Set<'useRelay' | 'helpRelay' | 'feeAtomic' | 'wakuPeers' | 'wakuClusterId'>());
   const [wakuPeersDraft, setWakuPeersDraft] = useState<string[]>(() => [draft.wakuPeers[0] ?? '', draft.wakuPeers[1] ?? '']);
   const [wakuClusterDraft, setWakuClusterDraft] = useState(() => String(draft.wakuClusterId));
   const id = useId();
   const error = feedback.state === 'error' ? feedback : null;
   const dirty = feeAmount !== feeForInput(saved.feeAtomic) ||
-    draft.transport !== saved.transport ||
-    draft.relayUrls.join('\n') !== saved.relayUrls.join('\n') ||
     wakuPeersDraft.map(peer => peer.trim()).filter(Boolean).join('\n') !== saved.wakuPeers.join('\n') ||
     wakuClusterDraft.trim() !== String(saved.wakuClusterId);
   const networkCopy = describePrivateRelayNetwork(privateRelayNetwork({ ...draft, wakuPeers: wakuPeersDraft.filter(peer => peer.trim()) }));
@@ -121,8 +118,6 @@ export function PrivateRelaySettings({
         ...next,
         useRelay: edited.current.has('useRelay') ? current.useRelay : next.useRelay,
         helpRelay: edited.current.has('helpRelay') ? current.helpRelay : next.helpRelay,
-        transport: edited.current.has('transport') ? current.transport : next.transport,
-        relayUrls: next.relayUrls.map((url, index) => edited.current.has(index) ? current.relayUrls[index] ?? url : url),
       }));
       if (!edited.current.has('feeAtomic')) setFeeAmount(feeForInput(next.feeAtomic));
       if (!edited.current.has('wakuPeers')) setWakuPeersDraft([next.wakuPeers[0] ?? '', next.wakuPeers[1] ?? '']);
@@ -143,12 +138,6 @@ export function PrivateRelaySettings({
     setFeedback({ state: 'idle' });
   };
 
-  const updateTransport = (value: PrivateRelayTransportKind) => {
-    edited.current.add('transport');
-    setDraft(current => ({ ...current, transport: value }));
-    setFeedback({ state: 'idle' });
-  };
-
   const save = (helpRelay?: boolean) => {
     const latest = loadPrivateRelayPreferences();
     let feeAtomic: string;
@@ -159,7 +148,6 @@ export function PrivateRelaySettings({
       setFeedback({ state: 'error', field: 'fee', message: 'Enter a fee greater than 0 within the supported range, with up to 7 decimal places.' });
       return;
     }
-    const transport = edited.current.has('transport') ? draft.transport : latest.transport;
     let wakuPeers: string[];
     let wakuClusterId: number;
     try {
@@ -167,23 +155,12 @@ export function PrivateRelaySettings({
       wakuClusterId = edited.current.has('wakuClusterId') ? validateWakuClusterId(wakuClusterDraft) : latest.wakuClusterId;
     } catch (cause) {
       setConnectionsOpen(true);
-      setFeedback({ state: 'error', field: 'connections', message: cause instanceof Error ? cause.message : 'Check the Waku peer settings.' });
-      return;
-    }
-    let relayUrls: string[];
-    try {
-      // Relay addresses only matter on Nostr; a Waku session discovers its peers.
-      relayUrls = transport === 'nostr'
-        ? validatePrivateRelayUrls(latest.relayUrls.map((url, index) => edited.current.has(index) ? draft.relayUrls[index] ?? url : url))
-        : latest.relayUrls;
-    } catch {
-      setConnectionsOpen(true);
-      setFeedback({ state: 'error', field: 'connections', message: 'Use two different public relay addresses, each starting with wss://.' });
+      setFeedback({ state: 'error', field: 'connections', message: cause instanceof Error ? cause.message : 'Check the Waku service node settings.' });
       return;
     }
     try {
       const next = savePrivateRelayPreferences({
-        relayUrls, feeAtomic, transport, wakuPeers, wakuClusterId,
+        relayUrls: latest.relayUrls, feeAtomic, transport: 'waku', wakuPeers, wakuClusterId,
         useRelay: !helperOnly && edited.current.has('useRelay') ? draft.useRelay : latest.useRelay,
         helpRelay: helpRelay ?? (!helperOnly && edited.current.has('helpRelay') ? draft.helpRelay : latest.helpRelay),
       });
@@ -227,61 +204,34 @@ export function PrivateRelaySettings({
   };
 
   const relayFields = <div className="space-y-3">
-    <div>
-      <p id={`${id}-transport-label`} className="field-label">Message transport</p>
-      <SegmentedControl<PrivateRelayTransportKind>
-        ariaLabel="Choose how relay messages travel"
-        value={draft.transport}
-        options={[
-          { label: 'Nostr relays', value: 'nostr' },
-          { label: 'Waku network (beta)', value: 'waku' },
-        ]}
-        onChange={value => updateTransport(value)}
-      />
-    </div>
-    {draft.transport === 'nostr' ? <div className="space-y-3">{[0, 1].map(index => <Field key={index} label={`Public relay ${index + 1}`}>
+    <Notice compact>
+      Relaying runs over Waku and requires a service node you run or trust. The public Waku network rate-limits
+      publishing without an RLN membership, so enter the secure websocket address of at least one Waku service node
+      on its cluster; each node needs at least one relay peer, or it refuses to publish. Messages stay end-to-end
+      encrypted; the node sees your IP address and timing, not your payment.
+    </Notice>
+    {[0, 1].map(index => <Field key={index} label={index === 0 ? 'Waku service node' : 'Waku service node 2 (optional)'}>
       <input className="input mono text-base sm:text-[13px]" inputMode="url" autoCapitalize="none"
-        enterKeyHint={index === 0 ? 'next' : 'done'}
-        autoCorrect="off" spellCheck={false} value={draft.relayUrls[index] ?? ''}
+        placeholder="/dns4/node.example/tcp/8000/wss/p2p/16Uiu2…"
+        autoCorrect="off" spellCheck={false} value={wakuPeersDraft[index] ?? ''}
         aria-invalid={error?.field === 'connections' || undefined}
         aria-describedby={error?.field === 'connections' ? `${id}-error` : undefined}
         onChange={event => {
-          // Inline so the compiler sees the ref read inside an event handler.
-          edited.current.add(index);
-          setDraft(current => ({ ...current, relayUrls: current.relayUrls.map((url, slot) => slot === index ? event.target.value : url) }));
+          edited.current.add('wakuPeers');
+          setWakuPeersDraft(current => current.map((peer, slot) => slot === index ? event.target.value : peer));
           setFeedback({ state: 'idle' });
         }} />
-    </Field>)}</div> : <div className="space-y-3">
-      <Notice compact>
-        Beta. Leave the peers empty to use the public Waku network, which discovers light-push and filter peers for you.
-        Public service nodes rate-limit publishing without an RLN membership, so a full exchange may not complete there;
-        for reliable relaying enter the websocket addresses of Waku service nodes you run or trust, on their cluster
-        (each node needs at least one relay peer, or it refuses to publish).
-        Messages stay end-to-end encrypted either way; the peers see your IP address and timing, not your payment.
-      </Notice>
-      {[0, 1].map(index => <Field key={index} label={`Waku peer ${index + 1} (optional)`}>
-        <input className="input mono text-base sm:text-[13px]" inputMode="url" autoCapitalize="none"
-          placeholder="/dns4/node.example/tcp/8000/wss/p2p/16Uiu2…"
-          autoCorrect="off" spellCheck={false} value={wakuPeersDraft[index] ?? ''}
-          aria-invalid={error?.field === 'connections' || undefined}
-          aria-describedby={error?.field === 'connections' ? `${id}-error` : undefined}
-          onChange={event => {
-            edited.current.add('wakuPeers');
-            setWakuPeersDraft(current => current.map((peer, slot) => slot === index ? event.target.value : peer));
-            setFeedback({ state: 'idle' });
-          }} />
-      </Field>)}
-      <Field label="Waku cluster" hint="1 is the public Waku Network. Self-hosted nodes must run this cluster with auto-sharding.">
-        <input className="input mono text-base sm:text-[13px]" inputMode="numeric" value={wakuClusterDraft}
-          aria-invalid={error?.field === 'connections' || undefined}
-          aria-describedby={error?.field === 'connections' ? `${id}-error` : undefined}
-          onChange={event => {
-            edited.current.add('wakuClusterId');
-            setWakuClusterDraft(event.target.value);
-            setFeedback({ state: 'idle' });
-          }} />
-      </Field>
-    </div>}
+    </Field>)}
+    <Field label="Waku cluster" hint="1 is the public Waku Network. Self-hosted nodes must run this cluster with auto-sharding.">
+      <input className="input mono text-base sm:text-[13px]" inputMode="numeric" value={wakuClusterDraft}
+        aria-invalid={error?.field === 'connections' || undefined}
+        aria-describedby={error?.field === 'connections' ? `${id}-error` : undefined}
+        onChange={event => {
+          edited.current.add('wakuClusterId');
+          setWakuClusterDraft(event.target.value);
+          setFeedback({ state: 'idle' });
+        }} />
+    </Field>
   </div>;
   const message = feedback.state === 'saved' ? 'Changes saved. New offers use these settings.'
     : feedback.state === 'started' ? 'Relaying enabled. Every transaction still needs your approval.'
@@ -315,7 +265,7 @@ export function PrivateRelaySettings({
           sub="No transaction is signed without your approval. The maximum network fee is shown before you sign." />
         <ExpectRow icon={<IconWallet size={15} />} tint="#0A84FF" title="Network fees are yours" sep
           sub="You pay network fees in XLM, and your account is public as the transaction source. A fee is not guaranteed profit." />
-        <ExpectRow icon={<IconEye size={15} />} tint="#FF9F0A" title={`${draft.transport === 'waku' ? 'Waku peers' : 'Public relays'} see your connection`} sep
+        <ExpectRow icon={<IconEye size={15} />} tint="#FF9F0A" title="Your Waku service node sees your connection" sep
           sub={networkCopy.observers} />
         <ExpectRow icon={<IconLock size={15} />} tint="#5E5CE6" title="Keep StellarKey open and unlocked" sep
           sub="Starting automatically signs encrypted account-possession offers, not transactions. Requests arrive only while unlocked." />
@@ -329,7 +279,7 @@ export function PrivateRelaySettings({
         <IconChevronDown size={14} className="shrink-0 text-neutral-400 transition-transform group-open/connections:rotate-180" />
       </summary>
       <div className="space-y-3 border-t border-white/[0.08] px-4 pb-4 pt-3">
-        <p className="text-[12px] leading-relaxed text-neutral-400">No StellarKey backend. {draft.transport === 'waku' ? 'Waku light-push and filter peers carry encrypted messages.' : 'Two public Nostr relays carry encrypted messages.'} Saving settings restarts your offer session; already shared signatures remain valid.</p>
+        <p className="text-[12px] leading-relaxed text-neutral-400">No StellarKey backend. Your Waku service node carries encrypted messages. Saving settings restarts your offer session; already shared signatures remain valid.</p>
         {relayFields}
         <p className="text-[11px] leading-relaxed text-neutral-400">An offer proves control of the account key, not that the account meets its transaction signing threshold. Every exact transaction still requires your approval.</p>
         <Button type="button" variant="secondary" className="w-full" onClick={() => save()}>Save connections</Button>
@@ -393,9 +343,8 @@ export function PrivateRelaySettings({
             />
           </Field>
           <Notice>
-            No StellarKey backend is involved. {draft.transport === 'waku'
-              ? 'The browser connects to public Waku light-push and filter peers; those operators'
-              : 'The browser connects to two public Nostr relays; those operators'} can observe your IP address and connection timing. Helping
+            No StellarKey backend is involved. The browser connects to the Waku service
+            node you configured; its operator can observe your IP address and connection timing. Helping
             automatically signs encrypted account-possession offers while unlocked;
             every exact transaction still requires your approval. An offer proves control
             of the account key, not that the account meets its transaction signing threshold.

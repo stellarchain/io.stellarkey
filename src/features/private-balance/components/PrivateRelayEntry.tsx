@@ -19,7 +19,7 @@ import { describePrivateRelayNetwork, privateRelayNetwork } from '../relay/netwo
 import type { PrivateRelayEntryPresentation } from './PrivateRelayEntryBody';
 
 // The status, settings and peer availability content pulls the relay settings
-// form and the Nostr transport. It loads on the first open; the trigger row
+// form and the Waku transport. It loads on the first open; the trigger row
 // and the dialog shell are always ready.
 const PrivateRelayEntryBody = dynamic(
   () => import('./PrivateRelayEntryBody').then((module) => module.PrivateRelayEntryBody),
@@ -74,7 +74,7 @@ export function PrivateRelayEntry() {
               ? 'Unavailable'
               : 'Connecting';
   const networkCopy = describePrivateRelayNetwork(privateRelayNetwork(preferences));
-  const networkName = preferences.transport === 'waku' ? 'the Waku network' : 'the public relay network';
+  const networkName = 'the Waku network';
   const helperDescription = !preferences.helpRelay
     ? 'Help submit private payments for a private reward'
     : helperPhase === 'paused'
@@ -88,9 +88,7 @@ export function PrivateRelayEntry() {
             : helperPhase === 'unavailable'
               ? runtimeUnavailable
                 ? 'Private Payments needs attention. Open its details before relaying.'
-                : preferences.transport === 'waku'
-                  ? 'Waku peer connection unavailable; retrying automatically'
-                  : 'Public relay connection unavailable; retrying automatically'
+                : 'Waku service node connection unavailable; retrying automatically'
               : `Connecting to ${networkName}`;
   const helperIsConnected = preferences.helpRelay && helperPhase === 'connected';
   const headline = !preferences.helpRelay
