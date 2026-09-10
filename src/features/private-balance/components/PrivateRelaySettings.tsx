@@ -255,7 +255,8 @@ export function PrivateRelaySettings({
       <Notice compact>
         Beta. Leave the peers empty to use the public Waku network, which discovers light-push and filter peers for you.
         Public service nodes rate-limit publishing without an RLN membership, so a full exchange may not complete there;
-        for reliable relaying enter the websocket addresses of Waku service nodes you run or trust, on their cluster.
+        for reliable relaying enter the websocket addresses of Waku service nodes you run or trust, on their cluster
+        (each node needs at least one relay peer, or it refuses to publish).
         Messages stay end-to-end encrypted either way; the peers see your IP address and timing, not your payment.
       </Notice>
       {[0, 1].map(index => <Field key={index} label={`Waku peer ${index + 1} (optional)`}>
