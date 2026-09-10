@@ -9,7 +9,7 @@ import {
   type PrivateBalanceTransactionReview,
   type PrivateBalanceTransactionManifest,
 } from './transaction-review';
-import { reviewPrivateRelayPreparedEnvelope, type PrivateRelayPreparedEnvelope } from '../relay/prepared-envelope';
+import { assertDirectPrivateSubmission } from './direct-submission';
 
 const REVIEW_WINDOW_SECONDS = 5 * 60;
 
@@ -26,16 +26,6 @@ export interface PreparedReviewedPrivateBalanceTransaction {
   simulationLedger: number;
 }
 
-export interface PrivateRelayPreparationCallbacks {
-  expiresAt: number;
-  prepare(input: {
-    operationXdr: string;
-    maxTime: number;
-    classicFeeStroops: string;
-    maximumResourceFeeStroops: string;
-  }, signal?: AbortSignal): Promise<PrivateRelayPreparedEnvelope>;
-}
-
 export async function prepareReviewedPrivateBalanceTransaction(input: {
   rpc?: PrivateActionSimulationRpc;
   operation: xdr.Operation;
@@ -45,10 +35,10 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
   maximumResourceFeeStroops: bigint;
   nowSeconds?: number;
   timeBounds?: { minTime: string; maxTime: string };
-  submissionMode?: 'direct' | 'relay';
-  relayPreparation?: PrivateRelayPreparationCallbacks;
+  submissionMode?: 'direct';
   signal?: AbortSignal;
 }): Promise<PreparedReviewedPrivateBalanceTransaction> {
+  assertDirectPrivateSubmission(input);
   if (input.classicFeeStroops < 1n || input.classicFeeStroops > 0xffff_ffffn) {
     throw new Error('Private Balance classic fee is outside the supported range');
   }
@@ -61,9 +51,7 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
   }
   const timeBounds = input.timeBounds ?? {
     minTime: '0',
-    maxTime: String(Math.min(nowSeconds + REVIEW_WINDOW_SECONDS, input.submissionMode === 'relay'
-      ? input.relayPreparation?.expiresAt ?? nowSeconds
-      : nowSeconds + REVIEW_WINDOW_SECONDS)),
+    maxTime: String(nowSeconds + REVIEW_WINDOW_SECONDS),
   };
   const assertCurrent = () => {
     if (input.signal?.aborted) throw new DOMException('Private preparation cancelled.', 'AbortError');
@@ -73,19 +61,6 @@ export async function prepareReviewedPrivateBalanceTransaction(input: {
       throw new Error('Private preparation time bounds are invalid or expired');
     }
   };
-  if (input.submissionMode === 'relay') {
-    if (!input.relayPreparation) throw new Error('Private relay preparation is unavailable; find a helper again');
-    assertCurrent();
-    const response = await input.relayPreparation.prepare({
-      operationXdr: input.operation.toXDR('base64'),
-      maxTime: Number(timeBounds.maxTime),
-      classicFeeStroops: input.classicFeeStroops.toString(),
-      maximumResourceFeeStroops: input.maximumResourceFeeStroops.toString(),
-    }, input.signal);
-    assertCurrent();
-    const review = reviewPrivateRelayPreparedEnvelope({ ...input, response, timeBounds });
-    return { review, timeBounds, simulationLedger: response.simulationLedger };
-  }
   assertCurrent();
   if (!input.rpc) throw new Error('Private Balance simulation RPC is unavailable');
   const account = await input.rpc.getAccount(input.source);

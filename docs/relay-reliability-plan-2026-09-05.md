@@ -1,5 +1,9 @@
 # Private relay reliability implementation plan
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 **Goal:** Prevent the reproduced address-selection and human-approval failures, and distinguish an earlier unresolved payment from a newly exposed proof without weakening reservations.
 
 **Architecture:** Preserve the current protocol, encrypted journal, manual signing, and canonical reconciliation. Put recipient compatibility checks before relay discovery, tie human approval to its existing expiry, and keep error presentation separate from spend finality. Work in an isolated worktree; do not access a real wallet session or submit payments.

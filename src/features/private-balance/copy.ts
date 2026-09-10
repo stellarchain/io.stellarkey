@@ -44,14 +44,6 @@ const ERROR_RULES: ErrorRule[] = [
     }),
   },
   {
-    match: /^Private relay requires a fresh recipient address\./,
-    humanize: () => ({
-      title: 'A new recipient address is needed',
-      body: 'Ask the recipient to open Receive → Private → Shielded → New address, then replace this send’s address. This address cannot be used with a relay. Nothing was sent.',
-      action: 'check-address',
-    }),
-  },
-  {
     match: /previous payment is still confirming/i,
     humanize: () => ({
       title: 'One moment',

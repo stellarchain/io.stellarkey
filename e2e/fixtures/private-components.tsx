@@ -10,22 +10,16 @@ import { initialPrivateBalanceRuntimeData, PrivateBalanceRuntimeDataProvider, us
 import { PrivateOutgoingHistorySettings } from '@/features/private-balance/components/PrivateOutgoingHistorySettings';
 import { PrivateActionReview } from '@/features/private-balance/components/PrivateActionReview';
 import type { PrivateOutgoingHistoryMode } from '@/features/private-balance/runtime/outgoing-history';
-import type { PrivateRelayChainApproval } from '@/features/private-balance/runtime/relay-chain-policy';
-import type { PrivateRelayQuote } from '@/features/private-balance/relay/protocol';
+import type { PrivateChainedSendApproval } from '@/features/private-balance/runtime/chained-send';
 import { disclosePrivateProof, PrivateProofConsent, type PrivateProofDisclosure } from '@/features/private-balance/runtime/proof-disclosure';
-import { RelayFlowPanel } from '../../../e2e/fixtures/relay-flow-panel';
 import { UxPrimitivesFixture } from '../../../e2e/fixtures/ux-primitives';
 import { QrFreshnessFixture } from '../../../e2e/fixtures/qr-freshness';
-import { RelayHelperFixture } from '../../../e2e/fixtures/relay-helper-panel';
-import { RelayRecipientFixture } from '../../../e2e/fixtures/relay-recipient-panel';
-import { RelayEarnFixture } from '../../../e2e/fixtures/relay-earn-panel';
-import { RelayStartupFixture } from '../../../e2e/fixtures/relay-startup-panel';
-import { RelayWakuFixture } from '../../../e2e/fixtures/relay-waku-panel';
+import { DirectPrivateFixture } from '../../../e2e/fixtures/private-direct-panel';
 import { MerchantLifetimeFixture } from '../../../e2e/fixtures/merchant-lifetime-panel';
 import { ModalOwnershipFixture } from '../../../e2e/fixtures/modal-ownership-panel';
 import { MerchantFeedbackFixture } from '../../../e2e/fixtures/merchant-feedback-panel';
 import { SigningContextFixture } from '../../../e2e/fixtures/signing-context-panel';
-import { RelayRecoveryFixture } from '../../../e2e/fixtures/relay-recovery-panel';
+import { PrivateRecoveryFixture } from '../../../e2e/fixtures/private-recovery-panel';
 import { IndexedDbEncryptedRecordDriver } from '@/lib/indexed-db';
 import { clearPrivateBalanceCommitmentCache, loadPrivateBalanceCommitments, recordVerifiedPrivateBalanceCommitments } from '@/features/private-balance/runtime/public-cache';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
@@ -571,16 +565,9 @@ async function checkDiscoveryRemovalSnapshot(mode: string): Promise<void> {
 }
 
 const draft = { kind: 'transfer' as const, amount: '1', recipientAddress: 'synthetic-recipient-only' };
-const approval: PrivateRelayChainApproval = {
-  id: 'synthetic-chain', submissionMode: 'relay', contextKey: 'synthetic', assetContractId: 'synthetic', assetIndex: 0,
-  draft, steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 4_000_000_000,
-  plan: { amountAtomic: '10000000', perStepMaxPrivateFeeAtomic: '100', cumulativeMaxPrivateFeeAtomic: '200', steps: 2,
-    inputNotes: [], merges: [], finalInputs: [] },
-};
-const quote: PrivateRelayQuote = {
-  version: 3, type: 'quote', requestId: '11'.repeat(32), quoteId: '22'.repeat(32), peerPubkey: '33'.repeat(32),
-  peerAccount: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', feeAtomic: '100',
-  accountSignature: 'synthetic-not-a-signed-offer', nonce: '44'.repeat(32), expiresAt: 4_000_000_000,
+const approval: PrivateChainedSendApproval = {
+  id: 'synthetic-chain', steps: 2, perStepMaxFeeStroops: '1000',
+  cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 4_000_000_000,
 };
 
 function ProofPanel() {
@@ -599,7 +586,7 @@ function ProofPanel() {
     void disclosePrivateProof({
       request: { kind: 'transfer', actionId: 'synthetic-proof', actionField: '55'.repeat(32), assetContractId: 'synthetic',
         amountStroops: '10000000', recipientAddress: draft.recipientAddress, publicRecipient: null, memoHex: null,
-        privateFeeAtomic: '100', maximumNetworkFeeStroops: '1000', submissionMode: 'relay' },
+        privateFeeAtomic: '0', maximumNetworkFeeStroops: '1000', submissionMode: 'direct' },
       signal: controller.signal,
       authorize: request => { setDisclosure(request); return consent.current.wait(request.actionId, controller.signal); },
       commit: async () => { setEvents(current => [...current, 'reserved']); },
@@ -616,7 +603,7 @@ function ProofPanel() {
     <p data-testid="proof-events">{events.join(',') || 'none'}</p>
     <p data-testid="proof-status">{status}</p>
     <PrivateActionReview draft={{ ...draft, amount }} review={null} disclosure={disclosure} chained={null}
-      chainProgress={null} progress={null} relayProgress={null} preparing={false} working={false}
+      chainProgress={null} progress={null} preparing={false} working={false}
       error={null} errorCause={null} balanceBeforeStroops={20_000_000n} confirmLabel="Send privately"
       onConfirm={() => { if (disclosure) consent.current.approve(disclosure.actionId); }}
       onBack={() => operation.current?.abort()} />
@@ -624,14 +611,12 @@ function ProofPanel() {
 }
 
 function Fixture() {
-  const [relayRecovery, setRelayRecovery] = useState(false);
+  const [privateRecovery, setPrivateRecovery] = useState(false);
   const [signingContext, setSigningContext] = useState(false);
   const [merchantFeedback, setMerchantFeedback] = useState(false);
   const [modalOwnership, setModalOwnership] = useState(false);
   const [merchantLifetime, setMerchantLifetime] = useState(false);
   const [discovery, setDiscovery] = useState(false);
-  const [relayStartup, setRelayStartup] = useState(false);
-  const [relayWaku, setRelayWaku] = useState(false);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('recovery');
   const [scope, setScope] = useState('account-a');
@@ -642,13 +627,11 @@ function Fixture() {
   const [writes, setWrites] = useState(0);
   const completion = useRef<(() => void) | null>(null);
   const rejection = useRef<(() => void) | null>(null);
-  if (relayRecovery) return <RelayRecoveryFixture />;
+  if (privateRecovery) return <PrivateRecoveryFixture />;
   if (signingContext) return <SigningContextFixture />;
   if (merchantFeedback) return <MerchantFeedbackFixture />;
   if (modalOwnership) return <ModalOwnershipFixture onExit={() => setModalOwnership(false)} />;
   if (merchantLifetime) return <MerchantLifetimeFixture />;
-  if (relayStartup) return <RelayStartupFixture />;
-  if (relayWaku) return <RelayWakuFixture />;
   if (discovery) return <DiscoveryProviderChecks />;
   return (
     <PrivateBalanceRuntimeDataProvider value={{ ...initialPrivateBalanceRuntimeData, asset: {
@@ -656,26 +639,22 @@ function Fixture() {
     } }}>
       <main id="app-content" data-app-surface className="min-h-screen p-6">
         <h1 className="text-xl text-white">Synthetic privacy interaction checks</h1>
-        <Button onClick={() => setRelayRecovery(true)}>Test relay recovery</Button>
+        <Button onClick={() => setPrivateRecovery(true)}>Test private recovery</Button>
         <Button onClick={() => setSigningContext(true)}>Test signing context</Button>
         <Button onClick={() => setMerchantFeedback(true)}>Test merchant feedback</Button>
         <Button onClick={() => setMerchantLifetime(true)}>Test merchant lifetime</Button>
         <Button onClick={() => setModalOwnership(true)}>Test modal ownership</Button>
-        <Button onClick={() => setRelayStartup(true)}>Test relay startup</Button>
-        <Button onClick={() => setRelayWaku(true)}>Test Waku connection</Button>
         <Button onClick={() => setDiscovery(true)}>Test discovery lifecycle</Button>
         <DiscoveryStorageChecks />
         <UxPrimitivesFixture />
         <QrFreshnessFixture />
-        <RelayHelperFixture />
-        <RelayRecipientFixture />
-        <RelayEarnFixture />
+        <DirectPrivateFixture />
         <Button onClick={() => { setOpen(true); setCancelled(false); }}>Open privacy controls</Button>
         <p data-testid="writes">{writes}</p>
         <Modal open={open} onClose={() => setOpen(false)} wide>
           <ModalHeader title="Synthetic privacy controls" onClose={() => setOpen(false)} />
           <div className="space-y-4 p-4">
-            <Tabs ariaLabel="Privacy check panels" options={[{ value: 'recovery', label: 'Recovery' }, { value: 'chain', label: 'Chain' }, { value: 'proof', label: 'Proof' }, { value: 'relay', label: 'Relay' }]} value={tab} onChange={setTab}>
+            <Tabs ariaLabel="Privacy check panels" options={[{ value: 'recovery', label: 'Recovery' }, { value: 'chain', label: 'Chain' }, { value: 'proof', label: 'Proof' }]} value={tab} onChange={setTab}>
             {tab === 'recovery' ? <>
               <Button variant="secondary" onClick={() => setScope(value => value === 'account-a' ? 'account-b' : 'account-a')}>Switch synthetic account</Button>
               <Button variant="secondary" onClick={() => completion.current?.()}>Finish pending preference</Button>
@@ -697,17 +676,16 @@ function Fixture() {
                     rejection.current = null;
                   }
                 }} />
-            </> : tab === 'relay' ? <RelayFlowPanel /> : tab === 'proof' ? <ProofPanel /> : cancelled ? <>
-              <p>Chain stopped locally</p>
+            </> : tab === 'proof' ? <ProofPanel /> : cancelled ? <>
+              <p>Chain finished</p>
               <Button onClick={() => { setCancelled(false); setStep(1); setWaiting(false); }}>Review another chain</Button>
             </> : <>
-              <Button variant="secondary" disabled={!waiting} onClick={() => { setStep(2); setWaiting(false); }}>Deliver canonical synthetic result</Button>
-              <PrivateActionReview draft={draft} review={null} chained={{ approval, relayApproval: approval, draft }}
-                chainProgress={{ step, totalSteps: 2, stage: waiting ? 'confirming' : 'choosing-peer' }}
-                progress={null} relayProgress={null} relayQuotes={waiting ? [] : [{ ...quote, quoteId: String(step).repeat(64) }]}
-                preparing={false} working error={null} errorCause={null} balanceBeforeStroops={20_000_000n}
-                confirmLabel="Send privately" onConfirm={() => {}} onBack={() => setCancelled(true)}
-                onSelectRelayQuote={() => setWaiting(true)} />
+              <Button variant="secondary" disabled={!waiting} onClick={() => { if (step === 1) setStep(2); else { setWaiting(false); setCancelled(true); } }}>Deliver canonical synthetic result</Button>
+              <PrivateActionReview draft={draft} review={null} chained={{ approval, draft }}
+                chainProgress={{ step, totalSteps: 2, stage: waiting ? 'confirming' : 'preparing' }}
+                progress={null}
+                preparing={false} working={waiting} error={null} errorCause={null} balanceBeforeStroops={20_000_000n}
+                confirmLabel="Send privately" onConfirm={() => setWaiting(true)} onBack={() => setTab('recovery')} />
             </>}
             </Tabs>
           </div>

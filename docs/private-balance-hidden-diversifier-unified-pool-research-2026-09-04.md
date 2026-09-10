@@ -1,5 +1,9 @@
 # Hidden Diversifiers and a Unified Asset-Private Pool
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 **Date:** 2026-09-04
 
 **Status:** Research complete; the lane-role mitigation and governed

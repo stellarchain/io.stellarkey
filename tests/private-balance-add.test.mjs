@@ -4,6 +4,25 @@ import test from 'node:test';
 
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+test('all private action flows publish submission busy state to their shell before paint', () => {
+  for (const component of ['AddPrivateFunds', 'SendPrivate', 'WithdrawPrivate']) {
+    const source = read(`src/features/private-balance/components/${component}.tsx`);
+    assert.equal(/useLayoutEffect\(\(\) => \{\s*onWorkingChange\?\.\((?:flow\.working|blocksNavigation)\);\s*return \(\) => onWorkingChange\?\.\(false\);/.test(source), true, component);
+  }
+});
+
+test('explicit private review navigation retains focus in its active owning shell', () => {
+  for (const component of ['AddPrivateFunds', 'SendPrivate', 'WithdrawPrivate']) {
+    const source = read(`src/features/private-balance/components/${component}.tsx`);
+    const start = source.indexOf('const submitForm =');
+    const review = source.indexOf("setStage('review')", start);
+    const navigation = source.slice(start, review);
+    assert.equal(/event\.currentTarget\.closest<HTMLElement>\('\[data-modal-shell\]'\)/.test(navigation), true, component);
+    assert.equal(/!shell\.closest\('\[inert\]'\)/.test(navigation), true, component);
+    assert.equal(/shell\.focus\(\{ preventScroll: true \}\)/.test(navigation), true, component);
+  }
+});
+
 test('add-funds uses the reviewed action lifecycle and honest privacy copy', () => {
   const source = read('src/features/private-balance/components/AddPrivateFunds.tsx');
   const controller = read('src/features/private-balance/components/usePrivateActionController.ts');

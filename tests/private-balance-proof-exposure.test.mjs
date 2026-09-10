@@ -68,15 +68,15 @@ test('unsigned exposed recovery uses canonical sync without transaction lookup o
   assert.equal(recovered.state.notes[0].status, 'reserved');
 });
 
-test('disclosure waits for exact intent consent and durable journal before any helper or RPC payload', async () => {
+test('disclosure waits for exact intent consent and durable journal before any RPC payload', async () => {
   assert.equal(typeof disclosure.disclosePrivateProof, 'function');
-  const request = { kind: 'transfer', actionId: 'one', actionField: hex('1'), assetContractId, amountStroops: '5', recipientAddress: 'exact-address', publicRecipient: null, memoHex: '0102', privateFeeAtomic: '1', maximumNetworkFeeStroops: '1100', submissionMode: 'relay' };
+  const request = { kind: 'transfer', actionId: 'one', actionField: hex('1'), assetContractId, amountStroops: '5', recipientAddress: 'exact-address', publicRecipient: null, memoHex: '0102', privateFeeAtomic: '0', maximumNetworkFeeStroops: '1100', submissionMode: 'direct' };
   let approve;
   const events = [];
   const promise = disclosure.disclosePrivateProof({ request,
     authorize: async shown => { assert.deepEqual(shown, request); events.push('shown'); await new Promise(resolve => { approve = resolve; }); },
     commit: async () => { events.push('journal'); },
-    disclose: async () => { events.push('network'); throw new Error('Helper preparation timed out'); } });
+    disclose: async () => { events.push('network'); throw new Error('RPC preparation timed out'); } });
   await Promise.resolve();
   assert.deepEqual(events, ['shown']);
   approve();

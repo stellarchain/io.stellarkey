@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react';
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader, Notice } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { useWalletLedger } from '@/hooks/useWallet';
@@ -180,6 +180,8 @@ function AddPrivateFundsFlow({
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     if (amountCheck.stroops === null || exitOnly) return;
+    const shell = event.currentTarget.closest<HTMLElement>('[data-modal-shell]');
+    if (shell && !shell.closest('[inert]')) shell.focus({ preventScroll: true });
     setStage('review');
     void flow.prepare({ kind: 'deposit', amount: amount.trim() });
   };
@@ -206,7 +208,7 @@ function AddPrivateFundsFlow({
     return () => onBeforeLeaveChange?.(null);
   }, [flow.cancelPrepared, onBeforeLeaveChange]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onWorkingChange?.(flow.working);
     return () => onWorkingChange?.(false);
   }, [flow.working, onWorkingChange]);

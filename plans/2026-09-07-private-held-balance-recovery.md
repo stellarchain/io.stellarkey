@@ -1,5 +1,9 @@
 # Held private balance recovery
 
+> Historical implementation record. Peer relaying was removed on 2026-09-10;
+> direct held-balance recovery and conservative recovery of old encrypted records remain supported.
+> Recovery fixture references below use their current `private-recovery` filenames.
+
 Implement the requested fix on `test/relay-payment-recovery`. The reproduced failure is a disclosed relay proof leaving an entire input note reserved, not evidence that the note was deleted or lost on-chain. The live helper failure itself remains unidentified.
 
 ## Safety design
@@ -34,7 +38,7 @@ Synthetic tests run the real builder, encrypted storage, action flow, signing cl
 ## Verification evidence — 2026-09-07
 
 - `npm test`: **1,765 passed**, zero failures/skips/todos. Final log: `/tmp/stellarkey-held-recovery-all-node-final-20260907.log`.
-- `E2E_PORT=3297 npm run test:e2e:private-components -- relay-recovery.spec.ts private-components.spec.ts --grep 'held balance recovery|three-wallet relay|relay|helper|proof sharing'`: **70 passed**, zero failures/skips; 35 each on Chromium and iPhone WebKit. This includes 52 three-wallet/recovery checks and 18 existing relay/helper/consent checks. Final log: `/tmp/stellarkey-held-recovery-browser-verified-20260907.log`.
+- `E2E_PORT=3297 npm run test:e2e:private-components -- private-recovery.spec.ts private-components.spec.ts --grep 'held balance recovery|three-wallet relay|relay|helper|proof sharing'`: **70 passed**, zero failures/skips; 35 each on Chromium and iPhone WebKit. This includes 52 three-wallet/recovery checks and 18 existing relay/helper/consent checks. Final log: `/tmp/stellarkey-held-recovery-browser-verified-20260907.log`.
 - Focused recovery/automation/UI Node suite: **54 passed**. It covers full-value recovery, one/two inputs, unrelated notes, both winners, stale/concurrent disclosure, cancellation, proof failure, rejected/uncertain submission, legacy records, backup restore, bounded lineage, tampered replacement fields and stale cleanup publication.
 - Real-wallet/provider browser cases run the actual worker thread, encrypted vault, signing API and canonical scanner. They verify both winners, password approval, session replacement, network roundtrip and provider retirement. Other browser cases exercise real Recovery/review controls with controlled runtime transport, stable shell/backdrop identity, inertness, scroll locks, keyboard/pointer cancellation, repeated preparation, focus restoration, reduced-motion settings, sanitized axe checks and IndexedDB reload.
 - The retired-provider signing and delayed-cleanup regressions were observed failing before their fixes, then passed. Full-suite source-contract assertions were updated for the linked abort signal and the additional signing dismissal lock; behavioral constraints remain covered.

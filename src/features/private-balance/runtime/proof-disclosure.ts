@@ -1,4 +1,5 @@
 import { createSessionRevocationGuard, subscribeSessionRevocation } from '../../../lib/vault';
+import { assertDirectPrivateSubmission } from './direct-submission';
 
 /** A lock/unlock ABA cannot revive an in-flight proof or signing operation. */
 export function createPrivateActionLifetime(assertContext: () => void, signal?: AbortSignal) {
@@ -27,7 +28,7 @@ export interface PrivateProofDisclosure {
   memoHex: string | null;
   privateFeeAtomic: string;
   maximumNetworkFeeStroops: string;
-  submissionMode: 'direct' | 'relay';
+  submissionMode: 'direct';
 }
 export type AuthorizePrivateProofDisclosure = (request: Readonly<PrivateProofDisclosure>) => Promise<void>;
 
@@ -52,19 +53,19 @@ export class PrivateProofConsent {
 }
 
 /** This is the spend authorization boundary, not the later envelope signature.
- * A successful commit must persist exposure AND any chain fee authorization. */
+ * A successful commit must persist exposure before any remote request. */
 export async function disclosePrivateProof<T>(input: {
   request: PrivateProofDisclosure;
   authorize?: AuthorizePrivateProofDisclosure;
-  persistedRelayChainConsent?: boolean;
   signal?: AbortSignal;
   assertContext?(): void;
   commit(): Promise<void>;
   disclose(): Promise<T>;
 }): Promise<T> {
+  assertDirectPrivateSubmission(input.request);
   const check = () => { if (input.signal?.aborted) throw new DOMException('Private proof sharing cancelled.', 'AbortError'); input.assertContext?.(); };
   check();
-  if (input.request.kind !== 'deposit' && !input.persistedRelayChainConsent) {
+  if (input.request.kind !== 'deposit') {
     if (!input.authorize) throw new Error('Explicit spend-proof sharing consent is required.');
     await input.authorize(Object.freeze({ ...input.request }));
   }

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,8 +21,6 @@ import { isValidPublicAddress } from '@/lib/vault';
 import { humanizePrivateError } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
-import { loadPrivateRelayPreferences } from '../relay/preferences';
-import { privateRelayRecipientDiversifier } from '../relay/recipient';
 import type { PrivateRecentRecipient } from '../runtime/types';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
@@ -32,10 +31,8 @@ import {
   trimAmountInput,
 } from './PrivateAmountField';
 import { PrivateSubmissionStatus } from './PrivateSubmissionStatus';
-import { PrivateRelaySubmissionChoice } from './PrivateRelaySubmissionChoice';
 import {
   usePrivateActionController,
-  type PrivateSubmissionMode,
 } from './usePrivateActionController';
 import {
   useReportToOwner,
@@ -153,13 +150,10 @@ function SendPrivateFlow({
   const [recipientAddress, setRecipientAddress] = useState(prefill?.recipient ?? '');
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
-  const [submissionMode, setSubmissionMode] = useState<PrivateSubmissionMode>(() =>
-    loadPrivateRelayPreferences().useRelay ? 'relay' : 'direct');
   const [showScanner, setShowScanner] = useState(false);
   const [pasteGuidance, setPasteGuidance] = useState<string | null>(null);
   const [recipientValidation, setRecipientValidation] = useState<{
     address: string;
-    submissionMode: PrivateSubmissionMode;
     networkLabel: string;
     fingerprint: string | null;
     error: string | null;
@@ -181,17 +175,13 @@ function SendPrivateFlow({
       };
     }
     void validateRecipient(address)
-      .then(async result => {
-        if (submissionMode === 'relay') {
-          await privateRelayRecipientDiversifier(address, networkLabel === 'Mainnet' ? 'skpay_' : 'tskpay_');
-        }
-        if (current) setRecipientValidation({ address, submissionMode, networkLabel, fingerprint: result.fingerprint, error: null });
+      .then(result => {
+        if (current) setRecipientValidation({ address, networkLabel, fingerprint: result.fingerprint, error: null });
       })
       .catch((cause: unknown) => {
         if (current) {
           setRecipientValidation({
             address,
-            submissionMode,
             networkLabel,
             fingerprint: null,
             error: humanizePrivateError(cause).body,
@@ -201,9 +191,9 @@ function SendPrivateFlow({
     return () => {
       current = false;
     };
-  }, [networkLabel, recipientAddress, submissionMode, validateRecipient]);
+  }, [networkLabel, recipientAddress, validateRecipient]);
   const currentValidation =
-    recipientValidation?.address === trimmedRecipient && recipientValidation.submissionMode === submissionMode &&
+    recipientValidation?.address === trimmedRecipient &&
     recipientValidation.networkLabel === networkLabel ? recipientValidation : null;
   const fingerprint = currentValidation?.fingerprint ?? null;
   const recipientError =
@@ -265,6 +255,9 @@ function SendPrivateFlow({
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     if (!canReview) return;
+    // The form leaves the tree; keep explicit navigation focus in its owner.
+    const shell = event.currentTarget.closest<HTMLElement>('[data-modal-shell]');
+    if (shell && !shell.closest('[inert]')) shell.focus({ preventScroll: true });
     setStage('review');
     // Straight to the review screen with the known draft; the proof prepares
     // underneath while the fee row shows its two calm labels.
@@ -275,7 +268,6 @@ function SendPrivateFlow({
         recipientAddress: trimmedRecipient,
         ...(memo.trim() ? { memo: memo.trim() } : {}),
       },
-      submissionMode,
     );
   };
 
@@ -323,8 +315,9 @@ function SendPrivateFlow({
     return () => onBeforeLeaveChange?.(null);
   }, [flow.cancelPrepared, onBeforeLeaveChange]);
 
-  const blocksNavigation = flow.working && !flow.chained?.relayApproval;
-  useEffect(() => {
+  const blocksNavigation = flow.working;
+  // Publish before another keyboard/pointer event can dismiss the owner.
+  useLayoutEffect(() => {
     onWorkingChange?.(blocksNavigation);
     return () => onWorkingChange?.(false);
   }, [blocksNavigation, onWorkingChange]);
@@ -377,8 +370,6 @@ function SendPrivateFlow({
           chained={flow.chained}
           chainProgress={flow.chainProgress}
           progress={flow.progress}
-          relayProgress={flow.relayProgress}
-          relayQuotes={flow.relayQuotes}
           disclosure={flow.disclosure}
           preparing={flow.preparing}
           working={flow.working}
@@ -389,7 +380,6 @@ function SendPrivateFlow({
           onConfirm={confirmSend}
           onBack={backToForm}
           backInHeader={headerOwned}
-          onSelectRelayQuote={quoteId => void flow.selectRelayQuote(quoteId)}
         />
       ) : (
         <form onSubmit={submitForm}>
@@ -428,10 +418,6 @@ function SendPrivateFlow({
                 error={amountCheck.error}
               />
             )}
-            <PrivateRelaySubmissionChoice
-              value={submissionMode}
-              onChange={setSubmissionMode}
-            />
             <div>
               <FieldLabelRow
                 htmlFor="private-recipient"

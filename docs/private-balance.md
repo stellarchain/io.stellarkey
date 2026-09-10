@@ -2,7 +2,7 @@
 
 - **Protocol:** V1 replacement design
 - **Implementation status:** Live Testnet development deployment, validated in StellarKey; not for real value
-- **Document revision:** 2026-09-04
+- **Document revision:** 2026-09-10
 
 ## Abstract
 
@@ -35,7 +35,7 @@ The implementation targets five properties:
 
 1. **Value conservation.** A proof and the pool contract jointly enforce exact
    63-bit integer balance across private inputs, three private outputs, and
-   public value. An optional peer fee is one of the private outputs.
+   public value. The fixed three-output protocol format remains unchanged.
 2. **Private internal transfers.** A transfer does not publish its private
    amount, recipient, selected notes, or change role.
 3. **Seed-based recovery.** Seed plus authenticated chain data can recover owned
@@ -52,8 +52,8 @@ The implementation targets five properties:
 The design does not hide network metadata, the pool, action timing, the
 transaction source, deposits, withdrawals, or the public action kind. Deposits
 and withdrawals reveal their asset; an internal transfer does not publish it.
-Direct mode self-submits from the user's public Stellar account. Optional relay
-mode uses an explicitly opted-in peer's account instead. It
+Direct mode self-submits from the user's public Stellar account and is now the
+only supported submission path. It
 does not guarantee a minimum privacy set, protect a compromised browser, or
 make an unaudited single-party proving setup safe for real value.
 
@@ -75,7 +75,6 @@ assets or set them `Active`/`ExitOnly`; entries cannot be deleted or reindexed.
 | Primary Stellar RPC | Supplies ledger state, simulation, submission, confirmation, and archive restoration. |
 | Different-origin witness RPC | Corroborates network identity, any retained deployment-checkpoint ledger, a current overlapping ledger hash, and the complete contract head during mandatory initial/full-history checks and, by default, routine checks. |
 | Static application origin | Serves hash-pinned manifests, circuit Wasm, proving material, and verification data. |
-| Waku service node (self-hosted or trusted) | The only relay carrier. A browser light client publishes with Light Push and receives with Filter on one shared content topic, and re-fetches recent retained history with Store to recover any message Filter dropped. The same signed, padded, encrypted events travel; the node sees connection metadata, not payment content. The public Waku Network is never dialled (it rate-limits proof-less publishing under RLN), so relaying requires at least one service node you run or trust, configured in Relay connections with its cluster id (auto-sharding, eight shards). Such a node runs nwaku with relay, light push, filter and store on a cluster other than 1 (nwaku refuses cluster 1 without RLN), peered with at least one other relay node (a lone node answers light push with "no peers for topic" even though its own filter subscribers still receive the message), and exposes secure websockets; the light client offers both yamux and mplex. With no node configured, relaying is simply unavailable. |
 
 Transfer and withdrawal need no user Soroban authorization: the proof authorizes
 the state transition. Direct mode still signs an inner transaction from the
@@ -83,15 +82,11 @@ user's public Stellar account, so that source links the action to the account.
 A fee-bump sponsor changes the outer fee source but leaves the inner source
 public.
 
-Optional privacy-relay mode discovers another opted-in browser wallet through
-a Waku service node you run or trust (the wallet relays exclusively over Waku). The selected helper supplies
-the Stellar transaction source, pays the public network fee, manually approves
-the exact reviewed transaction, and earns a proof-bound encrypted note in the
-same asset. No public relayer address or fee exists in the contract action or
-archive. StellarKey runs no relay backend and never silently falls back from
-relay to direct mode. The Waku service node still observes connection IPs,
-timing, and discovery messages; the selected peer sees the action asset, fee,
-proof, and exact transaction.
+Peer relaying and helper earnings have been removed. New reviews always use
+the user's account; stale relayed reviews are rejected and never silently fall
+back to direct submission. No public relayer address or fee exists in the
+unchanged contract action or archive. Historical encrypted fee notes remain
+ordinary recoverable outputs.
 
 ## 3. Deployment-bound keys and private addresses
 
@@ -109,9 +104,8 @@ ID, and Stellar account public key. Domain-separated expansion produces:
 A four-byte diversifier derives an address-specific owner commitment and an
 address-specific X25519 key pair. All three outputs in one action deliberately
 carry one common clear action diversifier. For a transfer this is the recipient
-address diversifier; change, peer-fee, and dummy lanes are constructed to match
-it. Deposits and direct withdrawals choose a fresh random action diversifier;
-a relayed withdrawal uses the peer fee-address diversifier. This prevents the
+address diversifier; change and dummy lanes are constructed to match
+it. Deposits and withdrawals choose a fresh random action diversifier. This prevents the
 clear bytes from identifying output roles inside an action while retaining the
 reviewed X25519 scan path. It does not hide the diversifier: reusing a receive
 address can still link the whole actions that carry it. Spending authority stays
@@ -190,7 +184,7 @@ Each 370-byte output package consists of:
 - a 157-byte outgoing envelope.
 
 The wallet independently randomizes real/dummy input lane ordering and
-recipient/change/peer-fee/dummy output lane ordering before building commitments
+recipient/change/dummy output lane ordering before building commitments
 and encryption envelopes.
 
 ## 6. Fixed-shape actions
@@ -204,8 +198,8 @@ slots do not disclose the private `inputReal` selectors.
 | Action | Public information | Private statement |
 | --- | --- | --- |
 | Deposit | Kind, source, amount, pool, registry index, asset, three commitments, nullifiers, timing and fee payer | Both inputs are dummy; at least one output is real, and private outputs sum to the deposited value. |
-| Transfer | Kind, pool, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input and one real output; asset, recipient, amount, peer fee, note count and output roles remain private. |
-| Withdraw | Kind, public recipient and amount, pool, registry index, asset, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input; any remainder and optional encrypted peer fee occupy private outputs. |
+| Transfer | Kind, pool, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input and one real output; asset, recipient, amount, note count and output roles remain private. |
+| Withdraw | Kind, public recipient and amount, pool, registry index, asset, anchor root, three commitments, nullifiers, timing and transaction source | At least one owned input; any remainder occupies private outputs. |
 
 For all actions the circuit enforces:
 
@@ -352,7 +346,7 @@ fingerprints, memos or transaction hashes into permanent activity. Pending safet
 journals still need payment details until canonical reconciliation. Seed scans
 continue to recover owned notes, spent status and incoming information; a
 canonical outgoing amount describes the net private-balance debit, including any
-private helper fee, not necessarily the recipient's amount. Self-payments may
+historical private helper fee, not necessarily the recipient's amount. New payments have no helper fee. Self-payments may
 still be recoverable as incoming payments. This is not deletion or forward
 secrecy: recipients retain their own information, and older outgoing records and
 backups remain readable. The scanner always tries older recoverable records even
@@ -454,13 +448,13 @@ broadcast or ambiguous pending state, canonical confirmation, rejection or
 failure, and runtime status-unknown. Ambiguous submissions keep their input
 notes reserved until canonical evidence proves confirmation or safe absence.
 
-Prepared actions persist their direct/relay submission route in encrypted state;
-signing and broadcasting must use that route. Restart only rebroadcasts explicitly
+New prepared actions persist a direct submission route in encrypted state;
+signing and broadcasting reject any other route, including missing legacy routes. Restart only rebroadcasts explicitly
 direct signed actions. Relayed and old records with no route are reconciled from
 the common archive without sender-RPC transaction-hash lookups. A disclosed spend
 proof is reusable in a fresh transaction: envelope failure or maximum-time expiry
 does not revoke it, and a current anchor can be refreshed. The client durably
-records exposure before proof-bearing helper/RPC preparation and keeps those
+records exposure before proof-bearing RPC preparation and keeps those
 inputs reserved on cancellation, rejection, timeout or envelope expiry, including
 legacy spend records with unknown exposure. Canonical inclusion or observed
 consumed nullifiers resolve the notes. Unsigned exposed preparations are visibly
@@ -473,192 +467,30 @@ requires a contract/circuit migration. Seed-only recovery cannot reconstruct an
 unconfirmed proof shared before local journals were lost; absence from the chain
 is not proof that no such authorization exists. Envelope-based expiry remains relevant to
 non-reusable deposit authorization; conservative common-ledger corroboration and
-exact-envelope validation still apply there. A timeout, helper acknowledgement,
+exact-envelope validation still apply there. A timeout, RPC acceptance,
 or removed pending record alone is not a success receipt.
 
-## 13. Optional browser peer relay
+## 13. Direct submission and legacy recovery
 
-For each private transfer or withdrawal, the review UI requires an explicit
-choice between **Privacy relay** and **My account**. Relay mode first publishes a
-short-lived quote request through the configured Waku service node with Light
-Push, and receives replies with Filter on one shared content topic, backfilling
-any missed reply from the node's Store. Sender and helper use ephemeral
-identities; messages after discovery are NIP-44 v2 encrypted to the selected peer. The sender keeps replies
-only in memory and displays the first valid offer immediately. Each new unique
-or lower-fee offer restarts a 700 ms quiet window so nearby offers can still be
-compared by fee. The user may choose any authenticated, live offer immediately,
-without waiting for that window. Selection stops collection while preserving
-the selected session; late responses cannot change the chosen offer. The hard
-discovery window remains the no-response deadline. The picker keeps peer rows
-in their initial display order, highlights the lowest current fee independently
-of row position, and shows every valid quote with the peer source account, fee,
-and expiry. Unavailable offers keep a disabled slot until this picker closes,
-so expiry cannot move a different helper under the same pointer. This also
-applies to every explicit, fee-capped helper choice in a consolidation chain. The user
-explicitly selects one peer before any fee-address negotiation,
-proof construction, signing, or submission. Deposits are not relayable because
-their public source must authorize the asset transfer.
+Private transfers, withdrawals, and consolidation now submit only from the
+user's own Stellar account through the selected RPC. The review explains that
+the submitting account and public network fee remain visible. Peer discovery,
+quotes, helper approval, helper fee notes, Earn controls, and Waku/Nostr
+transports are removed. A stale relayed draft or review fails closed; it is
+never silently converted into a direct payment.
 
-Negotiation protocol v3 uses the `stellarkey-private-relay-v3` topic; v1 and v2
-peers are not compatible. A relayed action is six messages: the clear discovery
-request, encrypted quote, selection, payout, one job and one outcome (or a
-rejection). Every offered Stellar source account must sign a canonical,
-domain-separated statement binding the request, network, pool, both peers,
-quoted account, fee, nonces and expiry. The sender verifies this proof before
-displaying/ranking an offer and again before revealing selection metadata.
-This proves account-key possession, not effective ledger signing thresholds.
-Helper opt-in permits these encrypted offer signatures while unlocked; it never
-permits automatic transaction signatures. Every encrypted message is padded
-inside NIP-44 to the same 24 KiB plaintext size, including quotes and rejections.
-Padding costs bandwidth and does not hide the carrier's peer graph, timing,
-message count, IP addresses, or the clear discovery request as the Waku
-service node moves the events.
+The published circuit, contract, three-output format, and encrypted archive
+are unchanged. Historical fee notes remain readable as ordinary owned outputs.
+Old encrypted pending records and backups retain their original submission
+route and proof-exposure holds. Legacy relayed or unknown-route records are
+reconcile-only, without new signing, rebroadcast, or transaction-hash lookup.
 
-The public discovery request carries neither an asset nor a transfer/withdrawal
-kind. The selected helper receives the kind only in the authenticated encrypted
-selection. Offers are valid for at most five minutes, independently of the short
-quote-collection window; preparation cannot extend the signed offer's lifetime.
-
-The **Check available peers** control is an explicit live quote request, not a
-background presence beacon. It reveals no asset, amount, destination, note, or
-proof input. The UI changes from finding peers to comparing fees when the first
-authenticated response arrives, renders that response immediately, and keeps
-selection disabled only until quote traffic has been quiet for 700 ms. Responses
-are kept only in memory, deduplicated by public source account, capped at 32
-unique replies, ordered by fee, and labelled with the time of the check. The
-active Stellar account is excluded so self-relay is never presented as privacy.
-If another browser answers from the same Stellar account, the check immediately
-explains that a different Testnet account is required in that browser while it
-continues looking for an eligible peer until the normal deadline. An ineligible
-or untrusted reply cannot shorten discovery and hide a slower valid offer. This
-distinction matters when testing two browser profiles on one computer: the
-second browser can be online while still being ineligible to hide the first
-browser's transaction source. The same live explanation appears inside an
-in-progress transfer or withdrawal review rather than leaving the generic
-finding-peer message visible until the deadline.
-Available when checked is not a guarantee that a peer will remain available;
-transaction submission obtains fresh short-lived offers and requires a new
-explicit choice.
-
-Relay events carry kind `24333`, in NIP-01's ephemeral event range, wrapped in a
-Waku message on a shared content topic. Because Filter has no store-and-forward,
-the light client also queries the node's Store over a recent window and feeds any
-recovered event through the same dedupe path, so a message missed during a
-subscription renewal is not lost. Retention is bounded and the node is the user's
-own or trusted; events stay padded and encrypted. An opted-in helper creates its
-subscription before publish can occur, reports **Connected** only after a Waku
-service peer is connected, and reports connecting, reconnecting, or unavailable
-separately. A rejected or initially failed subscription is retried independently,
-starting with a one-second retry and using bounded exponential backoff. A total startup outage
-is also retried while helping remains enabled. Connection attempts use a
-client-owned deadline and are cancelled with their socket and timer when the
-session closes, the wallet locks, or the runtime changes. These states and relay
-counts are memory-only; the saved opt-in alone is never presented as proof that
-the helper is online.
-
-A controlled two-client measurement through a configured Waku service node
-recorded a 5,196 ms one-peer result before adaptive collection. After the
-change, three cold sender sessions rendered their first offer in 378-431 ms and
-settled the selectable fee snapshot in 1,079-1,132 ms. This small desktop sample
-validates the waiting-strategy change, not production p50/p95 or mobile latency;
-the raw observations are in
-`protocol/private-balance/results/relay-discovery-latency-2026-09-04.json`.
-
-A second controlled diagnostic isolated account eligibility with a fresh pool
-binding per sample. Before the subsequent discovery-termination hardening, two
-same-account runs completed in 577-815 ms with zero eligible offers and one
-ineligible account; two different-account runs produced one eligible offer in
-639-672 ms. The diagnostic established that both browser paths exchanged relay
-messages in under a second. Current code reports an ineligible reply immediately
-but retains the full discovery window so it cannot suppress a slower valid
-offer. The sanitized observations are in
-`protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json`.
-
-The selected peer gives the sender a quote and a diversified private fee
-address. The sender builds a new proof with the peer's same-asset fee as one of
-the three shuffled encrypted outputs and the peer's Stellar account as the
-transaction source. The sender sends the proof-bound operation through encrypted
-negotiation, not its own RPC. Before any RPC preparation, the helper checks the
-selected pool/method, matched diversifiers and exactly one real fee note matching
-the quote. It prepares and simulates an unsigned envelope through its RPC and
-returns that envelope with the account sequence and an advisory simulation ledger.
-
-Before a transfer or withdrawal proof leaves the browser, a separate **Authorize
-Proof Sharing** step shows the exact spend intent and fee bounds and explains that
-proof disclosure authorizes that payment independently of the later envelope
-signature. Approved chains use their bounded consent instead. Input exposure and
-chain fee authorization are durably recorded before disclosure. Final transaction
-review/signing remains separate; cancelling it cannot retract the earlier proof.
-
-The sender independently checks the exact locally retained operation, helper
-source, time bounds, classic fee, resource-fee cap and absence of signatures,
-extra operations or authorization. It does not independently simulate the helper's
-footprint, resource estimates or account sequence: a dishonest helper can affect
-liveness or public metadata within those limits. The simulation ledger is not
-chain evidence. There is no sender-RPC preparation fallback.
-
-After the payout the sender delivers one job carrying the exact operation, time
-bound, classic fee and resource-fee cap. The helper simulates and prepares the
-envelope itself, reviews it locally, and asks its user for a single approval
-that signs and submits through the helper's RPC in one step. It answers with one
-outcome carrying the prepared and signed envelopes, the transaction hash, the
-account sequence, the simulation ledger and the RPC status. The sender verifies
-the prepared envelope against its retained operation and checks that the signed
-envelope hashes to the reported transaction before recording the submission.
-No signed-but-unsubmitted state exists on the wire: a helper cannot hold a
-signature the sender never learns about, and a lost outcome acknowledgement
-keeps the helper's submission record and refuses replacement approvals. One
-bounded preparation lease is released on rejection, expiry or session cleanup;
-late results cannot revive a rejected job.
-
-StellarKey operates no relay or signaling server and stores no relay jobs. A
-Waku service node is still server infrastructure: its operator sees
-connections, IP addresses, timing, the discovery request, and the padded
-encrypted events it retains for Store. The
-selected helper learns the asset, fee, proof, and transaction. NIP-44 does not
-provide forward secrecy or post-quantum confidentiality. A helper can refuse or
-delay service. Relay mode never silently falls back to direct submission;
-changing peers requires a new proof because the encrypted fee note is bound to
-the selected peer.
-
-Fragmented balances can remain in relay mode. The wallet creates a bounded,
-fixed note-merge plan with at most 64 transactions and reserves an approved
-private-asset fee allowance for every step, including the final send. It also
-tracks a separate cumulative helper-paid XLM network-fee cap; the sender does
-not need a public XLM balance to select this path. The plan checks both maximum
-and minimum possible intermediate values so cheaper quotes cannot overflow
-the protocol's signed-64-bit amount bound. It is a deterministic valid trace,
-not a claim of globally optimal coin selection.
-
-Consent expires after 15 minutes and is bound to the account, deployment,
-asset, final intent and original notes. Each merge receives a freshly issued,
-fully verified own private address without replacing the displayed receive
-address. Each step, including the final send, opens fresh discovery and waits
-for an explicit helper choice within the approved fee cap. Before signing, an
-atomic journal update binds the exact step and accounts for both fee budgets.
-The next step requires canonical action inclusion and the exact expected owned,
-spendable output; a missing pending row or a helper's acceptance is insufficient.
-There is no automatic chain resume or direct fallback. Cancellation stops new
-local steps; it cannot retract a valid proof already shared with a helper.
-
-WebRTC was evaluated and not added as a supposedly faster rendezvous path.
-Browser WebRTC still needs signalling before two unknown wallets can connect,
-then performs ICE discovery through STUN and potentially TURN. That adds another
-handshake after peer discovery, and direct ICE candidates can expose peer IP and
-network metadata. Retaining one measured discovery transport is simpler and
-avoids expanding the network privacy surface without evidence of a speed gain.
-The optional early-choice path removes the remaining comparison wait only when
-the user chooses to skip it; no current end-to-end or mobile speedup is claimed.
-Cross-payment connection pooling and simulation-result reuse are not enabled:
-the former adds correlation risk, and the latter requires a separately reviewed
-freshness policy. Fresh per-payment identities, 24 KiB encrypted padding, both
-helper simulations, proof-sharing consent and canonical finality are unchanged.
-Within a payment, subscription connection attempts borrow the session's sockets:
-cancellation, timeout, or late completion of an obsolete discovery waiter cannot
-close a selected-peer connection. Ending the session still closes its sockets.
-Each physical WebSocket also has an eight-second connection-setup deadline;
-stalled or abandoned late-opening sockets close themselves without tearing down
-a replacement connection. That deadline is cleared for established sessions.
+An atomic encrypted-state update retires obsolete relay-chain consent. It does
+not release pending inputs, build reservations, or issued-address history.
+Canonical reconciliation and explicit held-balance self-recovery remain
+available under the same conservative exposed-proof policy. Historical relay
+decision records and measurements are retained as historical evidence, not
+current product capabilities.
 
 ## 14. Local state and execution boundary
 
@@ -697,8 +529,8 @@ can defeat every browser-level privacy control.
 | Private transfer amount and asset | Pool contract and action timing |
 | Recipient private address | Public action kind |
 | Which note lanes are real | Anchor root, two nullifiers and three commitments |
-| Whether a real output is recipient, change, or peer fee | Three fixed-size encrypted output packages |
-| Memo plaintext | Direct-mode user source or relay-mode peer source, and public Stellar fee |
+| Whether a real output is recipient or change | Three fixed-size encrypted output packages |
+| Memo plaintext | User's public submitting account and Stellar fee |
 | Spending and viewing secrets | Transaction timing and network metadata |
 
 Deposits reveal their public source, asset, and amount. Withdrawals reveal their
@@ -711,8 +543,7 @@ private receive address still links whole actions through the clear diversifier.
 
 The RPC operator and a network observer can see the user's IP address, request
 timing, selected pool, queried ledger ranges, simulations, restoration attempts,
-and submitted transactions. The configured Waku service node additionally sees peer
-discovery metadata and the retained encrypted events, and the selected helper sees the asset, fee, proof, and job.
+and submitted transactions.
 Timing and pool activity remain public. Pool size,
 deposits, withdrawals, repeated public endpoints, private-address reuse,
 voluntary disclosure, or browser compromise may correlate otherwise hidden
@@ -804,7 +635,7 @@ readbacks succeeded against the public Testnet RPC.
 
 The official Testnet runner passed at source commit `7424bb2` against manifest
 `222e2028be15d94311751d38aaebadb03c9ef53cc76a19e72cdcf0b3fd01be9f`.
-It passed ten desktop Chromium tests, including the Home relay-participation
+That historical run passed ten desktop Chromium tests, including the now-removed Home relay-participation
 opt-in with decimal fee persistence and automatic modal close, and the complete two-wallet
 deposit, consolidation, private send, ambiguous-submission recovery,
 withdrawal, lock/unlock, encrypted-backup restore, local-data removal, and

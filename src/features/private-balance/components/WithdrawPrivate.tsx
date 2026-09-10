@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type FormEvent } from 'react';
 import { Button, Field, Modal, ModalBody, ModalFooter, ModalHeader, Notice } from '@/components/ui';
 import { usePrivateBalanceRuntimeData } from '@/hooks/usePrivateBalanceRuntime';
 import { fmtAmount } from '@/lib/format';
@@ -8,7 +8,6 @@ import { NETWORKS } from '@/lib/stellar';
 import { humanizePrivateError, PRIVACY_ROW } from '../copy';
 import { parsePrivateAmount } from '../runtime/coin-selection';
 import { formatPrivateBalanceAmount } from '../runtime/selectors';
-import { loadPrivateRelayPreferences } from '../relay/preferences';
 import { PrivateActionError } from './PrivateActionError';
 import { PrivateActionReview } from './PrivateActionReview';
 import { PrivateAssetSelector } from './PrivateAssetSelector';
@@ -18,10 +17,8 @@ import {
   trimAmountInput,
 } from './PrivateAmountField';
 import { PrivateSubmissionStatus } from './PrivateSubmissionStatus';
-import { PrivateRelaySubmissionChoice } from './PrivateRelaySubmissionChoice';
 import {
   usePrivateActionController,
-  type PrivateSubmissionMode,
 } from './usePrivateActionController';
 import {
   useReportToOwner,
@@ -115,8 +112,6 @@ export function WithdrawPrivateFlow({
   const [stage, setStage] = useState<'form' | 'review'>('form');
   const [amount, setAmount] = useState('');
   const [publicRecipient, setPublicRecipient] = useState(publicAddress ?? '');
-  const [submissionMode, setSubmissionMode] = useState<PrivateSubmissionMode>(() =>
-    loadPrivateRelayPreferences().useRelay ? 'relay' : 'direct');
   const flow = usePrivateActionController(onClose, onSubmitted);
 
   const trimmedRecipient = publicRecipient.trim();
@@ -146,10 +141,12 @@ export function WithdrawPrivateFlow({
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     if (amountCheck.stroops === null || !recipientShapeOk) return;
+    // The form leaves the tree; keep explicit navigation focus in its owner.
+    const shell = event.currentTarget.closest<HTMLElement>('[data-modal-shell]');
+    if (shell && !shell.closest('[inert]')) shell.focus({ preventScroll: true });
     setStage('review');
     void flow.prepare(
       { kind: 'withdraw', amount: amount.trim(), publicRecipient: trimmedRecipient },
-      submissionMode,
     );
   };
 
@@ -171,8 +168,8 @@ export function WithdrawPrivateFlow({
   }, [flow.close, onCloseHandlerChange]);
 
   // Signing and submitting must finish; preparing a proof may be abandoned,
-  // so it never blocks the shell.
-  useEffect(() => {
+  // so it never blocks the shell. Publish before the next dismissal event.
+  useLayoutEffect(() => {
     onWorkingChange?.(flow.working);
     return () => onWorkingChange?.(false);
   }, [flow.working, onWorkingChange]);
@@ -213,8 +210,6 @@ export function WithdrawPrivateFlow({
           chained={flow.chained}
           chainProgress={flow.chainProgress}
           progress={flow.progress}
-          relayProgress={flow.relayProgress}
-          relayQuotes={flow.relayQuotes}
           disclosure={flow.disclosure}
           preparing={flow.preparing}
           working={flow.working}
@@ -225,7 +220,6 @@ export function WithdrawPrivateFlow({
           onConfirm={() => void flow.submit()}
           onBack={backToForm}
           backInHeader={headerOwned}
-          onSelectRelayQuote={quoteId => void flow.selectRelayQuote(quoteId)}
         />
       ) : (
         <form onSubmit={submitForm}>
@@ -260,10 +254,6 @@ export function WithdrawPrivateFlow({
               />
             </div>
             <PrivateQuickAmounts onAmount={setAmount} max={privateBalanceMax} />
-            <PrivateRelaySubmissionChoice
-              value={submissionMode}
-              onChange={setSubmissionMode}
-            />
             <Field
               label="Public Recipient"
               hint={trimmedRecipient === publicAddress ? 'Active account' : 'Custom G or C address'}

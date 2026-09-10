@@ -1,5 +1,9 @@
 # Next Private Payments format: migration contract
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 Status: review draft, 2026-09-04. No suite identifier is assigned, no enabled
 runtime implements this document, and no replacement pool is deployed. This is
 the implementation boundary for the audit's format and infrastructure proposals,

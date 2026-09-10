@@ -1,5 +1,9 @@
 # Waku cluster-aware relay readiness
 
+> Historical record: peer relaying and helper earnings were removed on 2026-09-10.
+> Relay instructions, measurements, and proposals below are not current functionality.
+> See [the current whitepaper](private-balance.md) for direct submission and legacy recovery.
+
 ## Approved scope
 
 Fix the falsely successful Waku connection followed by indefinite “Reconnecting”, and verify the complete settings-to-helper flow with isolated end-to-end tests. The user approved implementation after the diagnostic findings, including E2E verification.

@@ -64,12 +64,6 @@ const DynamicPrivateBalanceProvider = dynamic(
   { ssr: false, loading: () => null },
 );
 
-const DynamicPrivateRelayHelperManager = dynamic(
-  () => import('@/features/private-balance/components/PrivateRelayHelperManager').then(
-    module => module.PrivateRelayHelperManager,
-  ),
-  { ssr: false, loading: () => null },
-);
 
 interface ReadyDeployment extends LoadedPrivateBalanceDeployment {
   storageScope: PrivateBalanceStorageScope;
@@ -700,7 +694,6 @@ function PrivateBalanceRuntimeBootstrap({ children }: { children: ReactNode }) {
             />
             {/* Inside the provider so it reads the live runtime value directly. */}
             <PrivateIncomingToasts />
-            <DynamicPrivateRelayHelperManager />
           </DynamicPrivateBalanceProvider>
         ) : null}
         {children}

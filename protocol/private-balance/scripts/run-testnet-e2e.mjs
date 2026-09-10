@@ -241,7 +241,6 @@ export async function runTestnetE2e(argv = process.argv.slice(2)) {
       'seed-only recovery with exact recovered balance',
       'selected RPC endpoint switch and canonical resync',
       'private receive address validation',
-      'relay helper participation with explicit-idle peer availability, decimal fee persistence, and automatic modal close',
       'manifest tamper fail-closed',
       'critical modal accessibility',
       'production CSP browser smoke matrix with QR, overflow, accessibility, and camera policy checks',

@@ -3,7 +3,8 @@
 ## 1. Assets and security objectives
 
 - Conservation of value: private inputs plus a public deposit equal three private outputs plus a
-  public withdrawal, using exact bounded integers. An optional peer fee is one of those outputs.
+  public withdrawal, using exact bounded integers. Historical peer fees used an ordinary output;
+  the current application does not construct peer-fee outputs.
 - Double-spend and replay prevention: accepted real nullifiers are persistent and unique; a deposit
   retains one durable dummy nullifier so the same proof cannot be replayed.
 - Spend authorization: only a valid note witness and the required spending/nullifier secrets can
@@ -28,15 +29,12 @@ the public action kind or guarantee anonymity. Reusing one private receive addre
 whole actions through its clear four-byte diversifier.
 
 Direct submission uses the user's Stellar account as the transaction source and links the action
-to it. A fee-bump sponsor changes only the outer fee source. Optional peer relay mode instead uses
-the helper's account as source; the sender must choose that mode explicitly, and the client never
-silently falls back to direct submission. A selected peer learns the action asset, quoted fee,
-proof, and transaction. It cannot redirect the proof-bound encrypted fee note.
+to it. A fee-bump sponsor changes only the outer fee source. Direct submission is the only
+supported application path. Stale relayed reviews are rejected; historical pending records
+remain reconcile-only without signing or rebroadcast.
 
 RPC providers and network observers see IP address, timing, selected deployment, ledger ranges,
-simulations, restoration attempts, and submissions. Public Nostr relay operators used for optional
-peer discovery also see connection IPs, timing, and the public request; NIP-44 encrypts selected-peer
-messages but provides neither forward secrecy nor post-quantum confidentiality. Cross-checking different-origin providers
+simulations, restoration attempts, and submissions. Cross-checking different-origin providers
 reduces the risk of accepting a fabricated ledger view when their operators are actually
 independent, but exposes access patterns to more endpoints. The shipped SDF-primary/Ankr-witness
 pair is operator-diverse; the runtime cannot prove the same for a custom primary.
@@ -76,12 +74,10 @@ migration exists for this replacement protocol.
 
 ## 5. Availability and recovery boundary
 
-The protocol has no StellarKey backend, operated relayer, or indexer. The browser can discover
-other explicitly opted-in browser wallets through user-configured public Nostr infrastructure.
-Relay availability is best-effort: a user may wait, retry, or explicitly choose direct submission.
-Availability otherwise depends on a usable Stellar RPC, retained or restorable ledger state,
-sufficient public XLM for direct submission or helper operation, browser storage, and access to the
-proving artifacts. Different-origin RPC disagreement intentionally disables spending.
+The protocol has no StellarKey backend, operated relayer, or indexer. Peer relaying
+and helper earnings are removed. Availability depends on a usable Stellar RPC,
+retained or restorable ledger state, sufficient public XLM for direct submission,
+browser storage, and access to the proving artifacts. Different-origin RPC disagreement intentionally disables spending.
 
 Archive records receive the configured maximum TTL when written but are not refreshed forever.
 After eviction, seed-only recovery requires paid restore-footprint transactions. The wallet batches
@@ -98,7 +94,7 @@ ledger confirmation.
 
 The protocol does not hide network metadata, protect against endpoint-wide traffic analysis,
 guarantee a minimum anonymity set, undo public deposits/withdrawals, make a reused clear
-diversifier unlinkable, guarantee an available or honest relay peer, recover a deliberately malformed
+diversifier unlinkable, recover a deliberately malformed
 ciphertext, prove membership in a curated association set, recover a lost seed and lost encrypted
 backup together, or make Testnet development
 proving material safe for real funds.

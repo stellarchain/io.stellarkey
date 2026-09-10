@@ -9,25 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added Waku as the privacy-relay carrier: the wallet runs a light client that publishes with Light Push and receives with Filter over a configured Waku service node, keeping the same signing, padding and end-to-end encryption. The Waku SDK loads only when relaying begins (it offers yamux and mplex and dials plain websockets only on this device).
-- Added a multi-wallet Private Payments test network: three synthetic wallets exercise deposits, direct and relayed payments, withdrawals, consolidation, helper and submission failures, held-proof self-recovery and reinstall-from-seed through the real runtime, asserting after every scenario that no value is lost and that durable state matches a fresh archive scan.
+- Added a multi-wallet Private Payments test network: three synthetic wallets exercise deposits, direct payments, withdrawals, consolidation, RPC and submission failures, held-proof self-recovery and reinstall-from-seed through the real runtime, checking value conservation and fresh archive scans.
 - Added explicit held-balance recovery for disclosed private payment proofs: self-transfer the held inputs through the selected RPC with no private helper fee, while keeping them reserved until canonical confirmation and reporting if the original payment confirms first.
 - Added an account- and deployment-scoped outgoing-recovery preference with separate consent to omit future sender-recoverable recipient and memo details. Recovery remains enabled by default, and earlier records and backups are unchanged.
-- Added relayed preparation of fragmented private balances with fresh helper selection for every step, fixed input plans, separately bounded private and network fees, and canonical owned-output checks before continuing.
-- Added an explicit, memory-only privacy-relay availability check that shows unique responding peers and their current fees, ordered with the lowest fee first.
-- Added explicit peer selection for private relay submission, showing every responding peer's public source account, private fee, and offer expiry before negotiation.
-- Added a visible Earn by relaying action beneath Home's private assets, with live participation status and focused helper controls that retain manual approval for every transaction.
 - Linked public Private Payments deposits and withdrawals to their exact Stellar explorer transactions while rejecting synthetic restored-history identifiers.
 - Added domain-separated outgoing viewing keys and fixed authenticated recovery envelopes for reconstructing sent Private Payments from seed and chain data.
 - Added an append-only Private Payments asset registry with administrator-only admission, `Active`/`ExitOnly` status, two-step administrator handoff, independently corroborated client reads, and in-wallet controls.
-- Added optional browser-to-browser privacy relay for private transfers and withdrawals using configurable public Nostr infrastructure, ephemeral encrypted sessions, proof-bound private fee notes, strict helper review, and manual peer approval without a StellarKey backend.
 
 ### Changed
 
-- Refreshed Private Payments toolchain provenance and its authenticated manifest/catalogue pins for the existing Waku dependency lock; contract, circuit, proof artifacts, and deployment bindings are unchanged.
-- Made Waku the wallet's only privacy-relay carrier and required a self-hosted or trusted Waku service node: Nostr and the public Waku Network are no longer used (the public network rate-limits proof-less publishing under RLN). Relay connections now configure a Waku service node address and cluster instead of relay URLs, and with none configured relaying is unavailable rather than falling back to a public network. Delivery is now reliable across the six-message exchange: because Waku Filter has no store-and-forward, the light client re-fetches recent retained history from the node's Store and recovers any message a subscription renewal dropped. Messages stay padded and end-to-end encrypted; the node retains them briefly to serve Store.
-- Reshaped privacy relay negotiation as protocol v3 on the `stellarkey-private-relay-v3` topic; v2 peers are not compatible. After the fee-address payout the sender delivers one job and the helper answers with one outcome once its user approves, so the exchange drops from ten messages to six. Helper approval now signs and submits in a single step through the helper's RPC ("Approve and submit"), a helper can no longer hold a signature the sender has not seen, and a lost outcome acknowledgement keeps the submission record and refuses replacement approvals.
-- Refined Earn by Relaying with live status cards, fee presets, grouped disclosures, collapsible connection and peer tools, and pinned participation controls. Saving keeps keyboard focus, action feedback stays visible, and approval details wrap on narrow screens.
+- Private payments now submit directly from the user's public Stellar account through the selected RPC. Stale relayed reviews are rejected; encrypted legacy records and exposed-input recovery remain supported without resubmitting old relay routes.
+- Retire obsolete encrypted relay-chain consent atomically without releasing pending inputs or issued-address history. The published contract, circuit, proof, and three-output archive formats are unchanged.
+- Refreshed Private Payments toolchain provenance and authenticated manifest/catalogue pins after removing relay dependencies; proving artifacts and deployment bindings are unchanged.
 - Aligned shared native fields and asset selectors with their labels, hints, and validation messages across dialog sizes.
 - Kept Public/Private tabs available during unsigned payment review. Switching types clears the public draft; preparation, signing, and submission still block switching.
 - Kept held-balance recovery available inside the new Private Payments settings flow, with its existing proof-sharing, signing and ledger-confirmation safeguards.
@@ -47,14 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Corrected dependency-risk counts, zoom guidance, the current Testnet development catalogue, and the scope and safe-capture limits of automated release verification.
 - Made verified Private Payments commitment-cache appends read only new and overlapping records, with atomic checkpoint checks, full history validation during recovery, and compatible migration that preserves existing cache data.
 - Reduced merchant JavaScript by composing its existing context slices instead of duplicating aggregate context wiring.
-- Redesigned Earn by relaying as a live, fee-first control panel with explicit Start/Stop, clearer approval and cost disclosures, and secondary connection and peer-discovery tools. Settings save in place, preserve unfinished edits, and incorporate untouched preferences changed in another tab.
 - Made Public/Private tabs use explicit keyboard activation: arrow keys move focus, while Enter, Space, or a pointer selects the panel without replacing the dialog shell.
 - Restored user-controlled page zoom while preserving mobile input sizing, corrected the Send form's MAX control contrast, and allowed recipient and memo captions to wrap on narrow screens.
-- Made authenticated Nostr helper offers selectable during fee comparison for ordinary private payments and each consolidation step, with stable peer rows and cancellation-safe session handoff.
-- Made opted-in private relay helpers report their actual connecting, connected, reconnecting, or unavailable state, retry startup and subscription failures, automatically restore dropped WebSocket subscriptions starting with a one-second retry, and cancel in-flight connection resources when the session ends.
-- Made private relay discovery display authenticated offers as they arrive, compare fees until quote traffic is quiet for 700 ms, and stop waiting for slower Nostr acknowledgements after the first configured relay accepts a message.
-- Displayed helper rewards in ordinary seven-decimal asset units instead of exposing protocol atomic units in relay settings.
-- Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery and relay controls while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
+- Re-baselined the unlocked-wallet JavaScript release budget for authenticated Private Payments registry discovery while retaining separate limits for the private runtime, worker, proving artifacts, merchant, and hardware journeys.
 - Flattened the Private Payments setup progress into the modal shell with a clearer live status, prominent percentage, and transform-animated progress rail.
 - Unified public and private asset artwork: XLM now uses the Stellar mark on black, while private assets reuse their normal logo with a shield notch labelled "Private asset".
 - Displayed the selected local-currency equivalent beside numeric XLM network fees throughout public and Private Payments flows, retaining useful precision below one cent.
@@ -70,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Used RFC 8410 PKCS#8 imports for native X25519 shared-secret derivation while retaining the portable fallback.
 - Accelerated Private Payments recovery scans with RFC 9180-compatible WebCrypto key handles, view-tag-first owner hashing, and bounded 8-output parallel batches selected by paired nine-trial controls while retaining record-order state updates.
 - Reduced Private Payments contract cost with one public-input MSM, single-pass public-signal derivation, a precomputed immutable asset field, and fixed-width field arithmetic that removes runtime arbitrary-precision integers.
-- Made direct self-submission and privacy-relay submission explicit per-payment choices, with no silent fallback that could reveal the user's public Stellar account.
 - Re-pinned development proof generation to the PSE degree-14 Perpetual Powers of Tau transcript after its hash and complete contribution/beacon chain verified and the prior endpoint stopped serving its authenticated artifact.
 - Deferred merchant archive code until an explicit backup or restore action so merchant security hardening does not increase wallet startup JavaScript.
 - Updated the Next.js ESLint configuration to 16.3.4 and React DOM type declarations to 19.2.7.
@@ -79,18 +66,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Removed peer-relayed private payments, Earn by Relaying, helper approvals, fee negotiation, relay settings, Waku/Nostr transports, and their relay-only dependencies and tooling.
 - Removed support for the previous `tks1` and `sks1` Private Payments address encodings; existing testnet private state must be recreated.
 - Removed compatibility with the previous binary-tree Private Payments state and deployment artifacts.
 - Removed retired archive-page constants from Private Payments constructors, deployment bindings, manifests, runtime validation, and generated clients now that every archive record occupies its own persistent entry.
 
 ### Fixed
 
-- Required a completed, matching Waku cluster handshake before reporting services ready or selecting message peers, including SDK retries. Earn by Relaying now explains proven cluster mismatches instead of briefly showing Connected and retrying forever; saving corrected connections replaces the session in place. Closing cancels pending readiness and cleans up late subscriptions, and successfully saved relay settings no longer trigger an unsaved-changes prompt.
-- Generated relay-compatible shielded receive addresses from first setup, replaced legacy default receive addresses when the recipient's private session initializes, and excluded the default diversifier from address rotation. Existing diversified addresses stay stable, older addresses remain recoverable, and delayed migration results cannot restore an address after session or tab ownership changes.
+- Keep focus inside private dialogs when opening review and on confirmation controls during proof preparation and submission, publish submission busy state to dialog shells before paint, and ignore duplicate direct or chained confirmations without losing the first result.
+- Maintain readable contrast for private-send outflow amounts during animated review updates.
+- Generate diversified private receive addresses from first setup, replace legacy default receive addresses when the private session initializes, and exclude the default diversifier from rotation. Existing diversified addresses stay stable, older addresses remain recoverable, and delayed migration results cannot restore an address after session ownership changes.
 - Kept confirmation alerts within the available viewport so long warnings and wrapped approval details scroll without pushing actions off-screen, including when the on-screen keyboard reduces the viewport.
 - Preserved pinch zoom and nested-list scrolling in mobile sheets; cancelled or multi-touch drags reset without closing or replaying the entrance animation.
 - Cancelled abandoned sheet-handle presses when the mouse button is released outside, preventing later hover movement from dragging the sheet.
-- Corrected the relay-feedback lab measurement to include its first rendering opportunity without waiting for an unrelated later frame; the 100 ms limit and throttled five-sample check are unchanged.
 - Restored focus to the actual tapped opener after nested sheets close in WebKit, while keeping later keyboard openings independent of earlier pointer activity.
 - Kept tooltips and menus aligned inside both plain mobile sheets and transformed dialog containers.
 - Closing a dialog now preserves its shell and exit geometry until the dim finishes fading, without retaining sensitive content or switching the sheet variant mid-exit.
@@ -116,13 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserved genuine observation times for retained asset, XLM, and fiat rates; rejected new Mainnet merchant quotes when required rates are stale or unavailable, with local price retries that preserve tickets and forms.
 - Revalidated expired chart ranges while retaining their correctly labelled series, with visible observation times and explicit retry after an unavailable refresh.
 - Run isolated private-component checks on Chromium and iPhone WebKit, all overlay and manifest checks on both browsers, and the nested browser-protocol tests through the shared CI and release gate. Verify fixture cleanup before and after the final static build.
-- Start relaying now requests the private runtime instead of leaving an inactive helper labelled Connecting. Saved participation shows Paused after a fresh unlock, with explicit Resume; fee and connection edits alone do not resume it. Unrelated preferences no longer restart a connected helper, and failed connection attempts show Reconnecting during retries.
-- Restored the original compact Earn by relaying row beneath Home's assets, keeping the redesigned controls and interaction improvements inside its modal.
-- Included native disclosure controls in modal keyboard focus containment and kept Earn's closing geometry stable while immediately clearing its panel content.
-- Validate relay-compatible recipient addresses before peer discovery and explain how to request a fresh Shielded address, without changing the recipient or silently switching to direct submission.
-- Wait for manual relay approval until the existing quote/payout deadline, register exact signed authorization before delivery, and prevent duplicate signing or submission after uncertain responses.
+- Included native disclosure controls in modal keyboard focus containment and preserved non-sensitive closing geometry while clearing private panel content.
 - Distinguish a new action blocked by an earlier unresolved private payment from a newly shared spend proof; keep existing input reservations intact.
-- Keep helper approval focus inside its dialog while signing and make uncertain signature delivery explicit without offering another approval.
 
 - Kept Select choices bound to option identity during live reordering, preserved focus when options disappear or become disabled, and made Select and Dropdown keyboard navigation stay within their owning dialog.
 - Added consistent clipboard pending, success, and retryable error feedback, prevented overlapping copy writes, and kept sensitive clipboard clearing available after the copied announcement ends.
@@ -130,9 +113,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made backup-file restore keyboard operable with local read progress and safe retryable errors, and prevented abandoned file reads from redirecting a newer workflow.
 - Kept older-activity requests scoped to the current wallet, account, network, and endpoint; preserved loaded history with explicit retry after failure and stable keyboard focus throughout retry feedback.
 - Made explicit Settings navigation start at the destination heading in the actual scroll container, preventing controls from inheriting an old scroll offset beneath the sticky header.
-- Kept cancelled Nostr discovery connection attempts from closing a selected helper's socket, cleared stale helper controls on account changes, and ignored duplicate consolidation-helper taps.
-- Identified same-account private relay helpers immediately in both peer checks and active payment reviews while keeping them ineligible and preserving the full eligible-peer discovery window.
-- Closed the focused Earn by relaying dialog immediately after valid settings are saved instead of requiring a second acknowledgement.
 - Kept private-asset shield badges inside their avatar bounds on narrow screens.
 - Deferred live Private Payments registry RPC corroboration until an explicit registry refresh, preserving continuous Send and Receive dialogs while ordinary wallet unlocks and first private intent use the authenticated deployment catalogue.
 - Kept verified Private Payments asset readiness stable across React bootstrap restarts and reused loaded contract specifications across corroborated reads, preventing lock/unlock from reverting ready balances while reducing setup RPC bursts.
@@ -189,7 +169,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refreshed generated Private Payments development-manifest provenance and dependent pins after the dependency lockfile update, preserving deployment identity, development-only flags, and all proving artifacts.
 - Pinned TOML 4.2.0 for Trezor's nested Stellar SDK 14.2.0 resolvers to fix installed parser prototype pollution and unbounded recursion, with real adapter compatibility tests. Upstream browser prebundles and the remote Trezor popup are outside this override; the remaining elliptic advisory is documented.
 - Bind public payment review, signing, and pre-broadcast authorization to the originating account, network, and unlock session, including delayed approval, preparation, and hardware responses; preserve canonical tracking after broadcast.
-- Bound private-relay Nostr frame processing and verified-event duplicate retention, reject malformed ingress without raw payload logging, and reconnect with the original filters without letting invalid event IDs or timestamps suppress valid delivery.
 - Bound queued contact edits, encrypted storage writes, and contact-list updates to their originating unlock session, while preserving writes already committed before a lock.
 - Revoke pending merchant loads, queued edits, PIN actions, and UI publication on vault lock, reset, session replacement, or provider teardown while preserving completed encrypted commits for recovery.
 - Keep canonical refund recovery records until the authenticated merchant journal durably records a terminal result, including across lock, teardown, storage failure, and reload; erasing merchant records preserves unresolved transaction tracking.
@@ -199,17 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clear owned temporary key-expansion and private-output plaintext buffers on success and failure while preserving returned keys, witnesses and encrypted output bytes. This is best-effort application-memory cleanup, not guaranteed memory erasure.
 
 - Included outgoing viewing keys in best-effort private-worker session cleanup and blocked production builds that contain a leftover synthetic privacy-test route.
-- Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing helper or RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
-- Bound relayed consolidation consent to one account, deployment, asset, fixed note trace and expiry; issued a fresh verified own address for each merge and stopped on cancellation, context changes or uncertain confirmation without switching to direct submission.
-- Moved relayed transaction preparation and simulation to the authenticated helper, rejected returned envelopes that change locally approved operations or fee/time bounds, and removed payment kind from public discovery. Helpers retain manual signing approval and relayed senders have no direct preparation fallback.
+- Required explicit spend authorization and durable input/chain-budget reservation before proof-bearing RPC preparation. Exposed spend proofs remain pending after cancellation, rejection or envelope expiry because they can be reused in a fresh transaction; unsigned exposed preparations show status unknown.
 - Prevented private receive-address rotation from reissuing a locally recorded diversifier, kept the bounded issuance history encrypted, and preserved it through full-verification rebuilds and failure rollback. Seed-only recovery cannot reconstruct previously unused addresses.
 - Removed the latent wallet-birthday ledger search from reusable private-payment discovery and normalized legacy cached bounds while preserving forward cursors; fresh recovery continues scanning all retained history.
 - Persisted the approved direct/relay route in encrypted private-action journals and blocked sender-RPC rebroadcast and transaction-hash lookup for relayed or unknown-route recovery. Envelope expiry cannot release an exposed spend proof; legacy records retain conservative recovery without guessing their route.
-- Required encrypted, context-bound Stellar account-key proofs before accepting or selecting privacy-relay offers, moved negotiation to an incompatible v2 topic, and padded encrypted message classes to a common bounded size. Helper opt-in authorizes offer signatures; transactions still require manual approval.
-- Excluded the active Stellar account from privacy-relay availability and transaction offers, capped untrusted quote collection, and expired helper request/quote state so self-relay, flooding, and repeated probes cannot undermine the bounded peer workflow.
 - Selected Ankr as the independent Testnet witness after multi-engine CORS checks and repeated same-ledger contract-state corroboration, and limited contract-source provenance to production build inputs so test-only changes cannot replace deployment evidence.
-- Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; optional helpers receive an encrypted proof-bound same-asset note instead.
-- Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool and browser peer relay in explicit decision records.
+- Removed public Private Payments relayer and relayer-fee fields from the action, circuit, contract, and archive; historical helper payments remain ordinary encrypted, proof-bound same-asset notes.
+- Retained audited RFC 9180 note encryption and Soroban-native Poseidon2 hashing while recording the governed asset-private pool in explicit decision records.
 - Corrected the Private Payments Merkle-domain invariant: the Poseidon2 length IV separates arities only, while same-arity separation depends on explicit slot-zero domains and Poseidon2 preimage/collision resistance.
 - Bound the reduced eleven-signal Groth16 statement to the exact canonical action field and added a proof-mutation regression for that public input.
 - Recovered sender-authenticated external recipient fingerprints and memos from outgoing envelopes during seed-only scans without persisting full private recipient addresses.

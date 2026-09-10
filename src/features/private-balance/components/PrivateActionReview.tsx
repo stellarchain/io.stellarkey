@@ -16,14 +16,12 @@ import type {
   PrivateActionProgressStage,
 } from '../runtime/action-flow';
 import type { PrivateChainedSendProgress } from '../runtime/chained-send';
-import type { PrivateRelayQuote } from '../relay/protocol';
 import { PrivateActionError, PrivateReviewMismatchError } from './PrivateActionError';
 import { privateReviewBalanceSimulation } from './PrivateReviewSimulation';
-import { PrivateRelayQuotePicker } from './PrivateRelayQuotePicker';
 import type { PrivateProofDisclosure } from '../runtime/proof-disclosure';
+import { assertDirectPrivateSubmission } from '../runtime/direct-submission';
 import type {
   PrivateChainedReview,
-  PrivateRelayProgress,
 } from './usePrivateActionController';
 
 /** What the person actually typed — the review screen renders this at once. */
@@ -59,7 +57,7 @@ function ReviewRow({
 }
 
 function chainStageLabel(stage: PrivateChainedSendProgress['stage']): string {
-  return stage === 'choosing-peer' ? 'Choose a helper for this step' : stage === 'preparing' ? 'Preparing your balance…' : 'Confirming…';
+  return stage === 'preparing' ? 'Preparing your balance…' : 'Confirming…';
 }
 
 /**
@@ -75,8 +73,6 @@ export function PrivateActionReview({
   chained,
   chainProgress,
   progress,
-  relayProgress,
-  relayQuotes = [],
   preparing,
   working,
   error,
@@ -86,7 +82,6 @@ export function PrivateActionReview({
   onConfirm,
   onBack,
   backInHeader = false,
-  onSelectRelayQuote,
 }: {
   draft: PrivateReviewDraft;
   review: PreparedPrivateActionReview | null;
@@ -94,8 +89,6 @@ export function PrivateActionReview({
   chained: PrivateChainedReview | null;
   chainProgress: PrivateChainedSendProgress | null;
   progress: PrivateActionProgressStage | null;
-  relayProgress?: PrivateRelayProgress | null;
-  relayQuotes?: readonly PrivateRelayQuote[];
   preparing: boolean;
   working: boolean;
   error: string | null;
@@ -107,7 +100,6 @@ export function PrivateActionReview({
   onBack(): void;
   /** The owning header shows the back control; the footer then carries only the primary. */
   backInHeader?: boolean;
-  onSelectRelayQuote?(quoteId: string): void;
 }) {
   const { asset, publicAddress } = usePrivateBalanceRuntimeData();
   const decimals = asset?.decimals ?? 7;
@@ -126,8 +118,20 @@ export function PrivateActionReview({
   // Render-integrity: a prepared review may only enable confirm when it
   // byte-matches the draft the person is looking at.
   const mismatch = useMemo<PrivateReviewMismatchError | null>(() => {
+    try {
+      if (review) assertDirectPrivateSubmission(review);
+      if (chained) {
+        assertDirectPrivateSubmission(chained.approval);
+        assertDirectPrivateSubmission(chained.draft);
+      }
+    } catch {
+      return new PrivateReviewMismatchError('direct submission requires a new review');
+    }
+    if (disclosure && (disclosure.submissionMode !== 'direct' || disclosure.privateFeeAtomic !== '0')) {
+      return new PrivateReviewMismatchError('direct submission requires a new review');
+    }
     if (draft.purpose === 'recovery' && ((disclosure && (!disclosure.recoveryOfActionId || disclosure.submissionMode !== 'direct' || disclosure.privateFeeAtomic !== '0')) ||
-      (review && (!review.recoveryOfActionId || review.relay || review.changeValueStroops !== '0' || review.inputValueStroops !== review.amountStroops)))) {
+      (review && (!review.recoveryOfActionId || review.changeValueStroops !== '0' || review.inputValueStroops !== review.amountStroops)))) {
       return new PrivateReviewMismatchError('recovery intent changed');
     }
     if (disclosure) {
@@ -156,7 +160,7 @@ export function PrivateActionReview({
       return new PrivateReviewMismatchError('public recipient changed');
     }
     return null;
-  }, [amountStroops, asset?.contractId, disclosure, draft, review]);
+  }, [amountStroops, asset?.contractId, chained, disclosure, draft, review]);
 
   const maximumFeeStroops = review
     ? review.transaction.classicFeeStroops + review.transaction.resourceFeeStroops
@@ -203,19 +207,16 @@ export function PrivateActionReview({
   // balance (unspent-only) has already dropped by their full value; the
   // simulation adds them back so Before/After stay protocol-true both while
   // preparing and after the review lands.
-  const privateChainFee = chained?.relayApproval ? BigInt(chained.relayApproval.plan.cumulativeMaxPrivateFeeAtomic) : 0n;
-  const choosingChainPeer = !!chained?.relayApproval && chainProgress?.stage === 'choosing-peer';
-  const simulation = draft.purpose === 'recovery' || amountStroops === null || (working && chained?.relayApproval)
+  const simulation = draft.purpose === 'recovery' || amountStroops === null
     ? null
     : privateReviewBalanceSimulation({
         kind: draft.kind,
         liveUnspentStroops: balanceBeforeStroops,
-        amountStroops: amountStroops + privateChainFee,
-        privateFeeStroops: disclosure ? BigInt(disclosure.privateFeeAtomic) : 0n,
+        amountStroops,
         review,
       });
   const displayCause = errorCause ?? (error ? new Error(error) : null) ?? mismatch;
-  const ready = chained !== null || ((review !== null || disclosure !== null) && mismatch === null);
+  const ready = mismatch === null && (chained !== null || review !== null || disclosure !== null);
   const validUntil = review
     ? new Date(review.transaction.expiresAt * 1000).toLocaleTimeString([], {
         hour: '2-digit',
@@ -227,37 +228,21 @@ export function PrivateActionReview({
   // announce reliably when they stay mounted and their content changes, so
   // this span never unmounts — it carries the progress labels and then the
   // readiness announcement with the final maximum fee.
-  const liveStatus = disclosure ? 'Review the exact payment and maximum fees before authorizing proof sharing.' : choosingChainPeer && relayQuotes.length > 0
-    ? `Step ${chainProgress?.step} of ${chainProgress?.totalSteps}. Choose a helper for this step.`
+  const liveStatus = disclosure ? 'Review the exact payment and maximum fees before authorizing proof sharing.'
     : review !== null && maximumFeeStroops !== null
-    ? `Ready to confirm. Maximum network fee ${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM.`
-    : chained !== null
-      ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
-      : preparing && relayProgress === 'comparing-fees'
-        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer found' : 'offers found'}. Choose now, or wait briefly for more offers.`
-      : preparing && relayProgress === 'same-account-peer'
-        ? 'A helper using this Stellar account answered. Still looking for a different Stellar account.'
-      : relayQuotes.length > 0
-        ? `${relayQuotes.length} privacy relay ${relayQuotes.length === 1 ? 'offer is' : 'offers are'} available. Choose a peer to continue.`
-      : preparing
-        ? relayProgress === 'finding-peer'
-          ? 'Finding a privacy relay…'
-          : relayProgress === 'agreeing-fee'
-            ? 'Agreeing the private relay fee…'
-            : progressLabel(progress ?? 'checking-chain')
-        : '';
+      ? `Ready to confirm. Maximum network fee ${fmtAmount(formatPrivateBalanceXlm(maximumFeeStroops))} XLM.`
+      : chained !== null
+        ? `Ready to confirm. Sends in ${chained.approval.steps} steps.`
+        : preparing ? progressLabel(progress ?? 'checking-chain') : '';
 
-  // Cancelling a running relay chain is a footer action even when the header
-  // owns Back: it must stay reachable while the shell is not busy.
-  const cancellingChain = working && Boolean(chained?.relayApproval);
-  const secondaryAction = cancellingChain || !backInHeader ? (
+  const secondaryAction = !backInHeader ? (
     <Button
       type="button"
       variant="ghost"
-      disabled={working && !chained?.relayApproval}
+      disabled={working}
       onClick={onBack}
     >
-      {cancellingChain ? 'Cancel Chain' : 'Back'}
+      Back
     </Button>
   ) : undefined;
 
@@ -305,13 +290,7 @@ export function PrivateActionReview({
         {draft.memo ? <ReviewRow label="Memo">{draft.memo}</ReviewRow> : null}
         {chained ? (
           <div className="py-2.5 text-[13px]">
-            {chained.relayApproval ? <>
-              <dt className="text-neutral-400">Your private fee cap</dt>
-              <dd className="mb-2 mt-0.5 font-medium text-neutral-100">
-                {privateAmount(BigInt(chained.relayApproval.plan.perStepMaxPrivateFeeAtomic))} per step · {privateAmount(privateChainFee)} total
-              </dd>
-            </> : null}
-            <dt className="text-neutral-400">{chained.relayApproval ? 'Helper-paid network fee cap' : 'Network Fee'}</dt>
+            <dt className="text-neutral-400">Network Fee</dt>
             <dd className="mt-0.5 font-medium text-neutral-100">
               Sends in {chained.approval.steps} steps · total max fee{' '}
               {fmtAmount(formatPrivateBalanceXlm(BigInt(chained.approval.cumulativeMaxFeeStroops)))} XLM
@@ -323,7 +302,7 @@ export function PrivateActionReview({
           </div>
         ) : (
           <ReviewRow
-            label={review?.relay ? 'Peer network fee (max)' : 'Network Fee (max)'}
+            label="Network Fee (max)"
             pulse={pulsedRows.has('fee')}
           >
             {maximumFeeStroops !== null ? (
@@ -333,28 +312,15 @@ export function PrivateActionReview({
               </span>
             ) : preparing ? (
               <span className="skeleton inline-block rounded-md px-2.5 py-0.5 text-[12px] font-normal text-neutral-400">
-                {relayProgress === 'finding-peer'
-                  ? 'Finding a privacy relay…'
-                  : relayProgress === 'same-account-peer'
-                    ? 'Same account found; checking others…'
-                  : relayProgress === 'comparing-fees'
-                    ? 'Comparing relay fees…'
-                  : relayProgress === 'agreeing-fee'
-                    ? 'Agreeing relay fee…'
-                    : progressLabel(progress ?? 'checking-chain')}
+                {progressLabel(progress ?? 'checking-chain')}
               </span>
             ) : (
               <span className="font-normal text-neutral-500">
-                {relayQuotes.length > 0 ? 'Choose a peer below' : '—'}
+                —
               </span>
             )}
           </ReviewRow>
         )}
-        {review?.relay ? (
-          <ReviewRow label="Privacy relay fee">
-            {privateAmount(review.relay.feeAtomic)}
-          </ReviewRow>
-        ) : null}
         {review?.transaction.refreshesAnchor ? (
           <ReviewRow label="Private access">Refreshed with this payment</ReviewRow>
         ) : null}
@@ -372,18 +338,22 @@ export function PrivateActionReview({
             <span>Balance Before</span>
             <span className="mono">{privateAmount(simulation.beforeStroops)}</span>
           </div>
-          <div className={`flex justify-between ${draft.kind === 'deposit' ? 'text-[#30D158]' : 'text-[#FF453A]'}`}>
+          <div className={`flex justify-between ${draft.kind === 'deposit' ? 'text-[#30D158]' : 'text-[#FF6961]'}`}>
             <span>{draft.kind === 'deposit' ? 'Amount Added' : 'Amount Sent'}</span>
             <span className="mono">
               {draft.kind === 'deposit' ? '+' : '−'}{fmtAmount(draft.amount)} {code}
             </span>
           </div>
           <div className="flex justify-between border-t border-white/10 pt-1.5 font-semibold text-white">
-            <span>{chained?.relayApproval ? 'Balance After Max Fees' : 'Balance After'}</span>
+            <span>Balance After</span>
             <span className="mono">{privateAmount(simulation.afterStroops)}</span>
           </div>
         </div>
       ) : null}
+
+      <Notice tone="info" compact>
+        Your Stellar account is public as the submitting account and pays network fees.
+      </Notice>
 
       <details className="panel-inset px-4">
         <summary className="cursor-pointer select-none py-3 text-[12.5px] font-medium text-neutral-300">
@@ -396,12 +366,7 @@ export function PrivateActionReview({
               <span className="mono">{privateAmount(changeStroops)}</span>
             </div>
           ) : null}
-          {review?.relay || chained?.relayApproval ? (
-            <div className="flex items-center justify-between gap-4">
-              <span className="shrink-0 text-neutral-400">Submitted by</span>
-              <span>Privacy relay peer</span>
-            </div>
-          ) : publicAddress ? (
+          {publicAddress ? (
             <div className="flex items-center justify-between gap-4">
               <span className="shrink-0 text-neutral-400">Fee paid by</span>
               <HashValue value={publicAddress} className="justify-end text-[11.5px] text-neutral-300" />
@@ -412,7 +377,6 @@ export function PrivateActionReview({
               This runs as {chained.approval.steps} public transactions on Stellar, one after
               another — their timing is visible, the amounts moving privately are not.
               {' Confirming authorizes sharing a spend proof for each approved step. A shared proof can execute even after cancellation or transaction expiry; unresolved inputs remain reserved.'}
-              {chained.relayApproval ? ' Choose a helper for each step. Helpers pay the public XLM fees; private rewards are deducted from your balance. Cancelling stops future local steps, but cannot retract a proof already shared with a helper or undo a submitted payment.' : ''}
             </p>
           ) : null}
           <p className="leading-relaxed text-neutral-400">{WHAT_STAYS_PUBLIC[draft.kind]}</p>
@@ -436,25 +400,13 @@ export function PrivateActionReview({
         </Notice>
       ) : null}
 
-      {relayQuotes.length > 0 && onSelectRelayQuote ? (
-        <PrivateRelayQuotePicker
-          quotes={relayQuotes}
-          code={code}
-          decimals={decimals}
-          disabled={(preparing && relayProgress !== 'comparing-fees') || (working && !choosingChainPeer)}
-          comparing={preparing && relayProgress === 'comparing-fees'}
-          onSelect={onSelectRelayQuote}
-        />
-      ) : null}
-
       {displayCause ? <PrivateActionError cause={displayCause} /> : null}
 
       {disclosure ? (
         <div className="panel-inset space-y-2 p-3.5 text-[12px] text-neutral-300">
           <p className="font-semibold text-white">Authorize this payment before sharing its proof</p>
-          <p>Sharing authorizes the exact payment above. The {disclosure.submissionMode === 'relay' ? 'helper' : 'RPC provider'} can submit that proof in another transaction, even if you later cancel or this transaction expires.</p>
-          <p>Maximum network fee: {fmtAmount(formatPrivateBalanceXlm(BigInt(disclosure.maximumNetworkFeeStroops)))} XLM{disclosure.submissionMode === 'relay' ? ' (paid by the helper)' : ''}.</p>
-          {BigInt(disclosure.privateFeeAtomic) > 0n ? <p>Your private helper fee: {privateAmount(disclosure.privateFeeAtomic)}.</p> : null}
+          <p>Sharing authorizes the exact payment above. The RPC provider can submit that proof in another transaction, even if you later cancel or this transaction expires.</p>
+          <p>Maximum network fee: {fmtAmount(formatPrivateBalanceXlm(BigInt(disclosure.maximumNetworkFeeStroops)))} XLM.</p>
           <p>If preparation fails after sharing, these inputs stay reserved with status unknown until canonical reconciliation. You cannot reset or retry them as unspent.</p>
         </div>
       ) : null}
@@ -464,6 +416,7 @@ export function PrivateActionReview({
         primary={
           <Button
             type="button"
+            focusableWhenDisabled
             loading={working}
             disabled={working || settling || !ready || (preparing && !chained)}
             onClick={onConfirm}

@@ -27,9 +27,11 @@ test('private balance documentation states exact privacy, recovery, and support 
   assert.match(product, /no (?:application|StellarKey) backend/i);
   assert.match(product, /transaction source.*public|public.*transaction source/is);
   assert.match(product, /Direct mode.*user's public Stellar account|user's public Stellar account.*Direct mode/is);
-  assert.match(product, /Optional privacy-relay mode.*peer|peer.*Optional privacy-relay mode/is);
+  assert.match(product, /Peer relaying and helper earnings have been removed/is);
+  assert.match(product, /stale relayed reviews are rejected/is);
+  assert.match(product, /obsolete relay-chain consent.*does\s+not release pending inputs/is);
   assert.match(product, /No public relayer address or fee/is);
-  assert.match(product, /never silently falls back/is);
+  assert.match(product, /never silently fall\s+back/is);
   assert.match(product, /timing.*pool activity|pool activity.*timing/is);
   assert.match(product, /RPC.*IP|IP.*RPC/is);
   assert.match(recovery, /encrypted backup/i);
@@ -55,9 +57,6 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   );
   const witnessEvidence = JSON.parse(
     readSource('protocol/private-balance/results/rpc-witness-validation.json'),
-  );
-  const relayEligibilityEvidence = JSON.parse(
-    readSource('protocol/private-balance/results/relay-eligibility-repro-2026-09-04.json'),
   );
   const noteInputs = [...noteCircuit.matchAll(/signal input (\w+);/g)].map(([, input]) => input);
   const constants = manifest.constants;
@@ -146,25 +145,9 @@ test('the Private Balance whitepaper matches the implemented replacement protoco
   assert.match(paper, /interruption before.*sync.*rescan/is);
   assert.doesNotMatch(paper, /stores an encrypted resume cursor/i);
   assert.match(paper, /no backward-compatible.*migration/i);
-  assert.match(paper, /shows every valid quote.*peer.*fee.*expir/is);
-  assert.match(paper, /Check available peers.*explicit.*live quote request/is);
-  assert.match(paper, /first.*valid.*offer.*immediately/is);
-  assert.match(paper, /700 ms.*quiet/is);
-  assert.match(paper, /first.*relay.*accept/is);
-  assert.match(paper, /active Stellar account.*excluded.*self-relay/is);
-  assert.match(paper, /same Stellar account.*different Testnet account/is);
-  assert.match(paper, /ephemeral.*subscription.*before.*publish/is);
-  assert.match(paper, /reconnect.*WebSocket/is);
-  assert.match(paper, /WebRTC.*signalling.*ICE.*peer IP/is);
-  assert.match(paper, /available when checked.*not.*guarantee/is);
-  assert.equal(relayEligibilityEvidence.passed, true);
-  assert.equal(relayEligibilityEvidence.samples.length, 4);
-  assert.ok(relayEligibilityEvidence.samples
-    .filter(sample => sample.scenario === 'different-account')
-    .every(sample => sample.elapsedMs < 1_000));
-  assert.ok(relayEligibilityEvidence.samples
-    .filter(sample => sample.scenario === 'same-account')
-    .every(sample => sample.eligibleQuotes === 0 && sample.ineligiblePeerAccounts === 1));
+  assert.match(paper, /Legacy relayed or unknown-route records are\s+reconcile-only/is);
+  assert.match(paper, /historical.*fee notes remain readable/is);
+  assert.doesNotMatch(paper, /## 13\. Optional browser peer relay/);
   assert.match(paper, /authenticated deployment\s+catalogue.*XLM.*USDC/is);
   assert.match(paper, /one live XLM\/USDC development pool on Testnet/is);
   assert.match(paper, /does not contain a deployment\s+transaction hash.*on-chain executable/is);
@@ -225,7 +208,7 @@ test('consensus-affecting protocol review decisions are explicit and linked', ()
     ['0006-association-sets.md', /4,573.*constraints/is, /Rejected/i],
     ['0007-stealth-subsystem.md', /complementary/is, /Accepted/i],
     ['0008-governed-asset-private-pool.md', /append-only.*asset registry/is, /Accepted/i],
-    ['0009-browser-peer-relay.md', /never.*silently.*fall.*back/is, /Accepted for Testnet development/i],
+    ['0009-browser-peer-relay.md', /never.*silently.*fall.*back/is, /Superseded by direct-only submission/i],
   ];
   for (const [file, expectedDecision, status] of operationalDecisions) {
     const decision = readSource(`protocol/private-balance/docs/decisions/${file}`);

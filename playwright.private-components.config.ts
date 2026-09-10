@@ -9,7 +9,7 @@ import base from './playwright.config';
 export default defineConfig({
   ...base,
   metadata: { ...base.metadata, requiredSyntheticComponents: true },
-  testMatch: process.env.E2E_WAKU_LOCAL_NODES === '1' ? ['relay-waku-live.spec.ts'] : ['private-components.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'relay-earn.spec.ts', 'relay-startup.spec.ts', 'relay-waku.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts', 'relay-recovery.spec.ts'],
+  testMatch: ['private-components.spec.ts', 'private-direct.spec.ts', 'ux-primitives.spec.ts', 'qr-freshness.spec.ts', 'modal-ownership.spec.ts', 'merchant-feedback.spec.ts', 'private-recovery.spec.ts'],
   globalTeardown: './e2e/fixtures/private-components-teardown.mjs',
   use: { ...base.use, screenshot: 'off', trace: 'off', video: 'off' },
   projects: [

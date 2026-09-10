@@ -5,7 +5,7 @@
 ## Coverage map
 
 - `tests/*.test.mjs` covers exact Stellar arithmetic, transaction review and submission recovery, Trezor serialization, standard mnemonic/derivation vectors, current wallet and merchant storage schemas, encryption, reporting, payment reconciliation, responsive UI policies, static security, and bundle boundaries.
-- `tests/private-payments-network.test.mjs` runs three real Private Payments wallets (Alice, Bob, Charlie) against one synthetic pool through the production preparation, signing, broadcast, recovery and sync code: deposits, direct and relayed payments in every direction, withdrawals, consolidation, every relay and submission failure mode, reinstall-from-seed, and seeded mixed traffic, each checked for value conservation and for agreement between durable state and a fresh archive scan. `tests/helpers/private-payments-network.ts` is the reusable engine.
+- `tests/private-payments-network.test.mjs` runs three real Private Payments wallets (Alice, Bob, Charlie) against one synthetic pool through the production preparation, signing, broadcast, recovery and sync code: deposits, direct payments in every direction, withdrawals, consolidation, RPC and submission failure modes, reinstall-from-seed, and seeded mixed traffic, each checked for value conservation and for agreement between durable state and a fresh archive scan. `tests/helpers/private-payments-network.ts` is the reusable engine.
 - `npm run test:hardware` includes real installed Trezor request-schema and device-protocol conversion, nested Stellar SDK transaction utilities, and resolver parser regressions. Device responses and metadata HTTP boundaries are synthetic; see [dependency compatibility and coverage limits](dependency-security.md).
 - `npm run test:private-protocol` runs the nested browser protocol package tests and is required by application verification.
 - `npm run test:e2e:private-ui` requires the Public/Private continuity, overlay-contract, and manifest-tamper gates in Chromium and iPhone WebKit; `npm run test:e2e:private-components` requires every isolated synthetic private-component scenario in those two projects.
@@ -29,29 +29,16 @@ The ignored 100,000-action deterministic recovery model is Gate B. GitHub runs i
 also be started manually through the `Private Balance Gate B` workflow; it remains separate from the
 bounded pull-request suite.
 
-## Local Waku connection check
+## Direct-only private payments and legacy recovery
 
-The required synthetic `relay-waku.spec.ts` exercises the actual settings, runtime
-intent gate, helper manager, session and transport factory, replacing only the
-adapter's SDK I/O loader. It covers cluster correction, fresh unlock, another-tab
-rebasing, dropped connections, stale handshakes, cancellation and accessible
-controls in desktop Chromium and iPhone WebKit.
-
-With the development nwaku pair on loopback ports 8010/8011, cluster 3 and eight
-shards, run the separate opt-in connection check:
-
-```sh
-E2E_PORT=3196 E2E_WAKU_LOCAL_NODES=1 npm run test:e2e:private-components
-```
-
-Its explicit peer identities are in `e2e/relay-waku-live.spec.ts`; it does not
-start or reconfigure servers. It runs the installed SDK through the production
-factory, checks cluster 1 rejection followed by Save connections to cluster 3,
-observes 70 seconds of connected Filter/Store service, and verifies Stop. Each
-run uses a unique unused topic, forbids publishing, imports no wallet, blocks
-non-loopback network traffic, and reports only fixed labels/counts. This is
-connection evidence, not payment, funded Testnet, or human accessibility evidence.
-The opt-in run does not replace the required synthetic suite.
+The isolated `private-direct.spec.ts` covers direct send and withdrawal, explicit
+proof-sharing consent, visible public submitting-account metadata, cancellation,
+and stale-result ownership. The recovery fixture covers held proofs, canonical
+reconciliation, backup/reload, and actual-provider session replacement in desktop
+Chromium and iPhone WebKit. It uses synthetic RPC failures, never a relay service.
+`private-balance-no-relay.test.mjs` checks removed runtime/dependency boundaries
+and atomic retirement of obsolete encrypted consent without releasing holds.
+No Waku or Nostr connection check is needed or supported.
 
 ## Isolated Private Balance testnet fixture
 

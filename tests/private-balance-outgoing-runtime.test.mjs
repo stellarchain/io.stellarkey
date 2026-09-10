@@ -9,8 +9,6 @@ import { encodePrivateAddress, derivePrivateAddressDeploymentTag } from '@stella
 import { encryptBytesWithKey } from '../src/lib/crypto.ts';
 import { PrivateBalanceArchiveClient } from '../src/features/private-balance/runtime/archive-client.ts';
 import { preparePrivateBalanceActionFlow } from '../src/features/private-balance/runtime/action-flow.ts';
-import { planPrivateRelayConsolidation } from '../src/features/private-balance/runtime/relay-consolidation-plan.ts';
-import { privateRelayChainContextKey } from '../src/features/private-balance/runtime/relay-chain-policy.ts';
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 
 class MemoryDriver {
@@ -30,7 +28,7 @@ const context = { accountId: 'history-test', networkId: hex('1'), realmId: hex('
 const assetContractId = 'CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF';
 const key = new Uint8Array(32).fill(7);
 const note = { id: hex('5'), commitment: hex('5'), value: '10', assetIndex: 0, assetContractId, diversifier: '00000000', ownerCommitment: hex('1'), leafIndex: 0, actionIndex: 0, rho: hex('2'), memoHex: '', senderFingerprintHex: '', status: 'unspent', createdAt: 1 };
-const pending = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'relay', proofExposure: 'shared',
+const pending = { id: 'proof', kind: 'transfer', assetIndex: 0, assetContractId, status: 'prepared', submissionMode: 'direct', proofExposure: 'shared',
   reservedNoteIds: [note.id], actionField: hex('6'), nullifiers: [hex('7'), hex('0')], outputCommitments: [hex('8'), hex('9'), hex('a')],
   anchorRoot: hex('b'), anchorExpiresAtLedger: 100, proofHash: hex('c'), classicFeeCapStroops: '100', resourceFeeCapStroops: '1000', broadcastAttempts: 0, createdAt: 1, updatedAt: 1 };
 async function fixture(extra = {}) {
@@ -137,15 +135,24 @@ test('minimized payments do not append a recent private recipient even if a call
   }
 });
 
-test('an approved relay chain prevents changing outgoing history between steps', async () => {
+test('obsolete relay consent blocks history changes only until safe consent retirement', async () => {
   const notes = [5, 6, 7].map((byte, index) => ({ ...note, id: hex(String(byte)), commitment: hex(String(byte)), leafIndex: index }));
-  const { driver, state } = await fixture({ notes });
-  const plan = planPrivateRelayConsolidation({ notes, assetContractId, amountAtomic: 25n, perStepMaxPrivateFeeAtomic: 1n });
-  const approval = { id: 'relay-chain', submissionMode: 'relay', contextKey: privateRelayChainContextKey(context, assetContractId), assetContractId, assetIndex: 0,
-    draft: { kind: 'transfer', amount: '25', recipientAddress: 'private-destination' }, plan, steps: plan.steps,
-    perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: String(plan.steps * 1000), expiresAtSeconds: 1000 };
-  const begun = await storage.beginPrivateRelayChainApproval(context, key, state.revision, approval, 1, driver);
-  await assert.rejects(storage.recordPrivateOutgoingHistoryMode(context, key, begun.revision, 'minimized', { acknowledgeRecoveryLoss: true }, driver), /approval|pending/i);
+  // Historical consent loaded from encrypted state, not created by a live planner.
+  const plan = { amountAtomic: '25', perStepMaxPrivateFeeAtomic: '1', cumulativeMaxPrivateFeeAtomic: '2', steps: 2,
+    inputNotes: notes.map(({ id, commitment, value }) => ({ id, commitment, value })),
+    merges: [{ left: 'note:' + notes[0].id, right: 'note:' + notes[1].id, output: 'merge:0', minimumOutputValue: '19', maximumOutputValue: '20' }],
+    finalInputs: ['merge:0', 'note:' + notes[2].id] };
+  const approval = { id: 'legacy-chain', submissionMode: 'relay',
+    contextKey: JSON.stringify([context.accountId, context.networkId, context.realmId, context.poolId, context.deploymentBindingHash, assetContractId]),
+    assetContractId, assetIndex: 0, draft: { kind: 'transfer', amount: '25', recipientAddress: 'synthetic-destination' },
+    plan, steps: 2, perStepMaxFeeStroops: '1000', cumulativeMaxFeeStroops: '2000', expiresAtSeconds: 2_000_000_000 };
+  const { driver, state } = await fixture({ notes,
+    relayChainedApproval: { approval, authorized: [], privateFeeAtomic: '0', networkFeeStroops: '0', selfAddresses: [] } });
+  await assert.rejects(storage.recordPrivateOutgoingHistoryMode(context, key, state.revision, 'minimized', { acknowledgeRecoveryLoss: true }, driver), /approval|pending/i);
+  const retired = await storage.retireLegacyPrivateRelayConsent(context, key, driver);
+  assert.deepEqual(retired.notes, notes);
+  const changed = await storage.recordPrivateOutgoingHistoryMode(context, key, retired.revision, 'minimized', { acknowledgeRecoveryLoss: true }, driver);
+  assert.equal(changed.outgoingHistoryMode, 'minimized');
 });
 
 test('invalid encrypted history modes fail local load and backup preparation, including pending and build snapshots', async () => {

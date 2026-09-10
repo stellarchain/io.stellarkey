@@ -40,42 +40,6 @@ test("sets up a fresh profile and renders its private receive address", async ({
   await expect(dialog).toBeHidden();
 });
 
-test("offers helper relay participation directly from Home", async ({ context, page }) => {
-  await installPrivateBalanceNetworkSupport(context);
-  await importLiveWallet(page, senderSecret);
-  const region = await setupPrivateBalance(page);
-  await region.evaluate(node => node.setAttribute("data-e2e-overlay-owner", "private-assets"));
-
-  const entry = region.getByRole("button", { name: /Earn by Relaying/ });
-  await expect(entry).toBeVisible();
-  await expect(entry).toContainText("Set up");
-  await entry.click();
-
-  const dialog = page.getByRole("dialog", { name: "Earn by Relaying", exact: true });
-  await expect(dialog).toBeVisible();
-  await dialog.evaluate(node => node.setAttribute("data-e2e-overlay-identity", "relay-settings"));
-  await expect(dialog.getByText("Prefer privacy relay", { exact: true })).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: /Check available peers/ })).toBeVisible();
-  await expect(dialog.getByText("Not checked", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("Looking for peers…", { exact: true })).toHaveCount(0);
-
-  const helping = dialog.getByRole("switch", {
-    name: "Help relay private payments from other wallets",
-  });
-  await helping.click();
-  await expect(helping).toHaveAttribute("aria-checked", "true");
-  const fee = dialog.getByRole("textbox", { name: "Private Fee" });
-  await fee.fill("0.001");
-  await dialog.getByRole("button", { name: "Save relay settings", exact: true }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByText("Relay settings saved on this device.", { exact: true })).toHaveCount(0);
-  await expect(region).toHaveAttribute("data-e2e-overlay-owner", "private-assets");
-  await expect(entry).toContainText(/Connecting|Connected|Reconnecting|Unavailable/);
-
-  await entry.click();
-  await expect(page.getByRole("dialog", { name: "Earn by Relaying", exact: true })
-    .getByRole("textbox", { name: "Private Fee" })).toHaveValue("0.001");
-});
 
 test("keeps Send mounted when its nested setup auto-dismisses after completion", async ({
   context,
