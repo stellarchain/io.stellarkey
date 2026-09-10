@@ -85,6 +85,14 @@
   scoped final review reported no remaining Important findings.
 
 The generated-artifact check exposed stale toolchain provenance from the existing
-dependency lock; its metadata-only refresh is tracked separately from the Waku
-behavior fix. No full release approval, funded-wallet E2E, physical-device, or
-human VoiceOver/NVDA verification is claimed.
+dependency lock. After installing the pinned circuit test dependencies and
+refreshing only toolchain provenance and its derived manifest/catalogue pins,
+`private:check-generated` passed, including proof-vector and artifact verification.
+The contract, circuit, proof artifacts and deployment binding did not change.
+This refresh is committed separately from the Waku behavior fix. The production
+audit gate passed its existing high-severity threshold: 14 vulnerable-package
+entries (10 low, 4 moderate), representing two advisories through the unchanged
+Trezor and Waku dependency trees. No overrides or dependency changes were made.
+
+No full release approval, funded-wallet E2E, physical-device, or human
+VoiceOver/NVDA verification is claimed.
