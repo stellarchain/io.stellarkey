@@ -112,8 +112,8 @@ export function PrivateRelayHelperManager() {
       resetPrivateRelayHelperStatus();
       return;
     }
-    const network = privateRelayNetwork({ transport: preferences.transport, relayUrls: preferences.relayUrls, wakuPeers: preferences.wakuPeers, wakuClusterId: preferences.wakuClusterId });
-    const totalRelays = network.transport === 'waku' ? WAKU_PRIVATE_RELAY_ENDPOINTS.length : preferences.relayUrls.length;
+    const network = privateRelayNetwork({ wakuPeers: preferences.wakuPeers, wakuClusterId: preferences.wakuClusterId });
+    const totalRelays = WAKU_PRIVATE_RELAY_ENDPOINTS.length;
     if (phase !== 'current' || !publicAddress || !networkId || !poolContractId) {
       publishPrivateRelayHelperStatus({
         phase: 'waiting',
@@ -345,8 +345,6 @@ export function PrivateRelayHelperManager() {
   }, [
     preferences.feeAtomic,
     preferences.helpRelay,
-    preferences.relayUrls,
-    preferences.transport,
     preferences.wakuPeers,
     preferences.wakuClusterId,
     derivePrivateRelayPayout,

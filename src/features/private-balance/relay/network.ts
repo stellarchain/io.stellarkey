@@ -43,22 +43,23 @@ export function validateWakuClusterId(value: unknown): number {
   return value as number;
 }
 
-/** Accepts the persisted preference shape, an explicit network, or the legacy
- * relay URL list (always Nostr) so older call sites keep working. */
+/** Resolves any accepted input to a Waku network: the wallet relays exclusively
+ * over Waku. An explicit Nostr network or a legacy relay-URL list yields a Waku
+ * network with no peers, which the UI treats as "no service node configured". */
 export function privateRelayNetwork(
   input: PrivateRelayNetwork | readonly string[] | {
-    transport?: PrivateRelayTransportKind; relayUrls: readonly string[]; wakuPeers?: readonly string[]; wakuClusterId?: number;
+    transport?: PrivateRelayTransportKind; relayUrls?: readonly string[]; wakuPeers?: readonly string[]; wakuClusterId?: number;
   },
 ): PrivateRelayNetwork {
-  if (Array.isArray(input)) return { transport: 'nostr', relayUrls: [...input] };
+  if (Array.isArray(input)) return { transport: 'waku', peers: [], clusterId: WAKU_DEFAULT_CLUSTER_ID };
   const value = input as {
-    transport?: PrivateRelayTransportKind; relayUrls?: readonly string[]; peers?: readonly string[]; wakuPeers?: readonly string[];
-    clusterId?: number; wakuClusterId?: number;
+    peers?: readonly string[]; wakuPeers?: readonly string[]; clusterId?: number; wakuClusterId?: number;
   };
-  if (value.transport === 'waku') {
-    return { transport: 'waku', peers: [...(value.peers ?? value.wakuPeers ?? [])], clusterId: value.clusterId ?? value.wakuClusterId ?? WAKU_DEFAULT_CLUSTER_ID };
-  }
-  return { transport: 'nostr', relayUrls: [...(value.relayUrls ?? [])] };
+  return {
+    transport: 'waku',
+    peers: [...(value.peers ?? value.wakuPeers ?? [])],
+    clusterId: value.clusterId ?? value.wakuClusterId ?? WAKU_DEFAULT_CLUSTER_ID,
+  };
 }
 
 export interface PrivateRelayNetworkCopy {
@@ -71,20 +72,13 @@ export interface PrivateRelayNetworkCopy {
 }
 
 export function describePrivateRelayNetwork(network: PrivateRelayNetwork | PrivateRelayTransportKind): PrivateRelayNetworkCopy {
-  const kind = typeof network === 'string' ? network : network.transport;
-  if (kind === 'waku') {
-    const own = typeof network !== 'string' && network.transport === 'waku' && network.peers.length > 0;
-    return {
-      carriers: own ? 'your Waku peers' : 'Waku peers',
-      observers: own
-        ? 'The Waku service nodes you configured carry encrypted messages and can observe your IP address and timing.'
-        : 'Waku light-push and filter peers carry encrypted messages and can observe your IP address and timing.',
-      connection: (connected, total) => `Connected to ${connected} of ${total} Waku services`,
-    };
-  }
+  // Waku is the only carrier; a configured service node is described as the user's own.
+  const own = typeof network !== 'string' && network.transport === 'waku' && network.peers.length > 0;
   return {
-    carriers: 'public relays',
-    observers: 'Two public Nostr relays carry encrypted messages and can observe your IP address and timing.',
-    connection: (connected, total) => `Connected to ${connected} of ${total} public relays`,
+    carriers: own ? 'your Waku service node' : 'the Waku service node',
+    observers: own
+      ? 'The Waku service node you configured carries encrypted messages and can observe your IP address and timing.'
+      : 'Your Waku service node carries encrypted messages and can observe your IP address and timing.',
+    connection: (connected, total) => `Connected to ${connected} of ${total} Waku services`,
   };
 }

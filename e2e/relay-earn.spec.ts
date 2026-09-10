@@ -59,7 +59,7 @@ for (const reducedMotion of ['reduce', 'no-preference'] as const) {
     await page.emulateMedia({ reducedMotion });
     const dialog = await openEarn(page);
     await expect(dialog.getByLabel('Your fee per payment', { exact: true })).toBeVisible();
-    await expect(dialog.getByLabel('Public relay 1', { exact: true })).toBeHidden();
+    await expect(dialog.getByLabel('Waku service node', { exact: true })).toBeHidden();
     await expect(dialog.getByRole('button', { name: /^Check available peers/ })).toHaveCount(0);
     await expect(dialog.getByText('Relay on your terms.', { exact: true })).toBeVisible();
     // Wait for existing entrance animations, not an arbitrary wall-clock sleep.
@@ -106,7 +106,7 @@ test('Earn keeps invalid fee edits recoverable and Stop independent of unfinishe
   await expect.poll(() => preference(page, 'helpRelay')).toBe(true);
   await fee.fill('unfinished');
   await dialog.getByText('Relay connections', { exact: true }).click();
-  await dialog.getByLabel('Public relay 1', { exact: true }).fill('unfinished');
+  await dialog.getByLabel('Waku service node', { exact: true }).fill('unfinished');
   await dialog.getByRole('button', { name: 'Stop Relaying', exact: true }).click();
   await expect.poll(() => preference(page, 'helpRelay')).toBe(false);
   await expect(fee).toHaveValue('unfinished');
@@ -195,11 +195,11 @@ test('Earn rebases untouched external settings but preserves actual unfinished e
   await page.getByRole('button', { name: 'Change external relay settings', exact: true }).evaluate(node => (node as HTMLButtonElement).click());
   await expect(fee).toHaveValue('0.005');
   await dialog.getByText('Relay connections', { exact: true }).click();
-  await expect(dialog.getByLabel('Public relay 1', { exact: true })).toHaveValue('wss://relay-one.example/');
+  await expect(dialog.getByLabel('Waku service node', { exact: true })).toHaveValue('/dns4/node-one.example/tcp/8000/wss/p2p/16Uiu2HAkykgaECHswi3YKJ5dMLbq2kPVCo89fcyTd38UcQD6ej5W');
   await dialog.getByRole('button', { name: 'Start Relaying', exact: true }).click();
   await expect.poll(() => page.evaluate(() => {
     const prefs = JSON.parse(localStorage.getItem('stellarkey.private-relay.preferences.v1')!);
-    return prefs.relayUrls[0] === 'wss://relay-one.example/' && prefs.feeAtomic === '50000';
+    return prefs.wakuPeers[0] === '/dns4/node-one.example/tcp/8000/wss/p2p/16Uiu2HAkykgaECHswi3YKJ5dMLbq2kPVCo89fcyTd38UcQD6ej5W' && prefs.feeAtomic === '50000';
   })).toBe(true);
 });
 
@@ -277,9 +277,9 @@ test('Earn disclosure, keyboard focus, narrow layout and accessibility remain us
   const connections = dialog.getByText('Relay connections', { exact: true });
   await connections.focus();
   await connections.press('Enter');
-  await expect(dialog.getByLabel('Public relay 1', { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('Waku service node', { exact: true })).toBeVisible();
   await connections.press('Enter');
-  await expect(dialog.getByLabel('Public relay 1', { exact: true })).toBeHidden();
+  await expect(dialog.getByLabel('Waku service node', { exact: true })).toBeHidden();
   const peers = dialog.getByText('Explore other peers', { exact: true });
   await peers.focus();
   await peers.press('Enter');
