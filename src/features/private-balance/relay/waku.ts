@@ -149,19 +149,27 @@ export class WakuPrivateRelayAdapter implements PrivateRelayTransportAdapter {
   private node(): Promise<WakuLightNode> {
     if (this.closed) return Promise.reject(new Error('Private relay transport is closed'));
     this.nodePromise ??= Promise.all([this.loadSdk(), this.loadMuxers()]).then(async ([sdk, streamMuxers]) => {
+      // Configured self-hosted peers are a known, reliable set: use as many as
+      // given (up to two) and do not renew a peer on a single missed ping, or
+      // the SDK tears the one filter subscription down and up on every ping gap
+      // and drops the exchange messages that land in the reconnect window.
+      // Public bootstrap keeps aggressive renewal to shed dead or banned peers.
+      const configured = this.bootstrapPeers.length > 0;
+      const peersToUse = configured ? Math.min(this.bootstrapPeers.length, 2) : 2;
+      const pingsBeforePeerRenewed = configured ? 3 : 1;
       const node = await sdk.createLightNode({
-        defaultBootstrap: this.bootstrapPeers.length === 0,
-        ...(this.bootstrapPeers.length ? { bootstrapPeers: [...this.bootstrapPeers] } : {}),
+        defaultBootstrap: !configured,
+        ...(configured ? { bootstrapPeers: [...this.bootstrapPeers] } : {}),
         // The SDK dials only wss by default; a plain-ws peer is accepted solely
         // on this device (the address validator enforces loopback for ws).
         libp2p: { streamMuxers, ...(this.bootstrapPeers.some(peer => /\/ws\/p2p\//u.test(peer)) ? { filterMultiaddrs: false } : {}) },
         networkConfig: { clusterId: this.clusterId, numShardsInCluster: WAKU_PRIVATE_RELAY_SHARDS },
-        numPeersToUse: 2,
+        numPeersToUse: peersToUse,
         // A relay exchange lasts seconds. The SDK's defaults (one ping a minute,
         // three misses before a peer is replaced) would leave a dead filter
-        // subscription undetected for minutes; renew on the first missed ping.
-        filter: { keepAliveIntervalMs: WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS, pingsBeforePeerRenewed: 1, numPeersToUse: 2 },
-        lightPush: { numPeersToUse: 2 },
+        // subscription undetected for minutes; keep the ping interval short.
+        filter: { keepAliveIntervalMs: WAKU_PRIVATE_RELAY_KEEP_ALIVE_MS, pingsBeforePeerRenewed, numPeersToUse: peersToUse },
+        lightPush: { numPeersToUse: peersToUse },
       });
       await node.start();
       return node;
