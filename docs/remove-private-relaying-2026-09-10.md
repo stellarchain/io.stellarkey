@@ -78,7 +78,7 @@
 
 ## Execution record — 2026-09-10
 
-**Status:** Relay removal is implemented and independently reviewed. Integration is blocked by the browser failures below; the branch is not merged and the aggregate application/release gate is not green.
+**Status:** Relay removal is implemented and independently reviewed. Integration remains blocked by the shared-UI browser failures below; the separately approved restore-feedback fix is recorded at the end of this document. The branch is not merged and the aggregate application/release gate is not green.
 
 ### Implemented
 
@@ -117,3 +117,21 @@ The required synthetic component and private UI gates remain wired into shared C
 3. The supplemental two-worker run additionally fails the Add Account modal accessibility audit in `e2e/modal-ownership.spec.ts` and one tooltip pointer-transfer case in `e2e/ux-primitives.spec.ts`. Both pass in the default run. Their shared production primitives and tests are unchanged; these failures remain recorded rather than waived.
 
 All browser checks used isolated non-usable synthetic fixtures with screenshots, traces, and video disabled. No real wallet or external relay service was inspected, stopped, or removed. Human VoiceOver/NVDA checks, physical-device pinch testing, live-funded protocol checks, and separate Rust/circuit release jobs are not claimed by this application verification. No release, tag, push, or deployment was performed.
+
+## Approved follow-up: restore busy/status accessibility
+
+The user approved fixing only the pre-existing backup-restore feedback bug in a separate commit. The shared Select, tooltip, and Add Account failures remain outside this follow-up.
+
+**Design:** Reuse the existing request-owned `readingBackup` state. Pass it through an optional `busy` prop to the existing `OnboardPath` button as `aria-busy`. Keep a separate, persistent polite status region outside the busy button, populated and named only during the current read. Do not change file parsing, cryptography, request ownership, retry/replacement behavior, or workflow navigation. Limit the touched onboarding control's CSS transitions to its actual animated properties.
+
+**Implementation and verification plan:**
+
+1. Strengthen `e2e/restore-feedback.spec.ts` with busy/status cleanup, keyboard-focus, and live-region-placement assertions. Include the same four scenarios in iPhone WebKit through `playwright.config.ts`.
+2. Run `E2E_PORT=3196 npx playwright test e2e/restore-feedback.spec.ts --project=desktop-chromium --project=iphone-webkit` against the unchanged production export and confirm the missing busy/status failures.
+3. Apply the minimal markup/prop fix in `src/components/Onboarding.tsx` and add an `[Unreleased]` Fixed entry in `CHANGELOG.md`.
+4. Rebuild with fixture-clean checks before and after, rerun the eight restore scenarios, typecheck, lint the touched files, run the full unit suite and focused onboarding accessibility checks, and request an independent diff review.
+5. Record the results here and create one separate fix commit. Do not merge, release, or claim the unrelated browser blockers are resolved.
+
+**Result:** Implemented as the approved isolated markup/prop change, with no file-reading, parsing, or request-ownership changes. The strengthened tests first produced six expected failures across eight cases against the unchanged export (missing busy attributes); after the fix, all eight cases passed across Chromium and iPhone WebKit with zero failures, retries, or skips. The tests cover keyboard focus, announcement placement outside busy ancestry, completion/error cleanup, cancellation, oversized files, and stale-error ownership.
+
+Fresh verification also passed: all 1,721 unit tests, typecheck, touched-file lint with zero warnings, production build, fixture cleanup before/after the build, all five bundle tests and budgets, and three existing onboarding/accessibility browser checks with zero skips. Independent read-only review found no issues. Human screen-reader announcement checks were not performed. Only the restore-feedback blocker is resolved; the earlier Select, tooltip, and Add Account failures were not changed or waived, and the full application gate is not claimed green.
